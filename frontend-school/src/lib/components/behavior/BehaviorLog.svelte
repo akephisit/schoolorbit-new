@@ -219,10 +219,7 @@
 			/>
 		</div>
 		<details class="sm:col-span-3">
-			<summary
-				class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-3 text-sm font-medium"
-				>ตัวกรองเพิ่มเติม</summary
-			>
+			<summary class="cursor-pointer py-3 text-sm font-medium">ตัวกรองเพิ่มเติม</summary>
 			<div class="grid gap-3 border-t pt-3 sm:grid-cols-3">
 				<BehaviorSelect
 					id="behavior-log-side"
@@ -259,8 +256,7 @@
 						bind:value={batchId}
 					/>
 				</div>
-				{#if onStudent}<label
-						class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-2"
+				{#if onStudent}<label class="flex items-center gap-2"
 						><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
 					>
 				{/if}
@@ -301,8 +297,7 @@
 					<Table.Row class="block space-y-2 p-4 lg:table-row lg:space-y-0 lg:p-0">
 						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:px-4 lg:py-3"
 							><div class="flex min-w-0 items-start gap-3">
-								{#if canCancel && row.canCancel}<label
-										class="flex items-center justify-center [@media(any-pointer:coarse)]:min-h-[44px] [@media(any-pointer:coarse)]:min-w-[44px]"
+								{#if canCancel && row.canCancel}<label class="flex items-center justify-center"
 										><Checkbox
 											aria-label={`เลือกยกเลิก ${row.studentName} ${row.itemName}`}
 											disabled={!!requestId}
@@ -343,8 +338,7 @@
 									: formatBehaviorDate(row.date)}
 							</p>
 							{#if row.detail || row.cancelledAt}<details class="mt-2">
-									<summary
-										class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-2 text-sm text-muted-foreground"
+									<summary class="cursor-pointer py-2 text-sm text-muted-foreground"
 										>รายละเอียดเพิ่มเติม</summary
 									>{#if row.detail}<p class="whitespace-pre-wrap break-words pb-2 text-sm">
 											{row.detail}

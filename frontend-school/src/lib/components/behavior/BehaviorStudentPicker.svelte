@@ -159,7 +159,7 @@
 	</div>
 	<div class="max-h-80 divide-y overflow-y-auto rounded-xl border bg-card" aria-busy={pending}>
 		{#each page.items as student (student.id)}<label
-				class="flex [@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:bg-primary/5"
+				class="flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:bg-primary/5"
 				><Checkbox
 					aria-label={`เลือก ${student.name}`}
 					checked={selected.some((s) => s.id === student.id)}
@@ -187,13 +187,9 @@
 		>
 	</div>
 	{#if selected.length}<details class="rounded-xl border bg-muted/20 px-4">
-			<summary class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-2"
-				>ตรวจรายชื่อที่เลือก {selected.length} คน</summary
-			>
+			<summary class="cursor-pointer py-2">ตรวจรายชื่อที่เลือก {selected.length} คน</summary>
 			<ul class="max-h-60 divide-y overflow-y-auto pb-2">
-				{#each selected as student (student.id)}<li
-						class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center justify-between gap-2"
-					>
+				{#each selected as student (student.id)}<li class="flex items-center justify-between gap-2">
 						<span>{student.name} · {student.homeroom}</span><Button
 							type="button"
 							variant="ghost"

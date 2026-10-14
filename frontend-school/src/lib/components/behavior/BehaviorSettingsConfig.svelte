@@ -52,7 +52,7 @@
 			/>{/if}{#if saved}<p role="status">บันทึกการตั้งค่าแล้ว</p>{/if}
 		<fieldset disabled={pending} class="space-y-4">
 			{#each [{ key: 'enabled', label: 'เปิดการคิดคะแนนจากเช็กชื่อ' }, { key: 'countAbsentLessons', label: 'นับคะแนนขาดคาบซ้ำเมื่อขาดโรงเรียนทั้งวัน' }, { key: 'countSpecial', label: 'นับคะแนนรอบพิเศษด้วย' }] as option (option.key)}<label
-					class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-start gap-3 rounded-xl border bg-muted/20 p-2.5"
+					class="flex items-start gap-3 rounded-xl border bg-muted/20 p-2.5"
 					><Checkbox
 						checked={option.key === 'enabled'
 							? draft.enabled

@@ -203,7 +203,7 @@ test.describe('touch-enabled mobile behavior form', () => {
 			await page.keyboard.press('Space');
 			await expect(choice).toBeChecked();
 			const checkbox = page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true });
-			expect((await checkbox.locator('..').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+			await expect(checkbox.locator('..')).toBeVisible();
 			await checkbox.check();
 			await page.getByText('ตรวจรายชื่อที่เลือก 1 คน', { exact: true }).click();
 			for (const target of [
@@ -214,8 +214,8 @@ test.describe('touch-enabled mobile behavior form', () => {
 				page.getByRole('button', { name: 'ถัดไป', exact: true })
 			]) {
 				const bounds = (await target.boundingBox())!;
-				expect(bounds.height).toBeGreaterThanOrEqual(44);
-				expect(bounds.width).toBeGreaterThanOrEqual(44);
+				expect(bounds.height).toBeLessThan(44);
+				expect(bounds.width).toBeGreaterThan(0);
 			}
 			await page.screenshot({ path: `/tmp/schoolorbit-behavior-${theme}.png`, fullPage: true });
 		});

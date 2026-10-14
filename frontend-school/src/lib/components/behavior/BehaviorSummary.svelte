@@ -207,9 +207,7 @@
 			>{/if}
 	</p>
 	<details class="rounded-xl border bg-card px-4 sm:px-5">
-		<summary class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-2"
-			>ประวัติยอดรายวัน ({summary.historyTotals.length})</summary
-		>
+		<summary class="cursor-pointer py-2">ประวัติยอดรายวัน ({summary.historyTotals.length})</summary>
 		<ul class="divide-y">
 			{#each summary.historyTotals as row (row.id)}<li
 					class="flex flex-wrap items-center justify-between gap-2 py-3"

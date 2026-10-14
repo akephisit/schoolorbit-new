@@ -144,7 +144,7 @@ for (const width of [375, 1440]) {
 		test.describe(`control sizing at ${width}px with ${hasTouch ? 'touch' : 'mouse'}`, () => {
 			test.use({ viewport: { width, height: 900 }, hasTouch });
 			for (const theme of ['light', 'dark'] as const) {
-				test(`normal sizing and calendar targets work in ${theme}`, async ({ page }) => {
+				test(`compact controls and calendar targets work in ${theme}`, async ({ page }) => {
 					await page.emulateMedia({ colorScheme: theme });
 					const api = await mockBehavior(page);
 					await page.goto(behaviorPath('/new'));
@@ -158,13 +158,9 @@ for (const width of [375, 1440]) {
 					await expect(save).toBeVisible();
 					for (const control of [choice, save, select, now]) {
 						const box = (await control.boundingBox())!;
-						if (hasTouch) {
-							expect(box.height).toBeGreaterThanOrEqual(44);
-							expect(box.width).toBeGreaterThanOrEqual(44);
-						} else {
-							expect(box.height).toBeLessThan(44);
-							expect(box.height).toBeGreaterThanOrEqual(24);
-						}
+						expect(box.height).toBeLessThan(44);
+						expect(box.height).toBeGreaterThan(0);
+						expect(box.width).toBeGreaterThan(0);
 					}
 					if (hasTouch) {
 						await choice.tap();
@@ -187,13 +183,9 @@ for (const width of [375, 1440]) {
 						);
 					});
 					const optionBox = (await option.boundingBox())!;
-					if (hasTouch) {
-						expect(optionBox.height).toBeGreaterThanOrEqual(44);
-						await option.tap();
-					} else {
-						expect(optionBox.height).toBeLessThan(44);
-						await option.click();
-					}
+					expect(optionBox.height).toBeLessThan(44);
+					if (hasTouch) await option.tap();
+					else await option.click();
 					const date = page.getByRole('button', { name: 'เลือกวันที่', exact: true });
 					if (hasTouch) await date.tap();
 					else await date.click();
@@ -211,10 +203,8 @@ for (const width of [375, 1440]) {
 						})
 					);
 					for (const box of boxes) {
-						if (hasTouch) {
-							expect(box.width).toBeGreaterThanOrEqual(44);
-							expect(box.height).toBeGreaterThanOrEqual(44);
-						} else expect(box.height).toBeLessThan(44);
+						expect(box.height).toBeLessThan(44);
+						expect(box.width).toBeLessThan(44);
 						expect(box.x).toBeGreaterThanOrEqual(0);
 						expect(box.x + box.width).toBeLessThanOrEqual(width);
 					}
@@ -229,6 +219,7 @@ for (const width of [375, 1440]) {
 						}
 					}
 					await page.keyboard.press('Escape');
+					await expect(page.locator('[data-slot=popover-content]')).toBeHidden();
 					expect(api.batches).toHaveLength(0);
 					await page.screenshot({
 						path: `/tmp/behavior-density-${width}-${hasTouch ? 'touch' : 'mouse'}-${theme}.png`,
@@ -243,8 +234,8 @@ for (const width of [375, 1440]) {
 						const target = selectedEntry.locator('..');
 						await expect(target).toBeVisible();
 						const box = (await target.boundingBox())!;
-						expect(box.width).toBeGreaterThanOrEqual(44);
-						expect(box.height).toBeGreaterThanOrEqual(44);
+						expect(box.width).toBeGreaterThan(0);
+						expect(box.height).toBeGreaterThan(0);
 						await target.tap();
 						await expect(selectedEntry).toBeChecked();
 						expect(api.cancellations).toHaveLength(0);
