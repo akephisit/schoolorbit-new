@@ -376,8 +376,30 @@ recipe still invalidates the cargo-chef layer, but unchanged eligible dependenci
 by sccache. This does not avoid compiling new dependencies or the final application executable.
 The `rustc-cache` wrapper executes the pinned sccache binary. This prevents cc-rs
 from also wrapping C/C++ and assembly compilers, reducing requests to GitHub's cache service.
-The pinned sccache backend does not retry rate-limited writes; inspect dependency-cook write
-errors as well as application statistics before treating a run as successful cache population.
+School builds sccache 0.17.0 from the immutable upstream source and checksum in its Dockerfile,
+with a narrow GHA retry patch. OpenDAL retries only temporary failures, including HTTP 429 and
+transient 5xx responses, with jitter, 1–8 second exponential backoff and at most five retries per
+operation. Permanent errors still propagate to the cache counters. The tool stage is cached;
+Rust application profiles, native compiler wrapping and the existing cache-key format are unchanged.
+After Cargo finishes, the build waits at most 120 seconds for asynchronous cache writes to settle
+before recording statistics. This wait has its own metric, separate from Cargo and link time;
+unavailable or unsettled writes are explicit and do not turn a successful compile into a failure.
+Inspect dependency-cook write errors as well as application statistics before treating a run as
+successful cache population.
+Operations `compiler-cache-diagnostic` compiles an isolated library with the pinned toolchain,
+then restores its new GHA entry in a fresh container. Daemon logs remain on private tmpfs mounts;
+only allowlisted error classes, HTTP statuses and numeric counters enter the evidence artifact.
+The probe publishes no release image and fails unless the new write and restoration are observed.
+Set `options={"workload":"dependencies"}` to repeat the canonical School dependency cook in
+two fresh containers, importing only its GHCR preparation layers. This preserves the release
+toolchain, recipe and compiler settings, checks all eligible writes and subsequent hits, and
+exports neither BuildKit layers nor a release image. Feature-ref writes remain scoped to that ref;
+a successful branch diagnostic alone does not prove that a main-only failure is resolved.
+Use `options={"workload":"cold-dependencies"}` to verify full population under load. It adds
+a run-specific Cargo environment key only inside the diagnostic containers, forcing a separate
+compiler-cache identity without changing optimization. The first container must write every miss;
+the second must restore all eligible outputs without misses or write errors. Retry warnings stay
+private; only allowlisted classes/statuses and the observed retry count enter the artifact.
 School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
 with Rayon processing retained. GIF, BMP and TIFF decoding additionally supports temporary supply image sources, which are normalized before canonical storage. The School image dependency keeps its codec features explicit.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use

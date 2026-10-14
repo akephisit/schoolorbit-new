@@ -54,6 +54,10 @@ Production acceptance also checks aliases and socket source addresses after star
 
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+Compiler-service diagnostics use `node --test scripts/tests/pipeline-compiler-cache-diagnostic.test.mjs`
+locally, then Operations `compiler-cache-diagnostic` on the reviewed branch. Inspect its bounded
+evidence for a successful new write followed by a hit in a fresh container; raw daemon logs must
+never enter Actions logs, artifacts or cache layers.
 Cache-backend experiment fixtures run with
 `node --test scripts/tests/pipeline-cache-benchmark.test.mjs`. They exercise paired scratch
 contexts, fresh builder ownership, cleanup on failure, frozen local compiler snapshots, read-only counters, missing metrics

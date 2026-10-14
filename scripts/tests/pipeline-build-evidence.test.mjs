@@ -203,10 +203,53 @@ for (const phase of ["application", "dependencies"])
           const metrics = JSON.parse(readFileSync(path.join(metricsDir, "build-metrics.json"), "utf8"));
           assert.equal(metrics.cacheEnabled, ["gha", "local"].includes(mode));
           assert.ok(metrics.compileNanoseconds >= 0);
+          assert.equal(metrics.cacheWritesSettled, !["gha", "local"].includes(mode));
           assert.deepEqual(JSON.parse(readFileSync(path.join(metricsDir, "sccache-stats.json"), "utf8")), {});
         } else assert.throws(() => readFileSync(path.join(metricsDir, "build-metrics.json")));
       }
     });
+
+for (const outcome of ["write", "error", "timeout"])
+  test(`School waits for asynchronous cache settlement without changing compile success (${outcome})`, (t) => {
+    const root = fixture(t), bin = path.join(root, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "cargo"), "#!/bin/sh\nexit 0\n", {mode: 0o755});
+    writeFileSync(path.join(root, "bash-env"), "sleep() { SECONDS=$((SECONDS + 120)); }\n");
+    writeFileSync(path.join(bin, "sleep"), "#!/bin/sh\nexit 0\n", {mode: 0o755});
+    writeFileSync(path.join(bin, "sccache"), `#!/bin/bash
+if [[ "$*" == *stats-format=json* ]]; then printf '{}\\n'; exit 0; fi
+count=0
+if [[ -f "$CACHE_CALLS" ]]; then read -r count < "$CACHE_CALLS"; fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "$CACHE_CALLS"
+writes=0; errors=0
+if ((count > 1)) && [[ "$CACHE_OUTCOME" == write ]]; then writes=1; fi
+if ((count > 1)) && [[ "$CACHE_OUTCOME" == error ]]; then errors=1; fi
+printf 'Cache misses 1\\nCache writes %s\\nCache write errors %s\\n' "$writes" "$errors"
+`, {mode: 0o755});
+    const script = readFileSync(path.join(repo, "backend-school/scripts/build_release.sh"), "utf8")
+      .replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"));
+    const result = spawnSync("bash", ["-c", script, "build_release.sh", "dependencies"], {
+      cwd: root, encoding: "utf8",
+      env: {...process.env, PATH: bin + ":" + process.env.PATH, SCHOOL_COMPILER_CACHE: "local", CACHE_OUTCOME: outcome,
+        CACHE_CALLS: path.join(root, "calls"), ...(outcome === "timeout" ? {BASH_ENV: path.join(root, "bash-env")} : {})}
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const metrics = JSON.parse(readFileSync(path.join(root, "target/dependency-timings/build-metrics.json"), "utf8"));
+    assert.equal(metrics.cacheWritesSettled, outcome !== "timeout");
+    assert.ok(metrics.cacheWriteWaitNanoseconds >= 0);
+    assert.equal(/unavailable or timed out/.test(result.stderr), outcome === "timeout");
+    assert.ok(Number(readFileSync(path.join(root, "calls"), "utf8")) >= 2);
+  });
+
+test("cache write settlement and waiting stay separate from Cargo duration", (t) => {
+  const root = fixture(t);
+  writeFileSync(path.join(root, "build-metrics.json"), JSON.stringify({compileNanoseconds: 10e9, cacheWriteWaitNanoseconds: 2e9, cacheWritesSettled: false}));
+  const result = spawnSync("python3", [path.join(repo, "scripts/render_backend_build_summary.py"), "backend-school", root, "absent"], {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Recorded Cargo invocation: 10\.00s/);
+  assert.match(result.stdout, /Application compiler cache write wait: 2\.00s; writes settled: no/);
+});
 
 test('API-readable evidence distinguishes executable/link work and current BuildKit phases', t => {
   const root = fixture(t);
