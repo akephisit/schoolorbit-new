@@ -183,7 +183,7 @@
 						{#each sides as option (option)}
 							<ToggleGroup.Item
 								value={option}
-								class="min-h-[44px] min-w-[44px] gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+								class="gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
 							>
 								{#if option === 'merit'}<Award
 										class="size-4 shrink-0"
@@ -220,7 +220,6 @@
 			description="ใช้เวลาปัจจุบันเป็นค่าเริ่มต้น หรือเปลี่ยนตามวันที่เกิดเหตุ"
 		>
 			<Button
-				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="outline"
 				onclick={() => {
@@ -251,7 +250,6 @@
 				</div>
 			</div>
 			{#if date !== loadedDate || error}<LoadingButton
-					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					loading={refreshing}
@@ -297,16 +295,12 @@
 		</p>{/if}
 	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button
-			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={pending || !!frozen}
 			onclick={() => void goto(`/staff/behavior?academicTermId=${term}`)}>กลับ</Button
-		><LoadingButton
-			class="min-h-[44px] min-w-[44px]"
-			type="submit"
-			loading={pending}
-			disabled={refreshing}><Save class="size-4" aria-hidden="true" />บันทึกพฤติกรรม</LoadingButton
+		><LoadingButton type="submit" loading={pending} disabled={refreshing}
+			><Save class="size-4" aria-hidden="true" />บันทึกพฤติกรรม</LoadingButton
 		>
 	</div>
 </form>

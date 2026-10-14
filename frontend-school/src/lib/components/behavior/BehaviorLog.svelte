@@ -219,7 +219,8 @@
 			/>
 		</div>
 		<details class="sm:col-span-3">
-			<summary class="min-h-[44px] cursor-pointer py-3 text-sm font-medium"
+			<summary
+				class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-3 text-sm font-medium"
 				>ตัวกรองเพิ่มเติม</summary
 			>
 			<div class="grid gap-3 border-t pt-3 sm:grid-cols-3">
@@ -258,17 +259,14 @@
 						bind:value={batchId}
 					/>
 				</div>
-				{#if onStudent}<label class="flex min-h-[44px] items-center gap-2"
+				{#if onStudent}<label
+						class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-2"
 						><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
 					>
 				{/if}
 			</div>
 		</details>
-		<LoadingButton
-			class="min-h-[44px] min-w-[44px]"
-			type="submit"
-			loading={pending === 'read'}
-			disabled={!!pending || !!frozen}
+		<LoadingButton type="submit" loading={pending === 'read'} disabled={!!pending || !!frozen}
 			><Search class="size-4" aria-hidden="true" />ค้นหา</LoadingButton
 		>
 	</form>
@@ -280,7 +278,6 @@
 			onaction={() => void load(applied)}
 		/>{/if}
 	{#if canCancel && selected.length}<Button
-			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="destructive"
 			disabled={!!pending || !!frozen}
@@ -304,7 +301,8 @@
 					<Table.Row class="block space-y-2 p-4 lg:table-row lg:space-y-0 lg:p-0">
 						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:px-4 lg:py-3"
 							><div class="flex min-w-0 items-start gap-3">
-								{#if canCancel && row.canCancel}<label class="flex min-h-[44px] items-center"
+								{#if canCancel && row.canCancel}<label
+										class="flex items-center justify-center [@media(any-pointer:coarse)]:min-h-[44px] [@media(any-pointer:coarse)]:min-w-[44px]"
 										><Checkbox
 											aria-label={`เลือกยกเลิก ${row.studentName} ${row.itemName}`}
 											disabled={!!requestId}
@@ -319,7 +317,7 @@
 									{#if onStudent}<Button
 											type="button"
 											variant="link"
-											class="min-h-[44px] min-w-[44px] h-auto whitespace-normal p-0 text-left font-semibold"
+											class="h-auto whitespace-normal p-0 text-left font-semibold"
 											onclick={() => onStudent?.(row.studentId)}>{row.studentName}</Button
 										>{:else}<p class="font-semibold">{row.studentName}</p>{/if}
 									<p class="text-xs text-muted-foreground">
@@ -345,7 +343,8 @@
 									: formatBehaviorDate(row.date)}
 							</p>
 							{#if row.detail || row.cancelledAt}<details class="mt-2">
-									<summary class="min-h-[44px] cursor-pointer py-2 text-sm text-muted-foreground"
+									<summary
+										class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-2 text-sm text-muted-foreground"
 										>รายละเอียดเพิ่มเติม</summary
 									>{#if row.detail}<p class="whitespace-pre-wrap break-words pb-2 text-sm">
 											{row.detail}
@@ -366,11 +365,9 @@
 						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:px-4 lg:py-3"
 							><div class="flex flex-wrap gap-2 lg:justify-end">
 								{#if row.source !== 'manual' && $can.hasAny(PERMISSIONS.ATTENDANCE_READ_ASSIGNED, PERMISSIONS.ATTENDANCE_READ_SCHOOL, PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED, PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL, PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}<Button
-										class="min-h-[44px] min-w-[44px]"
 										href={sourceHref(row)}
 										variant="outline">เปิดเช็กชื่อต้นทาง</Button
 									>{/if}{#if row.canCancel && canCancel && row.batchId}<Button
-										class="min-h-[44px] min-w-[44px]"
 										type="button"
 										variant="outline"
 										disabled={!!pending || !!frozen}
@@ -391,14 +388,12 @@
 	</div>
 	<div class="flex items-center justify-between gap-3 text-sm">
 		<Button
-			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={!!pending || !applied.offset}
 			onclick={() => void load({ ...applied, offset: Math.max(0, (applied.offset ?? 0) - 50) })}
 			>ก่อนหน้า</Button
 		><span>{page.total} รายการ</span><Button
-			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={!!pending || (applied.offset ?? 0) + 50 >= page.total}
@@ -420,16 +415,12 @@
 			/>
 			<div class="flex justify-end gap-2">
 				<Button
-					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					disabled={!!pending || !!frozen}
 					onclick={() => (confirming = false)}>กลับ</Button
-				><LoadingButton
-					class="min-h-[44px] min-w-[44px]"
-					type="submit"
-					variant="destructive"
-					loading={pending === 'cancel'}>ยืนยันยกเลิก</LoadingButton
+				><LoadingButton type="submit" variant="destructive" loading={pending === 'cancel'}
+					>ยืนยันยกเลิก</LoadingButton
 				>
 			</div>
 		</form>{/if}

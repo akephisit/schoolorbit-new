@@ -179,34 +179,24 @@
 		<BehaviorFormSection
 			step={1}
 			title="เลือกวิธีจัดการ"
-			description="รีเซ็ตยอดปัจจุบัน หรือจัดการรายละเอียดและผลคะแนน"
+			description="รีเซ็ตเริ่มรอบใหม่ที่ศูนย์และเก็บยอดเดิมเป็นประวัติ หรือล้างรายการตามขอบเขต"
 		>
 			<ToggleGroup.Root
 				type="single"
 				bind:value={() => (reset ? 'reset' : 'cleanup'), chooseOperation}
 				aria-label="วิธีจัดการคะแนน"
-				class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+				class="grid grid-cols-2 gap-2"
 				disabled={!!pending || !!requestId}
 			>
 				<ToggleGroup.Item
 					value="reset"
-					class="min-h-[44px] min-w-[44px] h-auto justify-start gap-3 whitespace-normal p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
-					><RotateCcw class="size-5 shrink-0" aria-hidden="true" /><span
-						><span class="block font-semibold">รีเซ็ตคะแนน</span><span
-							class="mt-1 block text-xs text-muted-foreground"
-							>เริ่มรอบใหม่ที่ศูนย์ เก็บยอดเดิมเป็นประวัติ</span
-						></span
-					></ToggleGroup.Item
+					class="gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+					><RotateCcw class="size-4 shrink-0" aria-hidden="true" />รีเซ็ตคะแนน</ToggleGroup.Item
 				>
 				<ToggleGroup.Item
 					value="cleanup"
-					class="min-h-[44px] min-w-[44px] h-auto justify-start gap-3 whitespace-normal p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
-					><Trash2 class="size-5 shrink-0" aria-hidden="true" /><span
-						><span class="block font-semibold">ล้างรายการ</span><span
-							class="mt-1 block text-xs text-muted-foreground"
-							>ลบรายละเอียดจริงและเลือกวิธีเก็บผลคะแนน</span
-						></span
-					></ToggleGroup.Item
+					class="gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+					><Trash2 class="size-4 shrink-0" aria-hidden="true" />ล้างรายการ</ToggleGroup.Item
 				>
 			</ToggleGroup.Root>
 			{#if reset}<p class="rounded-xl bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -222,7 +212,7 @@
 					>
 						{#each modes as option (option)}<ToggleGroup.Item
 								value={option}
-								class="min-h-[44px] min-w-[44px] h-auto justify-start whitespace-normal px-4 py-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+								class="h-auto justify-start whitespace-normal px-3 py-1.5 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
 								>{modeLabels[option]}</ToggleGroup.Item
 							>{/each}
 					</ToggleGroup.Root>
@@ -238,7 +228,7 @@
 				<p class="text-sm font-medium">ฝั่งคะแนน</p>
 				<div class="grid gap-3 sm:grid-cols-2">
 					{#each sides as side (side)}<label
-							class="flex min-h-[44px] items-center gap-3 rounded-xl border p-3 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/5"
+							class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3 rounded-xl border p-3 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/5"
 							><Checkbox
 								checked={chosenSides.includes(side)}
 								onCheckedChange={(checked) =>
@@ -250,9 +240,9 @@
 				</div>
 			</div>
 			{#if !reset}<div class="space-y-2 border-t pt-4">
-					<label class="flex min-h-[44px] items-center gap-3"
+					<label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3"
 						><Checkbox bind:checked={termOnly} />เฉพาะภาคเรียนที่เลือก (ปิดเพื่อเลือกทุกภาคเรียน)</label
-					><label class="flex min-h-[44px] items-center gap-3"
+					><label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3"
 						><Checkbox bind:checked={allDates} />ทุกวันในขอบเขตที่เลือก</label
 					>
 				</div>{/if}
@@ -283,7 +273,7 @@
 					<p class="text-sm font-medium">ที่มาของคะแนน</p>
 					<div class="grid gap-2 sm:grid-cols-2">
 						{#each sources as source (source)}<label
-								class="flex min-h-[44px] items-center gap-3 rounded-lg px-2"
+								class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3 rounded-lg px-2"
 								><Checkbox
 									checked={chosenSources.includes(source)}
 									onCheckedChange={(checked) =>
@@ -298,7 +288,6 @@
 	</fieldset>
 	<div class="flex justify-end border-t pt-4">
 		<LoadingButton
-			class="min-h-[44px] min-w-[44px]"
 			type="submit"
 			variant="outline"
 			loading={pending === 'preview'}
@@ -372,7 +361,6 @@
 				</p>{/if}
 			<div class="flex justify-end border-t pt-4">
 				<Button
-					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="destructive"
 					disabled={!!pending || previewKey !== key || !reason.trim()}
@@ -390,7 +378,6 @@
 				ลบรายละเอียดแล้ว {outcome.entriesDeleted} รายการ · นักเรียน {outcome.students} คน
 			</p>
 			{#if outcome.status === 'pending' && !pending}<Button
-					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					onclick={() => {
@@ -411,7 +398,6 @@
 				กำลังดำเนินการ ลบแล้ว {outcome?.entriesDeleted ?? 0} รายการ
 			</p>{/if}{#if error}<p class="text-destructive">{error}</p>{/if}<AlertDialog.Footer
 			><AlertDialog.Cancel disabled={!!pending}>กลับ</AlertDialog.Cancel><LoadingButton
-				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="destructive"
 				loading={!!pending}

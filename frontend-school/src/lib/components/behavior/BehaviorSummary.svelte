@@ -207,7 +207,7 @@
 			>{/if}
 	</p>
 	<details class="rounded-xl border bg-card px-4 sm:px-5">
-		<summary class="min-h-[44px] cursor-pointer py-2"
+		<summary class="[@media(any-pointer:coarse)]:min-h-[44px] cursor-pointer py-2"
 			>ประวัติยอดรายวัน ({summary.historyTotals.length})</summary
 		>
 		<ul class="divide-y">
@@ -218,7 +218,6 @@
 						>{formatBehaviorDate(row.date)} · {sideLabels[row.side]} · {sourceLabels[row.source]} · {row.points}
 						คะแนน</span
 					>{#if $can.has(PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL)}<Button
-							class="min-h-[44px] min-w-[44px]"
 							type="button"
 							variant="outline"
 							disabled={pending || !!requestId || refreshing}
@@ -258,16 +257,12 @@
 			/>
 			<div class="flex justify-end gap-2">
 				<Button
-					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					disabled={pending || !!requestId}
 					onclick={() => (editing = null)}>ยกเลิก</Button
-				><LoadingButton
-					class="min-h-[44px] min-w-[44px]"
-					type="submit"
-					loading={pending}
-					disabled={refreshing}>บันทึกการปรับยอด</LoadingButton
+				><LoadingButton type="submit" loading={pending} disabled={refreshing}
+					>บันทึกการปรับยอด</LoadingButton
 				>
 			</div>
 		</form>{/if}

@@ -25,7 +25,7 @@
 			href={href(section.suffix)}
 			variant={active === section.key ? 'default' : 'ghost'}
 			aria-current={active === section.key ? 'page' : undefined}
-			class="min-h-[44px] min-w-[44px] gap-2"
+			class="gap-2"
 		>
 			<section.icon class="size-4 shrink-0" aria-hidden="true" />{section.label}
 		</Button>
