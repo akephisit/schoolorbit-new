@@ -171,7 +171,7 @@ jobs:
             echo "### $BENCH_BACKEND / $GITHUB_SHA"
             if [ "$BENCH_PROFILE_ONLY" = true ]; then
               echo 'Compiler profile only; no warm timing samples or speed comparison.'
-              echo 'Compiler passes, monomorphization and LLVM traces are in the artifact.'
+              echo 'Compiler passes and monomorphization estimates are in the artifact.'
             else
               echo 'Source-changing Cargo/link timings on one runner; dependencies already built.'
               echo 'Each timed build links once. Profile/graph priming is reported separately.'

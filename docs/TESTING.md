@@ -267,8 +267,8 @@ exports must equal the default-profile OpenAPI, including across compiler varian
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
 Use `options={"backend":"backend-school","profile_only":true,"variants":"default"}`
 to collect only the compiler profile from the exact production builder. This mode skips warm
-comparison samples; it does not establish a speed improvement. LLVM time traces identify
-expensive generated functions. The benchmark imports the canonical backend cache without exporting it.
+comparison samples; it does not establish a speed improvement. Pass timings and monomorphization
+size estimates identify expensive generated code. The benchmark imports the canonical backend cache without exporting it.
 Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
 downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
 It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only for the selected binary's

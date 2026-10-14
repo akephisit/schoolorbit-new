@@ -22,7 +22,6 @@ unset RUSTC_BOOTSTRAP
 export RUSTC_WRAPPER="$temporary/rustc-profile"
 export SCHOOLORBIT_PROFILE_CRATE=${backend//-/_}
 export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
-flags=(-Z time-passes -Z llvm-time-trace -Z "dump-mono-stats=$output/mono" -Z dump-mono-stats-format=json)
+flags=(-Z time-passes -Z "dump-mono-stats=$output/mono" -Z dump-mono-stats-format=json)
 if [[ "$backend" == backend-school ]]; then flags+=(-C lto=off); fi
 cargo rustc --release --locked --bin "$backend" -- "${flags[@]}"
-find target/release -name '*.llvm_timings.json' -exec cp {} "$output/" \;

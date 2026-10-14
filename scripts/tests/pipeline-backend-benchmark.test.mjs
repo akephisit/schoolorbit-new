@@ -59,7 +59,7 @@ exit ${code}
   const result=spawnSync('bash',[path.join(repo,'scripts/profile_backend_compiler.sh'),'backend-school',f.folder],{cwd:f.root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,RUSTC_BOOTSTRAP:'parent-only',PROFILE_RUSTC:rustc,PROFILE_RUSTC_CALLS:path.join(f.root,'calls'),PROFILE_WRAPPER:path.join(f.root,'wrapper'),PROFILE_ARGUMENTS:path.join(f.root,'arguments')}});
   assert.equal(result.status,code,result.stderr);
   assert.equal(readFileSync(path.join(f.root,'calls'),'utf8'),'--crate-name dependency:off\n--crate-name backend_school:1\n');
-  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-Z\nllvm-time-trace/);
+  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-Z\ntime-passes/);
   assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-C\nlto=off/);
   assert.throws(()=>readFileSync(readFileSync(path.join(f.root,'wrapper'),'utf8').trim()));
 });
