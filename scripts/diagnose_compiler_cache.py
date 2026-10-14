@@ -104,13 +104,16 @@ def main():
                 try:
                     command(["docker", "run", "--detach", "--name", container,
                              "--tmpfs", "/private:rw,nosuid,nodev,noexec,mode=0700,size=16m", "--tmpfs", "/probe:rw,nosuid,nodev",
+                             "--mount", f"type=bind,src={fixture},dst=/fixture,readonly",
                              "-e", "ACTIONS_RESULTS_URL", "-e", "ACTIONS_RUNTIME_TOKEN",
                              "-e", "ACTIONS_CACHE_SERVICE_V2=true", "-e", "SCCACHE_GHA_ENABLED=on",
                              "-e", "SCCACHE_GHA_VERSION=schoolorbit-backend-school",
                              "-e", "SCCACHE_LOG=sccache::server=debug", "-e", "SCCACHE_ERROR_LOG=/private/server.log",
                              "-e", "RUSTC_WRAPPER=/usr/local/bin/rustc-cache", "-e", "CARGO_INCREMENTAL=0",
                              "--entrypoint", "sleep", image, "infinity"], "fresh_container")
-                    command(["docker", "cp", f"{fixture}/.", f"{container}:/probe"], "probe_context")
+                    # docker cp writes beneath a running tmpfs mount on some daemons.
+                    # Copy inside the mount namespace used by Cargo instead.
+                    command(["docker", "exec", container, "sh", "-c", "cp -a /fixture/. /probe/"], "probe_context")
                     started = time.monotonic()
                     command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
                     # Cache writes finish asynchronously. Wait for an observed write, error or hit.
