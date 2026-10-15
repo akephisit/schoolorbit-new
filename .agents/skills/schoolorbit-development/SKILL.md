@@ -58,9 +58,11 @@ Coordinator and obtain a revised assignment. Independent work can continue.
 2. Freeze the integrated candidate. For authorized parallel work, delegate its read-only
    Rules/Security review and local verification concurrently when independent. Assign one heavy
    Cargo owner and isolated database fixtures under `.rules`.
-3. The Verifier follows [testing](../../../docs/TESTING.md) and runs
-   `./scripts/pipeline verify --scope auto` plus affected coverage from the verification matrix.
-   Report exact commands, tested tree/environment, failures and unrun required checks.
+3. The Verifier selects checks under `.rules` section 11 and uses the matching owning runners or
+   focused recipes in [testing](../../../docs/TESTING.md). Record the affected scope and rationale;
+   automatic application-wide verification is not a prerequisite for every edit. Reuse valid
+   scoped evidence under section 1. Report exact commands, tested tree/environment, failures,
+   cancelled checks and unrun required checks.
 4. The Reviewer reads current `.rules` and inspects the complete integrated diff for scope, ownership,
    API/permission contracts, tenant isolation, data preservation and operational invariants.
    Check the working agreement and justified exceptions under `Consistency decisions and final review`.
