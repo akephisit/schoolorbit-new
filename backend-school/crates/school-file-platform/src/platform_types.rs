@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilePurpose {
+    TeachingLicense,
     AttendanceEvidence,
     SchoolLogo,
     SchoolBanner,
@@ -30,7 +31,8 @@ pub enum FilePurpose {
 }
 
 impl FilePurpose {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
+        Self::TeachingLicense,
         Self::AttendanceEvidence,
         Self::SchoolLogo,
         Self::SchoolBanner,
@@ -53,6 +55,7 @@ impl FilePurpose {
 
     pub const fn code(self) -> &'static str {
         match self {
+            Self::TeachingLicense => "teaching_license",
             Self::AttendanceEvidence => "attendance_evidence",
             Self::SchoolLogo => "school_logo",
             Self::SchoolBanner => "school_banner",

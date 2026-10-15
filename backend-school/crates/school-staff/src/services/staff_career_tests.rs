@@ -34,7 +34,7 @@ async fn career_fixture(name: &str) -> (PgPool, Uuid, Uuid) {
         .execute(&pool)
         .await
         .unwrap();
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     (pool, user, actor)
 }
 

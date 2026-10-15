@@ -18084,6 +18084,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		FilePurpose:
+			| 'teaching_license'
 			| 'attendance_evidence'
 			| 'school_logo'
 			| 'school_banner'
@@ -20412,6 +20413,12 @@ export interface components {
 			expected_revision: number;
 			items: components['schemas']['StaffEducationInput'][];
 		};
+		ReplaceStaffTeachingLicenseFile: {
+			/** Format: uuid */
+			expected_file_id: string | null;
+			/** Format: uuid */
+			file_id: string | null;
+		};
 		RequestSupervisionObservationRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -21161,6 +21168,8 @@ export interface components {
 			job_position: null | components['schemas']['StaffJobPositionSummary'];
 			/** Format: date */
 			teaching_license_expiry: string | null;
+			/** Format: uuid */
+			teaching_license_file_id: string | null;
 			teaching_license_number: string | null;
 		};
 		StaffJobPositionSummary: {
@@ -23434,6 +23443,7 @@ export interface components {
 			education?: null | components['schemas']['ReplaceStaffEducation'];
 			/** Format: date */
 			teaching_license_expiry?: string | null;
+			teaching_license_file?: null | components['schemas']['ReplaceStaffTeachingLicenseFile'];
 			teaching_license_number?: string | null;
 		};
 		UpdateStaffRequest: {

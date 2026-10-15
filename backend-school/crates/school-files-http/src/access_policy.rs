@@ -63,7 +63,9 @@ pub fn simple_file_access(
                 }
             }
         }
-        FilePurpose::AchievementImage | FilePurpose::AttendanceEvidence => None,
+        FilePurpose::TeachingLicense
+        | FilePurpose::AchievementImage
+        | FilePurpose::AttendanceEvidence => None,
         FilePurpose::AdmissionApplicationDocument => Some(match action {
             FilePolicyAction::Read => actor.has_any_permission(&[
                 codes::ADMISSION_READ_ALL,
@@ -108,6 +110,14 @@ pub async fn authorize_create(
     resource_id: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     match purpose {
+        FilePurpose::TeachingLicense => {
+            school_staff::services::staff_license_service::authorize_upload(
+                pool,
+                actor,
+                resource_id,
+            )
+            .await
+        }
         FilePurpose::AttendanceEvidence => {
             let student = required_resource(resource_id)?;
             school_attendance::application::require_evidence_upload(pool, actor, student).await?;
@@ -197,6 +207,16 @@ pub async fn authorize_existing(
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     match file.purpose {
+        FilePurpose::TeachingLicense => {
+            school_staff::services::staff_license_service::authorize_file(
+                pool,
+                actor,
+                file,
+                action,
+                resource_id,
+            )
+            .await
+        }
         FilePurpose::AttendanceEvidence => {
             school_attendance::application::require_evidence_file(
                 pool,

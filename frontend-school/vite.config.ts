@@ -65,6 +65,15 @@ function clientOnlyHeavyDependenciesPlugin(): Plugin {
 		name: 'client-only-heavy-dependencies',
 		enforce: 'pre',
 		resolveId(source) {
+			if (
+				this.environment.name === 'ssr' &&
+				(source === '#lib/files/document-preview.js' ||
+					source === fileURLToPath(new URL('./src/lib/files/document-preview', import.meta.url)))
+			) {
+				return fileURLToPath(
+					new URL('./src/lib/files/document-preview.server.ts', import.meta.url)
+				);
+			}
 			if (this.environment.name === 'ssr' && browserOnlyHeavyDependencies.has(source)) {
 				return browserOnlyHeavyDependencyServerStub;
 			}

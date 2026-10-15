@@ -145,3 +145,15 @@ test('clearing a date picker sends an explicit licence expiry clear', async () =
 		{ teaching_license_expiry: null }
 	);
 });
+
+test('licence replacement preserves expected reference and explicit removal', async () => {
+	const { buildStaffPersonnelPatch } = await import('../../src/lib/forms/staff-personnel.ts');
+	const before = personnel({ teaching_license_file_id: 'saved-file' });
+	assert.deepEqual(
+		buildStaffPersonnelPatch(before, personnel({ teaching_license_file_id: 'new-file' })),
+		{ teaching_license_file: { expected_file_id: 'saved-file', file_id: 'new-file' } }
+	);
+	assert.deepEqual(buildStaffPersonnelPatch(before, personnel()), {
+		teaching_license_file: { expected_file_id: 'saved-file', file_id: null }
+	});
+});

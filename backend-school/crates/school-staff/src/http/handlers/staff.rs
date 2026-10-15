@@ -207,6 +207,13 @@ pub async fn update_staff(
     let actor = context.actor;
     actor.require_permission(codes::STAFF_UPDATE_ALL)?;
 
+    if payload
+        .staff_info
+        .as_ref()
+        .is_some_and(|info| info.teaching_license_file.is_some())
+    {
+        crate::services::staff_license_service::require_manage(&actor, staff_id)?;
+    }
     let replaced_file_id =
         staff_service::update_staff(&pool, staff_id, payload, actor.user_id).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.

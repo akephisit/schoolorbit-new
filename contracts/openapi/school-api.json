@@ -39821,6 +39821,7 @@
       },
       "FilePurpose": {
         "enum": [
+          "teaching_license",
           "attendance_evidence",
           "school_logo",
           "school_banner",
@@ -48130,6 +48131,30 @@
         ],
         "type": "object"
       },
+      "ReplaceStaffTeachingLicenseFile": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_file_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "expected_file_id",
+          "file_id"
+        ],
+        "type": "object"
+      },
       "RequestSupervisionObservationRequest": {
         "properties": {
           "academicTermId": {
@@ -50869,6 +50894,13 @@
               "null"
             ]
           },
+          "teaching_license_file_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "teaching_license_number": {
             "type": [
               "string",
@@ -50877,6 +50909,7 @@
           }
         },
         "required": [
+          "teaching_license_file_id",
           "current_career",
           "job_position",
           "academic_rank",
@@ -59181,6 +59214,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "teaching_license_file": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReplaceStaffTeachingLicenseFile"
+              }
             ]
           },
           "teaching_license_number": {

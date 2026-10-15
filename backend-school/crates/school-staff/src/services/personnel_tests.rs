@@ -58,7 +58,7 @@ async fn personnel_position_deactivation_race_rejects_new_assignment() {
     use super::staff_info_service::patch_staff_info;
     use crate::personnel::*;
     let pool = legacy_pool("personnel_position_deactivation_race").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let user = canonical_person(&pool).await;
     let position: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
@@ -465,7 +465,7 @@ async fn current_patch(
 async fn personnel_patch_distinguishes_missing_null_value() {
     let pool = legacy_pool("personnel_patch_states").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let no_change = serde_json::from_value(serde_json::json!({"staff_info":{}})).unwrap();
     super::staff_service::update_staff(&pool, user, no_change, user)
         .await
@@ -530,7 +530,7 @@ fn personnel_rejects_unknown_enum() {
 async fn personnel_patch_preserves_license_and_employment() {
     let pool = legacy_pool("personnel_patch_preserve").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let before = preservation_snapshot(&pool).await;
     let teacher: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
@@ -555,7 +555,7 @@ async fn personnel_patch_preserves_license_and_employment() {
 #[tokio::test]
 async fn personnel_patch_creates_missing_info_row() {
     let pool = legacy_pool("personnel_patch_missing").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let user = canonical_person(&pool).await;
     let request = current_patch(
         &pool,
@@ -589,7 +589,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
         .execute(&pool)
         .await
         .unwrap();
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let keep = current_patch(
         &pool,
         user,
@@ -648,7 +648,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
 async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_invalid() {
     let pool = legacy_pool("personnel_text_patch").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     for (patch, major, university) in [
         (
             serde_json::json!({"major":"  ศิลปะ  ประยุกต์  "}),
@@ -702,7 +702,7 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
 #[tokio::test]
 async fn personnel_create_persists_canonical_fields_and_license() {
     let pool = legacy_pool("personnel_create").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let teacher: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
@@ -747,7 +747,7 @@ async fn personnel_directory_filters_match_missing_values() {
     let first = canonical_person(&pool).await;
     let second = canonical_person(&pool).await;
     sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level) SELECT $1,id,'none','bachelor' FROM staff_job_positions WHERE code='teacher'").bind(first).execute(&pool).await.unwrap();
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     for (field, value, expected) in [
         ("job_position_id", "unspecified", second),
         ("academic_rank", "unspecified", second),
@@ -824,7 +824,7 @@ async fn personnel_groups_deduplicate_current_membership() {
     use super::staff_service::{get_staff_profile, list_staff};
     use crate::models::*;
     let pool = legacy_pool("personnel_groups_current").await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let person = canonical_person(&pool).await;
     let empty = canonical_person(&pool).await;
     let math = personnel_group(&pool, "Fixture Math", true).await;
@@ -913,7 +913,7 @@ async fn personnel_overview_matches_directory_counts() {
     let child: Uuid=sqlx::query_scalar("INSERT INTO organization_units(code,name,parent_unit_id) VALUES ('fixture_child','Fixture child',$1) RETURNING id").bind(root).fetch_one(&pool).await.unwrap();
     personnel_membership(&pool, a, root, "2000-01-01", None).await;
     personnel_membership(&pool, c, child, "2000-01-01", None).await;
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     for (scope, total) in [
         (StaffListAccess::OrganizationUnit(a), 2),
         (StaffListAccess::OrganizationTree(a), 2),

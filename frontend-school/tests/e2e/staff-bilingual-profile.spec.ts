@@ -27,7 +27,8 @@ test('English-only creation requires a whole language set and reviews all qualif
 }) => {
 	const api = await mockStaffDirectory(page, { profile: english });
 	await page.goto('/staff/manage/new');
-	await page.getByLabel('คำนำหน้า (ไทย)', { exact: true }).fill('นาย');
+	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('option', { name: 'นาย', exact: true }).click();
 	await page.getByLabel('ชื่อ (ไทย)', { exact: true }).fill('ชื่อบางส่วน');
 	await page.getByLabel('Last name (English)', { exact: true }).fill('Example');
 	await page.locator('input[type=password]').nth(0).fill('Synthetic-123!');
@@ -35,7 +36,8 @@ test('English-only creation requires a whole language set and reviews all qualif
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('อย่างน้อยหนึ่งภาษา');
 	expect(api.writes).toHaveLength(0);
-	await page.getByLabel('Title (English)', { exact: true }).fill('Ms.');
+	await page.getByRole('button', { name: 'Title (English)', exact: true }).click();
+	await page.getByRole('option', { name: 'Ms.', exact: true }).click();
 	await page.getByLabel('First name (English)', { exact: true }).fill('Alice');
 	await expect(page.getByTestId('staff-name-fields')).toContainText('Ms. Alice Example');
 	for (const [index, label] of ['ปริญญาโท', 'ปริญญาตรี'].entries()) {
@@ -88,7 +90,8 @@ test('name editor prefers complete Thai and explicitly clears a Thai prefix to s
 	await page.goto(staffPath(undefined, '/edit'));
 	const names = page.getByTestId('staff-name-fields');
 	await expect(names).toContainText('ชื่อที่แสดง: นายกมล ทดสอบ');
-	await page.getByLabel('คำนำหน้า (ไทย)', { exact: true }).fill('');
+	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('option', { name: 'ยังไม่ระบุ', exact: true }).click();
 	await expect(names).toContainText('ชื่อที่แสดง: Ms. Alice Example');
 	const request = page.waitForRequest(
 		(r) => r.method() === 'PUT' && r.url().includes('/api/staff/')

@@ -941,6 +941,24 @@ mod tests {
     }
 
     #[test]
+    fn teaching_license_inspects_multiple_pdf_pages_and_each_supported_image() {
+        let page_box = [0.0, 0.0, 300.0, 400.0];
+        let pdf = certificate_pdf(page_box, page_box, 0, 3, false);
+        assert_eq!(
+            inspect_file(FilePurpose::TeachingLicense, &pdf)
+                .unwrap()
+                .detected_content(),
+            DetectedContent::Pdf
+        );
+        for format in [ImageFormat::Png, ImageFormat::Jpeg, ImageFormat::WebP] {
+            assert!(
+                inspect_file(FilePurpose::TeachingLicense, &encoded_image(format, 2, 3)).is_ok()
+            );
+        }
+        assert!(inspect_file(FilePurpose::TeachingLicense, b"unsupported document").is_err());
+    }
+
+    #[test]
     fn detects_supported_content_from_bytes_and_returns_canonical_metadata() {
         let cases = [
             (ImageFormat::Png, DetectedContent::Png),

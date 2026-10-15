@@ -26,7 +26,7 @@ async fn patch(
 #[tokio::test]
 async fn staff_profile_bilingual_validation_selection_search_and_pagination() {
     use crate::models::{StaffListAccess, StaffListFilter};
-    let pool = pool("staff_profile_names", 114).await;
+    let pool = pool("staff_profile_names", 115).await;
     let legacy = person(&pool).await;
     // Existing incomplete names remain readable and permit unrelated edits.
     patch(&pool, legacy, serde_json::json!({"nickname":"เดิม"}))
@@ -119,7 +119,7 @@ async fn staff_profile_bilingual_validation_selection_search_and_pagination() {
 
 #[tokio::test]
 async fn staff_profile_education_collection_revision_ownership_order_and_rollback() {
-    let pool = pool("staff_profile_educations", 114).await;
+    let pool = pool("staff_profile_educations", 115).await;
     let user = person(&pool).await;
     let foreign = person(&pool).await;
     patch(&pool,user,serde_json::json!({"staff_info":{"education":{"expected_revision":0,"items":[{"education_level":"master","major":"Science"},{"education_level":"bachelor"},{"education_level":"other"},{"education_level":"doctorate"}]},"teaching_license_number":"synthetic-license"}})).await.unwrap();
@@ -215,12 +215,12 @@ async fn staff_profile_migration_preserves_partial_education_and_retries() {
         .await
         .unwrap();
     let old:(Uuid,String)=sqlx::query_as("SELECT id,(to_jsonb(i)-ARRAY['education_level','major','university'])::text FROM staff_info i WHERE user_id=$1").bind(user).fetch_one(&pool).await.unwrap();
-    migrate_through(&pool, 114).await.unwrap();
-    migrate_through(&pool, 114).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
+    migrate_through(&pool, 115).await.unwrap();
     let after:String=sqlx::query_scalar("SELECT (to_jsonb(u)-ARRAY['title_en','first_name_en','last_name_en'])::text FROM users u WHERE id=$1").bind(user).fetch_one(&pool).await.unwrap();
     assert_eq!(before, after);
     let preserved: String = sqlx::query_scalar(
-        "SELECT (to_jsonb(i)-'education_revision')::text FROM staff_info i WHERE user_id=$1",
+        "SELECT (to_jsonb(i)-ARRAY['education_revision','teaching_license_file_id'])::text FROM staff_info i WHERE user_id=$1",
     )
     .bind(user)
     .fetch_one(&pool)
@@ -231,6 +231,7 @@ async fn staff_profile_migration_preserves_partial_education_and_retries() {
         .await
         .unwrap()
         .unwrap();
+    assert!(info.teaching_license_file_id.is_none());
     assert_eq!(info.educations[0].id, old.0);
     assert_eq!(info.educations[0].major.as_deref(), Some("Legacy partial"));
     assert!(info.highest_education_level.is_none());
@@ -273,4 +274,192 @@ async fn staff_profile_migration_blocks_missing_stale_or_failed_reconciliation()
         let columns:i64=sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='staff_info' AND column_name IN('education_level','major','university')").fetch_one(&pool).await.unwrap();
         assert_eq!(columns, 3);
     }
+}
+
+#[tokio::test]
+async fn staff_licence_attachment_scope_revision_lifecycle_rollback_and_private_read() {
+    use super::staff_license_service as licence;
+    use school_authorization::ActorContext;
+    use school_file_platform::{
+        access::FilePolicyAction,
+        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+        repository::PlatformFile,
+    };
+    use school_permissions::registry::codes;
+    let pool =
+        school_test_db::create_named_test_pool_with_max_connections("staff_licence_attachment", 2)
+            .await;
+    migrate_through(&pool, 115).await.unwrap();
+    let user = person(&pool).await;
+    let other = person(&pool).await;
+    let manager = ActorContext {
+        user_id: user,
+        permissions: vec![
+            codes::STAFF_UPDATE_ALL.into(),
+            codes::STAFF_PII_READ_SCHOOL.into(),
+            codes::STAFF_PROFILE_READ_SCHOOL.into(),
+        ],
+    };
+    let reader = ActorContext {
+        user_id: other,
+        permissions: vec![codes::STAFF_PROFILE_READ_SCHOOL.into()],
+    };
+    assert_eq!(
+        licence::authorize_upload(&pool, &manager, Some(user))
+            .await
+            .unwrap(),
+        user
+    );
+    assert!(licence::authorize_upload(&pool, &manager, None)
+        .await
+        .is_err());
+    assert!(
+        licence::authorize_upload(&pool, &manager, Some(Uuid::new_v4()))
+            .await
+            .is_err()
+    );
+    let insert = |owner| {
+        let pool = &pool;
+        async move {
+            sqlx::query_scalar::<_,Uuid>("INSERT INTO files(owner_user_id,created_by,display_filename,purpose_code,visibility,lifecycle_status,retention_class,expires_at) VALUES($1,$2,'synthetic.pdf','teaching_license','private','ready','temporary',now()+interval '1 hour') RETURNING id")
+            .bind(owner).bind(user).fetch_one(pool).await.unwrap()
+        }
+    };
+    let first = insert(user).await;
+    let second = insert(user).await;
+    let unrelated = insert(other).await;
+    let file = |id, owner| PlatformFile {
+        id,
+        owner_user_id: Some(owner),
+        purpose: FilePurpose::TeachingLicense,
+        visibility: FileVisibility::Private,
+        lifecycle_status: FileLifecycleStatus::Ready,
+        current_version: None,
+        display_filename: "synthetic.pdf".into(),
+        detected_mime_type: "application/pdf".into(),
+        byte_size: 100,
+    };
+    assert!(licence::authorize_file(
+        &pool,
+        &manager,
+        &file(first, user),
+        FilePolicyAction::Read,
+        Some(user)
+    )
+    .await
+    .is_ok());
+    assert!(licence::authorize_file(
+        &pool,
+        &reader,
+        &file(first, user),
+        FilePolicyAction::Read,
+        Some(user)
+    )
+    .await
+    .is_err());
+    assert!(licence::authorize_file(
+        &pool,
+        &manager,
+        &file(first, user),
+        FilePolicyAction::Read,
+        Some(other)
+    )
+    .await
+    .is_err());
+    let attach = |expected: Option<Uuid>, next: Option<Uuid>| serde_json::json!({"staff_info":{"teaching_license_file":{"expected_file_id":expected,"file_id":next}}});
+    assert!(patch(&pool, user, attach(None, Some(unrelated)))
+        .await
+        .is_err());
+    for (column, value) in [
+        ("purpose_code", "'profile_image'"),
+        ("created_by", "$2"),
+        ("lifecycle_status", "'processing'"),
+        ("expires_at", "now()-interval '1 minute'"),
+    ] {
+        let candidate = insert(user).await;
+        let statement = format!("UPDATE files SET {column}={value} WHERE id=$1");
+        let query = sqlx::query(sqlx::AssertSqlSafe(statement.as_str())).bind(candidate);
+        if column == "created_by" {
+            query.bind(other).execute(&pool).await.unwrap();
+        } else {
+            query.execute(&pool).await.unwrap();
+        }
+        assert!(patch(&pool, user, attach(None, Some(candidate)))
+            .await
+            .is_err());
+    }
+    patch(&pool, user, attach(None, Some(first))).await.unwrap();
+    assert!(
+        licence::delete_guard(&pool, &manager, &file(first, user), Some(user))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        staff_service::get_staff_profile(&pool, user, true)
+            .await
+            .unwrap()
+            .staff_info
+            .unwrap()
+            .teaching_license_file_id,
+        Some(first)
+    );
+    assert_eq!(
+        staff_service::get_staff_profile(&pool, user, false)
+            .await
+            .unwrap()
+            .staff_info
+            .unwrap()
+            .teaching_license_file_id,
+        None
+    );
+    assert!(patch(&pool, user, attach(None, Some(second)))
+        .await
+        .is_err());
+    let mut invalid = attach(Some(first), Some(second));
+    invalid["staff_info"]["education"] = serde_json::json!({"expected_revision":99,"items":[]});
+    assert!(patch(&pool, user, invalid).await.is_err());
+    let state:(Option<Uuid>,String)=sqlx::query_as("SELECT i.teaching_license_file_id,f.retention_class FROM staff_info i CROSS JOIN files f WHERE i.user_id=$1 AND f.id=$2").bind(user).bind(second).fetch_one(&pool).await.unwrap();
+    assert_eq!(state, (Some(first), "temporary".into()));
+    patch(&pool, user, attach(Some(first), Some(second)))
+        .await
+        .unwrap();
+    assert!(licence::authorize_file(
+        &pool,
+        &manager,
+        &file(first, user),
+        FilePolicyAction::Read,
+        Some(user)
+    )
+    .await
+    .is_err());
+    let old: (String, bool) =
+        sqlx::query_as("SELECT retention_class,expires_at<=now() FROM files WHERE id=$1")
+            .bind(first)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(old, ("temporary".into(), true));
+    // The deletion guard shares the parent lock with attachment writes.
+    let guard = licence::delete_guard(&pool, &manager, &file(unrelated, other), Some(other))
+        .await
+        .unwrap();
+    let mut concurrent = pool.begin().await.unwrap();
+    assert!(
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE NOWAIT")
+            .bind(other)
+            .fetch_one(&mut *concurrent)
+            .await
+            .is_err()
+    );
+    concurrent.rollback().await.unwrap();
+    guard.rollback().await.unwrap();
+    patch(&pool, user, attach(Some(second), None))
+        .await
+        .unwrap();
+    assert!(staff_info_service::read_staff_info(&pool, user)
+        .await
+        .unwrap()
+        .unwrap()
+        .teaching_license_file_id
+        .is_none());
 }

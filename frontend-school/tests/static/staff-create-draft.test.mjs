@@ -30,6 +30,7 @@ test('draft persists allowed fields and excludes credentials and national ID', (
 			confirmPassword: 'synthetic-private-password',
 			national_id: 'synthetic-private-identifier',
 			personnel: {
+				teaching_license_file_id: '55000000-0000-4000-8000-000000000099',
 				teaching_license_number: 'synthetic-private-license',
 				teaching_license_expiry: '2030-01-01'
 			}
@@ -40,6 +41,8 @@ test('draft persists allowed fields and excludes credentials and national ID', (
 	assert.ok(!encoded.includes('synthetic-private-password'));
 	assert.ok(!encoded.includes('synthetic-private-identifier'));
 	assert.ok(!encoded.includes('synthetic-private-license'));
+	assert.ok(!encoded.includes('teaching_license_file_id'));
+	assert.ok(!encoded.includes('55000000-0000-4000-8000-000000000099'));
 	assert.ok(!encoded.includes('2030-01-01'));
 	assert.equal(readStaffCreateDraft(store, owner, 101)?.first_name, 'ร่าง');
 });

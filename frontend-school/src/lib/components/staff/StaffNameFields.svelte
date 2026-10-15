@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StaffTitlePicker from './StaffTitlePicker.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import {
@@ -53,13 +54,27 @@
 				{#each group.fields as field (field.key)}
 					<div class="space-y-2">
 						<Label for={`staff-${field.key}`}>{field.label}</Label>
-						<Input
-							id={`staff-${field.key}`}
-							bind:value={value[field.key]}
-							placeholder={field.placeholder}
-							aria-invalid={Boolean(errors[field.key])}
-							aria-describedby={errors[field.key] ? `staff-${field.key}-error` : 'staff-name-help'}
-						/>
+						{#if field.key === 'title' || field.key === 'title_en'}
+							<StaffTitlePicker
+								id={`staff-${field.key}`}
+								label={field.label}
+								language={field.key === 'title' ? 'th' : 'en'}
+								bind:value={value[field.key]}
+								{disabled}
+								invalid={Boolean(errors[field.key])}
+								describedBy={errors[field.key] ? `staff-${field.key}-error` : 'staff-name-help'}
+							/>
+						{:else}
+							<Input
+								id={`staff-${field.key}`}
+								bind:value={value[field.key]}
+								placeholder={field.placeholder}
+								aria-invalid={Boolean(errors[field.key])}
+								aria-describedby={errors[field.key]
+									? `staff-${field.key}-error`
+									: 'staff-name-help'}
+							/>
+						{/if}
 						{#if errors[field.key]}<p
 								id={`staff-${field.key}-error`}
 								class="text-xs text-destructive"
