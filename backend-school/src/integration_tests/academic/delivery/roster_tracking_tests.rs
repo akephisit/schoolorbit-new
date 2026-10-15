@@ -318,9 +318,14 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
         serde_json::to_value(members(&f, f.groups[0]).await).unwrap(),
         before
     );
-    school_students::services::delete_student(&f.pool, old.student_id, f.actor)
-        .await
-        .unwrap();
+    school_students::services::delete_student(
+        &f.pool,
+        old.student_id,
+        f.actor,
+        &crate::http_state::PLACEMENT_ROSTERS,
+    )
+    .await
+    .unwrap();
     assert!(members(&f, f.groups[0])
         .await
         .iter()

@@ -4,6 +4,7 @@ mod tests {
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
         CutoverFixture,
     };
+    use school_academic_core::ports::PlacementRosterPort;
     use school_admission::applications::{
         complete_enrollment, AssignRoomsGlobalRequest, AssignRoomsRequest, BulkScoreEntry,
         CompleteEnrollmentRequest, UpdateScoreEntry,
@@ -13,6 +14,7 @@ mod tests {
     use school_errors::AppError;
     use school_test_db::{create_named_test_pool_with_max_connections, create_test_user};
     use sqlx::PgPool;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use uuid::Uuid;
 
     struct EnrollmentFixture {
@@ -20,6 +22,44 @@ mod tests {
         application_id: Uuid,
         academic_year_id: Uuid,
         enroller_id: Uuid,
+    }
+
+    struct EnrollmentRosters {
+        actor: Uuid,
+        fail: bool,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl PlacementRosterPort for EnrollmentRosters {
+        async fn reconcile(
+            &self,
+            transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            actor: Uuid,
+            student_year_ids: &[Uuid],
+        ) -> Result<(), AppError> {
+            assert_eq!(actor, self.actor);
+            assert_eq!(student_year_ids.len(), 1);
+            let count: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM student_academic_years WHERE id=ANY($1)")
+                    .bind(student_year_ids)
+                    .fetch_one(&mut **transaction)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                count, 1,
+                "provider must see the new row in the caller's transaction"
+            );
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail {
+                return Err(AppError::InternalServerError(
+                    "roster provider unavailable".into(),
+                ));
+            }
+            crate::http_state::PLACEMENT_ROSTERS
+                .reconcile(transaction, actor, student_year_ids)
+                .await
+        }
     }
 
     async fn enrollment_fixture(name: &str, connections: u32) -> EnrollmentFixture {
@@ -408,12 +448,29 @@ mod tests {
             academic_year_id,
             enroller_id,
         } = enrollment_fixture("admission_future_year_enrollment", 1).await;
-        let first = complete_enrollment(&pool, application_id, enrollment_payload(), enroller_id)
-            .await
-            .unwrap();
-        let replay = complete_enrollment(&pool, application_id, enrollment_payload(), enroller_id)
-            .await
-            .unwrap();
+        let rosters = EnrollmentRosters {
+            actor: enroller_id,
+            fail: false,
+            calls: AtomicUsize::new(0),
+        };
+        let first = complete_enrollment(
+            &pool,
+            application_id,
+            enrollment_payload(),
+            enroller_id,
+            &rosters,
+        )
+        .await
+        .unwrap();
+        let replay = complete_enrollment(
+            &pool,
+            application_id,
+            enrollment_payload(),
+            enroller_id,
+            &rosters,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(first.user_id, replay.user_id);
         assert_eq!(first.student_code, replay.student_code);
@@ -450,10 +507,15 @@ mod tests {
                 .execute(&pool)
                 .await
                 .unwrap();
-            let replay =
-                complete_enrollment(&pool, application_id, enrollment_payload(), enroller_id)
-                    .await
-                    .unwrap();
+            let replay = complete_enrollment(
+                &pool,
+                application_id,
+                enrollment_payload(),
+                enroller_id,
+                &rosters,
+            )
+            .await
+            .unwrap();
             assert_eq!(replay.user_id, first.user_id);
             assert_eq!(replay.student_code, first.student_code);
             let after: String = sqlx::query_scalar("SELECT to_jsonb(student_year)::text FROM student_academic_years student_year WHERE student_id=$1 AND academic_year_id=$2")
@@ -463,6 +525,57 @@ mod tests {
                 "completed receipt replay never rewrites closed academic history"
             );
         }
+        assert_eq!(
+            rosters.calls.load(Ordering::SeqCst),
+            1,
+            "receipt replay must not reconcile rosters again"
+        );
+    }
+
+    #[tokio::test]
+    async fn enrollment_roster_failure_rolls_back_all_created_records() {
+        let fixture = enrollment_fixture("enrollment_roster_rollback", 1).await;
+        let users_before: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        let rosters = EnrollmentRosters {
+            actor: fixture.enroller_id,
+            fail: true,
+            calls: AtomicUsize::new(0),
+        };
+        let result = complete_enrollment(
+            &fixture.pool,
+            fixture.application_id,
+            enrollment_payload(),
+            fixture.enroller_id,
+            &rosters,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::InternalServerError(message)) if message == "roster provider unavailable")
+        );
+        assert_eq!(rosters.calls.load(Ordering::SeqCst), 1);
+        let state: (String, Option<Uuid>, i64, i64, i64) = sqlx::query_as(
+            "SELECT status,created_user_id,(SELECT count(*) FROM users WHERE username='970001'),
+             (SELECT count(*) FROM student_academic_years WHERE academic_year_id=$2),
+             (SELECT count(*) FROM homeroom_placements WHERE academic_year_id=$2)
+             FROM admission_applications WHERE id=$1",
+        )
+        .bind(fixture.application_id)
+        .bind(fixture.academic_year_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(state, ("accepted".into(), None, 0, 0, 0));
+        let users_after: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            users_after, users_before,
+            "parent and student accounts must roll back together"
+        );
     }
 
     #[tokio::test]
@@ -480,6 +593,7 @@ mod tests {
                 fixture.application_id,
                 enrollment_payload(),
                 fixture.enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS,
             )
             .await;
             assert!(
@@ -518,6 +632,7 @@ mod tests {
                 application_id,
                 enrollment_payload(),
                 enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS,
             )
             .await
         });

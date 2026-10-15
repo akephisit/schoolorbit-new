@@ -227,6 +227,12 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   crates, and do not move unrelated code into a lower layer to conceal a dependency cycle.
 - Internal crates receive only the state, typed data, or narrow port they require. Cross-domain
   behavior goes through a provider-owned public operation or an application-owned adapter.
+- Select concrete cross-domain runtime and roster providers in application composition. Reuse the
+  owning domain's narrow ports rather than importing an implementation merely to construct it.
+  Students and Admission receive Core's `PlacementRosterPort`; preserve the caller's transaction,
+  actor and affected IDs, and propagate provider errors before commit. Behavior refreshes Attendance
+  through its application-bound runtime port only after successful commit, retaining best-effort
+  refresh semantics. Behavior and Attendance must not depend on each other.
 - Lookup wire DTOs belong with their lookup endpoint/query owner, even when they describe another
   domain's entities. Keep `OrganizationUnitLookupItem` in Administration's lookup module. Timetable
   receives Staff affiliations through its narrow directory port and the application adapter;

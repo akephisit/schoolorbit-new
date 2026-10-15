@@ -154,6 +154,74 @@ async fn student_year_history(pool: &PgPool, student: Uuid, year: Uuid) -> serde
 }
 
 #[tokio::test]
+async fn lifecycle_student_deactivation_roster_failure_rolls_back_academic_and_account_changes() {
+    struct RejectRosters {
+        actor: Uuid,
+        student: Uuid,
+    }
+    #[async_trait::async_trait]
+    impl school_academic_core::ports::PlacementRosterPort for RejectRosters {
+        async fn reconcile(
+            &self,
+            transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            actor: Uuid,
+            ids: &[Uuid],
+        ) -> Result<(), school_errors::AppError> {
+            assert_eq!(actor, self.actor);
+            assert!(!ids.is_empty());
+            let withdrawn: i64 = sqlx::query_scalar("SELECT count(*) FROM student_academic_years WHERE id=ANY($1) AND student_id=$2 AND status='withdrawn'")
+                .bind(ids).bind(self.student).fetch_one(&mut **transaction).await.unwrap();
+            assert_eq!(
+                withdrawn as usize,
+                ids.len(),
+                "provider must observe pending changes in the caller's transaction"
+            );
+            Err(school_errors::AppError::InternalServerError(
+                "roster provider unavailable".into(),
+            ))
+        }
+    }
+    let (pool, student, _, _) =
+        deactivation_lifecycle_fixture("deactivation_roster_rollback", "closed", true).await;
+    let years: Vec<Uuid> = sqlx::query_scalar("SELECT academic_year_id FROM student_academic_years WHERE student_id=$1 ORDER BY academic_year_id")
+        .bind(student).fetch_all(&pool).await.unwrap();
+    let mut before = Vec::new();
+    for &year in &years {
+        before.push(student_year_history(&pool, student, year).await);
+    }
+    let account_before: (String, String) =
+        sqlx::query_as("SELECT username,status FROM users WHERE id=$1")
+            .bind(student)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let actor = fixture_actor(&pool).await;
+    let result = school_students::services::delete_student(
+        &pool,
+        student,
+        actor,
+        &RejectRosters { actor, student },
+    )
+    .await;
+    assert!(
+        matches!(result, Err(school_errors::AppError::InternalServerError(message)) if message == "roster provider unavailable")
+    );
+    for (index, year) in years.into_iter().enumerate() {
+        assert_eq!(
+            student_year_history(&pool, student, year).await,
+            before[index]
+        );
+    }
+    let account_after: (String, String) =
+        sqlx::query_as("SELECT username,status FROM users WHERE id=$1")
+            .bind(student)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(account_after, account_before);
+}
+
+#[tokio::test]
 async fn lifecycle_student_deactivation_preserves_closed_and_archived_year_history() {
     for status in ["closed", "archived"] {
         let (pool, student, history_year, _) = deactivation_lifecycle_fixture(
@@ -166,9 +234,14 @@ async fn lifecycle_student_deactivation_preserves_closed_and_archived_year_histo
         let current_version: i64 = sqlx::query_scalar("SELECT row_version FROM student_academic_years WHERE student_id=$1 AND academic_year_id=$2")
             .bind(student).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
         let actor = fixture_actor(&pool).await;
-        school_students::services::delete_student(&pool, student, actor)
-            .await
-            .unwrap();
+        school_students::services::delete_student(
+            &pool,
+            student,
+            actor,
+            &crate::http_state::PLACEMENT_ROSTERS,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             student_year_history(&pool, student, history_year).await,
             before,
@@ -192,9 +265,14 @@ async fn lifecycle_student_deactivation_ends_future_placements_without_invalid_d
         deactivation_lifecycle_fixture("deactivation_future", "closed", true).await;
     let before = student_year_history(&pool, student, history_year).await;
     let actor = fixture_actor(&pool).await;
-    school_students::services::delete_student(&pool, student, actor)
-        .await
-        .expect("a future placement must not prevent account deactivation");
+    school_students::services::delete_student(
+        &pool,
+        student,
+        actor,
+        &crate::http_state::PLACEMENT_ROSTERS,
+    )
+    .await
+    .expect("a future placement must not prevent account deactivation");
     assert_eq!(
         student_year_history(&pool, student, history_year).await,
         before
@@ -226,7 +304,13 @@ async fn lifecycle_student_deactivation_coordinates_before_user_locks() {
     .unwrap();
     let worker_pool = pool.clone();
     let worker = tokio::spawn(async move {
-        school_students::services::delete_student(&worker_pool, student, actor).await
+        school_students::services::delete_student(
+            &worker_pool,
+            student,
+            actor,
+            &crate::http_state::PLACEMENT_ROSTERS,
+        )
+        .await
     });
     let mut waiting = false;
     for _ in 0..200 {
@@ -278,11 +362,14 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
             .await
             .unwrap();
     sqlx::raw_sql("CREATE FUNCTION fail_deactivation_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'DEACTIVATION_TEST_AUDIT_FAILURE'; END $$; CREATE TRIGGER fail_deactivation_audit BEFORE INSERT ON academic_audit_events FOR EACH ROW EXECUTE FUNCTION fail_deactivation_audit();").execute(&pool).await.unwrap();
-    assert!(
-        school_students::services::delete_student(&pool, student, actor)
-            .await
-            .is_err()
-    );
+    assert!(school_students::services::delete_student(
+        &pool,
+        student,
+        actor,
+        &crate::http_state::PLACEMENT_ROSTERS
+    )
+    .await
+    .is_err());
     let user_after: (String, String) =
         sqlx::query_as("SELECT username,status FROM users WHERE id=$1")
             .bind(student)
@@ -300,9 +387,14 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
         .execute(&pool)
         .await
         .unwrap();
-    school_students::services::delete_student(&pool, student, actor)
-        .await
-        .unwrap();
+    school_students::services::delete_student(
+        &pool,
+        student,
+        actor,
+        &crate::http_state::PLACEMENT_ROSTERS,
+    )
+    .await
+    .unwrap();
     let audits: Vec<(Uuid, serde_json::Value)> = sqlx::query_as("SELECT actor_user_id,payload FROM academic_audit_events WHERE event_code='student_academic_year.withdrawn_for_deactivation' AND entity_id=$1")
         .bind(student).fetch_all(&pool).await.unwrap();
     assert_eq!(audits.len(), 1);

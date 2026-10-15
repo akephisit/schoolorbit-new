@@ -45,6 +45,12 @@ Academic domain crates do not import Staff. Administration's lookup module owns
 dependency for authoritative profile and achievement access policies. These boundaries avoid
 rebuilding unrelated academic services when personnel implementation changes.
 
+Application composition supplies the same `PlacementRosterPort` implementation to Academic,
+Students and Admission. Withdrawal and enrollment invoke it inside their existing transaction;
+provider failures roll back all associated changes. Behavior requests post-commit runtime refresh
+through its narrow application-bound port. The application adapter retains Attendance's existing
+best-effort refresh behavior without a dependency between the two domains.
+
 Unit tests stay beside implementations. Deliberate application integration tests live in the
 `#[cfg(test)]` namespace `src/integration_tests`; shared historical migration fixtures belong to
 `school-test-db`, which is development-only. See [Testing](../docs/TESTING.md) for the owned

@@ -103,12 +103,14 @@ pub async fn save_settings(
     policy::require_manage(&context.actor)?;
     let pool = &context.tenant.pool;
     let result = catalog::save_settings(pool, payload).await?;
-    school_attendance::runtime::refresh_after_commit(
-        &context.tenant.subdomain,
-        pool.clone(),
-        state.notification_channel.clone(),
-    )
-    .await;
+    state
+        .runtime
+        .refresh_after_commit(
+            &context.tenant.subdomain,
+            pool.clone(),
+            state.notification_channel.clone(),
+        )
+        .await;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -213,12 +215,14 @@ pub async fn execute_cleanup(
     policy::require_cleanup(&context.actor)?;
     let pool = &context.tenant.pool;
     let result = cleanup::execute(pool, context.actor.user_id, payload).await?;
-    school_attendance::runtime::refresh_after_commit(
-        &context.tenant.subdomain,
-        pool.clone(),
-        state.notification_channel.clone(),
-    )
-    .await;
+    state
+        .runtime
+        .refresh_after_commit(
+            &context.tenant.subdomain,
+            pool.clone(),
+            state.notification_channel.clone(),
+        )
+        .await;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -261,12 +265,14 @@ pub async fn reset(
         .reset
         .reset_scores(pool, context.actor.user_id, payload)
         .await?;
-    school_attendance::runtime::refresh_after_commit(
-        &context.tenant.subdomain,
-        pool.clone(),
-        state.notification_channel.clone(),
-    )
-    .await;
+    state
+        .runtime
+        .refresh_after_commit(
+            &context.tenant.subdomain,
+            pool.clone(),
+            state.notification_channel.clone(),
+        )
+        .await;
     Ok(Json(ApiResponse::ok(result)))
 }
 

@@ -621,7 +621,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-admission",
             &[
                 "school-academic-core",
-                "school-academic-delivery",
                 "school-auth",
                 "school-auth-http",
                 "school-authorization",
@@ -678,7 +677,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-behavior",
             &[
                 "school-academic-core",
-                "school-attendance",
                 "school-auth",
                 "school-auth-http",
                 "school-authorization",
@@ -819,7 +817,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             &[
                 "school-academic-assessment",
                 "school-academic-core",
-                "school-academic-delivery",
                 "school-academic-timetable",
                 "school-auth",
                 "school-auth-http",
@@ -2516,9 +2513,9 @@ fn student_deactivation_invalidates_effective_permissions() {
     let source = read_source(manifest_dir().join("crates/school-students/src/http/handlers.rs"));
     let body = extract_braced_block(&source, "pub async fn delete_student", false);
 
-    assert!(
-        body.contains("student_service::delete_student(&pool, student_id, actor.user_id).await?")
-    );
+    assert!(body.split_whitespace().collect::<String>().contains(
+        "student_service::delete_student(&pool,student_id,actor.user_id,state.placement_rosters"
+    ));
     assert!(body.contains("invalidate_permission_user(&tenant, student_id)"));
     assert!(body.contains("notify_permission_changed(&tenant, student_id)"));
     let service = read_source(manifest_dir().join("crates/school-students/src/services.rs"));

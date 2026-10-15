@@ -15,7 +15,6 @@ api-docs = [
 async-trait = { workspace = true }
 tokio = { workspace = true }
 school-notifications = { workspace = true }
-school-attendance = { workspace = true }
 school-http = { workspace = true }
 school-auth-http = { workspace = true }
 school-auth = { workspace = true }

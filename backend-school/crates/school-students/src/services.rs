@@ -458,6 +458,7 @@ pub async fn delete_student(
     pool: &PgPool,
     student_id: Uuid,
     actor_user_id: Uuid,
+    placement_rosters: &dyn school_academic_core::ports::PlacementRosterPort,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("Failed to begin delete student transaction: {}", e);
@@ -466,7 +467,7 @@ pub async fn delete_student(
 
     school_academic_core::services::student_years::withdraw_for_account_deactivation(
         &mut tx,
-        &school_academic_delivery::services::roster_tracking::RoomRosterTracking,
+        placement_rosters,
         actor_user_id,
         student_id,
     )
