@@ -5,12 +5,26 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-calendar/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-academic-assessment/api-docs",
+    "school-http/api-docs",
+    "school-auth/api-docs",
     "dep:utoipa",
     "school-academic-core/api-docs",
     "school-academic-delivery/api-docs",
 ]
 
 [dependencies]
+school-calendar = { workspace = true }
+school-academic-timetable = { workspace = true }
+school-academic-assessment = { workspace = true }
+school-permissions = { workspace = true }
+school-authorization = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
 school-academic-delivery = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
@@ -24,6 +38,8 @@ utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+school-test-db = { workspace = true }
+tokio = { workspace = true }
 school-crypto = { workspace = true, features = ["test-support"] }
 
 [lints]

@@ -1,0 +1,56 @@
+use crate::http::state::NavigationHttpState;
+use crate::models::RouteRegistration;
+use crate::models::RouteRegistrationResponse;
+use crate::services::route_registration_service;
+use school_auth_http::origin::extract_subdomain_from_request;
+use school_auth_http::tenant::tenant_context_by_subdomain;
+use school_http::HttpError as AppError;
+
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    Json as JsonResponse,
+};
+
+/// Synchronize the complete frontend route inventory after tenant deployment.
+pub async fn register_routes(
+    State(state): State<NavigationHttpState>,
+    headers: HeaderMap,
+    JsonResponse(data): JsonResponse<RouteRegistration>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate deploy key
+    let deploy_key = headers.get("X-Deploy-Key").and_then(|h| h.to_str().ok());
+
+    let expected_key = std::env::var("DEPLOY_KEY").map_err(|_| {
+        tracing::error!("DEPLOY_KEY environment variable not set");
+        AppError::InternalServerError("Server configuration error".to_string())
+    })?;
+
+    if deploy_key != Some(expected_key.as_str()) {
+        tracing::warn!("Invalid deploy key provided");
+        return Err(AppError::AuthError("Invalid deploy key".to_string()));
+    }
+
+    let subdomain = extract_subdomain_from_request(&headers).map_err(|_| {
+        tracing::warn!("No subdomain provided for route registration");
+        AppError::BadRequest("No subdomain specified".to_string())
+    })?;
+
+    let pool = tenant_context_by_subdomain(&state.auth_runtime, &subdomain)
+        .await?
+        .pool;
+    let outcome = route_registration_service::sync_routes(&pool, &data).await?;
+
+    Ok((
+        StatusCode::OK,
+        JsonResponse(RouteRegistrationResponse {
+            success: true,
+            registered: outcome.registered,
+            message: format!(
+                "Synced {} routes (preserved user customizations)",
+                outcome.registered
+            ),
+        }),
+    ))
+}

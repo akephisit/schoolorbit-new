@@ -10,8 +10,8 @@ test('score route owns independent visible regions and uses a minimal score-room
 		read('frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.ts'),
 		read('frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.svelte'),
 		read('frontend-school/src/lib/api/admission.ts'),
-		read('backend-school/src/modules/admission.rs'),
-		read('backend-school/src/modules/admission/handlers/scores.rs'),
+		read('backend-school/crates/school-admission/src/http/routes.rs'),
+		read('backend-school/crates/school-admission/src/http/handlers/scores.rs'),
 		read('backend-school/crates/school-admission/src/services/score_service.rs')
 	]);
 	for (const readName of [

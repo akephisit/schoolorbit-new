@@ -57,7 +57,7 @@ test('timetable subject group scope selects its real database regression and rej
     const passing = await runStub('positive', 'timetable-subject-groups');
     assert.equal(passing.status, 0, passing.stderr);
     assert.equal(passing.calls.length, 1);
-    assert.deepEqual(passing.calls[0], ['test', 'modules::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load', '--bin', 'backend-school', '--', '--exact', '--nocapture']);
+    assert.deepEqual(passing.calls[0], ['test', 'integration_tests::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load', '--bin', 'backend-school', '--', '--exact', '--nocapture']);
     assert.notEqual((await runStub('zero', 'timetable-subject-groups')).status, 0);
     assert.equal((await runStub('failure', 'timetable-subject-groups')).status, 47);
 });

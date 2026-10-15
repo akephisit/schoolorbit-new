@@ -1,0 +1,343 @@
+use crate::delivery as calendar_service;
+use crate::http::state::CalendarHttpState;
+use crate::models::{
+    CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
+    UpsertCalendarTagRequest,
+};
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    Json,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_http::context::current_user_tenant_context_from_session;
+use school_auth_http::tenant::tenant_context;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_permissions::registry::codes;
+use uuid::Uuid;
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/calendar/events",
+    operation_id = "listCalendarEvents",
+    tag = "calendar",
+    params(CalendarEventQuery),
+    responses(
+        (status = 200, description = "School calendar events", body = ApiResponse<Vec<crate::models::CalendarEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_calendar_events(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<CalendarEventQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_READ_SCHOOL)?;
+    let events = calendar_service::list_management_events(&context.tenant.pool, query).await?;
+    Ok(Json(ApiResponse::ok(events)))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post,
+    path = "/api/calendar/events",
+    operation_id = "createCalendarEvent",
+    tag = "calendar",
+    request_body = UpsertCalendarEventRequest,
+    responses(
+        (status = 201, description = "Calendar event created", body = ApiResponse<crate::models::CalendarEvent>),
+        (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+    )
+))]
+pub async fn create_calendar_event(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<UpsertCalendarEventRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let outcome =
+        calendar_service::create_event(&context.tenant.pool, context.actor.user_id, payload)
+            .await?;
+    let event = outcome.event;
+
+    if outcome.notify_audience {
+        if let Err(error) = calendar_service::send_event_notification(
+            &context.tenant.pool,
+            &state.notification_channel,
+            &context.tenant.subdomain,
+            &event,
+            outcome.notification_kind,
+        )
+        .await
+        {
+            tracing::error!(
+                event_id = %event.id,
+                error = %error,
+                "Calendar event notification failed after create"
+            );
+        }
+    }
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(event))))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    put,
+    path = "/api/calendar/events/{id}",
+    operation_id = "updateCalendarEvent",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Calendar event ID")),
+    request_body = UpsertCalendarEventRequest,
+    responses(
+        (status = 200, description = "Calendar event updated", body = ApiResponse<crate::models::CalendarEvent>),
+        (status = 400, description = "Invalid event dates, targets or tags", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+        (status = 404, description = "Event not found", body = ApiErrorResponse),
+    )
+))]
+pub async fn update_calendar_event(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpsertCalendarEventRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let outcome =
+        calendar_service::update_event(&context.tenant.pool, context.actor.user_id, id, payload)
+            .await?;
+    let event = outcome.event;
+
+    if outcome.notify_audience {
+        if let Err(error) = calendar_service::send_event_notification(
+            &context.tenant.pool,
+            &state.notification_channel,
+            &context.tenant.subdomain,
+            &event,
+            outcome.notification_kind,
+        )
+        .await
+        {
+            tracing::error!(
+                event_id = %event.id,
+                error = %error,
+                "Calendar event notification failed after update"
+            );
+        }
+    }
+
+    Ok(Json(ApiResponse::ok(event)))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/calendar/events/{id}",
+    operation_id = "deleteCalendarEvent",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Calendar event ID")),
+    responses(
+        (status = 200, description = "Calendar event removed", body = ApiResponse<school_http::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
+        (status = 404, description = "Event not found", body = ApiErrorResponse),
+    )
+))]
+pub async fn delete_calendar_event(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    calendar_service::soft_delete_event(&context.tenant.pool, id, context.actor.user_id).await?;
+    Ok(Json(ApiResponse::empty()))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/calendar/categories",
+    operation_id = "listCalendarCategories",
+    tag = "calendar",
+    responses(
+        (status = 200, description = "Calendar categories", body = ApiResponse<Vec<crate::models::CalendarCategory>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_calendar_categories(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_READ_SCHOOL)?;
+    let categories = calendar_service::list_categories(&context.tenant.pool).await?;
+    Ok(Json(ApiResponse::ok(categories)))
+}
+
+pub async fn create_calendar_category(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<UpsertCalendarCategoryRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let category = calendar_service::create_category(&context.tenant.pool, payload).await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(category))))
+}
+
+pub async fn update_calendar_category(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpsertCalendarCategoryRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let category = calendar_service::update_category(&context.tenant.pool, id, payload).await?;
+    Ok(Json(ApiResponse::ok(category)))
+}
+
+pub async fn delete_calendar_category(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    calendar_service::hard_delete_category(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::empty()))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/calendar/tags",
+    operation_id = "listCalendarTags",
+    tag = "calendar",
+    responses(
+        (status = 200, description = "Calendar tags", body = ApiResponse<Vec<crate::models::CalendarTag>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_calendar_tags(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_READ_SCHOOL)?;
+    let tags = calendar_service::list_tags(&context.tenant.pool).await?;
+    Ok(Json(ApiResponse::ok(tags)))
+}
+
+pub async fn create_calendar_tag(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<UpsertCalendarTagRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let tag = calendar_service::create_tag(&context.tenant.pool, payload).await?;
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(tag))))
+}
+
+pub async fn update_calendar_tag(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpsertCalendarTagRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    let tag = calendar_service::update_tag(&context.tenant.pool, id, payload).await?;
+    Ok(Json(ApiResponse::ok(tag)))
+}
+
+pub async fn delete_calendar_tag(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::CALENDAR_MANAGE_SCHOOL)?;
+    calendar_service::hard_delete_tag(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::empty()))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/me/calendar/events",
+    operation_id = "listMyCalendarEvents",
+    tag = "calendar",
+    params(CalendarEventQuery),
+    responses(
+        (status = 200, description = "Calendar events visible to the current student or staff member", body = ApiResponse<Vec<crate::models::CalendarViewerEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student or staff account required", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_my_calendar_events(
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<CalendarEventQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = current_user_tenant_context_from_session(&session);
+    let events =
+        calendar_service::list_my_events(&context.tenant.pool, context.user_id, query).await?;
+    Ok(Json(ApiResponse::ok(events)))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/public/calendar/events",
+    operation_id = "listPublicCalendarEvents",
+    tag = "calendar",
+    params(CalendarEventQuery),
+    responses(
+        (status = 200, description = "Public calendar events", body = ApiResponse<Vec<crate::models::CalendarPublicEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_public_calendar_events(
+    State(state): State<CalendarHttpState>,
+    headers: HeaderMap,
+    Query(query): Query<CalendarEventQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = tenant_context(&state.auth_runtime, &headers).await?;
+    let events = calendar_service::list_public_events(&context.pool, query).await?;
+    Ok(Json(ApiResponse::ok(events)))
+}

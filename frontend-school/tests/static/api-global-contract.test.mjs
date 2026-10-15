@@ -375,8 +375,17 @@ function hasGuardedAncestor(routeId, guardedRouteIds) {
 
 test('backend JSON handler responses use the standard envelope shape', async () => {
 	const backendFiles = await listFiles(
-		path.join(repoRoot, 'backend-school/src/modules'),
-		(file) => file.endsWith('.rs') && !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(file)
+		path.join(repoRoot, 'backend-school/crates'),
+		(file) =>
+			file.endsWith('.rs') &&
+			(file.includes('/http/') || /school-(?:academic|certificates)-http\/src\//.test(file)) &&
+			!/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(file)
+	);
+	backendFiles.push(
+		...(await listFiles(
+			path.join(repoRoot, 'backend-school/src/system'),
+			(file) => file.endsWith('.rs') && !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(file)
+		))
 	);
 	const violations = [];
 
@@ -441,7 +450,10 @@ test('backend JSON handler responses use the standard envelope shape', async () 
 });
 
 test('backend consent type filter uses the user_type query parameter contract', async () => {
-	const file = path.join(repoRoot, 'backend-school/src/modules/consent/handlers.rs');
+	const file = path.join(
+		repoRoot,
+		'backend-school/crates/school-auth-http/src/http/consent/handlers.rs'
+	);
 	const source = await readFile(file, 'utf8');
 
 	assert.match(source, /\.get\("user_type"\)/);
@@ -458,7 +470,7 @@ test('backend auth middleware and login validation errors use the response envel
 		'utf8'
 	);
 	const loginHandler = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/auth/session_handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-auth-http/src/http/session_handlers.rs'),
 		'utf8'
 	);
 
@@ -2027,7 +2039,7 @@ test('frontend apiClient validates the backend envelope before returning typed r
 
 test('backend services do not return raw serde_json::Value for API contracts', async () => {
 	const serviceFiles = await listFiles(
-		path.join(repoRoot, 'backend-school/src/modules'),
+		path.join(repoRoot, 'backend-school/crates'),
 		(file) => file.endsWith('.rs') && /\/services(?:\/|\.rs$)/.test(file)
 	);
 	const violations = [];

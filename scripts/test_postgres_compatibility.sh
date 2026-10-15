@@ -15,11 +15,11 @@ case "${POSTGRES_COMPATIBILITY_SCOPE:-full}" in
         run_nonempty_tests cargo test -p school-staff personnel_simplification -- --test-threads=1
         run_nonempty_tests cargo test -p school-auth session_schema_tests -- --nocapture
         run_nonempty_tests cargo test -p school-file-platform schema_tests -- --nocapture
-        run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=4
-        run_nonempty_tests cargo test modules::system::handlers::migration::tests::gradebook_results_status --bin backend-school -- --nocapture --test-threads=4
+        run_nonempty_tests cargo test integration_tests::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=4
+        run_nonempty_tests cargo test system::handlers::migration::tests::gradebook_results_status --bin backend-school -- --nocapture --test-threads=4
         ;;
     timetable-subject-groups)
-        run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture
+        run_nonempty_tests cargo test integration_tests::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture
         ;;
     course-zero-periods)
         run_nonempty_tests cargo test --test delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture

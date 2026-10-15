@@ -5,11 +5,21 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-http/api-docs",
+    "school-auth/api-docs",
     "dep:utoipa",
     "school-academic-core/api-docs",
 ]
 
 [dependencies]
+async-trait = { workspace = true }
+tokio = { workspace = true }
+school-notifications = { workspace = true }
+school-attendance = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 school-academic-core = { workspace = true }

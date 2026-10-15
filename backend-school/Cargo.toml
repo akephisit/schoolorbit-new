@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/school-files-http",
+    "crates/school-administration",
     "crates/school-attendance",
     "crates/school-behavior",
     "crates/school-academic-http",
@@ -44,6 +46,8 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-files-http = { path = "crates/school-files-http" }
+school-administration = { path = "crates/school-administration" }
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
 async-stream = "0.3.6"
 async-trait = "0.1.92"
@@ -138,6 +142,8 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-files-http/api-docs",
+    "school-administration/api-docs",
     "dep:utoipa",
     "school-academic-assessment/api-docs",
     "school-academic-core/api-docs",
@@ -149,6 +155,7 @@ api-docs = [
     "school-admission/api-docs",
     "school-attendance/api-docs",
     "school-auth/api-docs",
+    "school-auth-http/api-docs",
     "school-behavior/api-docs",
     "school-calendar/api-docs",
     "school-certificates-http/api-docs",
@@ -165,6 +172,8 @@ api-docs = [
 ]
 
 [dependencies]
+school-files-http = { workspace = true }
+school-administration = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }

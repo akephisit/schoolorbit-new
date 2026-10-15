@@ -1,16 +1,10 @@
 use crate::{
-    modules::academic::{
-        lifecycle_provider_adapter::LIFECYCLE_PROVIDERS, result_lock_adapter::RESULT_LOCKS,
-        websockets::WebSocketManager,
-    },
+    adapters::{academic_lifecycle::LIFECYCLE_PROVIDERS, academic_result_locks::RESULT_LOCKS},
     AppState,
 };
 use async_trait::async_trait;
 use axum::extract::FromRef;
-use school_academic_http::{
-    realtime::{AcademicRealtimePort, TimetableEvent},
-    state::AcademicHttpState,
-};
+use school_academic_http::state::AcademicHttpState;
 use school_certificates_http::state::{CertificateFileDeletionPort, CertificateHttpState};
 use school_errors::AppError;
 use school_file_platform::platform_service::FilePlatform;
@@ -44,7 +38,7 @@ impl CertificateFileDeletionPort for ApplicationCertificateFileDeletions {
         pool: &PgPool,
         file_ids: Vec<Uuid>,
     ) -> Result<(), AppError> {
-        crate::modules::files::consumer_service::request_deletions(platform, pool, file_ids).await
+        school_file_platform::consumer_service::request_deletions(platform, pool, file_ids).await
     }
 }
 
@@ -59,51 +53,154 @@ impl FromRef<AppState> for CertificateHttpState {
     }
 }
 
-impl AcademicRealtimePort for WebSocketManager {
-    fn broadcast_mutation(
-        &self,
-        school_key: String,
-        academic_term_id: Uuid,
-        event: TimetableEvent,
-    ) -> u64 {
-        WebSocketManager::broadcast_mutation(self, school_key, academic_term_id, event)
+impl FromRef<AppState> for school_students::http::state::StudentHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+        }
     }
-    fn broadcast_academic_core_changed(
-        &self,
-        school_key: String,
-        user_id: Uuid,
-        entity_type: &str,
-        entity_id: Option<Uuid>,
-        academic_year_id: Option<Uuid>,
-        academic_term_id: Option<Uuid>,
-    ) {
-        WebSocketManager::broadcast_academic_core_changed(
-            self,
-            school_key,
-            user_id,
-            entity_type,
-            entity_id,
-            academic_year_id,
-            academic_term_id,
-        )
+}
+
+impl FromRef<AppState> for school_fonts::http::state::FontHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_platform: state.file_platform.clone(),
+        }
     }
-    fn broadcast_learning_delivery_changed(
-        &self,
-        school_key: String,
-        user_id: Uuid,
-        academic_term_id: Uuid,
-        learning_offering_id: Uuid,
-        learning_group_id: Option<Uuid>,
-        revision: i64,
-    ) {
-        WebSocketManager::broadcast_learning_delivery_changed(
-            self,
-            school_key,
-            user_id,
-            academic_term_id,
-            learning_offering_id,
-            learning_group_id,
-            revision,
-        )
+}
+
+impl FromRef<AppState> for school_staff::http::state::StaffHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_supervision::http::state::SupervisionHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_navigation::http::state::NavigationHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_notifications::http::state::NotificationHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            notification_channel: state.notification_channel.clone(),
+            work_event_channel: state.work_event_channel.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_workflow::http::state::WorkflowHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            work_event_channel: state.work_event_channel.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_calendar::http::state::CalendarHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            notification_channel: state.notification_channel.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_auth_http::http::state::AuthHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_administration::http::state::AdministrationHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_attendance::http::state::AttendanceHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            notification_channel: state.notification_channel.clone(),
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_behavior::http::state::BehaviorHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            notification_channel: state.notification_channel.clone(),
+            reset: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
+        }
+    }
+}
+
+impl FromRef<AppState> for school_admission::http::state::AdmissionHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_authorization: &school_files_http::FILE_AUTHORIZATION,
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_question_bank::http::state::QuestionBankHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_authorization: &school_files_http::FILE_AUTHORIZATION,
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_files_http::http::state::FileHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            file_platform: state.file_platform.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_http::state::AcademicWebSocketState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_auth::runtime::AuthRuntime {
+    fn from_ref(state: &AppState) -> Self {
+        state.auth_runtime.clone()
     }
 }

@@ -120,7 +120,7 @@ test('backend routes assessment plans through offering IDs and registers OpenAPI
 	assert.match(handler, /path = "\/api\/academic\/assessments\/phase-controls\/\{control_id\}"/);
 	assert.match(router, /\/assessments\/offerings\/\{offering_id\}/);
 	assert.match(router, /\/assessments\/phase-controls/);
-	assert.match(contract, /crate::modules::academic::handlers::assessment::get_assessment_plan/);
+	assert.match(contract, /school_academic_http::handlers::assessment::get_assessment_plan/);
 	assert.match(contract, /AssessmentPlanDetail/);
 	assert.doesNotMatch(router, /quick-scores|assessments\/courses|\/submit|\/settings/);
 });

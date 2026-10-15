@@ -52,7 +52,7 @@ This file is the single active backlog for verified, unfinished technical work t
   - Done when no account type receives a deterministic initial password and reset/revocation tests pass.
 
 - [ ] **SEC-008: Restrict notification creation to authorized server workflows.**
-  - Remove or protect the generic authenticated notification creation route in the [notification handler](./backend-school/src/modules/notification/handlers.rs).
+  - Remove or protect the generic authenticated notification creation route in the [notification handler](./backend-school/crates/school-notifications/src/http/handlers.rs).
   - Use server-owned templates, validate recipients, and allowlist internal links.
   - Done when an ordinary authenticated user cannot send arbitrary content to another user.
 

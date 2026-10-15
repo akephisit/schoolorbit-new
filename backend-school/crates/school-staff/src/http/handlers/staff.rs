@@ -1,0 +1,296 @@
+use crate::http::state::StaffHttpState;
+use crate::models::*;
+use crate::services::{dashboard_service, staff_service};
+use crate::staff_access_policy;
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_http::context::current_user_tenant_context_from_session;
+use school_authorization::resource_access_policy::UserResourceListAccess;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::HttpError as AppError;
+use school_http::{ApiResponse, IdData};
+use school_permissions::registry::codes;
+use serde::Serialize;
+#[cfg(feature = "api-docs")]
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct StaffListData {
+    pub items: Vec<StaffListItem>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
+    pub total_pages: i64,
+}
+
+pub(super) fn staff_list_access(access: UserResourceListAccess) -> StaffListAccess {
+    match access {
+        UserResourceListAccess::Own(user_id) => StaffListAccess::Own(user_id),
+        UserResourceListAccess::Assigned(user_id) => StaffListAccess::Assigned(user_id),
+        UserResourceListAccess::OrganizationUnit(user_id) => {
+            StaffListAccess::OrganizationUnit(user_id)
+        }
+        UserResourceListAccess::OrganizationTree(user_id) => {
+            StaffListAccess::OrganizationTree(user_id)
+        }
+        UserResourceListAccess::School => StaffListAccess::School,
+    }
+}
+
+// ============================================
+// Handlers
+// ============================================
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/staff/dashboard",
+    operation_id = "getStaffDashboard",
+    tag = "staff",
+    params(StaffDashboardQuery),
+    responses(
+        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<crate::services::dashboard_service::StaffDashboardOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Active staff account required", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_staff_dashboard(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StaffDashboardQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+
+    dashboard_service::ensure_active_staff_user(&pool, actor.user_id).await?;
+    let data = dashboard_service::get_staff_dashboard(&pool, query.academic_year_id).await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/staff",
+    operation_id = "listStaff",
+    tag = "staff",
+    params(StaffListFilter),
+    responses(
+        (status = 200, description = "Paginated staff list", body = ApiResponse<StaffListData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff list permission denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_staff(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(filter): Query<StaffListFilter>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let access = staff_list_access(staff_access_policy::resolve_staff_profile_list_access(
+        &actor,
+    )?);
+
+    let (items, total, page, page_size) = staff_service::list_staff(&pool, filter, access).await?;
+    let total_pages = (total as f64 / page_size as f64).ceil() as i64;
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::ok(StaffListData {
+            items,
+            total,
+            page,
+            page_size,
+            total_pages,
+        })),
+    )
+        .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/staff/{id}",
+    operation_id = "getStaffProfile",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Scoped staff profile", body = ApiResponse<StaffProfileResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff profile permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_staff_profile(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(staff_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    staff_access_policy::can_read_staff_profile(&pool, &actor, staff_id).await?;
+    let include_pii = staff_access_policy::can_read_staff_pii(&actor, staff_id);
+
+    let profile = staff_service::get_staff_profile(&pool, staff_id, include_pii).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile))).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post,
+    path = "/api/staff",
+    operation_id = "createStaff",
+    tag = "staff",
+    request_body = CreateStaffRequest,
+    responses(
+        (status = 201, description = "Staff member created", body = ApiResponse<school_http::UuidIdData>),
+        (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn create_staff(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<CreateStaffRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STAFF_CREATE_ALL)?;
+
+    let user_id = staff_service::create_staff(&pool, payload, actor.user_id).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ApiResponse::with_message(
+            IdData::new(user_id),
+            "สร้างบุคลากรสำเร็จ",
+        )),
+    )
+        .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    put,
+    path = "/api/staff/{id}",
+    operation_id = "updateStaff",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    request_body = UpdateStaffRequest,
+    responses(
+        (status = 200, description = "Staff member updated", body = ApiResponse<school_http::EmptyData>),
+        (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse),
+        (status = 409, description = "Career reference changed", body = ApiErrorResponse)
+    )
+))]
+pub async fn update_staff(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(staff_id): Path<Uuid>,
+    Json(payload): Json<UpdateStaffRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let tenant = context.tenant.subdomain.clone();
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STAFF_UPDATE_ALL)?;
+
+    let replaced_file_id =
+        staff_service::update_staff(&pool, staff_id, payload, actor.user_id).await?;
+    // Status/roles are already committed; invalidate identity before fallible cleanup.
+    state
+        .auth_runtime
+        .invalidate_permission_user(&tenant, staff_id);
+    state
+        .auth_runtime
+        .notify_permission_changed(&tenant, staff_id);
+    if let Some(file_id) = replaced_file_id {
+        school_file_platform::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &pool,
+            [file_id],
+        )
+        .await?;
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::empty_with_message("อัปเดตข้อมูลสำเร็จ")),
+    )
+        .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/staff/{id}",
+    operation_id = "deleteStaff",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Staff member deactivated", body = ApiResponse<school_http::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Staff deletion permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn delete_staff(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(staff_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let tenant = context.tenant.subdomain.clone();
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STAFF_DELETE_ALL)?;
+
+    staff_service::soft_delete_staff(&pool, staff_id).await?;
+    state
+        .auth_runtime
+        .invalidate_permission_user(&tenant, staff_id);
+    state
+        .auth_runtime
+        .notify_permission_changed(&tenant, staff_id);
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::empty_with_message("ลบบุคลากรสำเร็จ")),
+    )
+        .into_response())
+}
+
+/// Public profile — authentication required but no permission check (any logged-in user)
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/staff/{id}/public-profile",
+    operation_id = "getPublicStaffProfile",
+    tag = "staff",
+    params(("id" = Uuid, Path, description = "Staff user ID")),
+    responses(
+        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<crate::services::staff_service::PublicStaffProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_public_staff_profile(
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(staff_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = current_user_tenant_context_from_session(&session);
+    let pool = context.tenant.pool;
+
+    let data = staff_service::get_public_staff_profile(&pool, staff_id).await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
+}

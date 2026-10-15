@@ -13,135 +13,35 @@ The tenant data-plane API serves school workflows. It resolves the school from e
 
 ## Workspace
 
-`Cargo.toml` is both the application package and the non-virtual workspace root. The root
-`backend-school` package owns startup, routing, full application state, OpenAPI composition,
-schedulers, and cross-domain adapters. Internal crates under `crates/` expose narrow public APIs,
-do not depend on the root package, and do not receive the complete `AppState`.
+`Cargo.toml` is the application package and workspace root. Domain crates own models, services,
+resource policies and concrete HTTP handlers. A typical owner has `src/models.rs`, `src/services.rs`
+and `src/http/{state,routes,handlers}.rs`. Related smaller capabilities remain modules within that
+owner. See the [workspace manifest](Cargo.toml) for the crate inventory.
 
-`src/app.rs` mounts feature routers under their global prefixes and applies the shared session
-boundary. Application-owned route registrations live beside their feature handlers in
-`src/modules/<feature>/routes.rs`, or in the existing colocated feature factory. Academic and
-Certificate route factories compile in their HTTP crates with narrow state; the application
-binds that state before adding protected routes to the session boundary. Auth handlers and
-profile orchestration remain application-owned; `school-auth-http` owns context and cookies.
+`src/main.rs` starts the process and prepares dependencies. `src/http_state.rs` selects narrow,
+cloneable HTTP state with `FromRef`; no domain accepts full `AppState` or imports the executable.
+`src/app.rs` combines concrete route factories under global prefixes and applies the single shared
+session boundary and system middleware. `src/system` owns internal provisioning, migration and
+health operations. `src/adapters` binds cross-domain lifecycle, result-lock and Attendance/Behavior
+ports; process scheduling and cleanup remain application composition responsibilities.
 
-The current internal crates are:
+Existing Academic domain boundaries remain separate, with transport in `school-academic-http`.
+Certificate transport stays in `school-certificates-http`. `school-auth` owns identity/session
+operations and consent; `school-auth-http` owns canonical cookie/origin/tenant/session context and
+Auth/Consent transport. `school-file-platform` owns storage/lifecycle and provider ports;
+`school-files-http` composes consumer-specific file authorization without a dependency back from
+storage to its consumers.
 
-- `school-permissions`, the generated backend permission registry owner;
-- `school-migrations`, the canonical tenant migration and permission-reconciliation runner;
-- `school-errors`, the transport-independent application error taxonomy;
-- `school-http`, the Axum error conversion and standard API response envelopes;
-- `school-authorization`, actor permission evaluation, effective-permission loading, and the
-  permission-only cache plus exact organization-unit authorization queries;
-- `school-auth`, session credentials, policy, persistence, throttling, audit events, identity
-  cache, user-profile domain operations, and the root-independent authentication runtime;
-- `school-academic-core`, academic-year, term, curriculum, catalog, homeroom, student-year,
-  promotion, and foundational academic persistence;
-- `school-academic-delivery`, teaching offerings, enrollments, assignments, workload, and delivery
-  workspaces;
-- `school-academic-timetable`, timetable models, policies, templates, versions, conflicts, and
-  term-preparation operations;
-- `school-academic-assessment`, assessment, gradebook, learner-evaluation, and result-lock ports;
-- `school-academic-results`, activity/course/annual result models, policies, revisions, locking,
-  correction, and reporting operations;
-- `school-academic-lifecycle`, academic readiness and lifecycle orchestration through narrow
-  external-provider ports;
-- `school-workflow`, workflow-window and work-item models, policy, persistence, and lifecycle;
-- `school-question-bank`, question models, rich content, resource access policy, persistence, and
-  file relationships;
-- `school-admission`, admission rounds, applications, examinations, scoring, selection, and
-  enrollment outcomes;
-- `school-supervision`, supervision templates, cycles, observations, evaluations, reviews, and
-  reports;
-- `school-students`, student/parent models, encrypted identity persistence, and student queries;
-- `school-staff`, staff identity, roles, permissions, organization units, memberships,
-  delegations, and audit writes;
-- `school-calendar`, calendar models, validation, categories, tags, event persistence, and
-  visibility;
-- `school-tenancy`, backend-admin tenant discovery, immutable tenant metadata, lazy migration
-  coordination, and the tenant pool cache;
-- `school-file-platform`, provider-neutral file inspection, purpose policy, persistence, storage,
-  malware scanning, lifecycle operations, and reconciliation;
-- `school-crypto`, the canonical AES-256-GCM and keyed blind-index implementation;
-- `school-fonts`, school-font models, validation, persistence, typed upload relationships, and
-  reference-aware deletion;
-- `school-certificates`, certificate models, policies, layouts, issuance, rendering, verification,
-  rate limiting, and purge lifecycle; and
-- `school-test-db`, the schema-isolated PostgreSQL test harness, available to the root package only
-  as a development dependency.
+Parents lives within Students, Achievement within Staff, Work within Workflow, and menu, feature
+toggles and route registration within Navigation. `school-administration` keeps settings, facility,
+supply catalog and lookup as separate modules. Each owner returns its existing typed responses;
+`src/api_contract.rs` composes the offline OpenAPI document and forwards the optional `api-docs`
+feature without adding metadata dependencies to production.
 
-The root package retains Axum handlers, cookie/CSRF and tenant/request adapters, OpenAPI
-composition, File Platform deletion orchestration, Calendar notification delivery and all-tenant
-reminder scheduling, academic external-provider and consequence adapters, cache/realtime side
-effects, and deliberate cross-domain integration tests. Parents remains here because it composes
-Student, Calendar, and Exam views; the smaller school, facility, consent, achievement, lookup,
-menu, notification, and system modules also remain application-owned until they meet the crate
-admission rule. Root code maps application concerns to narrow crate APIs and does not duplicate
-their domain SQL or business rules.
-
-`school-auth` owns the session identity cache and composes it with the authorization-owned
-permission cache. Permission-authority changes invalidate session identity first and permission
-data second, then the application may publish realtime invalidation events.
-
-## Local Setup
-
-```bash
-cd backend-school
-cp .env.example .env
-cargo build
-```
-
-Backend-admin must be reachable at `BACKEND_ADMIN_URL`. School database URLs are resolved through its internal API; backend-school does not use an admin database connection directly.
-
-## Run
-
-```bash
-cargo run
-```
-
-Plain `cargo run` continues to select the root application. By default the service binds to
-`0.0.0.0:8081`; `HOST` and `PORT` configure it.
-
-## Check and Test
-
-```bash
-cargo fmt --all -- --check
-cargo test --test static_architecture
-cargo check --workspace --all-targets
-cargo test -p school-permissions
-cargo test -p school-migrations
-cargo test -p school-errors
-cargo test -p school-http
-cargo test -p school-authorization
-cargo test -p school-auth -- --test-threads=8
-cargo test -p school-academic-core -- --test-threads=8
-cargo test -p school-academic-delivery -- --test-threads=8
-cargo test -p school-academic-timetable -- --test-threads=8
-cargo test -p school-academic-assessment -- --test-threads=8
-cargo test -p school-academic-results -- --test-threads=8
-cargo test -p school-academic-lifecycle -- --test-threads=8
-cargo test -p school-workflow
-cargo test -p school-question-bank -- --test-threads=8
-cargo test -p school-admission -- --test-threads=8
-cargo test -p school-supervision -- --test-threads=8
-cargo test -p school-students -- --test-threads=8
-cargo test -p school-staff -- --test-threads=8
-cargo test -p school-calendar -- --test-threads=8
-cargo test -p school-tenancy
-cargo test -p school-file-platform
-cargo test -p school-crypto
-cargo test -p school-fonts -- --test-threads=8
-cargo test -p school-certificates -- --test-threads=8
-cargo test -p school-test-db
-```
-
-Run focused module/service tests for changed behavior. From the repository root, run database-backed binary tests with:
-
-```bash
-./scripts/test_backend_school.sh
-```
-
-See [Testing](../docs/TESTING.md) for focused filters and the owned PostgreSQL compatibility suite.
+Unit tests stay beside implementations. Deliberate application integration tests live in the
+`#[cfg(test)]` namespace `src/integration_tests`; shared historical migration fixtures belong to
+`school-test-db`, which is development-only. See [Testing](../docs/TESTING.md) for the owned
+verification commands, database fixtures and compile measurement procedure.
 
 ## Environment
 

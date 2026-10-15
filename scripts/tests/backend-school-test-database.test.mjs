@@ -147,7 +147,7 @@ function runRunner(f, args = [], extraEnv = {}) {
 
 test('runner overrides remote URL, forwards arguments, and cleans up', async (t) => {
     const f = await fixture(t);
-    const result = runRunner(f, ['modules::auth::session_repository_tests', '--', '--nocapture']);
+    const result = runRunner(f, ['integration_tests::auth::session_http_tests', '--', '--nocapture']);
 
     assert.equal(result.status, 0, result.error?.message ?? result.stderr);
     assert.match(await read(f.cargoLog), /^url=postgresql:\/\/schoolorbit_test:schoolorbit_test@127\.0\.0\.1:55432\/schoolorbit_test_[0-9]+_[0-9]+\?sslmode=disable\n/);
@@ -158,7 +158,7 @@ test('runner overrides remote URL, forwards arguments, and cleans up', async (t)
             'arg=test',
             'arg=--bin',
             'arg=backend-school',
-            'arg=modules::auth::session_repository_tests',
+            'arg=integration_tests::auth::session_http_tests',
             'arg=--',
             'arg=--nocapture',
             ''

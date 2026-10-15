@@ -255,15 +255,16 @@ test('backend school workspace rules and verification commands are canonical', a
 		readFile(path.join(repoRoot, 'backend-school/README.md'), 'utf8')
 	]);
 
-	for (const source of [rules, testing, backendReadme]) {
+	for (const source of [rules, testing]) {
 		assert.match(source, /cargo check --workspace --all-targets/);
 	}
 	assert.match(rules, /backend-school\/crates\/school-permissions\/src\/registry\.rs/);
 	assert.match(rules, /backend-school\/crates\/school-migrations\/src\/lib\.rs/);
 	assert.match(rules, /cohesive owner/i);
 	assert.match(rules, /compile-scope/i);
-	assert.match(backendReadme, /cargo test -p school-permissions/);
-	assert.match(backendReadme, /cargo test -p school-migrations/);
+	assert.match(testing, /cargo test -p school-permissions/);
+	assert.match(testing, /cargo test -p school-migrations/);
+	assert.match(backendReadme, /\[Testing\]\(\.\.\/docs\/TESTING\.md\)/);
 	assert.match(testing, /BACKEND_SCHOOL_TEST_BIN=seed_sandbox/);
 });
 
@@ -340,7 +341,7 @@ test('canonical docs own the academic cutover boundaries and unfinished lifecycl
 	for (const migration of ['041', '042', '043', '044', '045']) {
 		assert.match(testing, new RegExp(`migration_${migration}|through ${migration}`));
 	}
-	assert.match(testing, /modules::system::handlers::migration::tests/);
+	assert.match(testing, /system::handlers::migration::tests/);
 	assert.match(testing, /discovery does not equal execution/i);
 	assert.match(testing, /PostgreSQL compatibility/i);
 	assert.match(testing, /Gradebook and results cutover rehearsal/);

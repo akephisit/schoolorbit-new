@@ -12,3 +12,9 @@ pub struct AcademicHttpState {
     pub result_locks: &'static dyn ResultLockPort,
     pub lifecycle_providers: &'static dyn ExternalLifecyclePort,
 }
+
+#[derive(Clone)]
+pub struct AcademicWebSocketState {
+    pub auth_runtime: AuthRuntime,
+    pub websocket_manager: Arc<crate::websockets::WebSocketManager>,
+}

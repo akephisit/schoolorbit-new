@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+unicode-normalization = { workspace = true }
+serde = { workspace = true }
 bcrypt = { workspace = true }
 dotenvy = { workspace = true }
 hex = { workspace = true }

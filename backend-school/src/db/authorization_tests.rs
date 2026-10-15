@@ -2,7 +2,7 @@ use school_authorization::{get_cached_user_permissions, PermissionCache};
 use school_test_db::create_named_test_pool;
 use uuid::Uuid;
 
-use crate::modules::academic::cutover_test_support::{
+use crate::integration_tests::academic::cutover_test_support::{
     apply_migrations_through, record_passing_phase_a_reconciliation_marker,
     seed_academic_cutover_fixture, CutoverFixture,
 };

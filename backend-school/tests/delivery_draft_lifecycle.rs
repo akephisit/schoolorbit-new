@@ -1,9 +1,5 @@
 #[path = "../src/bin/cleanup_cancelled_academic_versions/cleanup.rs"]
 mod cleanup_service;
-#[path = "../src/modules/academic/cutover_test_preflight.rs"]
-pub mod cutover_test_preflight;
-#[path = "../src/modules/academic/cutover_test_support.rs"]
-pub mod cutover_test_support;
 use cutover_test_support::{apply_migrations_through, seed_release_two_predecessor};
 use school_academic_delivery::{
     models::{versions::DeleteDeliveryVersionRequest, CreateAcademicTermChangeSetRequest},
@@ -15,6 +11,8 @@ use school_academic_timetable::{
 };
 use school_authorization::ActorContext;
 use school_permissions::registry::codes;
+pub use school_test_db::cutover_test_preflight;
+pub use school_test_db::cutover_test_support;
 use sqlx::PgPool;
 use uuid::Uuid;
 

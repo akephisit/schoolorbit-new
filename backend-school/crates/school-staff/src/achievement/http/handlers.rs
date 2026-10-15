@@ -1,0 +1,135 @@
+use crate::achievement::models::*;
+use crate::achievement::services as achievement_service;
+use crate::http::state::StaffHttpState;
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use uuid::Uuid;
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/achievements",
+    operation_id = "listAchievements",
+    tag = "achievement",
+    params(AchievementListFilter),
+    responses(
+        (status = 200, description = "Scoped achievement list", body = ApiResponse<Vec<Achievement>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement read permission denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn list_achievements(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(filter): Query<AchievementListFilter>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let items =
+        achievement_service::list_achievements(&context.tenant.pool, &context.actor, filter)
+            .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(items))).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post,
+    path = "/api/achievements",
+    operation_id = "createAchievement",
+    tag = "achievement",
+    request_body = CreateAchievementRequest,
+    responses(
+        (status = 201, description = "Achievement created", body = ApiResponse<Achievement>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement creation permission denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn create_achievement(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<CreateAchievementRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let achievement =
+        achievement_service::create_achievement(&context.tenant.pool, &context.actor, payload)
+            .await?;
+
+    Ok((StatusCode::CREATED, Json(ApiResponse::ok(achievement))).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    put,
+    path = "/api/achievements/{id}",
+    operation_id = "updateAchievement",
+    tag = "achievement",
+    params(("id" = Uuid, Path, description = "Achievement ID")),
+    request_body = UpdateAchievementRequest,
+    responses(
+        (status = 200, description = "Achievement updated", body = ApiResponse<Achievement>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Achievement not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn update_achievement(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateAchievementRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result =
+        achievement_service::update_achievement(&context.tenant.pool, &context.actor, id, payload)
+            .await?;
+    if let Some(file_id) = result.replaced_file_id {
+        school_file_platform::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [file_id],
+        )
+        .await?;
+    }
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(result.achievement))).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/achievements/{id}",
+    operation_id = "deleteAchievement",
+    tag = "achievement",
+    params(("id" = Uuid, Path, description = "Achievement ID")),
+    responses(
+        (status = 200, description = "Achievement deleted", body = ApiResponse<school_http::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Achievement deletion permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Achievement not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn delete_achievement(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    if let Some(file_id) =
+        achievement_service::delete_achievement(&context.tenant.pool, &context.actor, id).await?
+    {
+        school_file_platform::consumer_service::request_deletions(
+            state.file_platform.as_ref(),
+            &context.tenant.pool,
+            [file_id],
+        )
+        .await?;
+    }
+
+    Ok((StatusCode::OK, Json(ApiResponse::empty())).into_response())
+}

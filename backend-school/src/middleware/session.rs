@@ -8,13 +8,6 @@ use chrono::Utc;
 use school_http::HttpError as AppError;
 use uuid::Uuid;
 
-use crate::{
-    modules::auth::http::{
-        append_response_cookie, csrf_response_header, presented_session_token, set_session_cookie,
-        validate_csrf,
-    },
-    utils::{subdomain::parse_realtime_tenant_hint, tenant::resolve_auth_tenant_context},
-};
 use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
@@ -22,6 +15,14 @@ use school_auth::{
     session_crypto::RawSessionToken,
     session_repository::SessionMaintenanceMode,
     session_service,
+};
+use school_auth_http::{
+    cookies::{
+        append_response_cookie, csrf_response_header, presented_session_token, set_session_cookie,
+        validate_csrf,
+    },
+    origin::parse_realtime_tenant_hint,
+    tenant::resolve_auth_tenant_context,
 };
 
 pub async fn session_middleware(
