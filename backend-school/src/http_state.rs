@@ -17,6 +17,7 @@ static PLACEMENT_ROSTERS: school_academic_delivery::services::roster_tracking::R
 impl FromRef<AppState> for AcademicHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
             result_locks: &RESULT_LOCKS,

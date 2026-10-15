@@ -2,10 +2,7 @@ use chrono::{Days, NaiveDate};
 use uuid::Uuid;
 
 use super::timetable_block_service;
-use crate::integration_tests::academic::cutover_test_support::{
-    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-    CutoverFixture,
-};
+use crate::integration_tests::academic::core::services_tests::prepare_current_core_fixture;
 use school_academic_timetable::models::timetable_block::{
     CreateOrdinaryTimetableBlockRequest, CreateStructuralTimetableBlocksRequest,
     CreateSynchronizedTimetableBlockRequest, RemoveTimetableBlockTargetRequest,
@@ -14,11 +11,40 @@ use school_academic_timetable::models::timetable_block::{
     TimetableTargetKind, UpdateTimetableBlockRequest,
 };
 use school_academic_timetable::policy::TimetableAccessFilter;
+use school_academic_timetable::ports::{StaffDirectoryPort, StaffSubjectGroupAssignment};
 use school_academic_timetable::services::daily_teaching as daily_teaching_service;
 use school_errors::AppError;
-use school_test_db::create_named_test_pool_with_max_connections;
 
 const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
+
+struct WorkspaceStaffDirectory {
+    teacher_id: Uuid,
+    subject_group_id: Uuid,
+    fail: bool,
+}
+
+#[async_trait::async_trait]
+impl StaffDirectoryPort for WorkspaceStaffDirectory {
+    async fn subject_groups_for_users(
+        &self,
+        _pool: &sqlx::PgPool,
+        user_ids: &[Uuid],
+    ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
+        assert!(user_ids.contains(&self.teacher_id));
+        assert!(user_ids.windows(2).all(|pair| pair[0] < pair[1]));
+        if self.fail {
+            return Err(AppError::InternalServerError(
+                "directory unavailable".into(),
+            ));
+        }
+        Ok(vec![StaffSubjectGroupAssignment {
+            user_id: self.teacher_id,
+            subject_group_id: self.subject_group_id,
+            name: "กลุ่มสาระทดสอบ".into(),
+            display_order: Some(3),
+        }])
+    }
+}
 
 #[tokio::test]
 async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
@@ -231,13 +257,7 @@ async fn timetable_lifecycle_preserves_closed_blocks_and_individual_targets() {
 }
 
 async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
-    let pool = create_named_test_pool_with_max_connections(test_name, 3).await;
-    apply_migrations_through(&pool, 40).await.unwrap();
-    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
-        .await
-        .unwrap();
-    apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 89).await.unwrap();
+    let pool = prepare_current_core_fixture(test_name).await;
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -455,6 +475,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
             includes_school_owned: true,
             ..TimetableAccessFilter::default()
         },
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
     )
     .await
     .expect("canonical block workspace must hydrate in bounded queries");
@@ -472,6 +493,42 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .find(|group| group.id == group_id)
         .expect("created group must be available in the timetable workspace");
     assert_eq!(workspace_group.preferred_room_ids, vec![preferred_room_id]);
+
+    let mut directory = WorkspaceStaffDirectory {
+        teacher_id,
+        subject_group_id: Uuid::new_v4(),
+        fail: false,
+    };
+    let query = || TimetableBlockWorkspaceQuery {
+        academic_year_id: year_id,
+        academic_term_id: term_id,
+        timetable_version_id: version_id,
+    };
+    let access = TimetableAccessFilter {
+        includes_school_owned: true,
+        ..TimetableAccessFilter::default()
+    };
+    let workspace = timetable_block_service::get_workspace(&pool, query(), &access, &directory)
+        .await
+        .expect("workspace must use the selected directory provider");
+    let teacher = workspace
+        .staff
+        .iter()
+        .find(|staff| staff.id == teacher_id)
+        .expect("workspace must retain the selected teacher");
+    assert_eq!(teacher.subject_groups.len(), 1);
+    assert_eq!(teacher.subject_groups[0].id, directory.subject_group_id);
+    assert_eq!(teacher.subject_groups[0].name, "กลุ่มสาระทดสอบ");
+    assert_eq!(teacher.subject_groups[0].display_order, Some(3));
+
+    directory.fail = true;
+    assert!(
+        matches!(
+            timetable_block_service::get_workspace(&pool, query(), &access, &directory).await,
+            Err(AppError::InternalServerError(message)) if message == "directory unavailable"
+        ),
+        "a failed authoritative read must not turn into empty affiliations"
+    );
 
     assert!(matches!(
         timetable_block_service::create_ordinary_block(&pool, actor_id, request).await,

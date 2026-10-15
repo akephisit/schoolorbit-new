@@ -46,11 +46,11 @@ use school_auth::session_service::AuthenticatedSession;
 use uuid::Uuid;
 
 use crate::state::CertificateHttpState;
+use school_administration::lookup::models::OrganizationUnitLookupItem;
 use school_auth_http::{
     client_address::client_address, context::actor_tenant_context_from_session,
     tenant::tenant_context,
 };
-use school_staff::models::OrganizationUnitLookupItem;
 
 use school_permissions::registry::codes;
 

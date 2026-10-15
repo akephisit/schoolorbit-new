@@ -126,6 +126,7 @@ pub(crate) async fn get_workspace(
     pool: &PgPool,
     query: TimetableBlockWorkspaceQuery,
     access: &TimetableAccessFilter,
+    staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
     const MAX_GROUPS: i64 = 2_000;
     const MAX_HOMEROOMS: i64 = 500;
@@ -496,7 +497,9 @@ pub(crate) async fn get_workspace(
             "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
         ));
     }
-    let affiliations = school_staff::services::subject_groups_for_users(pool, &staff_ids).await?;
+    let affiliations = staff_directory
+        .subject_groups_for_users(pool, &staff_ids)
+        .await?;
     let mut subject_groups_by_staff = BTreeMap::<Uuid, Vec<TimetableSubjectGroup>>::new();
     for affiliation in affiliations {
         subject_groups_by_staff

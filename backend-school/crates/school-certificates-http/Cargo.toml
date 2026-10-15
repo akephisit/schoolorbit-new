@@ -11,7 +11,7 @@ api-docs = [
     "school-file-platform/api-docs",
     "school-fonts/api-docs",
     "school-http/api-docs",
-    "school-staff/api-docs",
+    "school-administration/api-docs",
 ]
 
 [dependencies]
@@ -25,7 +25,7 @@ school-file-platform = { workspace = true }
 school-fonts = { workspace = true }
 school-http = { workspace = true }
 school-permissions = { workspace = true }
-school-staff = { workspace = true }
+school-administration = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 utoipa = { workspace = true, optional = true }

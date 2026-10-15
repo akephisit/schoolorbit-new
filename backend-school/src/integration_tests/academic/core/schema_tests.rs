@@ -4596,6 +4596,9 @@ async fn migration_059_makes_academic_catalog_affiliation_authoritative() {
 
 #[tokio::test]
 async fn migration_060_subject_group_projections_support_timetable_load() {
+    use crate::adapters::staff_directory::STAFF_DIRECTORY;
+    use school_academic_timetable::ports::StaffDirectoryPort;
+
     let pool = release_two_fixture("academic_060_timetable_subject_groups").await;
     release_two_migrate(&pool).await;
     let teacher = Uuid::new_v4();
@@ -4656,20 +4659,22 @@ async fn migration_060_subject_group_projections_support_timetable_load() {
     assert_eq!(courses[0].subject_group_id, group);
     assert_eq!(courses[0].name, "Fixture Math");
     assert_eq!(courses[0].display_order, Some(3));
-    let teachers = school_staff::services::subject_groups_for_users(&pool, &[teacher])
+    let teachers = STAFF_DIRECTORY
+        .subject_groups_for_users(&pool, &[teacher])
         .await
         .unwrap();
     assert_eq!(teachers.len(), 1);
     assert_eq!(teachers[0].user_id, teacher);
     assert_eq!(teachers[0].subject_group_id, group);
+    assert_eq!(teachers[0].name, "Fixture Math");
     assert_eq!(teachers[0].display_order, Some(3));
-    assert!(
-        school_staff::services::subject_groups_for_users(&pool, &[Uuid::new_v4()])
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(school_staff::services::subject_groups_for_users(&pool, &[])
+    assert!(STAFF_DIRECTORY
+        .subject_groups_for_users(&pool, &[Uuid::new_v4()])
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(STAFF_DIRECTORY
+        .subject_groups_for_users(&pool, &[])
         .await
         .unwrap()
         .is_empty());

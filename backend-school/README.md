@@ -22,8 +22,8 @@ owner. See the [workspace manifest](Cargo.toml) for the crate inventory.
 cloneable HTTP state with `FromRef`; no domain accepts full `AppState` or imports the executable.
 `src/app.rs` combines concrete route factories under global prefixes and applies the single shared
 session boundary and system middleware. `src/system` owns internal provisioning, migration and
-health operations. `src/adapters` binds cross-domain lifecycle, result-lock and Attendance/Behavior
-ports; process scheduling and cleanup remain application composition responsibilities.
+health operations. `src/adapters` binds cross-domain lifecycle, result-lock, Staff directory and
+Attendance/Behavior ports; process scheduling and cleanup remain application composition responsibilities.
 
 Existing Academic domain boundaries remain separate, with transport in `school-academic-http`.
 Certificate transport stays in `school-certificates-http`. `school-auth` owns identity/session
@@ -37,6 +37,13 @@ toggles and route registration within Navigation. `school-administration` keeps 
 supply catalog and lookup as separate modules. Each owner returns its existing typed responses;
 `src/api_contract.rs` composes the offline OpenAPI document and forwards the optional `api-docs`
 feature without adding metadata dependencies to production.
+
+Timetable requests current teacher subject-group affiliations through its `StaffDirectoryPort`.
+The application adapter calls Staff's authoritative bounded query using the request's tenant pool;
+Academic domain crates do not import Staff. Administration's lookup module owns
+`OrganizationUnitLookupItem`, also used by Certificate transport. Files retains its direct Staff
+dependency for authoritative profile and achievement access policies. These boundaries avoid
+rebuilding unrelated academic services when personnel implementation changes.
 
 Unit tests stay beside implementations. Deliberate application integration tests live in the
 `#[cfg(test)]` namespace `src/integration_tests`; shared historical migration fixtures belong to

@@ -227,6 +227,10 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   crates, and do not move unrelated code into a lower layer to conceal a dependency cycle.
 - Internal crates receive only the state, typed data, or narrow port they require. Cross-domain
   behavior goes through a provider-owned public operation or an application-owned adapter.
+- Lookup wire DTOs belong with their lookup endpoint/query owner, even when they describe another
+  domain's entities. Keep `OrganizationUnitLookupItem` in Administration's lookup module. Timetable
+  receives Staff affiliations through its narrow directory port and the application adapter;
+  keep Staff's authoritative query and Files' Staff authorization policies with Staff.
 - Centralize shared dependency versions and deny-level lints in the workspace manifest. Every
   internal crate opts into workspace dependencies and lints; the application retains its existing
   crate-level deny lints and also opts into the workspace policy.

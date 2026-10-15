@@ -55,8 +55,13 @@ pub async fn get_workspace(
     let access =
         require_timetable_list_access(&context.tenant.pool, &context.actor, TimetableAction::Read)
             .await?;
-    let workspace =
-        timetable_block_service::get_workspace(&context.tenant.pool, query, &access).await?;
+    let workspace = timetable_block_service::get_workspace(
+        &context.tenant.pool,
+        query,
+        &access,
+        state.staff_directory,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(workspace)).into_response())
 }
 

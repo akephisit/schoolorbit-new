@@ -136,8 +136,9 @@ pub async fn get_workspace(
     pool: &PgPool,
     query: TimetableBlockWorkspaceQuery,
     access: &TimetableAccessFilter,
+    staff_directory: &dyn crate::ports::StaffDirectoryPort,
 ) -> Result<TimetableBlockWorkspace, AppError> {
-    timetable_block_queries::get_workspace(pool, query, access).await
+    timetable_block_queries::get_workspace(pool, query, access, staff_directory).await
 }
 
 pub async fn preview_placement(
