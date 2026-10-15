@@ -1,6 +1,7 @@
 pub mod handlers;
 pub mod http;
 pub mod profile_orchestrator;
+pub mod routes;
 pub mod session_handlers;
 
 #[cfg(test)]

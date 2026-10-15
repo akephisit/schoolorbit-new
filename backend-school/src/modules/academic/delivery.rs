@@ -1,3 +1,4 @@
+#[cfg(feature = "api-docs")]
 pub mod handlers;
 pub mod version_handlers;
 

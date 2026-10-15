@@ -894,8 +894,9 @@ mod protected_router {
     use uuid::Uuid;
 
     use crate::{
-        app::{APPLICATION_BODY_LIMIT, AUTH_JSON_BODY_LIMIT},
+        app::APPLICATION_BODY_LIMIT,
         middleware::session::{maintenance_mode, session_middleware},
+        modules::auth::routes::AUTH_JSON_BODY_LIMIT,
     };
     use school_auth::{
         config::SessionConfig,

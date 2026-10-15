@@ -1,3 +1,4 @@
+#[cfg(feature = "api-docs")]
 pub mod handlers;
 
 // The cutover suite remains application-owned because it exercises historical migrations and
