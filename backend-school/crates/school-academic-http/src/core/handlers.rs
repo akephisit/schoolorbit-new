@@ -9,7 +9,10 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::policies::{
-    academic_catalog_access_policy::{self, CatalogAction, CatalogResourceRef},
+    academic_catalog_access_policy::{
+        self, require_subject_group_registry_access, CatalogAction, CatalogResourceRef,
+        SubjectGroupRegistryAction,
+    },
     academic_curriculum_access_policy::{self, CurriculumAction},
     homeroom_roster_access_policy::{require_roster_access, RosterAction},
 };
@@ -1261,15 +1264,7 @@ pub async fn list_subject_groups(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
-        &pool,
-        &actor,
-        CatalogAction::Read,
-    )
-    .await?;
-    if !filter.includes_school_owned {
-        return Err(AppError::Forbidden("กลุ่มสาระเป็นข้อมูลระดับโรงเรียน".to_string()));
-    }
+    require_subject_group_registry_access(&actor, SubjectGroupRegistryAction::Read)?;
     Ok(ok(catalog::list_subject_groups(&pool).await?))
 }
 
@@ -1295,7 +1290,7 @@ pub async fn create_subject_group(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
+    require_subject_group_registry_access(&actor, SubjectGroupRegistryAction::Create)?;
     let group = catalog::create_subject_group(&pool, request).await?;
     signal_core_changed(
         &state,
@@ -1330,10 +1325,7 @@ pub async fn get_subject_group(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_any_permission(&[
-        codes::ACADEMIC_CATALOG_READ_SCHOOL,
-        codes::ACADEMIC_CATALOG_MANAGE_SCHOOL,
-    ])?;
+    require_subject_group_registry_access(&actor, SubjectGroupRegistryAction::Read)?;
     let group = catalog::list_subject_groups(&pool)
         .await?
         .into_iter()
@@ -1367,8 +1359,21 @@ pub async fn update_subject_group(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
+    require_subject_group_registry_access(
+        &actor,
+        if request.is_active == Some(false) {
+            SubjectGroupRegistryAction::Deactivate
+        } else {
+            SubjectGroupRegistryAction::Update
+        },
+    )?;
     let group = catalog::update_subject_group(&pool, id, request).await?;
+    state
+        .auth_runtime
+        .invalidate_permission_tenant(&context.tenant.subdomain);
+    state
+        .auth_runtime
+        .notify_all_permissions_changed(&context.tenant.subdomain);
     signal_core_changed(
         &state,
         &session,
@@ -1379,43 +1384,6 @@ pub async fn update_subject_group(
         None,
     );
     Ok(ok(group))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    delete,
-    path = "/api/academic/catalog/subject-groups/{id}",
-    operation_id = "deleteSubjectGroup",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Subject group ID")),
-    responses(
-        (status = 200, description = "Subject group deleted", body = ApiResponse<EmptyData>),
-        (status = 400, description = "Subject group cannot be deleted", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Subject group not found", body = ApiErrorResponse),
-        (status = 409, description = "Subject group has dependent records", body = ApiErrorResponse)
-    )
-))]
-pub async fn delete_subject_group(
-    State(state): State<AcademicHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
-    catalog::delete_subject_group(&pool, id).await?;
-    signal_core_changed(
-        &state,
-        &session,
-        &actor,
-        "subject_group",
-        Some(id),
-        None,
-        None,
-    );
-    Ok(ok(EmptyData {}))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

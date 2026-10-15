@@ -269,12 +269,12 @@
 		{
 			"route": "staff/academic/catalog/subject-groups",
 			"wave": "academic-foundation",
-			"dataOwner": "route",
+			"dataOwner": "no-data",
 			"preload": "hover",
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Route loader owns the subject-group cards; typed create, update, and delete mutations patch only the local collection."
+			"notes": "Redirects to the canonical organization learning-area tab; no registry reads or editor here."
 		},
 		{
 			"route": "staff/academic/catalog/subjects",
@@ -1073,7 +1073,7 @@
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Direct event-fetch route ownership; catalog resolves initial selection before shared member read."
+			"notes": "URL-owned administration/learning-area sections; route reads only the active authorized section. Members and grants are interaction-lazy for learning areas."
 		},
 		{
 			"route": "staff/organization/[id]",

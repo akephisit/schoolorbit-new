@@ -121,3 +121,6 @@ mod tests {
         assert!(parse_row_version(0).is_err());
     }
 }
+
+#[cfg(test)]
+mod learning_area_tests;

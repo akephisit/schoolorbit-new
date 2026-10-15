@@ -113,8 +113,8 @@ pub struct OrganizationUnit {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CreateOrganizationUnitRequest {
-    pub code: String,
     pub name: String,
     pub name_en: Option<String>,
     pub description: Option<String>,
@@ -124,11 +124,11 @@ pub struct CreateOrganizationUnitRequest {
     pub location: Option<String>,
     pub category: Option<String>,
     pub unit_type: Option<String>,
-    pub subject_group_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOrganizationUnitRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -140,7 +140,6 @@ pub struct UpdateOrganizationUnitRequest {
     pub is_active: Option<bool>,
     pub category: Option<String>,
     pub unit_type: Option<String>,
-    pub subject_group_id: Option<Uuid>,
 }
 
 // ===================================================================

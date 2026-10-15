@@ -783,11 +783,15 @@ pub async fn replace_activity_default_teachers(
     list_activity_default_teachers(pool, activity_id).await
 }
 
+const SUBJECT_GROUP_SELECT: &str =
+    "SELECT g.id, u.id AS organization_unit_id, g.code, g.name_th, g.name_en,
+            g.display_order, g.is_active, g.row_version, g.created_at, g.updated_at
+     FROM subject_groups g JOIN organization_units u ON u.subject_group_id = g.id";
+
 pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, AppError> {
-    Ok(sqlx::query_as(
-        "SELECT id, code, name_th, name_en, display_order, is_active, row_version, created_at, updated_at \
-         FROM subject_groups ORDER BY display_order, code, id",
-    )
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{SUBJECT_GROUP_SELECT} ORDER BY g.display_order, g.code, g.id"
+    )))
     .fetch_all(pool)
     .await?)
 }
@@ -796,23 +800,30 @@ pub async fn create_subject_group(
     pool: &PgPool,
     request: CreateSubjectGroupRequest,
 ) -> Result<SubjectGroup, AppError> {
-    validate_subject_group(&request.code, &request.name_th, &request.name_en)?;
-    sqlx::query_as(
-        r#"
-        INSERT INTO subject_groups (id, code, name_th, name_en, display_order, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, code, name_th, name_en, display_order, is_active, row_version, created_at, updated_at
-        "#,
+    validate_subject_group(&request.name_th, &request.name_en)?;
+    if request.display_order.is_some_and(|order| order < 0) {
+        return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
+    }
+    let mut tx = pool.begin().await?;
+    let code: String = sqlx::query_scalar("SELECT next_organization_code('SG')")
+        .fetch_one(&mut *tx)
+        .await?;
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO subject_groups (code, name_th, name_en, display_order, is_active)
+         VALUES ($1, $2, $3, COALESCE($4, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM subject_groups)), true)
+         RETURNING id",
     )
-    .bind(Uuid::new_v4())
-    .bind(request.code.trim().to_uppercase())
-    .bind(request.name_th.trim())
-    .bind(request.name_en.trim())
-    .bind(request.display_order)
-    .bind(request.is_active)
-    .fetch_one(pool)
-    .await
-    .map_err(map_catalog_write_error)
+    .bind(code).bind(request.name_th.trim()).bind(request.name_en.trim())
+    .bind(request.display_order).fetch_one(&mut *tx).await.map_err(map_catalog_write_error)?;
+    // The database trigger creates the membership/permission owner in this same transaction.
+    let group = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{SUBJECT_GROUP_SELECT} WHERE g.id = $1"
+    )))
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(group)
 }
 
 pub async fn update_subject_group(
@@ -821,45 +832,36 @@ pub async fn update_subject_group(
     request: UpdateSubjectGroupRequest,
 ) -> Result<SubjectGroup, AppError> {
     parse_row_version(request.row_version)?;
-    validate_subject_group(&request.code, &request.name_th, &request.name_en)?;
-    sqlx::query_as(
-        r#"
-        UPDATE subject_groups SET code = $1, name_th = $2, name_en = $3,
-            display_order = $4, is_active = $5, row_version = row_version + 1, updated_at = now()
-        WHERE id = $6 AND row_version = $7
-        RETURNING id, code, name_th, name_en, display_order, is_active, row_version, created_at, updated_at
-        "#,
+    validate_subject_group(&request.name_th, &request.name_en)?;
+    if request.display_order < 0 {
+        return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
+    }
+    let mut tx = pool.begin().await?;
+    let updated = sqlx::query(
+        "UPDATE subject_groups SET name_th = $1, name_en = $2, display_order = $3,
+            is_active = COALESCE($4, is_active), row_version = row_version + 1, updated_at = now()
+         WHERE id = $5 AND row_version = $6",
     )
-    .bind(request.code.trim().to_uppercase())
     .bind(request.name_th.trim())
     .bind(request.name_en.trim())
     .bind(request.display_order)
     .bind(request.is_active)
     .bind(id)
     .bind(request.row_version)
-    .fetch_optional(pool)
+    .execute(&mut *tx)
     .await
-    .map_err(map_catalog_write_error)?
-    .ok_or_else(|| AppError::Conflict("กลุ่มสาระถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()))
-}
-
-pub async fn delete_subject_group(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let used: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM subjects WHERE subject_group_id = $1)")
-            .bind(id)
-            .fetch_one(pool)
-            .await?;
-    if used {
-        return Err(AppError::Conflict("กลุ่มสาระถูกใช้งานอยู่".to_string()));
+    .map_err(map_catalog_write_error)?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict("กลุ่มสาระถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
-    let result = sqlx::query("DELETE FROM subject_groups WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("ไม่พบกลุ่มสาระ".to_string()));
-    }
-    Ok(())
+    let group = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{SUBJECT_GROUP_SELECT} WHERE g.id = $1"
+    )))
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(group)
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1215,8 +1217,11 @@ fn normalize_code(code: &str) -> Result<String, AppError> {
     Ok(code)
 }
 
-fn validate_subject_group(code: &str, name_th: &str, name_en: &str) -> Result<(), AppError> {
-    if code.trim().is_empty() || name_th.trim().is_empty() || name_en.trim().is_empty() {
+fn validate_subject_group(name_th: &str, name_en: &str) -> Result<(), AppError> {
+    if name_th.trim().is_empty()
+        || name_th.trim().chars().count() > 200
+        || name_en.trim().chars().count() > 200
+    {
         return Err(AppError::ValidationError("ข้อมูลกลุ่มสาระไม่ครบถ้วน".to_string()));
     }
     Ok(())
@@ -1351,6 +1356,19 @@ async fn replace_default_teachers(
 
 fn map_catalog_write_error(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(database) = &error {
+        if database
+            .message()
+            .contains("LEARNING_AREA_AFFILIATION_INVALID")
+        {
+            return AppError::Conflict(
+                "กลุ่มสาระปิดใช้งานหรือข้อมูลสังกัดเปลี่ยน กรุณาโหลดทะเบียนใหม่".to_string(),
+            );
+        }
+        if database.message().contains("LEARNING_AREA_IN_USE") {
+            return AppError::Conflict(
+                "กลุ่มสาระยังมีรายวิชาที่ใช้งานอยู่ หรือเป็นทะเบียนกิจกรรมพัฒนาผู้เรียน".to_string(),
+            );
+        }
         if database.code().as_deref() == Some("23505") {
             return AppError::Conflict("รหัสหรือข้อมูลประจำรายการซ้ำ".to_string());
         }

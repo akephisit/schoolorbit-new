@@ -228,11 +228,6 @@ export const updateSubjectGroup = (id: string, body: UpdateSubjectGroupRequest) 
 		apiClient.patch<SubjectGroup>(`/api/academic/catalog/subject-groups/${id}`, body),
 		'แก้ไขกลุ่มสาระไม่สำเร็จ'
 	);
-export const deleteSubjectGroup = (id: string) =>
-	academicData(
-		apiClient.delete<Schemas['EmptyData']>(`/api/academic/catalog/subject-groups/${id}`),
-		'ลบกลุ่มสาระไม่สำเร็จ'
-	);
 
 export const listCatalogSubjects = () =>
 	academicData(
