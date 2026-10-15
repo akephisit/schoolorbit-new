@@ -115,19 +115,21 @@ test('milestone failure retries independently while existing charts remain usabl
 		region(page).getByRole('heading', { name: 'โหลดกำหนดเวลาวิทยฐานะไม่สำเร็จ' })
 	).toHaveCount(0);
 });
-test('a delayed old milestone status cannot replace the newly selected status', async ({
+test('an old status link keeps milestone planning active while charts render independently', async ({
 	page
 }) => {
 	const api = await setup(page, { hold: true });
-	await page.goto('/staff/manage/overview');
+	await page.goto('/staff/manage/overview?status=inactive');
 	await expect(
 		region(page).getByRole('button', { name: 'รีเฟรชกำหนดเวลาวิทยฐานะ' })
 	).toBeDisabled();
-	await page.getByRole('button', { name: 'สถานะสำหรับกราฟ', exact: true }).click();
-	await page.getByRole('option', { name: 'ปิดการใช้งาน', exact: true }).click();
-	await expect(region(page).getByText('บุคลากรสถานะอื่น', { exact: true })).toBeVisible();
+	await expect(page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true })).toContainText(
+		'2 คน'
+	);
+	await expect(page.getByRole('button', { name: 'สถานะสำหรับกราฟ', exact: true })).toHaveCount(0);
 	api.release();
-	await expect(region(page).getByText('ครูทดสอบกำหนดเวลา', { exact: true })).toHaveCount(0);
+	await expect(region(page).getByText('ครูทดสอบกำหนดเวลา', { exact: true })).toBeVisible();
+	await expect(region(page).getByText('บุคลากรสถานะอื่น', { exact: true })).toHaveCount(0);
 });
 test('profile displays ordinary and conditional dates with source and review wording', async ({
 	page

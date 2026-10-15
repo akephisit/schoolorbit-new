@@ -21150,6 +21150,8 @@ export interface components {
 			job_position: null | components['schemas']['StaffJobPositionSummary'];
 			last_name: string;
 			organization_units: string[];
+			/** Format: uuid */
+			profile_image_file_id: string | null;
 			roles: string[];
 			status: string;
 			title: string;

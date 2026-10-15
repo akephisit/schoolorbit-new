@@ -38,7 +38,11 @@ async function setup(page: Page, permissions?: string[]) {
 					asOf: '2026-10-01T00:00:00Z',
 					total: 2,
 					filteredTotal: 2,
-					subjectGroups: [{ key: 'unassigned', label: 'ยังไม่มีสังกัดกลุ่มสาระ', count: 2 }],
+					subjectGroups: Array.from({ length: 9 }, (_, index) => ({
+						key: String(index),
+						label: `กลุ่มสาระทดสอบ ${index + 1}`,
+						count: 2
+					})),
 					jobPositions: [{ key: ref, label: 'ครู', count: 2 }],
 					academicRanks: [{ key: 'none', label: 'ไม่มีวิทยฐานะ', count: 2 }],
 					educationLevels: [{ key: 'bachelor', label: 'ปริญญาตรี', count: 2 }]
@@ -94,6 +98,27 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);
+			await page.evaluate(async () => {
+				await document.fonts.ready;
+				await new Promise<void>((r) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => r()))
+				);
+			});
+			if (width === 1440) {
+				const groups = await page
+					.getByRole('region', { name: 'บุคลากรตามกลุ่มสาระ', exact: true })
+					.boundingBox();
+				const positions = await page
+					.getByRole('region', { name: 'บุคลากรตามตำแหน่งงาน', exact: true })
+					.boundingBox();
+				const ranks = await page
+					.getByRole('region', { name: 'บุคลากรตามวิทยฐานะ', exact: true })
+					.boundingBox();
+				expect(groups!.height).toBeGreaterThan(positions!.height + 100);
+				expect(Math.abs(ranks!.x - positions!.x)).toBeLessThan(1);
+				expect(ranks!.y - positions!.y - positions!.height).toBeGreaterThan(0);
+				expect(ranks!.y - positions!.y - positions!.height).toBeLessThan(25);
+			}
 			await page.screenshot({
 				path: testInfo.outputPath(`dashboard-${width}-${theme}.png`),
 				fullPage: true
@@ -108,9 +133,7 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 	await page.getByRole('link', { name: 'กลับรายชื่อบุคลากร', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`job_position_id=${ref}`));
 });
-test('active summary remains independent of the detail status and opens the active directory', async ({
-	page
-}) => {
+test('overview ignores old status links and opens the active directory', async ({ page }) => {
 	await setup(page);
 	await page.route('**/api/staff/personnel-overview**', (route) =>
 		route.fulfill({
@@ -128,13 +151,22 @@ test('active summary remains independent of the detail status and opens the acti
 			}
 		})
 	);
+	const reads: string[] = [];
+	page.on('request', (request) => {
+		if (/personnel-(overview|rank-milestones)/.test(request.url())) reads.push(request.url());
+	});
 	await page.goto('/staff/manage/overview?status=inactive');
 	const summary = page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true });
 	await expect(summary).toContainText('2 คน');
 	await expect(page.getByRole('link', { name: 'ครู 1 คน', exact: true })).toHaveAttribute(
 		'href',
-		/status=inactive/
+		/status=active/
 	);
+	await expect(page.getByRole('button', { name: 'สถานะสำหรับกราฟ', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'รีเฟรชข้อมูล', exact: true }).click();
+	await expect(page.getByTestId('personnel-overview')).toHaveAttribute('aria-busy', 'false');
+	expect(reads.length).toBeGreaterThanOrEqual(3);
+	expect(reads.every((url) => new URL(url).searchParams.get('status') === 'active')).toBe(true);
 	const directory = summary.getByRole('link', { name: 'ดูรายชื่อบุคลากรทั้งหมด' });
 	await directory.focus();
 	await page.keyboard.press('Enter');
@@ -308,20 +340,21 @@ test('overview owns its first error and retains data during refresh', async ({ p
 	await expect(region).toContainText('บุคลากรทั้งหมด');
 	release();
 	await expect(region).toHaveAttribute('aria-busy', 'false');
-	await expect(region).toContainText('ไม่มีบุคลากรในสถานะที่เลือก');
+	await expect(region).toContainText('ไม่มีบุคลากรในกลุ่มนี้');
 	await expect(page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true })).toContainText(
 		'0 คน'
 	);
 });
 
-test('a superseded overview status cannot paint a late result', async ({ page }) => {
+test('an overview left behind cannot paint a late result after returning', async ({ page }) => {
 	await setup(page);
 	let release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
+	let reads = 0;
 	await page.route('**/api/staff/personnel-overview**', async (route) => {
-		const status = new URL(route.request().url()).searchParams.get('status');
-		if (status === 'inactive') await held;
-		const label = status === 'inactive' ? 'ผลเก่าที่ช้า' : 'ครู';
+		const first = ++reads === 1;
+		if (first) await held;
+		const label = first ? 'ผลเก่าที่ช้า' : 'ครู';
 		return route.fulfill({
 			json: {
 				success: true,
@@ -338,18 +371,16 @@ test('a superseded overview status cannot paint a late result', async ({ page })
 		});
 	});
 	await page.goto('/staff/manage/overview');
-	await expect(page.getByRole('link', { name: 'ครู 1 คน', exact: true })).toBeVisible();
-	await navigate(page, '/staff/manage/overview?status=inactive');
 	await expect(page.getByTestId('personnel-overview')).toHaveAttribute('aria-busy', 'true');
-	await expect(page.getByRole('link', { name: 'ครู 1 คน', exact: true })).toHaveCount(0);
+	await navigate(page, '/staff/manage');
+	await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
 	await page
 		.getByRole('link', { name: 'test navigation', exact: true })
 		.evaluate((el) => el.remove());
-	await navigate(page, '/staff/manage/overview?status=all');
+	await navigate(page, '/staff/manage/overview');
 	await expect(page.getByRole('link', { name: 'ครู 1 คน', exact: true })).toBeVisible();
 	release();
 	await expect(page.getByTestId('personnel-overview')).not.toContainText('ผลเก่าที่ช้า');
-	await expect(page).toHaveURL(/status=all/);
 	await expect(
 		page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true }).getByRole('link')
 	).toHaveAttribute('href', '/staff/manage?status=active');

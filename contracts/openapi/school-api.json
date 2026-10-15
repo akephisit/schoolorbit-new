@@ -50801,6 +50801,13 @@
             },
             "type": "array"
           },
+          "profile_image_file_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "roles": {
             "items": {
               "type": "string"
@@ -50823,6 +50830,7 @@
           "title",
           "first_name",
           "last_name",
+          "profile_image_file_id",
           "roles",
           "organization_units",
           "status",

@@ -7,10 +7,10 @@ test('staff links carry list context and reject external or unrelated return des
 	assert.equal(
 		staffReturnHref(
 			new URL(
-				'https://school.test/staff/manage/one?returnTo=%2Fstaff%2Fmanage%3Fsearch%3Dteacher%26page%3D2%26status%3Dinactive'
+				'https://school.test/staff/manage/one?returnTo=%2Fstaff%2Fmanage%3Fsearch%3Dteacher%26page%3D2%26status%3Dinactive%26view%3Dcards'
 			)
 		),
-		'/staff/manage?search=teacher&page=2&status=inactive'
+		'/staff/manage?search=teacher&page=2&status=inactive&view=cards'
 	);
 	for (const target of [
 		'https://evil.test/staff/manage',

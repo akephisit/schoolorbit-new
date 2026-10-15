@@ -1,14 +1,11 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { ArrowUpRight, RefreshCw, UsersRound } from '@lucide/svelte';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import { getPersonnelOverview, type PersonnelOverview } from '#lib/api/personnel.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -18,7 +15,6 @@
 	import { can, userPermissions } from '#lib/stores/permissions.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { STAFF_STATUS_OPTIONS, staffStatusLabel } from '#lib/forms/staff-status.js';
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
 	let overview = $state<PersonnelOverview | null>(null),
@@ -134,10 +130,9 @@
 						<Skeleton class="h-8 w-28" />
 					</Card.Content>
 				</Card.Root>
-				<Skeleton class="h-16 w-full rounded-xl" />
-				<div class="grid gap-5 lg:grid-cols-2">
+				<div class="columns-1 gap-5 lg:columns-2">
 					{#each Array.from({ length: 4 }) as _, index (index)}
-						<Card.Root>
+						<Card.Root class="mb-5 break-inside-avoid">
 							<Card.Content class="space-y-4">
 								<Skeleton class="h-5 w-48" />
 								<Skeleton class="h-12 w-full" />
@@ -184,30 +179,7 @@
 					</Button>
 				</Card.Content>
 			</Card.Root>
-			<div class="rounded-xl border bg-card p-3 sm:p-4 flex flex-wrap items-center gap-3">
-				<p class="text-sm font-medium">สถานะสำหรับกราฟด้านล่าง</p>
-				<Select.Root
-					type="single"
-					value={data.status}
-					onValueChange={(value) => {
-						void goto(resolve(`staff/manage/overview?status=${value}`));
-					}}
-					><Select.Trigger class="w-full sm:w-48" aria-label="สถานะสำหรับกราฟ"
-						>{data.status === 'all' ? 'ทุกสถานะ' : staffStatusLabel(data.status)}</Select.Trigger
-					><Select.Content
-						><Select.Item value="all">ทุกสถานะ</Select.Item
-						>{#each STAFF_STATUS_OPTIONS as option (option.value)}<Select.Item value={option.value}
-								>{option.label}</Select.Item
-							>{/each}</Select.Content
-					></Select.Root
-				>
-				<p class="text-sm text-muted-foreground">
-					{overview.filteredTotal.toLocaleString('th-TH')} คน {#if loading}<span role="status"
-							>กำลังอัปเดต…</span
-						>{/if}
-				</p>
-			</div>
-			<div class="grid gap-5 lg:grid-cols-2">
+			<div class="columns-1 gap-5 lg:columns-2">
 				<PersonnelBarChart
 					title="บุคลากรตามกลุ่มสาระ"
 					dimension="subject_group"
