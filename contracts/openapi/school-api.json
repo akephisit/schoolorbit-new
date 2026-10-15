@@ -12139,10 +12139,6 @@
                 },
                 "type": "array"
               },
-              "active": {
-                "format": "int64",
-                "type": "integer"
-              },
               "asOf": {
                 "format": "date-time",
                 "type": "string"
@@ -12154,20 +12150,11 @@
                 "type": "array"
               },
               "filteredTotal": {
+                "description": "Number of staff matching the selected status in the authorized scope.",
                 "format": "int64",
                 "type": "integer"
               },
               "jobPositions": {
-                "items": {
-                  "$ref": "#/components/schemas/PersonnelBucket"
-                },
-                "type": "array"
-              },
-              "otherStatuses": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "statuses": {
                 "items": {
                   "$ref": "#/components/schemas/PersonnelBucket"
                 },
@@ -12180,6 +12167,7 @@
                 "type": "array"
               },
               "total": {
+                "description": "Number of active staff in the authorized scope, independent of the detail status filter.",
                 "format": "int64",
                 "type": "integer"
               }
@@ -12187,10 +12175,7 @@
             "required": [
               "asOf",
               "total",
-              "active",
-              "otherStatuses",
               "filteredTotal",
-              "statuses",
               "subjectGroups",
               "jobPositions",
               "academicRanks",
@@ -44705,10 +44690,6 @@
             },
             "type": "array"
           },
-          "active": {
-            "format": "int64",
-            "type": "integer"
-          },
           "asOf": {
             "format": "date-time",
             "type": "string"
@@ -44720,20 +44701,11 @@
             "type": "array"
           },
           "filteredTotal": {
+            "description": "Number of staff matching the selected status in the authorized scope.",
             "format": "int64",
             "type": "integer"
           },
           "jobPositions": {
-            "items": {
-              "$ref": "#/components/schemas/PersonnelBucket"
-            },
-            "type": "array"
-          },
-          "otherStatuses": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "statuses": {
             "items": {
               "$ref": "#/components/schemas/PersonnelBucket"
             },
@@ -44746,6 +44718,7 @@
             "type": "array"
           },
           "total": {
+            "description": "Number of active staff in the authorized scope, independent of the detail status filter.",
             "format": "int64",
             "type": "integer"
           }
@@ -44753,10 +44726,7 @@
         "required": [
           "asOf",
           "total",
-          "active",
-          "otherStatuses",
           "filteredTotal",
-          "statuses",
           "subjectGroups",
           "jobPositions",
           "academicRanks",

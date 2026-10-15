@@ -10512,19 +10512,20 @@ export interface components {
 		ApiResponse_PersonnelOverview: {
 			data: {
 				academicRanks: components['schemas']['PersonnelBucket'][];
-				/** Format: int64 */
-				active: number;
 				/** Format: date-time */
 				asOf: string;
 				educationLevels: components['schemas']['PersonnelBucket'][];
-				/** Format: int64 */
+				/**
+				 * Format: int64
+				 * @description Number of staff matching the selected status in the authorized scope.
+				 */
 				filteredTotal: number;
 				jobPositions: components['schemas']['PersonnelBucket'][];
-				/** Format: int64 */
-				otherStatuses: number;
-				statuses: components['schemas']['PersonnelBucket'][];
 				subjectGroups: components['schemas']['PersonnelBucket'][];
-				/** Format: int64 */
+				/**
+				 * Format: int64
+				 * @description Number of active staff in the authorized scope, independent of the detail status filter.
+				 */
 				total: number;
 			};
 			message?: string;
@@ -19442,19 +19443,20 @@ export interface components {
 			'status' | 'subject_group' | 'job_position' | 'academic_rank' | 'education_level';
 		PersonnelOverview: {
 			academicRanks: components['schemas']['PersonnelBucket'][];
-			/** Format: int64 */
-			active: number;
 			/** Format: date-time */
 			asOf: string;
 			educationLevels: components['schemas']['PersonnelBucket'][];
-			/** Format: int64 */
+			/**
+			 * Format: int64
+			 * @description Number of staff matching the selected status in the authorized scope.
+			 */
 			filteredTotal: number;
 			jobPositions: components['schemas']['PersonnelBucket'][];
-			/** Format: int64 */
-			otherStatuses: number;
-			statuses: components['schemas']['PersonnelBucket'][];
 			subjectGroups: components['schemas']['PersonnelBucket'][];
-			/** Format: int64 */
+			/**
+			 * Format: int64
+			 * @description Number of active staff in the authorized scope, independent of the detail status filter.
+			 */
 			total: number;
 		};
 		/** @enum {string} */

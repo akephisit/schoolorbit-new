@@ -78,8 +78,8 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Explicit invocation of `$schoolorbit-development` authorizes the bounded parallel workflow below for that task. Implicit skill selection alone does not authorize delegation. A user's inline-only preference takes precedence.
 - Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; checkpoint commits may be used on their feature branch.
 - Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.
-- Verification evidence belongs to the exact tested Git tree and relevant test environment, not to a branch name or commit hash. After a conflict-free squash merge from an unchanged base, confirm that the feature and integrated root tree object IDs are identical. If they match and no hook, generator, dependency install, manual step, or external test dependency changed the tracked tree or relevant test environment, reuse the completed focused and matrix results; do not rerun them only because the branch or commit hash changed.
-- Rerun affected checks when the base advanced, conflicts were resolved, the integrated tree differs, required coverage was incomplete or failed, or the relevant toolchain, dependencies, or external test environment changed. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
+- Verification evidence names the tested Git tree, affected source/configuration/test inputs, and relevant test environment, not just a branch name or commit hash. Reuse a completed result after documentation-only or unrelated-owner changes only after confirming its relevant inputs and environment are unchanged; record that comparison and verify the newly changed scope. After a conflict-free squash merge from an unchanged base, identical feature and integrated root tree object IDs establish source equality. Do not rerun checks only because the branch or commit hash changed.
+- When the base advances, conflicts are resolved, or the candidate changes, inspect the diff and rerun checks whose relevant inputs or environment changed. Also rerun incomplete or failed required coverage. Changes to the toolchain, dependencies, generators or external test fixtures invalidate affected evidence. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
 - Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
 - Every change enters `main` through a pull request. Do not push directly to `main` or force-push shared branches. After required local checks pass, commit and push the feature branch, open a PR and attach it to the task.
 - Trusted team collaborators with write access use automatic squash merge after the stable `Pipeline gate` succeeds; human approval is not mandatory. External/fork PRs are never auto-merged.
@@ -136,7 +136,7 @@ and may carry out any role inline. Open only roles needed for the current change
 
 ### Local verification and GitHub delivery
 
-- Run every affected suite through `./scripts/pipeline verify --scope auto` on the developer's machine before opening or updating a ready PR. Use the change-type matrix for additional browser, migration and security coverage. Record exact commands, results and any missing environment in the PR; an unrun required check must not be reported as passing.
+- Before opening or updating a ready PR, run the impact-based checks selected under section 11 on the developer's machine. Use focused owning commands or explicit pipeline scopes that match the affected behavior and consumers; the automatic application's entire suite is not mandatory for every edit. Record the scope rationale, exact commands, results and any missing environment in the PR; an unrun or cancelled check must not be reported as passing.
 - GitHub runs planning, selected release builds and deployment only. Do not add unit, database, architecture, lint, type-check or browser E2E suites to Actions, and do not implement local receipt uploads, signatures, registered verifiers or test-result attestations. The `Pipeline gate` proves planning/build success, not local test execution.
 - Each developer owns a separate branch/worktree and disposable fixtures. Refresh `origin/main` before local verification and integration. When main advances, update the feature branch and rerun affected suites before making the PR ready; the merge controller must never update a branch or silently substitute untested source.
 - Trusted same-repository team PRs may auto-squash merge after the latest-main `Pipeline gate` succeeds, with no mandatory human approval. Keep incomplete or failing work in draft; external/fork work needs maintainer-owned local verification before integration.
@@ -235,8 +235,10 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   tradeoffs rather than assuming a split improves every build. It must not weaken runtime,
   API/OpenAPI, permission, migration, security, test, or
   deployment guarantees.
-- Run focused checks for every affected package and finish backend-school verification with
-  `cargo check --workspace --all-targets`.
+- Compile and test affected packages and their consumers. Use
+  `cargo check --workspace --all-targets` when workspace composition, shared dependencies/build
+  configuration, broadly consumed contracts or uncertain dependency impact require workspace coverage;
+  a bounded domain edit does not automatically require every workspace package or database suite.
 
 ### Request context and architecture
 
@@ -340,7 +342,7 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   Each schema/path owner gates its Utoipa dependency, imports, derives and helper attributes;
   forward the feature along existing dependency edges. Keep runtime DTOs, Serde and HTTP behavior
   available without it. Application composition and offline export require this feature, and the
-  local generator enables it automatically. Verify both feature modes, all documentation-specific
+  local generator enables it automatically. Verify both feature modes, affected documentation-specific
   tests and generated artifacts; production builds keep the default feature set.
 - Tracked OpenAPI output lives at `contracts/openapi/school-api.json`; generated frontend DTOs live under `frontend-school/src/lib/api/generated/`.
 - When adding or changing an endpoint:
@@ -668,7 +670,7 @@ These six reviewed references guide the matching page responsibility. Inspect th
 - `pipeline.yml` alone owns automatic PR/main planning, artifact preparation and production release. `merge.yml` owns team integration, `operations.yml` explicit operational tasks, and `maintenance.yml` retention. Reusable implementations have no independent push/PR/dispatch writers.
 - Executable policy separates verification, build and deployment scopes. Unknown paths expand verification rather than silently skipping it. Automatic deployment compares each component against its trusted accepted input baseline and includes queued changes; manual scope can add work but cannot omit required reconciliation.
 - Artifact-producing commands belong to the backend/frontend build composite actions and application Dockerfiles/scripts. Hash those owners and compiled public configuration; orchestration and timing-only changes must not invalidate compiled artifacts. Component-specific deployment implementations reconcile their own owners, while shared maintenance, runtime and release controls reconcile every affected component. Report selection reasons without dropping unaccepted work.
-- Local checks use `scripts/pipeline`; GitHub does not execute test suites. Run selected checks before opening a PR; critical API, permission, auth, tenant, migration and recovery checks remain required for their affected scope.
+- Local checks use the owning runners or focused commands selected under section 11; GitHub does not execute test suites. Run selected checks before opening a PR; critical API, permission, auth, tenant, migration and recovery checks remain required for their affected scope.
 - Dependencies, compiled test targets and release artifacts have separate keys including toolchain, platform/profile, source and compiled public configuration. Main builds save shared release caches; developer machines retain their own Cargo/npm caches. Debug/test output cannot replace a release binary, and cache hits never count as verification success.
 - Before production changes, the exact SHA and latest attempt must pass planning and every selected Pipeline build. Validate immutable image digests and frontend bundle manifests, reread accepted state under the shared production lock, and reject a stale candidate before maintenance.
 - Reconcile prepared scope again under the production lock: remove only work now covered by trusted accepted baselines, retain explicit requested scope, and reject changed hashes or any newly required unprepared component. If no work remains, finish without entering maintenance or changing accepted state. Every downstream release and acceptance consumer uses this reconciled plan.
@@ -704,7 +706,7 @@ These six reviewed references guide the matching page responsibility. Inspect th
 
 ## 11. Verification Matrix
 
-Run focused tests for each distinct candidate tree and relevant test environment, plus the applicable matrix below. Reuse prior results only under the exact-tree integration rule in section 1. Always run:
+Choose the smallest defensible verification set from the changed behavior, direct consumers, shared boundaries and failure risk. Record the affected scope and selected commands before running them. File placement alone, such as one edit under `backend-school/`, does not require testing every module in that application. Reuse valid results under section 1; rerun only checks whose relevant inputs or environment changed. Always run:
 
 ```bash
 git diff --check
@@ -727,13 +729,28 @@ npm run check:api-contracts
 npm run test:api-contracts
 ```
 
-For frontend, backend, installer, proxy or workflow changes, run the applicable owned suites from the repository root:
+### Selecting verification scope
+
+- For a bounded backend rule or query change, compile the affected package and consumers and run focused service/database tests for its behavior and access scope. Add transport, transaction, concurrency or denied-path cases when those boundaries change. Do not run unrelated domain database suites merely because they share an application.
+- For frontend presentation or workflow changes, check the owning Svelte/TypeScript application, lint/format the changed files, and run the affected helper/component/browser workflows and direct consumers. A frontend-only change does not require Rust or database tests unless it changes their contract or behavior.
+- For API or permission contracts, run the corresponding generation/check/tests above and verify the affected producers, consumers and authorization paths. An unchanged contract does not need regeneration as a ritual.
+- For documentation, `.rules`, or skill-instruction-only changes, run the documentation-policy check. Add runtime checks only when executable code, configuration or runtime behavior also changed; do not rerun completed runtime suites solely for prose edits.
+- Broaden coverage when shared authentication/tenant/session boundaries, cross-domain behavior, migrations, dependencies, workspace composition, or verification/deployment infrastructure affect multiple owners, or when investigation cannot establish a bounded impact. Select all affected owners and critical cases. Failures require diagnosis and the relevant regression checks; narrowing scope must not hide a failed required check.
+
+Use an owning runner when its suite matches the selected impact. Explicit owner scopes still run that owner's whole suite; use the documented focused commands in `docs/TESTING.md` when a narrower package, service, test filter or browser workflow provides the required coverage. For example, from the repository root:
+
+```bash
+./scripts/pipeline verify --scope documentation
+./scripts/test_backend_school.sh --package school-staff personnel_overview -- --nocapture
+```
+
+For broader affected owners, use explicit scopes such as `./scripts/pipeline verify --scope contracts,frontend-school`. The conservative application-level planner remains available when its coverage fits the impact or the impact cannot be bounded:
 
 ```bash
 ./scripts/pipeline verify --scope auto
 ```
 
-Use `--scope full` for a full local rehearsal or a comma-separated list of owners for focused work. The runner owns frontend lint/type/static or unit checks, backend formatting/workspace/architecture/API and disposable database checks, and deployment ShellCheck/shfmt/Bats/Node guards/Compose/actionlint. Do not rerun their individual commands as a second mandatory flow; use those commands only to diagnose a failure or run additional affected tests. Backend Admin SQLx checks must use the owned disposable Docker fixture, not a shared database.
+Use `--scope full` only for changes that require repository-wide coverage, unresolved repository-wide impact, or an explicitly requested full rehearsal. The runner owns frontend lint/type/static or unit checks, backend formatting/workspace/architecture/API and disposable database checks, and deployment ShellCheck/shfmt/Bats/Node guards/Compose/actionlint. Do not run a focused command and then repeat it inside a larger suite without an additional coverage need. Backend Admin SQLx checks must use the owned disposable Docker fixture, not a shared database. Test selection does not weaken production build, migration, maintenance, readiness or deployed acceptance gates.
 
 When creating, editing, or analyzing `.svelte`, `.svelte.ts`, or `.svelte.js`, use the project Svelte tooling and resolve all reported issues before completion.
 

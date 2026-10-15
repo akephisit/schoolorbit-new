@@ -15,10 +15,15 @@ Do not replace a failed check by disabling it or by running a narrower command t
 
 ## Local verification and GitHub delivery
 
-From the repository root, refresh `origin/main`, update your feature branch if needed, and run
-`./scripts/pipeline verify --scope auto` before opening or updating a ready PR. The command includes
-uncommitted/untracked paths. `--scope full` runs every suite; a comma-separated list such as
-`backend-school,contracts` selects explicit suites. Install Node 24, pinned Rust, Docker, and the
+From the repository root, refresh `origin/main`, update your feature branch if needed, and select
+checks using [the verification scope policy](../.rules#11-verification-matrix) before opening or
+updating a ready PR. The commands below are recipes for the affected owners and workflows.
+`./scripts/pipeline verify --scope documentation` selects the documentation suite; a comma-separated
+list such as `contracts,frontend-school` selects whole owner suites. Use the focused package,
+service/filter and browser commands below for bounded work. `--scope auto` conservatively selects
+whole application suites from changed paths, including uncommitted/untracked files; `--scope full`
+runs every suite. Choose these broad modes only when the policy calls for their coverage.
+Install Node 24, pinned Rust, Docker, and the
 owning application's locked npm dependencies. Deployment/static checks need ShellCheck, shfmt,
 Bats, envsubst and jq. Local test profiles use no debug information or Cargo incremental data;
 production release optimization is unchanged. Keep incomplete or failing work in a draft PR.
@@ -94,8 +99,9 @@ is discovered from `.agents/skills/` by supported Codex hosts. Invoke
 reasoning preferences and delegation authorization are defined in `.rules`; implicit discovery
 does not itself authorize subagents. The same workflow can run inline when the host lacks them.
 
-For a skill change, run `node --test frontend-school/tests/static/documentation-policy.test.mjs`
-and the applicable `./scripts/pipeline verify --scope auto` owners. Verify the skill appears in the
+For a skill-instruction-only change, run
+`node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior
+also changes, select its checks under `.rules` section 11. Verify the skill appears in the
 target host's skill selector after checkout refresh; Codex detects skill changes automatically,
 and restarting it is the documented fallback when an update does not appear. File/metadata checks
 prove repository packaging, not live discovery or agent isolation in a different host.
@@ -1175,4 +1181,4 @@ node --test tests/static/supply-catalog-money.test.mjs
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supply-catalog.spec.ts --project=chromium --workers=1
 ```
 
-Keep fixture browser evidence distinct from real device-format and private-storage/scanner acceptance. Use only disposable catalog items/proposals in an isolated tenant for the latter: verify uploads from iPhone/Android/desktop, replacement cleanup, pending-source private access and permanent source removal after approval. Do not print grants, source URLs or private contents. Always finish with the applicable `./scripts/pipeline verify --scope auto` suites.
+Keep fixture browser evidence distinct from real device-format and private-storage/scanner acceptance. Use only disposable catalog items/proposals in an isolated tenant for the latter: verify uploads from iPhone/Android/desktop, replacement cleanup, pending-source private access and permanent source removal after approval. Do not print grants, source URLs or private contents. Select final verification under `.rules` section 11 and reuse valid scoped evidence under section 1.

@@ -23,11 +23,8 @@ async function setup(page: Page, options: { fail?: boolean; hold?: boolean } = {
 				success: true,
 				data: {
 					asOf: '2026-10-03T00:00:00Z',
-					total: 3,
-					active: 2,
-					otherStatuses: 1,
+					total: 2,
 					filteredTotal: 2,
-					statuses: [{ key: 'active', label: 'ปฏิบัติงาน', count: 2 }],
 					subjectGroups: [],
 					jobPositions: [],
 					academicRanks: [],
@@ -109,7 +106,7 @@ test('milestone failure retries independently while existing charts remain usabl
 	await setup(page, { fail: true });
 	await page.goto('/staff/manage/overview');
 	await expect(
-		page.getByRole('region', { name: 'สถานะบุคลากรทั้งหมด', exact: true })
+		page.getByRole('region', { name: 'บุคลากรตามตำแหน่งงาน', exact: true })
 	).toBeVisible();
 	await expect(region(page)).toContainText('โหลดกำหนดเวลาวิทยฐานะไม่สำเร็จ');
 	await region(page).getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
