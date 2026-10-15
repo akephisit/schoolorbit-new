@@ -420,7 +420,10 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	);
 	const smoke = await readRepo('scripts/smoke_test.sh');
 
-	assert.match(compatibility, /cargo test integration_tests::academic::core::schema_tests::migration_060/);
+	assert.match(
+		compatibility,
+		/cargo test integration_tests::academic::core::schema_tests::migration_060/
+	);
 	assert.match(compatibility, /TEST_DATABASE_URL/);
 	assert.match(migrationHandler, /gradebook_results_cutover/);
 	assert.match(migrationHandler, /gradebookResultsCutover/);
