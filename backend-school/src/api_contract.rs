@@ -557,7 +557,6 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::create_subject_group,
         school_academic_http::core::handlers::get_subject_group,
         school_academic_http::core::handlers::update_subject_group,
-        school_academic_http::core::handlers::delete_subject_group,
         school_academic_http::core::handlers::list_catalog_activities,
         school_academic_http::core::handlers::get_catalog_activity_overview,
         school_academic_http::core::handlers::create_catalog_activity,

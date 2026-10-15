@@ -2771,24 +2771,22 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
 #[tokio::test]
 async fn subject_group_updates_use_optimistic_revisions() {
     let pool = prepare_current_core_fixture("academic_core_subject_group_revision").await;
+    apply_migrations_through(&pool, 116).await.unwrap();
     let group = catalog::create_subject_group(
         &pool,
         CreateSubjectGroupRequest {
-            code: "TEST-GROUP".to_string(),
             name_th: "กลุ่มสาระทดสอบ".to_string(),
             name_en: "Test Group".to_string(),
-            display_order: 99,
-            is_active: true,
+            display_order: Some(99),
         },
     )
     .await
     .unwrap();
     let update = UpdateSubjectGroupRequest {
-        code: group.code.clone(),
         name_th: "กลุ่มสาระทดสอบปรับปรุง".to_string(),
         name_en: group.name_en.clone(),
         display_order: 99,
-        is_active: true,
+        is_active: Some(true),
         row_version: group.row_version,
     };
     let updated = catalog::update_subject_group(&pool, group.id, update.clone())
@@ -6427,4 +6425,38 @@ impl school_academic_core::ports::PlacementRosterPort for TestPlacementRosters {
     ) -> Result<(), school_errors::AppError> {
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn organization_learning_area_cutover_preserves_academic_owners_and_grants() {
+    let pool = prepare_current_core_fixture("organization_academic_preservation").await;
+    async fn fingerprints(pool: &PgPool) -> Vec<String> {
+        let mut result = Vec::new();
+        for table in [
+            "subjects",
+            "learning_offerings",
+            "organization_members",
+            "organization_permission_grants",
+        ] {
+            let sql = format!("SELECT md5(coalesce(string_agg(row_json, ',' ORDER BY row_json), '')) FROM (SELECT to_jsonb(t)::text AS row_json FROM {table} t) rows");
+            result.push(
+                sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+                    .fetch_one(pool)
+                    .await
+                    .unwrap(),
+            );
+        }
+        result
+    }
+    let before = fingerprints(&pool).await;
+    let identities: Vec<(Uuid, Uuid, String)> = sqlx::query_as("SELECT id, subject_group_id, code FROM organization_units WHERE subject_group_id IS NOT NULL ORDER BY id")
+        .fetch_all(&pool).await.unwrap();
+    apply_migrations_through(&pool, 116).await.unwrap();
+    assert_eq!(fingerprints(&pool).await, before);
+    let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as("SELECT id, subject_group_id, code FROM organization_units WHERE subject_group_id IS NOT NULL ORDER BY id")
+        .fetch_all(&pool).await.unwrap();
+    assert_eq!(after, identities);
+    let activity: (String, String) = sqlx::query_as("SELECT u.code, g.code FROM organization_units u JOIN subject_groups g ON g.id=u.subject_group_id WHERE u.code='ACAD-ACT'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(activity, ("ACAD-ACT".into(), "AC".into()));
 }

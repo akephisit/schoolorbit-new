@@ -1,8 +1,7 @@
+import { redirect } from '@sveltejs/kit';
+import { resolve } from '$app/paths';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
-import { listSubjectGroups } from '#lib/api/academic-core.js';
-import { CATALOG_SUBJECT_GROUPS_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
-import { captureRouteLoad } from '#lib/navigation/route-load.js';
-import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none',
@@ -13,14 +12,17 @@ export const _meta = {
 		workspace: 'academic',
 		order: 10,
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.ACADEMIC_CATALOG
+		permission: [
+			PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL
+		]
 	}
 };
 
-export const load: PageLoad = ({ depends, fetch }) => {
-	depends(CATALOG_SUBJECT_GROUPS_DEPENDENCY);
-	return {
-		title: _meta.menu.title,
-		groups: captureRouteLoad(listSubjectGroups({ requestFetch: fetch }), 'โหลดกลุ่มสาระไม่สำเร็จ')
-	};
+export const load: PageLoad = ({ url }) => {
+	const destination = new URL(resolve('staff/organization'), url);
+	destination.searchParams.set('tab', 'subject-groups');
+	const selected = url.searchParams.get('group');
+	if (selected) destination.searchParams.set('group', selected);
+	redirect(307, destination.pathname + destination.search);
 };

@@ -542,7 +542,6 @@ async fn organization_unit_soft_deactivation_enforces_hierarchy_and_audit_rules(
     let create_under_inactive_parent = organization_unit_service::create_organization_unit(
         &pool,
         CreateOrganizationUnitRequest {
-            code: format!("TNEW{}", &fixture[..8]),
             name: format!("test new child {}", &fixture[..8]),
             name_en: None,
             description: None,
@@ -552,7 +551,6 @@ async fn organization_unit_soft_deactivation_enforces_hierarchy_and_audit_rules(
             location: None,
             category: None,
             unit_type: None,
-            subject_group_id: None,
         },
     )
     .await;
@@ -585,7 +583,6 @@ async fn organization_unit_soft_deactivation_enforces_hierarchy_and_audit_rules(
             is_active: None,
             category: None,
             unit_type: None,
-            subject_group_id: None,
         },
         actor_user_id,
     )
@@ -864,4 +861,93 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
     .await
     .expect("membership should be checked after rejected staff update");
     assert!(active_membership_still_remains);
+}
+
+#[tokio::test]
+async fn organization_auto_codes_and_learning_area_guards() {
+    let pool = school_test_db::create_named_test_pool("organization_auto_codes").await;
+    run_test_migrations(&pool).await;
+    let make = |name: &str, kind: &str, parent| CreateOrganizationUnitRequest {
+        name: name.into(),
+        name_en: None,
+        description: None,
+        parent_unit_id: parent,
+        phone: None,
+        email: None,
+        location: None,
+        category: None,
+        unit_type: Some(kind.into()),
+    };
+    let parent = organization_unit_service::create_organization_unit(
+        &pool,
+        make("กลุ่มบริหาร", "management_group", None),
+    )
+    .await
+    .unwrap();
+    let child = organization_unit_service::create_organization_unit(
+        &pool,
+        make("ฝ่ายงาน", "division", Some(parent)),
+    )
+    .await
+    .unwrap();
+    let first = organization_unit_service::get_organization_unit(&pool, parent)
+        .await
+        .unwrap();
+    let second = organization_unit_service::get_organization_unit(&pool, child)
+        .await
+        .unwrap();
+    assert!(first.code.starts_with("MG-"));
+    assert!(second.code.starts_with("DV-"));
+    assert!(second.display_order > first.display_order);
+    assert_eq!(second.parent_unit_id, Some(parent));
+    assert!(organization_unit_service::create_organization_unit(
+        &pool,
+        make("กลุ่มสาระหลุดทะเบียน", "subject_group", None)
+    )
+    .await
+    .is_err());
+    let group_unit: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE unit_type='subject_group' LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mutation = |parent| UpdateOrganizationUnitRequest {
+        name: None,
+        name_en: None,
+        description: None,
+        parent_unit_id: Some(parent),
+        phone: None,
+        email: None,
+        location: None,
+        is_active: None,
+        category: None,
+        unit_type: None,
+    };
+    assert!(organization_unit_service::update_organization_unit(
+        &pool,
+        parent,
+        mutation(child),
+        Uuid::nil()
+    )
+    .await
+    .is_err());
+    assert!(organization_unit_service::update_organization_unit(
+        &pool,
+        group_unit,
+        mutation(parent),
+        Uuid::nil()
+    )
+    .await
+    .is_err());
+    assert!(organization_unit_service::create_organization_unit(
+        &pool,
+        make("ใต้กลุ่มสาระ", "division", Some(group_unit))
+    )
+    .await
+    .is_err());
+    assert!(serde_json::from_str::<CreateOrganizationUnitRequest>(
+        r#"{"name":"งานทดสอบ","code":"MANUAL"}"#
+    )
+    .is_err());
 }

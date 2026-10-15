@@ -1228,3 +1228,20 @@ Large cleanup/reset operations persist a job before deleting bounded chunks. Whi
 Staff identity and qualification cutover uses migrations 113–114. Migration 113 preserves raw language values, expands the name read projection and backfills the person-owned qualification collection with the original staff-info identity and timestamps. Migration 114 holds the affected tables while reconciling counts, fingerprints, identities, ownership and all source values before removing the old single-qualification columns. Missing or stale evidence raises only `STAFF_PROFILE_RECONCILIATION_REQUIRED`; retain Maintenance Mode and remediate through a reviewed forward recovery. The deployment migration-status report requires all four `staffProfileCutover` checks before promoting the new consumers. After 114, recovery must roll forward with compatible code; the old staff binary cannot read the contracted schema. Do not restore an older binary against a migrated tenant or modify applied migrations. Rehearsal and failure-gate commands are in [testing](TESTING.md).
 
 Migration 115 adds a nullable staff teaching-licence file reference without changing existing licence metadata. Files purpose `teaching_license` requires private scanned PDF/JPEG/PNG/WebP uploads. Before the first such upload, the additive column remains compatible with the previous application; after uploads begin, retain code that recognizes that purpose and recover by rolling forward. Attachment saves promote temporary uploads to standard retention; replaced/removed documents and abandoned drafts use the existing Files retention worker. Never remove an attached object directly from storage.
+
+## Organization learning-area separation
+
+Migration 116 separates ordinary learning areas from the administrative hierarchy under
+SCHOOL while preserving unit/group IDs, members, grants and catalog owner snapshots.
+Run the normal migration/release workflow under universal maintenance. The migration
+blocks ambiguous or inconsistent mappings; remediate reported finding codes explicitly
+and rerun through the canonical migration runner. It emits only aggregate moved-unit
+and tree-grant review counts. Tree grants stay on their existing roots and are not
+copied to detached learning areas. Verify the intended users' resource scopes during
+authenticated acceptance. AC/ACAD-ACT retains its existing activity affiliation.
+
+After 116, old binaries that create independent registry/unit rows or accept caller-owned
+codes are prohibited. Deploy backend and frontend together and recover by rolling forward;
+do not restore an older binary against the migrated schema. Confirm one owner per group,
+newly created groups in catalog choices, separate member/grant controls and automatic codes
+before ending maintenance.

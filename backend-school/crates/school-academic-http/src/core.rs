@@ -81,9 +81,7 @@ pub fn routes() -> Router<AcademicHttpState> {
         )
         .route(
             "/catalog/subject-groups/{id}",
-            get(handlers::get_subject_group)
-                .patch(handlers::update_subject_group)
-                .delete(handlers::delete_subject_group),
+            get(handlers::get_subject_group).patch(handlers::update_subject_group),
         )
         .route(
             "/catalog/activities",

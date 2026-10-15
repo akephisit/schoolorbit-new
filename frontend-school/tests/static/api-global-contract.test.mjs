@@ -1044,10 +1044,10 @@ test('academic structure workspace pages gate read and mutation actions', async 
 test('academic catalog and curriculum workspaces gate mutation actions', async () => {
 	const routeExpectations = [
 		{
-			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
+			file: 'frontend-school/src/lib/components/staff/LearningAreaWorkspace.svelte',
 			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
-			identifiers: ['canManage']
+			identifiers: ['canCreate', 'canEdit']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/curricula/+page.svelte',

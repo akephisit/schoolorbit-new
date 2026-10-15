@@ -122,10 +122,11 @@ test('subject-group creation patches its card without rereading the collection',
 	);
 	await page.goto('/staff/academic/catalog/subject-groups', { waitUntil: 'domcontentloaded' });
 	await expect(page.getByTestId('catalog-subject-groups-ready')).toBeVisible();
-	await page.getByLabel('รหัส', { exact: true }).fill(group.code);
-	await page.getByLabel('ชื่อภาษาไทย').fill(group.nameTh);
+	await page.getByRole('button', { name: 'เพิ่มกลุ่มสาระ', exact: true }).click();
+	await expect(page.getByLabel('รหัส', { exact: true })).toHaveCount(0);
+	await page.getByLabel('ชื่อกลุ่มสาระ').fill(group.nameTh);
 	await page.getByLabel('ชื่อภาษาอังกฤษ').fill(group.nameEn);
-	await page.getByRole('button', { name: 'เพิ่มกลุ่มสาระ' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'บันทึก', exact: true }).click();
 	await expect(page.getByRole('heading', { name: group.nameTh })).toBeVisible();
 	expect(writes).toBe(1);
 	expect(requests.primary).toBe(1);
