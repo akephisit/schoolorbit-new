@@ -9,12 +9,6 @@ const routesRoot = path.resolve(
 );
 const cases = [
 	{
-		route: 'subject-groups',
-		read: 'listSubjectGroups',
-		result: 'groups',
-		dependency: 'CATALOG_SUBJECT_GROUPS_DEPENDENCY'
-	},
-	{
 		route: 'subjects',
 		read: 'getCatalogSubjectOverview',
 		result: 'overview',
@@ -48,10 +42,11 @@ test('catalog list regions start in route loaders and keep history lazy', async 
 	}
 });
 
-test('an empty but loaded subject-group collection remains usable on refresh failure', async () => {
-	const page = await readFile(path.join(routesRoot, 'subject-groups/+page.svelte'), 'utf8');
-	assert.match(page, /errorMessage\s*&&\s*!groupsReady/);
-	assert.match(page, /loading\s*&&\s*!groupsReady/);
+test('subject-group menu redirects to the single organization registry', async () => {
+	const loader = await readFile(path.join(routesRoot, 'subject-groups/+page.ts'), 'utf8');
+	assert.match(loader, /redirect\(307/);
+	assert.match(loader, /staff\/organization/);
+	assert.doesNotMatch(loader, /listSubjectGroups/);
 });
 
 test('retained catalog data exposes a focused retry after a refresh error', async () => {

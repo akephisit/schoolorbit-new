@@ -606,10 +606,18 @@
 
 							<div class="flex flex-wrap gap-2">
 								{#if canUpdateOrganizationUnit}
-									<Button variant="outline" class="gap-2" onclick={() => (showEditDialog = true)}>
-										<Pencil class="h-4 w-4" />
-										แก้ไขหน่วยงาน
-									</Button>
+									{#if department.unit_type === 'subject_group' && department.subject_group_id}
+										<Button
+											variant="outline"
+											href={`${resolve('staff/organization')}?tab=subject-groups&group=${department.subject_group_id}`}
+											>จัดการกลุ่มสาระ</Button
+										>
+									{:else}
+										<Button variant="outline" class="gap-2" onclick={() => (showEditDialog = true)}>
+											<Pencil class="h-4 w-4" />
+											แก้ไขหน่วยงาน
+										</Button>
+									{/if}
 								{/if}
 								{#if canReadOrganizationPermissions}
 									<Button
@@ -621,7 +629,7 @@
 										{canUpdateOrganizationPermissions ? 'สิทธิ์ตามตำแหน่ง' : 'ดูสิทธิ์ตามตำแหน่ง'}
 									</Button>
 								{/if}
-								{#if canCreateOrganizationUnit}
+								{#if canCreateOrganizationUnit && department?.unit_type !== 'subject_group'}
 									<Button class="gap-2" onclick={() => (showAddChildDialog = true)}>
 										<Plus class="h-4 w-4" />
 										เพิ่มหน่วยงานย่อย
@@ -728,7 +736,7 @@
 										หน่วยงานที่อยู่ภายใต้ {department?.name ?? 'หน่วยงานนี้'}
 									</p>
 								</div>
-								{#if canCreateOrganizationUnit}
+								{#if canCreateOrganizationUnit && department?.unit_type !== 'subject_group'}
 									<Button size="sm" class="gap-2" onclick={() => (showAddChildDialog = true)}>
 										<Plus class="h-4 w-4" />
 										เพิ่ม
@@ -1024,7 +1032,7 @@
 	{/if}
 </PageShell>
 
-{#if showEditDialog && canUpdateOrganizationUnit}
+{#if showEditDialog && canUpdateOrganizationUnit && department?.unit_type !== 'subject_group'}
 	<OrganizationUnitDialog
 		bind:open={showEditDialog}
 		organizationUnitToEdit={department}
@@ -1033,7 +1041,7 @@
 	/>
 {/if}
 
-{#if showAddChildDialog && canCreateOrganizationUnit}
+{#if showAddChildDialog && canCreateOrganizationUnit && department?.unit_type !== 'subject_group'}
 	<OrganizationUnitDialog
 		bind:open={showAddChildDialog}
 		organizationUnits={allDepartments}

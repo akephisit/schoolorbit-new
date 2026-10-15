@@ -52,7 +52,6 @@ const operations = [
 	['/api/academic/catalog/subject-groups', 'post', 'createSubjectGroup'],
 	['/api/academic/catalog/subject-groups/{id}', 'get', 'getSubjectGroup'],
 	['/api/academic/catalog/subject-groups/{id}', 'patch', 'updateSubjectGroup'],
-	['/api/academic/catalog/subject-groups/{id}', 'delete', 'deleteSubjectGroup'],
 	['/api/academic/catalog/activities', 'get', 'listCatalogActivities'],
 	['/api/academic/catalog/activities', 'post', 'createCatalogActivity'],
 	['/api/academic/catalog/activities/overview', 'get', 'getCatalogActivityOverview'],
@@ -335,7 +334,6 @@ test('placement transfers require an auditable reason', async () => {
 test('new academic workspaces own context and permission metadata', async () => {
 	const routes = [
 		['core', 'none', 'ACADEMIC_YEAR'],
-		['catalog/subject-groups', 'none', 'ACADEMIC_CATALOG'],
 		['catalog/subjects', 'none', 'ACADEMIC_CATALOG'],
 		['catalog/activities', 'none', 'ACADEMIC_CATALOG'],
 		['curricula', 'none', 'ACADEMIC_CURRICULUM'],

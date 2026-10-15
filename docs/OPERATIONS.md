@@ -1301,3 +1301,20 @@ There is no automatic payment collection. Expiry is warning-only, independent of
 school deployment/active status, and never blocks School login or reads. School
 deletion has no public Admin HTTP route in this release. Account deletion,
 suspension and school-data cleanup are not automatic subscription actions.
+
+## Organization learning-area separation
+
+Migration 116 separates ordinary learning areas from the administrative hierarchy under
+SCHOOL while preserving unit/group IDs, members, grants and catalog owner snapshots.
+Run the normal migration/release workflow under universal maintenance. The migration
+blocks ambiguous or inconsistent mappings; remediate reported finding codes explicitly
+and rerun through the canonical migration runner. It emits only aggregate moved-unit
+and tree-grant review counts. Tree grants stay on their existing roots and are not
+copied to detached learning areas. Verify the intended users' resource scopes during
+authenticated acceptance. AC/ACAD-ACT retains its existing activity affiliation.
+
+After 116, old binaries that create independent registry/unit rows or accept caller-owned
+codes are prohibited. Deploy backend and frontend together and recover by rolling forward;
+do not restore an older binary against the migrated schema. Confirm one owner per group,
+newly created groups in catalog choices, separate member/grant controls and automatic codes
+before ending maintenance.

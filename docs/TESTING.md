@@ -1248,3 +1248,26 @@ registration/explicit verification, email login, operator approval/CSRF, denied
 operator rendering, expiry warnings and mobile password reset. It uses only
 synthetic accounts and cannot contact Resend. `E2E_ADMIN_URL` can select another
 isolated Admin preview; never point this mocked fixture at a production tenant.
+
+## Organization and learning areas
+
+The organization route owns separate administration and learning-area sections. The academic
+subject-group route redirects to the latter. Run the affected service and scope checks on
+disposable PostgreSQL, then the mocked browser workflow against the local frontend preview:
+
+```bash
+./scripts/test_backend_school.sh --package school-academic-core learning_area -- --test-threads=4
+./scripts/test_backend_school.sh --package school-staff organization_auto_codes -- --test-threads=1
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http learning_area_registry --lib
+./scripts/test_backend_school.sh organization_learning_area_cutover -- --test-threads=1
+```
+
+From `frontend-school`, run API contract generation/check/tests, `npm run check`, focused
+ESLint/Prettier and `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test
+tests/e2e/organization-learning-areas.spec.ts tests/e2e/organization-region-loading.spec.ts
+tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium --workers=2`.
+The fixtures cover academic-only access, absent code inputs, failed-draft retention,
+local mutation reconciliation, lazy member reads, URL/history selection and mobile/desktop
+light/dark layouts. Database cases exercise pair rollback, concurrent codes, stale revisions,
+active-catalog deactivation refusal and concurrent creation/deactivation in both lock orders,
+migration preflight/retry and identity/grant preservation.

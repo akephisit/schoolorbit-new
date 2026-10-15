@@ -14891,6 +14891,10 @@
               "nameTh": {
                 "type": "string"
               },
+              "organizationUnitId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
@@ -14902,6 +14906,7 @@
             },
             "required": [
               "id",
+              "organizationUnitId",
               "code",
               "nameTh",
               "nameEn",
@@ -24547,6 +24552,10 @@
                 "nameTh": {
                   "type": "string"
                 },
+                "organizationUnitId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
@@ -24558,6 +24567,7 @@
               },
               "required": [
                 "id",
+                "organizationUnitId",
                 "code",
                 "nameTh",
                 "nameEn",
@@ -33999,15 +34009,13 @@
         "type": "object"
       },
       "CreateOrganizationUnitRequest": {
+        "additionalProperties": false,
         "properties": {
           "category": {
             "type": [
               "string",
               "null"
             ]
-          },
-          "code": {
-            "type": "string"
           },
           "description": {
             "type": [
@@ -34049,13 +34057,6 @@
               "null"
             ]
           },
-          "subject_group_id": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "unit_type": {
             "type": [
               "string",
@@ -34064,7 +34065,6 @@
           }
         },
         "required": [
-          "code",
           "name"
         ],
         "type": "object"
@@ -34672,15 +34672,12 @@
       "CreateSubjectGroupRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "displayOrder": {
             "format": "int32",
-            "type": "integer"
-          },
-          "isActive": {
-            "type": "boolean"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "nameEn": {
             "type": "string"
@@ -34690,11 +34687,7 @@
           }
         },
         "required": [
-          "code",
-          "nameTh",
-          "nameEn",
-          "displayOrder",
-          "isActive"
+          "nameTh"
         ],
         "type": "object"
       },
@@ -52345,6 +52338,10 @@
           "nameTh": {
             "type": "string"
           },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -52356,6 +52353,7 @@
         },
         "required": [
           "id",
+          "organizationUnitId",
           "code",
           "nameTh",
           "nameEn",
@@ -58844,6 +58842,7 @@
         "type": "object"
       },
       "UpdateOrganizationUnitRequest": {
+        "additionalProperties": false,
         "properties": {
           "category": {
             "type": [
@@ -58895,13 +58894,6 @@
             ]
           },
           "phone": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "subject_group_id": {
-            "format": "uuid",
             "type": [
               "string",
               "null"
@@ -59475,15 +59467,15 @@
       "UpdateSubjectGroupRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "displayOrder": {
             "format": "int32",
             "type": "integer"
           },
           "isActive": {
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "nameEn": {
             "type": "string"
@@ -59497,11 +59489,9 @@
           }
         },
         "required": [
-          "code",
           "nameTh",
           "nameEn",
           "displayOrder",
-          "isActive",
           "rowVersion"
         ],
         "type": "object"
@@ -62581,86 +62571,6 @@
       }
     },
     "/api/academic/catalog/subject-groups/{id}": {
-      "delete": {
-        "operationId": "deleteSubjectGroup",
-        "parameters": [
-          {
-            "description": "Subject group ID",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
-                }
-              }
-            },
-            "description": "Subject group deleted"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Subject group cannot be deleted"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic catalog management permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Subject group not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Subject group has dependent records"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      },
       "get": {
         "operationId": "getSubjectGroup",
         "parameters": [

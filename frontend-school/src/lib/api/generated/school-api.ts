@@ -255,7 +255,7 @@ export interface paths {
 		get: operations['getSubjectGroup'];
 		put?: never;
 		post?: never;
-		delete: operations['deleteSubjectGroup'];
+		delete?: never;
 		options?: never;
 		head?: never;
 		patch: operations['updateSubjectGroup'];
@@ -11235,6 +11235,8 @@ export interface components {
 				isActive?: boolean | null;
 				nameEn: string;
 				nameTh: string;
+				/** Format: uuid */
+				organizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date-time */
@@ -13863,6 +13865,8 @@ export interface components {
 				isActive?: boolean | null;
 				nameEn: string;
 				nameTh: string;
+				/** Format: uuid */
+				organizationUnitId: string;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date-time */
@@ -16459,7 +16463,6 @@ export interface components {
 		};
 		CreateOrganizationUnitRequest: {
 			category?: string | null;
-			code: string;
 			description?: string | null;
 			email?: string | null;
 			location?: string | null;
@@ -16468,8 +16471,6 @@ export interface components {
 			/** Format: uuid */
 			parent_unit_id?: string | null;
 			phone?: string | null;
-			/** Format: uuid */
-			subject_group_id?: string | null;
 			unit_type?: string | null;
 		};
 		CreateParentRequest: {
@@ -16612,11 +16613,9 @@ export interface components {
 			nameTh: string;
 		};
 		CreateSubjectGroupRequest: {
-			code: string;
 			/** Format: int32 */
-			displayOrder: number;
-			isActive: boolean;
-			nameEn: string;
+			displayOrder?: number | null;
+			nameEn?: string;
 			nameTh: string;
 		};
 		CreateSubjectVersionRequest: {
@@ -21541,6 +21540,8 @@ export interface components {
 			isActive?: boolean | null;
 			nameEn: string;
 			nameTh: string;
+			/** Format: uuid */
+			organizationUnitId: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: date-time */
@@ -23375,8 +23376,6 @@ export interface components {
 			/** Format: uuid */
 			parent_unit_id?: string | null;
 			phone?: string | null;
-			/** Format: uuid */
-			subject_group_id?: string | null;
 			unit_type?: string | null;
 		};
 		UpdateOwnProfileRequest: {
@@ -23499,10 +23498,9 @@ export interface components {
 			rowVersion: number;
 		};
 		UpdateSubjectGroupRequest: {
-			code: string;
 			/** Format: int32 */
 			displayOrder: number;
-			isActive: boolean;
+			isActive?: boolean | null;
 			nameEn: string;
 			nameTh: string;
 			/** Format: int64 */
@@ -25324,74 +25322,6 @@ export interface operations {
 			};
 			/** @description Subject group not found */
 			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	deleteSubjectGroup: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Subject group ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Subject group deleted */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_EmptyData'];
-				};
-			};
-			/** @description Subject group cannot be deleted */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic catalog management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject group not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Subject group has dependent records */
-			409: {
 				headers: {
 					[name: string]: unknown;
 				};

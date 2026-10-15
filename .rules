@@ -338,6 +338,8 @@ Use `ApiResponse` and `ApiErrorResponse` for application responses; do not retur
 - List endpoints combine independent scopes as a union. `own`, `assigned`, `organization_unit`, and `organization_tree` must not hide one another. Only a true `school`/all-record scope may short-circuit.
 - Add focused policy/service tests for allowed, denied, and multi-scope union behavior.
 - Organization grants apply to the exact unit and matching position. Do not infer parent/child permission inheritance; grant and enforce `*.organization_tree` explicitly.
+- `subject_groups` owns learning-area names, status and order; its transactional database projection owns the linked organization row. Ordinary learning areas attach directly to `SCHOOL`. Create them only through the registry, preserve AC/ACAD-ACT, and never infer administrative-tree access across that separation.
+- Organization/learning-area codes are server-generated and immutable; preserve existing codes and use UUIDv7 for new business identities.
 - `SCHOOL` remains the root organization unit. `is_primary` is the HR/home assignment, not an authorization source.
 - PII access is separate from ordinary profile access. Generic lookup endpoints must never expose national IDs, blind indexes, unnecessary contact data, medical/guardian-sensitive fields, or document identifiers.
 - After roles, grants, delegations, memberships, or permission definitions change, invalidate the relevant backend permission cache and emit `permission_changed`. The frontend then silently refreshes `/api/auth/me`; SSE/Web Push payloads are signals, not permission truth.

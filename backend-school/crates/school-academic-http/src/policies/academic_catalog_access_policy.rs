@@ -140,3 +140,82 @@ async fn catalog_resource_owner(
 
     owner.ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลคลังวิชาหรือกิจกรรม".to_string()))
 }
+
+#[derive(Clone, Copy)]
+pub enum SubjectGroupRegistryAction {
+    Read,
+    Create,
+    Update,
+    Deactivate,
+}
+
+/// Registry management is school-level; owning a unit never grants roster or permission administration.
+pub fn require_subject_group_registry_access(
+    actor: &ActorContext,
+    action: SubjectGroupRegistryAction,
+) -> Result<(), AppError> {
+    if actor.has_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL) {
+        return Ok(());
+    }
+    match action {
+        SubjectGroupRegistryAction::Read => actor
+            .require_any_permission(&[codes::ROLES_READ_ALL, codes::ACADEMIC_CATALOG_READ_SCHOOL]),
+        SubjectGroupRegistryAction::Create => actor.require_permission(codes::ROLES_CREATE_ALL),
+        SubjectGroupRegistryAction::Update => actor.require_permission(codes::ROLES_UPDATE_ALL),
+        SubjectGroupRegistryAction::Deactivate => {
+            actor.require_all_permissions(&[codes::ROLES_UPDATE_ALL, codes::ROLES_DELETE_ALL])
+        }
+    }
+}
+
+#[cfg(test)]
+mod learning_area_registry_tests {
+    use super::*;
+    fn actor(permissions: &[&str]) -> ActorContext {
+        ActorContext {
+            user_id: Uuid::nil(),
+            permissions: permissions.iter().map(|value| value.to_string()).collect(),
+        }
+    }
+    #[test]
+    fn learning_area_registry_separates_read_write_and_unit_scopes() {
+        use SubjectGroupRegistryAction::*;
+        for read in [codes::ACADEMIC_CATALOG_READ_SCHOOL, codes::ROLES_READ_ALL] {
+            assert!(require_subject_group_registry_access(&actor(&[read]), Read).is_ok());
+            assert!(require_subject_group_registry_access(&actor(&[read]), Create).is_err());
+            assert!(require_subject_group_registry_access(&actor(&[read]), Update).is_err());
+        }
+        for scoped in [
+            codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT,
+            codes::ACADEMIC_CATALOG_MANAGE_ORGANIZATION_TREE,
+        ] {
+            for action in [Read, Create, Update, Deactivate] {
+                assert!(require_subject_group_registry_access(&actor(&[scoped]), action).is_err());
+            }
+        }
+        for full in [codes::ACADEMIC_CATALOG_MANAGE_SCHOOL, codes::WILDCARD] {
+            for action in [Read, Create, Update, Deactivate] {
+                assert!(require_subject_group_registry_access(&actor(&[full]), action).is_ok());
+            }
+        }
+        assert!(
+            require_subject_group_registry_access(&actor(&[codes::ROLES_UPDATE_ALL]), Update)
+                .is_ok()
+        );
+        assert!(require_subject_group_registry_access(
+            &actor(&[codes::ROLES_UPDATE_ALL]),
+            Deactivate
+        )
+        .is_err());
+        assert!(require_subject_group_registry_access(
+            &actor(&[codes::ROLES_DELETE_ALL]),
+            Deactivate
+        )
+        .is_err());
+        assert!(require_subject_group_registry_access(
+            &actor(&[codes::ROLES_UPDATE_ALL, codes::ROLES_DELETE_ALL]),
+            Deactivate
+        )
+        .is_ok());
+    }
+}

@@ -633,6 +633,7 @@ pub struct ReplaceDefaultTeachersRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SubjectGroup {
     pub id: Uuid,
+    pub organization_unit_id: Uuid,
     pub code: String,
     pub name_th: String,
     pub name_en: String,
@@ -647,22 +648,20 @@ pub struct SubjectGroup {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSubjectGroupRequest {
-    pub code: String,
     pub name_th: String,
+    #[serde(default)]
     pub name_en: String,
-    pub display_order: i32,
-    pub is_active: bool,
+    pub display_order: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateSubjectGroupRequest {
-    pub code: String,
     pub name_th: String,
     pub name_en: String,
     pub display_order: i32,
-    pub is_active: bool,
+    pub is_active: Option<bool>,
     pub row_version: i64,
 }
 

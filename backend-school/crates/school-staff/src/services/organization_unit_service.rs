@@ -50,34 +50,53 @@ pub async fn create_organization_unit(
     pool: &PgPool,
     payload: CreateOrganizationUnitRequest,
 ) -> Result<Uuid, AppError> {
+    validate_unit_fields(payload.name.as_str(), payload.unit_type.as_deref(), None)?;
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!(%error, "failed to start organization unit create transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
 
-    if let Some(parent_unit_id) = payload.parent_unit_id {
-        require_active_parent(&mut tx, parent_unit_id).await?;
-    }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
+        .execute(&mut *tx)
+        .await?;
+    let parent_id = match payload.parent_unit_id {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar("SELECT id FROM organization_units WHERE code = 'SCHOOL'")
+                .fetch_one(&mut *tx)
+                .await?
+        }
+    };
+    require_active_parent(&mut tx, parent_id).await?;
+    let unit_type = organization_unit_type_or_default(payload.unit_type.clone());
+    let prefix = match unit_type.as_str() {
+        "management_group" => "MG",
+        "division" => "DV",
+        _ => "OU",
+    };
+    let code: String = sqlx::query_scalar("SELECT next_organization_code($1)")
+        .bind(prefix)
+        .fetch_one(&mut *tx)
+        .await?;
 
     let unit_id = sqlx::query_scalar(
         "INSERT INTO organization_units (
             code, name, name_en, description, parent_unit_id,
-            phone, email, location, category, unit_type, subject_group_id
+            phone, email, location, category, unit_type, display_order
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM organization_units))
          RETURNING id",
     )
-    .bind(&payload.code)
-    .bind(&payload.name)
+    .bind(code)
+    .bind(payload.name.trim())
     .bind(&payload.name_en)
     .bind(&payload.description)
-    .bind(payload.parent_unit_id)
+    .bind(parent_id)
     .bind(&payload.phone)
     .bind(&payload.email)
     .bind(&payload.location)
     .bind(organization_category_or_default(payload.category))
     .bind(organization_unit_type_or_default(payload.unit_type))
-    .bind(payload.subject_group_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -108,7 +127,53 @@ pub async fn update_organization_unit(
         tracing::error!(%unit_id, %error, "failed to start organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
+        .execute(&mut *tx)
+        .await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
+    if unit.unit_type == "subject_group" {
+        return Err(AppError::Conflict(
+            "กรุณาแก้ไขกลุ่มสาระจากทะเบียนกลุ่มสาระการเรียนรู้".to_string(),
+        ));
+    }
+    if unit.is_system
+        && payload
+            .unit_type
+            .as_ref()
+            .is_some_and(|kind| kind != &unit.unit_type)
+    {
+        return Err(AppError::Conflict(
+            "ไม่สามารถเปลี่ยนประเภทหน่วยงานระบบได้".to_string(),
+        ));
+    }
+    if payload.unit_type.as_deref() == Some("subject_group") {
+        return Err(AppError::ValidationError(
+            "กรุณาสร้างและเชื่อมกลุ่มสาระจากทะเบียนกลุ่มสาระการเรียนรู้".to_string(),
+        ));
+    }
+    if !unit.is_system {
+        validate_unit_fields(
+            payload.name.as_deref().unwrap_or(&unit.name),
+            payload.unit_type.as_deref().or(Some(&unit.unit_type)),
+            None,
+        )?;
+    }
+    if let Some(parent_id) = payload.parent_unit_id {
+        if unit.is_system {
+            return Err(AppError::Conflict("ไม่สามารถย้ายหน่วยงานระบบได้".to_string()));
+        }
+        let cycle: bool = sqlx::query_scalar(
+            "WITH RECURSIVE ancestors AS (
+                SELECT id, parent_unit_id FROM organization_units WHERE id = $1
+                UNION SELECT u.id, u.parent_unit_id FROM organization_units u JOIN ancestors a ON u.id = a.parent_unit_id
+             ) SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = $2)")
+            .bind(parent_id).bind(unit_id).fetch_one(&mut *tx).await?;
+        if cycle {
+            return Err(AppError::ValidationError(
+                "ไม่สามารถย้ายหน่วยงานไปอยู่ใต้ตัวเองหรือหน่วยงานย่อยได้".to_string(),
+            ));
+        }
+    }
     let effective_parent_unit_id = payload.parent_unit_id.or(unit.parent_unit_id);
     let resulting_is_active = payload.is_active.unwrap_or(unit.is_active);
 
@@ -144,7 +209,6 @@ pub async fn update_organization_unit(
             location = COALESCE($8, location),
             category = COALESCE($9, category),
             unit_type = COALESCE($10, unit_type),
-            subject_group_id = COALESCE($11, subject_group_id),
             updated_at = NOW()
          WHERE id = $1",
     )
@@ -158,7 +222,6 @@ pub async fn update_organization_unit(
     .bind(&payload.location)
     .bind(&payload.category)
     .bind(&payload.unit_type)
-    .bind(payload.subject_group_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -189,6 +252,8 @@ struct OrganizationUnitStatusRow {
     parent_unit_id: Option<Uuid>,
     is_active: bool,
     is_system: bool,
+    unit_type: String,
+    subject_group_id: Option<Uuid>,
 }
 
 async fn lock_organization_unit(
@@ -196,7 +261,7 @@ async fn lock_organization_unit(
     unit_id: Uuid,
 ) -> Result<OrganizationUnitStatusRow, AppError> {
     sqlx::query_as::<_, OrganizationUnitStatusRow>(
-        "SELECT name, parent_unit_id, is_active, is_system
+        "SELECT name, parent_unit_id, is_active, is_system, unit_type, subject_group_id
          FROM organization_units
          WHERE id = $1
          FOR UPDATE",
@@ -216,7 +281,7 @@ async fn require_active_parent(
     parent_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let parent_is_active = sqlx::query_scalar::<_, bool>(
-        "SELECT is_active
+        "SELECT is_active AND unit_type <> 'subject_group'
          FROM organization_units
          WHERE id = $1
          FOR SHARE",
@@ -269,6 +334,11 @@ async fn transition_locked_organization_unit_status(
     is_active: bool,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
+    if unit.unit_type == "subject_group" || unit.subject_group_id.is_some() {
+        return Err(AppError::Conflict(
+            "กรุณาเปลี่ยนสถานะผ่านทะเบียนกลุ่มสาระการเรียนรู้".to_string(),
+        ));
+    }
     if !is_active && unit.is_system {
         return Err(AppError::Conflict(
             "ไม่สามารถปิดใช้งานหน่วยงานระบบได้".to_string(),
@@ -380,6 +450,29 @@ pub async fn set_organization_unit_active(
     Ok(outcome)
 }
 
+fn validate_unit_fields(
+    name: &str,
+    unit_type: Option<&str>,
+    subject_group_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    if name.trim().is_empty() || name.trim().chars().count() > 200 {
+        return Err(AppError::ValidationError(
+            "กรุณาระบุชื่อหน่วยงานไม่เกิน 200 ตัวอักษร".to_string(),
+        ));
+    }
+    if subject_group_id.is_some()
+        || !matches!(
+            unit_type.unwrap_or("division"),
+            "management_group" | "division" | "committee" | "team" | "unit" | "custom"
+        )
+    {
+        return Err(AppError::ValidationError(
+            "ประเภทหน่วยงานไม่ถูกต้อง กรุณาจัดการกลุ่มสาระผ่านทะเบียนกลุ่มสาระ".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn organization_category_or_default(category: Option<String>) -> String {
     category.unwrap_or_else(|| "general".to_string())
 }
@@ -408,5 +501,18 @@ mod tests {
             organization_unit_type_or_default(Some("management_group".to_string())),
             "management_group"
         );
+    }
+}
+
+#[cfg(test)]
+mod learning_area_validation_tests {
+    use super::*;
+    #[test]
+    fn generic_unit_cannot_create_unlinked_learning_area_or_second_school() {
+        assert!(validate_unit_fields("คณิตศาสตร์", Some("subject_group"), None).is_err());
+        assert!(validate_unit_fields("คณิตศาสตร์", Some("division"), Some(Uuid::now_v7())).is_err());
+        assert!(validate_unit_fields("โรงเรียน", Some("school"), None).is_err());
+        assert!(validate_unit_fields("  ", Some("division"), None).is_err());
+        assert!(validate_unit_fields("งานวัดผล", Some("division"), None).is_ok());
     }
 }
