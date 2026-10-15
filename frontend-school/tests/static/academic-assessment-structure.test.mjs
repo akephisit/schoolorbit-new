@@ -101,7 +101,7 @@ test('backend assessment model is term and offering scoped with optimistic locki
 	assert.match(model, /pub learning_group_ids: Vec<Uuid>/);
 	assert.match(model, /pub row_version: Option<i64>/);
 	assert.match(model, /pub assessment_total_score: String/);
-	assert.match(model, /#\[into_params\(parameter_in = Query\)\]/);
+	assert.match(model, /#\[cfg_attr\(feature = "api-docs", into_params\(parameter_in = Query\)\)\]/);
 	assert.doesNotMatch(
 		model,
 		/classroom_course_id|academic_semester_id|CourseGradingPolicy|grading_policy/
