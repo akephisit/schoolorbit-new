@@ -1,0 +1,214 @@
+use sqlx::PgPool;
+use tokio::sync::broadcast;
+use uuid::Uuid;
+
+use crate::models::CalendarEvent;
+use crate::services::{dedupe_user_ids, CalendarNotificationKind};
+use school_errors::AppError;
+use school_notifications::events::TenantNotificationEvent;
+use school_notifications::publisher::NotificationService;
+use school_notifications::publisher::NotificationType;
+use school_notifications::publisher::TenantNotificationPublisher;
+
+#[derive(sqlx::FromRow)]
+struct NotificationRecipientRow {
+    id: Uuid,
+    user_type: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalendarNotificationSendOutcome {
+    pub recipient_count: usize,
+    pub successful_count: usize,
+    pub failed_count: usize,
+}
+
+impl CalendarNotificationSendOutcome {
+    pub(super) fn should_mark_reminder_sent(self) -> bool {
+        self.recipient_count == 0 || self.successful_count > 0
+    }
+}
+
+pub async fn resolve_event_recipient_user_ids(
+    pool: &PgPool,
+    event_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        WITH targets AS (
+            SELECT target.audience_type, target.grade_level_id, target.homeroom_id, target.academic_year_id, event.start_date
+            FROM calendar_event_targets target JOIN calendar_events event ON event.id=target.event_id
+            WHERE target.event_id = $1
+        )
+        SELECT users.id
+        FROM users
+        WHERE users.status = 'active'
+          AND users.user_type IN ('staff', 'student', 'parent')
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'all'
+          )
+
+        UNION ALL
+
+        SELECT users.id
+        FROM users
+        WHERE users.status = 'active'
+          AND users.user_type = 'staff'
+          AND EXISTS (
+              SELECT 1 FROM targets
+              WHERE targets.audience_type = 'staff'
+          )
+
+        UNION ALL
+
+        SELECT users.id FROM users
+        WHERE users.status='active' AND users.user_type='student'
+          AND EXISTS (SELECT 1 FROM targets WHERE audience_type='student' AND grade_level_id IS NULL AND homeroom_id IS NULL AND academic_year_id IS NULL)
+
+        UNION ALL
+
+        SELECT parent_users.id FROM users parent_users
+        JOIN student_parents links ON links.parent_user_id=parent_users.id
+        JOIN users student_users ON student_users.id=links.student_user_id AND student_users.status='active'
+        WHERE parent_users.status='active' AND parent_users.user_type='parent'
+          AND EXISTS (SELECT 1 FROM targets WHERE audience_type='parent' AND grade_level_id IS NULL AND homeroom_id IS NULL AND academic_year_id IS NULL)
+
+        UNION ALL
+
+        SELECT users.id
+        FROM users
+        JOIN student_academic_years student_year ON student_year.student_id = users.id
+        LEFT JOIN homeroom_placements placement
+          ON placement.student_academic_year_id = student_year.id
+         AND placement.status IN ('planned', 'current')
+        JOIN targets
+          ON targets.audience_type = 'student'
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
+        WHERE users.status = 'active'
+          AND users.user_type = 'student'
+          AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
+          AND (targets.homeroom_id IS NULL OR placement.homeroom_id = targets.homeroom_id)
+
+        UNION ALL
+
+        SELECT parent_users.id
+        FROM users parent_users
+        JOIN student_parents
+          ON student_parents.parent_user_id = parent_users.id
+        JOIN users student_users
+          ON student_users.id = student_parents.student_user_id
+         AND student_users.status = 'active'
+         AND student_users.user_type = 'student'
+        JOIN student_academic_years student_year
+          ON student_year.student_id = student_users.id
+        LEFT JOIN homeroom_placements placement
+          ON placement.student_academic_year_id = student_year.id
+         AND placement.status IN ('planned', 'current')
+        JOIN targets
+          ON targets.audience_type = 'parent'
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
+        WHERE parent_users.status = 'active'
+          AND parent_users.user_type = 'parent'
+          AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
+          AND (targets.homeroom_id IS NULL OR placement.homeroom_id = targets.homeroom_id)
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(dedupe_user_ids(ids))
+}
+
+pub async fn send_event_notification(
+    pool: &PgPool,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
+    event: &CalendarEvent,
+    notification_kind: CalendarNotificationKind,
+) -> Result<CalendarNotificationSendOutcome, AppError> {
+    let recipient_ids = resolve_event_recipient_user_ids(pool, event.id).await?;
+    if recipient_ids.is_empty() {
+        return Ok(CalendarNotificationSendOutcome {
+            recipient_count: 0,
+            successful_count: 0,
+            failed_count: 0,
+        });
+    }
+
+    let recipients = sqlx::query_as::<_, NotificationRecipientRow>(
+        r#"
+        SELECT id, user_type
+        FROM users
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(&recipient_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let (title, message) = calendar_notification_text(event, &notification_kind);
+    let publisher = TenantNotificationPublisher::new(tenant, notification_channel);
+    let mut successful_count = 0;
+    let mut failed_count = 0;
+    for recipient in recipients {
+        if let Err(error) = NotificationService::send(
+            pool,
+            &publisher,
+            recipient.id,
+            &title,
+            &message,
+            NotificationType::Info,
+            calendar_notification_link_for_user_type(&recipient.user_type),
+        )
+        .await
+        {
+            tracing::error!(
+                event_id = %event.id,
+                recipient_user_id = %recipient.id,
+                error = %error,
+                "Calendar event notification failed for recipient"
+            );
+            failed_count += 1;
+        } else {
+            successful_count += 1;
+        }
+    }
+
+    Ok(CalendarNotificationSendOutcome {
+        recipient_count: successful_count + failed_count,
+        successful_count,
+        failed_count,
+    })
+}
+
+pub(super) fn calendar_notification_text(
+    event: &CalendarEvent,
+    kind: &CalendarNotificationKind,
+) -> (String, String) {
+    match kind {
+        CalendarNotificationKind::Created => (
+            format!("เพิ่มกำหนดการ: {}", event.title),
+            "มีกำหนดการใหม่ในปฏิทินโรงเรียน".to_string(),
+        ),
+        CalendarNotificationKind::Updated => (
+            format!("อัปเดตกำหนดการ: {}", event.title),
+            "มีการเปลี่ยนแปลงกำหนดการในปฏิทินโรงเรียน".to_string(),
+        ),
+        CalendarNotificationKind::Reminder { days_before } => (
+            format!("เตือนล่วงหน้า: {}", event.title),
+            format!("กำหนดการนี้จะเริ่มในอีก {} วัน", days_before),
+        ),
+    }
+}
+
+pub(super) fn calendar_notification_link_for_user_type(user_type: &str) -> Option<&'static str> {
+    match user_type {
+        "staff" => Some("/staff/calendar"),
+        "student" => Some("/student/calendar"),
+        // V1 falls back to the parent workspace; exact child-specific links need child mapping.
+        "parent" => Some("/parent"),
+        _ => None,
+    }
+}

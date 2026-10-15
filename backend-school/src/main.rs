@@ -1,21 +1,22 @@
 #![deny(dead_code, unused_imports)]
 
+mod adapters;
 #[cfg(feature = "api-docs")]
 pub mod api_contract;
 mod app;
-mod behavior_provider_adapter;
+#[cfg(test)]
 mod db;
 mod http_state;
+#[cfg(test)]
+mod integration_tests;
 mod middleware;
-mod modules;
-mod policies;
+mod system;
+
 mod scheduling;
 mod services;
 mod utils;
 
-use crate::modules::notification::events::{TenantNotificationEvent, WorkChangeEvent};
 use dotenvy::dotenv;
-use school_auth::events::PermissionChangeEvent;
 use school_authorization::PermissionCache;
 use school_file_platform::{
     malware_scanner::{ClamdConfig, ClamdScanner},
@@ -23,22 +24,22 @@ use school_file_platform::{
     r2_storage_provider::R2StorageProvider,
     runtime_config::FilePlatformRuntimeConfig,
 };
+use school_notifications::events::{TenantNotificationEvent, WorkChangeEvent};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
-use uuid::Uuid;
 
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
     pub admin_client: Arc<AdminClient>,
     pub pool_manager: Arc<PoolManager>,
-    pub websocket_manager: Arc<modules::academic::websockets::WebSocketManager>,
+    pub websocket_manager: Arc<school_academic_http::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<TenantNotificationEvent>,
-    pub permission_event_channel: broadcast::Sender<PermissionChangeEvent>,
+
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
-    pub permission_cache: Arc<PermissionCache>,
+
     pub file_platform: Arc<FilePlatform>,
     pub certificate_verification_limiter:
         Arc<school_certificates::verification_limiter::CertificateVerificationLimiter>,
@@ -46,37 +47,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn invalidate_permission_user(&self, tenant: &str, target_user_id: Uuid) {
-        self.auth_runtime
-            .invalidate_permission_user(tenant, target_user_id);
-    }
-
     pub fn invalidate_permission_tenant(&self, tenant: &str) {
         self.auth_runtime.invalidate_permission_tenant(tenant);
     }
-
-    pub fn notify_permission_changed(&self, tenant: &str, target_user_id: Uuid) {
-        let _ = self
-            .permission_event_channel
-            .send(PermissionChangeEvent::for_user(tenant, target_user_id));
-    }
-
     pub fn notify_all_permissions_changed(&self, tenant: &str) {
-        let _ = self
-            .permission_event_channel
-            .send(PermissionChangeEvent::for_all_users(tenant));
-    }
-
-    pub fn notify_work_items_changed(&self, tenant: &str) {
-        let _ = self
-            .work_event_channel
-            .send(WorkChangeEvent::work_items_changed(tenant));
-    }
-
-    pub fn notify_workflow_window_changed(&self, tenant: &str) {
-        let _ = self
-            .work_event_channel
-            .send(WorkChangeEvent::workflow_window_changed(tenant));
+        self.auth_runtime.notify_all_permissions_changed(tenant);
     }
 }
 
@@ -146,7 +121,7 @@ async fn main() {
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
 
     let pool_manager = Arc::new(PoolManager::new());
-    let websocket_manager = Arc::new(modules::academic::websockets::WebSocketManager::new());
+    let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();
 
     let (notification_tx, _) = broadcast::channel(100);
@@ -223,9 +198,9 @@ async fn main() {
         pool_manager,
         websocket_manager,
         notification_channel: notification_tx,
-        permission_event_channel: permission_event_tx,
+
         work_event_channel: work_event_tx,
-        permission_cache,
+
         file_platform,
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
@@ -335,7 +310,7 @@ async fn main() {
                 let Ok(_guard) = running.try_lock() else {
                     return;
                 };
-                state.permission_cache.cleanup_expired();
+                state.auth_runtime.permission_cache.cleanup_expired();
                 let cleanup = async {
                     let Ok(schools) = state.admin_client.list_active_schools().await else {
                         return;
@@ -392,7 +367,7 @@ async fn main() {
             let notification_channel = notification_channel_for_calendar_job.clone();
 
             Box::pin(async move {
-                modules::calendar::services::process_due_calendar_reminders_for_all_tenants(
+                school_calendar::delivery::process_due_calendar_reminders_for_all_tenants(
                     admin_client,
                     pool_manager,
                     notification_channel,
@@ -430,7 +405,14 @@ async fn main() {
         calendar_next_run,
     );
     sched.start().await.expect("Failed to start scheduler");
-    tokio::spawn(modules::attendance::runtime::start(state.clone()));
+    tokio::spawn(school_attendance::runtime::start(
+        school_attendance::runtime::AttendanceRuntimeState {
+            admin_client: state.admin_client.clone(),
+            pool_manager: state.pool_manager.clone(),
+            notification_channel: state.notification_channel.clone(),
+            behavior: &adapters::behavior::APPLICATION_BEHAVIOR,
+        },
+    ));
 
     axum::serve(
         listener,

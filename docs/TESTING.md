@@ -133,10 +133,12 @@ cargo test -p school-staff --features api-docs personnel_schema_enum_matches_ser
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
 `cargo test -p school-academic-http`, `cargo test -p school-certificates-http`,
 `cargo test -p school-navigation`, and `cargo test -p school-notifications`.
+The other domain owners expose their concrete routes under `http`; changed owners also run
+through the disposable database wrapper when their tests need PostgreSQL.
 The application owns `FromRef` state selection and injected realtime, result-lock,
 lifecycle and file-deletion adapters. Architecture guards inspect the actual crate
-implementation paths; root cross-domain/database fixtures retain their original
-application-level ownership. Keep the full OpenAPI artifact byte-identical when
+implementation paths; cross-domain/database fixtures retain application-level ownership in
+`src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
 For tenant pool lifecycle changes, run the `school-tenancy` pool-manager tests through
@@ -153,6 +155,8 @@ historical outage's initiating network or server fault.
 Foundation ownership can be checked independently:
 
 ```bash
+cargo test -p school-permissions
+cargo test -p school-migrations
 cargo test -p school-errors
 cargo test -p school-http
 cargo test -p school-authorization
@@ -203,7 +207,7 @@ All three public Certificate routes retain malformed-body and 16 KiB rejection p
 headers, including method rejection. Architecture inventories follow feature route modules and
 their application-owned prefixes instead of assuming registrations live in `app.rs`.
 
-Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
+Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh integration_tests::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
 
 Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
 migration and concurrent writers against disposable PostgreSQL using:
@@ -212,10 +216,10 @@ migration and concurrent writers against disposable PostgreSQL using:
 ./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
 ./scripts/test_backend_school.sh --integration delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture
 ./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --nocapture
-./scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
-./scripts/test_backend_school.sh modules::academic::services::timetable_ -- --nocapture
-./scripts/test_backend_school.sh modules::academic::lifecycle::services::term_preparation_tests -- --nocapture
-./scripts/test_backend_school.sh modules::system::handlers::migration::tests -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::lifecycle::services::term_preparation_tests -- --nocapture
+./scripts/test_backend_school.sh system::handlers::migration::tests -- --nocapture
 ./scripts/test_backend_school.sh --package school-academic-delivery
 ./scripts/test_backend_school.sh --package school-academic-timetable
 ```
@@ -379,10 +383,10 @@ From the repository root, use the disposable local PostgreSQL runner for applica
 realtime, profile/File Platform, and cross-domain behavior:
 
 ```bash
-./scripts/test_backend_school.sh modules::auth::session_http_tests -- --nocapture
-./scripts/test_backend_school.sh modules::auth::profile_integration_tests -- --nocapture
-./scripts/test_backend_school.sh modules::auth::staff_integration_tests -- --nocapture
-./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --nocapture
+./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --nocapture
+./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --nocapture
+./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture
 ```
 
 From `frontend-school`, verify the browser security boundary and client state:
@@ -440,7 +444,7 @@ The public school homepage uses disposable API fixtures, including streamed load
 
 ```bash
 # Repository root
-./scripts/test_backend_school.sh modules::school -- --nocapture
+./scripts/test_backend_school.sh integration_tests::school -- --nocapture
 # frontend-school (the browser specs start their own local servers)
 node --experimental-strip-types --test tests/runtime/public-school-organization.test.ts
 node --experimental-strip-types --test tests/runtime/public-school-seo.test.ts
@@ -732,8 +736,8 @@ Run the canonical personnel owner and its historical SQL migration fixtures agai
 
 ```bash
 ./scripts/test_backend_school.sh --package school-staff -- --test-threads=1
-./scripts/test_backend_school.sh modules::staff -- --test-threads=1
-./scripts/test_backend_school.sh policies::staff_access_policy::tests -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::staff -- --test-threads=1
+./scripts/test_backend_school.sh --package school-staff staff_access_policy::tests -- --test-threads=1
 ```
 
 The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, person-owned text validation, preserved custom/inactive positions and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Career tests additionally cover migration 085 preservation and deferred owner/kind/value guards, transactional current projections, reasoned corrections, stale revisions, concurrent writers, safe UUID retries, staff-scoped cursors, optional dates and writer-only acknowledgements. Root HTTP tests exercise own/unit/tree/school reads, denied writes and the production session boundary. Historical migration readers are private test-only helpers; production has no personnel preflight endpoint or cutover report.
@@ -765,42 +769,42 @@ one-time runtime CLI is retired after Phase B.
 
 ```bash
 ./scripts/test_backend_school.sh \
-  modules::academic::cutover_test_preflight_database_tests -- --nocapture --test-threads=1
+  integration_tests::academic::cutover_test_preflight_database_tests -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_041_maps_core_fixture \
+  integration_tests::academic::core::schema_tests::migration_041_maps_core_fixture \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::delivery::services_tests::migration_042_maps_delivery_fixture \
+  integration_tests::academic::delivery::services_tests::migration_042_maps_delivery_fixture \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_043_maps_all_consumers \
+  integration_tests::academic::core::schema_tests::migration_043_maps_all_consumers \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_044_exposes_the_clean_academic_core_runtime_contract \
+  integration_tests::academic::core::schema_tests::migration_044_exposes_the_clean_academic_core_runtime_contract \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_removes_legacy_schema \
+  integration_tests::academic::core::schema_tests::migration_045_removes_legacy_schema \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_fails_closed_without_current_reconciliation_evidence \
+  integration_tests::academic::core::schema_tests::migration_045_fails_closed_without_current_reconciliation_evidence \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_accepts_a_valid_marker_with_distinct_reconciliation_counts \
+  integration_tests::academic::core::schema_tests::migration_045_accepts_a_valid_marker_with_distinct_reconciliation_counts \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_rejects_a_mapping_delete_committed_after_the_marker \
+  integration_tests::academic::core::schema_tests::migration_045_rejects_a_mapping_delete_committed_after_the_marker \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_rejects_a_deleted_expanded_delivery_target \
+  integration_tests::academic::core::schema_tests::migration_045_rejects_a_deleted_expanded_delivery_target \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_rejects_a_deleted_legacy_mapping_source \
+  integration_tests::academic::core::schema_tests::migration_045_rejects_a_deleted_legacy_mapping_source \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_045_rejects_source_field_drift_committed_after_the_marker \
+  integration_tests::academic::core::schema_tests::migration_045_rejects_source_field_drift_committed_after_the_marker \
   -- --exact --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::system::handlers::migration::tests -- --nocapture --test-threads=1
+  system::handlers::migration::tests -- --nocapture --test-threads=1
 ```
 
 Then run the complete disposable PostgreSQL suite:
@@ -846,9 +850,9 @@ repository root:
 
 ```bash
 ./scripts/test_backend_school.sh \
-  modules::academic::core::schema_tests::migration_060 -- --nocapture --test-threads=1
+  integration_tests::academic::core::schema_tests::migration_060 -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh \
-  modules::system::handlers::migration::tests::gradebook_results_status \
+  system::handlers::migration::tests::gradebook_results_status \
   -- --nocapture --test-threads=1
 ```
 
@@ -1008,9 +1012,9 @@ Run the focused adapter tests as well:
 Session-cache and hidden-tab regressions can be exercised without a live tenant:
 
 ```bash
-./scripts/test_backend_school.sh modules::auth -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh modules::notification::handlers::tests -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh integration_tests::auth -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-notifications http::handlers::tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture --test-threads=1
 cd frontend-school
 node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-runtime.test.mjs tests/static/auth-refresh-races.test.mjs tests/static/timetable-socket-runtime.test.mjs
 ```
@@ -1050,7 +1054,7 @@ Run central authorization, inspection, atomic attach, reference-safe delete, and
 ```bash
 ./scripts/test_backend_school.sh --package school-fonts -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh --package school-certificates -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh modules::certificates::handlers::tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-certificates-http handlers::tests -- --nocapture --test-threads=1
 ```
 
 Run the generated-contract, reusable-uploader, manager-only route, upload retry/cleanup, and delete-conflict coverage from `frontend-school`:
@@ -1070,7 +1074,7 @@ Run the complete certificate lifecycle against an isolated tenant with dedicated
 
 ```bash
 ./scripts/test_backend_school.sh --package school-certificates -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh modules::certificates::handlers::tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-certificates-http handlers::tests -- --nocapture --test-threads=1
 CARGO_BUILD_JOBS=1 cargo test --manifest-path backend-school/Cargo.toml --test static_architecture certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral -- --exact --test-threads=1
 ```
 
@@ -1128,7 +1132,7 @@ The sandbox E2E workflow uses Ubuntu 24.04.
 
 ## Date calendar and activity requests
 
-Run `cargo test -p school-calendar` for date/time validation and request authorization policy. Run `./scripts/test_backend_school.sh modules::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants; and verify stored notifications, tenant/user-scoped realtime delivery, concurrent decision deduplication and committed outcomes when notification storage fails. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
+Run `cargo test -p school-calendar` for date/time validation and request authorization policy. Run `./scripts/test_backend_school.sh integration_tests::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants; and verify stored notifications, tenant/user-scoped realtime delivery, concurrent decision deduplication and committed outcomes when notification storage fails. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
 
 Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-region-loading.spec.ts tests/e2e/calendar-requests.spec.ts tests/e2e/calendar-pending-overlay.spec.ts tests/e2e/calendar-timed-display.spec.ts tests/e2e/calendar-event-popovers.spec.ts tests/e2e/calendar-embed-dialog.spec.ts tests/e2e/calendar-action-menus.spec.ts --project=chromium`. The fixtures use synthetic staff sessions and intercept calendar APIs. Action-menu cases cover header and selected-day creation menus, date inheritance, manager/requester/reader permissions, disabled catalog actions, settings tools and the absence of an extra empty-month box. They do not exercise a deployed database. The request tests cover selected-day defaults in a future month, timed defaults, 24-hour compact input normalization, invalid time refusal, minimal payloads, failure draft retention, own status tracking, approval and rejection, including desktop and mobile layouts. Timed-display cases inspect centered dates, continuous all-day bars, per-day timed dots, retained edit values and desktop/mobile light/dark layouts; pure helper tests cover time boundaries, week-spanning layout and per-day timed lane packing. Event popover cases verify full-width staff calendars, direct event selection, complete details, manager/reader actions, keyboard focus return, outside mouse/touch dismissal without reopening another day, context changes and mobile/desktop light/dark layouts. Region-loading cases verify stable paired navigation buttons and an immediately visible new-month grid during delayed event reads. Public and staff mobile cases hide grid times while retaining full times in details and on desktop. Pending overlay cases cover inline manager approval/rejection with local draft retry, lazy detail loading and cancellation, compact filter popovers, removed notices, lazy reads, multiday and timed markers, toggle cancellation, month/history ownership, independent errors/retry, explicit overflow, scope controls and mutation patches. The calendar database suite also verifies oldest-first review paging and ties with approved requests excluded before pagination, manager-only detail access, newest-first own history, pending-only date overlap, private scope and bounded overlay results.
 
@@ -1154,10 +1158,10 @@ From `frontend-school`, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright t
 
 ## Supply catalog
 
-Supply catalog ownership is in `backend-school/src/modules/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
+Supply catalog ownership is in `backend-school/crates/school-administration/src/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
 
 ```bash
-./scripts/test_backend_school.sh modules::supply_catalog -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::supply_catalog -- --test-threads=4
 cargo test --manifest-path backend-school/Cargo.toml -p school-file-platform --lib catalog_images
 cargo test --manifest-path backend-school/Cargo.toml -p school-file-platform --lib supply
 ```

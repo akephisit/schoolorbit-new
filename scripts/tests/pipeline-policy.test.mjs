@@ -9,7 +9,7 @@ import { trustedRun, validateState } from '../lib/pipeline-state.mjs';
 
 test('UI, service, docs, tests and control changes have separate verification/deployment scopes', () => {
   assert.deepEqual(classify(['frontend-school/src/routes/+page.svelte']).verify, ['documentation', 'frontend-school']);
-  assert.deepEqual(classify(['backend-school/src/modules/menu/services.rs']).deploy, ['backend-school']);
+  assert.deepEqual(classify(['backend-school/crates/school-navigation/src/http/handlers/admin.rs']).deploy, ['backend-school']);
   assert.deepEqual(classify(['backend-admin/src/main.rs']).deploy, ['backend-admin']);
   assert.ok(classify(['backend-school/crates/school-auth-http/src/origin.rs']).verify.includes('frontend-school'));
   assert.deepEqual(classify(['backend-school/crates/school-auth-http/src/origin.rs']).deploy, ['backend-school']);

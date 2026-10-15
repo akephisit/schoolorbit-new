@@ -258,3 +258,11 @@ pub fn personal_routes() -> Router<AcademicHttpState> {
             get(crate::handlers::exam_schedule::list_staff_exam_schedule),
         )
 }
+
+// WebSocket authenticates its upgrade using the same session runtime and tenant-origin policy.
+pub fn websocket_routes() -> Router<crate::state::AcademicWebSocketState> {
+    Router::new().route(
+        "/timetable",
+        get(crate::websockets::timetable_websocket_handler),
+    )
+}

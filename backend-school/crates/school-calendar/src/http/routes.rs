@@ -1,0 +1,73 @@
+use super::handlers;
+use crate::http::state::CalendarHttpState;
+use axum::{routing::get, Router};
+
+pub fn public_routes() -> Router<CalendarHttpState> {
+    Router::new().route(
+        "/public/calendar/events",
+        get(handlers::list_public_calendar_events),
+    )
+}
+
+pub fn protected_routes() -> Router<CalendarHttpState> {
+    Router::new().route(
+        "/me/calendar/events",
+        get(handlers::list_my_calendar_events),
+    )
+}
+
+use super::request_handlers;
+
+use axum::routing::put;
+
+pub fn management_routes() -> Router<CalendarHttpState> {
+    Router::new()
+        .route(
+            "/requests",
+            get(request_handlers::list_requests).post(request_handlers::create_request),
+        )
+        .route(
+            "/requests/calendar",
+            get(request_handlers::list_pending_calendar),
+        )
+        .route(
+            "/requests/{id}",
+            get(request_handlers::get_request_for_review),
+        )
+        .route(
+            "/requests/{id}/approve",
+            axum::routing::post(request_handlers::approve_request),
+        )
+        .route(
+            "/requests/{id}/reject",
+            axum::routing::post(request_handlers::reject_request),
+        )
+        .route(
+            "/target-options",
+            get(request_handlers::list_target_options),
+        )
+        .route(
+            "/events",
+            get(handlers::list_calendar_events).post(handlers::create_calendar_event),
+        )
+        .route(
+            "/events/{id}",
+            put(handlers::update_calendar_event).delete(handlers::delete_calendar_event),
+        )
+        .route(
+            "/categories",
+            get(handlers::list_calendar_categories).post(handlers::create_calendar_category),
+        )
+        .route(
+            "/categories/{id}",
+            put(handlers::update_calendar_category).delete(handlers::delete_calendar_category),
+        )
+        .route(
+            "/tags",
+            get(handlers::list_calendar_tags).post(handlers::create_calendar_tag),
+        )
+        .route(
+            "/tags/{id}",
+            put(handlers::update_calendar_tag).delete(handlers::delete_calendar_tag),
+        )
+}

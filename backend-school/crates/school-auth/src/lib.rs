@@ -20,5 +20,6 @@ mod session_repository_tests;
 #[cfg(test)]
 mod session_schema_tests;
 
+pub mod consent;
 #[cfg(test)]
 mod session_service_tests;

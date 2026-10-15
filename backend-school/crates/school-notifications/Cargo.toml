@@ -5,10 +5,20 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-http/api-docs",
+    "school-auth/api-docs",
     "dep:utoipa",
 ]
 
 [dependencies]
+async-stream = { workspace = true }
+futures = { workspace = true }
+school-permissions = { workspace = true }
+school-authorization = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 school-errors = { workspace = true }
@@ -19,6 +29,10 @@ tracing = { workspace = true }
 utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 web-push = { workspace = true }
+
+[dev-dependencies]
+school-auth = { workspace = true, features = ["test-support"] }
+school-tenancy = { workspace = true }
 
 [lints]
 workspace = true

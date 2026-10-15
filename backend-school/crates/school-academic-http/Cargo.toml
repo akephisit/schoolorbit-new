@@ -17,6 +17,11 @@ api-docs = [
 ]
 
 [dependencies]
+serde_json = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+dashmap = { workspace = true }
 tracing = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
@@ -39,6 +44,8 @@ utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+school-auth = { workspace = true, features = ["test-support"] }
+school-tenancy = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 

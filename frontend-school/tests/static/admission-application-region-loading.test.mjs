@@ -67,12 +67,18 @@ test('national-ID search has a permission-gated POST contract and no GET query h
 		),
 		readFile(
 			new URL(
-				'../../../backend-school/src/modules/admission/handlers/applications.rs',
+				'../../../backend-school/crates/school-admission/src/http/handlers/applications.rs',
 				import.meta.url
 			),
 			'utf8'
 		),
-		readFile(new URL('../../../backend-school/src/modules/admission.rs', import.meta.url), 'utf8'),
+		readFile(
+			new URL(
+				'../../../backend-school/crates/school-admission/src/http/routes.rs',
+				import.meta.url
+			),
+			'utf8'
+		),
 		readFile(new URL('../../src/lib/api/generated/school-api.ts', import.meta.url), 'utf8'),
 		readFile(new URL('../../src/lib/api/admission.ts', import.meta.url), 'utf8')
 	]);

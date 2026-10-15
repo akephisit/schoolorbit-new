@@ -1,0 +1,261 @@
+use crate::http::state::StudentHttpState;
+use crate::models::StudentAcademicYearQuery;
+#[cfg(feature = "api-docs")]
+use crate::parents::models::ParentProfile;
+use crate::parents::services as parent_service;
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use chrono::NaiveDate;
+#[cfg(feature = "api-docs")]
+use school_academic_core::models::AcademicContextOptions;
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use uuid::Uuid;
+
+/// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/profile",
+    operation_id = "getParentProfile",
+    tag = "parent",
+    params(StudentAcademicYearQuery),
+    responses(
+        (status = 200, description = "Current parent profile and linked children", body = ApiResponse<ParentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent account required", body = ApiErrorResponse),
+        (status = 404, description = "Parent profile not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_own_parent_profile(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentAcademicYearQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let profile =
+        parent_service::get_own_parent_profile(&pool, actor.user_id, query.academic_year_id)
+            .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(profile))))
+}
+
+/// GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}",
+    operation_id = "getParentChildProfile",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        StudentAcademicYearQuery
+    ),
+    responses(
+        (status = 200, description = "Linked child's profile", body = ApiResponse<crate::models::StudentProfile>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse),
+        (status = 404, description = "Child profile not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_child_profile(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<StudentAcademicYearQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let student =
+        parent_service::get_child_profile(&pool, actor.user_id, student_id, query.academic_year_id)
+            .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChildTimetableQuery {
+    pub academic_term_id: Uuid,
+    pub date: NaiveDate,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChildExamScheduleQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/academic-context/options",
+    operation_id = "listParentAcademicContextOptions",
+    tag = "parent",
+    responses(
+        (status = 200, description = "Academic years and terms available across linked active students", body = ApiResponse<AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent account required", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_parent_academic_context_options(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let options = parent_service::get_parent_academic_context_options(
+        &context.tenant.pool,
+        context.actor.user_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(options))))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/academic-context/options",
+    operation_id = "listChildAcademicContextOptions",
+    tag = "parent",
+    params(("student_id" = Uuid, Path, description = "Linked student user ID")),
+    responses(
+        (status = 200, description = "Academic years and terms available to the linked student", body = ApiResponse<school_academic_core::models::AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_child_academic_context_options(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let options = parent_service::get_child_academic_context_options(
+        &context.tenant.pool,
+        context.actor.user_id,
+        student_id,
+    )
+    .await?;
+    Ok((StatusCode::OK, Json(ApiResponse::ok(options))))
+}
+
+/// GET /api/parent/students/:student_id/timetable
+/// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/timetable",
+    operation_id = "getParentChildTimetable",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        ChildTimetableQuery
+    ),
+    responses(
+        (status = 200, description = "Linked child's timetable blocks", body = ApiResponse<Vec<school_academic_timetable::models::timetable_block::TimetableBlock>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_child_timetable(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<ChildTimetableQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let entries = parent_service::get_child_timetable(
+        &pool,
+        actor.user_id,
+        student_id,
+        query.academic_term_id,
+        query.date,
+    )
+    .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(entries))))
+}
+
+/// GET /api/parent/students/:student_id/exam-schedules
+/// ผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/exam-schedules",
+    operation_id = "getParentChildExamSchedule",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        ChildExamScheduleQuery
+    ),
+    responses(
+        (status = 200, description = "Linked child's published exam schedule", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::PersonalExamScheduleRound>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_child_exam_schedule(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<ChildExamScheduleQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let schedule = parent_service::get_child_exam_schedule(
+        &pool,
+        actor.user_id,
+        student_id,
+        query.academic_term_id,
+    )
+    .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(schedule))))
+}
+
+/// GET /api/parent/students/:student_id/calendar/events
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/parent/students/{student_id}/calendar/events",
+    operation_id = "getParentChildCalendarEvents",
+    tag = "parent",
+    params(
+        ("student_id" = Uuid, Path, description = "Linked student user ID"),
+        school_calendar::models::CalendarEventQuery
+    ),
+    responses(
+        (status = 200, description = "Calendar events visible for the linked child", body = ApiResponse<Vec<school_calendar::models::CalendarViewerEvent>>),
+        (status = 400, description = "Invalid date range", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_child_calendar_events(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+    Query(query): Query<school_calendar::models::CalendarEventQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let events = parent_service::get_child_calendar_events(
+        &context.tenant.pool,
+        context.actor.user_id,
+        student_id,
+        query,
+    )
+    .await?;
+
+    Ok((StatusCode::OK, Json(ApiResponse::ok(events))))
+}

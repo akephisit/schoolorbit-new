@@ -3,7 +3,15 @@ name = "school-auth-http"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = ["dep:utoipa", "school-auth/api-docs", "school-http/api-docs", "school-file-platform/api-docs"]
+
 [dependencies]
+utoipa = { workspace = true, optional = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+school-file-platform = { workspace = true }
 axum = { workspace = true }
 ipnet = { workspace = true }
 school-auth = { workspace = true }

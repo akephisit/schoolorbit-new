@@ -414,15 +414,13 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
 	const deployment = await readRepo('.github/workflows/deploy-school-release.yml');
 	const compatibility = await readRepo('scripts/test_postgres_compatibility.sh');
-	const migrationHandler = await readRepo(
-		'backend-school/src/modules/system/handlers/migration.rs'
-	);
+	const migrationHandler = await readRepo('backend-school/src/system/handlers/migration.rs');
 	const cutoverAudit = await readRepo(
 		'backend-school/crates/school-academic-results/src/services/cutover.rs'
 	);
 	const smoke = await readRepo('scripts/smoke_test.sh');
 
-	assert.match(compatibility, /cargo test modules::academic::core::schema_tests::migration_060/);
+	assert.match(compatibility, /cargo test integration_tests::academic::core::schema_tests::migration_060/);
 	assert.match(compatibility, /TEST_DATABASE_URL/);
 	assert.match(migrationHandler, /gradebook_results_cutover/);
 	assert.match(migrationHandler, /gradebookResultsCutover/);
@@ -1259,7 +1257,7 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 
 test('completed personnel migration hooks are retired while all-tenant deployment stays gated', async () => {
 	const release = await readRepo('.github/workflows/deploy-school-release.yml');
-	const handler = await readRepo('backend-school/src/modules/system/handlers/migration.rs');
+	const handler = await readRepo('backend-school/src/system/handlers/migration.rs');
 	const routes = await readRepo('backend-school/src/app.rs');
 	for (const source of [release, handler.split('#[cfg(test)]')[0], routes]) {
 		assert.doesNotMatch(

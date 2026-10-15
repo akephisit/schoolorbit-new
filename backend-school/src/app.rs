@@ -1,5 +1,5 @@
 use crate::middleware::session::session_middleware;
-use crate::{middleware, modules, AppState};
+use crate::{middleware, system, AppState};
 use axum::{
     extract::{DefaultBodyLimit, FromRef},
     middleware::{from_fn, from_fn_with_state},
@@ -25,35 +25,64 @@ pub fn build_app(state: AppState) -> Router {
 fn public_routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/", get(root_handler))
-        .route(
-            "/health",
-            get(modules::system::handlers::health::health_check),
-        )
-        .route(
-            "/ready",
-            get(modules::system::handlers::health::readiness_check),
-        )
+        .route("/health", get(system::handlers::health::health_check))
+        .route("/ready", get(system::handlers::health::readiness_check))
         .nest(
             "/api/admission",
-            modules::admission::admission_public_routes(),
+            school_admission::http::routes::admission_public_routes().with_state(
+                school_admission::http::state::AdmissionHttpState::from_ref(state),
+            ),
         )
-        .nest("/api", modules::calendar::routes::public_routes())
+        .nest(
+            "/api",
+            school_calendar::http::routes::public_routes().with_state(
+                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            ),
+        )
         .nest(
             "/api",
             school_academic_http::routes::public_routes()
                 .with_state(AcademicHttpState::from_ref(state)),
         )
-        .nest("/api", modules::auth::routes::public_routes())
-        .nest("/api", modules::consent::routes::public_routes())
-        .nest("/api", modules::files::routes::public_routes())
-        .nest("/api", modules::school::routes::public_routes())
-        .nest("/api", modules::system::routes::public_routes())
+        .nest(
+            "/api",
+            school_auth_http::http::routes::public_routes().with_state(
+                school_auth_http::http::state::AuthHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_auth_http::http::consent::routes::public_routes().with_state(
+                school_auth_http::http::state::AuthHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_files_http::http::routes::public_routes().with_state(
+                school_files_http::http::state::FileHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_administration::settings::http::routes::public_routes().with_state(
+                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_navigation::http::routes::public_system_routes()
+                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+        )
         .nest(
             "/api",
             school_certificates_http::routes::public_routes()
                 .with_state(CertificateHttpState::from_ref(state)),
         )
-        .nest("/ws", modules::academic::routes::websocket_routes())
+        .nest(
+            "/ws",
+            school_academic_http::routes::websocket_routes()
+                .with_state(school_academic_http::state::AcademicWebSocketState::from_ref(state)),
+        )
         .merge(internal_routes())
 }
 
@@ -61,66 +90,171 @@ fn internal_routes() -> Router<AppState> {
     Router::new()
         .route(
             "/internal/provision",
-            post(modules::system::handlers::provision::provision_tenant),
+            post(system::handlers::provision::provision_tenant),
         )
         .route(
             "/internal/migrate-all",
-            post(modules::system::handlers::migration::migrate_all_schools),
+            post(system::handlers::migration::migrate_all_schools),
         )
         .route(
             "/internal/migration-status",
-            get(modules::system::handlers::migration::migration_status),
+            get(system::handlers::migration::migration_status),
         )
         .route_layer(from_fn(middleware::internal_auth::validate_internal_secret))
 }
 
 fn protected_routes(state: &AppState) -> Router<AppState> {
     Router::new()
-        .nest("/api", modules::auth::routes::protected_routes())
-        .nest("/api", modules::staff::routes::protected_routes())
-        .nest("/api", modules::achievement::routes::protected_routes())
-        .nest("/api", modules::school_fonts::routes::protected_routes())
+        .nest(
+            "/api",
+            school_auth_http::http::routes::protected_routes().with_state(
+                school_auth_http::http::state::AuthHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_staff::http::routes::protected_routes()
+                .with_state(school_staff::http::state::StaffHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_staff::achievement::http::routes::protected_routes()
+                .with_state(school_staff::http::state::StaffHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_fonts::http::routes::protected_routes()
+                .with_state(school_fonts::http::state::FontHttpState::from_ref(state)),
+        )
         .nest(
             "/api",
             school_certificates_http::routes::protected_routes()
                 .with_state(CertificateHttpState::from_ref(state)),
         )
-        .nest("/api", modules::students::routes::protected_routes())
-        .nest("/api", modules::parents::routes::protected_routes())
+        .nest(
+            "/api",
+            school_students::http::routes::protected_routes().with_state(
+                school_students::http::state::StudentHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_students::parents::http::routes::protected_routes().with_state(
+                school_students::http::state::StudentHttpState::from_ref(state),
+            ),
+        )
         .nest(
             "/api",
             school_academic_http::routes::personal_routes()
                 .with_state(AcademicHttpState::from_ref(state)),
         )
-        .nest("/api", modules::calendar::routes::protected_routes())
-        .nest("/api", modules::menu::routes::protected_routes())
-        .nest("/api", modules::system::routes::protected_routes())
-        .nest("/api", modules::consent::routes::protected_routes())
-        .nest("/api", modules::files::routes::protected_routes())
-        .nest("/api", modules::school::routes::protected_routes())
-        .nest("/api", modules::notification::routes::protected_routes())
-        .nest("/api", modules::lookup::routes::protected_routes())
-        .merge(modules::attendance::handlers::routes())
-        .merge(modules::behavior::behavior_routes())
+        .nest(
+            "/api",
+            school_calendar::http::routes::protected_routes().with_state(
+                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_navigation::http::routes::protected_routes()
+                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_navigation::http::routes::protected_system_routes()
+                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_auth_http::http::consent::routes::protected_routes().with_state(
+                school_auth_http::http::state::AuthHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_files_http::http::routes::protected_routes().with_state(
+                school_files_http::http::state::FileHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_administration::settings::http::routes::protected_routes().with_state(
+                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_notifications::http::routes::protected_routes().with_state(
+                school_notifications::http::state::NotificationHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_administration::lookup::http::routes::protected_routes().with_state(
+                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            ),
+        )
+        .merge(
+            school_attendance::http::routes::protected_routes()
+                .with_state(school_attendance::http::state::AttendanceHttpState::from_ref(state)),
+        )
+        .merge(
+            school_behavior::http::routes::protected_routes().with_state(
+                school_behavior::http::state::BehaviorHttpState::from_ref(state),
+            ),
+        )
         .nest(
             "/api/supply-catalog",
-            modules::supply_catalog::supply_catalog_routes(),
+            school_administration::supply_catalog::http::routes::supply_catalog_routes()
+                .with_state(
+                    school_administration::http::state::AdministrationHttpState::from_ref(state),
+                ),
         )
-        .nest("/api/calendar", modules::calendar::calendar_routes())
+        .nest(
+            "/api/calendar",
+            school_calendar::http::routes::management_routes().with_state(
+                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            ),
+        )
         .nest(
             "/api/supervision",
-            modules::supervision::supervision_routes(),
+            school_supervision::http::routes::protected_routes()
+                .with_state(school_supervision::http::state::SupervisionHttpState::from_ref(state)),
         )
-        .nest("/api/facilities", modules::facility::facility_routes())
-        .nest("/api", modules::workflow::workflow_routes())
-        .nest("/api", modules::work::work_routes())
+        .nest(
+            "/api/facilities",
+            school_administration::facility::http::routes::facility_routes().with_state(
+                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_workflow::http::routes::workflow_routes().with_state(
+                school_workflow::http::state::WorkflowHttpState::from_ref(state),
+            ),
+        )
+        .nest(
+            "/api",
+            school_workflow::http::routes::work_routes().with_state(
+                school_workflow::http::state::WorkflowHttpState::from_ref(state),
+            ),
+        )
         .nest(
             "/api/admission",
-            modules::admission::admission_staff_routes(),
+            school_admission::http::routes::admission_staff_routes().with_state(
+                school_admission::http::state::AdmissionHttpState::from_ref(state),
+            ),
         )
         .nest(
             "/api/academic",
-            modules::academic::academic_routes(AcademicHttpState::from_ref(state)),
+            school_academic_http::routes::academic_routes()
+                .with_state(AcademicHttpState::from_ref(state))
+                .nest(
+                    "/question-bank",
+                    school_question_bank::http::routes::question_bank_routes().with_state(
+                        school_question_bank::http::state::QuestionBankHttpState::from_ref(state),
+                    ),
+                ),
         )
 }
 

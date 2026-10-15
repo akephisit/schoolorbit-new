@@ -166,9 +166,11 @@ test('question bank exports selected questions with editable native Word Math eq
 	const exporter = await readProjectFile('src/lib/question-bank/word-export.ts');
 	const serverExporter = await readProjectFile('src/lib/question-bank/word-export.server.ts');
 	const viteConfig = await readProjectFile('vite.config.ts');
-	const backendRoutes = await readProjectFile('../backend-school/src/modules/question_bank.rs');
+	const backendRoutes = await readProjectFile(
+		'../backend-school/crates/school-question-bank/src/http/routes.rs'
+	);
 	const backendHandlers = await readProjectFile(
-		'../backend-school/src/modules/question_bank/handlers.rs'
+		'../backend-school/crates/school-question-bank/src/http/handlers.rs'
 	);
 	const backendServices = await readProjectFile(
 		'../backend-school/crates/school-question-bank/src/services.rs'
@@ -258,7 +260,7 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.doesNotMatch(page, /สูตรจะเป็นภาพ PNG/);
 	assert.match(backendRoutes, /questions\/\{question_id\}\/files\/\{file_id\}/);
 	assert.match(backendHandlers, /pub async fn get_question_file/);
-	assert.match(backendHandlers, /file_access_policy::authorize_existing/);
+	assert.match(backendHandlers, /file_authorization\s*\.authorize_existing/);
 	assert.match(backendHandlers, /Some\(question_id\)/);
 	assert.match(backendHandlers, /\.file_platform[\s\S]*?\.private_download\(/);
 	assert.match(backendServices, /collect_payload_image_file_ids/);

@@ -6,12 +6,10 @@ use std::{env, error::Error, time::Duration};
 use uuid::Uuid;
 
 #[cfg(test)]
-#[path = "../modules/academic/cutover_test_preflight.rs"]
-pub mod cutover_test_preflight;
+pub use school_test_db::cutover_test_preflight;
 
 #[cfg(test)]
-#[path = "../modules/academic/cutover_test_support.rs"]
-pub mod cutover_test_support;
+pub use school_test_db::cutover_test_support;
 
 type SeedResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 

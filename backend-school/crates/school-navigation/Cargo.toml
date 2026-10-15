@@ -5,10 +5,17 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-http/api-docs",
+    "school-auth/api-docs",
     "dep:utoipa",
 ]
 
 [dependencies]
+school-permissions = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
 hex = { workspace = true }
 school-authorization = { workspace = true }
 sha2 = { workspace = true }

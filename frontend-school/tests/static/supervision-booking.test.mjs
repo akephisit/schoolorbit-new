@@ -119,7 +119,7 @@ test('teaching supervision request approval renders request rows with multiple e
 		'frontend-school/src/lib/api/generated/school-api.ts'
 	);
 	const supervisionHandlers = await readRepoFile(
-		'backend-school/src/modules/supervision/handlers.rs'
+		'backend-school/crates/school-supervision/src/http/handlers.rs'
 	);
 	const supervisionService = await readSupervisionServices();
 
@@ -229,7 +229,7 @@ test('teaching supervision approval workflow skips review submission', async () 
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
 	const supervisionHandlers = await readRepoFile(
-		'backend-school/src/modules/supervision/handlers.rs'
+		'backend-school/crates/school-supervision/src/http/handlers.rs'
 	);
 	const supervisionService = await readSupervisionServices();
 
@@ -316,7 +316,7 @@ test('teaching supervision detail hides scores until academic approval releases 
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
 	const supervisionHandlers = await readRepoFile(
-		'backend-school/src/modules/supervision/handlers.rs'
+		'backend-school/crates/school-supervision/src/http/handlers.rs'
 	);
 	const supervisionService = await readSupervisionServices();
 
@@ -340,7 +340,7 @@ test('teaching supervision approval review shows completed rubric before approvi
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
 	const supervisionHandlers = await readRepoFile(
-		'backend-school/src/modules/supervision/handlers.rs'
+		'backend-school/crates/school-supervision/src/http/handlers.rs'
 	);
 	const supervisionModels = await readRepoFile(
 		'backend-school/crates/school-supervision/src/models.rs'
@@ -452,11 +452,11 @@ test('teaching supervision manager view exposes teacher status overview and alig
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const supervisionHandlers = await readRepoFile(
-		'backend-school/src/modules/supervision/handlers.rs'
+		'backend-school/crates/school-supervision/src/http/handlers.rs'
 	);
 	const supervisionService = await readSupervisionServices();
 	const supervisionPolicy = await readRepoFile(
-		'backend-school/src/policies/supervision_access_policy.rs'
+		'backend-school/crates/school-supervision/src/access_policy.rs'
 	);
 
 	assert.match(supervisionApi, /SupervisionTeacherStatusRow/);

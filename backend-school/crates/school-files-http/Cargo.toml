@@ -1,0 +1,55 @@
+[package]
+name = "school-files-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "school-administration/api-docs",
+    "school-attendance/api-docs",
+    "school-admission/api-docs",
+    "school-question-bank/api-docs",
+    "school-students/api-docs",
+    "school-staff/api-docs",
+    "school-fonts/api-docs",
+    "school-certificates/api-docs",
+    "school-http/api-docs",
+    "school-auth/api-docs",
+    "dep:utoipa",
+    "school-file-platform/api-docs",
+]
+
+[dependencies]
+school-administration = { workspace = true }
+school-attendance = { workspace = true }
+school-admission = { workspace = true }
+school-question-bank = { workspace = true }
+school-students = { workspace = true }
+school-staff = { workspace = true }
+school-fonts = { workspace = true }
+school-certificates = { workspace = true }
+school-permissions = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+school-file-platform = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
+utoipa = { workspace = true, optional = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

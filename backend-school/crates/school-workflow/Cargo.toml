@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+tokio = { workspace = true }
+school-notifications = { workspace = true }
+school-http = { workspace = true }
+school-auth-http = { workspace = true }
+school-auth = { workspace = true }
+axum = { workspace = true }
 chrono = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }

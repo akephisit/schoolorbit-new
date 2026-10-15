@@ -179,10 +179,10 @@ For each endpoint, establish this flow before writing code: router/session middl
 | Responsibility | School owner and rule |
 | --- | --- |
 | Startup and router composition | [Application router](backend-school/src/app.rs) and application-owned state. Register the route under the existing authentication/tenant boundary; do not create a feature-local auth flow. |
-| HTTP transport | The owning domain HTTP crate or existing `src/modules/<feature>/handlers.rs`. Read [timetable handlers](backend-school/crates/school-academic-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/src/modules/calendar/request_handlers.rs) for a root-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
-| Business rules and persistence | The existing domain crate's typed models, policy, and service operations. Read [calendar requests](backend-school/crates/school-calendar/src/requests.rs) for validation, bounded reads, and transactional decisions. Keep remaining application-owned feature services with their existing owner until a justified crate boundary is introduced. |
-| Resource scope | The owning domain policy or existing application policy. [Staff access policy](backend-school/src/policies/staff_access_policy.rs) illustrates reuse of the shared resource policy and separate PII access; select the policy matching the actual resource. |
-| Cross-domain side effects | Application adapters use provider-owned operations/ports. [Calendar notification workflow](backend-school/src/modules/calendar/services/request_workflow.rs) illustrates post-commit delivery; do not pull notification infrastructure into the calendar domain crate. |
+| HTTP transport | The owning domain crate's `http/handlers.rs`, or its existing dedicated HTTP crate. Read [timetable handlers](backend-school/crates/school-academic-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/crates/school-calendar/src/http/request_handlers.rs) for a domain-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
+| Business rules and persistence | The existing domain crate's typed models, policy, and service operations. Read [calendar requests](backend-school/crates/school-calendar/src/requests.rs) for validation, bounded reads, and transactional decisions. Keep related small capabilities as modules within their existing domain owner. |
+| Resource scope | The owning domain policy or existing application policy. [Staff access policy](backend-school/crates/school-staff/src/staff_access_policy.rs) illustrates reuse of the shared resource policy and separate PII access; select the policy matching the actual resource. |
+| Cross-domain side effects | Application adapters use provider-owned operations/ports. [Calendar notification workflow](backend-school/crates/school-calendar/src/delivery/request_workflow.rs) illustrates post-commit delivery; use the notification provider's public publisher contract without coupling it back to Calendar. |
 | Response and wire schema | [School HTTP types](backend-school/crates/school-http/src/lib.rs), typed domain DTOs, and [OpenAPI composition](backend-school/src/api_contract.rs). Follow section 5 for generation and consumers. |
 
 Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](backend-admin/src/handlers/), [services](backend-admin/src/services/), and [models](backend-admin/src/models/), consumed by [the Admin API client](frontend-admin/src/lib/api/client.ts). These links identify ownership, not blanket approval of existing implementation details. Inspect each changed endpoint's actual authentication, error mapping, wire types, and callers before reuse.
@@ -195,16 +195,24 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   accept the full `AppState`. Domain HTTP crates own concrete handlers and their path declarations,
   receive narrow state through application-owned `FromRef` implementations, and use provider-owned
   ports for cross-domain operations. `school-auth-http` is the single session/tenant request-context
-  and cookie/origin adapter owner; root facades delegate to it without duplicating identity logic.
+  and cookie/origin adapter owner; all callers use it directly without duplicating identity logic.
 - Keep domain route factories non-generic over the application state and return
   `Router<DomainHttpState>`. Bind the existing narrow `FromRef` state at application composition,
   before the shared session middleware. This keeps handler futures, extractors and response
   encoding in the owning HTTP crate rather than regenerating them in the executable. Global
   prefixes, public/protected partitioning and cross-domain assembly remain application-owned.
-- Keep application-owned feature registrations beside their handlers in
-  `src/modules/<feature>/routes.rs`; reuse existing colocated feature factories. These modules
-  use paths relative to the prefix supplied by `app.rs` and may use application state while
-  their handlers remain application-owned. Do not create crates merely to group route files.
+- Keep feature HTTP handlers, route factories, DTOs and policies with their domain owner, normally
+  under `crates/<owner>/src/http/`. Existing dedicated Academic, Certificate, Auth and File HTTP
+  crates retain transport composition where importing it into a lower provider would create a
+  dependency cycle. Do not retain production feature facades in the executable.
+- Group related small capabilities as modules in an existing cohesive owner. Parents belongs to
+  Students, Achievement to Staff, Work to Workflow, and menu/feature/route registration to Navigation.
+  School administration owns its settings, facility, supply-catalog and lookup modules. Global
+  prefixes and public/protected separation remain in `src/app.rs`; internal operational endpoints
+  remain in `src/system`. Deliberate cross-domain adapters live in `src/adapters`.
+- Application integration fixtures live in the test-only `src/integration_tests` namespace; shared
+  historical migration fixtures belong to the development-only `school-test-db` crate. Unit tests
+  remain with the owning implementation. Never compile integration fixtures into production.
 - Evaluate crate placement whenever a capability is added or an existing capability materially
   expands. Create a crate only for a cohesive owner with a public interface materially narrower
   than its implementation, acyclic and intentionally directed dependencies, meaningful focused
@@ -223,8 +231,9 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   internal crate opts into workspace dependencies and lints; the application retains its existing
   crate-level deny lints and also opts into the workspace policy.
 - Support a new crate boundary with before-and-after compile evidence on the same toolchain,
-  machine, Cargo configuration, and dependency state. A split must improve expected invalidation
-  scope and must not weaken runtime, API/OpenAPI, permission, migration, security, test, or
+  machine, Cargo configuration, and dependency state. Record the ownership and invalidation-scope
+  tradeoffs rather than assuming a split improves every build. It must not weaken runtime,
+  API/OpenAPI, permission, migration, security, test, or
   deployment guarantees.
 - Run focused checks for every affected package and finish backend-school verification with
   `cargo check --workspace --all-targets`.
@@ -241,7 +250,7 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
 - Browser mutations require the exact tenant `Origin` plus `X-CSRF-Token`. The backend-host-only `__Host-schoolorbit_session` cookie is opaque, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and has no `Domain` attribute.
 - Keep handlers thin: request context → permission/policy → service → typed response → realtime signal when required.
 - Feature handlers must not contain `sqlx::query*`, `.fetch_*`, `.execute`, `.begin`, `sqlx::FromRow`, or database helpers typed as `PgPool`.
-- Business logic and SQL belong to the owning domain crate's service/model layer, or to `modules/<feature>/services/` for an existing application-owned capability. DB-facing types stay with that owner, not in handlers. DB service operations receive `&PgPool` or the existing transaction interface and return `Result<T, AppError>` or a meaningful outcome enum; pure helpers need no pool.
+- Business logic and SQL belong to the owning domain crate's service/model layer, including typed orchestration within that owner. DB-facing types stay with that owner, not in handlers. DB service operations receive `&PgPool` or the existing transaction interface and return `Result<T, AppError>` or a meaningful outcome enum; pure helpers need no pool.
 - Extract validation, grouping, defaults, formatting, parsing, ID generation, and decision logic into testable helpers. New logic-bearing service files require focused `#[cfg(test)]` tests.
 - Prefer validated bulk SQL for same-kind multi-row mutations. Normalize and deduplicate before writing. Per-row writes are reserved for genuinely different side effects or ordering.
 - Never create `mod.rs`; use sibling module files such as `handlers.rs`.
@@ -312,8 +321,8 @@ Use `ApiResponse` and `ApiErrorResponse` for application responses; do not retur
 
 - Frontend route guards and hidden controls are convenience UX; backend policies are authoritative.
 - Use `ActorContext` helpers for coarse capability checks. Do not reintroduce legacy permission wrappers or manual wildcard parsing.
-- Access to another user or resource must be decided by a reusable policy in `backend-school/src/policies/*_access_policy.rs`.
-- Use `resource_access_policy.rs` for shared organization membership/tree decisions instead of duplicating SQL.
+- Access to another user or resource must be decided by a reusable policy in the owning domain crate. Shared scope primitives belong to `school-authorization`.
+- Use `school_authorization::resource_access_policy` for shared organization membership/tree decisions instead of duplicating SQL.
 - List endpoints combine independent scopes as a union. `own`, `assigned`, `organization_unit`, and `organization_tree` must not hide one another. Only a true `school`/all-record scope may short-circuit.
 - Add focused policy/service tests for allowed, denied, and multi-scope union behavior.
 - Organization grants apply to the exact unit and matching position. Do not infer parent/child permission inheritance; grant and enforce `*.organization_tree` explicitly.

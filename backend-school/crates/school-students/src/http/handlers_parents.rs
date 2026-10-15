@@ -1,0 +1,107 @@
+use axum::{
+    extract::{Extension, Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use uuid::Uuid;
+
+use crate::http::state::StudentHttpState;
+use crate::services as student_service;
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
+use school_http::HttpError as AppError;
+use school_permissions::registry::codes;
+
+use crate::models::CreateParentRequest;
+
+// -----------------------------------------------------------------------------
+// Parent Management Handlers (New)
+// -----------------------------------------------------------------------------
+
+/// POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post,
+    path = "/api/students/{id}/parents",
+    operation_id = "addStudentParent",
+    tag = "student",
+    params(("id" = Uuid, Path, description = "Student user ID")),
+    request_body = CreateParentRequest,
+    responses(
+        (status = 200, description = "Parent linked to student", body = ApiResponse<school_http::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student not found", body = ApiErrorResponse),
+        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
+    )
+))]
+pub async fn add_parent_to_student(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_id): Path<Uuid>,
+    Json(payload): Json<CreateParentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
+
+    let parent_id = student_service::add_parent_to_student(&pool, student_id, payload).await?;
+    state
+        .auth_runtime
+        .invalidate_permission_user(&context.tenant.subdomain, parent_id);
+    state
+        .auth_runtime
+        .notify_permission_changed(&context.tenant.subdomain, parent_id);
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::empty_with_message("เพิ่มผู้ปกครองสำเร็จ")),
+    )
+        .into_response())
+}
+
+/// DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/students/{id}/parents/{parent_id}",
+    operation_id = "removeStudentParent",
+    tag = "student",
+    params(
+        ("id" = Uuid, Path, description = "Student user ID"),
+        ("parent_id" = Uuid, Path, description = "Parent user ID")
+    ),
+    responses(
+        (status = 200, description = "Parent link removed", body = ApiResponse<school_http::EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Parent relationship not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn remove_parent_from_student(
+    State(state): State<StudentHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((student_id, parent_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
+
+    student_service::remove_parent_from_student(&pool, student_id, parent_id).await?;
+    state
+        .auth_runtime
+        .invalidate_permission_user(&context.tenant.subdomain, parent_id);
+    state
+        .auth_runtime
+        .notify_permission_changed(&context.tenant.subdomain, parent_id);
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse::empty_with_message("ลบผู้ปกครองสำเร็จ")),
+    )
+        .into_response())
+}

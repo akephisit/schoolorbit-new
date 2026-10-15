@@ -44,6 +44,12 @@ impl AuthRuntime {
         self.permission_cache.invalidate_tenant(tenant);
     }
 
+    pub fn notify_permission_changed(&self, tenant: &str, user_id: uuid::Uuid) {
+        let _ = self
+            .permission_events
+            .send(PermissionChangeEvent::for_user(tenant, user_id));
+    }
+
     pub fn notify_all_permissions_changed(&self, tenant: &str) {
         let _ = self
             .permission_events

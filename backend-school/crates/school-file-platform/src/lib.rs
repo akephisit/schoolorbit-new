@@ -15,3 +15,7 @@ pub mod storage_provider;
 
 #[cfg(test)]
 mod schema_tests;
+
+pub mod access;
+pub mod consumer_service;
+pub mod http_models;

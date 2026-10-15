@@ -84,8 +84,12 @@ test('project rules require a single JSON API response envelope', async () => {
 });
 
 test('backend auth success handlers return enveloped data', async () => {
-	const sessionSource = await readRepoFile('backend-school/src/modules/auth/session_handlers.rs');
-	const profileSource = await readRepoFile('backend-school/src/modules/auth/handlers.rs');
+	const sessionSource = await readRepoFile(
+		'backend-school/crates/school-auth-http/src/http/session_handlers.rs'
+	);
+	const profileSource = await readRepoFile(
+		'backend-school/crates/school-auth-http/src/http/handlers.rs'
+	);
 
 	assert.doesNotMatch(sessionSource, /Json\(current_user_response\)/);
 	assert.doesNotMatch(profileSource, /Json\(profile_response\)/);
@@ -604,7 +608,9 @@ test('staff dashboard API uses a typed aggregate response scoped to the selected
 	const backendService = await readRepoFile(
 		'backend-school/crates/school-staff/src/services/dashboard_service.rs'
 	);
-	const backendHandler = await readRepoFile('backend-school/src/modules/staff/handlers/staff.rs');
+	const backendHandler = await readRepoFile(
+		'backend-school/crates/school-staff/src/http/handlers/staff.rs'
+	);
 
 	assert.match(
 		frontendStaffApi,
@@ -673,7 +679,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 
 test('admission application detail contract returns application and documents in data', async () => {
 	const backendHandler = await readRepoFile(
-		'backend-school/src/modules/admission/handlers/applications.rs'
+		'backend-school/crates/school-admission/src/http/handlers/applications.rs'
 	);
 	const examRoomService = await readRepoFile(
 		'backend-school/crates/school-admission/src/services/exam_room_service.rs'
@@ -832,7 +838,7 @@ test('admission application detail contract returns application and documents in
 	assert.match(applicationService, /struct\s+DocumentUploadResponse/);
 	assert.match(applicationService, /document_upload_response[\s\S]*?->\s*DocumentUploadResponse/);
 	assert.doesNotMatch(applicationService, /document_upload_response_json/);
-	assert.match(backendHandler, /file_access_policy::authorize_create/);
+	assert.match(backendHandler, /file_authorization\s*\.authorize_create/);
 	assert.match(backendHandler, /state[\s\S]*?\.file_platform[\s\S]*?\.upload\(/);
 	assert.match(backendHandler, /application_service::attach_document/);
 	assert.match(
@@ -1138,7 +1144,7 @@ test('admission exam-room mutations return typed data and patch local state', as
 		'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte'
 	);
 	const examRoomsHandler = await readRepoFile(
-		'backend-school/src/modules/admission/handlers/exam_rooms.rs'
+		'backend-school/crates/school-admission/src/http/handlers/exam_rooms.rs'
 	);
 
 	assert.match(admissionApi, /addExamRoom[\s\S]*apiClient\.post<ExamRoom>/);
