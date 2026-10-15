@@ -18,6 +18,13 @@ The tenant data-plane API serves school workflows. It resolves the school from e
 schedulers, and cross-domain adapters. Internal crates under `crates/` expose narrow public APIs,
 do not depend on the root package, and do not receive the complete `AppState`.
 
+`src/app.rs` mounts feature routers under their global prefixes and applies the shared session
+boundary. Application-owned route registrations live beside their feature handlers in
+`src/modules/<feature>/routes.rs`, or in the existing colocated feature factory. Academic and
+Certificate route factories compile in their HTTP crates with narrow state; the application
+binds that state before adding protected routes to the session boundary. Auth handlers and
+profile orchestration remain application-owned; `school-auth-http` owns context and cookies.
+
 The current internal crates are:
 
 - `school-permissions`, the generated backend permission registry owner;

@@ -201,6 +201,10 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   before the shared session middleware. This keeps handler futures, extractors and response
   encoding in the owning HTTP crate rather than regenerating them in the executable. Global
   prefixes, public/protected partitioning and cross-domain assembly remain application-owned.
+- Keep application-owned feature registrations beside their handlers in
+  `src/modules/<feature>/routes.rs`; reuse existing colocated feature factories. These modules
+  use paths relative to the prefix supplied by `app.rs` and may use application state while
+  their handlers remain application-owned. Do not create crates merely to group route files.
 - Evaluate crate placement whenever a capability is added or an existing capability materially
   expands. Create a crate only for a cohesive owner with a public interface materially narrower
   than its implementation, acyclic and intentionally directed dependencies, meaningful focused

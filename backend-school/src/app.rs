@@ -1,35 +1,28 @@
+use crate::middleware::session::session_middleware;
+use crate::{middleware, modules, AppState};
 use axum::{
-    extract::{DefaultBodyLimit, FromRef, Request},
-    http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
-    middleware::{from_fn, from_fn_with_state, Next},
-    response::Response,
-    routing::{delete, get, post, put},
+    extract::{DefaultBodyLimit, FromRef},
+    middleware::{from_fn, from_fn_with_state},
+    routing::{get, post},
     Json, Router,
 };
+use school_academic_http::state::AcademicHttpState;
+use school_certificates_http::state::CertificateHttpState;
 use serde_json::json;
 
-use crate::{middleware, modules, AppState};
-
-pub const AUTH_JSON_BODY_LIMIT: usize = 16 * 1024;
-pub const PUBLIC_CERTIFICATE_JSON_BODY_LIMIT: usize = 16 * 1024;
 pub const APPLICATION_BODY_LIMIT: usize = 20 * 1024 * 1024;
 
 pub fn build_app(state: AppState) -> Router {
     let runtime = state.auth_runtime.clone();
-    let protected = protected_routes().nest(
-        "/api/academic",
-        modules::academic::academic_routes(
-            school_academic_http::state::AcademicHttpState::from_ref(&state),
-        ),
-    );
-    public_routes()
+    let protected = protected_routes(&state);
+    public_routes(&state)
         .merge(protected.route_layer(from_fn_with_state(runtime, session_middleware)))
         .layer(DefaultBodyLimit::max(APPLICATION_BODY_LIMIT))
         .layer(axum::middleware::from_fn(request_timing))
         .with_state(state)
 }
 
-fn public_routes() -> Router<AppState> {
+fn public_routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .route("/", get(root_handler))
         .route(
@@ -40,96 +33,28 @@ fn public_routes() -> Router<AppState> {
             "/ready",
             get(modules::system::handlers::health::readiness_check),
         )
-        .route(
-            "/api/public/calendar/events",
-            get(modules::calendar::handlers::list_public_calendar_events),
-        )
-        .route(
-            "/api/public/academic-context/options",
-            get(modules::academic::core::handlers::list_public_context_options),
-        )
-        .route(
-            "/api/auth/login",
-            post(modules::auth::session_handlers::login)
-                .layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
-        )
-        .route(
-            "/api/auth/logout",
-            post(modules::auth::session_handlers::logout),
-        )
-        .route(
-            "/api/consent/types",
-            get(modules::consent::handlers::get_consent_types),
-        )
-        .route(
-            "/api/public/files/{id}/content",
-            get(modules::files::handlers::get_public_file_content),
-        )
-        .route(
-            "/api/public/files/{id}/delivery",
-            get(modules::files::handlers::get_public_file_delivery),
-        )
-        .merge(public_certificate_routes())
         .nest(
             "/api/admission",
             modules::admission::admission_public_routes(),
         )
-        .route(
-            "/api/school/public",
-            get(modules::school::handlers::get_public_info),
+        .nest("/api", modules::calendar::routes::public_routes())
+        .nest(
+            "/api",
+            school_academic_http::routes::public_routes()
+                .with_state(AcademicHttpState::from_ref(state)),
         )
-        .route(
-            "/api/school/public/statistics",
-            get(modules::school::handlers::get_public_statistics),
+        .nest("/api", modules::auth::routes::public_routes())
+        .nest("/api", modules::consent::routes::public_routes())
+        .nest("/api", modules::files::routes::public_routes())
+        .nest("/api", modules::school::routes::public_routes())
+        .nest("/api", modules::system::routes::public_routes())
+        .nest(
+            "/api",
+            school_certificates_http::routes::public_routes()
+                .with_state(CertificateHttpState::from_ref(state)),
         )
-        .route(
-            "/api/school/public/organization",
-            get(modules::school::handlers::get_public_organization),
-        )
-        .route(
-            "/api/school/public/organization-members/{id}/avatar",
-            get(modules::school::handlers::get_public_organization_avatar),
-        )
-        .route(
-            "/api/admin/routes/sync",
-            post(modules::system::handlers::register_routes::register_routes),
-        )
-        // WebSocket authentication runs in the handler; query selects academic term only.
-        .route(
-            "/ws/timetable",
-            get(modules::academic::websockets::timetable_websocket_handler),
-        )
+        .nest("/ws", modules::academic::routes::websocket_routes())
         .merge(internal_routes())
-}
-
-fn public_certificate_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/public/certificates/verify/manual",
-            post(modules::certificates::handlers::verify_certificate_manually),
-        )
-        .route(
-            "/api/public/certificates/verify/qr",
-            post(modules::certificates::handlers::verify_certificate_by_qr),
-        )
-        .route(
-            "/api/public/certificates/render-manifest",
-            post(modules::certificates::handlers::create_public_certificate_render_manifest),
-        )
-        .route_layer(from_fn(public_certificate_security_headers))
-        .layer(DefaultBodyLimit::max(PUBLIC_CERTIFICATE_JSON_BODY_LIMIT))
-}
-
-async fn public_certificate_security_headers(request: Request, next: Next) -> Response {
-    let mut response = next.run(request).await;
-    response
-        .headers_mut()
-        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response.headers_mut().insert(
-        HeaderName::from_static("referrer-policy"),
-        HeaderValue::from_static("no-referrer"),
-    );
-    response
 }
 
 fn internal_routes() -> Router<AppState> {
@@ -149,521 +74,37 @@ fn internal_routes() -> Router<AppState> {
         .route_layer(from_fn(middleware::internal_auth::validate_internal_secret))
 }
 
-fn protected_routes() -> Router<AppState> {
+fn protected_routes(state: &AppState) -> Router<AppState> {
     Router::new()
+        .nest("/api", modules::auth::routes::protected_routes())
+        .nest("/api", modules::staff::routes::protected_routes())
+        .nest("/api", modules::achievement::routes::protected_routes())
+        .nest("/api", modules::school_fonts::routes::protected_routes())
+        .nest(
+            "/api",
+            school_certificates_http::routes::protected_routes()
+                .with_state(CertificateHttpState::from_ref(state)),
+        )
+        .nest("/api", modules::students::routes::protected_routes())
+        .nest("/api", modules::parents::routes::protected_routes())
+        .nest(
+            "/api",
+            school_academic_http::routes::personal_routes()
+                .with_state(AcademicHttpState::from_ref(state)),
+        )
+        .nest("/api", modules::calendar::routes::protected_routes())
+        .nest("/api", modules::menu::routes::protected_routes())
+        .nest("/api", modules::system::routes::protected_routes())
+        .nest("/api", modules::consent::routes::protected_routes())
+        .nest("/api", modules::files::routes::protected_routes())
+        .nest("/api", modules::school::routes::protected_routes())
+        .nest("/api", modules::notification::routes::protected_routes())
+        .nest("/api", modules::lookup::routes::protected_routes())
         .merge(modules::attendance::handlers::routes())
         .merge(modules::behavior::behavior_routes())
         .nest(
             "/api/supply-catalog",
             modules::supply_catalog::supply_catalog_routes(),
-        )
-        .route("/api/auth/me", get(modules::auth::session_handlers::me))
-        .route(
-            "/api/auth/me/profile",
-            get(modules::auth::handlers::get_profile).put(modules::auth::handlers::update_profile),
-        )
-        .route(
-            "/api/auth/me/change-password",
-            post(modules::auth::session_handlers::change_password)
-                .layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
-        )
-        .route(
-            "/api/auth/sessions",
-            get(modules::auth::session_handlers::list_sessions),
-        )
-        .route(
-            "/api/auth/sessions/{id}",
-            delete(modules::auth::session_handlers::revoke_session),
-        )
-        .route(
-            "/api/auth/logout-all",
-            post(modules::auth::session_handlers::logout_all),
-        )
-        .route(
-            "/api/staff",
-            get(modules::staff::handlers::staff::list_staff)
-                .post(modules::staff::handlers::staff::create_staff),
-        )
-        .route(
-            "/api/staff/dashboard",
-            get(modules::staff::handlers::staff::get_staff_dashboard),
-        )
-        .route(
-            "/api/staff/personnel-rank-milestones",
-            get(modules::staff::handlers::personnel::get_rank_milestone_overview),
-        )
-        .route(
-            "/api/staff/personnel-overview",
-            get(modules::staff::handlers::personnel::get_personnel_overview),
-        )
-        .route(
-            "/api/staff/job-positions",
-            get(modules::staff::handlers::personnel::list_job_positions),
-        )
-        .route(
-            "/api/staff/{id}",
-            get(modules::staff::handlers::staff::get_staff_profile)
-                .put(modules::staff::handlers::staff::update_staff)
-                .delete(modules::staff::handlers::staff::delete_staff),
-        )
-        .route(
-            "/api/staff/{id}/career-history",
-            get(modules::staff::handlers::career::list_career_history)
-                .post(modules::staff::handlers::career::append_career_history),
-        )
-        .route(
-            "/api/staff/{id}/career-history/{entryId}",
-            axum::routing::patch(modules::staff::handlers::career::correct_career_history),
-        )
-        .route(
-            "/api/staff/{id}/public-profile",
-            get(modules::staff::handlers::staff::get_public_staff_profile),
-        )
-        .route(
-            "/api/achievements",
-            get(modules::achievement::handlers::list_achievements)
-                .post(modules::achievement::handlers::create_achievement),
-        )
-        .route(
-            "/api/achievements/{id}",
-            put(modules::achievement::handlers::update_achievement)
-                .delete(modules::achievement::handlers::delete_achievement),
-        )
-        .route(
-            "/api/school-fonts",
-            get(modules::school_fonts::handlers::list_school_fonts),
-        )
-        .route(
-            "/api/school-fonts/inspect",
-            post(modules::school_fonts::handlers::inspect_school_font_uploads),
-        )
-        .route(
-            "/api/school-fonts/batch",
-            post(modules::school_fonts::handlers::attach_school_font_batch),
-        )
-        .route(
-            "/api/school-fonts/{font_id}",
-            delete(modules::school_fonts::handlers::delete_school_font),
-        )
-        .route(
-            "/api/certificates/campaigns",
-            get(modules::certificates::handlers::list_certificate_campaigns)
-                .post(modules::certificates::handlers::create_certificate_campaign),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}",
-            get(modules::certificates::handlers::get_certificate_campaign)
-                .put(modules::certificates::handlers::update_certificate_campaign),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/status",
-            put(modules::certificates::handlers::change_certificate_campaign_status),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/purge-impact",
-            get(modules::certificates::handlers::get_certificate_campaign_purge_impact),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/purge",
-            post(modules::certificates::handlers::start_certificate_campaign_purge),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/purge-status",
-            get(modules::certificates::handlers::get_certificate_campaign_purge_status),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/purge/retry",
-            post(modules::certificates::handlers::retry_certificate_campaign_purge),
-        )
-        .route(
-            "/api/certificates/owner-options",
-            get(modules::certificates::handlers::list_certificate_owner_options),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/templates",
-            get(modules::certificates::handlers::list_certificate_templates)
-                .post(modules::certificates::handlers::create_certificate_template),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}",
-            get(modules::certificates::handlers::get_certificate_template)
-                .put(modules::certificates::handlers::update_certificate_template)
-                .delete(modules::certificates::handlers::delete_certificate_template),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/background",
-            put(modules::certificates::handlers::attach_certificate_template_background),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/assets",
-            post(modules::certificates::handlers::attach_certificate_template_asset),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/fonts",
-            get(modules::certificates::handlers::list_certificate_school_fonts),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/fonts/inspect",
-            post(modules::certificates::handlers::inspect_certificate_font_uploads),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/fonts/batch",
-            post(modules::certificates::handlers::attach_certificate_font_batch),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/assets/{asset_id}",
-            delete(modules::certificates::handlers::delete_certificate_template_asset),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/variables",
-            get(modules::certificates::handlers::get_certificate_template_variable_catalog),
-        )
-        .route(
-            "/api/certificates/templates/{template_id}/preview-manifest",
-            post(modules::certificates::handlers::create_certificate_template_preview_manifest),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/candidates",
-            get(modules::certificates::handlers::list_certificate_candidates),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/candidates/import",
-            post(modules::certificates::handlers::import_certificate_candidates),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/candidates/manual",
-            post(modules::certificates::handlers::create_manual_certificate_candidate),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
-            get(modules::certificates::handlers::search_certificate_candidate_accounts)
-                .post(modules::certificates::handlers::create_account_certificate_candidate),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
-            post(modules::certificates::handlers::bulk_update_certificate_candidates),
-        )
-        .route(
-            "/api/certificates/candidates/{candidate_id}",
-            get(modules::certificates::handlers::get_certificate_candidate)
-                .put(modules::certificates::handlers::update_certificate_candidate)
-                .delete(modules::certificates::handlers::delete_certificate_candidate),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/issue-requests",
-            get(modules::certificates::handlers::list_certificate_campaign_issue_requests)
-                .post(modules::certificates::handlers::submit_certificate_issue_request),
-        )
-        .route(
-            "/api/certificates/issue-requests",
-            get(modules::certificates::handlers::list_certificate_issue_requests),
-        )
-        .route(
-            "/api/certificates/issue-requests/{request_id}",
-            get(modules::certificates::handlers::get_certificate_issue_request),
-        )
-        .route(
-            "/api/certificates/issue-requests/{request_id}/withdraw",
-            post(modules::certificates::handlers::withdraw_certificate_issue_request),
-        )
-        .route(
-            "/api/certificates/issue-requests/{request_id}/review",
-            post(modules::certificates::handlers::start_certificate_issue_request_review),
-        )
-        .route(
-            "/api/certificates/issue-requests/{request_id}/return",
-            post(modules::certificates::handlers::return_certificate_issue_request),
-        )
-        .route(
-            "/api/certificates/issue-requests/{request_id}/issue",
-            post(modules::certificates::handlers::issue_certificates),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/issued",
-            get(modules::certificates::handlers::list_issued_certificates),
-        )
-        .route(
-            "/api/certificates/campaigns/{campaign_id}/render-manifests",
-            post(modules::certificates::handlers::create_issued_certificate_render_manifests),
-        )
-        .route(
-            "/api/certificates/{certificate_id}",
-            get(modules::certificates::handlers::get_issued_certificate),
-        )
-        .route(
-            "/api/certificates/{certificate_id}/revoke",
-            post(modules::certificates::handlers::revoke_issued_certificate),
-        )
-        .route(
-            "/api/certificates/{certificate_id}/render-manifest",
-            post(modules::certificates::handlers::create_issued_certificate_render_manifest),
-        )
-        .route(
-            "/api/me/certificates",
-            get(modules::certificates::handlers::list_own_certificates),
-        )
-        .route(
-            "/api/me/certificates/{certificate_id}",
-            get(modules::certificates::handlers::get_own_certificate),
-        )
-        .route(
-            "/api/me/certificates/{certificate_id}/render-manifest",
-            post(modules::certificates::handlers::create_own_certificate_render_manifest),
-        )
-        .route(
-            "/api/student/profile",
-            get(modules::students::handlers::get_own_profile)
-                .put(modules::students::handlers::update_own_profile),
-        )
-        .route(
-            "/api/parent/profile",
-            get(modules::parents::handlers::get_own_parent_profile),
-        )
-        .route(
-            "/api/parent/academic-context/options",
-            get(modules::parents::handlers::get_parent_academic_context_options),
-        )
-        .route(
-            "/api/parent/students/{student_id}",
-            get(modules::parents::handlers::get_child_profile),
-        )
-        .route(
-            "/api/parent/students/{student_id}/timetable",
-            get(modules::parents::handlers::get_child_timetable),
-        )
-        .route(
-            "/api/parent/students/{student_id}/academic-context/options",
-            get(modules::parents::handlers::get_child_academic_context_options),
-        )
-        .route(
-            "/api/parent/students/{student_id}/exam-schedules",
-            get(modules::parents::handlers::get_child_exam_schedule),
-        )
-        .route(
-            "/api/parent/students/{student_id}/calendar/events",
-            get(modules::parents::handlers::get_child_calendar_events),
-        )
-        .route(
-            "/api/me/timetable",
-            get(modules::academic::handlers::timetable_blocks::get_my_timetable),
-        )
-        .route(
-            "/api/me/academic-context/options",
-            get(modules::academic::core::handlers::list_my_context_options),
-        )
-        .route(
-            "/api/me/activity-registrations",
-            get(modules::academic::delivery::handlers::list_my_activity_registrations),
-        )
-        .route(
-            "/api/me/activity-registrations/{group_id}",
-            post(modules::academic::delivery::handlers::enroll_my_activity_registration)
-                .delete(modules::academic::delivery::handlers::unenroll_my_activity_registration),
-        )
-        .route(
-            "/api/me/exam-schedules",
-            get(modules::academic::handlers::exam_schedule::list_my_exam_schedule),
-        )
-        .route(
-            "/api/staff/exam-schedules",
-            get(modules::academic::handlers::exam_schedule::list_staff_exam_schedule),
-        )
-        .route(
-            "/api/me/calendar/events",
-            get(modules::calendar::handlers::list_my_calendar_events),
-        )
-        .route(
-            "/api/students",
-            get(modules::students::handlers::list_students)
-                .post(modules::students::handlers::create_student),
-        )
-        .route(
-            "/api/students/{id}",
-            get(modules::students::handlers::get_student)
-                .put(modules::students::handlers::update_student)
-                .delete(modules::students::handlers::delete_student),
-        )
-        .route(
-            "/api/students/{id}/parents",
-            post(modules::students::handlers_parents::add_parent_to_student),
-        )
-        .route(
-            "/api/students/{id}/parents/{parent_id}",
-            delete(modules::students::handlers_parents::remove_parent_from_student),
-        )
-        .route(
-            "/api/roles",
-            get(modules::staff::handlers::roles::list_roles)
-                .post(modules::staff::handlers::roles::create_role),
-        )
-        .route(
-            "/api/roles/{id}",
-            get(modules::staff::handlers::roles::get_role)
-                .put(modules::staff::handlers::roles::update_role)
-                .delete(modules::staff::handlers::roles::deactivate_role),
-        )
-        .route(
-            "/api/organization/units",
-            get(modules::staff::handlers::roles::list_organization_units)
-                .post(modules::staff::handlers::roles::create_organization_unit),
-        )
-        .route(
-            "/api/organization/units/{id}",
-            get(modules::staff::handlers::roles::get_organization_unit)
-                .put(modules::staff::handlers::roles::update_organization_unit)
-                .delete(modules::staff::handlers::roles::deactivate_organization_unit),
-        )
-        .route(
-            "/api/organization/units/{id}/permissions",
-            get(modules::staff::handlers::organization_permissions::get_organization_permissions)
-                .put(
-                modules::staff::handlers::organization_permissions::update_organization_permissions,
-            ),
-        )
-        .route(
-            "/api/organization/units/{id}/delegatable-permissions",
-            get(modules::staff::handlers::organization_delegations::list_delegatable_permissions),
-        )
-        .route(
-            "/api/organization/units/{id}/delegations",
-            get(modules::staff::handlers::organization_delegations::list_delegations)
-                .post(modules::staff::handlers::organization_delegations::create_delegation),
-        )
-        .route(
-            "/api/organization/delegations/{id}",
-            delete(modules::staff::handlers::organization_delegations::revoke_delegation),
-        )
-        .route(
-            "/api/organization/units/{id}/members",
-            get(modules::staff::handlers::organization_members::list_members)
-                .post(modules::staff::handlers::organization_members::add_member),
-        )
-        .route(
-            "/api/organization/units/{id}/members/{user_id}",
-            put(modules::staff::handlers::organization_members::update_member)
-                .delete(modules::staff::handlers::organization_members::remove_member),
-        )
-        .route(
-            "/api/users/{id}/roles",
-            get(modules::staff::handlers::user_roles::get_user_roles)
-                .post(modules::staff::handlers::user_roles::assign_user_role),
-        )
-        .route(
-            "/api/users/{id}/roles/{role_id}",
-            delete(modules::staff::handlers::user_roles::remove_user_role),
-        )
-        .route(
-            "/api/users/{id}/permissions",
-            get(modules::staff::handlers::user_roles::get_user_permissions),
-        )
-        .route(
-            "/api/permissions",
-            get(modules::staff::handlers::permissions::list_permissions),
-        )
-        .route(
-            "/api/permissions/modules",
-            get(modules::staff::handlers::permissions::list_permissions_by_module),
-        )
-        .route(
-            "/api/menu/user",
-            get(modules::menu::handlers::public::get_user_menu),
-        )
-        .route(
-            "/api/admin/features",
-            get(modules::system::handlers::feature_toggles::list_features),
-        )
-        .route(
-            "/api/admin/features/{id}",
-            get(modules::system::handlers::feature_toggles::get_feature)
-                .put(modules::system::handlers::feature_toggles::update_feature),
-        )
-        .route(
-            "/api/admin/features/{id}/toggle",
-            post(modules::system::handlers::feature_toggles::toggle_feature),
-        )
-        .route(
-            "/api/admin/menu/workspaces",
-            get(modules::menu::handlers::admin::list_menu_workspaces)
-                .post(modules::menu::handlers::admin::create_menu_workspace),
-        )
-        .route(
-            "/api/admin/menu/templates/academic/recommended",
-            get(modules::menu::handlers::admin::preview_recommended_academic_menu_template),
-        )
-        .route(
-            "/api/admin/menu/templates/academic/recommended/apply",
-            post(modules::menu::handlers::admin::apply_recommended_academic_menu_template),
-        )
-        .route(
-            "/api/admin/menu/workspaces/reorder",
-            post(modules::menu::handlers::admin::reorder_menu_workspaces),
-        )
-        .route(
-            "/api/admin/menu/workspaces/{id}",
-            put(modules::menu::handlers::admin::update_menu_workspace)
-                .delete(modules::menu::handlers::admin::delete_menu_workspace),
-        )
-        .route(
-            "/api/admin/menu/groups",
-            get(modules::menu::handlers::admin::list_menu_groups)
-                .post(modules::menu::handlers::admin::create_menu_group),
-        )
-        .route(
-            "/api/admin/menu/groups/{id}",
-            put(modules::menu::handlers::admin::update_menu_group)
-                .delete(modules::menu::handlers::admin::delete_menu_group),
-        )
-        .route(
-            "/api/admin/menu/groups/reorder",
-            post(modules::menu::handlers::admin::reorder_menu_groups),
-        )
-        .route(
-            "/api/admin/menu/items",
-            get(modules::menu::handlers::admin::list_menu_items)
-                .post(modules::menu::handlers::admin::create_menu_item),
-        )
-        .route(
-            "/api/admin/menu/items/{id}",
-            put(modules::menu::handlers::admin::update_menu_item)
-                .delete(modules::menu::handlers::admin::delete_menu_item),
-        )
-        .route(
-            "/api/admin/menu/items/{id}/group",
-            put(modules::menu::handlers::admin::move_item_to_group),
-        )
-        .route(
-            "/api/admin/menu/items/reorder",
-            post(modules::menu::handlers::admin::reorder_menu_items),
-        )
-        .route(
-            "/api/consent/my-status",
-            get(modules::consent::handlers::get_my_consent_status),
-        )
-        .route(
-            "/api/consent",
-            post(modules::consent::handlers::create_consent),
-        )
-        .route(
-            "/api/consent/{id}/withdraw",
-            post(modules::consent::handlers::withdraw_consent),
-        )
-        .route(
-            "/api/consent/summary",
-            get(modules::consent::handlers::get_consent_summary),
-        )
-        .route(
-            "/api/files",
-            post(modules::files::handlers::upload_file)
-                .layer(DefaultBodyLimit::max(24 * 1024 * 1024)),
-        )
-        .route(
-            "/api/files/{id}",
-            get(modules::files::handlers::get_file_metadata)
-                .delete(modules::files::handlers::delete_file),
-        )
-        .route(
-            "/api/files/{id}/download",
-            post(modules::files::handlers::download_file),
         )
         .nest("/api/calendar", modules::calendar::calendar_routes())
         .nest(
@@ -677,75 +118,9 @@ fn protected_routes() -> Router<AppState> {
             "/api/admission",
             modules::admission::admission_staff_routes(),
         )
-        .route(
-            "/api/school/settings",
-            get(modules::school::handlers::get_settings)
-                .patch(modules::school::handlers::update_settings),
-        )
-        .route(
-            "/api/school/settings/logo",
-            delete(modules::school::handlers::delete_logo),
-        )
-        .route(
-            "/api/notifications/stream",
-            get(modules::notification::handlers::stream_notifications),
-        )
-        .route(
-            "/api/notifications",
-            get(modules::notification::handlers::list_notifications)
-                .post(modules::notification::handlers::create_notification),
-        )
-        .route(
-            "/api/notifications/read-all",
-            post(modules::notification::handlers::mark_all_as_read),
-        )
-        .route(
-            "/api/notifications/{id}/read",
-            post(modules::notification::handlers::mark_as_read),
-        )
-        .route(
-            "/api/notifications/subscribe",
-            post(modules::notification::handlers::subscribe_push),
-        )
-        .route(
-            "/api/lookup/staff",
-            get(modules::lookup::handlers::lookup_staff),
-        )
-        .route(
-            "/api/lookup/students",
-            get(modules::lookup::handlers::lookup_students),
-        )
-        .route(
-            "/api/lookup/rooms",
-            get(modules::lookup::handlers::lookup_rooms),
-        )
-        .route(
-            "/api/lookup/roles",
-            get(modules::lookup::handlers::lookup_roles),
-        )
-        .route(
-            "/api/lookup/organization-units",
-            get(modules::lookup::handlers::lookup_organization_units),
-        )
-        .route(
-            "/api/lookup/organization-units/{id}",
-            get(modules::lookup::handlers::lookup_organization_unit_by_id),
-        )
-        .route(
-            "/api/lookup/grade-levels",
-            get(modules::lookup::handlers::lookup_grade_levels),
-        )
-        .route(
-            "/api/lookup/homerooms",
-            get(modules::lookup::handlers::lookup_homerooms),
-        )
-        .route(
-            "/api/lookup/academic-years",
-            get(modules::lookup::handlers::lookup_academic_years),
-        )
-        .route(
-            "/api/lookup/subjects",
-            get(modules::lookup::handlers::lookup_subjects),
+        .nest(
+            "/api/academic",
+            modules::academic::academic_routes(AcademicHttpState::from_ref(state)),
         )
 }
 
@@ -756,57 +131,6 @@ async fn root_handler() -> Json<serde_json::Value> {
         "status": "running",
         "architecture": "multi-tenant with dynamic connection pools"
     }))
-}
-
-use crate::middleware::session::session_middleware;
-
-#[cfg(test)]
-mod tests {
-    use axum::{
-        body::Body,
-        http::{Method, Request, StatusCode},
-        routing::post,
-        Router,
-    };
-    use tower::ServiceExt;
-
-    use super::public_certificate_security_headers;
-
-    #[tokio::test]
-    async fn public_certificate_route_headers_cover_success_and_method_rejection() {
-        let app = Router::new()
-            .route("/certificate", post(|| async { StatusCode::OK }))
-            .route_layer(axum::middleware::from_fn(
-                public_certificate_security_headers,
-            ));
-
-        for method in [Method::POST, Method::GET] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method(method.clone())
-                        .uri("/certificate")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
-            assert_eq!(
-                response.headers().get("referrer-policy").unwrap(),
-                "no-referrer"
-            );
-            assert_eq!(
-                response.status(),
-                if method == Method::POST {
-                    StatusCode::OK
-                } else {
-                    StatusCode::METHOD_NOT_ALLOWED
-                }
-            );
-        }
-    }
 }
 
 async fn request_timing(

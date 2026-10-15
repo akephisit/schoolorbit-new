@@ -195,6 +195,14 @@ request-context adapters. The application package retains login/profile Axum han
 File Platform profile-image orchestration, and deliberate
 cross-domain tests such as staff soft-delete followed by session invalidation.
 
+The public school HTTP fixture also exercises the composed domain routers: anonymous access
+is refused across protected feature owners, unknown paths remain 404, authenticated `/api/auth/me`
+returns its CSRF header, and the notification stream accepts its scoped realtime tenant hint
+from an allowlisted development Origin while rejecting a request without Origin.
+All three public Certificate routes retain malformed-body and 16 KiB rejection plus security
+headers, including method rejection. Architecture inventories follow feature route modules and
+their application-owned prefixes instead of assuming registrations live in `app.rs`.
+
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
 
 Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical

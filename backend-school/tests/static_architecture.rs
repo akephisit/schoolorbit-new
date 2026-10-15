@@ -39,6 +39,77 @@ fn workspace_crate_dir(name: &str) -> PathBuf {
     manifest_dir().join("crates").join(name)
 }
 
+// Keep contract inventories tied to runtime registrations after their domain move.
+// Application composition owns /api; the feature factories own relative paths.
+fn route_factory_source<'a>(source: &'a str, factory: &str) -> &'a str {
+    let marker = format!("pub fn {factory}()");
+    let block = extract_braced_block(source, &marker, false);
+    let start = lexical_mask(source, false)
+        .structural
+        .find(&marker)
+        .unwrap();
+    // The lexical mask preserves byte positions but hides string literals. Inventory
+    // guards need the original URLs and use the mask only to find the closing brace.
+    &source[start..start + block.len()]
+}
+
+fn application_route_source() -> String {
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    let route_path = Regex::new(r#"(\.route\(\s*")(/[^\"]*)(")"#).unwrap();
+    let with_prefix = |source: &str, prefix: &str| {
+        route_path
+            .replace_all(source, |captures: &regex::Captures<'_>| {
+                format!("{}{}{}{}", &captures[1], prefix, &captures[2], &captures[3])
+            })
+            .into_owned()
+    };
+    let mut sources = vec![app.clone()];
+    for file in list_files(manifest_dir().join("src/modules"), |path| {
+        path.file_name().is_some_and(|name| name == "routes.rs")
+    }) {
+        let owner = file
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let prefix = if owner == "academic" { "/ws" } else { "/api" };
+        let mount = Regex::new(&format!(
+            r#"\.nest\(\s*"{prefix}",\s*modules::{owner}::routes::"#
+        ))
+        .unwrap();
+        assert!(mount.is_match(&app), "unmounted route owner: {owner}");
+        let source = read_source(&file);
+        let handler =
+            Regex::new(r"\b(handlers(?:_parents)?|session_handlers|websockets)::").unwrap();
+        let qualified = handler.replace_all(&source, |captures: &regex::Captures<'_>| {
+            format!("modules::{owner}::{}::", &captures[1])
+        });
+        sources.push(with_prefix(&qualified, prefix));
+    }
+    let academic = read_source(workspace_crate_dir("school-academic-http").join("src/routes.rs"));
+    for factory in ["public_routes", "personal_routes"] {
+        let source = route_factory_source(&academic, factory);
+        assert!(app.contains(&format!("school_academic_http::routes::{factory}()")));
+        sources.push(with_prefix(
+            &source.replace("crate::", "modules::academic::"),
+            "/api",
+        ));
+    }
+    let certificates =
+        read_source(workspace_crate_dir("school-certificates-http").join("src/routes.rs"));
+    for factory in ["public_routes", "protected_routes"] {
+        let source = route_factory_source(&certificates, factory);
+        assert!(app.contains(&format!("school_certificates_http::routes::{factory}()")));
+        sources.push(with_prefix(
+            &source.replace("handlers::", "modules::certificates::handlers::"),
+            "/api",
+        ));
+    }
+    sources.join("\n")
+}
+
 fn school_dependencies_in_section(manifest: &str, section: &str) -> BTreeSet<String> {
     let header = format!("[{section}]");
     let body = manifest
@@ -3488,7 +3559,7 @@ fn staff_list_uses_resource_aware_access_scope() {
 
 #[test]
 fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
-    let routes = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
+    let routes = strip_comments(&application_route_source());
     let staff_handler = strip_comments(&read_source(
         manifest_dir().join("src/modules/staff/handlers/staff.rs"),
     ));
@@ -3828,7 +3899,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     let academic_routes = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-http/src/routes.rs"),
     ));
-    let app_routes = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
+    let app_routes = strip_comments(&application_route_source());
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/handlers.rs"),
     ));
@@ -5160,7 +5231,7 @@ fn read_oriented_handlers_missing_from_contract(
 
 #[test]
 fn authorization_handlers_are_registered_in_the_openapi_document() {
-    let router = read_source(manifest_dir().join("src/app.rs"));
+    let router = application_route_source();
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
     assert!(
@@ -5206,7 +5277,7 @@ fn authorization_openapi_guard_detects_a_new_router_handler() {
 
 #[test]
 fn read_oriented_handlers_are_registered_in_the_openapi_document() {
-    let main_router = read_source(manifest_dir().join("src/app.rs"));
+    let main_router = application_route_source();
     let calendar_router = read_source(manifest_dir().join("src/modules/calendar.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
@@ -5695,9 +5766,11 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
 
     let app = read_source(manifest_dir().join("src/app.rs"));
     assert!(!app.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
-    assert!(app.contains(
-        "WebSocket authentication runs in the handler; query selects academic term only"
-    ));
+    assert!(
+        read_source(manifest_dir().join("src/modules/academic/routes.rs")).contains(
+            "WebSocket authentication runs in the handler; query selects academic term only"
+        )
+    );
 }
 
 #[test]
@@ -5878,14 +5951,15 @@ fn browser_auth_uses_one_session_boundary_and_no_jwt_runtime() {
 #[test]
 fn public_and_protected_routes_are_explicitly_partitioned() {
     let app = read_source(manifest_dir().join("src/app.rs"));
-    assert!(app.contains("public_routes()"));
-    assert!(app.contains("protected_routes()"));
+    assert!(app.contains("public_routes(&state)"));
+    assert!(app.contains("protected_routes(&state)"));
     assert!(app.contains("admission_public_routes()"));
     assert!(app.contains("admission_staff_routes()"));
     assert!(app.contains("/internal/migrate-all"));
-    assert!(app.contains("/api/admin/routes/sync"));
+    assert!(application_route_source().contains("/api/admin/routes/sync"));
     assert_eq!(
-        app.matches("DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)")
+        read_source(manifest_dir().join("src/modules/auth/routes.rs"))
+            .matches("DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)")
             .count(),
         2
     );
@@ -5896,6 +5970,8 @@ fn public_and_protected_routes_are_explicitly_partitioned() {
 fn academic_router_codegen_stays_with_its_concrete_http_state() {
     for (file, factory) in [
         ("routes.rs", "academic_routes"),
+        ("routes.rs", "public_routes"),
+        ("routes.rs", "personal_routes"),
         ("core.rs", "routes"),
         ("delivery.rs", "routes"),
         ("gradebook.rs", "routes"),
@@ -5929,10 +6005,12 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
 
     let app = read_source(manifest_dir().join("src/app.rs"));
     let startup = extract_braced_block(&app, "pub fn build_app", false);
-    assert!(startup.contains("AcademicHttpState::from_ref(&state)"));
+    let protected = extract_braced_block(&app, "fn protected_routes", false);
+    assert!(protected.contains("AcademicHttpState::from_ref(state)"));
+    assert!(protected.contains("school_academic_http::routes::personal_routes()"));
     assert!(
         startup
-            .find("let protected = protected_routes().nest(")
+            .find("let protected = protected_routes(&state)")
             .unwrap()
             < startup
                 .find("protected.route_layer(from_fn_with_state(runtime, session_middleware))")
@@ -5942,6 +6020,44 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
     assert!(composition.contains("school_academic_http::routes::academic_routes()"));
     assert!(composition.contains(".with_state(state)"));
     assert!(composition.contains("crate::modules::question_bank::question_bank_routes()"));
+}
+
+#[test]
+fn domain_routes_keep_handlers_with_their_owner_and_bind_before_session_middleware() {
+    let app = read_source(manifest_dir().join("src/app.rs"));
+    let feature_handler =
+        Regex::new(r"modules::(\w+)::(?:handlers|session_handlers)::(\w+)").unwrap();
+    for captures in feature_handler.captures_iter(&app) {
+        if &captures[1] == "attendance" && &captures[2] == "routes" {
+            continue; // Existing feature-owned factory, not a direct handler registration.
+        }
+        assert_eq!(
+            &captures[1], "system",
+            "only platform handlers belong in app.rs"
+        );
+    }
+    let routes = read_source(workspace_crate_dir("school-certificates-http").join("src/routes.rs"));
+    for factory in ["public_routes", "protected_routes"] {
+        assert!(routes.contains(&format!(
+            "#[inline(never)]\npub fn {factory}() -> Router<CertificateHttpState>"
+        )));
+    }
+    assert!(!routes.contains("AppState"));
+    let public = extract_braced_block(&app, "fn public_routes", false);
+    let protected = extract_braced_block(&app, "fn protected_routes", false);
+    assert!(public.contains("school_certificates_http::routes::public_routes()"));
+    assert!(protected.contains("school_certificates_http::routes::protected_routes()"));
+    for source in [&public, &protected] {
+        assert!(source.contains("CertificateHttpState::from_ref(state)"));
+    }
+    assert!(routes.contains(".route_layer(from_fn(public_certificate_security_headers))"));
+    assert!(routes.contains("DefaultBodyLimit::max(PUBLIC_CERTIFICATE_JSON_BODY_LIMIT)"));
+    assert!(
+        read_source(manifest_dir().join("src/modules/files/routes.rs"))
+            .contains("DefaultBodyLimit::max(24 * 1024 * 1024)")
+    );
+    // Also validate that every discovered route owner is mounted at its declared prefix.
+    assert!(!application_route_source().is_empty());
 }
 
 #[test]
@@ -6852,7 +6968,7 @@ fn calendar_schema_routes_and_permissions_are_registered() {
     );
     let modules_root = read_source(manifest_dir().join("src/modules.rs"));
     let main_source = read_source(manifest_dir().join("src/main.rs"));
-    let app = strip_comments(&read_source(manifest_dir().join("src/app.rs")));
+    let app = strip_comments(&application_route_source());
 
     for required in [
         "CREATE TABLE calendar_categories",
@@ -7430,7 +7546,7 @@ fn academic_core_one_time_cutover_tools_are_retired_after_cleanup() {
     assert!(academic.contains("#[cfg(test)]\npub mod cutover_test_preflight;"));
     assert!(academic.contains("#[cfg(test)]\npub mod cutover_test_support;"));
 
-    let app = read_source(manifest_dir().join("src/app.rs"));
+    let app = application_route_source();
     let reconciliation = strip_comments(&read_source(
         manifest_dir().join("src/modules/academic/reconciliation.rs"),
     ));
@@ -8473,7 +8589,7 @@ fn admission_enrollment_and_room_sort_fail_closed_on_sql_errors() {
 
 #[test]
 fn personnel_catalog_is_read_only() {
-    let router = read_source(manifest_dir().join("src/app.rs"));
+    let router = application_route_source();
     assert!(router.contains("/api/staff/job-positions"));
     assert!(!router.contains("/api/staff/reference-items"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));

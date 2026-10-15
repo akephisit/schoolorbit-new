@@ -17,6 +17,7 @@ pub mod models;
 pub mod reconciliation;
 pub(crate) mod result_lock_adapter;
 pub mod results;
+pub mod routes;
 pub mod services;
 pub mod websockets;
 

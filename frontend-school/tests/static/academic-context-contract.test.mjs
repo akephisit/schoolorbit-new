@@ -642,6 +642,14 @@ test('student and parent history selectors use learner-scoped academic context e
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const parentsApi = await readProjectFile('src/lib/api/parents.ts');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
+	const academicRoutes = await readFile(
+		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/routes.rs'),
+		'utf8'
+	);
+	const parentRoutes = await readFile(
+		path.join(repoRoot, 'backend-school/src/modules/parents/routes.rs'),
+		'utf8'
+	);
 	const coreHandlers = await readFile(
 		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
 		'utf8'
@@ -664,9 +672,11 @@ test('student and parent history selectors use learner-scoped academic context e
 		api,
 		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/academic-context\/options/
 	);
-	assert.match(app, /"\/api\/me\/academic-context\/options"/);
-	assert.match(app, /"\/api\/parent\/academic-context\/options"/);
-	assert.match(app, /"\/api\/parent\/students\/\{student_id\}\/academic-context\/options"/);
+	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_http::routes::personal_routes\(\)/);
+	assert.match(app, /\.nest\(\s*"\/api",\s*modules::parents::routes::protected_routes\(\)/);
+	assert.match(academicRoutes, /"\/me\/academic-context\/options"/);
+	assert.match(parentRoutes, /"\/parent\/academic-context\/options"/);
+	assert.match(parentRoutes, /"\/parent\/students\/\{student_id\}\/academic-context\/options"/);
 	assert.match(coreHandlers, /pub async fn list_my_context_options/);
 	assert.match(parentHandlers, /pub async fn get_child_academic_context_options/);
 	assert.match(parentHandlers, /pub async fn get_parent_academic_context_options/);
@@ -761,6 +771,10 @@ test('public calendar scopes date ranges using public academic year dates', asyn
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
+	const routes = await readFile(
+		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/routes.rs'),
+		'utf8'
+	);
 	const handlers = await readFile(
 		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
 		'utf8'
@@ -774,7 +788,8 @@ test('public calendar scopes date ranges using public academic year dates', asyn
 	assert.match(loader, /publicCalendarRange\(month, year\)/);
 	assert.doesNotMatch(loader, /listMyAcademicContextOptions|apiClient\.get\(/);
 	assert.match(view, /listPublicCalendarEvents/);
-	assert.match(app, /"\/api\/public\/academic-context\/options"/);
+	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_http::routes::public_routes\(\)/);
+	assert.match(routes, /"\/public\/academic-context\/options"/);
 	assert.match(handlers, /pub async fn list_public_context_options/);
 });
 

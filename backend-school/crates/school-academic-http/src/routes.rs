@@ -218,3 +218,43 @@ pub fn academic_routes() -> Router<AcademicHttpState> {
             ),
     )
 }
+
+// Compile handler futures and response encoding in the owning HTTP crate.
+#[inline(never)]
+pub fn public_routes() -> Router<AcademicHttpState> {
+    Router::new().route(
+        "/public/academic-context/options",
+        get(crate::core::handlers::list_public_context_options),
+    )
+}
+
+// Compile handler futures and response encoding in the owning HTTP crate.
+#[inline(never)]
+pub fn personal_routes() -> Router<AcademicHttpState> {
+    Router::new()
+        .route(
+            "/me/timetable",
+            get(crate::handlers::timetable_blocks::get_my_timetable),
+        )
+        .route(
+            "/me/academic-context/options",
+            get(crate::core::handlers::list_my_context_options),
+        )
+        .route(
+            "/me/activity-registrations",
+            get(crate::delivery::handlers::list_my_activity_registrations),
+        )
+        .route(
+            "/me/activity-registrations/{group_id}",
+            post(crate::delivery::handlers::enroll_my_activity_registration)
+                .delete(crate::delivery::handlers::unenroll_my_activity_registration),
+        )
+        .route(
+            "/me/exam-schedules",
+            get(crate::handlers::exam_schedule::list_my_exam_schedule),
+        )
+        .route(
+            "/staff/exam-schedules",
+            get(crate::handlers::exam_schedule::list_staff_exam_schedule),
+        )
+}

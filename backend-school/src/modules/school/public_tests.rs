@@ -438,7 +438,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         permission_cache: permission_cache.clone(),
         identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
         config: Arc::new({
-            let mut config = SessionConfig::for_tests(SessionHmacKey::for_tests([71; 32]));
+            let mut config = SessionConfig::for_tests_with_dev_origins(
+                SessionHmacKey::for_tests([71; 32]),
+                ["http://localhost:5173"],
+            );
             config.base_domain = "schoolorbit.app".into();
             config
         }),
@@ -517,6 +520,158 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         );
     }
     let app = build_app(state);
+    let unknown = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/not-a-schoolorbit-route")
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    // Exercise real composition across the moved owners: registration and all methods
+    // must remain behind the shared session boundary before their extractors/services run.
+    for (method, path) in [
+        ("GET", "/api/auth/me"),
+        ("PUT", "/api/auth/me/profile"),
+        ("POST", "/api/auth/me/change-password"),
+        ("GET", "/api/staff/dashboard"),
+        ("POST", "/api/staff"),
+        ("GET", "/api/roles"),
+        ("GET", "/api/organization/units"),
+        ("GET", "/api/permissions"),
+        ("GET", "/api/achievements"),
+        ("POST", "/api/school-fonts/inspect"),
+        ("GET", "/api/certificates/campaigns"),
+        ("POST", "/api/certificates/campaigns"),
+        ("GET", "/api/me/certificates"),
+        ("GET", "/api/students"),
+        ("PUT", "/api/students/00000000-0000-0000-0000-000000000001"),
+        ("GET", "/api/student/profile"),
+        ("GET", "/api/parent/profile"),
+        ("GET", "/api/parent/academic-context/options"),
+        ("GET", "/api/me/timetable"),
+        ("GET", "/api/me/academic-context/options"),
+        ("GET", "/api/me/activity-registrations"),
+        ("GET", "/api/me/exam-schedules"),
+        ("GET", "/api/staff/exam-schedules"),
+        ("GET", "/api/me/calendar/events"),
+        ("GET", "/api/menu/user"),
+        ("GET", "/api/admin/menu/workspaces"),
+        ("GET", "/api/admin/features"),
+        ("GET", "/api/consent/my-status"),
+        ("POST", "/api/files"),
+        ("PATCH", "/api/school/settings"),
+        ("GET", "/api/notifications"),
+        ("GET", "/api/notifications/stream"),
+        ("GET", "/api/lookup/staff"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header("Origin", "https://school-a.schoolorbit.app")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path}"
+        );
+    }
+    // These middleware behaviors depend on the full mounted path, before /api is stripped.
+    let token = school_auth::session_crypto::RawSessionToken::from_bytes([83; 32]);
+    let now = chrono::Utc::now();
+    sqlx::query("INSERT INTO auth_sessions(id,user_id,current_token_hash,remember_me,device_label,created_at,last_seen_at,idle_expires_at,absolute_expires_at,rotated_at) VALUES($1,$2,$3,false,'Route ownership fixture',$4,$4,$5,$6,$4)")
+        .bind(Uuid::new_v4()).bind(actor_id).bind(token.token_hash().as_bytes().as_slice())
+        .bind(now).bind(now + chrono::Duration::hours(2)).bind(now + chrono::Duration::hours(12))
+        .execute(&a).await.unwrap();
+    let cookie = format!(
+        "__Host-schoolorbit_session={}",
+        token.encode().expose_for_cookie()
+    );
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/me")
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .header("Cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key("x-csrf-token"));
+    let missing_origin = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/notifications/stream?school_subdomain=school-a")
+                .header("Cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_origin.status(), StatusCode::FORBIDDEN);
+    let stream = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/notifications/stream?school_subdomain=school-a")
+                .header("Origin", "http://localhost:5173")
+                .header("Cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stream.status(), StatusCode::OK);
+    assert!(stream.headers()["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("text/event-stream"));
+    drop(stream);
+    for path in [
+        "/api/public/certificates/verify/manual",
+        "/api/public/certificates/verify/qr",
+        "/api/public/certificates/render-manifest",
+    ] {
+        for (method, body, expected) in [
+            ("POST", "{".to_owned(), StatusCode::BAD_REQUEST),
+            (
+                "POST",
+                "x".repeat(16 * 1024 + 1),
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ),
+            ("GET", String::new(), StatusCode::METHOD_NOT_ALLOWED),
+        ] {
+            let mut request = Request::builder()
+                .method(method)
+                .uri(path)
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .header("Content-Type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            request.extensions_mut().insert(axum::extract::ConnectInfo(
+                "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap(),
+            ));
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected, "{method} {path}");
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+        }
+    }
     for (tenant, count) in [("school-a", 1), ("school-b", 0)] {
         for path in [
             "/api/school/public/statistics",
