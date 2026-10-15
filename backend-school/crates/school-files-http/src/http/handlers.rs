@@ -335,6 +335,15 @@ pub async fn delete_file(
         .await
         .map_err(map_platform_error)?;
     let domain_delete_guard = match file.purpose {
+        FilePurpose::TeachingLicense => Some(
+            school_staff::services::staff_license_service::delete_guard(
+                repository.pool(),
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
         FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => Some(
             file_access_policy::authorize_certificate_template_delete_guard(
                 repository.pool(),

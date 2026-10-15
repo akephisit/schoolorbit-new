@@ -7,6 +7,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import StaffNameFields from '#lib/components/staff/StaffNameFields.svelte';
 	import { STAFF_NAME_FIELDS, staffNameDraft, staffNameErrors } from '#lib/forms/staff-name.js';
+	import StaffLicensePreview from '#lib/components/staff/StaffLicensePreview.svelte';
 	import StaffPersonnelFields from '#lib/components/staff/StaffPersonnelFields.svelte';
 	import {
 		buildStaffPersonnelPatch,
@@ -85,11 +86,19 @@
 	// Loading states
 	let loadingProfile = $state(true);
 	let saving = $state(false);
+	let uploadingLicense = $state(false);
+	let latestLicense = $state<{ fileId: string | null } | null>(null);
+
 	let loadingOrganizationUnits = $state(false);
 
 	const organizationRequest = new LatestRequest();
 	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
 	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_UPDATE_ALL));
+	const canManageLicense = $derived(
+		canMutateStaff &&
+			($can.has(PERMISSIONS.STAFF_PII_READ_SCHOOL) ||
+				(currentUserId === staffId && $can.has(PERMISSIONS.STAFF_PII_READ_OWN)))
+	);
 	let organizationsLoaded = $state(false),
 		organizationError = $state('');
 	let disposed = false,
@@ -159,6 +168,7 @@
 				activeId = id;
 				latestEducation = null;
 				careerConflict = false;
+				latestLicense = null;
 				mutationEpoch++;
 				staff = null;
 				saving = false;
@@ -349,7 +359,16 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!canMutateStaff || saving || careerConflict || !staff || !originalForm || !dirty) return;
+		if (
+			!canMutateStaff ||
+			saving ||
+			uploadingLicense ||
+			careerConflict ||
+			!staff ||
+			!originalForm ||
+			!dirty
+		)
+			return;
 		if (!validateStep1()) {
 			await goto(
 				sectionHref(
@@ -484,7 +503,21 @@
 					originalForm.personnel.education_revision = latestPersonnel.education_revision;
 				}
 			}
-			careerConflict = latestEducation !== null;
+			if (
+				latestPersonnel.teaching_license_file_id !== originalForm.personnel.teaching_license_file_id
+			) {
+				if (
+					formData.personnel.teaching_license_file_id !==
+					originalForm.personnel.teaching_license_file_id
+				)
+					latestLicense = { fileId: latestPersonnel.teaching_license_file_id };
+				else {
+					formData.personnel.teaching_license_file_id = latestPersonnel.teaching_license_file_id;
+					originalForm.personnel.teaching_license_file_id =
+						latestPersonnel.teaching_license_file_id;
+				}
+			}
+			careerConflict = latestEducation !== null || latestLicense !== null;
 			toast.success('โหลดข้อมูลล่าสุดแล้ว กรุณาตรวจสอบร่างก่อนบันทึก');
 		} catch (error) {
 			if (!disposed && owner === staffId)
@@ -503,7 +536,14 @@
 		formData.personnel.education_revision = latestEducation.education_revision;
 		originalForm.personnel.education_revision = latestEducation.education_revision;
 		latestEducation = null;
-		careerConflict = false;
+		careerConflict = latestLicense !== null;
+	}
+	function resolveLicenseConflict(useLatest: boolean) {
+		if (!latestLicense || !originalForm || saving) return;
+		originalForm.personnel.teaching_license_file_id = latestLicense.fileId;
+		if (useLatest) formData.personnel.teaching_license_file_id = latestLicense.fileId;
+		latestLicense = null;
+		careerConflict = latestEducation !== null;
 	}
 	// Get display label for value
 	function getGenderLabel(value: string): string {
@@ -801,6 +841,30 @@
 										disabled={saving}
 										onclick={reconcileCareerDraft}>โหลดข้อมูลล่าสุดและตรวจสอบร่าง</Button
 									>
+									{#if latestLicense && canManageLicense}
+										<div class="space-y-2 border-t pt-3">
+											<p class="text-sm font-medium">เอกสารล่าสุดในระบบ</p>
+											{#if latestLicense.fileId}<StaffLicensePreview
+													{staffId}
+													fileId={latestLicense.fileId}
+												/>{:else}<p class="text-sm">ไม่มีเอกสารแนบ</p>{/if}
+											<p class="text-xs text-muted-foreground">
+												ร่างเอกสารของคุณยังอยู่ เลือกว่าจะเก็บเอกสารใดก่อนบันทึก
+											</p>
+											<div class="flex flex-wrap gap-2">
+												<Button
+													type="button"
+													variant="outline"
+													onclick={() => resolveLicenseConflict(true)}>ใช้เอกสารล่าสุด</Button
+												><Button
+													type="button"
+													variant="outline"
+													onclick={() => resolveLicenseConflict(false)}
+													>ใช้ร่างแทนเอกสารล่าสุด</Button
+												>
+											</div>
+										</div>
+									{/if}
 									{#if latestEducation}
 										<div class="space-y-3 border-t pt-3">
 											<p class="text-sm font-medium">รายการวุฒิล่าสุดในระบบ</p>
@@ -826,6 +890,9 @@
 								</div>{/if}
 
 							<StaffPersonnelFields
+								{staffId}
+								{canManageLicense}
+								onUploadPendingChange={(pending) => (uploadingLicense = pending)}
 								bind:value={formData.personnel}
 								originalCareer={originalForm?.personnel.career}
 								bind:correctionReasons
@@ -1008,11 +1075,11 @@
 							type="button"
 							variant="outline"
 							onclick={discardChanges}
-							disabled={saving || !dirty}>ยกเลิกการแก้ไข</Button
+							disabled={saving || uploadingLicense || !dirty}>ยกเลิกการแก้ไข</Button
 						>
 						<Button
 							type="submit"
-							disabled={saving || careerConflict || !canMutateStaff || !dirty}
+							disabled={saving || uploadingLicense || careerConflict || !canMutateStaff || !dirty}
 							class="gap-2"
 							>{#if saving}<LoaderCircle class="size-4 animate-spin" />กำลังบันทึก...{:else}<Save
 									class="size-4"

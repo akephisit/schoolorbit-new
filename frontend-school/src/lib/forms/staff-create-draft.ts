@@ -69,6 +69,7 @@ const inputFields = z
 				career: career.optional(),
 				educations: z.array(education).optional(),
 				education_revision: z.number().int().nonnegative().optional(),
+				teaching_license_file_id: z.string().uuid().nullable().optional(),
 				teaching_license_number: z.string().optional(),
 				teaching_license_expiry: z.string().optional()
 			})
@@ -103,6 +104,7 @@ const inputFields = z
 	.partial();
 const fields = inputFields.transform((value) => {
 	if (value.personnel) {
+		delete value.personnel.teaching_license_file_id;
 		delete value.personnel.teaching_license_number;
 		delete value.personnel.teaching_license_expiry;
 	}

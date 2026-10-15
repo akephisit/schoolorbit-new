@@ -654,6 +654,7 @@ pub async fn get_staff_profile(
     let mut staff_info = staff_info_res?;
     if !include_pii {
         if let Some(info) = staff_info.as_mut() {
+            info.teaching_license_file_id = None;
             info.teaching_license_number = None;
             info.teaching_license_expiry = None;
         }

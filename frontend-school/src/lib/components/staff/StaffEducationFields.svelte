@@ -26,7 +26,7 @@
 	}
 </script>
 
-<section class="space-y-4" aria-label="วุฒิการศึกษา" data-testid="staff-education-fields">
+<section class="space-y-3" aria-label="วุฒิการศึกษา" data-testid="staff-education-fields">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h3 class="text-sm font-semibold">วุฒิการศึกษา</h3>
@@ -44,9 +44,12 @@
 		>
 	</div>
 	{#each value as row, index (row.key)}
-		<fieldset class="min-w-0 rounded-xl border p-4" {disabled}>
-			<legend class="px-1 text-sm font-medium">วุฒิที่ {index + 1}</legend>
-			<div class="mb-3 flex justify-end">
+		<fieldset class="min-w-0 rounded-xl border p-3" {disabled}>
+			<legend class="sr-only">วุฒิที่ {index + 1}</legend>
+			<div class="mb-2 flex items-center justify-between gap-2">
+				<span class="text-xs font-medium text-muted-foreground" aria-hidden="true"
+					>วุฒิที่ {index + 1}</span
+				>
 				<Button
 					type="button"
 					variant="ghost"
@@ -57,7 +60,7 @@
 				>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-3">
-				<div class="space-y-2">
+				<div class="space-y-1.5">
 					<Label for={`education-${row.key}`}
 						>ระดับวุฒิ{#if !row.id}<span class="text-destructive">*</span>{/if}</Label
 					>
@@ -91,7 +94,7 @@
 				</div>
 				{#each [{ key: 'major', label: 'สาขาวิชา' }, { key: 'university', label: 'สถาบันการศึกษา' }] as field (field.key)}
 					{@const key = field.key as 'major' | 'university'}
-					<div class="space-y-2">
+					<div class="space-y-1.5">
 						<Label for={`${key}-${row.key}`}>{field.label}</Label><Input
 							id={`${key}-${row.key}`}
 							bind:value={row[key]}

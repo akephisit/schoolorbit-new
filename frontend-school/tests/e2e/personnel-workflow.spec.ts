@@ -254,7 +254,8 @@ test('new personnel selection survives draft reload and appears in review and cr
 }) => {
 	await setup(page);
 	await page.goto('/staff/manage/new');
-	await page.getByLabel('คำนำหน้า (ไทย)', { exact: true }).fill('นาย');
+	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('option', { name: 'นาย', exact: true }).click();
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรใหม่');
 	await page.getByPlaceholder('นามสกุล', { exact: true }).fill('ทดสอบ');
 	await page.getByRole('button', { name: 'ตำแหน่งงาน', exact: true }).click();

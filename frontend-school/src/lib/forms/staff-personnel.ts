@@ -38,6 +38,7 @@ export type StaffPersonnelDraft = {
 	career: StaffCareerDraft;
 	educations: StaffEducationDraft[];
 	education_revision: number;
+	teaching_license_file_id: string | null;
 	teaching_license_number: string;
 	teaching_license_expiry: string;
 };
@@ -116,6 +117,11 @@ export function buildStaffPersonnelPatch(
 	for (const field of ['teaching_license_number', 'teaching_license_expiry'] as const) {
 		if (before[field] !== after[field]) patch[field] = after[field]?.trim() || null;
 	}
+	if (before.teaching_license_file_id !== after.teaching_license_file_id)
+		patch.teaching_license_file = {
+			expected_file_id: before.teaching_license_file_id,
+			file_id: after.teaching_license_file_id
+		};
 	const oldRows = before.educations.map(staffEducationInput);
 	const newRows = after.educations.map(staffEducationInput);
 	if (JSON.stringify(oldRows) !== JSON.stringify(newRows))
@@ -128,6 +134,7 @@ export function staffPersonnelDraft(
 	return {
 		career: staffCareerDraft(info?.current_career ?? null),
 		education_revision: info?.education_revision ?? 0,
+		teaching_license_file_id: info?.teaching_license_file_id ?? null,
 		teaching_license_number: info?.teaching_license_number ?? '',
 		teaching_license_expiry: info?.teaching_license_expiry ?? '',
 		educations: (info?.educations ?? []).map((row) => ({ ...row, key: row.id }))

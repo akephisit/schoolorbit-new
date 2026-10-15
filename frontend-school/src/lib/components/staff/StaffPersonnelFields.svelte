@@ -19,6 +19,7 @@
 		type StaffPersonnelType
 	} from '#lib/forms/staff-career.js';
 	import StaffJobPositionPicker from './StaffJobPositionPicker.svelte';
+	import StaffLicenseAttachment from './StaffLicenseAttachment.svelte';
 	import StaffEducationFields from './StaffEducationFields.svelte';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import StaffCareerDates from './StaffCareerDates.svelte';
@@ -28,7 +29,10 @@
 		correctionReasons = $bindable({}),
 		originalCareer = null,
 		errors = {},
-		disabled = false
+		disabled = false,
+		staffId,
+		canManageLicense = false,
+		onUploadPendingChange
 	}: {
 		value: StaffPersonnelDraft;
 		selectedPosition?: StaffJobPositionSummary | null;
@@ -36,6 +40,9 @@
 		originalCareer?: StaffCareerDraft | null;
 		errors?: Record<string, string>;
 		disabled?: boolean;
+		staffId?: string;
+		canManageLicense?: boolean;
+		onUploadPendingChange?: (pending: boolean) => void;
 	} = $props();
 	const careerErrors = $derived({ ...careerFieldErrors(value.career), ...errors });
 	const facts = [
@@ -56,8 +63,8 @@
 	}
 </script>
 
-<div class="space-y-6" data-testid="staff-personnel-fields">
-	<div class="grid min-w-0 gap-5 sm:grid-cols-2">
+<div class="space-y-4" data-testid="staff-personnel-fields">
+	<div class="grid min-w-0 gap-3 sm:grid-cols-2">
 		<div class="space-y-2">
 			<Label for="staff-personnel-type">ประเภทบุคลากร</Label>
 			<Select.Root
@@ -177,6 +184,16 @@
 	</div>
 	{#if errors.teaching_license_number}<p id="staff-license-error" class="text-sm text-destructive">
 			{errors.teaching_license_number}
+		</p>{/if}
+	{#if staffId && canManageLicense}
+		{#key staffId}<StaffLicenseAttachment
+				bind:value={value.teaching_license_file_id}
+				{staffId}
+				{disabled}
+				onPendingChange={onUploadPendingChange}
+			/>{/key}
+	{:else if !staffId}<p class="text-xs text-muted-foreground">
+			แนบใบประกอบวิชาชีพได้หลังสร้างบุคลากรแล้ว ในหน้างานและการศึกษา
 		</p>{/if}
 	<p class="text-xs text-muted-foreground">จัดการกลุ่มสาระและหน่วยงานได้ในส่วนสังกัดหน่วยงาน</p>
 </div>

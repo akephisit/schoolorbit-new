@@ -31,6 +31,7 @@ export function personnelInfo(
 		educations: [],
 		education_revision: 0,
 		highest_education_level: null,
+		teaching_license_file_id: null,
 		teaching_license_number: null,
 		teaching_license_expiry: null,
 		...overrides

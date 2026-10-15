@@ -108,6 +108,8 @@ where
 #[serde(deny_unknown_fields)]
 pub struct UpdateStaffInfoRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub teaching_license_file: Option<ReplaceStaffTeachingLicenseFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub career: Option<UpdateStaffCareerRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub education: Option<ReplaceStaffEducation>,
@@ -130,6 +132,7 @@ impl UpdateStaffInfoRequest {
         self.career
             .as_ref()
             .is_none_or(|career| career.changes.is_empty())
+            && self.teaching_license_file.is_none()
             && self.education.is_none()
             && self.teaching_license_number.is_none()
             && self.teaching_license_expiry.is_none()
@@ -139,6 +142,8 @@ impl UpdateStaffInfoRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffInfoResponse {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub teaching_license_file_id: Option<Uuid>,
     pub current_career: StaffCareerCurrent,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub job_position: Option<StaffJobPositionSummary>,
@@ -169,6 +174,20 @@ mod tests {
             .map(|v| v.as_str())
             .collect::<Vec<_>>();
         assert_eq!(schema["enum"], serde_json::to_value(expected).unwrap());
+    }
+
+    #[test]
+    fn staff_licence_patch_requires_explicit_current_and_next_references() {
+        for value in [
+            r#"{}"#,
+            r#"{"file_id":null}"#,
+            r#"{"expected_file_id":null}"#,
+        ] {
+            assert!(serde_json::from_str::<ReplaceStaffTeachingLicenseFile>(value).is_err());
+        }
+        let clear: ReplaceStaffTeachingLicenseFile =
+            serde_json::from_str(r#"{"expected_file_id":null,"file_id":null}"#).unwrap();
+        assert!(clear.expected_file_id.is_none() && clear.file_id.is_none());
     }
 
     #[test]
@@ -261,4 +280,22 @@ pub struct PersonnelOverview {
     pub job_positions: Vec<PersonnelBucket>,
     pub academic_ranks: Vec<PersonnelBucket>,
     pub education_levels: Vec<PersonnelBucket>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceStaffTeachingLicenseFile {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable_file_id")]
+    pub expected_file_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    #[serde(deserialize_with = "required_nullable_file_id")]
+    pub file_id: Option<Uuid>,
+}
+
+fn required_nullable_file_id<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Uuid>, D::Error> {
+    Option::<Uuid>::deserialize(deserializer)
 }

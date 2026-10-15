@@ -16,7 +16,7 @@ pub async fn read_staff_info(
           'job_position', CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id', position.id, 'code', position.code, 'name', position.name, 'isActive', position.is_active, 'isSelectable', position.is_selectable) END,
           'academic_rank', info.academic_rank, 'education_revision',info.education_revision,
           'highest_education_level',(SELECT education_level FROM staff_highest_education WHERE staff_id=info.user_id),
-          'teaching_license_number',info.teaching_license_number,'teaching_license_expiry',info.teaching_license_expiry,
+          'teaching_license_file_id',info.teaching_license_file_id, 'teaching_license_number',info.teaching_license_number,'teaching_license_expiry',info.teaching_license_expiry,
           'educations',coalesce((SELECT jsonb_agg(jsonb_build_object('id',e.id,'education_level',e.education_level,'major',e.major,'university',e.university) ORDER BY CASE WHEN staff_education_tier(e.education_level)=0 THEN 99 ELSE staff_education_tier(e.education_level) END,e.education_level,e.created_at,e.id) FROM staff_educations e WHERE e.staff_id=info.user_id),'[]'::jsonb),
           'current_career',jsonb_build_object('personnelType',{type_entry},'jobPosition',{position_entry},'academicRank',{rank_entry})
         ) FROM staff_info info
@@ -123,6 +123,9 @@ pub async fn patch_staff_info(
         .bind(license)
         .bind(patch.teaching_license_expiry.is_some()).bind(patch.teaching_license_expiry.flatten())
         .execute(&mut **tx).await?;
+    if let Some(file) = &patch.teaching_license_file {
+        super::staff_license_service::replace_file(tx, user_id, actor_id, file).await?;
+    }
     if let Some(education) = &patch.education {
         super::staff_education_service::replace_educations(
             tx,

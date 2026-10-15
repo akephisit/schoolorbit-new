@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StaffLicensePreview from '#lib/components/staff/StaffLicensePreview.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { PERSONNEL_TYPE_LABELS, formatCareerDate } from '#lib/forms/staff-career.js';
 	import StaffCareerHistory from '#lib/components/staff/StaffCareerHistory.svelte';
@@ -406,8 +407,16 @@
 											{formatCareerDate(staff.staff_info?.teaching_license_expiry ?? null)}
 										</dd>
 									</div>{/if}
-							</dl></Card.Content
-						></Card.Root
+							</dl>
+							{#if canReadStaffPii && staff.staff_info?.teaching_license_file_id}
+								<div class="mt-4">
+									{#key `${staff.id}:${staff.staff_info.teaching_license_file_id}`}<StaffLicensePreview
+											staffId={staff.id}
+											fileId={staff.staff_info.teaching_license_file_id}
+										/>{/key}
+								</div>
+							{/if}
+						</Card.Content></Card.Root
 					>
 					<Card.Root
 						><Card.Header

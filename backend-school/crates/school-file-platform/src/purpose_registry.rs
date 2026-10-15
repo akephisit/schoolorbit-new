@@ -137,6 +137,22 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::TeachingLicense => PurposeDefinition {
+            domain_segment: "staff",
+            purpose_segment: "teaching-license",
+            visibility: FileVisibility::Private,
+            allowed_content: &[
+                DetectedContent::Jpeg,
+                DetectedContent::Png,
+                DetectedContent::Webp,
+                DetectedContent::Pdf,
+            ],
+            limits: image_limits(10 * 1024 * 1024, 6000, 6000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::IdentityDocument,
+        },
         FilePurpose::AttendanceEvidence => PurposeDefinition {
             domain_segment: "attendance",
             purpose_segment: "evidence",
@@ -715,7 +731,7 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 18);
+        assert_eq!(FilePurpose::ALL.len(), 19);
     }
 
     #[test]
@@ -942,5 +958,30 @@ mod tests {
                 "invalid persisted key should be rejected: {invalid}",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod teaching_license_tests {
+    use super::*;
+    #[test]
+    fn teaching_license_is_private_scanned_temporary_and_accepts_pdf_or_supported_images() {
+        let definition = purpose_definition(FilePurpose::TeachingLicense).unwrap();
+        assert_eq!(definition.visibility, FileVisibility::Private);
+        assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+        assert_eq!(definition.retention_class, RetentionClass::Temporary);
+        assert_eq!(definition.limits.max_bytes, 10 * 1024 * 1024);
+        for content in [
+            DetectedContent::Pdf,
+            DetectedContent::Jpeg,
+            DetectedContent::Png,
+            DetectedContent::Webp,
+        ] {
+            assert!(definition.allowed_content.contains(&content));
+        }
+        assert_eq!(
+            purpose_from_code("teaching_license").unwrap(),
+            FilePurpose::TeachingLicense
+        );
     }
 }
