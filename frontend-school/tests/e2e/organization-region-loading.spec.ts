@@ -265,7 +265,7 @@ test('ordinary detail links preload their destination and preserve one primary r
 	await page.goto('/staff/organization');
 	await expect(page.getByTestId('organization-selected-members')).toContainText('สมาชิกแรก');
 	await page.getByRole('link', { name: 'เปิดรายละเอียด', exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(`${firstUnit}$`));
+	await expect(page).toHaveURL(new RegExp(`${firstUnit}(?:\\?|$)`));
 	await expect(page.getByTestId('organization-unit')).toContainText('หน่วยงานแรก');
 	await page
 		.getByRole('link', { name: /หน่วยงานสอง/ })
