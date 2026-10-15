@@ -360,7 +360,7 @@ pub async fn list_staff(
 
     let search_pattern = staff_search_pattern(filter.search.clone());
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status,
+        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status, u.profile_image_file_id,
          CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id',position.id,'code',position.code,'name',position.name,'isActive',position.is_active,'isSelectable',position.is_selectable) END,
          info.academic_rank FROM users u
          LEFT JOIN staff_info info ON info.user_id=u.id
@@ -382,6 +382,7 @@ pub async fn list_staff(
             String,
             String,
             String,
+            Option<Uuid>,
             Option<sqlx::types::Json<StaffJobPositionSummary>>,
             Option<String>,
         )>()
@@ -446,20 +447,37 @@ pub async fn list_staff(
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
         .map(
-            |(id, username, title, first_name, last_name, status, position, rank)| -> Result<StaffListItem,AppError> { Ok(StaffListItem {
+            |(
                 id,
                 username,
-                title: staff_title_or_default(title),
+                title,
                 first_name,
                 last_name,
-                roles: roles.remove(&id).unwrap_or_default(),
-                organization_units: organizations.remove(&id).unwrap_or_default(),
                 status,
-                job_position: position.map(|sqlx::types::Json(v)|v),
-                academic_rank: rank.map(|v| v.parse()).transpose().map_err(|_| AppError::InternalServerError("ข้อมูลวิทยฐานะไม่ถูกต้อง".into()))?,
-            }) },
+                profile_image_file_id,
+                position,
+                rank,
+            )|
+             -> Result<StaffListItem, AppError> {
+                Ok(StaffListItem {
+                    id,
+                    username,
+                    title: staff_title_or_default(title),
+                    first_name,
+                    last_name,
+                    profile_image_file_id,
+                    roles: roles.remove(&id).unwrap_or_default(),
+                    organization_units: organizations.remove(&id).unwrap_or_default(),
+                    status,
+                    job_position: position.map(|sqlx::types::Json(v)| v),
+                    academic_rank: rank
+                        .map(|v| v.parse())
+                        .transpose()
+                        .map_err(|_| AppError::InternalServerError("ข้อมูลวิทยฐานะไม่ถูกต้อง".into()))?,
+                })
+            },
         )
-        .collect::<Result<_,_>>()?;
+        .collect::<Result<_, _>>()?;
 
     Ok((items, total, page_params.page, page_params.page_size))
 }
@@ -1260,6 +1278,76 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert!(items[0].roles.is_empty());
         assert!(items[0].organization_units.is_empty());
+    }
+
+    #[tokio::test]
+    async fn staff_directory_orders_by_given_name_before_paging_and_projects_portrait() {
+        let pool = create_test_pool().await;
+        run_test_migrations(&pool).await;
+        let fixture = Uuid::new_v4().simple().to_string();
+        let mut people = Vec::new();
+        for (index, (title, first, last)) in [
+            ("A", "Zoe", "A"),
+            ("Z", "Anna", "B"),
+            ("Y", "Anna", "A"),
+            ("X", "Anna", "A"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = create_test_user(
+                &pool,
+                &format!("sort-{fixture}-{index}@example.test"),
+                "Test1234!",
+            )
+            .await
+            .unwrap();
+            sqlx::query("UPDATE users SET title=$2, first_name=$3, last_name=$4 WHERE id=$1")
+                .bind(id)
+                .bind(title)
+                .bind(first)
+                .bind(format!("sort-{fixture}-{last}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+            people.push(id);
+        }
+        let image: Uuid = sqlx::query_scalar("INSERT INTO files (owner_user_id, display_filename, created_by, purpose_code, visibility, lifecycle_status, retention_class, expires_at) VALUES ($1, 'portrait.jpg', $1, 'profile_image', 'private', 'processing', 'temporary', now()+interval '1 hour') RETURNING id")
+            .bind(people[1]).fetch_one(&pool).await.unwrap();
+        sqlx::query("UPDATE users SET profile_image_file_id=$2 WHERE id=$1")
+            .bind(people[1])
+            .bind(image)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut filter = staff_filter(Some(1), Some(2), Some(format!("sort-{fixture}")));
+        // A common family-name marker isolates this fixture within the full school scope.
+        let (first, total, _, _) = list_staff(&pool, filter.clone(), StaffListAccess::School)
+            .await
+            .unwrap();
+        assert_eq!(total, 4);
+        let mut tied = [people[2], people[3]];
+        tied.sort();
+        assert_eq!(first.iter().map(|item| item.id).collect::<Vec<_>>(), tied);
+        assert!(first
+            .iter()
+            .all(|item| item.profile_image_file_id.is_none()));
+        filter.page = Some(2);
+        let (second, _, _, _) = list_staff(&pool, filter.clone(), StaffListAccess::School)
+            .await
+            .unwrap();
+        assert_eq!(
+            second.iter().map(|item| item.id).collect::<Vec<_>>(),
+            [people[1], people[0]]
+        );
+        assert_eq!(second[0].profile_image_file_id, Some(image));
+        filter.page = Some(1);
+        let own = list_staff(&pool, filter, StaffListAccess::Own(people[0]))
+            .await
+            .unwrap();
+        assert_eq!(own.1, 1);
+        assert_eq!(own.0[0].id, people[0]);
+        assert_eq!(own.0[0].profile_image_file_id, None);
     }
 
     fn staff_filter(

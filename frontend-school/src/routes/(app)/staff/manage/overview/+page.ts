@@ -21,18 +21,10 @@ export const _meta = {
 		permission: PERMISSION_MODULES.STAFF_PROFILE
 	}
 };
-export const load: PageLoad = ({ fetch, url, depends }) => {
+export const load: PageLoad = ({ fetch, depends }) => {
 	depends('school:app-identity');
 	depends('school:personnel-overview');
-	const requested = url.searchParams.get('status');
-	const status: PersonnelStatusFilter =
-		requested === 'all' ||
-		requested === 'inactive' ||
-		requested === 'suspended' ||
-		requested === 'resigned' ||
-		requested === 'retired'
-			? requested
-			: 'active';
+	const status: PersonnelStatusFilter = 'active';
 	const overview = captureRouteLoad(
 		waitForAuthenticatedUser().then((user) =>
 			user?.user_type === 'staff' &&
