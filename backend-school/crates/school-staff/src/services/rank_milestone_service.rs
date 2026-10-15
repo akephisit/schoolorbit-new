@@ -4,18 +4,21 @@ use chrono::{NaiveDate, Utc};
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, QueryBuilder};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Default, Deserialize, IntoParams)]
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct RankMilestoneOverviewQuery {
     pub status: Option<PersonnelStatusFilter>,
     pub bucket: Option<RankMilestoneStatus>,
     pub page: Option<i64>,
 }
-#[derive(Debug, Default, Serialize, ToSchema)]
+#[derive(Debug, Default, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankMilestoneCounts {
     pub future: i64,
@@ -37,14 +40,16 @@ impl RankMilestoneCounts {
         }
     }
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankMilestonePerson {
     pub staff_id: Uuid,
     pub display_name: String,
     pub milestone: RankMilestone,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankMilestoneOverview {
     pub as_of: NaiveDate,

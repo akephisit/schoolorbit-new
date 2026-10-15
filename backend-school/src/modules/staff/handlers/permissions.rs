@@ -7,9 +7,12 @@ use axum::{
     Json,
 };
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
+#[cfg(feature = "api-docs")]
 use school_staff::models::Permission;
 use school_staff::services::permission_service;
 
@@ -17,7 +20,7 @@ use school_staff::services::permission_service;
 // List All Permissions
 // ===================================================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/permissions",
     operation_id = "listPermissions",
@@ -27,7 +30,7 @@ use school_staff::services::permission_service;
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_permissions(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -46,7 +49,7 @@ pub async fn list_permissions(
 // List Permissions Grouped by Module
 // ===================================================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/permissions/modules",
     operation_id = "listPermissionsByModule",
@@ -60,7 +63,7 @@ pub async fn list_permissions(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_permissions_by_module(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

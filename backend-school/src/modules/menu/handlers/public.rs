@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use serde::Serialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 
 use crate::modules::menu::models::*;
@@ -11,15 +12,18 @@ use crate::modules::menu::services::public_menu_service;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UserMenuData {
     groups: Vec<MenuGroupResponse>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/menu/user",
     operation_id = "getUserMenu",
@@ -28,7 +32,7 @@ pub struct UserMenuData {
         (status = 200, description = "Menu groups visible to the current user", body = ApiResponse<UserMenuData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_user_menu(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

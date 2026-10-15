@@ -1,7 +1,8 @@
 use super::*;
 use school_academic_assessment::learner_evaluation::models::LearnerEvaluationDomain;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualCorrectionEvidence {
     pub annual_revision_id: Uuid,

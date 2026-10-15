@@ -2,6 +2,13 @@
 name = "school-attendance"
 version.workspace = true
 edition.workspace = true
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+    "school-file-platform/api-docs",
+]
+
 [dependencies]
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
@@ -11,7 +18,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 school-errors = { workspace = true }
 school-academic-core = { workspace = true }
 school-authorization = { workspace = true }

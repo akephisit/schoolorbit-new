@@ -1,6 +1,7 @@
+#[cfg(feature = "api-docs")]
+use crate::modules::facility::models::{Building, Room};
 use crate::modules::facility::models::{
-    Building, CreateBuildingRequest, CreateRoomRequest, Room, RoomFilter, UpdateBuildingRequest,
-    UpdateRoomRequest,
+    CreateBuildingRequest, CreateRoomRequest, RoomFilter, UpdateBuildingRequest, UpdateRoomRequest,
 };
 use crate::modules::facility::services;
 use crate::utils::request_context::actor_tenant_context_from_session;
@@ -13,8 +14,10 @@ use axum::{
     Json, Router,
 };
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
@@ -22,7 +25,7 @@ use uuid::Uuid;
 // Buildings
 // ----------------------
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/facilities/buildings",
     operation_id = "listFacilityBuildings", tag = "facility",
     responses(
@@ -30,7 +33,7 @@ use uuid::Uuid;
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_buildings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -42,7 +45,7 @@ pub async fn list_buildings(
     Ok(Json(ApiResponse::ok(buildings)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post, path = "/api/facilities/buildings",
     operation_id = "createFacilityBuilding", tag = "facility",
     request_body = CreateBuildingRequest,
@@ -51,7 +54,7 @@ pub async fn list_buildings(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_building(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -66,7 +69,7 @@ pub async fn create_building(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(building))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put, path = "/api/facilities/buildings/{id}",
     operation_id = "updateFacilityBuilding", tag = "facility",
     request_body = UpdateBuildingRequest,
@@ -76,7 +79,7 @@ pub async fn create_building(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_building(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -92,7 +95,7 @@ pub async fn update_building(
     Ok(Json(ApiResponse::ok(building)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete, path = "/api/facilities/buildings/{id}",
     operation_id = "deleteFacilityBuilding", tag = "facility",
     params(("id" = Uuid, Path, description = "Resource ID")),
@@ -101,7 +104,7 @@ pub async fn update_building(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_building(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -120,7 +123,7 @@ pub async fn delete_building(
 // Rooms
 // ----------------------
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/facilities/rooms",
     operation_id = "listFacilityRooms", tag = "facility",
     params(("building_id" = Option<Uuid>, Query), ("room_type" = Option<String>, Query), ("search" = Option<String>, Query)),
@@ -128,7 +131,7 @@ pub async fn delete_building(
         (status = 200, description = "List room result", body = ApiResponse<Vec<Room>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_rooms(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -141,7 +144,7 @@ pub async fn list_rooms(
     Ok(Json(ApiResponse::ok(rooms)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post, path = "/api/facilities/rooms",
     operation_id = "createFacilityRoom", tag = "facility",
     request_body = CreateRoomRequest,
@@ -150,7 +153,7 @@ pub async fn list_rooms(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_room(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -165,7 +168,7 @@ pub async fn create_room(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(room))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put, path = "/api/facilities/rooms/{id}",
     operation_id = "updateFacilityRoom", tag = "facility",
     request_body = UpdateRoomRequest,
@@ -175,7 +178,7 @@ pub async fn create_room(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_room(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -191,7 +194,7 @@ pub async fn update_room(
     Ok(Json(ApiResponse::ok(room)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete, path = "/api/facilities/rooms/{id}",
     operation_id = "deleteFacilityRoom", tag = "facility",
     params(("id" = Uuid, Path, description = "Resource ID")),
@@ -200,7 +203,7 @@ pub async fn update_room(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Facility action permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_room(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

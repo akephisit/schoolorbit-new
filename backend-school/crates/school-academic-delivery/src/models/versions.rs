@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -8,13 +9,15 @@ use super::{
 };
 
 /// Published delivery graphs contain academic resource identities, never student rosters.
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliverySnapshot {
     pub offerings: Vec<DeliveryVersionOffering>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryVersionOffering {
     /// Empty means the actual source publication was not recorded (legacy/manual).
@@ -34,7 +37,8 @@ pub struct DeliveryVersionOffering {
     pub groups: Vec<DeliveryVersionGroup>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryVersionGroup {
     pub id: Uuid,
@@ -47,7 +51,8 @@ pub struct DeliveryVersionGroup {
     pub teachers: Vec<DeliveryVersionTeacher>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryVersionTeacher {
     pub assignment_id: Uuid,
@@ -56,7 +61,8 @@ pub struct DeliveryVersionTeacher {
     pub role: LearningTeacherRole,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum DeliveryVersionStatus {
@@ -65,18 +71,19 @@ pub enum DeliveryVersionStatus {
     Cancelled,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryVersion {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub source_version_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_from: Option<NaiveDate>,
     pub reference_date: NaiveDate,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_until: Option<NaiveDate>,
     pub status: DeliveryVersionStatus,
     pub row_version: i64,
@@ -88,20 +95,21 @@ pub struct DeliveryVersion {
     pub snapshot: DeliverySnapshot,
 }
 
-#[derive(Clone, Debug, Serialize, sqlx::FromRow, ToSchema)]
+#[derive(Clone, Debug, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryVersionSummary {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub source_version_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub change_set_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_from: Option<NaiveDate>,
     pub reference_date: NaiveDate,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_until: Option<NaiveDate>,
     pub status: DeliveryVersionStatus,
     pub row_version: i64,
@@ -111,14 +119,16 @@ pub struct DeliveryVersionSummary {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryVersionQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DeliveryReadinessCode {
     DuplicateOffering,
@@ -131,7 +141,8 @@ pub enum DeliveryReadinessCode {
     MissingPrimaryTeacher,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryReadinessFinding {
     pub code: DeliveryReadinessCode,
@@ -139,7 +150,8 @@ pub struct DeliveryReadinessFinding {
     pub learning_group_id: Option<Uuid>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DeliveryChangeKind {
     Added,
@@ -147,7 +159,8 @@ pub enum DeliveryChangeKind {
     Changed,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryVersionChange {
     pub kind: DeliveryChangeKind,
@@ -159,7 +172,8 @@ pub struct DeliveryVersionChange {
     pub after: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryResourceLabel {
     pub id: Uuid,
@@ -167,7 +181,8 @@ pub struct DeliveryResourceLabel {
     pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteDeliveryVersionRequest {
     pub row_version: i64,
@@ -177,7 +192,8 @@ pub struct DeleteDeliveryVersionRequest {
     pub expected_group_count: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeletedDeliveryVersion {
     pub id: Uuid,

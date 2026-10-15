@@ -10,16 +10,20 @@ use axum::{
     Json,
 };
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, IdData};
+use school_http::{ApiResponse, IdData};
 use school_permissions::registry::codes;
 use school_staff::models::*;
 use school_staff::services::{dashboard_service, staff_service};
 use serde::Serialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffListData {
     pub items: Vec<StaffListItem>,
     pub total: i64,
@@ -46,7 +50,7 @@ pub(super) fn staff_list_access(access: UserResourceListAccess) -> StaffListAcce
 // Handlers
 // ============================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/staff/dashboard",
     operation_id = "getStaffDashboard",
@@ -57,7 +61,7 @@ pub(super) fn staff_list_access(access: UserResourceListAccess) -> StaffListAcce
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_staff_dashboard(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -73,7 +77,7 @@ pub async fn get_staff_dashboard(
     Ok((StatusCode::OK, Json(ApiResponse::ok(data))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/staff",
     operation_id = "listStaff",
@@ -84,7 +88,7 @@ pub async fn get_staff_dashboard(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff list permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_staff(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,7 +117,7 @@ pub async fn list_staff(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/staff/{id}",
     operation_id = "getStaffProfile",
@@ -125,7 +129,7 @@ pub async fn list_staff(
         (status = 403, description = "Staff profile permission denied", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_staff_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -141,7 +145,7 @@ pub async fn get_staff_profile(
     Ok((StatusCode::OK, Json(ApiResponse::ok(profile))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/staff",
     operation_id = "createStaff",
@@ -153,7 +157,7 @@ pub async fn get_staff_profile(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_staff(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -175,7 +179,7 @@ pub async fn create_staff(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/staff/{id}",
     operation_id = "updateStaff",
@@ -190,7 +194,7 @@ pub async fn create_staff(
         (status = 404, description = "Staff member not found", body = ApiErrorResponse),
         (status = 409, description = "Career reference changed", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_staff(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -224,7 +228,7 @@ pub async fn update_staff(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/staff/{id}",
     operation_id = "deleteStaff",
@@ -236,7 +240,7 @@ pub async fn update_staff(
         (status = 403, description = "Staff deletion permission denied", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_staff(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -260,7 +264,7 @@ pub async fn delete_staff(
 }
 
 /// Public profile — authentication required but no permission check (any logged-in user)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/staff/{id}/public-profile",
     operation_id = "getPublicStaffProfile",
@@ -271,7 +275,7 @@ pub async fn delete_staff(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_public_staff_profile(
     Extension(session): Extension<AuthenticatedSession>,
     Path(staff_id): Path<Uuid>,

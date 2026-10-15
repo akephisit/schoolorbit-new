@@ -3,6 +3,11 @@ name = "school-notifications"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
 [dependencies]
 serde_json = { workspace = true }
 chrono = { workspace = true }
@@ -11,7 +16,7 @@ serde = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 web-push = { workspace = true }
 

@@ -9,8 +9,10 @@ use uuid::Uuid;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 use school_students::services as student_service;
 
@@ -21,7 +23,7 @@ use school_students::models::CreateParentRequest;
 // -----------------------------------------------------------------------------
 
 /// POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/students/{id}/parents",
     operation_id = "addStudentParent",
@@ -35,7 +37,7 @@ use school_students::models::CreateParentRequest;
         (status = 404, description = "Student not found", body = ApiErrorResponse),
         (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn add_parent_to_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -59,7 +61,7 @@ pub async fn add_parent_to_student(
 }
 
 /// DELETE /api/students/:id/parents/:parentId - ลบความสัมพันธ์ผู้ปกครอง
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/students/{id}/parents/{parent_id}",
     operation_id = "removeStudentParent",
@@ -74,7 +76,7 @@ pub async fn add_parent_to_student(
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Parent relationship not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn remove_parent_from_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

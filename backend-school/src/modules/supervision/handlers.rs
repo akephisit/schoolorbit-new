@@ -8,6 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 
 use crate::policies::supervision_access_policy;
@@ -15,8 +16,10 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
 use school_authorization::ActorContext;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_supervision::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
@@ -29,8 +32,9 @@ use school_supervision::models::{
 };
 use school_supervision::services;
 
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase")]
 pub struct ListObservationsQuery {
     pub academic_year_id: Uuid,
@@ -39,7 +43,8 @@ pub struct ListObservationsQuery {
     pub status: Option<SupervisionObservationStatus>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ItemsData<T> {
     pub items: Vec<T>,
@@ -95,7 +100,7 @@ fn redact_teacher_status_results_for_actor(
     }
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/templates/{id}/summary",
     operation_id = "getSupervisionTemplateSummary",
@@ -107,7 +112,7 @@ fn redact_teacher_status_results_for_actor(
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse),
         (status = 404, description = "Template summary not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_template_summary(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -119,7 +124,7 @@ pub async fn get_template_summary(
     Ok(Json(ApiResponse::ok(item)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/cycles/{id}",
     operation_id = "getSupervisionCycle",
@@ -131,7 +136,7 @@ pub async fn get_template_summary(
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_cycle(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -143,7 +148,7 @@ pub async fn get_cycle(
     Ok(Json(ApiResponse::ok(item)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/cycles",
     operation_id = "listSupervisionCycles",
@@ -155,7 +160,7 @@ pub async fn get_cycle(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_cycles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -169,7 +174,7 @@ pub async fn list_cycles(
     Ok(Json(ApiResponse::ok(ItemsData::<SupervisionCycle> { items })).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/cycles",
     operation_id = "createSupervisionCycle",
@@ -182,7 +187,7 @@ pub async fn list_cycles(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_cycle(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -197,7 +202,7 @@ pub async fn create_cycle(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(cycle))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/supervision/cycles/{id}",
     operation_id = "updateSupervisionCycle",
@@ -212,7 +217,7 @@ pub async fn create_cycle(
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_cycle(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -227,7 +232,7 @@ pub async fn update_cycle(
     Ok(Json(ApiResponse::ok(cycle)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/templates",
     operation_id = "listSupervisionTemplates",
@@ -237,7 +242,7 @@ pub async fn update_cycle(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_templates(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -250,7 +255,7 @@ pub async fn list_templates(
     Ok(Json(ApiResponse::ok(ItemsData::<SupervisionTemplate> { items })).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/templates/summaries",
     operation_id = "listSupervisionTemplateSummaries",
@@ -260,7 +265,7 @@ pub async fn list_templates(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_template_summaries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -276,7 +281,7 @@ pub async fn list_template_summaries(
     )
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/templates",
     operation_id = "createSupervisionTemplate",
@@ -288,7 +293,7 @@ pub async fn list_template_summaries(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -303,7 +308,7 @@ pub async fn create_template(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/templates/{id}",
     operation_id = "getSupervisionTemplate",
@@ -315,7 +320,7 @@ pub async fn create_template(
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision template not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -329,7 +334,7 @@ pub async fn get_template(
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/supervision/templates/{id}",
     operation_id = "updateSupervisionTemplate",
@@ -343,7 +348,7 @@ pub async fn get_template(
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision template not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -358,7 +363,7 @@ pub async fn update_template(
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/observations",
     operation_id = "listSupervisionObservations",
@@ -370,7 +375,7 @@ pub async fn update_template(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_observations(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -401,7 +406,7 @@ pub async fn list_observations(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/observations/{id}",
     operation_id = "getSupervisionObservation",
@@ -413,7 +418,7 @@ pub async fn list_observations(
         (status = 403, description = "Observation read access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -438,7 +443,7 @@ pub async fn get_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/observations/{id}/review",
     operation_id = "getSupervisionObservationReview",
@@ -450,7 +455,7 @@ pub async fn get_observation(
         (status = 403, description = "Observation review access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_observation_review(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -488,7 +493,7 @@ pub async fn get_observation_review(
     Ok(Json(ApiResponse::ok(review)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/observations/{id}/evaluator-availability",
     operation_id = "getSupervisionEvaluatorAvailability",
@@ -500,7 +505,7 @@ pub async fn get_observation_review(
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn evaluator_availability(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -525,7 +530,7 @@ pub async fn evaluator_availability(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/observations/{id}/timetable-options",
     operation_id = "getSupervisionObservationTimetableOptions",
@@ -537,7 +542,7 @@ pub async fn evaluator_availability(
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn observation_timetable_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -563,7 +568,7 @@ pub async fn observation_timetable_options(
     Ok(Json(ApiResponse::ok(ItemsData { items })).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/requests",
     operation_id = "requestSupervisionObservation",
@@ -577,7 +582,7 @@ pub async fn observation_timetable_options(
         (status = 404, description = "Supervision cycle or timetable entry not found", body = ApiErrorResponse),
         (status = 409, description = "Supervision booking conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn request_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -593,7 +598,7 @@ pub async fn request_observation(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(observation))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/supervision/observations/{id}/request",
     operation_id = "updateRequestedSupervisionObservation",
@@ -608,7 +613,7 @@ pub async fn request_observation(
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse),
         (status = 409, description = "Supervision booking conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_requested_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -630,7 +635,7 @@ pub async fn update_requested_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/supervision/observations/{id}/request",
     operation_id = "cancelRequestedSupervisionObservation",
@@ -644,7 +649,7 @@ pub async fn update_requested_observation(
         (status = 403, description = "Supervision request denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn cancel_requested_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -661,7 +666,7 @@ pub async fn cancel_requested_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/supervision/observations/{id}",
     operation_id = "updateSupervisionObservation",
@@ -676,7 +681,7 @@ pub async fn cancel_requested_observation(
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse),
         (status = 409, description = "Supervision booking conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -700,7 +705,7 @@ pub async fn update_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/supervision/observations/{id}/evaluators",
     operation_id = "replaceSupervisionObservationEvaluators",
@@ -715,7 +720,7 @@ pub async fn update_observation(
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse),
         (status = 409, description = "Evaluator schedule conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_observation_evaluators(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -743,7 +748,7 @@ pub async fn replace_observation_evaluators(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/cancel",
     operation_id = "cancelSupervisionObservation",
@@ -758,7 +763,7 @@ pub async fn replace_observation_evaluators(
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn cancel_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -782,7 +787,7 @@ pub async fn cancel_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/approve-request",
     operation_id = "approveSupervisionObservationRequest",
@@ -797,7 +802,7 @@ pub async fn cancel_observation(
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse),
         (status = 409, description = "Evaluator schedule conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn approve_observation_request(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -825,7 +830,7 @@ pub async fn approve_observation_request(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/return-request",
     operation_id = "returnSupervisionObservationRequest",
@@ -840,7 +845,7 @@ pub async fn approve_observation_request(
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn return_observation_request(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -868,7 +873,7 @@ pub async fn return_observation_request(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/evaluations/me/submit",
     operation_id = "submitMySupervisionEvaluation",
@@ -883,7 +888,7 @@ pub async fn return_observation_request(
         (status = 403, description = "Evaluation submission denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn submit_my_evaluation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -901,7 +906,7 @@ pub async fn submit_my_evaluation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/certify",
     operation_id = "certifySupervisionObservation",
@@ -915,7 +920,7 @@ pub async fn submit_my_evaluation(
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn certify_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -937,7 +942,7 @@ pub async fn certify_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/approve",
     operation_id = "approveSupervisionObservation",
@@ -951,7 +956,7 @@ pub async fn certify_observation(
         (status = 403, description = "Academic approval denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn approve_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -967,7 +972,7 @@ pub async fn approve_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/supervision/observations/{id}/acknowledge",
     operation_id = "acknowledgeSupervisionObservation",
@@ -982,7 +987,7 @@ pub async fn approve_observation(
         (status = 403, description = "Acknowledgement denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn acknowledge_observation(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1000,7 +1005,7 @@ pub async fn acknowledge_observation(
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/reports/cycles/{id}/progress",
     operation_id = "getSupervisionCycleProgress",
@@ -1012,7 +1017,7 @@ pub async fn acknowledge_observation(
         (status = 403, description = "Supervision report access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn cycle_progress(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1026,7 +1031,7 @@ pub async fn cycle_progress(
     Ok(Json(ApiResponse::ok(progress)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/supervision/reports/cycles/{id}/teacher-status",
     operation_id = "getSupervisionTeacherStatusOverview",
@@ -1038,7 +1043,7 @@ pub async fn cycle_progress(
         (status = 403, description = "Supervision report access denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn teacher_status_overview(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

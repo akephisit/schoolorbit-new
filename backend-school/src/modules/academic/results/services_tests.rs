@@ -2447,7 +2447,9 @@ async fn results_stale_workspace_get_cannot_invalidate_newer_confirmation() {
 
 // Exercises the owning handler declarations. Aggregate OpenAPI registration remains Task 9.
 #[test]
+#[cfg(feature = "api-docs")]
 fn results_endpoint_contract_requires_exact_context_and_typed_envelopes() {
+    #[cfg(feature = "api-docs")]
     use utoipa::OpenApi;
 
     #[derive(OpenApi)]

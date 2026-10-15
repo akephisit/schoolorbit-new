@@ -10,12 +10,16 @@ use crate::policies::{resource_access_policy::UserResourceListAccess, student_ac
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
+#[cfg(feature = "api-docs")]
+use school_students::models::StudentProfile;
 use school_students::models::{
-    CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, StudentProfile,
-    UpdateOwnProfileRequest, UpdateStudentRequest,
+    CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, UpdateOwnProfileRequest,
+    UpdateStudentRequest,
 };
 use school_students::services::{self as student_service, StudentListAccess};
 
@@ -34,7 +38,7 @@ fn student_list_access(access: UserResourceListAccess) -> StudentListAccess {
 }
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/student/profile",
     operation_id = "getStudentProfile",
@@ -46,7 +50,7 @@ fn student_list_access(access: UserResourceListAccess) -> StudentListAccess {
         (status = 403, description = "Student profile access denied", body = ApiErrorResponse),
         (status = 404, description = "Student profile not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_own_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -65,7 +69,7 @@ pub async fn get_own_profile(
 }
 
 /// PUT /api/student/profile - นักเรียนแก้ไขข้อมูลตนเอง (จำกัดฟิลด์)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/student/profile",
     operation_id = "updateStudentProfile",
@@ -76,7 +80,7 @@ pub async fn get_own_profile(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student profile access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_own_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -94,7 +98,7 @@ pub async fn update_own_profile(
 }
 
 /// GET /api/students - รายชื่อนักเรียนทั้งหมด
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/students",
     operation_id = "listStudents",
@@ -105,7 +109,7 @@ pub async fn update_own_profile(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student list access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_students(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -123,7 +127,7 @@ pub async fn list_students(
 }
 
 /// POST /api/students - เพิ่มนักเรียนใหม่
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/students",
     operation_id = "createStudent",
@@ -136,7 +140,7 @@ pub async fn list_students(
         (status = 403, description = "Student creation permission denied", body = ApiErrorResponse),
         (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -163,7 +167,7 @@ pub async fn create_student(
 }
 
 /// GET /api/students/:id - ดูข้อมูลนักเรียน
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/students/{id}",
     operation_id = "getStudent",
@@ -178,7 +182,7 @@ pub async fn create_student(
         (status = 403, description = "Student profile access denied", body = ApiErrorResponse),
         (status = 404, description = "Student profile not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -199,7 +203,7 @@ pub async fn get_student(
 }
 
 /// PUT /api/students/:id - แก้ไขข้อมูลนักเรียน
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/students/{id}",
     operation_id = "updateStudent",
@@ -212,7 +216,7 @@ pub async fn get_student(
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -233,7 +237,7 @@ pub async fn update_student(
 }
 
 /// DELETE /api/students/:id - ลบนักเรียน (soft delete)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/students/{id}",
     operation_id = "deleteStudent",
@@ -245,7 +249,7 @@ pub async fn update_student(
         (status = 403, description = "Student deletion permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_student(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

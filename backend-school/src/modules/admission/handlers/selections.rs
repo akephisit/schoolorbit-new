@@ -12,8 +12,10 @@ use school_admission::applications::{AssignRoomsGlobalRequest, AssignRoomsReques
 use school_admission::rounds::UpdateSelectionSettingsRequest;
 use school_admission::selections as selection_service;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 #[derive(serde::Deserialize)]
@@ -32,7 +34,7 @@ struct DeletedData<T> {
     deleted: T,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admission/rounds/{id}/ranking",
     operation_id = "getAdmissionRoundRanking",
@@ -43,7 +45,7 @@ struct DeletedData<T> {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -57,7 +59,7 @@ pub async fn get_ranking(
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admission/tracks/{id}/ranking",
     operation_id = "getAdmissionTrackRanking",
@@ -72,7 +74,7 @@ pub async fn get_ranking(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_track_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -145,7 +147,7 @@ pub async fn assign_rooms_global(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admission/rounds/{id}/global-ranking",
     operation_id = "getAdmissionGlobalRanking",
@@ -156,7 +158,7 @@ pub async fn assign_rooms_global(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_global_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -170,7 +172,7 @@ pub async fn get_global_ranking(
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admission/rounds/{id}/rooms",
     operation_id = "getAdmissionRoundRooms",
@@ -181,7 +183,7 @@ pub async fn get_global_ranking(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_round_rooms(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

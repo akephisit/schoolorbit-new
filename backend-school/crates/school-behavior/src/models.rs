@@ -1,12 +1,14 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 macro_rules! text_enum {
     ($name:ident {$($variant:ident => $value:literal),+ $(,)?}) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema, sqlx::Type)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type)]
+        #[cfg_attr(feature = "api-docs", derive(ToSchema))]
         #[serde(rename_all="snake_case")]
         #[sqlx(type_name="text",rename_all="snake_case")]
         pub enum $name { $($variant),+ }
@@ -19,7 +21,8 @@ text_enum!(BehaviorScoreAction { None=>"none", Merit=>"merit", Deduction=>"deduc
 text_enum!(BehaviorResetSchedule { Manual=>"manual", Monthly=>"monthly", Term=>"term", Year=>"year" });
 text_enum!(BehaviorCleanupMode { DetailsOnly=>"details_only", Archive=>"archive", DeleteEffects=>"delete_effects" });
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorItem {
     pub id: Uuid,
@@ -27,14 +30,15 @@ pub struct BehaviorItem {
     pub side: BehaviorSide,
     pub enabled: bool,
     pub row_version: i64,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub version_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_from: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub points: Option<i32>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBehaviorItem {
     pub request_id: Uuid,
@@ -46,26 +50,29 @@ pub struct SaveBehaviorItem {
     pub effective_from: NaiveDate,
     pub points: i32,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct BehaviorItemsQuery {
     pub date: Option<NaiveDate>,
     pub include_disabled: Option<bool>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorAttendanceRule {
     pub id: Uuid,
     pub kind: BehaviorSource,
     pub status: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub grade_level_id: Option<Uuid>,
     pub effective_from: NaiveDate,
     pub action: BehaviorScoreAction,
     pub points: i32,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBehaviorAttendanceRule {
     pub kind: BehaviorSource,
@@ -75,42 +82,46 @@ pub struct SaveBehaviorAttendanceRule {
     pub action: BehaviorScoreAction,
     pub points: i32,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorSettings {
     pub enabled: bool,
     pub count_absent_lessons: bool,
     pub count_special: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub daily_merit_cap: Option<i32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub daily_deduction_cap: Option<i32>,
     pub merit_reset: BehaviorResetSchedule,
     pub deduction_reset: BehaviorResetSchedule,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBehaviorSettings {
     pub settings: BehaviorSettings,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCycle {
     pub id: Uuid,
     pub side: BehaviorSide,
     pub starts_on: NaiveDate,
     pub starts_at: DateTime<Utc>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ends_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ends_on: Option<NaiveDate>,
     pub state: String,
     pub label: String,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct BehaviorStudentsQuery {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
@@ -120,23 +131,25 @@ pub struct BehaviorStudentsQuery {
     pub offset: Option<i64>,
     pub limit: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorStudent {
     pub id: Uuid,
     pub student_academic_year_id: Uuid,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_code: Option<String>,
     pub grade_level_id: Uuid,
     pub grade_level: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_id: Option<Uuid>,
     pub homeroom: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub class_number: Option<i32>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorStudentPage {
     pub items: Vec<BehaviorStudent>,
@@ -144,19 +157,22 @@ pub struct BehaviorStudentPage {
     pub roster_token: String,
     pub options: BehaviorSelectorOptions,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorSelectorOption {
     pub id: Uuid,
     pub label: String,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorSelectorOptions {
     pub grade_levels: Vec<BehaviorSelectorOption>,
     pub homerooms: Vec<BehaviorSelectorOption>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateBehaviorBatch {
     pub request_id: Uuid,
@@ -169,7 +185,8 @@ pub struct CreateBehaviorBatch {
     pub student_ids: Vec<Uuid>,
     pub roster_token: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorBatchReceipt {
     pub id: Uuid,
@@ -179,22 +196,25 @@ pub struct BehaviorBatchReceipt {
     pub replayed: bool,
     pub details_available: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CancelBehaviorEntries {
     pub request_id: Uuid,
     pub entry_ids: Vec<Uuid>,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCancellation {
     pub cancelled: i64,
     pub already_cancelled: i64,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct BehaviorReportQuery {
     pub start: NaiveDate,
     pub end: NaiveDate,
@@ -212,15 +232,16 @@ pub struct BehaviorReportQuery {
     pub offset: Option<i64>,
     pub limit: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorReportEntry {
     pub id: Uuid,
     pub student_id: Uuid,
     pub student_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_code: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_id: Option<Uuid>,
     pub homeroom: String,
     pub grade_level_id: Uuid,
@@ -230,57 +251,62 @@ pub struct BehaviorReportEntry {
     pub source: BehaviorSource,
     pub points: i32,
     pub item_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub detail: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub occurred_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub batch_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub source_key: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub source_session_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub created_by: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub creator_name: Option<String>,
     pub created_at: DateTime<Utc>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub cancelled_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub cancellation_reason: Option<String>,
     pub can_cancel: bool,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorReportPage {
     pub items: Vec<BehaviorReportEntry>,
     pub total: i64,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct BehaviorSummaryQuery {
     pub start: Option<NaiveDate>,
     pub end: Option<NaiveDate>,
     pub academic_term_id: Option<Uuid>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorScoreTotals {
     pub merit: i64,
     pub deduction: i64,
     pub net: i64,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCurrentTotals {
     pub merit: i64,
     pub deduction: i64,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub net: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorStudentSummary {
     pub student_id: Uuid,
@@ -295,7 +321,8 @@ pub struct BehaviorStudentSummary {
     pub deduction_cycle: BehaviorCycle,
     pub history_totals: Vec<BehaviorDailyTotal>,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorDailyTotal {
     pub id: Uuid,
@@ -303,7 +330,7 @@ pub struct BehaviorDailyTotal {
     pub date: NaiveDate,
     pub academic_term_id: Uuid,
     pub grade_level_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_id: Option<Uuid>,
     pub side: BehaviorSide,
     pub source: BehaviorSource,
@@ -311,7 +338,8 @@ pub struct BehaviorDailyTotal {
     pub points: i64,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BehaviorCleanupScope {
     pub start: Option<NaiveDate>,
@@ -321,13 +349,15 @@ pub struct BehaviorCleanupScope {
     pub sides: Vec<BehaviorSide>,
     pub sources: Vec<BehaviorSource>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewBehaviorCleanup {
     pub scope: BehaviorCleanupScope,
     pub mode: BehaviorCleanupMode,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCleanupPreview {
     pub token: Uuid,
@@ -340,7 +370,8 @@ pub struct BehaviorCleanupPreview {
     pub history: BehaviorScoreTotals,
     pub lifetime: BehaviorScoreTotals,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExecuteBehaviorCleanup {
     pub request_id: Uuid,
@@ -350,7 +381,8 @@ pub struct ExecuteBehaviorCleanup {
     pub mode: BehaviorCleanupMode,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCleanupOutcome {
     pub id: Uuid,
@@ -360,7 +392,8 @@ pub struct BehaviorCleanupOutcome {
     pub merit: i64,
     pub deduction: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AdjustBehaviorHistory {
     pub request_id: Uuid,
@@ -369,7 +402,8 @@ pub struct AdjustBehaviorHistory {
     pub delta: i64,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorHistoryAdjustment {
     pub id: Uuid,
@@ -377,13 +411,15 @@ pub struct BehaviorHistoryAdjustment {
     pub points: i64,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewBehaviorReset {
     pub sides: Vec<BehaviorSide>,
     pub through: NaiveDate,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResetBehaviorScores {
     pub request_id: Uuid,
@@ -435,7 +471,8 @@ pub struct BehaviorResetReadiness {
     pub term_ends: Vec<NaiveDate>,
     pub year_ends: Vec<NaiveDate>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorOverview {
     pub cycles: Vec<BehaviorCycle>,

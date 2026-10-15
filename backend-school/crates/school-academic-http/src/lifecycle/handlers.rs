@@ -2,8 +2,10 @@ use school_academic_lifecycle::models::*;
 use school_academic_lifecycle::services;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 pub mod promotion_runs;
 pub mod year_reopening;
 use crate::state::AcademicHttpState;
@@ -18,8 +20,8 @@ pub use promotion_runs::{
 use school_academic_lifecycle::services::{term_transitions, year_transitions};
 use uuid::Uuid;
 
-#[utoipa::path(get,path="/api/academic/lifecycle/opening-policy",operation_id="getAcademicOpeningPolicy",tag="academic",
-    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/opening-policy",operation_id="getAcademicOpeningPolicy",tag="academic",
+    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn get_opening_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -30,9 +32,9 @@ pub async fn get_opening_policy(
     )))
 }
 
-#[utoipa::path(put,path="/api/academic/lifecycle/opening-policy",operation_id="updateAcademicOpeningPolicy",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/lifecycle/opening-policy",operation_id="updateAcademicOpeningPolicy",tag="academic",
     request_body=UpdateOpeningPolicyInput,
-    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn update_opening_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -52,8 +54,8 @@ pub async fn update_opening_policy(
     Ok(Json(ApiResponse::ok(policy)))
 }
 
-#[utoipa::path(get,path="/api/academic/lifecycle/promotion-policies/options",operation_id="getPromotionPolicyOptions",tag="academic",
-    responses((status=200,body=ApiResponse<PromotionPolicyOptions>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies/options",operation_id="getPromotionPolicyOptions",tag="academic",
+    responses((status=200,body=ApiResponse<PromotionPolicyOptions>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn get_promotion_policy_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -64,8 +66,8 @@ pub async fn get_promotion_policy_options(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/lifecycle/promotion-policies",operation_id="listPromotionPolicies",tag="academic",
-    responses((status=200,body=ApiResponse<Vec<PromotionPolicyVersion>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies",operation_id="listPromotionPolicies",tag="academic",
+    responses((status=200,body=ApiResponse<Vec<PromotionPolicyVersion>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn list_promotion_policies(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -76,9 +78,9 @@ pub async fn list_promotion_policies(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/promotion-policies",operation_id="createPromotionPolicy",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/promotion-policies",operation_id="createPromotionPolicy",tag="academic",
     request_body=PromotionPolicyInput,
-    responses((status=200,body=ApiResponse<PromotionPolicyVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<PromotionPolicyVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn create_promotion_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -98,9 +100,9 @@ pub async fn create_promotion_policy(
     Ok(Json(ApiResponse::ok(policy)))
 }
 
-#[utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}",operation_id="getYearLifecycleWorkspace",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}",operation_id="getYearLifecycleWorkspace",tag="academic",
     params(("year_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<YearLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<YearLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn get_year_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -112,9 +114,9 @@ pub async fn get_year_workspace(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/transitions",operation_id="transitionAcademicYear",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/transitions",operation_id="transitionAcademicYear",tag="academic",
     params(("year_id"=Uuid,Path)),request_body=YearTransitionRequest,
-    responses((status=200,body=ApiResponse<YearTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<YearTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn transition_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -136,9 +138,9 @@ pub async fn transition_year(
     Ok(Json(ApiResponse::ok(outcome)))
 }
 
-#[utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}",operation_id="getTermLifecycleWorkspace",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}",operation_id="getTermLifecycleWorkspace",tag="academic",
     params(TermLifecycleQuery,("term_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<TermLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<TermLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn get_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -158,9 +160,9 @@ pub async fn get_workspace(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}/activation",operation_id="getTermActivationWorkspace",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}/activation",operation_id="getTermActivationWorkspace",tag="academic",
     params(TermLifecycleQuery,("term_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<TermActivationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<TermActivationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn get_activation_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -179,9 +181,9 @@ pub async fn get_activation_workspace(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/terms/{term_id}/transitions",operation_id="transitionAcademicTerm",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/terms/{term_id}/transitions",operation_id="transitionAcademicTerm",tag="academic",
     params(("term_id"=Uuid,Path)),request_body=TermTransitionRequest,
-    responses((status=200,body=ApiResponse<TermTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<TermTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn transition_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -208,9 +210,9 @@ pub async fn transition_term(
     Ok(Json(ApiResponse::ok(outcome)))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/term-preparations/preview",operation_id="previewAcademicTermPreparation",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/term-preparations/preview",operation_id="previewAcademicTermPreparation",tag="academic",
     request_body=PreviewTermPreparationInput,
-    responses((status=200,body=ApiResponse<TermPreparationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<TermPreparationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn preview_term_preparation(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -222,9 +224,9 @@ pub async fn preview_term_preparation(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/term-preparations/apply",operation_id="applyAcademicTermPreparation",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/term-preparations/apply",operation_id="applyAcademicTermPreparation",tag="academic",
     request_body=ApplyTermPreparationInput,
-    responses((status=200,body=ApiResponse<TermPreparationOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<TermPreparationOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn apply_term_preparation(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

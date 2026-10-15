@@ -3,6 +3,17 @@ name = "school-certificates-http"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-auth/api-docs",
+    "school-certificates/api-docs",
+    "school-file-platform/api-docs",
+    "school-fonts/api-docs",
+    "school-http/api-docs",
+    "school-staff/api-docs",
+]
+
 [dependencies]
 async-trait = { workspace = true }
 axum = { workspace = true }
@@ -17,7 +28,7 @@ school-permissions = { workspace = true }
 school-staff = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

@@ -3,6 +3,19 @@ name = "school-academic-http"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-assessment/api-docs",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
+    "school-academic-lifecycle/api-docs",
+    "school-academic-results/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-auth/api-docs",
+    "school-http/api-docs",
+]
+
 [dependencies]
 tracing = { workspace = true }
 axum = { workspace = true }
@@ -22,7 +35,7 @@ school-http = { workspace = true }
 school-permissions = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

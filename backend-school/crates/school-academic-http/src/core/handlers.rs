@@ -19,8 +19,10 @@ use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_context;
 use school_authorization::ActorContext;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_http::{ApiResponse, EmptyData};
 use school_permissions::registry::codes;
 
 use school_academic_core::models::*;
@@ -29,8 +31,9 @@ use school_academic_core::services::{
     homeroom_roster, progressions, student_years, workspaces, years_terms,
 };
 
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcademicYearQuery {
     pub academic_year_id: Uuid,
@@ -44,7 +47,7 @@ fn created<T: serde::Serialize>(data: T) -> Response {
     (StatusCode::CREATED, Json(ApiResponse::ok(data))).into_response()
 }
 
-#[utoipa::path(delete,path="/api/academic/curricula/{id}/draft",operation_id="discardCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=DiscardCurriculumDraftRequest,responses((status=200,description="Unpublished amendment deleted; current publication restored",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/academic/curricula/{id}/draft",operation_id="discardCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=DiscardCurriculumDraftRequest,responses((status=200,description="Unpublished amendment deleted; current publication restored",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse))))]
 pub async fn discard_curriculum_draft(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -72,7 +75,7 @@ pub async fn discard_curriculum_draft(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}/draft/discard-preview",operation_id="previewCurriculumDraftDiscard",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),CurriculumDraftDiscardPreviewQuery),responses((status=200,description="Current amendment content and deletion scope",body=ApiResponse<CurriculumDraftDiscardPreview>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Draft conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curricula/{id}/draft/discard-preview",operation_id="previewCurriculumDraftDiscard",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),CurriculumDraftDiscardPreviewQuery),responses((status=200,description="Current amendment content and deletion scope",body=ApiResponse<CurriculumDraftDiscardPreview>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Draft conflict",body=ApiErrorResponse))))]
 pub async fn preview_curriculum_draft_discard(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -114,7 +117,7 @@ fn signal_core_changed(
     );
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/context/options",
     operation_id = "listAcademicContextOptions",
@@ -124,7 +127,7 @@ fn signal_core_changed(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic context read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_context_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -136,7 +139,7 @@ pub async fn list_context_options(
     Ok(ok(context::list_options(&pool).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/setup/workspace",
     operation_id = "getAcademicSetupWorkspace",
@@ -147,7 +150,7 @@ pub async fn list_context_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic setup read permissions denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_academic_setup_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -160,7 +163,7 @@ pub async fn get_academic_setup_workspace(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/public/academic-context/options",
     operation_id = "listPublicAcademicContextOptions",
@@ -169,7 +172,7 @@ pub async fn get_academic_setup_workspace(
         (status = 200, description = "Published academic years and terms available to the public calendar", body = ApiResponse<AcademicContextOptions>),
         (status = 404, description = "School tenant not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_public_context_options(
     State(state): State<AcademicHttpState>,
     headers: HeaderMap,
@@ -178,7 +181,7 @@ pub async fn list_public_context_options(
     Ok(ok(context::list_public_options(&tenant.pool).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/academic-context/options",
     operation_id = "listMyAcademicContextOptions",
@@ -188,7 +191,7 @@ pub async fn list_public_context_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student context access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_my_context_options(
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<Response, AppError> {
@@ -204,7 +207,7 @@ pub async fn list_my_context_options(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/years",
     operation_id = "listAcademicYears",
@@ -214,7 +217,7 @@ pub async fn list_my_context_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_years(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -229,7 +232,7 @@ pub async fn list_years(
     Ok(ok(years_terms::list_years(&pool).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/years",
     operation_id = "createAcademicYear",
@@ -242,7 +245,7 @@ pub async fn list_years(
         (status = 403, description = "Academic year management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Academic year conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -265,7 +268,7 @@ pub async fn create_year(
     Ok(created(year))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/years/{id}",
     operation_id = "getAcademicYear",
@@ -277,7 +280,7 @@ pub async fn create_year(
         (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -293,7 +296,7 @@ pub async fn get_year(
     Ok(ok(years_terms::get_year(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/years/{id}",
     operation_id = "updateAcademicYear",
@@ -308,7 +311,7 @@ pub async fn get_year(
         (status = 404, description = "Academic year not found", body = ApiErrorResponse),
         (status = 409, description = "Academic year row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -332,7 +335,7 @@ pub async fn update_year(
     Ok(ok(year))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/terms",
     operation_id = "listAcademicTerms",
@@ -343,7 +346,7 @@ pub async fn update_year(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_terms(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -361,7 +364,7 @@ pub async fn list_terms(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/terms",
     operation_id = "createAcademicTerm",
@@ -374,7 +377,7 @@ pub async fn list_terms(
         (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Academic term conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -397,7 +400,7 @@ pub async fn create_term(
     Ok(created(term))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/terms/{id}",
     operation_id = "getAcademicTerm",
@@ -409,7 +412,7 @@ pub async fn create_term(
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic term not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -425,7 +428,7 @@ pub async fn get_term(
     Ok(ok(years_terms::get_term(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/terms/{id}",
     operation_id = "updateAcademicTerm",
@@ -440,7 +443,7 @@ pub async fn get_term(
         (status = 404, description = "Academic term not found", body = ApiErrorResponse),
         (status = 409, description = "Academic term row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -464,7 +467,7 @@ pub async fn update_term(
     Ok(ok(term))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/terms/{id}",
     operation_id = "deleteAcademicTerm",
@@ -478,7 +481,7 @@ pub async fn update_term(
         (status = 404, description = "Academic term not found", body = ApiErrorResponse),
         (status = 409, description = "Academic term has dependent records", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -502,7 +505,7 @@ pub async fn delete_term(
     Ok(ok(EmptyData {}))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/bell-schedules",
     operation_id = "listBellSchedules",
@@ -513,7 +516,7 @@ pub async fn delete_term(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_bell_schedules(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -531,7 +534,7 @@ pub async fn list_bell_schedules(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/bell-schedules",
     operation_id = "createBellSchedule",
@@ -544,7 +547,7 @@ pub async fn list_bell_schedules(
         (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Bell schedule conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_bell_schedule(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -567,7 +570,7 @@ pub async fn create_bell_schedule(
     Ok(created(schedule))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/bell-schedules/{id}",
     operation_id = "getBellSchedule",
@@ -579,7 +582,7 @@ pub async fn create_bell_schedule(
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_bell_schedule(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -595,7 +598,7 @@ pub async fn get_bell_schedule(
     Ok(ok(bell_schedules::get(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/bell-schedules/{id}",
     operation_id = "updateBellSchedule",
@@ -610,7 +613,7 @@ pub async fn get_bell_schedule(
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse),
         (status = 409, description = "Bell schedule row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_bell_schedule(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -634,7 +637,7 @@ pub async fn update_bell_schedule(
     Ok(ok(schedule))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/bell-schedules/{id}/periods",
     operation_id = "listBellSchedulePeriods",
@@ -646,7 +649,7 @@ pub async fn update_bell_schedule(
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_bell_schedule_periods(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -662,7 +665,7 @@ pub async fn list_bell_schedule_periods(
     Ok(ok(bell_schedules::list_periods(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/bell-schedules/{id}/periods",
     operation_id = "replaceBellSchedulePeriods",
@@ -677,7 +680,7 @@ pub async fn list_bell_schedule_periods(
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse),
         (status = 409, description = "Bell schedule row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_bell_schedule_periods(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -702,7 +705,7 @@ pub async fn replace_bell_schedule_periods(
     Ok(ok(periods))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/grade-progressions",
     operation_id = "listGradeProgressions",
@@ -712,7 +715,7 @@ pub async fn replace_bell_schedule_periods(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_grade_progressions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -727,7 +730,7 @@ pub async fn list_grade_progressions(
     Ok(ok(progressions::list(&pool).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/grade-progressions",
     operation_id = "replaceGradeProgressions",
@@ -740,7 +743,7 @@ pub async fn list_grade_progressions(
         (status = 403, description = "Academic year management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Grade progression row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_grade_progressions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -763,7 +766,7 @@ pub async fn replace_grade_progressions(
     Ok(ok(values))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects",
     operation_id = "listCatalogSubjects",
@@ -773,7 +776,7 @@ pub async fn replace_grade_progressions(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_catalog_subjects(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -790,7 +793,7 @@ pub async fn list_catalog_subjects(
     Ok(ok(catalog::list_subjects(&pool, &filter).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects/overview",
     operation_id = "getCatalogSubjectOverview",
@@ -800,7 +803,7 @@ pub async fn list_catalog_subjects(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_catalog_subject_overview(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -830,7 +833,7 @@ pub async fn get_catalog_subject_overview(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/subjects",
     operation_id = "createCatalogSubject",
@@ -843,7 +846,7 @@ pub async fn get_catalog_subject_overview(
         (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Catalog subject conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_catalog_subject(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -877,7 +880,7 @@ pub async fn create_catalog_subject(
     Ok(created(subject))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects/{id}",
     operation_id = "getCatalogSubject",
@@ -889,7 +892,7 @@ pub async fn create_catalog_subject(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_catalog_subject(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -908,7 +911,7 @@ pub async fn get_catalog_subject(
     Ok(ok(catalog::get_subject(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/catalog/subjects/{id}",
     operation_id = "updateCatalogSubject",
@@ -923,7 +926,7 @@ pub async fn get_catalog_subject(
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
         (status = 409, description = "Catalog subject row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_catalog_subject(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -963,7 +966,7 @@ pub async fn update_catalog_subject(
     Ok(ok(subject))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects/{id}/versions",
     operation_id = "listSubjectVersions",
@@ -975,7 +978,7 @@ pub async fn update_catalog_subject(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_subject_versions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -994,7 +997,7 @@ pub async fn list_subject_versions(
     Ok(ok(catalog::list_subject_versions(&pool, subject_id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/subjects/{id}/versions",
     operation_id = "createSubjectVersion",
@@ -1009,7 +1012,7 @@ pub async fn list_subject_versions(
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
         (status = 409, description = "Subject version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_subject_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1039,7 +1042,7 @@ pub async fn create_subject_version(
     Ok(created(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subject-versions/{id}",
     operation_id = "getSubjectVersion",
@@ -1051,7 +1054,7 @@ pub async fn create_subject_version(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Subject version not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_subject_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1072,7 +1075,7 @@ pub async fn get_subject_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/catalog/subject-versions/{id}",
     operation_id = "updateSubjectVersion",
@@ -1087,7 +1090,7 @@ pub async fn get_subject_version(
         (status = 404, description = "Subject version not found", body = ApiErrorResponse),
         (status = 409, description = "Subject version row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_subject_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1118,7 +1121,7 @@ pub async fn update_subject_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/subject-versions/{id}/publish",
     operation_id = "publishSubjectVersion",
@@ -1133,7 +1136,7 @@ pub async fn update_subject_version(
         (status = 404, description = "Subject version not found", body = ApiErrorResponse),
         (status = 409, description = "Subject version row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_subject_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1164,7 +1167,7 @@ pub async fn publish_subject_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subjects/{id}/default-teachers",
     operation_id = "listSubjectDefaultTeachers",
@@ -1176,7 +1179,7 @@ pub async fn publish_subject_version(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_subject_default_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1195,7 +1198,7 @@ pub async fn list_subject_default_teachers(
     Ok(ok(catalog::list_subject_default_teachers(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/catalog/subjects/{id}/default-teachers",
     operation_id = "replaceSubjectDefaultTeachers",
@@ -1210,7 +1213,7 @@ pub async fn list_subject_default_teachers(
         (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
         (status = 409, description = "Catalog subject row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_subject_default_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1240,7 +1243,7 @@ pub async fn replace_subject_default_teachers(
     Ok(ok(teachers))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subject-groups",
     operation_id = "listSubjectGroups",
@@ -1250,7 +1253,7 @@ pub async fn replace_subject_default_teachers(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_subject_groups(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1270,7 +1273,7 @@ pub async fn list_subject_groups(
     Ok(ok(catalog::list_subject_groups(&pool).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/subject-groups",
     operation_id = "createSubjectGroup",
@@ -1283,7 +1286,7 @@ pub async fn list_subject_groups(
         (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Subject group conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_subject_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1306,7 +1309,7 @@ pub async fn create_subject_group(
     Ok(created(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/subject-groups/{id}",
     operation_id = "getSubjectGroup",
@@ -1318,7 +1321,7 @@ pub async fn create_subject_group(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Subject group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_subject_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1339,7 +1342,7 @@ pub async fn get_subject_group(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/catalog/subject-groups/{id}",
     operation_id = "updateSubjectGroup",
@@ -1354,7 +1357,7 @@ pub async fn get_subject_group(
         (status = 404, description = "Subject group not found", body = ApiErrorResponse),
         (status = 409, description = "Subject group row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_subject_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1378,7 +1381,7 @@ pub async fn update_subject_group(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/catalog/subject-groups/{id}",
     operation_id = "deleteSubjectGroup",
@@ -1392,7 +1395,7 @@ pub async fn update_subject_group(
         (status = 404, description = "Subject group not found", body = ApiErrorResponse),
         (status = 409, description = "Subject group has dependent records", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_subject_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1415,7 +1418,7 @@ pub async fn delete_subject_group(
     Ok(ok(EmptyData {}))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activities",
     operation_id = "listCatalogActivities",
@@ -1425,7 +1428,7 @@ pub async fn delete_subject_group(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_catalog_activities(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1442,7 +1445,7 @@ pub async fn list_catalog_activities(
     Ok(ok(catalog::list_activities(&pool, &filter).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activities/overview",
     operation_id = "getCatalogActivityOverview",
@@ -1452,7 +1455,7 @@ pub async fn list_catalog_activities(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_catalog_activity_overview(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1482,7 +1485,7 @@ pub async fn get_catalog_activity_overview(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/activities",
     operation_id = "createCatalogActivity",
@@ -1495,7 +1498,7 @@ pub async fn get_catalog_activity_overview(
         (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Catalog activity conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_catalog_activity(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1527,7 +1530,7 @@ pub async fn create_catalog_activity(
     Ok(created(activity))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activities/{id}",
     operation_id = "getCatalogActivity",
@@ -1539,7 +1542,7 @@ pub async fn create_catalog_activity(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_catalog_activity(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1558,7 +1561,7 @@ pub async fn get_catalog_activity(
     Ok(ok(catalog::get_activity(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/catalog/activities/{id}",
     operation_id = "updateCatalogActivity",
@@ -1573,7 +1576,7 @@ pub async fn get_catalog_activity(
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
         (status = 409, description = "Catalog activity row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_catalog_activity(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1603,7 +1606,7 @@ pub async fn update_catalog_activity(
     Ok(ok(activity))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activities/{id}/versions",
     operation_id = "listActivityVersions",
@@ -1615,7 +1618,7 @@ pub async fn update_catalog_activity(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_activity_versions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1636,7 +1639,7 @@ pub async fn list_activity_versions(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/activities/{id}/versions",
     operation_id = "createActivityVersion",
@@ -1651,7 +1654,7 @@ pub async fn list_activity_versions(
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
         (status = 409, description = "Activity version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_activity_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1681,7 +1684,7 @@ pub async fn create_activity_version(
     Ok(created(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activity-versions/{id}",
     operation_id = "getActivityVersion",
@@ -1693,7 +1696,7 @@ pub async fn create_activity_version(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Activity version not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_activity_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1714,7 +1717,7 @@ pub async fn get_activity_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/catalog/activity-versions/{id}",
     operation_id = "updateActivityVersion",
@@ -1729,7 +1732,7 @@ pub async fn get_activity_version(
         (status = 404, description = "Activity version not found", body = ApiErrorResponse),
         (status = 409, description = "Activity version row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_activity_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1760,7 +1763,7 @@ pub async fn update_activity_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/catalog/activity-versions/{id}/publish",
     operation_id = "publishActivityVersion",
@@ -1775,7 +1778,7 @@ pub async fn update_activity_version(
         (status = 404, description = "Activity version not found", body = ApiErrorResponse),
         (status = 409, description = "Activity version row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_activity_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1806,7 +1809,7 @@ pub async fn publish_activity_version(
     Ok(ok(version))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/catalog/activities/{id}/default-teachers",
     operation_id = "listActivityDefaultTeachers",
@@ -1818,7 +1821,7 @@ pub async fn publish_activity_version(
         (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_activity_default_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1837,7 +1840,7 @@ pub async fn list_activity_default_teachers(
     Ok(ok(catalog::list_activity_default_teachers(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/catalog/activities/{id}/default-teachers",
     operation_id = "replaceActivityDefaultTeachers",
@@ -1852,7 +1855,7 @@ pub async fn list_activity_default_teachers(
         (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
         (status = 409, description = "Catalog activity row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_activity_default_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1882,7 +1885,7 @@ pub async fn replace_activity_default_teachers(
     Ok(ok(teachers))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/curricula",
     operation_id = "listCurricula",
@@ -1892,7 +1895,7 @@ pub async fn replace_activity_default_teachers(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_curricula(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1909,7 +1912,7 @@ pub async fn list_curricula(
     Ok(ok(curriculum::list(&pool, &filter).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/curricula/overview",
     operation_id = "getCurriculumOverview",
@@ -1920,7 +1923,7 @@ pub async fn list_curricula(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_curriculum_overview(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1936,7 +1939,7 @@ pub async fn get_curriculum_overview(
     Ok(ok(workspaces::curriculum_overview(&pool, &filter).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/curricula/management-options",
     operation_id = "getCurriculumCreateOptions",
@@ -1947,7 +1950,7 @@ pub async fn get_curriculum_overview(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_curriculum_create_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1965,7 +1968,7 @@ pub async fn get_curriculum_create_options(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/study-program-options",
     operation_id = "listStudyProgramOptionsForAcademicYear",
@@ -1978,7 +1981,7 @@ pub async fn get_curriculum_create_options(
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_study_program_options_for_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2001,7 +2004,7 @@ pub async fn list_study_program_options_for_year(
     .await?))
 }
 
-#[utoipa::path(post,path="/api/academic/curricula",operation_id="createCurriculum",tag="academic",request_body=CreateCurriculumRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curricula",operation_id="createCurriculum",tag="academic",request_body=CreateCurriculumRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn create_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2027,7 +2030,7 @@ pub async fn create_curriculum(
     Ok(created(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}",operation_id="getCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curricula/{id}",operation_id="getCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn get_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2045,7 +2048,7 @@ pub async fn get_curriculum(
     Ok(ok(value))
 }
 
-#[utoipa::path(patch,path="/api/academic/curricula/{id}",operation_id="updateCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(patch,path="/api/academic/curricula/{id}",operation_id="updateCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn update_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2072,7 +2075,7 @@ pub async fn update_curriculum(
     Ok(ok(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curricula/{id}/publish",operation_id="publishCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=PublishCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curricula/{id}/publish",operation_id="publishCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=PublishCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn publish_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2100,7 +2103,7 @@ pub async fn publish_curriculum(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}/levels",operation_id="listCurriculumLevels",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<CurriculumLevelView>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curricula/{id}/levels",operation_id="listCurriculumLevels",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<CurriculumLevelView>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn list_curriculum_levels(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2118,7 +2121,7 @@ pub async fn list_curriculum_levels(
     Ok(ok(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curricula/{id}/levels",operation_id="createCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateCurriculumLevelRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curricula/{id}/levels",operation_id="createCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateCurriculumLevelRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn create_curriculum_level(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2145,7 +2148,7 @@ pub async fn create_curriculum_level(
     Ok(created(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}",operation_id="getCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curriculum-levels/{id}",operation_id="getCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn get_curriculum_level(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2163,7 +2166,7 @@ pub async fn get_curriculum_level(
     Ok(ok(value))
 }
 
-#[utoipa::path(patch,path="/api/academic/curriculum-levels/{id}",operation_id="updateCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumLevelRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(patch,path="/api/academic/curriculum-levels/{id}",operation_id="updateCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumLevelRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn update_curriculum_level(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2190,7 +2193,7 @@ pub async fn update_curriculum_level(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/management-options",operation_id="getCurriculumManagementOptions",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumManagementOptions>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curriculum-levels/{id}/management-options",operation_id="getCurriculumManagementOptions",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumManagementOptions>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn get_curriculum_management_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2208,7 +2211,7 @@ pub async fn get_curriculum_management_options(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/structure",operation_id="getCurriculumStructureWorkspace",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curriculum-levels/{id}/structure",operation_id="getCurriculumStructureWorkspace",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn get_curriculum_structure_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2226,7 +2229,7 @@ pub async fn get_curriculum_structure_workspace(
     Ok(ok(value))
 }
 
-#[utoipa::path(put,path="/api/academic/curriculum-levels/{id}/term-slots",operation_id="replaceCurriculumTermSlots",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumTermSlotsRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/curriculum-levels/{id}/term-slots",operation_id="replaceCurriculumTermSlots",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumTermSlotsRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn replace_curriculum_term_slots(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2253,7 +2256,7 @@ pub async fn replace_curriculum_term_slots(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn list_study_programs(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2271,7 +2274,7 @@ pub async fn list_study_programs(
     Ok(ok(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curriculum-levels/{id}/programs",operation_id="createStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curriculum-levels/{id}/programs",operation_id="createStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn create_study_program(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2298,7 +2301,7 @@ pub async fn create_study_program(
     Ok(created(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curriculum-levels/{id}/copy-program",operation_id="copyStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CopyStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curriculum-levels/{id}/copy-program",operation_id="copyStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CopyStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn copy_study_program(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2325,7 +2328,7 @@ pub async fn copy_study_program(
     Ok(created(value))
 }
 
-#[utoipa::path(get,path="/api/academic/study-programs/{id}",operation_id="getStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/study-programs/{id}",operation_id="getStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn get_study_program(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2343,7 +2346,7 @@ pub async fn get_study_program(
     Ok(ok(value))
 }
 
-#[utoipa::path(patch,path="/api/academic/study-programs/{id}",operation_id="updateStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateStudyProgramRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(patch,path="/api/academic/study-programs/{id}",operation_id="updateStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateStudyProgramRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn update_study_program(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2370,7 +2373,7 @@ pub async fn update_study_program(
     Ok(ok(value))
 }
 
-#[utoipa::path(put,path="/api/academic/study-programs/{id}/structure",operation_id="replaceCurriculumStructure",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumStructureRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/study-programs/{id}/structure",operation_id="replaceCurriculumStructure",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumStructureRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn replace_curriculum_structure(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2398,7 +2401,7 @@ pub async fn replace_curriculum_structure(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/homerooms",
     operation_id = "listHomerooms",
@@ -2409,7 +2412,7 @@ pub async fn replace_curriculum_structure(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_homerooms(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2426,7 +2429,7 @@ pub async fn list_homerooms(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/homerooms",
     operation_id = "createHomeroom",
@@ -2439,7 +2442,7 @@ pub async fn list_homerooms(
         (status = 403, description = "Homeroom management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Homeroom conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_homeroom(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2462,7 +2465,7 @@ pub async fn create_homeroom(
     Ok(created(homeroom))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/homerooms/{id}",
     operation_id = "getHomeroom",
@@ -2474,7 +2477,7 @@ pub async fn create_homeroom(
         (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Homeroom not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_homeroom(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2487,7 +2490,7 @@ pub async fn get_homeroom(
     Ok(ok(student_years::get_homeroom(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/homerooms/{id}",
     operation_id = "updateHomeroom",
@@ -2502,7 +2505,7 @@ pub async fn get_homeroom(
         (status = 404, description = "Homeroom not found", body = ApiErrorResponse),
         (status = 409, description = "Homeroom row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_homeroom(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2526,7 +2529,7 @@ pub async fn update_homeroom(
     Ok(ok(homeroom))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/homerooms/{id}/advisors",
     operation_id = "listHomeroomAdvisors",
@@ -2538,7 +2541,7 @@ pub async fn update_homeroom(
         (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Homeroom not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_homeroom_advisors(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2551,7 +2554,7 @@ pub async fn list_homeroom_advisors(
     Ok(ok(student_years::list_advisors(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/homeroom-advisors",
     operation_id = "listHomeroomAdvisorsForAcademicYear",
@@ -2564,7 +2567,7 @@ pub async fn list_homeroom_advisors(
         (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_homeroom_advisors_for_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2581,7 +2584,7 @@ pub async fn list_homeroom_advisors_for_year(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/homerooms/{id}/advisors",
     operation_id = "replaceHomeroomAdvisors",
@@ -2596,7 +2599,7 @@ pub async fn list_homeroom_advisors_for_year(
         (status = 404, description = "Homeroom not found", body = ApiErrorResponse),
         (status = 409, description = "Homeroom row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_homeroom_advisors(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2621,7 +2624,7 @@ pub async fn replace_homeroom_advisors(
     Ok(ok(advisors))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/student-years",
     operation_id = "listStudentAcademicYears",
@@ -2632,7 +2635,7 @@ pub async fn replace_homeroom_advisors(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_student_years(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2648,7 +2651,7 @@ pub async fn list_student_years(
     Ok(ok(student_years::list_student_years(&pool, filter).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/student-years/candidates",
     operation_id = "listStudentYearCandidates",
@@ -2661,7 +2664,7 @@ pub async fn list_student_years(
         (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_student_year_candidates(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2678,7 +2681,7 @@ pub async fn list_student_year_candidates(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/student-years",
     operation_id = "createStudentAcademicYear",
@@ -2691,7 +2694,7 @@ pub async fn list_student_year_candidates(
         (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Student academic year conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_student_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2714,7 +2717,7 @@ pub async fn create_student_year(
     Ok(created(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/student-years/{id}",
     operation_id = "getStudentAcademicYear",
@@ -2726,7 +2729,7 @@ pub async fn create_student_year(
         (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_student_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2742,7 +2745,7 @@ pub async fn get_student_year(
     Ok(ok(student_years::get_student_year(&pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/student-years/{id}",
     operation_id = "updateStudentAcademicYear",
@@ -2757,7 +2760,7 @@ pub async fn get_student_year(
         (status = 404, description = "Student academic year not found", body = ApiErrorResponse),
         (status = 409, description = "Student academic year row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_student_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2781,7 +2784,7 @@ pub async fn update_student_year(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/student-years/{id}/placements",
     operation_id = "listHomeroomPlacements",
@@ -2793,7 +2796,7 @@ pub async fn update_student_year(
         (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_placements(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2808,7 +2811,7 @@ pub async fn list_placements(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/placements",
     operation_id = "listPlacementsForAcademicYear",
@@ -2821,7 +2824,7 @@ pub async fn list_placements(
         (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic year not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_placements_for_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2838,7 +2841,7 @@ pub async fn list_placements_for_year(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/student-years/{id}/placements",
     operation_id = "createHomeroomPlacement",
@@ -2853,7 +2856,7 @@ pub async fn list_placements_for_year(
         (status = 404, description = "Student academic year or homeroom not found", body = ApiErrorResponse),
         (status = 409, description = "Homeroom placement conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_placement(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2884,7 +2887,7 @@ pub async fn create_placement(
     Ok(created(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/placements/{id}/transfer",
     operation_id = "transferHomeroomPlacement",
@@ -2899,7 +2902,7 @@ pub async fn create_placement(
         (status = 404, description = "Homeroom placement or target homeroom not found", body = ApiErrorResponse),
         (status = 409, description = "Homeroom placement transfer conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn transfer_placement(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2930,7 +2933,7 @@ pub async fn transfer_placement(
     Ok(ok(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curricula/{id}/draft",operation_id="openCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=OpenCurriculumDraftRequest,responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/curricula/{id}/draft",operation_id="openCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=OpenCurriculumDraftRequest,responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse))))]
 pub async fn open_curriculum_draft(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2958,7 +2961,7 @@ pub async fn open_curriculum_draft(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}/publications",operation_id="listCurriculumPublications",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<Vec<CurriculumPublication>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curricula/{id}/publications",operation_id="listCurriculumPublications",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<Vec<CurriculumPublication>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse))))]
 pub async fn list_curriculum_publications(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2976,7 +2979,7 @@ pub async fn list_curriculum_publications(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}/publications/{publication_id}",operation_id="getCurriculumPublicationHistory",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),("publication_id"=Uuid,Path,description="Publication identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumPublicationHistory>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curricula/{id}/publications/{publication_id}",operation_id="getCurriculumPublicationHistory",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),("publication_id"=Uuid,Path,description="Publication identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumPublicationHistory>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse))))]
 pub async fn get_curriculum_publication_history(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -2994,14 +2997,14 @@ pub async fn get_curriculum_publication_history(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path="/api/academic/homerooms/{id}/students",operation_id="getHomeroomRoster",tag="academic",
     params(("id"=Uuid,Path,description="Homeroom ID")),
     responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomRoster>),
         (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
         (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
-)]
+))]
 pub async fn get_homeroom_roster(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -3015,14 +3018,14 @@ pub async fn get_homeroom_roster(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path="/api/academic/homerooms/{id}/student-candidates",operation_id="listHomeroomRosterCandidates",tag="academic",
     params(("id"=Uuid,Path,description="Homeroom ID"), HomeroomCandidateQuery),
     responses((status=200,description="Homeroom roster operation",body=ApiResponse<Vec<HomeroomRosterCandidate>>),
         (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
         (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
-)]
+))]
 pub async fn list_homeroom_candidates(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -3037,14 +3040,14 @@ pub async fn list_homeroom_candidates(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path="/api/academic/homerooms/{id}/numbering-preview",operation_id="previewHomeroomNumbers",tag="academic",
     params(("id"=Uuid,Path,description="Homeroom ID"), HomeroomNumberingQuery),
     responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomNumberingPreview>),
         (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
         (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
-)]
+))]
 pub async fn preview_homeroom_numbers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -3059,7 +3062,7 @@ pub async fn preview_homeroom_numbers(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch, path="/api/academic/homerooms/{id}/numbers",operation_id="updateHomeroomNumbers",tag="academic",
     params(("id"=Uuid,Path,description="Homeroom ID")),
     request_body=UpdateHomeroomNumbersRequest,
@@ -3067,7 +3070,7 @@ pub async fn preview_homeroom_numbers(
         (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
         (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
-)]
+))]
 pub async fn update_homeroom_numbers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -3091,7 +3094,7 @@ pub async fn update_homeroom_numbers(
     Ok(ok(value))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post, path="/api/academic/homerooms/{id}/students",operation_id="mutateHomeroomRoster",tag="academic",
     params(("id"=Uuid,Path,description="Homeroom ID")),
     request_body=MutateHomeroomRosterRequest,
@@ -3099,7 +3102,7 @@ pub async fn update_homeroom_numbers(
         (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
         (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
-)]
+))]
 pub async fn mutate_homeroom_roster(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -3125,8 +3128,8 @@ pub async fn mutate_homeroom_roster(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/homerooms/{id}/transfer-targets",operation_id="listHomeroomTransferTargets",tag="academic",
- params(("id"=Uuid,Path,description="Source homeroom ID")),responses((status=200,description="Compatible rooms with occupancy",body=ApiResponse<Vec<Homeroom>>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/homerooms/{id}/transfer-targets",operation_id="listHomeroomTransferTargets",tag="academic",
+ params(("id"=Uuid,Path,description="Source homeroom ID")),responses((status=200,description="Compatible rooms with occupancy",body=ApiResponse<Vec<Homeroom>>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse))))]
 pub async fn list_homeroom_transfer_targets(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

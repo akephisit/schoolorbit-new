@@ -4,35 +4,37 @@ use std::{collections::BTreeMap, fmt};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// Domain-owned representation of an organization unit that may own a certificate campaign.
 /// The HTTP adapter maps this into its public lookup contract.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CertificateOwnerOption {
     pub id: Uuid,
     pub code: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub name_en: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub category: Option<String>,
     pub display_order: i32,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Uuid))]
     pub parent_unit_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub unit_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Uuid))]
     pub subject_group_id: Option<Uuid>,
 }
 
@@ -40,7 +42,8 @@ use school_fonts::models::SchoolFontStyle;
 
 macro_rules! string_enum {
     ($name:ident { $($variant:ident),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+        #[cfg_attr(feature = "api-docs", derive(ToSchema))]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($variant),+
@@ -364,7 +367,8 @@ impl CertificateTemplateAssetKind {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(transparent)]
 pub struct CertificateNumber(pub(super) String);
 
@@ -412,7 +416,8 @@ impl fmt::Display for CertificateNumberError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateLayoutV1 {
     pub schema_version: u16,
@@ -428,7 +433,8 @@ impl Default for CertificateLayoutV1 {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CertificateElement {
     Text(TextElement),
@@ -470,7 +476,8 @@ impl CertificateElement {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ElementFrame {
     pub x: f64,
@@ -479,7 +486,8 @@ pub struct ElementFrame {
     pub height: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextElement {
     pub id: Uuid,
@@ -499,7 +507,8 @@ pub struct TextElement {
     pub shadow: Option<TextShadow>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CertificateFontSource {
     #[default]
@@ -509,7 +518,8 @@ pub enum CertificateFontSource {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextAlignment {
     Left,
@@ -517,7 +527,8 @@ pub enum TextAlignment {
     Right,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TextShadow {
     pub offset_x: f64,
@@ -526,7 +537,8 @@ pub struct TextShadow {
     pub color: String,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImageElement {
     pub id: Uuid,
@@ -537,7 +549,8 @@ pub struct ImageElement {
     pub aspect_ratio: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QrElement {
     pub id: Uuid,
@@ -597,7 +610,8 @@ impl PageGeometry {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateImportRequest {
     pub source: CertificateImportSource,
@@ -605,7 +619,8 @@ pub struct CertificateImportRequest {
     pub rows: Vec<CertificateImportRowInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateImportRowInput {
     pub recipient_type: String,
@@ -621,8 +636,9 @@ pub struct CertificateImportRowInput {
     pub custom_values: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateCandidateListQuery {
     pub status: Option<CandidateValidationStatus>,
@@ -630,15 +646,17 @@ pub struct CertificateCandidateListQuery {
     pub search: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateAccountSearchQuery {
     pub recipient_type: RecipientType,
     pub search: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateCapabilities {
     pub can_update: bool,
@@ -648,53 +666,55 @@ pub struct CertificateCandidateCapabilities {
     pub can_confirm_duplicate: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateDetail {
     pub id: Uuid,
     pub campaign_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub batch_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub template_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub template_name: Option<String>,
     pub recipient_type: RecipientType,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub matched_user_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub staff_username: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub imported_title: Option<String>,
     pub imported_first_name: String,
     pub imported_last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub account_title: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub account_first_name: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub account_last_name: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub selected_name_source: Option<CandidateNameSource>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_item: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub award_or_role: Option<String>,
     pub custom_values: BTreeMap<String, String>,
     pub match_status: CandidateMatchStatus,
     pub validation_status: CandidateValidationStatus,
     pub validation_codes: Vec<CandidateValidationCode>,
     pub duplicate_confirmed: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub deleted_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub capabilities: CertificateCandidateCapabilities,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateSummary {
     pub total_count: i64,
@@ -703,14 +723,16 @@ pub struct CertificateCandidateSummary {
     pub invalid_count: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateListResponse {
     pub items: Vec<CertificateCandidateDetail>,
     pub summary: CertificateCandidateSummary,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateImportBatchSummary {
     pub id: Uuid,
@@ -724,29 +746,32 @@ pub struct CertificateImportBatchSummary {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateImportResult {
     pub batch: CertificateImportBatchSummary,
     pub candidates: Vec<CertificateCandidateDetail>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateAccount {
     pub user_id: Uuid,
     pub recipient_type: RecipientType,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub staff_username: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateManualExternalCandidateRequest {
     pub template_id: Option<Uuid>,
@@ -759,7 +784,8 @@ pub struct CreateManualExternalCandidateRequest {
     pub custom_values: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAccountCertificateCandidateRequest {
     pub user_id: Uuid,
@@ -770,7 +796,8 @@ pub struct CreateAccountCertificateCandidateRequest {
     pub custom_values: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCertificateCandidateRequest {
     pub expected_updated_at: DateTime<Utc>,
@@ -788,7 +815,8 @@ pub struct UpdateCertificateCandidateRequest {
     pub custom_values: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "operation",
     rename_all = "snake_case",
@@ -798,33 +826,33 @@ pub struct UpdateCertificateCandidateRequest {
 pub enum CertificateCandidateBulkRequest {
     AssignTemplate {
         #[serde(rename = "candidateIds")]
-        #[schema(rename = "candidateIds")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateIds"))]
         candidate_ids: Vec<Uuid>,
         #[serde(rename = "templateId")]
-        #[schema(rename = "templateId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "templateId"))]
         template_id: Uuid,
     },
     ChooseName {
         #[serde(rename = "candidateIds")]
-        #[schema(rename = "candidateIds")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateIds"))]
         candidate_ids: Vec<Uuid>,
         #[serde(rename = "nameSource")]
-        #[schema(rename = "nameSource")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "nameSource"))]
         name_source: CandidateNameSource,
     },
     ConfirmExternal {
         #[serde(rename = "candidateIds")]
-        #[schema(rename = "candidateIds")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateIds"))]
         candidate_ids: Vec<Uuid>,
     },
     ConfirmDuplicate {
         #[serde(rename = "candidateIds")]
-        #[schema(rename = "candidateIds")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateIds"))]
         candidate_ids: Vec<Uuid>,
     },
     SoftDelete {
         #[serde(rename = "candidateIds")]
-        #[schema(rename = "candidateIds")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateIds"))]
         candidate_ids: Vec<Uuid>,
     },
 }
@@ -841,34 +869,39 @@ impl CertificateCandidateBulkRequest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCandidateBulkResult {
     pub updated_count: u32,
     pub candidates: Vec<CertificateCandidateDetail>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubmitCertificateIssueRequest {
     pub candidate_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReturnCertificateIssueRequest {
     pub issue_codes: Vec<CertificateIssueCode>,
     pub return_note: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateIssueRequestListQuery {
     pub status: Option<CertificateIssueRequestStatus>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateIssueRequestCapabilities {
     pub can_withdraw: bool,
@@ -877,33 +910,34 @@ pub struct CertificateIssueRequestCapabilities {
     pub can_issue: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateIssueRequestSummary {
     pub id: Uuid,
     pub campaign_id: Uuid,
     pub campaign_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name: Option<String>,
     pub status: CertificateIssueRequestStatus,
     pub submitted_by: Uuid,
     pub submitted_by_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_by: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_by_name: Option<String>,
     pub submitted_at: DateTime<Utc>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub returned_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub withdrawn_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub issued_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub return_note: Option<String>,
     pub issue_codes: Vec<CertificateIssueCode>,
     pub item_count: i64,
@@ -916,54 +950,56 @@ pub struct CertificateIssueRequestSummary {
     pub capabilities: CertificateIssueRequestCapabilities,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateIssueRequestItem {
     pub candidate_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub template_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub template_name: Option<String>,
     pub recipient_type: RecipientType,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_item: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub award_or_role: Option<String>,
     pub validation_status: CandidateValidationStatus,
     pub validation_codes: Vec<CandidateValidationCode>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateIssueRequestDetail {
     pub id: Uuid,
     pub campaign_id: Uuid,
     pub campaign_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name: Option<String>,
     pub status: CertificateIssueRequestStatus,
     pub submitted_by: Uuid,
     pub submitted_by_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_by: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_by_name: Option<String>,
     pub submitted_at: DateTime<Utc>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub returned_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub withdrawn_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub issued_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub return_note: Option<String>,
     pub issue_codes: Vec<CertificateIssueCode>,
     pub item_count: i64,
@@ -977,21 +1013,24 @@ pub struct CertificateIssueRequestDetail {
     pub items: Vec<CertificateIssueRequestItem>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateResourceLocked {
     pub code: CertificateResourceLockCode,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub request_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IssueCertificateRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCapabilities {
     pub can_read: bool,
@@ -999,15 +1038,16 @@ pub struct CertificateCapabilities {
     pub can_revoke: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct IssuedCertificateSummary {
     pub id: Uuid,
     pub campaign_id: Uuid,
     pub campaign_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name: Option<String>,
     pub template_id: Uuid,
     pub template_name: String,
@@ -1017,27 +1057,28 @@ pub struct IssuedCertificateSummary {
     pub certificate_sequence: i32,
     pub certificate_number: String,
     pub recipient_type: RecipientType,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_item: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub award_or_role: Option<String>,
     pub issue_date: NaiveDate,
     pub status: CertificateStatus,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub replacement_for_certificate_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub replaced_by_certificate_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub replacement_candidate_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub capabilities: CertificateCapabilities,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct IssuedCertificateDetail {
     #[serde(flatten)]
@@ -1045,25 +1086,27 @@ pub struct IssuedCertificateDetail {
     pub issue_run_id: Uuid,
     pub custom_values: BTreeMap<String, String>,
     pub school_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name_snapshot: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub revoked_by: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub revoked_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub revocation_reason: Option<String>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateIssueCandidateProblem {
     pub candidate_id: Uuid,
     pub issue_codes: Vec<CertificateIssueCode>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "outcome",
     rename_all = "snake_case",
@@ -1072,46 +1115,47 @@ pub struct CertificateIssueCandidateProblem {
 pub enum IssueCertificateOutcome {
     Issued {
         #[serde(rename = "issueRunId")]
-        #[schema(rename = "issueRunId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "issueRunId"))]
         issue_run_id: Uuid,
         #[serde(rename = "requestId")]
-        #[schema(rename = "requestId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "requestId"))]
         request_id: Uuid,
         #[serde(rename = "campaignId")]
-        #[schema(rename = "campaignId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "campaignId"))]
         campaign_id: Uuid,
         #[serde(rename = "activitySequence")]
-        #[schema(rename = "activitySequence")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "activitySequence"))]
         activity_sequence: i32,
         #[serde(rename = "firstCertificateSequence")]
-        #[schema(rename = "firstCertificateSequence")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "firstCertificateSequence"))]
         first_certificate_sequence: i32,
         #[serde(rename = "lastCertificateSequence")]
-        #[schema(rename = "lastCertificateSequence")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "lastCertificateSequence"))]
         last_certificate_sequence: i32,
         certificates: Vec<IssuedCertificateSummary>,
     },
     Returned {
         #[serde(rename = "issueRunId")]
-        #[schema(rename = "issueRunId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "issueRunId"))]
         issue_run_id: Uuid,
         #[serde(rename = "requestId")]
-        #[schema(rename = "requestId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "requestId"))]
         request_id: Uuid,
         #[serde(rename = "campaignId")]
-        #[schema(rename = "campaignId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "campaignId"))]
         campaign_id: Uuid,
         #[serde(rename = "issueCodes")]
-        #[schema(rename = "issueCodes")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "issueCodes"))]
         issue_codes: Vec<CertificateIssueCode>,
         #[serde(rename = "candidateProblems")]
-        #[schema(rename = "candidateProblems")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "candidateProblems"))]
         candidate_problems: Vec<CertificateIssueCandidateProblem>,
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IssuedCertificateListQuery {
     pub status: Option<CertificateStatus>,
@@ -1119,14 +1163,16 @@ pub struct IssuedCertificateListQuery {
     pub search: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RevokeCertificateRequest {
     pub reason: String,
     pub create_replacement_candidate: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateReplacementCandidate {
     pub id: Uuid,
@@ -1135,15 +1181,17 @@ pub struct CertificateReplacementCandidate {
     pub validation_status: CandidateValidationStatus,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RevokeCertificateResult {
     pub certificate: IssuedCertificateDetail,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub replacement_candidate: Option<CertificateReplacementCandidate>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManualCertificateVerificationRequest {
     pub certificate_number: String,
@@ -1151,46 +1199,50 @@ pub struct ManualCertificateVerificationRequest {
     pub last_name: String,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QrCertificateVerificationRequest {
     pub certificate_number: String,
     pub proof: String,
 }
 
-#[derive(Clone, Deserialize, ToSchema)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublicCertificateRenderRequest {
     pub receipt: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PublicCertificateVerificationData {
     pub status: CertificateStatus,
     pub certificate_number: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
     pub campaign_name: String,
     pub academic_year: i32,
     pub template_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_item: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub award_or_role: Option<String>,
     pub issue_date: NaiveDate,
     pub issuer_school_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub replacement_certificate_number: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub receipt: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub receipt_expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCertificateCampaignRequest {
     pub academic_year_id: Uuid,
@@ -1201,14 +1253,16 @@ pub struct CreateCertificateCampaignRequest {
 
 /// Explicit nullable update wrapper: omitted means unchanged; `{ "value": null }`
 /// changes a unit-owned draft into a school-owned draft.
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NullableUuidUpdate {
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub value: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCertificateCampaignRequest {
     pub expected_updated_at: DateTime<Utc>,
@@ -1220,14 +1274,16 @@ pub struct UpdateCertificateCampaignRequest {
     pub confirm_affects_issued_certificates: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChangeCertificateCampaignStatusRequest {
     pub expected_updated_at: DateTime<Utc>,
     pub status: CertificateCampaignStatus,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCampaignCapabilities {
     pub can_read: bool,
@@ -1240,23 +1296,24 @@ pub struct CertificateCampaignCapabilities {
     pub can_manage_templates: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCampaignSummary {
     pub id: Uuid,
     pub academic_year_id: Uuid,
     pub academic_year_value: i32,
     pub academic_year_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_code: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name: Option<String>,
     pub name: String,
     pub event_date: NaiveDate,
     pub status: CertificateCampaignStatus,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_sequence: Option<i32>,
     pub template_count: i64,
     pub candidate_count: i64,
@@ -1267,40 +1324,42 @@ pub struct CertificateCampaignSummary {
     pub capabilities: CertificateCampaignCapabilities,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCampaignDetail {
     pub id: Uuid,
     pub academic_year_id: Uuid,
     pub academic_year_value: i32,
     pub academic_year_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_code: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub owner_organization_unit_name: Option<String>,
     pub name: String,
     pub event_date: NaiveDate,
     pub status: CertificateCampaignStatus,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub activity_sequence: Option<i32>,
     pub next_certificate_sequence: i32,
     pub template_count: i64,
     pub candidate_count: i64,
     pub issued_certificate_count: i64,
     pub has_open_issue_request: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub created_by: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub capabilities: CertificateCampaignCapabilities,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateCampaignListQuery {
     pub academic_year_id: Option<Uuid>,
@@ -1308,7 +1367,8 @@ pub struct CertificateCampaignListQuery {
     pub search: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateCampaignPurgeCounts {
     pub template_count: i64,
@@ -1321,7 +1381,8 @@ pub struct CertificateCampaignPurgeCounts {
     pub total_file_bytes: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StartCertificateCampaignPurgeRequest {
     pub confirmation_name: String,
@@ -1329,7 +1390,8 @@ pub struct StartCertificateCampaignPurgeRequest {
     pub expected_impact: CertificateCampaignPurgeCounts,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCampaignPurgeImpact {
     pub campaign_id: Uuid,
@@ -1338,7 +1400,8 @@ pub struct CertificateCampaignPurgeImpact {
     pub counts: CertificateCampaignPurgeCounts,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CertificateCampaignPurgePhase {
     DeletingFiles,
@@ -1347,25 +1410,28 @@ pub enum CertificateCampaignPurgePhase {
     Completed,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateCampaignPurgeStatus {
     pub campaign_id: Uuid,
     pub phase: CertificateCampaignPurgePhase,
     pub file_count: i64,
     pub deleted_file_count: i64,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub last_error_code: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCertificateTemplateRequest {
     pub name: String,
     pub allowed_recipient_types: Vec<RecipientType>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCertificateTemplateRequest {
     pub expected_updated_at: DateTime<Utc>,
@@ -1379,7 +1445,8 @@ pub struct UpdateCertificateTemplateRequest {
     pub confirm_missing_issued_values: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttachCertificateBackgroundRequest {
     pub file_id: Uuid,
@@ -1387,7 +1454,8 @@ pub struct AttachCertificateBackgroundRequest {
     pub preview_confirmed: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttachCertificateAssetRequest {
     pub file_id: Uuid,
@@ -1395,7 +1463,8 @@ pub struct AttachCertificateAssetRequest {
     pub display_name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificatePageBox {
     pub x_points: f64,
@@ -1404,7 +1473,8 @@ pub struct CertificatePageBox {
     pub height_points: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificatePageGeometry {
     pub crop_box: CertificatePageBox,
@@ -1415,7 +1485,8 @@ pub struct CertificatePageGeometry {
     pub paper_label: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateTemplateCapabilities {
     pub can_read: bool,
@@ -1424,29 +1495,31 @@ pub struct CertificateTemplateCapabilities {
     pub can_preview: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateTemplateAsset {
     pub id: Uuid,
     pub file_id: Uuid,
     pub kind: CertificateTemplateAssetKind,
     pub display_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub image_width_pixels: Option<u32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub image_height_pixels: Option<u32>,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateTemplateDetail {
     pub id: Uuid,
     pub campaign_id: Uuid,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub background_file_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub page_geometry: Option<CertificatePageGeometry>,
     pub safe_margin_points: f64,
     pub show_safe_area: bool,
@@ -1462,31 +1535,35 @@ pub struct CertificateTemplateDetail {
     pub capabilities: CertificateTemplateCapabilities,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateTemplateDeleteResult {
     pub disposition: CertificateTemplateDeleteDisposition,
     pub detached_file_count: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateTemplateVariableCatalog {
     pub variables: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificatePreviewManifestRequest {
     pub preview_kind: CertificatePreviewKind,
     pub candidate_id: Option<Uuid>,
     #[serde(default)]
     pub sample_values: BTreeMap<String, String>,
-    #[schema(required = false)]
+    #[cfg_attr(feature = "api-docs", schema(required = false))]
     pub layout: Option<CertificateLayoutV1>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateRenderFileGrant {
     pub file_id: Uuid,
@@ -1494,7 +1571,8 @@ pub struct CertificateRenderFileGrant {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateBuiltInFont {
     pub family: String,
@@ -1503,7 +1581,8 @@ pub struct CertificateBuiltInFont {
     pub asset_path: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateRenderFontGrant {
     pub school_font_id: Uuid,
@@ -1515,7 +1594,8 @@ pub struct CertificateRenderFontGrant {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateRenderImageGrant {
     pub asset_id: Uuid,
@@ -1524,7 +1604,8 @@ pub struct CertificateRenderImageGrant {
     pub expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateRenderCampaignValues {
     pub academic_year: String,
@@ -1535,7 +1616,8 @@ pub struct CertificateRenderCampaignValues {
     pub owner_organization_unit_name: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CertificateRenderManifest {
     pub template_id: Uuid,
@@ -1552,7 +1634,8 @@ pub struct CertificateRenderManifest {
     pub suggested_filename: String,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CertificateRenderManifestBatchRequest {
     pub certificate_ids: Vec<Uuid>,

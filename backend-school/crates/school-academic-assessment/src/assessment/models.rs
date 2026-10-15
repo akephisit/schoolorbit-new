@@ -1,10 +1,12 @@
 use bigdecimal::BigDecimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AssessmentPhaseCode {
     BeforeMidterm,
@@ -67,7 +69,8 @@ impl TryFrom<&str> for AssessmentPhaseCode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AssessmentExamArrangement {
     None,
@@ -98,7 +101,8 @@ impl TryFrom<&str> for AssessmentExamArrangement {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AssessmentReadinessFinding {
     MissingCoordinator,
@@ -109,8 +113,9 @@ pub enum AssessmentReadinessFinding {
     FinalMissingExamDuration,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssessmentPlanListQuery {
     pub academic_term_id: Uuid,
@@ -120,14 +125,16 @@ pub struct AssessmentPlanListQuery {
     pub exam_arrangement: Option<AssessmentExamArrangement>,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssessmentPhaseControlListQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAssessmentPlanRequest {
     /// Omit only when the offering does not have a persisted plan yet.
@@ -136,25 +143,28 @@ pub struct SaveAssessmentPlanRequest {
     pub phases: Vec<SaveAssessmentPhaseRequest>,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAssessmentPhaseRequest {
     pub id: Option<Uuid>,
     pub phase_code: AssessmentPhaseCode,
-    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$"))]
     pub max_score: String,
     pub exam_arrangement: AssessmentExamArrangement,
     pub exam_duration_minutes: Option<i32>,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAssessmentPhaseControlRequest {
     pub row_version: i64,
     pub plan_editing_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentReadiness {
     pub ready: bool,
@@ -163,7 +173,8 @@ pub struct AssessmentReadiness {
     pub expected_total_score: String,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentCoordinatorOption {
     pub teacher_id: Uuid,
@@ -172,7 +183,8 @@ pub struct AssessmentCoordinatorOption {
     pub primary_learning_group_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentPhase {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,7 +198,8 @@ pub struct AssessmentPhase {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentPlanSummary {
     pub plan_id: Option<Uuid>,
@@ -208,7 +221,8 @@ pub struct AssessmentPlanSummary {
     pub readiness: AssessmentReadiness,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentPlanDetail {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -220,7 +234,7 @@ pub struct AssessmentPlanDetail {
     pub subject_version_display_label: String,
     pub offering_code: String,
     pub offering_name: String,
-    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$"))]
     pub assessment_total_score: String,
     pub row_version: Option<i64>,
     pub learning_group_ids: Vec<Uuid>,
@@ -233,7 +247,8 @@ pub struct AssessmentPlanDetail {
     pub readiness: AssessmentReadiness,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AssessmentPhaseControl {
     pub id: Uuid,

@@ -1,13 +1,15 @@
 use super::*;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct AnnualResultContext {
     pub academic_year_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualClosureStudent {
     pub student_academic_year_id: Uuid,
@@ -17,7 +19,8 @@ pub struct AnnualClosureStudent {
     pub hold_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualClosureCoverage {
     pub students: Vec<AnnualClosureStudent>,
@@ -25,7 +28,8 @@ pub struct AnnualClosureCoverage {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualResultStudent {
     pub student_academic_year_id: Uuid,
@@ -36,7 +40,8 @@ pub struct AnnualResultStudent {
     pub closure: AnnualClosureStudent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualTermSource {
     pub academic_term_id: Uuid,
@@ -46,7 +51,8 @@ pub struct AnnualTermSource {
     pub revision: Option<TermAggregateRevision>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualResultPreview {
     pub academic_year_id: Uuid,
@@ -58,7 +64,8 @@ pub struct AnnualResultPreview {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnnualLockInput {
     pub expected_revision: Option<i64>,
@@ -67,7 +74,8 @@ pub struct AnnualLockInput {
     pub hold_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualResultRevision {
     pub id: Uuid,

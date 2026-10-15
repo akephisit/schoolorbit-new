@@ -17,10 +17,12 @@ use school_academic_assessment::policy::assessment::{
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/assessments/plans",
     operation_id = "listAssessmentPlans",
@@ -31,7 +33,7 @@ use school_http::{ApiErrorResponse, ApiResponse};
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_assessment_plans(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -54,7 +56,7 @@ pub async fn list_assessment_plans(
     Ok(Json(ApiResponse::ok(plans)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/assessments/phase-controls",
     operation_id = "listAssessmentPhaseControls",
@@ -65,7 +67,7 @@ pub async fn list_assessment_plans(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Assessment phase control read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_assessment_phase_controls(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -79,7 +81,7 @@ pub async fn list_assessment_phase_controls(
     Ok(Json(ApiResponse::ok(controls)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/assessments/phase-controls/{control_id}",
     operation_id = "updateAssessmentPhaseControl",
@@ -94,7 +96,7 @@ pub async fn list_assessment_phase_controls(
         (status = 404, description = "Assessment phase control not found", body = ApiErrorResponse),
         (status = 409, description = "Stale control version or closed academic context", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_assessment_phase_control(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,7 +115,7 @@ pub async fn update_assessment_phase_control(
     Ok(Json(ApiResponse::ok(control)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/assessments/offerings/{offering_id}",
     operation_id = "getAssessmentPlan",
@@ -125,7 +127,7 @@ pub async fn update_assessment_phase_control(
         (status = 403, description = "Assessment plan read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Offering not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_assessment_plan(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -143,7 +145,7 @@ pub async fn get_assessment_plan(
     Ok(Json(ApiResponse::ok(plan)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/assessments/offerings/{offering_id}",
     operation_id = "saveAssessmentPlan",
@@ -158,7 +160,7 @@ pub async fn get_assessment_plan(
         (status = 404, description = "Offering not found", body = ApiErrorResponse),
         (status = 409, description = "Stale assessment plan version", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn save_assessment_plan(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

@@ -1,7 +1,8 @@
 use super::*;
 use school_academic_assessment::learner_evaluation::models::StudentEvaluationSummary;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregatePolicyInput {
     pub name: String,
@@ -10,7 +11,8 @@ pub struct AggregatePolicyInput {
     pub allow_reviewed_holds: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AggregatePolicyVersion {
     pub id: Uuid,
@@ -22,16 +24,18 @@ pub struct AggregatePolicyVersion {
     pub approved_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct AggregatePreviewQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
     pub policy_id: Uuid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AggregateBlocker {
     NoCourseCoverage,
@@ -41,7 +45,8 @@ pub enum AggregateBlocker {
     ReviewedHoldNotAllowed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AggregateHoldFinding {
     ExceptionalCourseOutcomes,
@@ -49,7 +54,8 @@ pub enum AggregateHoldFinding {
     FailedLearnerEvaluations,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermAggregatePreview {
     pub policy: AggregatePolicyVersion,
@@ -61,7 +67,8 @@ pub struct TermAggregatePreview {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregateLockInput {
     pub policy_id: Uuid,
@@ -71,7 +78,8 @@ pub struct AggregateLockInput {
     pub hold_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermAggregateRevision {
     pub id: Uuid,
@@ -85,7 +93,8 @@ pub struct TermAggregateRevision {
     pub is_current: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermClosureStudent {
     pub student_academic_year_id: Uuid,
@@ -98,7 +107,8 @@ pub struct TermClosureStudent {
     pub current_source_checksum: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermClosureCoverage {
     pub students: Vec<TermClosureStudent>,
@@ -106,7 +116,8 @@ pub struct TermClosureCoverage {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AggregateStudent {
     pub student_academic_year_id: Uuid,

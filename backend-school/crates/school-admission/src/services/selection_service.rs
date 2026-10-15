@@ -3,6 +3,7 @@ use crate::models::rounds::{SelectionSettingsPatch, UpdateSelectionSettingsReque
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -110,7 +111,8 @@ pub struct RankRowDetailed {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoundRankingEntry {
     pub rank: usize,
@@ -121,7 +123,8 @@ pub struct RoundRankingEntry {
     pub selection_score: f64,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoundRankingResult {
     pub track_id: Uuid,
@@ -129,7 +132,8 @@ pub struct RoundRankingResult {
     pub applications: Vec<RoundRankingEntry>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankingRoomSummary {
     pub room_id: String,
@@ -140,7 +144,8 @@ pub struct RankingRoomSummary {
     pub female_count: i64,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TrackRankingEntry {
     pub application_id: Uuid,
@@ -159,7 +164,8 @@ pub struct TrackRankingEntry {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TrackRankingResult {
     pub track_id: Uuid,
@@ -168,7 +174,8 @@ pub struct TrackRankingResult {
     pub applications: Vec<TrackRankingEntry>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalRankingEntry {
     pub application_id: Uuid,
@@ -185,7 +192,8 @@ pub struct GlobalRankingEntry {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalRankingResult {
     pub rooms: Vec<RankingRoomSummary>,
@@ -1061,7 +1069,8 @@ pub async fn get_global_ranking(
     })
 }
 
-#[derive(serde::Serialize, sqlx::FromRow, ToSchema)]
+#[derive(serde::Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoomBasic {
     pub room_id: Uuid,

@@ -1,5 +1,7 @@
+use school_http::ApiResponse;
+#[cfg(feature = "api-docs")]
+use school_http::EmptyData;
 use school_http::HttpError as AppError;
-use school_http::{ApiResponse, EmptyData};
 use std::net::SocketAddr;
 
 use axum::{
@@ -31,7 +33,7 @@ use school_auth::{
     session_service::{self, AuthenticatedSession, LoginCommand, LoginUserSnapshot},
 };
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/auth/login",
     operation_id = "login",
@@ -45,7 +47,7 @@ use school_auth::{
         (status = 429, description = "Login rate limited", body = school_http::ApiErrorResponse),
         (status = 503, description = "Authentication service unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn login(
     State(runtime): State<AuthRuntime>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -100,7 +102,7 @@ pub(super) async fn login_with_tenant(
     Ok(response)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/auth/logout",
     operation_id = "logout",
@@ -111,7 +113,7 @@ pub(super) async fn login_with_tenant(
         (status = 403, description = "Origin or CSRF rejected", body = school_http::ApiErrorResponse),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn logout(
     State(runtime): State<AuthRuntime>,
     headers: HeaderMap,
@@ -155,7 +157,7 @@ pub(super) async fn logout_with_tenant(
     Ok(expired_auth_response("ออกจากระบบสำเร็จ"))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/auth/me",
     operation_id = "getCurrentUser",
@@ -165,7 +167,7 @@ pub(super) async fn logout_with_tenant(
         (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
         (status = 503, description = "Identity or permission store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn me(
     State(runtime): State<AuthRuntime>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -179,7 +181,7 @@ pub async fn me(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/auth/sessions",
     operation_id = "listAuthSessions",
@@ -189,7 +191,7 @@ pub async fn me(
         (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_sessions(
     State(_runtime): State<AuthRuntime>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -215,7 +217,7 @@ pub async fn list_sessions(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/auth/sessions/{id}",
     operation_id = "revokeAuthSession",
@@ -226,7 +228,7 @@ pub async fn list_sessions(
         (status = 404, description = "Owned session not found", body = school_http::ApiErrorResponse),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn revoke_session(
     State(runtime): State<AuthRuntime>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -243,7 +245,7 @@ pub async fn revoke_session(
     Ok(response)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/auth/logout-all",
     operation_id = "logoutAllSessions",
@@ -252,7 +254,7 @@ pub async fn revoke_session(
         (status = 200, description = "All owned sessions revoked", body = ApiResponse<EmptyData>),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn logout_all(
     State(runtime): State<AuthRuntime>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -262,7 +264,7 @@ pub async fn logout_all(
     Ok(expired_auth_response("ออกจากระบบทุกอุปกรณ์สำเร็จ"))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/auth/me/change-password",
     operation_id = "changeCurrentUserPassword",
@@ -275,7 +277,7 @@ pub async fn logout_all(
         (status = 409, description = "Concurrent password change", body = school_http::ApiErrorResponse),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
-)]
+))]
 pub async fn change_password(
     State(runtime): State<AuthRuntime>,
     Extension(session): Extension<AuthenticatedSession>,

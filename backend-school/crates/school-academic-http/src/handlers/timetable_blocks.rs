@@ -27,10 +27,12 @@ use school_academic_timetable::services::{
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_auth_http::origin::extract_subdomain_from_request;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable-blocks/workspace",
     operation_id = "getTimetableBlockWorkspace",
@@ -43,7 +45,7 @@ use school_http::{ApiErrorResponse, ApiResponse};
         (status = 404, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn get_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -58,7 +60,7 @@ pub async fn get_workspace(
     Ok(Json(ApiResponse::ok(workspace)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/placement-preview",
     operation_id = "previewTimetableBlockPlacement",
@@ -71,7 +73,7 @@ pub async fn get_workspace(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn preview_placement(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -107,7 +109,7 @@ pub async fn preview_placement(
     Ok(Json(ApiResponse::ok(preview)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/ordinary",
     operation_id = "createOrdinaryTimetableBlock",
@@ -120,7 +122,7 @@ pub async fn preview_placement(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn create_ordinary(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -151,7 +153,7 @@ pub async fn create_ordinary(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/synchronized",
     operation_id = "createSynchronizedTimetableBlock",
@@ -164,7 +166,7 @@ pub async fn create_ordinary(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn create_synchronized(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -195,7 +197,7 @@ pub async fn create_synchronized(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/structural",
     operation_id = "createStructuralTimetableBlocks",
@@ -208,7 +210,7 @@ pub async fn create_synchronized(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn create_structural(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -242,7 +244,7 @@ pub async fn create_structural(
     Ok(Json(ApiResponse::ok(blocks)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "updateTimetableBlock",
@@ -257,7 +259,7 @@ pub async fn create_structural(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn update_block(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -291,7 +293,7 @@ pub async fn update_block(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/timetable-blocks/{block_id}/targets",
     operation_id = "removeTimetableBlockTarget",
@@ -306,7 +308,7 @@ pub async fn update_block(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn remove_target(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -343,7 +345,7 @@ pub async fn remove_target(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/{block_id}/sync",
     operation_id = "retryTimetableBlockSync",
@@ -351,7 +353,7 @@ pub async fn remove_target(
     request_body = RetryTimetableBlockSyncRequest,
     responses((status = 200, body = ApiResponse<TimetableBlock>), (status = 409, body = ApiErrorResponse)),
     tag = "academic"
-)]
+))]
 pub async fn retry_sync(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -372,7 +374,7 @@ pub async fn retry_sync(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/{block_id}/restore",
     operation_id = "restoreTimetableBlockGroup",
@@ -380,7 +382,7 @@ pub async fn retry_sync(
     request_body = RestoreTimetableBlockGroupRequest,
     responses((status = 200, body = ApiResponse<TimetableBlock>), (status = 409, body = ApiErrorResponse)),
     tag = "academic"
-)]
+))]
 pub async fn restore_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -401,14 +403,14 @@ pub async fn restore_group(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "deleteTimetableBlock",
     params(("block_id" = Uuid, Path), DeleteTimetableBlockQuery),
     responses((status = 200, body = ApiResponse<TimetableBlock>), (status = 409, body = ApiErrorResponse)),
     tag = "academic"
-)]
+))]
 pub async fn delete_block(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -430,14 +432,14 @@ pub async fn delete_block(
     Ok(Json(ApiResponse::ok(block)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/timetable-blocks/series/{series_id}",
     operation_id = "deleteTimetableBlockSeries",
     params(("series_id" = Uuid, Path), DeleteTimetableBlockSeriesQuery),
     responses((status = 200, body = ApiResponse<Vec<TimetableBlock>>), (status = 409, body = ApiErrorResponse)),
     tag = "academic"
-)]
+))]
 pub async fn delete_series(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -470,7 +472,7 @@ pub async fn delete_series(
     Ok(Json(ApiResponse::ok(blocks)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-blocks/swap",
     operation_id = "swapTimetableBlocks",
@@ -480,7 +482,7 @@ pub async fn delete_series(
         (status = 409, body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn swap_blocks(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -509,14 +511,14 @@ pub async fn swap_blocks(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/timetable",
     operation_id = "getMyTimetable",
     params(PersonalTimetableQuery),
     responses((status = 200, body = ApiResponse<Vec<TimetableBlock>>), (status = 403, body = ApiErrorResponse)),
     tag = "academic"
-)]
+))]
 pub async fn get_my_timetable(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PersonalTimetableQuery>,
@@ -556,14 +558,14 @@ pub async fn get_my_timetable(
     Ok(Json(ApiResponse::ok(blocks)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable/daily-teaching",
     operation_id = "getDailyTeachingOverview",
     params(daily_teaching_service::DailyTeachingQuery),
     responses((status = 200, body = ApiResponse<daily_teaching_service::DailyTeachingOverview>)),
     tag = "academic"
-)]
+))]
 pub async fn daily_teaching_overview(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

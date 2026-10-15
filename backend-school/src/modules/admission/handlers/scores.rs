@@ -11,8 +11,10 @@ use crate::AppState;
 use school_admission::applications::*;
 use school_admission::scores as score_service;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
@@ -33,7 +35,7 @@ pub async fn get_all_scores(
     Ok(Json(ApiResponse::ok(scores)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admission/rounds/{round_id}/score-room-roster",
     operation_id = "getAdmissionScoreRoomRoster",
@@ -44,7 +46,7 @@ pub async fn get_all_scores(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_score_room_roster(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

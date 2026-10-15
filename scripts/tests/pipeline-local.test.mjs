@@ -9,7 +9,7 @@ function fixture(t) {
  const root=mkdtempSync(path.join(os.tmpdir(),'pipeline-local-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
  for(const directory of ['scripts/lib','scripts/tests','backend-school/target/debug','backend-admin','bin'])mkdirSync(path.join(root,directory),{recursive:true});
  for(const source of ['scripts/pipeline.mjs','scripts/lib/pipeline-policy.mjs'])cpSync(path.join(repo,source),path.join(root,source));
- writeFileSync(path.join(root,'scripts/generate-api-contracts.mjs'),'// fixture exporter check\n');
+ writeFileSync(path.join(root,'scripts/generate-api-contracts.mjs'),`import {writeFileSync} from 'node:fs';\nwriteFileSync(${JSON.stringify(path.join(root,'backend-school/target/debug/backend-school'))}, '#!/bin/sh\\nprintf "{}"\\n', {mode:0o755});\n`);
  writeFileSync(path.join(root,'scripts/tests/postgres-compatibility.test.mjs'),"import test from 'node:test';test('fixture',()=>{});\n");
  writeFileSync(path.join(root,'scripts/test_school_database_suite.sh'),'#!/bin/sh\ntouch fixture-executed\n');
  cpSync(path.join(repo,'scripts/test_backend_admin.sh'),path.join(root,'scripts/test_backend_admin.sh'));
@@ -21,6 +21,8 @@ function fixture(t) {
 const fs=require('node:fs');const args=process.argv.slice(2);
 fs.appendFileSync(process.env.COMMAND_LOG,JSON.stringify(args)+'\\n');
 if(args[0]==='metadata')process.stdout.write(JSON.stringify({target_directory:${JSON.stringify(path.join(root,'backend-school/target'))}}));
+if(args[0]==='tree'&&process.env.FIXTURE_DOCS_DEP)process.stdout.write('utoipa v5.5.0\\n');
+if(args[0]==='build'&&!process.env.FIXTURE_DOCS_LEAK)fs.writeFileSync(${JSON.stringify(path.join(root,'backend-school/target/debug/backend-school'))}, '#!/bin/sh\\necho "OpenAPI export requires --features api-docs" >&2\\nexit 2\\n', {mode:0o755});
 `,{mode:0o755});
  execFileSync('git',['init','-q',root]);execFileSync('git',['-C',root,'config','user.email','fixture@example.invalid']);execFileSync('git',['-C',root,'config','user.name','Fixture']);
  execFileSync('git',['-C',root,'add','.']);execFileSync('git',['-C',root,'commit','-qm','fixture']);
@@ -63,5 +65,16 @@ test('local School verification executes tests and database fixtures rather than
  const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
  const tests=commands.filter(args=>args[0]==='test');assert.ok(tests.length>=3);
  assert.ok(tests.every(args=>!args.includes('--no-run')));
+ assert.ok(commands.some(args=>args[0]==='check'&&!args.includes('--features')));
+ assert.ok(commands.some(args=>args[0]==='check'&&args.includes('api-docs')));
+ assert.ok(tests.some(args=>args.includes('api_contract::tests')&&args.includes('api-docs')));
+ assert.ok(tests.some(args=>args.includes('school-staff')&&args.includes('api-docs')));
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,0);
+});
+for (const [flag, message] of [['FIXTURE_DOCS_LEAK', /Production binary must reject OpenAPI/], ['FIXTURE_DOCS_DEP', /Production dependency graph must exclude Utoipa/]]) test(`School verification refuses production documentation leakage (${flag})`,t=>{
+ const f=fixture(t);
+ const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{cwd:f.root,env:{...f.env,[flag]:'1'},encoding:'utf8'});
+ assert.notEqual(result.status,0);
+ assert.match(result.stderr,message);
+ assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,1);
 });

@@ -9,7 +9,7 @@ build() {
     cargo rustc --release --locked --bin backend-school --timings -- -C lto=off
 }
 export_api() {
-    env -i PATH="$PATH" HOME=/tmp target/release/backend-school export-openapi
+    bash "$(dirname "$0")/export_benchmark_openapi.sh"
 }
 measure() {
     local phase=$1 owner=$2 source=$3 sample start end output

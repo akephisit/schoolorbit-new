@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,8 +19,10 @@ use school_auth::session_service::AuthenticatedSession;
 use school_file_platform::{
     platform_service::UploadCommand, platform_types::FilePurpose, repository::SqlFileRepository,
 };
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
@@ -35,13 +38,15 @@ struct ApplicationWithDocumentsData {
     documents: Vec<ApplicationDocument>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SearchApplicationByIdentifierRequest {
     pub identifier: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CompleteEnrollmentData {
     user_id: Uuid,
@@ -59,10 +64,13 @@ struct AssignedData<T> {
     assigned: T,
 }
 
+#[cfg(feature = "api-docs")]
 pub struct StaffDocumentMultipart;
 
+#[cfg(feature = "api-docs")]
 impl utoipa::PartialSchema for StaffDocumentMultipart {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        #[cfg(feature = "api-docs")]
         use utoipa::openapi::{schema::Type, KnownFormat, ObjectBuilder, SchemaFormat};
 
         ObjectBuilder::new()
@@ -79,6 +87,7 @@ impl utoipa::PartialSchema for StaffDocumentMultipart {
     }
 }
 
+#[cfg(feature = "api-docs")]
 impl ToSchema for StaffDocumentMultipart {}
 
 // ==========================================
@@ -125,7 +134,7 @@ pub async fn list_applications(
     Ok(Json(ApiResponse::ok(applications)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admission/rounds/{round_id}/applications/search-by-identifier",
     operation_id = "searchAdmissionApplicationsByIdentifier",
@@ -138,7 +147,7 @@ pub async fn list_applications(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Admission read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn search_applications_by_identifier(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -286,7 +295,7 @@ pub async fn list_enrollment_pending(
     Ok(Json(ApiResponse::ok(list)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admission/applications/{id}/enroll",
     operation_id = "completeAdmissionEnrollment",
@@ -301,7 +310,7 @@ pub async fn list_enrollment_pending(
         (status = 404, description = "Application or academic year not found", body = ApiErrorResponse),
         (status = 409, description = "Academic year is closed or enrollment context changed", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn complete_enrollment(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -358,7 +367,7 @@ pub async fn update_admission_track(
 // Documents
 // ==========================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admission/applications/{application_id}/documents",
     operation_id = "staffUploadAdmissionDocument",
@@ -373,7 +382,7 @@ pub async fn update_admission_track(
         (status = 404, description = "Application not found", body = ApiErrorResponse),
         (status = 503, description = "Scanner or storage unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn staff_upload_document(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -470,7 +479,7 @@ pub async fn staff_upload_document(
     Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/admission/applications/{application_id}/documents/{doc_type}",
     operation_id = "staffDeleteAdmissionDocument",
@@ -486,7 +495,7 @@ pub async fn staff_upload_document(
         (status = 403, description = "Admission verification permission required", body = ApiErrorResponse),
         (status = 404, description = "Application document not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn staff_delete_document(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

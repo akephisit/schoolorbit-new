@@ -10,13 +10,15 @@ use school_academic_lifecycle::models::{
     YearReopeningOutcome, YearReopeningRequest, YearReopeningWorkspace,
 };
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
-#[utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="getYearReopeningWorkspace",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="getYearReopeningWorkspace",tag="academic",
     params(("year_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<YearReopeningWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<YearReopeningWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn get_year_reopening_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -28,9 +30,9 @@ pub async fn get_year_reopening_workspace(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="reopenAcademicYear",tag="academic",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="reopenAcademicYear",tag="academic",
     params(("year_id"=Uuid,Path)),request_body=YearReopeningRequest,
-    responses((status=200,body=ApiResponse<YearReopeningOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse)))]
+    responses((status=200,body=ApiResponse<YearReopeningOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
 pub async fn reopen_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

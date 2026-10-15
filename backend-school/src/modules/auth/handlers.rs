@@ -13,11 +13,13 @@ use school_auth::{
 };
 
 use super::profile_orchestrator;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
 /// Get full profile handler (GET /me/profile).
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/auth/me/profile",
     operation_id = "getCurrentUserProfile",
@@ -27,7 +29,7 @@ use school_http::{ApiErrorResponse, ApiResponse};
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "User not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_profile(
     State(_state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -45,7 +47,7 @@ pub async fn get_profile(
 }
 
 /// Update profile handler (PUT /me/profile).
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/auth/me/profile",
     operation_id = "updateCurrentUserProfile",
@@ -57,7 +59,7 @@ pub async fn get_profile(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "User not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

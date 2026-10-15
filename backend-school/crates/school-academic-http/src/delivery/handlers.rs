@@ -17,8 +17,10 @@ use school_academic_delivery::services::{
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_authorization::ActorContext;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
 fn with_homeroom_delivery_timing(
     mut response: Response,
@@ -168,7 +170,7 @@ async fn signal_term_change_set_changed(
     Ok(())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/activity-registrations",
     operation_id = "listMyActivityRegistrations",
@@ -179,7 +181,7 @@ async fn signal_term_change_set_changed(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student activity access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_my_activity_registrations(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<StudentActivityRegistrationQuery>,
@@ -193,7 +195,7 @@ pub async fn list_my_activity_registrations(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/me/activity-registrations/{group_id}",
     operation_id = "enrollMyActivityRegistration",
@@ -210,7 +212,7 @@ pub async fn list_my_activity_registrations(
         (status = 409, description = "Activity registration conflict", body = ApiErrorResponse),
         (status = 422, description = "Academic term context mismatch", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn enroll_my_activity_registration(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -231,7 +233,7 @@ pub async fn enroll_my_activity_registration(
     Ok(ok(result))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/me/activity-registrations/{group_id}",
     operation_id = "unenrollMyActivityRegistration",
@@ -248,7 +250,7 @@ pub async fn enroll_my_activity_registration(
         (status = 409, description = "Activity registration window is closed", body = ApiErrorResponse),
         (status = 422, description = "Academic term context mismatch", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn unenroll_my_activity_registration(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -270,7 +272,7 @@ pub async fn unenroll_my_activity_registration(
     Ok(ok(result))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/offerings",
     operation_id = "listLearningOfferings",
@@ -281,7 +283,7 @@ pub async fn unenroll_my_activity_registration(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_offerings(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -299,7 +301,7 @@ pub async fn list_offerings(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/delivery/workspace",
     operation_id = "getLearningDeliveryOverview",
@@ -311,7 +313,7 @@ pub async fn list_offerings(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_delivery_overview(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -332,7 +334,7 @@ pub async fn get_delivery_overview(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/delivery/homerooms",
     operation_id = "getHomeroomDeliveryWorkspace",
@@ -345,7 +347,7 @@ pub async fn get_delivery_overview(
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic term not found in the selected year", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_homeroom_delivery_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -376,7 +378,7 @@ pub async fn get_homeroom_delivery_workspace(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/delivery/management-options",
     operation_id = "getLearningDeliveryManagementOptions",
@@ -389,7 +391,7 @@ pub async fn get_homeroom_delivery_workspace(
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Academic term not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_delivery_management_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -417,7 +419,7 @@ pub async fn get_delivery_management_options(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/offerings",
     operation_id = "createLearningOffering",
@@ -431,7 +433,7 @@ pub async fn get_delivery_management_options(
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 409, description = "Learning offering conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_offering(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -471,7 +473,7 @@ pub async fn create_offering(
     Ok(created(offering))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/offerings/preview-from-curriculum",
     operation_id = "previewLearningOfferingsFromCurriculum",
@@ -484,7 +486,7 @@ pub async fn create_offering(
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 409, description = "CurriculumEdition source conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_offerings_from_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -504,7 +506,7 @@ pub async fn preview_offerings_from_curriculum(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/offerings/apply-from-curriculum",
     operation_id = "applyLearningOfferingsFromCurriculum",
@@ -517,7 +519,7 @@ pub async fn preview_offerings_from_curriculum(
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
         (status = 409, description = "CurriculumEdition source hash conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn apply_offerings_from_curriculum(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -558,7 +560,7 @@ pub async fn apply_offerings_from_curriculum(
     Ok(ok(result))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/offerings/{id}",
     operation_id = "getLearningOffering",
@@ -570,7 +572,7 @@ pub async fn apply_offerings_from_curriculum(
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning offering not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_offering(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -587,7 +589,7 @@ pub async fn get_offering(
     Ok(ok(offerings::get(&context.tenant.pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/offerings/{id}",
     operation_id = "updateLearningOffering",
@@ -602,7 +604,7 @@ pub async fn get_offering(
         (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
         (status = 409, description = "Learning offering row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_offering(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -631,7 +633,7 @@ pub async fn update_offering(
     Ok(ok(offering))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/offerings/{id}/publish",
     operation_id = "publishLearningOffering",
@@ -646,7 +648,7 @@ pub async fn update_offering(
         (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
         (status = 409, description = "Learning offering publish conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_offering(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -675,7 +677,7 @@ pub async fn publish_offering(
     Ok(ok(offering))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups",
     operation_id = "listLearningGroupsForTerm",
@@ -687,7 +689,7 @@ pub async fn publish_offering(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_groups_for_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -708,7 +710,7 @@ pub async fn list_groups_for_term(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/offerings/{id}/groups",
     operation_id = "listLearningGroups",
@@ -720,7 +722,7 @@ pub async fn list_groups_for_term(
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning offering not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_groups(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -737,7 +739,7 @@ pub async fn list_groups(
     Ok(ok(groups::list(&context.tenant.pool, offering_id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/offerings/{id}/groups",
     operation_id = "createLearningGroup",
@@ -752,7 +754,7 @@ pub async fn list_groups(
         (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -778,7 +780,7 @@ pub async fn create_group(
     Ok(created(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups/{id}",
     operation_id = "getLearningGroup",
@@ -790,7 +792,7 @@ pub async fn create_group(
         (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -807,7 +809,7 @@ pub async fn get_group(
     Ok(ok(groups::get(&context.tenant.pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/learning-groups/{id}",
     operation_id = "updateLearningGroup",
@@ -822,7 +824,7 @@ pub async fn get_group(
         (status = 404, description = "Learning group not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -842,7 +844,7 @@ pub async fn update_group(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups/{id}/homerooms",
     operation_id = "listLearningGroupHomerooms",
@@ -854,7 +856,7 @@ pub async fn update_group(
         (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_group_homerooms(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -873,7 +875,7 @@ pub async fn list_group_homerooms(
     )))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/learning-groups/{id}/homerooms",
     operation_id = "replaceLearningGroupHomerooms",
@@ -888,7 +890,7 @@ pub async fn list_group_homerooms(
         (status = 404, description = "Learning group or homeroom not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_group_homerooms(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -909,7 +911,7 @@ pub async fn replace_group_homerooms(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups/{id}/teachers",
     operation_id = "listLearningGroupTeachers",
@@ -921,7 +923,7 @@ pub async fn replace_group_homerooms(
         (status = 403, description = "Learning group read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_group_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -940,7 +942,7 @@ pub async fn list_group_teachers(
         .teacher_assignments))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/learning-groups/{id}/teachers",
     operation_id = "replaceLearningGroupTeachers",
@@ -955,7 +957,7 @@ pub async fn list_group_teachers(
         (status = 404, description = "Learning group or teacher not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn replace_group_teachers(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -976,7 +978,7 @@ pub async fn replace_group_teachers(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/learning-groups/{id}/roster",
     operation_id = "applyLearningGroupRoster",
@@ -991,7 +993,7 @@ pub async fn replace_group_teachers(
         (status = 404, description = "Learning group not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group roster source conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn apply_group_roster(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1012,7 +1014,7 @@ pub async fn apply_group_roster(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups/{id}/roster",
     operation_id = "previewLearningGroupRoster",
@@ -1025,7 +1027,7 @@ pub async fn apply_group_roster(
         (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
         (status = 404, description = "Learning group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_group_roster(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1042,7 +1044,7 @@ pub async fn preview_group_roster(
     Ok(ok(groups::preview_roster(&context.tenant.pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/learning-groups/{id}/roster/publish",
     operation_id = "publishLearningGroupRoster",
@@ -1057,7 +1059,7 @@ pub async fn preview_group_roster(
         (status = 404, description = "Learning group not found", body = ApiErrorResponse),
         (status = 409, description = "Learning group roster publish conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_group_roster(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1078,7 +1080,7 @@ pub async fn publish_group_roster(
     Ok(ok(group))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/term-change-sets",
     operation_id = "listAcademicTermChangeSets",
@@ -1092,7 +1094,7 @@ pub async fn publish_group_roster(
         (status = 404, description = "Academic term not found", body = ApiErrorResponse),
         (status = 409, description = "Academic term state conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_term_change_sets(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1112,7 +1114,7 @@ pub async fn list_term_change_sets(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/term-change-sets",
     operation_id = "createAcademicTermChangeSet",
@@ -1126,7 +1128,7 @@ pub async fn list_term_change_sets(
         (status = 404, description = "Academic term or timetable version not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change creation conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_term_change_set(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1146,7 +1148,7 @@ pub async fn create_term_change_set(
     Ok(created(change_set))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/term-change-sets/{id}",
     operation_id = "getAcademicTermChangeSet",
@@ -1160,7 +1162,7 @@ pub async fn create_term_change_set(
         (status = 404, description = "Operational change not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change state conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_term_change_set(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1173,7 +1175,7 @@ pub async fn get_term_change_set(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/term-change-sets/{id}",
     operation_id = "updateAcademicTermChangeSet",
@@ -1188,7 +1190,7 @@ pub async fn get_term_change_set(
         (status = 404, description = "Operational change not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_term_change_set(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1207,7 +1209,7 @@ pub async fn update_term_change_set(
     Ok(ok(change_set))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/term-change-sets/{id}/items",
     operation_id = "upsertAcademicTermChangeItem",
@@ -1222,7 +1224,7 @@ pub async fn update_term_change_set(
         (status = 404, description = "Operational change or offering not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change item conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn upsert_term_change_item(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1287,7 +1289,7 @@ pub async fn upsert_term_change_item(
     Ok(ok(change_set))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/term-change-sets/{id}/items/{itemId}",
     operation_id = "deleteAcademicTermChangeItem",
@@ -1305,7 +1307,7 @@ pub async fn upsert_term_change_item(
         (status = 404, description = "Operational change item not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change item row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_term_change_item(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1329,7 +1331,7 @@ pub async fn delete_term_change_item(
     Ok(ok(change_set))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/term-change-sets/{id}/preview",
     operation_id = "previewAcademicTermChangeSet",
@@ -1343,7 +1345,7 @@ pub async fn delete_term_change_item(
         (status = 404, description = "Operational change not found", body = ApiErrorResponse),
         (status = 409, description = "Operational change preview conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_term_change_set(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1360,7 +1362,7 @@ pub async fn preview_term_change_set(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/term-change-sets/{id}/publish",
     operation_id = "publishAcademicTermChangeSet",
@@ -1375,7 +1377,7 @@ pub async fn preview_term_change_set(
         (status = 404, description = "Operational change not found", body = ApiErrorResponse),
         (status = 409, description = "Preview or publication conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_term_change_set(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1394,7 +1396,7 @@ pub async fn publish_term_change_set(
     Ok(ok(change_set))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/learning-groups/{id}/memberships",
     operation_id = "listDatedRosterMemberships",
@@ -1408,7 +1410,7 @@ pub async fn publish_term_change_set(
         (status = 404, description = "Learning group not found", body = ApiErrorResponse),
         (status = 409, description = "Roster state conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_group_memberships(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1429,7 +1431,7 @@ pub async fn list_group_memberships(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/learning-groups/{id}/memberships",
     operation_id = "addDatedRosterMembership",
@@ -1444,7 +1446,7 @@ pub async fn list_group_memberships(
         (status = 404, description = "Learning group or student year not found", body = ApiErrorResponse),
         (status = 409, description = "Membership overlap or row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn add_group_membership(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1471,7 +1473,7 @@ pub async fn add_group_membership(
     Ok(created(membership))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
     operation_id = "endDatedRosterMembership",
@@ -1489,7 +1491,7 @@ pub async fn add_group_membership(
         (status = 404, description = "Learning group or membership not found", body = ApiErrorResponse),
         (status = 409, description = "Membership row version conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn end_group_membership(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1534,7 +1536,7 @@ fn signal_group_changed(
     );
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/academic/learning-groups/{id}/roster-tracking",
     operation_id = "getLearningGroupRosterTracking", tag = "academic",
     params(("id" = Uuid, Path, description = "Learning group ID")),
@@ -1544,7 +1546,7 @@ fn signal_group_changed(
         (status = 403, description = "Group read denied", body = ApiErrorResponse),
         (status = 404, description = "Group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_group_roster_tracking(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1561,7 +1563,7 @@ pub async fn get_group_roster_tracking(
     Ok(ok(roster_tracking::get(&context.tenant.pool, id).await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put, path = "/api/academic/learning-groups/{id}/roster-tracking",
     operation_id = "updateLearningGroupRosterTracking", tag = "academic",
     params(("id" = Uuid, Path, description = "Learning group ID")), request_body = UpdateRosterTrackingRequest,
@@ -1573,7 +1575,7 @@ pub async fn get_group_roster_tracking(
         (status = 404, description = "Group not found", body = ApiErrorResponse),
         (status = 409, description = "Stale revision, closed term, capacity or membership conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_group_roster_tracking(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

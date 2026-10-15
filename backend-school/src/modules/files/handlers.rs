@@ -17,8 +17,10 @@ use school_file_platform::{
     repository::{PlatformFile, SqlFileRepository},
 };
 use school_fonts::file_relationships::record_upload as record_school_font_upload;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 use crate::{
@@ -27,17 +29,17 @@ use crate::{
     AppState,
 };
 
-use super::{
-    consumer_service::{map_platform_error, request_deletions},
-    models::{
-        FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
-        FileUploadMultipart, PublicFileDeliveryResponse,
-    },
+use super::consumer_service::{map_platform_error, request_deletions};
+#[cfg(feature = "api-docs")]
+use super::models::FileUploadMultipart;
+use super::models::{
+    FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
+    PublicFileDeliveryResponse,
 };
 
 const MAX_CONTROL_FIELD_BYTES: usize = 128;
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/files",
     operation_id = "uploadFile",
@@ -50,7 +52,7 @@ const MAX_CONTROL_FIELD_BYTES: usize = 128;
         (status = 403, description = "File purpose policy denied", body = ApiErrorResponse),
         (status = 503, description = "Scanner or storage unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn upload_file(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -210,7 +212,7 @@ async fn record_upload_relation_or_request_cleanup(
     Ok(())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/files/{id}",
     operation_id = "getFileMetadata",
@@ -225,7 +227,7 @@ async fn record_upload_relation_or_request_cleanup(
         (status = 403, description = "File policy denied", body = ApiErrorResponse),
         (status = 404, description = "File or resource relationship not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_file_metadata(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -252,7 +254,7 @@ pub async fn get_file_metadata(
     Ok(Json(ApiResponse::ok(FileMetadata::from(file))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/files/{id}/download",
     operation_id = "downloadFile",
@@ -268,7 +270,7 @@ pub async fn get_file_metadata(
         (status = 404, description = "File or resource relationship not found", body = ApiErrorResponse),
         (status = 409, description = "File is not ready", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn download_file(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -303,7 +305,7 @@ pub async fn download_file(
     Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/files/{id}",
     operation_id = "deleteFile",
@@ -318,7 +320,7 @@ pub async fn download_file(
         (status = 403, description = "File policy denied", body = ApiErrorResponse),
         (status = 404, description = "File or resource relationship not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_file(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -411,7 +413,7 @@ pub async fn delete_file(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/public/files/{id}/content",
     operation_id = "getPublicFileContent",
@@ -421,7 +423,7 @@ pub async fn delete_file(
         (status = 307, description = "Ready public file redirect"),
         (status = 404, description = "Public ready file not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_public_file_content(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -442,7 +444,7 @@ pub async fn get_public_file_content(
     Ok(response)
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/public/files/{id}/delivery",
     operation_id = "getPublicFileDelivery",
@@ -452,7 +454,7 @@ pub async fn get_public_file_content(
         (status = 200, description = "Browser-safe public file delivery", body = ApiResponse<PublicFileDeliveryResponse>),
         (status = 404, description = "Public ready file not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_public_file_delivery(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -3,6 +3,11 @@ name = "school-file-platform"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
 [dependencies]
 async-trait = { workspace = true }
 aws-config = { workspace = true }
@@ -19,7 +24,7 @@ sqlx = { workspace = true }
 tokio = { workspace = true }
 ttf-parser = { workspace = true }
 url = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

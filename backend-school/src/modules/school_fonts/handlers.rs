@@ -6,7 +6,9 @@ use axum::{
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse, EmptyData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
+use school_http::{ApiErrorResponseWithData, ApiResponse};
 use uuid::Uuid;
 
 use crate::{
@@ -14,15 +16,14 @@ use crate::{
     utils::request_context::actor_tenant_context_from_session, AppState,
 };
 
-use school_fonts::{
-    models::{
-        AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
-        SchoolFontListResponse, SchoolFontUploadInspection,
-    },
-    services::{self, SchoolFontDeleteOutcome},
+use school_fonts::models::{AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest};
+#[cfg(feature = "api-docs")]
+use school_fonts::models::{
+    SchoolFontDeleteConflict, SchoolFontListResponse, SchoolFontUploadInspection,
 };
+use school_fonts::services::{self, SchoolFontDeleteOutcome};
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/school-fonts",
     operation_id = "listSchoolFonts",
@@ -32,7 +33,7 @@ use school_fonts::{
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "School font manager permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_school_fonts(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -42,7 +43,7 @@ pub async fn list_school_fonts(
     Ok((StatusCode::OK, Json(ApiResponse::ok(fonts))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/school-fonts/inspect",
     operation_id = "inspectSchoolFontUploads",
@@ -54,7 +55,7 @@ pub async fn list_school_fonts(
         (status = 403, description = "School font manager permission required", body = ApiErrorResponse),
         (status = 422, description = "Invalid or unavailable school font selection", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn inspect_school_font_uploads(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -66,7 +67,7 @@ pub async fn inspect_school_font_uploads(
     Ok((StatusCode::OK, Json(ApiResponse::ok(inspection))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/school-fonts/batch",
     operation_id = "attachSchoolFontBatch",
@@ -79,7 +80,7 @@ pub async fn inspect_school_font_uploads(
         (status = 409, description = "School font variant conflict", body = ApiErrorResponse),
         (status = 422, description = "Invalid batch or font rights not confirmed", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn attach_school_font_batch(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -90,7 +91,7 @@ pub async fn attach_school_font_batch(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(fonts))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/school-fonts/{font_id}",
     operation_id = "deleteSchoolFont",
@@ -103,7 +104,7 @@ pub async fn attach_school_font_batch(
         (status = 404, description = "School font not found", body = ApiErrorResponse),
         (status = 409, description = "School font is still referenced", body = ApiErrorResponseWithData<SchoolFontDeleteConflict>)
     )
-)]
+))]
 pub async fn delete_school_font(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

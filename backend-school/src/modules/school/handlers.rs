@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 
 use super::models::UpdateSchoolSettingsRequest;
@@ -13,27 +14,30 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::utils::tenant::tenant_context;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PublicSchoolInfoData {
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub logo_file_id: Option<uuid::Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub school_name: Option<String>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/school/public/statistics", operation_id = "getPublicSchoolStatistics", tag = "school",
     responses(
         (status = 200, description = "Public school statistics for the active academic year", body = ApiResponse<super::models::PublicSchoolStatistics>),
         (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
         (status = 404, description = "School not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_public_statistics(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -46,14 +50,14 @@ pub async fn get_public_statistics(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/school/public/organization", operation_id = "getPublicSchoolOrganization", tag = "school",
     responses(
         (status = 200, description = "Active organization units and all current members", body = ApiResponse<super::models::PublicSchoolOrganization>),
         (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
         (status = 404, description = "School not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_public_organization(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -66,12 +70,12 @@ pub async fn get_public_organization(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/school/public/organization-members/{id}/avatar", operation_id = "getPublicOrganizationAvatar", tag = "school",
     params(("id" = uuid::Uuid, Path, description = "Current public organization membership")),
     responses((status = 307, description = "Short-lived profile image delivery"),
         (status = 404, description = "Published staff photo not found", body = ApiErrorResponse))
-)]
+))]
 pub async fn get_public_organization_avatar(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -95,7 +99,7 @@ pub async fn get_public_organization_avatar(
 }
 
 /// GET /api/school/settings — staff only (SETTINGS_READ_ALL)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/school/settings",
     operation_id = "getSchoolSettings",
@@ -105,7 +109,7 @@ pub async fn get_public_organization_avatar(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Settings read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_settings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -145,7 +149,7 @@ pub async fn update_settings(
 
 /// GET /api/school/public — no auth required
 /// Returns the public File Platform identity + schoolName (from backend-admin)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/school/public",
     operation_id = "getPublicSchoolInfo",
@@ -153,7 +157,7 @@ pub async fn update_settings(
     responses(
         (status = 200, description = "Public school branding", body = ApiResponse<PublicSchoolInfoData>)
     )
-)]
+))]
 pub async fn get_public_info(
     State(state): State<AppState>,
     headers: HeaderMap,

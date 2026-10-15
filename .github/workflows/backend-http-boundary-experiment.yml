@@ -50,6 +50,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/http-boundary-results"
           docker run --rm --cpus=2 \
             -v "$PWD/scripts/benchmark_http_boundaries.sh:/benchmark.sh:ro" \
+            -v "$PWD/scripts/export_benchmark_openapi.sh:/export_benchmark_openapi.sh:ro" \
             -v "$PWD/backend-school:/candidate:ro" \
             -v "$RUNNER_TEMP/http-boundary-results:/results" \
             --entrypoint bash schoolorbit-http-boundary:builder /benchmark.sh

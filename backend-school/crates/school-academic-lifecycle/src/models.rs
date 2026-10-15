@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 mod opening;
@@ -26,7 +27,8 @@ pub use term_preparation::*;
 mod transitions;
 pub use transitions::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct YearLifecycleWorkspace {
     pub context: school_academic_core::models::YearLifecycleContext,
@@ -38,14 +40,16 @@ pub struct YearLifecycleWorkspace {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Deserialize, utoipa::IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams, ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct TermLifecycleQuery {
     pub academic_year_id: Uuid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum LifecycleSeverity {
     Ready,
@@ -53,7 +57,8 @@ pub enum LifecycleSeverity {
     Blocking,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LifecycleFinding {
     pub code: String,
@@ -63,7 +68,8 @@ pub struct LifecycleFinding {
     pub resolution_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermLifecycleWorkspace {
     pub context: school_academic_core::models::TermLifecycleContext,

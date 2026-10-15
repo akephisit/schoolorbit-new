@@ -2,29 +2,34 @@ use chrono::NaiveDate;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct CalendarTargetOptionsQuery {
     pub date: NaiveDate,
 }
-#[derive(Debug, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarGradeOption {
     pub id: Uuid,
     pub name: String,
 }
-#[derive(Debug, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarHomeroomOption {
     pub id: Uuid,
     pub name: String,
     pub grade_level_id: Uuid,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarTargetOptions {
     pub grade_levels: Vec<CalendarGradeOption>,

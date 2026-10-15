@@ -6,6 +6,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -13,12 +14,18 @@ use crate::policies::organization_access_policy;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::EmptyData;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_http::{ApiErrorResponse, ApiResponse};
+#[cfg(feature = "api-docs")]
 use school_staff::models::DelegationItem;
-use school_staff::services::organization_delegation_service::{self, DelegatablePermission};
+use school_staff::services::organization_delegation_service;
+#[cfg(feature = "api-docs")]
+use school_staff::services::organization_delegation_service::DelegatablePermission;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateDelegationRequest {
     pub to_user_id: Uuid,
     pub permission_id: Uuid,
@@ -26,12 +33,13 @@ pub struct CreateDelegationRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct DelegationIdData {
     pub delegation_id: Uuid,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units/{id}/delegatable-permissions",
     operation_id = "listDelegatablePermissions",
@@ -42,7 +50,7 @@ pub struct DelegationIdData {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_delegatable_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -60,7 +68,7 @@ pub async fn list_delegatable_permissions(
     Ok(Json(ApiResponse::ok(perms)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units/{id}/delegations",
     operation_id = "listOrganizationDelegations",
@@ -71,7 +79,7 @@ pub async fn list_delegatable_permissions(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_delegations(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -88,7 +96,7 @@ pub async fn list_delegations(
     Ok(Json(ApiResponse::ok(delegations)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/organization/units/{id}/delegations",
     operation_id = "createOrganizationDelegation",
@@ -101,7 +109,7 @@ pub async fn list_delegations(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Organization approval access required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_delegation(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -161,7 +169,7 @@ pub async fn create_delegation(
     Ok(Json(ApiResponse::ok(DelegationIdData { delegation_id: id })).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/organization/delegations/{id}",
     operation_id = "revokeOrganizationDelegation",
@@ -173,7 +181,7 @@ pub async fn create_delegation(
         (status = 403, description = "Delegation ownership required", body = ApiErrorResponse),
         (status = 404, description = "Delegation not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn revoke_delegation(
     State(state): State<AppState>,
     Path(delegation_id): Path<Uuid>,

@@ -4,6 +4,14 @@ version.workspace = true
 edition.workspace = true
 
 [features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-assessment/api-docs",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
+    "school-academic-results/api-docs",
+    "school-academic-timetable/api-docs",
+]
 integration-test-support = []
 
 [dependencies]
@@ -22,7 +30,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

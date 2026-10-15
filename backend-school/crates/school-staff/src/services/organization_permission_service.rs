@@ -4,13 +4,15 @@ use serde::Serialize;
 use std::collections::HashSet;
 
 use sqlx::{PgPool, Row};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationPermissionGrant {
     pub permission_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub position_code: Option<String>,
 }
 

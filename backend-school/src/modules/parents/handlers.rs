@@ -1,3 +1,4 @@
+#[cfg(feature = "api-docs")]
 use crate::modules::parents::models::ParentProfile;
 use crate::modules::parents::services as parent_service;
 use crate::utils::request_context::actor_tenant_context_from_session;
@@ -9,15 +10,18 @@ use axum::{
     Json,
 };
 use chrono::NaiveDate;
+#[cfg(feature = "api-docs")]
 use school_academic_core::models::AcademicContextOptions;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_students::models::StudentAcademicYearQuery;
 use uuid::Uuid;
 
 /// GET /api/parent/profile - ผู้ปกครองดูข้อมูลตนเองและบุตรหลาน
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/profile",
     operation_id = "getParentProfile",
@@ -29,7 +33,7 @@ use uuid::Uuid;
         (status = 403, description = "Parent account required", body = ApiErrorResponse),
         (status = 404, description = "Parent profile not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_own_parent_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -46,7 +50,7 @@ pub async fn get_own_parent_profile(
 }
 
 /// GET /api/parent/students/:student_id - ผู้ปกครองดูรายละเอียดบุตรหลาน
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/students/{student_id}",
     operation_id = "getParentChildProfile",
@@ -61,7 +65,7 @@ pub async fn get_own_parent_profile(
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse),
         (status = 404, description = "Child profile not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_child_profile(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -78,22 +82,24 @@ pub async fn get_child_profile(
     Ok((StatusCode::OK, Json(ApiResponse::ok(student))))
 }
 
-#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, serde::Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildTimetableQuery {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
 }
 
-#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, serde::Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChildExamScheduleQuery {
     pub academic_term_id: Uuid,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/academic-context/options",
     operation_id = "listParentAcademicContextOptions",
@@ -103,7 +109,7 @@ pub struct ChildExamScheduleQuery {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent account required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_parent_academic_context_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -117,7 +123,7 @@ pub async fn get_parent_academic_context_options(
     Ok((StatusCode::OK, Json(ApiResponse::ok(options))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/students/{student_id}/academic-context/options",
     operation_id = "listChildAcademicContextOptions",
@@ -128,7 +134,7 @@ pub async fn get_parent_academic_context_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_child_academic_context_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -146,7 +152,7 @@ pub async fn get_child_academic_context_options(
 
 /// GET /api/parent/students/:student_id/timetable
 /// ผู้ปกครองดูตารางเรียนของบุตรหลาน — verify ownership ผ่าน student_parents
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/students/{student_id}/timetable",
     operation_id = "getParentChildTimetable",
@@ -160,7 +166,7 @@ pub async fn get_child_academic_context_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_child_timetable(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -184,7 +190,7 @@ pub async fn get_child_timetable(
 
 /// GET /api/parent/students/:student_id/exam-schedules
 /// ผู้ปกครองดูตารางสอบของบุตรหลาน — service verifies ownership ผ่าน student_parents
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/students/{student_id}/exam-schedules",
     operation_id = "getParentChildExamSchedule",
@@ -198,7 +204,7 @@ pub async fn get_child_timetable(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_child_exam_schedule(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -220,7 +226,7 @@ pub async fn get_child_exam_schedule(
 }
 
 /// GET /api/parent/students/:student_id/calendar/events
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/parent/students/{student_id}/calendar/events",
     operation_id = "getParentChildCalendarEvents",
@@ -235,7 +241,7 @@ pub async fn get_child_exam_schedule(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_child_calendar_events(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

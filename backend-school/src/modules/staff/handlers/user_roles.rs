@@ -10,12 +10,14 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
+use school_http::{ApiErrorResponse, ApiResponse, IdData};
+#[cfg(feature = "api-docs")]
+use school_http::{EmptyData, UuidIdData};
 use school_permissions::registry::codes;
 use school_staff::models::*;
 use school_staff::services::user_role_service::{self, AssignRoleOutcome};
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/users/{id}/roles",
     operation_id = "getUserRoles",
@@ -26,7 +28,7 @@ use school_staff::services::user_role_service::{self, AssignRoleOutcome};
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_user_roles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -44,7 +46,7 @@ pub async fn get_user_roles(
     )
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/users/{id}/roles",
     operation_id = "assignUserRole",
@@ -58,7 +60,7 @@ pub async fn get_user_roles(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "User or role not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn assign_user_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,7 +115,7 @@ pub async fn assign_user_role(
     )
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/users/{id}/roles/{role_id}",
     operation_id = "removeUserRole",
@@ -128,7 +130,7 @@ pub async fn assign_user_role(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Role assignment not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn remove_user_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -161,7 +163,7 @@ pub async fn remove_user_role(
     )
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/users/{id}/permissions",
     operation_id = "listUserEffectivePermissions",
@@ -172,7 +174,7 @@ pub async fn remove_user_role(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_user_permissions(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

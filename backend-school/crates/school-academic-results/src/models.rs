@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -12,29 +13,33 @@ pub use annual::*;
 mod annual_corrections;
 pub use annual_corrections::*;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct ResultContext {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GradingPolicyBand {
     pub grade: String,
     pub lower_bound: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GradingPolicyInput {
     pub name: String,
     pub bands: Vec<GradingPolicyBand>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradingPolicyVersion {
     pub id: Uuid,
@@ -45,7 +50,8 @@ pub struct GradingPolicyVersion {
     pub bands: Vec<GradingPolicyBand>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CourseOutcomeSelection {
     Derived,
@@ -80,7 +86,8 @@ impl TryFrom<&str> for CourseOutcomeSelection {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ActivityOutcome {
     Pass,
@@ -108,7 +115,8 @@ impl TryFrom<&str> for ActivityOutcome {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelectionInput {
     pub student_academic_year_id: Uuid,
@@ -116,7 +124,8 @@ pub struct SelectionInput {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityCellInput {
     pub student_academic_year_id: Uuid,
@@ -124,13 +133,15 @@ pub struct ActivityCellInput {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityBatchInput {
     pub cells: Vec<ActivityCellInput>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResultConfirmationInput {
     pub source_checksum: String,
@@ -138,13 +149,15 @@ pub struct ResultConfirmationInput {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PolicyActivationInput {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResultConfirmation {
     pub id: Uuid,
@@ -155,7 +168,8 @@ pub struct ResultConfirmation {
     pub invalidated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ResultBlockerCode {
     MissingPhaseConfirmation,
@@ -169,7 +183,8 @@ pub enum ResultBlockerCode {
     AlreadyLocked,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResultBlocker {
     pub code: ResultBlockerCode,
@@ -177,7 +192,8 @@ pub struct ResultBlocker {
     pub student_academic_year_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedCourseStudent {
     pub student_academic_year_id: Uuid,
@@ -189,7 +205,8 @@ pub struct PreparedCourseStudent {
     pub numeric_grade: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedActivityStudent {
     pub student_academic_year_id: Uuid,
@@ -198,7 +215,8 @@ pub struct PreparedActivityStudent {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CoursePreparationWorkspace {
     pub learning_group_id: Uuid,
@@ -215,7 +233,8 @@ pub struct CoursePreparationWorkspace {
     pub can_confirm: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityPreparationWorkspace {
     pub learning_group_id: Uuid,
@@ -230,7 +249,8 @@ pub struct ActivityPreparationWorkspace {
     pub can_confirm: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GroupResultReadiness {
     pub learning_group_id: Uuid,
@@ -244,7 +264,8 @@ pub struct GroupResultReadiness {
     pub blockers: Vec<ResultBlocker>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SubjectResultReadiness {
     pub subject_id: Uuid,
@@ -252,14 +273,16 @@ pub struct SubjectResultReadiness {
     pub groups: Vec<GroupResultReadiness>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResultReadiness {
     pub courses: Vec<SubjectResultReadiness>,
     pub activities: Vec<GroupResultReadiness>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CourseResultLock {
     pub id: Uuid,
@@ -275,14 +298,16 @@ pub struct CourseResultLock {
     pub result_count: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CourseResultLockOutcome {
     pub lock: Option<CourseResultLock>,
     pub groups: Vec<GroupResultReadiness>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityResultLock {
     pub id: Uuid,
@@ -298,21 +323,24 @@ pub struct ActivityResultLock {
     pub result_count: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityResultLockOutcome {
     pub lock: Option<ActivityResultLock>,
     pub blockers: Vec<ResultBlocker>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BulkActivityResultLockOutcome {
     pub locked: Vec<ActivityResultLock>,
     pub skipped: Vec<GroupResultReadiness>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CourseOfficialOutcome {
     Numeric,
@@ -343,7 +371,8 @@ impl TryFrom<&str> for CourseOfficialOutcome {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -352,33 +381,34 @@ impl TryFrom<&str> for CourseOfficialOutcome {
 )]
 pub enum ResultCorrectionInput {
     Course {
-        #[schema(rename = "courseResultId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "courseResultId"))]
         course_result_id: Uuid,
         outcome: CourseOfficialOutcome,
-        #[schema(rename = "numericGrade")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "numericGrade"))]
         numeric_grade: Option<String>,
-        #[schema(rename = "expectedEffectiveVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "expectedEffectiveVersion"))]
         expected_effective_version: i64,
     },
     Activity {
-        #[schema(rename = "activityResultId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "activityResultId"))]
         activity_result_id: Uuid,
         outcome: ActivityOutcome,
-        #[schema(rename = "expectedEffectiveVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "expectedEffectiveVersion"))]
         expected_effective_version: i64,
     },
     LearnerEvaluation {
-        #[schema(rename = "subjectStudentEvaluationId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "subjectStudentEvaluationId"))]
         subject_student_evaluation_id: Uuid,
-        #[schema(rename = "qualityLevel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "qualityLevel"))]
         quality_level:
             school_academic_assessment::learner_evaluation::models::LearnerEvaluationLevel,
-        #[schema(rename = "expectedEffectiveVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "expectedEffectiveVersion"))]
         expected_effective_version: i64,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -387,19 +417,20 @@ pub enum ResultCorrectionInput {
 pub enum EffectiveResultValue {
     Course {
         outcome: CourseOfficialOutcome,
-        #[schema(rename = "numericGrade")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "numericGrade"))]
         numeric_grade: Option<String>,
     },
     Activity {
         outcome: ActivityOutcome,
     },
     LearnerEvaluation {
-        #[schema(rename = "qualityLevel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "qualityLevel"))]
         quality_level: i16,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResultCorrectionRecord {
     pub id: Uuid,
@@ -410,7 +441,8 @@ pub struct ResultCorrectionRecord {
     pub corrected_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EffectiveResult {
     pub result_id: Uuid,
@@ -421,7 +453,8 @@ pub struct EffectiveResult {
     pub corrections: Vec<ResultCorrectionRecord>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum EffectiveResultKind {
     Course,
@@ -429,9 +462,10 @@ pub enum EffectiveResultKind {
     LearnerEvaluation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct EffectiveResultSearch {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
@@ -440,7 +474,8 @@ pub struct EffectiveResultSearch {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EffectiveResultSearchItem {
     pub kind: EffectiveResultKind,

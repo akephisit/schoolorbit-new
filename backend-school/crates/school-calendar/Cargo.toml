@@ -3,6 +3,11 @@ name = "school-calendar"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
 [dependencies]
 chrono = { workspace = true }
 school-errors = { workspace = true }
@@ -10,7 +15,7 @@ school-authorization = { workspace = true }
 school-permissions = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

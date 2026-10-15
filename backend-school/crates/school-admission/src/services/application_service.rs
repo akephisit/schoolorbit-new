@@ -10,6 +10,7 @@ use school_file_platform::{
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
 use std::collections::HashSet;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -364,7 +365,8 @@ pub async fn submit_application(
 // Staff: List & Get
 // ==========================================
 
-#[derive(sqlx::FromRow, serde::Serialize, ToSchema)]
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AppListRow {
     pub id: Uuid,
@@ -1950,7 +1952,8 @@ mod tests {
     }
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentUploadResponse {
     pub id: Uuid,
