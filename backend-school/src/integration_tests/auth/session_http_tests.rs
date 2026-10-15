@@ -1132,6 +1132,129 @@ mod protected_router {
     }
 
     #[tokio::test]
+    async fn behavior_refresh_runs_after_committed_settings_only() {
+        struct RefreshProbe(AtomicUsize);
+        #[async_trait::async_trait]
+        impl school_behavior::http::state::BehaviorRuntimePort for RefreshProbe {
+            async fn refresh_after_commit(
+                &self,
+                tenant: &str,
+                pool: sqlx::PgPool,
+                _channel: broadcast::Sender<school_notifications::events::TenantNotificationEvent>,
+            ) {
+                assert_eq!(tenant, "tenant-a");
+                let settings = school_behavior::services::catalog::settings(&pool)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    settings.daily_merit_cap,
+                    Some(17),
+                    "refresh must observe committed settings"
+                );
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        static REFRESH: RefreshProbe = RefreshProbe(AtomicUsize::new(0));
+        let fixture = ProtectedFixture::new("behavior_runtime_boundary").await;
+        let manager = fixture
+            .insert_user(&fixture.tenant_a_pool, "behavior-manager", "active")
+            .await;
+        let denied = fixture
+            .insert_user(&fixture.tenant_a_pool, "behavior-denied", "active")
+            .await;
+        let role: Uuid = sqlx::query_scalar("INSERT INTO roles (code,name,user_type) VALUES ('TEST_BEHAVIOR_MANAGER','Behavior test manager','staff') RETURNING id")
+            .fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let grant = sqlx::query("INSERT INTO role_permissions (role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+            .bind(role).bind(school_permissions::registry::codes::BEHAVIOR_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+        assert_eq!(grant.rows_affected(), 1);
+        sqlx::query("INSERT INTO user_roles (user_id,role_id) VALUES ($1,$2)")
+            .bind(manager)
+            .bind(role)
+            .execute(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+        let (manager_session, manager_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, manager, 76, false)
+            .await;
+        let (denied_session, denied_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, denied, 77, false)
+            .await;
+        let (notification_channel, _) = broadcast::channel(8);
+        let app = Router::new()
+            .merge(
+                school_behavior::http::routes::protected_routes().with_state(
+                    school_behavior::http::state::BehaviorHttpState {
+                        auth_runtime: fixture.runtime.clone(),
+                        notification_channel,
+                        reset: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
+                        runtime: &REFRESH,
+                    },
+                ),
+            )
+            .route_layer(from_fn_with_state(
+                fixture.runtime.clone(),
+                session_middleware,
+            ));
+        let mut settings = school_behavior::services::catalog::settings(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+        settings.daily_merit_cap = Some(17);
+        let payload =
+            serde_json::to_vec(&school_behavior::models::SaveBehaviorSettings { settings })
+                .unwrap();
+        let build = |token: Option<&RawSessionToken>, csrf: Option<&str>| {
+            let mut req = request(
+                Method::PUT,
+                "/api/behavior/settings",
+                Some("https://tenant-a.schoolorbit.test"),
+                token,
+                csrf,
+            )
+            .map(|_| Body::from(payload.clone()));
+            req.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            req
+        };
+        for (req, expected) in [
+            (build(None, None), StatusCode::UNAUTHORIZED),
+            (build(Some(&manager_token), None), StatusCode::FORBIDDEN),
+            (
+                build(Some(&denied_token), Some(&fixture.csrf(denied_session))),
+                StatusCode::FORBIDDEN,
+            ),
+        ] {
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), expected);
+            assert_eq!(REFRESH.0.load(Ordering::SeqCst), 0);
+        }
+        let response = app
+            .clone()
+            .oneshot(build(
+                Some(&manager_token),
+                Some(&fixture.csrf(manager_session)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(REFRESH.0.load(Ordering::SeqCst), 1);
+        let replay = app
+            .oneshot(build(
+                Some(&manager_token),
+                Some(&fixture.csrf(manager_session)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            REFRESH.0.load(Ordering::SeqCst),
+            1,
+            "failed mutations must not refresh runtime state"
+        );
+    }
+
+    #[tokio::test]
     async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
         use school_academic_http::state::AcademicHttpState;
 

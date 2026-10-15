@@ -220,3 +220,17 @@ impl school_behavior::http::state::BehaviorResetPort for ApplicationBehavior {
         reset_scores(pool, actor, payload).await
     }
 }
+
+#[async_trait::async_trait]
+impl school_behavior::http::state::BehaviorRuntimePort for ApplicationBehavior {
+    async fn refresh_after_commit(
+        &self,
+        tenant: &str,
+        pool: PgPool,
+        channel: tokio::sync::broadcast::Sender<
+            school_notifications::events::TenantNotificationEvent,
+        >,
+    ) {
+        school_attendance::runtime::refresh_after_commit(tenant, pool, channel).await;
+    }
+}

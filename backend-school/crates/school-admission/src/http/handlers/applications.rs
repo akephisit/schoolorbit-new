@@ -323,7 +323,14 @@ pub async fn complete_enrollment(
     actor.require_permission(codes::ADMISSION_ENROLL_ALL)?;
     let enroller_id = actor.user_id;
 
-    let result = application_service::complete_enrollment(&pool, id, payload, enroller_id).await?;
+    let result = application_service::complete_enrollment(
+        &pool,
+        id,
+        payload,
+        enroller_id,
+        state.placement_rosters,
+    )
+    .await?;
     Ok(Json(ApiResponse::with_message(
         CompleteEnrollmentData {
             user_id: result.user_id,

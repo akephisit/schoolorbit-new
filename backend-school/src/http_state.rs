@@ -11,7 +11,8 @@ use school_file_platform::platform_service::FilePlatform;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-static PLACEMENT_ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
+pub(crate) static PLACEMENT_ROSTERS:
+    school_academic_delivery::services::roster_tracking::RoomRosterTracking =
     school_academic_delivery::services::roster_tracking::RoomRosterTracking;
 
 impl FromRef<AppState> for AcademicHttpState {
@@ -57,6 +58,7 @@ impl FromRef<AppState> for CertificateHttpState {
 impl FromRef<AppState> for school_students::http::state::StudentHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            placement_rosters: &PLACEMENT_ROSTERS,
             auth_runtime: state.auth_runtime.clone(),
         }
     }
@@ -155,6 +157,7 @@ impl FromRef<AppState> for school_attendance::http::state::AttendanceHttpState {
 impl FromRef<AppState> for school_behavior::http::state::BehaviorHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            runtime: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
             auth_runtime: state.auth_runtime.clone(),
             notification_channel: state.notification_channel.clone(),
             reset: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
@@ -165,6 +168,7 @@ impl FromRef<AppState> for school_behavior::http::state::BehaviorHttpState {
 impl FromRef<AppState> for school_admission::http::state::AdmissionHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            placement_rosters: &PLACEMENT_ROSTERS,
             auth_runtime: state.auth_runtime.clone(),
             file_authorization: &school_files_http::FILE_AUTHORIZATION,
             file_platform: state.file_platform.clone(),

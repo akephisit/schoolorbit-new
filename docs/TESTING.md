@@ -264,6 +264,20 @@ Fixtures use synthetic staff/resources and generated API shapes. A published ope
 implicitly creates or publishes a timetable or student roster. Opening snapshots retain their
 course/group/teacher facts; dated student memberships remain on their separate roster lifecycle.
 
+For application-selected roster and Behavior runtime providers, run the owning database fixtures:
+
+```bash
+./scripts/test_backend_school.sh admission::application_service_tests -- --test-threads=4
+./scripts/test_backend_school.sh lifecycle_student_deactivation -- --test-threads=4
+./scripts/test_backend_school.sh behavior_refresh_runs_after_committed_settings_only
+```
+
+These exercise same-transaction roster visibility, rollback of enrollment/account/academic changes,
+completed-receipt replay, and Behavior refresh only after a committed, authorized, CSRF-checked
+mutation. Compare application, Attendance and Delivery source edits on the same toolchain and target
+when evaluating these provider boundaries. Delivery remains transitively used by Students through
+Timetable; removing a direct manifest edge does not imply the entire rebuild path disappears.
+
 The six `school-academic-*` crates own Core, Delivery, Timetable, Assessment, Results, and
 Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-support features
 only for root tests that intentionally span domain owners; the normal release graph must keep

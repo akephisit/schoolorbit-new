@@ -837,6 +837,7 @@ pub async fn complete_enrollment(
     id: Uuid,
     payload: CompleteEnrollmentRequest,
     enroller_id: Uuid,
+    placement_rosters: &dyn school_academic_core::ports::PlacementRosterPort,
 ) -> Result<EnrollmentResult, AppError> {
     let mut tx = pool
         .begin()
@@ -1356,12 +1357,9 @@ pub async fn complete_enrollment(
         AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
     })?;
 
-    school_academic_delivery::services::roster_tracking::sync_students(
-        &mut tx,
-        enroller_id,
-        &[student_academic_year_id],
-    )
-    .await?;
+    placement_rosters
+        .reconcile(&mut tx, enroller_id, &[student_academic_year_id])
+        .await?;
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
