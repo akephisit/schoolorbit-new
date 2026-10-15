@@ -8,7 +8,8 @@ output=${3:?output directory is required}
 owner=${4:-application}
 samples=${BENCH_SAMPLES:-2}
 case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
-case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches | http-routes) ;; *) exit 64 ;; esac
+case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches | http-routes | api-docs) ;; *) exit 64 ;; esac
+if [[ "$variant" == api-docs ]]; then [[ "$backend" == backend-school ]] || exit 64; fi
 [[ $samples =~ ^[2-5]$ ]] || exit 64
 case "$backend/$owner" in
     */application) source_file=src/main.rs ;;
@@ -59,10 +60,12 @@ case "$variant" in
     cgu256) flags+=(-C codegen-units=256) ;;
 esac
 build() {
-    cargo rustc --release --locked --bin "$backend" --timings -- "${flags[@]}"
+    local features=()
+    if [[ "$variant" == api-docs ]]; then features=(--features api-docs); fi
+    cargo rustc --release --locked --bin "$backend" --timings "${features[@]}" -- "${flags[@]}"
 }
 export_api() {
-    env -i PATH="$PATH" HOME=/tmp "target/release/$backend" export-openapi
+    bash "$(dirname "$0")/export_benchmark_openapi.sh"
 }
 
 # Changing final-crate flags can require a complete application rebuild. Exclude it.

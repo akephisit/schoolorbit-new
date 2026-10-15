@@ -1,22 +1,26 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyCategory {
     pub id: Uuid,
     pub name: String,
     pub revision: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyCategoryWrite {
     pub name: String,
     pub revision: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyVersion {
     pub id: Uuid,
@@ -27,7 +31,8 @@ pub struct SupplyVersion {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyItem {
     pub id: Uuid,
@@ -41,7 +46,8 @@ pub struct SupplyItem {
     pub favorite: bool,
     pub revision: i64,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyItemDetail {
     #[serde(flatten)]
@@ -49,7 +55,8 @@ pub struct SupplyItemDetail {
     pub versions: Vec<SupplyVersion>,
     pub versions_total: i64,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyItemPage {
     pub items: Vec<SupplyItem>,
@@ -57,9 +64,10 @@ pub struct SupplyItemPage {
     pub page: i64,
     pub page_size: i64,
 }
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct SupplyItemQuery {
     pub search: Option<String>,
     pub category_id: Option<Uuid>,
@@ -67,7 +75,8 @@ pub struct SupplyItemQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyItemWrite {
     pub name: String,
@@ -78,7 +87,8 @@ pub struct SupplyItemWrite {
     pub price: String,
     pub shop: String,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyItemUpdate {
     pub name: String,
@@ -86,29 +96,33 @@ pub struct SupplyItemUpdate {
     pub category_id: Uuid,
     pub unit: String,
     #[serde(deserialize_with = "required_nullable_image")]
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub image_file_id: Option<Uuid>,
     pub revision: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyVersionWrite {
     pub price: String,
     pub shop: String,
     pub revision: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyFavoriteWrite {
     pub favorite: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyBundleEntryWrite {
     pub item_id: Uuid,
     pub quantity: i32,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyBundleWrite {
     pub name: String,
@@ -116,14 +130,16 @@ pub struct SupplyBundleWrite {
     pub entries: Vec<SupplyBundleEntryWrite>,
     pub revision: Option<i64>,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyBundleEntry {
     pub item: SupplyItem,
     pub quantity: i32,
     pub subtotal: String,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyBundle {
     pub id: Uuid,
@@ -134,14 +150,16 @@ pub struct SupplyBundle {
     pub total_price: String,
     pub revision: i64,
 }
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct SupplyPageQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyBundlePage {
     pub items: Vec<SupplyBundle>,
@@ -149,12 +167,14 @@ pub struct SupplyBundlePage {
     pub page: i64,
     pub page_size: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyRevision {
     pub revision: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyProposalWrite {
     pub name: String,
@@ -167,7 +187,8 @@ pub struct SupplyProposalWrite {
     pub source_file_id: Option<Uuid>,
     pub source_url: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyProposal {
     pub id: Uuid,
@@ -189,15 +210,17 @@ pub struct SupplyProposal {
     pub revision: i64,
     pub created_at: DateTime<Utc>,
 }
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct SupplyProposalQuery {
     pub review: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyProposalPage {
     pub items: Vec<SupplyProposal>,
@@ -205,7 +228,8 @@ pub struct SupplyProposalPage {
     pub page: i64,
     pub page_size: i64,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyProposalApprove {
     pub revision: i64,
@@ -216,30 +240,33 @@ pub struct SupplyProposalApprove {
     pub category_id: Uuid,
     pub unit: String,
     #[serde(deserialize_with = "required_nullable_image")]
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub image_file_id: Option<Uuid>,
     pub price: String,
     pub shop: String,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyProposalReject {
     pub revision: i64,
     pub reason: String,
 }
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupplyVersionAppend {
     pub price: String,
     pub shop: String,
     pub revision: i64,
     #[serde(deserialize_with = "required_nullable_image")]
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub image_file_id: Option<Uuid>,
 }
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct SupplyDuplicateQuery {
     pub name: String,
     pub unit: String,
@@ -278,7 +305,8 @@ mod tests {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupplyVersionPage {
     pub items: Vec<SupplyVersion>,

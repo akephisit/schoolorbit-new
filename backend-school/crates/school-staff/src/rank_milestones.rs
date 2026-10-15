@@ -3,9 +3,11 @@ use crate::career::{StaffCareerCurrent, StaffCareerFact, StaffPersonnelType};
 use crate::personnel::StaffAcademicRank;
 use chrono::{Months, NaiveDate};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RankMilestoneStatus {
     Future,
@@ -15,7 +17,8 @@ pub enum RankMilestoneStatus {
     Unsupported,
     NoNextRank,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RankMilestoneReason {
     MissingPersonnelType,
@@ -51,13 +54,15 @@ impl RankMilestoneReason {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankCriteriaSource {
     pub title: String,
     pub url: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankCriteriaVersion {
     pub version: String,
@@ -67,25 +72,26 @@ pub struct RankCriteriaVersion {
     pub conditional_reduced_years: u32,
     pub sources: Vec<RankCriteriaSource>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RankMilestone {
     pub as_of: NaiveDate,
     pub status: RankMilestoneStatus,
     pub reasons: Vec<RankMilestoneReason>,
     pub reason_labels: Vec<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub next_rank: Option<StaffAcademicRank>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub recorded_start_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ordinary_date: Option<NaiveDate>,
     /// Comparison only: reduction evidence and all other qualifications are unverified.
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub conditional_reduced_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub days_until_ordinary_date: Option<i64>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub criteria: Option<RankCriteriaVersion>,
 }
 

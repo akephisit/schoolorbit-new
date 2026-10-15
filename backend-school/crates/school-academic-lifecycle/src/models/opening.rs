@@ -1,6 +1,7 @@
 use super::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct OpeningPolicy {
     pub row_version: i64,
@@ -9,7 +10,8 @@ pub struct OpeningPolicy {
     pub require_published_timetable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateOpeningPolicyInput {
     pub row_version: i64,

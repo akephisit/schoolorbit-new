@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum PromotionRunStatus {
@@ -15,7 +17,8 @@ pub enum PromotionRunStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreatePromotionRunInput {
     pub request_id: Uuid,
@@ -24,7 +27,8 @@ pub struct CreatePromotionRunInput {
     pub policy_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApprovePromotionRunInput {
     pub request_id: Uuid,
@@ -32,7 +36,8 @@ pub struct ApprovePromotionRunInput {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionRun {
     pub id: Uuid,
@@ -53,7 +58,8 @@ pub struct PromotionRun {
     pub executed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PromotionDecisionOutcome {
     Promote,
@@ -64,7 +70,8 @@ pub enum PromotionDecisionOutcome {
     Conditional,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PromotionDecisionInput {
     pub outcome: PromotionDecisionOutcome,

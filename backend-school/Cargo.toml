@@ -136,6 +136,34 @@ name = "backend-school"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-assessment/api-docs",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
+    "school-academic-http/api-docs",
+    "school-academic-lifecycle/api-docs",
+    "school-academic-results/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-admission/api-docs",
+    "school-attendance/api-docs",
+    "school-auth/api-docs",
+    "school-behavior/api-docs",
+    "school-calendar/api-docs",
+    "school-certificates-http/api-docs",
+    "school-certificates/api-docs",
+    "school-file-platform/api-docs",
+    "school-fonts/api-docs",
+    "school-http/api-docs",
+    "school-navigation/api-docs",
+    "school-notifications/api-docs",
+    "school-question-bank/api-docs",
+    "school-staff/api-docs",
+    "school-students/api-docs",
+    "school-supervision/api-docs",
+]
+
 [dependencies]
 axum = { workspace = true }
 tokio = { workspace = true }
@@ -143,7 +171,7 @@ tower = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bigdecimal = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 sqlx = { workspace = true }
 bcrypt = { workspace = true }
 dotenvy = { workspace = true }

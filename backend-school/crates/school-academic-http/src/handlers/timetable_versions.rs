@@ -21,12 +21,14 @@ use school_academic_timetable::policy::{
 use school_academic_timetable::services::{timetable_lifecycle, timetable_version_service};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
-#[utoipa::path(post,path="/api/academic/timetable-versions",operation_id="createTimetableVersion",request_body=CreateTimetableVersionRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic")]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions",operation_id="createTimetableVersion",request_body=CreateTimetableVersionRequest,
+    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
 pub async fn create_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -52,7 +54,7 @@ pub async fn create_version(
     Ok(Json(ApiResponse::ok(version)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable-versions",
     operation_id = "listTimetableVersions",
@@ -63,7 +65,7 @@ pub async fn create_version(
         (status = 403, description = "Timetable read permission denied", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn list_versions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -81,7 +83,7 @@ pub async fn list_versions(
     Ok(Json(ApiResponse::ok(versions)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable-versions/resolve",
     operation_id = "resolveTimetableVersion",
@@ -93,7 +95,7 @@ pub async fn list_versions(
         (status = 404, description = "No effective timetable version", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn resolve_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -118,7 +120,7 @@ pub async fn resolve_version(
     Ok(Json(ApiResponse::ok(version)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-versions/{source_id}/clone",
     operation_id = "cloneTimetableVersion",
@@ -133,7 +135,7 @@ pub async fn resolve_version(
         (status = 409, description = "Timetable version conflict", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn clone_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -161,9 +163,9 @@ pub async fn clone_version(
     Ok(Json(ApiResponse::ok(version)).into_response())
 }
 
-#[utoipa::path(put,path="/api/academic/timetable-versions/{version_id}/delivery-source",operation_id="updateTimetableDeliverySource",
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/timetable-versions/{version_id}/delivery-source",operation_id="updateTimetableDeliverySource",
     params(("version_id"=Uuid,Path)),request_body=UpdateTimetableDeliverySourceRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic")]
+    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
 pub async fn update_delivery_source(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -199,9 +201,9 @@ pub async fn update_delivery_source(
     Ok(Json(ApiResponse::ok(version)))
 }
 
-#[utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/delete-draft",operation_id="deleteTimetableDraft",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/delete-draft",operation_id="deleteTimetableDraft",
     params(("version_id"=Uuid,Path)),request_body=DeleteTimetableDraftRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::DeletedTimetableDraft>),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic")]
+    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::DeletedTimetableDraft>),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
 pub async fn delete_draft(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -239,9 +241,9 @@ pub async fn delete_draft(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publication-preview",operation_id="previewTimetablePublication",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publication-preview",operation_id="previewTimetablePublication",
     params(("version_id"=Uuid,Path)),request_body=PreviewTimetablePublicationRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_publication::TimetablePublicationPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic")]
+    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_publication::TimetablePublicationPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
 pub async fn preview_publication(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -264,9 +266,9 @@ pub async fn preview_publication(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publish",operation_id="publishTimetableVersion",
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publish",operation_id="publishTimetableVersion",
     params(("version_id"=Uuid,Path)),request_body=PublishTimetableVersionRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic")]
+    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
 pub async fn publish_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

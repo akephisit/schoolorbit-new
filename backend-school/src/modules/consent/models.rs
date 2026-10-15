@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -34,28 +35,29 @@ pub struct ConsentRecord {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ConsentRecordResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub user_type: String,
     pub consent_type: String,
-    #[schema(required)]
+    #[cfg_attr(feature = "api-docs", schema(required))]
     pub consent_type_name: Option<String>,
     pub purpose: String,
     pub data_categories: Vec<String>,
     pub consent_status: String,
-    #[schema(required)]
+    #[cfg_attr(feature = "api-docs", schema(required))]
     pub granted_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[schema(required)]
+    #[cfg_attr(feature = "api-docs", schema(required))]
     pub withdrawn_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[schema(required)]
+    #[cfg_attr(feature = "api-docs", schema(required))]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub is_expired: bool,
     pub is_required: bool,
     pub consent_method: String,
     pub is_minor_consent: bool,
-    #[schema(required)]
+    #[cfg_attr(feature = "api-docs", schema(required))]
     pub parent_guardian_name: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -130,7 +132,8 @@ impl From<ConsentType> for ConsentTypeResponse {
 // User Consent Status (สถานะความยินยอมของผู้ใช้)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UserConsentStatus {
     pub user_id: Uuid,
     pub user_type: String,

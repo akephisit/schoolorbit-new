@@ -1,6 +1,7 @@
 use super::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct YearReopeningWorkspace {
     pub context: school_academic_core::models::YearLifecycleContext,

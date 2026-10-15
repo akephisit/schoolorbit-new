@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+    "school-academic-timetable/api-docs",
+]
 integration-test-support = []
 
 [dependencies]
@@ -15,7 +20,7 @@ school-errors = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [lints]

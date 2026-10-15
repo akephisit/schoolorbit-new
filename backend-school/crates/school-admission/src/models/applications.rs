@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -417,7 +418,8 @@ pub struct EnrollmentForm {
 
 /// Credentials ที่ผู้สมัครส่งมาทุก request (stateless)
 /// ใช้ national_id + date_of_birth (format DDMMYYYY) เพื่อยืนยันตัวตน
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PortalCredentials {
     pub national_id: String,
@@ -520,7 +522,8 @@ pub struct ApplicationFilter {
 // Complete Enrollment (มอบตัว) Request
 // ==========================================
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CompleteEnrollmentRequest {
     /// รหัสนักเรียน (student_id field ใน student_info)

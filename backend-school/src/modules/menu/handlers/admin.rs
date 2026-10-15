@@ -1,3 +1,4 @@
+#[cfg(feature = "api-docs")]
 use crate::modules::menu::models::{
     AcademicMenuTemplateApplyResult, AcademicMenuTemplatePreview, MenuGroup, MenuItem,
     MenuWorkspace,
@@ -6,8 +7,10 @@ use crate::modules::menu::services::{academic_template_service, menu_service};
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
 use school_permissions::registry::codes;
 
 use axum::{
@@ -16,10 +19,12 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateMenuWorkspaceRequest {
     pub code: String,
     pub name: String,
@@ -29,7 +34,8 @@ pub struct CreateMenuWorkspaceRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateMenuWorkspaceRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -39,7 +45,8 @@ pub struct UpdateMenuWorkspaceRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateMenuGroupRequest {
     pub code: String,
     pub name: String,
@@ -50,7 +57,8 @@ pub struct CreateMenuGroupRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateMenuGroupRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -61,7 +69,8 @@ pub struct UpdateMenuGroupRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateMenuItemRequest {
     pub code: String,
     pub name: String,
@@ -75,7 +84,8 @@ pub struct CreateMenuItemRequest {
     pub display_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateMenuItemRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -89,45 +99,53 @@ pub struct UpdateMenuItemRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ReorderRequest {
     pub items: Vec<ReorderItem>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ReorderItem {
     pub id: Uuid,
     pub display_order: i32,
     pub group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct MenuItemFilter {
     pub group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ReorderGroupsRequest {
     pub groups: Vec<ReorderItem>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ReorderWorkspacesRequest {
     pub workspaces: Vec<ReorderItem>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct MovedCountData {
     moved_count: u64,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct MoveItemToGroupRequest {
     pub group_id: Uuid,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyAcademicMenuTemplateRequest {
     pub revision: String,
@@ -145,7 +163,7 @@ async fn auth_with_permission(
 
 // ==================== Recommended Academic Template ====================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/menu/templates/academic/recommended",
     operation_id = "previewRecommendedAcademicMenuTemplate",
@@ -155,7 +173,7 @@ async fn auth_with_permission(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_recommended_academic_menu_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -166,7 +184,7 @@ pub async fn preview_recommended_academic_menu_template(
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(preview))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/templates/academic/recommended/apply",
     operation_id = "applyRecommendedAcademicMenuTemplate",
@@ -179,7 +197,7 @@ pub async fn preview_recommended_academic_menu_template(
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
         (status = 409, description = "Preview revision is stale", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn apply_recommended_academic_menu_template(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -202,7 +220,7 @@ pub async fn apply_recommended_academic_menu_template(
 
 // ==================== Menu Workspaces ====================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/menu/workspaces",
     operation_id = "listMenuWorkspaces",
@@ -212,7 +230,7 @@ pub async fn apply_recommended_academic_menu_template(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_menu_workspaces(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -222,7 +240,7 @@ pub async fn list_menu_workspaces(
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(workspaces))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/workspaces",
     operation_id = "createMenuWorkspace",
@@ -233,7 +251,7 @@ pub async fn list_menu_workspaces(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_menu_workspace(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -261,7 +279,7 @@ pub async fn create_menu_workspace(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/admin/menu/workspaces/{id}",
     operation_id = "updateMenuWorkspace",
@@ -274,7 +292,7 @@ pub async fn create_menu_workspace(
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu workspace not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_menu_workspace(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -304,7 +322,7 @@ pub async fn update_menu_workspace(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/admin/menu/workspaces/{id}",
     operation_id = "deleteMenuWorkspace",
@@ -316,7 +334,7 @@ pub async fn update_menu_workspace(
         (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu workspace not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_menu_workspace(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -336,7 +354,7 @@ pub async fn delete_menu_workspace(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/workspaces/reorder",
     operation_id = "reorderMenuWorkspaces",
@@ -347,7 +365,7 @@ pub async fn delete_menu_workspace(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn reorder_menu_workspaces(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -371,7 +389,7 @@ pub async fn reorder_menu_workspaces(
 
 // ==================== Menu Groups ====================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/menu/groups",
     operation_id = "listMenuGroups",
@@ -381,7 +399,7 @@ pub async fn reorder_menu_workspaces(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_menu_groups(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -391,7 +409,7 @@ pub async fn list_menu_groups(
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(groups))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/groups",
     operation_id = "createMenuGroup",
@@ -402,7 +420,7 @@ pub async fn list_menu_groups(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_menu_group(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -431,7 +449,7 @@ pub async fn create_menu_group(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/admin/menu/groups/{id}",
     operation_id = "updateMenuGroup",
@@ -444,7 +462,7 @@ pub async fn create_menu_group(
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -475,7 +493,7 @@ pub async fn update_menu_group(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/admin/menu/groups/{id}",
     operation_id = "deleteMenuGroup",
@@ -487,7 +505,7 @@ pub async fn update_menu_group(
         (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu group not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_menu_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -506,7 +524,7 @@ pub async fn delete_menu_group(
 
 // ==================== Menu Items ====================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/menu/items",
     operation_id = "listMenuItems",
@@ -517,7 +535,7 @@ pub async fn delete_menu_group(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_menu_items(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -528,7 +546,7 @@ pub async fn list_menu_items(
     Ok((StatusCode::OK, JsonResponse(ApiResponse::ok(items))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/items",
     operation_id = "createMenuItem",
@@ -539,7 +557,7 @@ pub async fn list_menu_items(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu create permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_menu_item(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -571,7 +589,7 @@ pub async fn create_menu_item(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/admin/menu/items/{id}",
     operation_id = "updateMenuItem",
@@ -584,7 +602,7 @@ pub async fn create_menu_item(
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu item not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -618,7 +636,7 @@ pub async fn update_menu_item(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/admin/menu/items/{id}",
     operation_id = "deleteMenuItem",
@@ -630,7 +648,7 @@ pub async fn update_menu_item(
         (status = 403, description = "Menu delete permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu item not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_menu_item(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -646,7 +664,7 @@ pub async fn delete_menu_item(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/items/reorder",
     operation_id = "reorderMenuItems",
@@ -657,7 +675,7 @@ pub async fn delete_menu_item(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn reorder_menu_items(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -685,7 +703,7 @@ pub async fn reorder_menu_items(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admin/menu/groups/reorder",
     operation_id = "reorderMenuGroups",
@@ -696,7 +714,7 @@ pub async fn reorder_menu_items(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn reorder_menu_groups(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -718,7 +736,7 @@ pub async fn reorder_menu_groups(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/admin/menu/items/{id}/group",
     operation_id = "moveMenuItemToGroup",
@@ -731,7 +749,7 @@ pub async fn reorder_menu_groups(
         (status = 403, description = "Menu update permission required", body = ApiErrorResponse),
         (status = 404, description = "Menu item not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn move_item_to_group(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

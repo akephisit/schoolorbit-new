@@ -1,11 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 macro_rules! string_enum {
     ($name:ident { $($variant:ident),+ $(,)? }) => {
-        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema)]
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+        #[cfg_attr(feature = "api-docs", derive(ToSchema))]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($variant),+
@@ -42,7 +44,8 @@ impl SchoolFontStyle {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolFontSummary {
     pub id: Uuid,
@@ -54,19 +57,22 @@ pub struct SchoolFontSummary {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolFontListResponse {
     pub items: Vec<SchoolFontSummary>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InspectSchoolFontUploadsRequest {
     pub file_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttachSchoolFontBatchRequest {
     pub file_ids: Vec<Uuid>,
@@ -74,27 +80,30 @@ pub struct AttachSchoolFontBatchRequest {
     pub rights_confirmed: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolFontUploadInspectionFile {
     pub file_id: Uuid,
     pub display_filename: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub font_family: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub font_weight: Option<u16>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub font_style: Option<SchoolFontStyle>,
     pub status: SchoolFontUploadStatus,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolFontUploadInspection {
     pub files: Vec<SchoolFontUploadInspectionFile>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolFontDeleteConflict {
     pub reference_count: i64,

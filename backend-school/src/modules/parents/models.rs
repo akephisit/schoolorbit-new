@@ -1,22 +1,24 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ParentProfile {
     // User fields
     pub id: Uuid,
     pub username: String,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub phone: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub email: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub national_id: Option<String>, // Encrypted
 
     // Children
@@ -35,18 +37,19 @@ pub struct ParentDbRow {
     pub national_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ChildDto {
     pub id: Uuid,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub grade_level: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub profile_image_file_id: Option<Uuid>,
     pub relationship: String,
 }

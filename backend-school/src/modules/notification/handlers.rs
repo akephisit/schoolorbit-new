@@ -19,8 +19,10 @@ use school_auth::{
     events::{PermissionChangeEvent, SessionRevocationEvent},
     session_service::{self, AuthenticatedSession},
 };
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use std::{convert::Infallible, future::Future, time::Duration};
 use tokio::{
     sync::broadcast,
@@ -181,7 +183,7 @@ where
 }
 
 /// List notifications for current user
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/notifications",
     operation_id = "listNotifications",
@@ -191,7 +193,7 @@ where
         (status = 200, description = "Current user's notifications", body = ApiResponse<crate::modules::notification::models::ListNotificationsResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_notifications(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<ListNotificationsQuery>,

@@ -7,6 +7,34 @@ import test from 'node:test';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const script = path.join(repo, 'scripts/benchmark_backend_build.sh');
+test('documentation comparison is bounded to School and cannot be mixed with historical source patches', () => {
+  const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = workflow.match(/name: Validate bounded benchmark selection[\s\S]*?        run: \|\n([\s\S]*?)(?=      -)/)[1].replace(/^          /gm, '');
+  for (const [backend, baseline, status] of [['backend-school', '', 0], ['backend-admin', '', 1], ['backend-school', 'a'.repeat(40), 1]]) {
+    const result = spawnSync('bash', ['-e', '-c', body], {encoding:'utf8', env:{...process.env, BENCH_BACKEND:backend, BENCH_BASELINE:baseline, BENCH_SAMPLES:'2', BENCH_VARIANTS:'default,api-docs', BENCH_PROFILE_ONLY:'false'}});
+    assert.equal(result.status, status, result.stderr);
+  }
+});
+for (const mode of ['documentation', 'historical', 'failure']) test(`benchmark export preserves production targets and a clean runtime environment (${mode})`, t => {
+  const f = fixture(t), bin = path.join(f.root, 'bin'), docsTarget = path.join(f.root, 'documentation target');
+  mkdirSync(bin);
+  mkdirSync(path.join(f.root, 'target/release'), {recursive:true});
+  writeFileSync(path.join(f.root, 'Cargo.toml'), mode === 'historical' ? '[package]\n' : '[features]\napi-docs = []\n');
+  const executable = `#!/bin/bash\nset -eu\ntest -z "\${RUNTIME_SECRET:-}"\ntest "$1" = export-openapi\nprintf '%s\\n' '${JSON.stringify(api)}'\n`;
+  writeFileSync(path.join(f.root, 'target/release/backend-school'), mode === 'historical' ? executable : '#!/bin/bash\nexit 98\n', {mode:0o755});
+  mkdirSync(path.join(docsTarget, 'debug'), {recursive:true});
+  writeFileSync(path.join(docsTarget, 'debug/backend-school'), executable, {mode:0o755});
+  writeFileSync(path.join(bin, 'cargo'), '#!/bin/bash\nset -eu\ntest -z "${RUSTC_WRAPPER:-}"\nprintf "%s\\n" "$@" > "$DOCS_ARGUMENTS"\nexit "${DOCS_FAILURE:-0}"\n', {mode:0o755});
+  const result = spawnSync('bash', [path.join(repo, 'scripts/export_benchmark_openapi.sh')], {cwd:f.root, encoding:'utf8', env:{...process.env, PATH:bin+':'+process.env.PATH, BENCH_DOCS_TARGET_DIR:docsTarget, DOCS_ARGUMENTS:path.join(f.root, 'args'), DOCS_FAILURE:mode==='failure'?'37':'0', RUSTC_WRAPPER:'must-be-disabled', RUNTIME_SECRET:'must-be-cleared'}});
+  assert.equal(result.status, mode==='failure'?37:0, result.stderr);
+  if (mode !== 'failure') assert.deepEqual(JSON.parse(result.stdout), api);
+  if (mode !== 'historical') {
+    const args = readFileSync(path.join(f.root, 'args'), 'utf8').trim().split('\n');
+    assert.equal(args[args.indexOf('--features')+1], 'api-docs');
+    assert.equal(args[args.indexOf('--target-dir')+1], docsTarget);
+    assert.ok(!args.includes('--release'));
+  }
+});
 test('compiler profiling refuses paired-source or altered-profile selections', () => {
   const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
   const body = workflow.match(/name: Validate bounded benchmark selection[\s\S]*?        run: \|\n([\s\S]*?)(?=      -)/)[1].replace(/^          /gm, '');
@@ -27,7 +55,7 @@ test('profile-only mode skips warm samples and compares credential-free exports'
 printf '%s\\n' "$*" >> "$PROFILE_CALLS"
 case " $* " in
  *" /benchmark.sh backend-school "*) exit 99;;
- *" export-openapi "*) printf '{"openapi":"3.1.0","paths":{"/fixture":{}}}\\n';;
+ *" /export_benchmark_openapi.sh "*) printf '{"openapi":"3.1.0","paths":{"/fixture":{}}}\\n';;
 esac
 `, {mode:0o755});
   const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
@@ -38,7 +66,7 @@ esac
   assert.doesNotMatch(calls, /bash \/benchmark\.sh/);
   assert.match(calls, /exec schoolorbit-benchmark bash \/profile\.sh backend-school/);
   assert.doesNotMatch(calls, /exec -e RUSTC_BOOTSTRAP/);
-  assert.equal(calls.match(/env -i .*export-openapi/g).length, 2);
+  assert.equal(calls.match(/exec schoolorbit-benchmark bash \/export_benchmark_openapi.sh/g).length, 2);
   assert.deepEqual(JSON.parse(readFileSync(path.join(root,'build-benchmark/compiler-profile/openapi.json'),'utf8')),JSON.parse(readFileSync(path.join(root,'build-benchmark/openapi-baseline.json'),'utf8')));
 });
 const summary = path.join(repo, 'scripts/summarize_backend_benchmark.py');

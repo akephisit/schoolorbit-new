@@ -323,6 +323,12 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
 
 - Rust DTOs plus domain-owned `utoipa::path` declarations own the HTTP wire contract.
   `backend-school/src/api_contract.rs` owns composition and registration of the complete document.
+- School documentation metadata is opt-in through the default-off `api-docs` Cargo feature.
+  Each schema/path owner gates its Utoipa dependency, imports, derives and helper attributes;
+  forward the feature along existing dependency edges. Keep runtime DTOs, Serde and HTTP behavior
+  available without it. Application composition and offline export require this feature, and the
+  local generator enables it automatically. Verify both feature modes, all documentation-specific
+  tests and generated artifacts; production builds keep the default feature set.
 - Tracked OpenAPI output lives at `contracts/openapi/school-api.json`; generated frontend DTOs live under `frontend-school/src/lib/api/generated/`.
 - When adding or changing an endpoint:
   1. Add typed request/response DTOs and `ToSchema` as needed.

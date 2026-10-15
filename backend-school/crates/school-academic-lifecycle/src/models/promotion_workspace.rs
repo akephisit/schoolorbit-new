@@ -1,22 +1,25 @@
 use super::*;
 
-#[derive(Debug, Clone, Deserialize, ToSchema, utoipa::IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, utoipa::IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct PromotionRunListQuery {
     pub source_year_id: Uuid,
     pub target_year_id: Option<Uuid>,
     pub before_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionRunList {
     pub runs: Vec<PromotionRun>,
     pub next_cursor: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionRunStudent {
     pub item: PromotionRunItem,
@@ -27,7 +30,8 @@ pub struct PromotionRunStudent {
     pub receipt: Option<PromotionExecutionReceipt>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionRunWorkspace {
     pub run: PromotionRun,

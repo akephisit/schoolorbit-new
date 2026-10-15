@@ -1,11 +1,15 @@
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
 use school_permissions::registry::codes;
 use school_staff::models::UpdateOrganizationPermissionsRequest;
-use school_staff::services::organization_permission_service::{self, OrganizationPermissionGrant};
+use school_staff::services::organization_permission_service;
+#[cfg(feature = "api-docs")]
+use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
 
 use axum::{
     extract::{Extension, Path, State},
@@ -15,7 +19,7 @@ use axum::{
 use uuid::Uuid;
 
 // GET /api/organization/units/{id}/permissions
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units/{id}/permissions",
     operation_id = "getOrganizationPermissions",
@@ -26,7 +30,7 @@ use uuid::Uuid;
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_organization_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -47,7 +51,7 @@ pub async fn get_organization_permissions(
 }
 
 // PUT /api/organization/units/{id}/permissions
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/organization/units/{id}/permissions",
     operation_id = "updateOrganizationPermissions",
@@ -60,7 +64,7 @@ pub async fn get_organization_permissions(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_organization_permissions(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,

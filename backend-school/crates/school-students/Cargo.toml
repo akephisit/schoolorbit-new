@@ -3,6 +3,13 @@ name = "school-students"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
+]
+
 [dependencies]
 school-academic-delivery = { workspace = true }
 bcrypt = { workspace = true }
@@ -13,7 +20,7 @@ school-errors = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

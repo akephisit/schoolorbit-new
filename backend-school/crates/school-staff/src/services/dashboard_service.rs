@@ -1,11 +1,13 @@
 use serde::Serialize;
 use sqlx::{FromRow, PgPool};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use school_errors::AppError;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffDashboardOverview {
     pub total_staff: i64,

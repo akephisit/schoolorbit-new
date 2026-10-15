@@ -2,13 +2,15 @@ use chrono::{DateTime, Utc};
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{PgPool, Row};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::models::DelegationItem;
 use crate::services::organization_unit_service;
 
-#[derive(Serialize, sqlx::FromRow, ToSchema)]
+#[derive(Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct DelegatablePermission {
     pub id: Uuid,
     pub code: String,

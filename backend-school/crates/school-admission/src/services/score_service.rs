@@ -2,6 +2,7 @@ use crate::models::applications::*;
 use school_errors::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -32,7 +33,8 @@ struct ScoreRoomSeatRow {
     full_name: String,
 }
 
-#[derive(serde::Serialize, ToSchema)]
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreRoomSeat {
     pub seat_number: i32,
@@ -42,7 +44,8 @@ pub struct ScoreRoomSeat {
     pub full_name: String,
 }
 
-#[derive(serde::Serialize, ToSchema)]
+#[derive(serde::Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreRoomGroup {
     pub exam_room_id: Uuid,

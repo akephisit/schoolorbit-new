@@ -1,10 +1,12 @@
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AttendanceResult {
@@ -43,7 +45,8 @@ impl AttendanceResult {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AttendanceKind {
@@ -60,7 +63,8 @@ impl AttendanceKind {
         }
     }
 }
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceConfiguration {
     pub enabled: bool,
@@ -86,7 +90,8 @@ impl Default for AttendanceConfiguration {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceSettings {
     pub academic_term_id: Uuid,
@@ -95,49 +100,56 @@ pub struct AttendanceSettings {
     pub archived: bool,
     pub auto_finalize_from: NaiveDate,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceSettings {
     pub configuration: AttendanceConfiguration,
     pub row_version: i64,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub auto_finalize_from: Option<NaiveDate>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceDay {
     pub date: NaiveDate,
     pub counted: bool,
     pub note: String,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceDays {
     pub days: Vec<AttendanceDay>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct AttendanceQuery {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct AttendanceTermQuery {
     pub academic_term_id: Uuid,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct AttendanceMonthQuery {
     pub academic_term_id: Uuid,
     pub start: NaiveDate,
     pub end: NaiveDate,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceSession {
     pub id: Uuid,
@@ -147,29 +159,29 @@ pub struct AttendanceSession {
     pub source_key: String,
     pub title: String,
     pub teacher_ids: Vec<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub learning_group_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub offering_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub special_round_id: Option<Uuid>,
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub count_override: Option<bool>,
     pub cancelled: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub cancellation_reason: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub saved_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub saved_by: Option<Uuid>,
     pub row_version: i64,
     /// Immutable participants, independent of sparse result facts.
     #[serde(skip)]
-    #[schema(ignore)]
+    #[cfg_attr(feature = "api-docs", schema(ignore))]
     #[sqlx(json)]
     pub roster: Vec<AttendanceRosterStudent>,
     #[sqlx(skip)]
@@ -199,29 +211,31 @@ pub struct AttendanceRosterStudent {
     pub student_academic_year_id: Uuid,
     pub class_number: Option<i32>,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceRecord {
     pub student_id: Uuid,
     pub student_academic_year_id: Uuid,
     pub display_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub class_number: Option<i32>,
     pub result: AttendanceResult,
     pub origin: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub observed_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub evidence_file_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub arrival_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub arrival_result: Option<AttendanceResult>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub processed_at: Option<DateTime<Utc>>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceDetail {
     pub session: AttendanceSession,
@@ -229,7 +243,8 @@ pub struct AttendanceDetail {
     pub counted: bool,
     pub writable: bool,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceWorkspace {
     pub date: NaiveDate,
@@ -238,7 +253,8 @@ pub struct AttendanceWorkspace {
     pub lesson_choices: Vec<AttendanceLessonChoice>,
     pub settings: AttendanceSettings,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceLessonChoice {
     pub session_id: Uuid,
@@ -247,28 +263,32 @@ pub struct AttendanceLessonChoice {
     pub group_name: String,
     pub homerooms: Vec<AttendanceLessonHomeroom>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceLessonHomeroom {
     pub id: Uuid,
     pub name: String,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct OpenAttendanceSession {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
     pub kind: AttendanceKind,
     pub source_key: String,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceResultInput {
     pub student_id: Uuid,
     pub result: AttendanceResult,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceResults {
     pub session: OpenAttendanceSession,
@@ -277,7 +297,8 @@ pub struct SaveAttendanceResults {
     pub reason: String,
     pub students: Vec<AttendanceResultInput>,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceCancellation {
     pub session: OpenAttendanceSession,
@@ -286,7 +307,8 @@ pub struct AttendanceCancellation {
     pub cancelled: bool,
     pub reason: String,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceAudienceGroup {
     pub id: Uuid,
@@ -295,16 +317,18 @@ pub struct AttendanceAudienceGroup {
     pub student_ids: Vec<Uuid>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceAudience {
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub id: Option<Uuid>,
     pub name: String,
     pub student_ids: Vec<Uuid>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpecialAttendanceGroup {
     pub name: String,
@@ -314,7 +338,8 @@ pub struct SpecialAttendanceGroup {
     pub student_ids: Vec<Uuid>,
     pub use_homeroom_advisors: bool,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpecialAttendanceDefinition {
     pub title: String,
@@ -324,24 +349,27 @@ pub struct SpecialAttendanceDefinition {
     pub counted: bool,
     pub notify: bool,
     pub groups: Vec<SpecialAttendanceGroup>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub scoring: Option<Vec<AttendanceScoreRule>>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ScoreAction {
     None,
     Merit,
     Deduction,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceScoreRule {
     pub result: AttendanceResult,
     pub action: ScoreAction,
     pub points: i32,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SpecialAttendanceTemplate {
     pub id: Uuid,
@@ -349,7 +377,8 @@ pub struct SpecialAttendanceTemplate {
     pub definition: SpecialAttendanceDefinition,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceDevice {
     pub id: Uuid,
@@ -357,26 +386,30 @@ pub struct AttendanceDevice {
     pub enabled: bool,
     pub operator_id: Uuid,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceDevice {
     pub name: String,
     pub enabled: bool,
     pub operator_id: Uuid,
 }
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FaceDescriptor {
     pub values: Vec<f32>,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnrollAttendanceFace {
     pub model: String,
     pub descriptors: Vec<FaceDescriptor>,
     pub consent_confirmed: bool,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceFace {
     pub student_id: Uuid,
@@ -385,13 +418,15 @@ pub struct AttendanceFace {
     pub row_version: i64,
 }
 /// Management metadata deliberately excludes biometric templates.
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceFaceEnrollment {
     pub student_id: Uuid,
     pub enrolled_at: DateTime<Utc>,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceScan {
     pub session: OpenAttendanceSession,
@@ -404,7 +439,8 @@ pub struct AttendanceScan {
     pub evidence_file_id: Uuid,
     pub captured_at: DateTime<Utc>,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceScanOutcome {
     pub event_id: Uuid,
@@ -413,7 +449,8 @@ pub struct AttendanceScanOutcome {
     pub duplicate: bool,
     pub teacher_conflict: bool,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceSummary {
     pub academic_term_id: Uuid,
@@ -443,7 +480,8 @@ pub struct AttendanceExpectedSummary {
     pub teacher_ids: Vec<Uuid>,
     pub expected: i64,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceReport {
     pub page: i64,
@@ -453,7 +491,8 @@ pub struct AttendanceReport {
     pub archived: bool,
     pub activity_counts_as_present: bool,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendancePurgeImpact {
     pub academic_term_id: Uuid,
@@ -463,29 +502,33 @@ pub struct AttendancePurgeImpact {
     pub archived: bool,
     pub can_purge: bool,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PurgeAttendanceTerm {
     pub expected_records: i64,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceStudentOption {
     pub id: Uuid,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom_name: Option<String>,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceTeacherOption {
     pub id: Uuid,
     pub name: String,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceOptions {
     pub students: Vec<AttendanceStudentOption>,
@@ -494,14 +537,16 @@ pub struct AttendanceOptions {
     pub specials: Vec<SpecialAttendanceTemplate>,
     pub devices: Vec<AttendanceDevice>,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenAttendanceKiosk {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
     pub device_id: Uuid,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceKioskWorkspace {
     pub sessions: Vec<AttendanceSession>,
@@ -509,9 +554,10 @@ pub struct AttendanceKioskWorkspace {
     pub students: Vec<AttendanceStudentOption>,
     pub configuration: AttendanceConfiguration,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct AttendanceReportQuery {
     pub academic_term_id: Uuid,
     pub student_id: Option<Uuid>,
@@ -544,16 +590,18 @@ impl AttendanceReportQuery {
         Ok(())
     }
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct AttendanceHistoryQuery {
     pub academic_term_id: Uuid,
     pub student_id: Uuid,
     pub start: NaiveDate,
     pub end: NaiveDate,
 }
-#[derive(Debug, Clone, Serialize, sqlx::FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceHistoryItem {
     pub session_id: Uuid,
@@ -561,20 +609,22 @@ pub struct AttendanceHistoryItem {
     pub kind: AttendanceKind,
     pub title: String,
     pub result: AttendanceResult,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub observed_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub evidence_file_id: Option<Uuid>,
     pub cancelled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceResetCount {
     pub resource: String,
     pub count: i64,
 }
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceResetImpact {
     pub generation: Uuid,
@@ -585,7 +635,8 @@ pub struct AttendanceResetImpact {
     pub evidence_bytes: i64,
     pub pending_file_deletions: i64,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResetAttendanceModule {
     pub generation: Uuid,

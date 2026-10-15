@@ -1,41 +1,39 @@
-use school_certificates::{
-    models::{
-        AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
-        CertificateAccountSearchQuery, CertificateCampaignDetail, CertificateCampaignListQuery,
-        CertificateCampaignPurgeImpact, CertificateCampaignPurgeStatus, CertificateCampaignSummary,
-        CertificateCandidateAccount, CertificateCandidateBulkRequest,
-        CertificateCandidateBulkResult, CertificateCandidateDetail,
-        CertificateCandidateImportResult, CertificateCandidateListQuery,
-        CertificateCandidateListResponse, CertificateImportRequest, CertificateIssueRequestDetail,
-        CertificateIssueRequestListQuery, CertificateIssueRequestSummary,
-        CertificatePreviewManifestRequest, CertificateRenderManifest,
-        CertificateRenderManifestBatchRequest, CertificateResourceLockCode,
-        CertificateResourceLocked, CertificateTemplateDeleteResult, CertificateTemplateDetail,
-        CertificateTemplateVariableCatalog, ChangeCertificateCampaignStatusRequest,
-        CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
-        CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
-        IssueCertificateOutcome, IssueCertificateRequest, IssuedCertificateDetail,
-        IssuedCertificateListQuery, IssuedCertificateSummary, ManualCertificateVerificationRequest,
-        PublicCertificateRenderRequest, PublicCertificateVerificationData,
-        QrCertificateVerificationRequest, ReturnCertificateIssueRequest, RevokeCertificateRequest,
-        RevokeCertificateResult, StartCertificateCampaignPurgeRequest,
-        SubmitCertificateIssueRequest, UpdateCertificateCampaignRequest,
-        UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
-    },
-    services::{
-        campaign_service, candidate_service, issuance_service, purge_service, render_service,
-        request_service, template_service, verification_service,
-    },
+use school_certificates::models::{
+    AttachCertificateAssetRequest, AttachCertificateBackgroundRequest,
+    CertificateAccountSearchQuery, CertificateCampaignListQuery, CertificateCandidateBulkRequest,
+    CertificateCandidateListQuery, CertificateImportRequest, CertificateIssueRequestListQuery,
+    CertificatePreviewManifestRequest, CertificateRenderManifestBatchRequest,
+    CertificateResourceLockCode, CertificateResourceLocked, ChangeCertificateCampaignStatusRequest,
+    CreateAccountCertificateCandidateRequest, CreateCertificateCampaignRequest,
+    CreateCertificateTemplateRequest, CreateManualExternalCandidateRequest,
+    IssueCertificateRequest, IssuedCertificateListQuery, ManualCertificateVerificationRequest,
+    PublicCertificateRenderRequest, QrCertificateVerificationRequest,
+    ReturnCertificateIssueRequest, RevokeCertificateRequest, StartCertificateCampaignPurgeRequest,
+    SubmitCertificateIssueRequest, UpdateCertificateCampaignRequest,
+    UpdateCertificateCandidateRequest, UpdateCertificateTemplateRequest,
+};
+#[cfg(feature = "api-docs")]
+use school_certificates::models::{
+    CertificateCampaignDetail, CertificateCampaignPurgeImpact, CertificateCampaignPurgeStatus,
+    CertificateCampaignSummary, CertificateCandidateAccount, CertificateCandidateBulkResult,
+    CertificateCandidateDetail, CertificateCandidateImportResult, CertificateCandidateListResponse,
+    CertificateIssueRequestDetail, CertificateIssueRequestSummary, CertificateRenderManifest,
+    CertificateTemplateDeleteResult, CertificateTemplateDetail, CertificateTemplateVariableCatalog,
+    IssueCertificateOutcome, IssuedCertificateDetail, IssuedCertificateSummary,
+    PublicCertificateVerificationData, RevokeCertificateResult,
+};
+use school_certificates::services::{
+    campaign_service, candidate_service, issuance_service, purge_service, render_service,
+    request_service, template_service, verification_service,
 };
 use school_errors::AppError as DomainError;
-use school_fonts::models::{
-    AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontListResponse,
-    SchoolFontUploadInspection,
-};
+use school_fonts::models::{AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest};
+#[cfg(feature = "api-docs")]
+use school_fonts::models::{SchoolFontListResponse, SchoolFontUploadInspection};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponseWithOptionalData;
 use school_http::HttpError as AppError;
-use school_http::{
-    ApiErrorResponse, ApiErrorResponseWithData, ApiErrorResponseWithOptionalData, ApiResponse,
-};
+use school_http::{ApiErrorResponse, ApiErrorResponseWithData, ApiResponse};
 use std::net::SocketAddr;
 
 use axum::{
@@ -140,7 +138,7 @@ impl IntoResponse for PublicCertificateError {
     }
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/public/certificates/verify/manual",
     operation_id = "verifyCertificateManually",
@@ -152,7 +150,7 @@ impl IntoResponse for PublicCertificateError {
         (status = 429, description = "Public verification rate limited", body = ApiErrorResponse),
         (status = 422, description = "Malformed verification request", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn verify_certificate_manually(
     State(state): State<CertificateHttpState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -176,7 +174,7 @@ pub async fn verify_certificate_manually(
     Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/public/certificates/verify/qr",
     operation_id = "verifyCertificateByQr",
@@ -188,7 +186,7 @@ pub async fn verify_certificate_manually(
         (status = 429, description = "Public verification rate limited", body = ApiErrorResponse),
         (status = 422, description = "Malformed verification request", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn verify_certificate_by_qr(
     State(state): State<CertificateHttpState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -212,7 +210,7 @@ pub async fn verify_certificate_by_qr(
     Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/public/certificates/render-manifest",
     operation_id = "createPublicCertificateRenderManifest",
@@ -225,7 +223,7 @@ pub async fn verify_certificate_by_qr(
         (status = 422, description = "Malformed render request", body = ApiErrorResponse),
         (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_public_certificate_render_manifest(
     State(state): State<CertificateHttpState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -252,7 +250,7 @@ pub async fn create_public_certificate_render_manifest(
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/certificates",
     operation_id = "listOwnCertificates",
@@ -262,7 +260,7 @@ pub async fn create_public_certificate_render_manifest(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Own certificate permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_own_certificates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -276,7 +274,7 @@ pub async fn list_own_certificates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(certificates))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/certificates/{certificate_id}",
     operation_id = "getOwnCertificate",
@@ -288,7 +286,7 @@ pub async fn list_own_certificates(
         (status = 403, description = "Own certificate permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate is not linked to the current account", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_own_certificate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -307,7 +305,7 @@ pub async fn get_own_certificate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(certificate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/me/certificates/{certificate_id}/render-manifest",
     operation_id = "createOwnCertificateRenderManifest",
@@ -321,7 +319,7 @@ pub async fn get_own_certificate(
         (status = 409, description = "The linked certificate is revoked or no longer renderable", body = ApiErrorResponse),
         (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_own_certificate_render_manifest(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -343,7 +341,7 @@ pub async fn create_own_certificate_render_manifest(
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns",
     operation_id = "listCertificateCampaigns",
@@ -355,7 +353,7 @@ pub async fn create_own_certificate_render_manifest(
         (status = 403, description = "Certificate campaign read permission denied", body = ApiErrorResponse),
         (status = 422, description = "Invalid query", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_campaigns(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -367,7 +365,7 @@ pub async fn list_certificate_campaigns(
     Ok((StatusCode::OK, Json(ApiResponse::ok(campaigns))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns",
     operation_id = "createCertificateCampaign",
@@ -379,7 +377,7 @@ pub async fn list_certificate_campaigns(
         (status = 403, description = "Certificate campaign create permission denied", body = ApiErrorResponse),
         (status = 422, description = "Invalid campaign", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_certificate_campaign(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -391,7 +389,7 @@ pub async fn create_certificate_campaign(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(campaign))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}",
     operation_id = "getCertificateCampaign",
@@ -403,7 +401,7 @@ pub async fn create_certificate_campaign(
         (status = 403, description = "Certificate campaign read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_campaign(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -415,7 +413,7 @@ pub async fn get_certificate_campaign(
     Ok((StatusCode::OK, Json(ApiResponse::ok(campaign))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/certificates/campaigns/{campaign_id}",
     operation_id = "updateCertificateCampaign",
@@ -430,7 +428,7 @@ pub async fn get_certificate_campaign(
         (status = 409, description = "Campaign changed or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid campaign", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_certificate_campaign(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -448,7 +446,7 @@ pub async fn update_certificate_campaign(
     Ok((StatusCode::OK, Json(ApiResponse::ok(campaign))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/certificates/campaigns/{campaign_id}/status",
     operation_id = "changeCertificateCampaignStatus",
@@ -463,7 +461,7 @@ pub async fn update_certificate_campaign(
         (status = 409, description = "Campaign changed or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid status transition", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn change_certificate_campaign_status(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -481,7 +479,7 @@ pub async fn change_certificate_campaign_status(
     Ok((StatusCode::OK, Json(ApiResponse::ok(campaign))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/purge-impact",
     operation_id = "getCertificateCampaignPurgeImpact",
@@ -493,7 +491,7 @@ pub async fn change_certificate_campaign_status(
         (status = 404, description = "Certificate campaign not found or outside the actor's exact delete scope", body = ApiErrorResponse),
         (status = 409, description = "Campaign purge already started", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_campaign_purge_impact(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -504,7 +502,7 @@ pub async fn get_certificate_campaign_purge_impact(
     Ok((StatusCode::OK, Json(ApiResponse::ok(impact))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/purge",
     operation_id = "startCertificateCampaignPurge",
@@ -518,7 +516,7 @@ pub async fn get_certificate_campaign_purge_impact(
         (status = 409, description = "Campaign or purge impact changed", body = ApiErrorResponse),
         (status = 422, description = "Confirmation name is invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn start_certificate_campaign_purge(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -537,7 +535,7 @@ pub async fn start_certificate_campaign_purge(
     Ok((StatusCode::ACCEPTED, Json(ApiResponse::ok(status))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/purge-status",
     operation_id = "getCertificateCampaignPurgeStatus",
@@ -548,7 +546,7 @@ pub async fn start_certificate_campaign_purge(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "Campaign purge not found, already completed, or outside the actor's exact delete scope", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_campaign_purge_status(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -559,7 +557,7 @@ pub async fn get_certificate_campaign_purge_status(
     Ok((StatusCode::OK, Json(ApiResponse::ok(status))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/purge/retry",
     operation_id = "retryCertificateCampaignPurge",
@@ -571,7 +569,7 @@ pub async fn get_certificate_campaign_purge_status(
         (status = 404, description = "Campaign purge not found, already completed, or outside the actor's exact delete scope", body = ApiErrorResponse),
         (status = 409, description = "Campaign purge state is inconsistent", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn retry_certificate_campaign_purge(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -588,7 +586,7 @@ pub async fn retry_certificate_campaign_purge(
     Ok((StatusCode::ACCEPTED, Json(ApiResponse::ok(status))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/owner-options",
     operation_id = "listCertificateOwnerOptions",
@@ -598,7 +596,7 @@ pub async fn retry_certificate_campaign_purge(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Certificate campaign create permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_owner_options(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -625,7 +623,7 @@ pub async fn list_certificate_owner_options(
     Ok((StatusCode::OK, Json(ApiResponse::ok(options))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/templates",
     operation_id = "listCertificateTemplates",
@@ -637,7 +635,7 @@ pub async fn list_certificate_owner_options(
         (status = 403, description = "Certificate template read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_templates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -649,7 +647,7 @@ pub async fn list_certificate_templates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(templates))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/templates",
     operation_id = "createCertificateTemplate",
@@ -663,7 +661,7 @@ pub async fn list_certificate_templates(
         (status = 409, description = "Duplicate template name", body = ApiErrorResponse),
         (status = 422, description = "Invalid template", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_certificate_template(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -681,7 +679,7 @@ pub async fn create_certificate_template(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/templates/{template_id}",
     operation_id = "getCertificateTemplate",
@@ -693,7 +691,7 @@ pub async fn create_certificate_template(
         (status = 403, description = "Certificate template read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_template(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -705,7 +703,7 @@ pub async fn get_certificate_template(
     Ok((StatusCode::OK, Json(ApiResponse::ok(template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/certificates/templates/{template_id}",
     operation_id = "updateCertificateTemplate",
@@ -720,7 +718,7 @@ pub async fn get_certificate_template(
         (status = 409, description = "Template changed, locked, or needs confirmation", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid template", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_certificate_template(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -746,7 +744,7 @@ pub async fn update_certificate_template(
     Ok((StatusCode::OK, Json(ApiResponse::ok(outcome.template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/certificates/templates/{template_id}",
     operation_id = "deleteCertificateTemplate",
@@ -759,7 +757,7 @@ pub async fn update_certificate_template(
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse),
         (status = 409, description = "Certificate template is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
-)]
+))]
 pub async fn delete_certificate_template(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -780,7 +778,7 @@ pub async fn delete_certificate_template(
     Ok((StatusCode::OK, Json(ApiResponse::ok(outcome.result))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/certificates/templates/{template_id}/background",
     operation_id = "attachCertificateTemplateBackground",
@@ -794,7 +792,7 @@ pub async fn delete_certificate_template(
         (status = 409, description = "File not ready, template locked, or preview required", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid PDF geometry", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn attach_certificate_template_background(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -820,7 +818,7 @@ pub async fn attach_certificate_template_background(
     Ok((StatusCode::OK, Json(ApiResponse::ok(outcome.template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/templates/{template_id}/assets",
     operation_id = "attachCertificateTemplateAsset",
@@ -834,7 +832,7 @@ pub async fn attach_certificate_template_background(
         (status = 409, description = "File not ready, duplicate, or template locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid asset or font rights not confirmed", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn attach_certificate_template_asset(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -848,7 +846,7 @@ pub async fn attach_certificate_template_asset(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/templates/{template_id}/fonts",
     operation_id = "listCertificateSchoolFonts",
@@ -860,7 +858,7 @@ pub async fn attach_certificate_template_asset(
         (status = 403, description = "Certificate template read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_school_fonts(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -872,7 +870,7 @@ pub async fn list_certificate_school_fonts(
     Ok((StatusCode::OK, Json(ApiResponse::ok(fonts))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/templates/{template_id}/fonts/inspect",
     operation_id = "inspectCertificateFontUploads",
@@ -885,7 +883,7 @@ pub async fn list_certificate_school_fonts(
         (status = 403, description = "Certificate template update permission or file relationship denied", body = ApiErrorResponse),
         (status = 422, description = "Invalid font file selection", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn inspect_certificate_font_uploads(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -903,7 +901,7 @@ pub async fn inspect_certificate_font_uploads(
     Ok((StatusCode::OK, Json(ApiResponse::ok(inspection))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/templates/{template_id}/fonts/batch",
     operation_id = "attachCertificateFontBatch",
@@ -917,7 +915,7 @@ pub async fn inspect_certificate_font_uploads(
         (status = 409, description = "Duplicate variant or template locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid batch, unsupported font, or rights not confirmed", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn attach_certificate_font_batch(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -935,7 +933,7 @@ pub async fn attach_certificate_font_batch(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(fonts))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/certificates/templates/{template_id}/assets/{asset_id}",
     operation_id = "deleteCertificateTemplateAsset",
@@ -951,7 +949,7 @@ pub async fn attach_certificate_font_batch(
         (status = 404, description = "Certificate template asset not found", body = ApiErrorResponse),
         (status = 409, description = "Asset is referenced by the layout or template is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
-)]
+))]
 pub async fn delete_certificate_template_asset(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -972,7 +970,7 @@ pub async fn delete_certificate_template_asset(
     Ok((StatusCode::OK, Json(ApiResponse::ok(outcome.template))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/templates/{template_id}/variables",
     operation_id = "getCertificateTemplateVariableCatalog",
@@ -984,7 +982,7 @@ pub async fn delete_certificate_template_asset(
         (status = 403, description = "Certificate template read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate template not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_template_variable_catalog(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -997,7 +995,7 @@ pub async fn get_certificate_template_variable_catalog(
     Ok((StatusCode::OK, Json(ApiResponse::ok(catalog))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/templates/{template_id}/preview-manifest",
     operation_id = "createCertificateTemplatePreviewManifest",
@@ -1012,7 +1010,7 @@ pub async fn get_certificate_template_variable_catalog(
         (status = 422, description = "Invalid sample values", body = ApiErrorResponse),
         (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_certificate_template_preview_manifest(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1038,7 +1036,7 @@ pub async fn create_certificate_template_preview_manifest(
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/candidates",
     operation_id = "listCertificateCandidates",
@@ -1054,7 +1052,7 @@ pub async fn create_certificate_template_preview_manifest(
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
         (status = 422, description = "Invalid candidate query", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_candidates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1072,7 +1070,7 @@ pub async fn list_certificate_candidates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidates))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/candidates/import",
     operation_id = "importCertificateCandidates",
@@ -1087,7 +1085,7 @@ pub async fn list_certificate_candidates(
         (status = 409, description = "Certificate campaign cannot be changed", body = ApiErrorResponse),
         (status = 422, description = "Import headers or request are invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn import_certificate_candidates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1105,7 +1103,7 @@ pub async fn import_certificate_candidates(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(imported))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/candidates/manual",
     operation_id = "createManualCertificateCandidate",
@@ -1120,7 +1118,7 @@ pub async fn import_certificate_candidates(
         (status = 409, description = "Certificate campaign cannot be changed", body = ApiErrorResponse),
         (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_manual_certificate_candidate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1138,7 +1136,7 @@ pub async fn create_manual_certificate_candidate(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(candidate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
     operation_id = "searchCertificateCandidateAccounts",
@@ -1154,7 +1152,7 @@ pub async fn create_manual_certificate_candidate(
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
         (status = 422, description = "Invalid account search", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn search_certificate_candidate_accounts(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1172,7 +1170,7 @@ pub async fn search_certificate_candidate_accounts(
     Ok((StatusCode::OK, Json(ApiResponse::ok(accounts))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/candidates/account-search",
     operation_id = "createAccountCertificateCandidate",
@@ -1187,7 +1185,7 @@ pub async fn search_certificate_candidate_accounts(
         (status = 409, description = "Account or campaign cannot be used", body = ApiErrorResponse),
         (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_account_certificate_candidate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1205,7 +1203,7 @@ pub async fn create_account_certificate_candidate(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(candidate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/candidates/bulk",
     operation_id = "bulkUpdateCertificateCandidates",
@@ -1220,7 +1218,7 @@ pub async fn create_account_certificate_candidate(
         (status = 409, description = "Mixed or locked candidate selection", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Invalid bulk request", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn bulk_update_certificate_candidates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1238,7 +1236,7 @@ pub async fn bulk_update_certificate_candidates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidates))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/candidates/{candidate_id}",
     operation_id = "getCertificateCandidate",
@@ -1250,7 +1248,7 @@ pub async fn bulk_update_certificate_candidates(
         (status = 403, description = "Certificate candidate read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Candidate not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_candidate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1263,7 +1261,7 @@ pub async fn get_certificate_candidate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/certificates/candidates/{candidate_id}",
     operation_id = "updateCertificateCandidate",
@@ -1278,7 +1276,7 @@ pub async fn get_certificate_candidate(
         (status = 409, description = "Candidate changed or is locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>),
         (status = 422, description = "Candidate values are invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_certificate_candidate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1296,7 +1294,7 @@ pub async fn update_certificate_candidate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/certificates/candidates/{candidate_id}",
     operation_id = "deleteCertificateCandidate",
@@ -1309,7 +1307,7 @@ pub async fn update_certificate_candidate(
         (status = 404, description = "Candidate not found", body = ApiErrorResponse),
         (status = 409, description = "Candidate is issued or locked", body = ApiErrorResponseWithOptionalData<CertificateResourceLocked>)
     )
-)]
+))]
 pub async fn delete_certificate_candidate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1322,7 +1320,7 @@ pub async fn delete_certificate_candidate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(candidate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/issue-requests",
     operation_id = "listCertificateCampaignIssueRequests",
@@ -1334,7 +1332,7 @@ pub async fn delete_certificate_candidate(
         (status = 403, description = "Certificate campaign read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_campaign_issue_requests(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1347,7 +1345,7 @@ pub async fn list_certificate_campaign_issue_requests(
     Ok((StatusCode::OK, Json(ApiResponse::ok(requests))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/issue-requests",
     operation_id = "submitCertificateIssueRequest",
@@ -1362,7 +1360,7 @@ pub async fn list_certificate_campaign_issue_requests(
         (status = 409, description = "Selected candidate is already locked", body = school_http::ApiErrorResponseWithData<CertificateResourceLocked>),
         (status = 422, description = "Campaign or selected candidate is not ready", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn submit_certificate_issue_request(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1380,7 +1378,7 @@ pub async fn submit_certificate_issue_request(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(request))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/issue-requests",
     operation_id = "listCertificateIssueRequests",
@@ -1392,7 +1390,7 @@ pub async fn submit_certificate_issue_request(
         (status = 403, description = "School certificate issue permission denied", body = ApiErrorResponse),
         (status = 422, description = "Invalid issue request query", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_certificate_issue_requests(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1404,7 +1402,7 @@ pub async fn list_certificate_issue_requests(
     Ok((StatusCode::OK, Json(ApiResponse::ok(requests))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/issue-requests/{request_id}",
     operation_id = "getCertificateIssueRequest",
@@ -1416,7 +1414,7 @@ pub async fn list_certificate_issue_requests(
         (status = 403, description = "Certificate issue request read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_certificate_issue_request(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1429,7 +1427,7 @@ pub async fn get_certificate_issue_request(
     Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/issue-requests/{request_id}/withdraw",
     operation_id = "withdrawCertificateIssueRequest",
@@ -1442,7 +1440,7 @@ pub async fn get_certificate_issue_request(
         (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
         (status = 409, description = "Issue request cannot be withdrawn from its current state", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn withdraw_certificate_issue_request(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1454,7 +1452,7 @@ pub async fn withdraw_certificate_issue_request(
     Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/issue-requests/{request_id}/review",
     operation_id = "startCertificateIssueRequestReview",
@@ -1467,7 +1465,7 @@ pub async fn withdraw_certificate_issue_request(
         (status = 404, description = "Certificate issue request not found", body = ApiErrorResponse),
         (status = 409, description = "Issue request cannot enter review from its current state", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn start_certificate_issue_request_review(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1479,7 +1477,7 @@ pub async fn start_certificate_issue_request_review(
     Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/issue-requests/{request_id}/return",
     operation_id = "returnCertificateIssueRequest",
@@ -1494,7 +1492,7 @@ pub async fn start_certificate_issue_request_review(
         (status = 409, description = "Issue request cannot be returned from its current state", body = ApiErrorResponse),
         (status = 422, description = "Return reasons or note are invalid", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn return_certificate_issue_request(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1513,7 +1511,7 @@ pub async fn return_certificate_issue_request(
     Ok((StatusCode::OK, Json(ApiResponse::ok(request))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/issue-requests/{request_id}/issue",
     operation_id = "issueCertificates",
@@ -1528,7 +1526,7 @@ pub async fn return_certificate_issue_request(
         (status = 409, description = "Request state, idempotency key, or number range conflict", body = ApiErrorResponse),
         (status = 503, description = "Authoritative school name unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn issue_certificates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1563,7 +1561,7 @@ pub async fn issue_certificates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(outcome))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/campaigns/{campaign_id}/issued",
     operation_id = "listIssuedCertificates",
@@ -1579,7 +1577,7 @@ pub async fn issue_certificates(
         (status = 404, description = "Certificate campaign not found", body = ApiErrorResponse),
         (status = 422, description = "Invalid issued certificate query", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_issued_certificates(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1597,7 +1595,7 @@ pub async fn list_issued_certificates(
     Ok((StatusCode::OK, Json(ApiResponse::ok(certificates))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/certificates/{certificate_id}",
     operation_id = "getIssuedCertificate",
@@ -1609,7 +1607,7 @@ pub async fn list_issued_certificates(
         (status = 403, description = "Certificate read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Issued certificate not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_issued_certificate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1622,7 +1620,7 @@ pub async fn get_issued_certificate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(certificate))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/{certificate_id}/revoke",
     operation_id = "revokeIssuedCertificate",
@@ -1637,7 +1635,7 @@ pub async fn get_issued_certificate(
         (status = 409, description = "Certificate already revoked", body = ApiErrorResponse),
         (status = 422, description = "Invalid revocation reason", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn revoke_issued_certificate(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1655,7 +1653,7 @@ pub async fn revoke_issued_certificate(
     Ok((StatusCode::OK, Json(ApiResponse::ok(result))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/{certificate_id}/render-manifest",
     operation_id = "createIssuedCertificateRenderManifest",
@@ -1669,7 +1667,7 @@ pub async fn revoke_issued_certificate(
         (status = 409, description = "Certificate revoked or current template unavailable", body = ApiErrorResponse),
         (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_issued_certificate_render_manifest(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -1688,7 +1686,7 @@ pub async fn create_issued_certificate_render_manifest(
     Ok((StatusCode::OK, Json(ApiResponse::ok(manifest))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/certificates/campaigns/{campaign_id}/render-manifests",
     operation_id = "createIssuedCertificateRenderManifests",
@@ -1704,7 +1702,7 @@ pub async fn create_issued_certificate_render_manifest(
         (status = 422, description = "Select between 1 and 200 unique certificates", body = ApiErrorResponse),
         (status = 503, description = "Private asset grant unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_issued_certificate_render_manifests(
     State(state): State<CertificateHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

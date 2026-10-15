@@ -1,16 +1,19 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct GradebookContext {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ItemInput {
     pub name: String,
@@ -19,7 +22,8 @@ pub struct ItemInput {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "operation",
     rename_all = "snake_case",
@@ -27,25 +31,26 @@ pub struct ItemInput {
 )]
 pub enum ScoreCellMutation {
     Set {
-        #[schema(rename = "scoreItemId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "scoreItemId"))]
         score_item_id: Uuid,
-        #[schema(rename = "studentAcademicYearId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "studentAcademicYearId"))]
         student_academic_year_id: Uuid,
         value: String,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: Option<i64>,
     },
     Clear {
-        #[schema(rename = "scoreItemId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "scoreItemId"))]
         score_item_id: Uuid,
-        #[schema(rename = "studentAcademicYearId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "studentAcademicYearId"))]
         student_academic_year_id: Uuid,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: Option<i64>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmInput {
     pub source_checksum: String,
@@ -53,7 +58,8 @@ pub struct ConfirmInput {
     pub row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreItem {
     pub id: Uuid,
@@ -64,13 +70,15 @@ pub struct ScoreItem {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ScoreItemRemovalDisposition {
     Deleted,
     Cancelled,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreItemRemovalOutcome {
     pub disposition: ScoreItemRemovalDisposition,
@@ -78,7 +86,8 @@ pub struct ScoreItemRemovalOutcome {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreCell {
     pub score_item_id: Uuid,
@@ -86,7 +95,8 @@ pub struct ScoreCell {
     pub value: Option<String>,
     pub row_version: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradebookStudent {
     pub membership_id: Uuid,
@@ -96,7 +106,8 @@ pub struct GradebookStudent {
     pub homeroom_name: Option<String>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PhaseConfirmation {
     pub id: Uuid,
@@ -106,7 +117,8 @@ pub struct PhaseConfirmation {
     pub row_version: i64,
     pub invalidated: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GroupPhaseWorkspace {
     pub learning_group_id: Uuid,
@@ -127,13 +139,15 @@ pub struct GroupPhaseWorkspace {
     pub confirmation: Option<PhaseConfirmation>,
     pub confirmation_is_current: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreBatchOutcome {
     pub cells: Vec<ScoreCell>,
     pub workspace_revision: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradebookControl {
     pub id: Uuid,
@@ -143,13 +157,15 @@ pub struct GradebookControl {
     pub score_entry_enabled: bool,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateControlInput {
     pub score_entry_enabled: bool,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradebookSubject {
     pub learning_offering_id: Uuid,
@@ -162,7 +178,8 @@ pub struct GradebookSubject {
     #[sqlx(json)]
     pub phases: Vec<GradebookPhaseSummary>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradebookPhaseSummary {
     pub id: Uuid,
@@ -170,12 +187,14 @@ pub struct GradebookPhaseSummary {
     pub max_score: String,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveItemInput {
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScoreBatchInput {
     pub cells: Vec<ScoreCellMutation>,

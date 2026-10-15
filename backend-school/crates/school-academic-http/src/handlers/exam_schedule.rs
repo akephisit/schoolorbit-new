@@ -6,40 +6,50 @@ use axum::{
     Json,
 };
 use school_academic_assessment::exam_schedule::models::{
-    CreateExamRoundRequest, DayRoomAssignmentView, ExamDayDetail, ExamInvigilatorStaffOption,
-    ExamInvigilatorWorkspace, ExamRound, ExamScheduleWorkspace, ExamSessionView, ExamSourcePreview,
-    GenerateSeatsRequest, PlaceExamSessionRequest, SeatAssignmentView, SyncExamSourcesRequest,
-    SyncExamSourcesResult, UpdateExamInvigilatorsRequest, UpdateExamRoundRequest,
-    UpsertDayRoomAssignmentRequest, UpsertExamDayRequest,
+    CreateExamRoundRequest, GenerateSeatsRequest, PlaceExamSessionRequest, SyncExamSourcesRequest,
+    UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
+    UpsertExamDayRequest,
+};
+#[cfg(feature = "api-docs")]
+use school_academic_assessment::exam_schedule::models::{
+    DayRoomAssignmentView, ExamDayDetail, ExamInvigilatorStaffOption, ExamInvigilatorWorkspace,
+    ExamRound, ExamScheduleWorkspace, ExamSessionView, ExamSourcePreview, SeatAssignmentView,
+    SyncExamSourcesResult,
 };
 use school_academic_assessment::exam_schedule::services as exam_schedule_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 use serde::Deserialize;
+#[cfg(feature = "api-docs")]
 use utoipa::IntoParams;
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExamRoundQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PersonalExamScheduleQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InvigilatorStaffOptionsQuery {
     pub search: Option<String>,
@@ -47,7 +57,7 @@ pub struct InvigilatorStaffOptionsQuery {
 }
 
 /// GET /api/academic/exam-schedules
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules",
     operation_id = "listExamRounds",
@@ -58,7 +68,7 @@ pub struct InvigilatorStaffOptionsQuery {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_rounds(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -74,7 +84,7 @@ pub async fn list_rounds(
 }
 
 /// POST /api/academic/exam-schedules
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules",
     operation_id = "createExamRound",
@@ -87,7 +97,7 @@ pub async fn list_rounds(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_round(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -103,7 +113,7 @@ pub async fn create_round(
 }
 
 /// PATCH /api/academic/exam-schedules/{round_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/exam-schedules/{round_id}",
     operation_id = "updateExamRound",
@@ -118,7 +128,7 @@ pub async fn create_round(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam round not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_round(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -136,7 +146,7 @@ pub async fn update_round(
 }
 
 /// DELETE /api/academic/exam-schedules/{round_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/exam-schedules/{round_id}",
     operation_id = "deleteExamRound",
@@ -149,7 +159,7 @@ pub async fn update_round(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam round not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_round(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -166,7 +176,7 @@ pub async fn delete_round(
 }
 
 /// GET /api/academic/exam-schedules/{round_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules/{round_id}",
     operation_id = "getExamScheduleWorkspace",
@@ -178,7 +188,7 @@ pub async fn delete_round(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam round not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -194,7 +204,7 @@ pub async fn get_workspace(
 }
 
 /// GET /api/academic/exam-schedules/{round_id}/source-preview
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules/{round_id}/source-preview",
     operation_id = "previewExamSources",
@@ -205,7 +215,7 @@ pub async fn get_workspace(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_sources(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -221,7 +231,7 @@ pub async fn preview_sources(
 }
 
 /// POST /api/academic/exam-schedules/{round_id}/source-sync
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/{round_id}/source-sync",
     operation_id = "syncExamSources",
@@ -235,7 +245,7 @@ pub async fn preview_sources(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 409, description = "Source preview is stale or conflicts with placement", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn sync_sources(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -253,7 +263,7 @@ pub async fn sync_sources(
 }
 
 /// POST /api/academic/exam-schedules/{round_id}/days
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/{round_id}/days",
     operation_id = "upsertExamDay",
@@ -267,7 +277,7 @@ pub async fn sync_sources(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn upsert_day(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -284,7 +294,7 @@ pub async fn upsert_day(
 }
 
 /// PATCH /api/academic/exam-schedules/days/{exam_day_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/academic/exam-schedules/days/{exam_day_id}",
     operation_id = "updateExamDay",
@@ -299,7 +309,7 @@ pub async fn upsert_day(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam day not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_day(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -316,7 +326,7 @@ pub async fn update_day(
 }
 
 /// DELETE /api/academic/exam-schedules/days/{exam_day_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/exam-schedules/days/{exam_day_id}",
     operation_id = "deleteExamDay",
@@ -329,7 +339,7 @@ pub async fn update_day(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam day not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_day(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -345,7 +355,7 @@ pub async fn delete_day(
 }
 
 /// GET /api/academic/exam-schedules/days/{exam_day_id}/room-assignments
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules/days/{exam_day_id}/room-assignments",
     operation_id = "listExamDayRoomAssignments",
@@ -356,7 +366,7 @@ pub async fn delete_day(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_day_room_assignments(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -372,7 +382,7 @@ pub async fn list_day_room_assignments(
 }
 
 /// GET /api/academic/exam-schedules/{round_id}/invigilators
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules/{round_id}/invigilators",
     operation_id = "getExamInvigilatorWorkspace",
@@ -383,7 +393,7 @@ pub async fn list_day_room_assignments(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_invigilator_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -399,7 +409,7 @@ pub async fn get_invigilator_workspace(
 }
 
 /// GET /api/academic/exam-schedules/{round_id}/invigilator-staff-options
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/exam-schedules/{round_id}/invigilator-staff-options",
     operation_id = "listExamInvigilatorStaffOptions",
@@ -413,7 +423,7 @@ pub async fn get_invigilator_workspace(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_invigilator_staff_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -436,7 +446,7 @@ pub async fn get_invigilator_staff_options(
 }
 
 /// POST /api/academic/exam-schedules/days/{exam_day_id}/room-assignments
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/days/{exam_day_id}/room-assignments",
     operation_id = "upsertExamDayRoomAssignment",
@@ -450,7 +460,7 @@ pub async fn get_invigilator_staff_options(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn upsert_day_room_assignment(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -473,7 +483,7 @@ pub async fn upsert_day_room_assignment(
 }
 
 /// PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators",
     operation_id = "updateExamAssignmentInvigilators",
@@ -487,7 +497,7 @@ pub async fn upsert_day_room_assignment(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_assignment_invigilators(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -510,7 +520,7 @@ pub async fn update_assignment_invigilators(
 }
 
 /// PUT /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
     operation_id = "assignExamAssignmentInvigilator",
@@ -526,7 +536,7 @@ pub async fn update_assignment_invigilators(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn assign_assignment_invigilator(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -548,7 +558,7 @@ pub async fn assign_assignment_invigilator(
 }
 
 /// DELETE /api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
     operation_id = "removeExamAssignmentInvigilator",
@@ -563,7 +573,7 @@ pub async fn assign_assignment_invigilator(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn remove_assignment_invigilator(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -585,7 +595,7 @@ pub async fn remove_assignment_invigilator(
 }
 
 /// POST /api/academic/exam-schedules/room-assignments/{assignment_id}/seats
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/room-assignments/{assignment_id}/seats",
     operation_id = "generateExamSeats",
@@ -599,7 +609,7 @@ pub async fn remove_assignment_invigilator(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn generate_seats(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -622,7 +632,7 @@ pub async fn generate_seats(
 }
 
 /// POST /api/academic/exam-schedules/sessions
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/sessions",
     operation_id = "placeExamSession",
@@ -635,7 +645,7 @@ pub async fn generate_seats(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn place_session(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -651,7 +661,7 @@ pub async fn place_session(
 }
 
 /// DELETE /api/academic/exam-schedules/sessions/{session_id}
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/exam-schedules/sessions/{session_id}",
     operation_id = "deleteExamSession",
@@ -664,7 +674,7 @@ pub async fn place_session(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam session not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_session(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -680,7 +690,7 @@ pub async fn delete_session(
 }
 
 /// POST /api/academic/exam-schedules/{round_id}/publish
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/exam-schedules/{round_id}/publish",
     operation_id = "publishExamRound",
@@ -694,7 +704,7 @@ pub async fn delete_session(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Exam round not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn publish_round(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -710,7 +720,7 @@ pub async fn publish_round(
 }
 
 /// GET /api/me/exam-schedules
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/exam-schedules",
     operation_id = "listMyExamSchedules",
@@ -721,7 +731,7 @@ pub async fn publish_round(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active student account required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_my_exam_schedule(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PersonalExamScheduleQuery>,
@@ -738,7 +748,7 @@ pub async fn list_my_exam_schedule(
 }
 
 /// GET /api/staff/exam-schedules
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/staff/exam-schedules",
     operation_id = "listStaffExamSchedules",
@@ -749,7 +759,7 @@ pub async fn list_my_exam_schedule(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_staff_exam_schedule(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PersonalExamScheduleQuery>,

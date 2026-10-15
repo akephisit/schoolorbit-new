@@ -1449,7 +1449,9 @@ async fn learner_aggregation_policy_activation_is_immutable_and_immediately_effe
 
 // Exercises the actual emitted OpenAPI operations, including required year/term context.
 #[test]
+#[cfg(feature = "api-docs")]
 fn learner_endpoint_contract_requires_full_context_and_typed_domains() {
+    #[cfg(feature = "api-docs")]
     use utoipa::OpenApi;
     #[derive(OpenApi)]
     #[openapi(paths(

@@ -8,12 +8,14 @@ use axum::{
     Json,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_http::{ApiErrorResponse, ApiResponse, HttpError as AppError};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::{ApiResponse, HttpError as AppError};
 use school_permissions::registry::codes;
 use school_staff::{career::*, services::staff_career_service};
 use uuid::Uuid;
 
-#[utoipa::path(get,path="/api/staff/{id}/career-history",operation_id="listStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID"),StaffCareerHistoryQuery),responses((status=200,description="Scoped history and current entries",body=ApiResponse<StaffCareerHistoryPage>),(status=400,description="Invalid cursor or page size",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Profile read permission denied",body=ApiErrorResponse),(status=404,description="Staff member not found",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/staff/{id}/career-history",operation_id="listStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID"),StaffCareerHistoryQuery),responses((status=200,description="Scoped history and current entries",body=ApiResponse<StaffCareerHistoryPage>),(status=400,description="Invalid cursor or page size",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Profile read permission denied",body=ApiErrorResponse),(status=404,description="Staff member not found",body=ApiErrorResponse))))]
 pub async fn list_career_history(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -28,7 +30,7 @@ pub async fn list_career_history(
             .await?,
     )))
 }
-#[utoipa::path(post,path="/api/staff/{id}/career-history",operation_id="appendStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID")),request_body=CreateStaffCareerHistoryRequest,responses((status=200,description="Entry acknowledgement, including safe retries",body=ApiResponse<StaffCareerMutationAck>),(status=400,description="Invalid historical entry",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Staff update permission denied",body=ApiErrorResponse),(status=404,description="Staff member not found",body=ApiErrorResponse),(status=409,description="ID or payload conflict",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/staff/{id}/career-history",operation_id="appendStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID")),request_body=CreateStaffCareerHistoryRequest,responses((status=200,description="Entry acknowledgement, including safe retries",body=ApiResponse<StaffCareerMutationAck>),(status=400,description="Invalid historical entry",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Staff update permission denied",body=ApiErrorResponse),(status=404,description="Staff member not found",body=ApiErrorResponse),(status=409,description="ID or payload conflict",body=ApiErrorResponse))))]
 pub async fn append_career_history(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -47,7 +49,7 @@ pub async fn append_career_history(
         .await?,
     )))
 }
-#[utoipa::path(patch,path="/api/staff/{id}/career-history/{entryId}",operation_id="correctStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID"),("entryId"=Uuid,Path,description="History entry ID")),request_body=CorrectStaffCareerHistoryRequest,responses((status=200,description="Correction acknowledgement",body=ApiResponse<StaffCareerMutationAck>),(status=400,description="Invalid correction or missing reason",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Staff update permission denied",body=ApiErrorResponse),(status=404,description="Staff member or entry not found",body=ApiErrorResponse),(status=409,description="Revision or current status changed",body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(patch,path="/api/staff/{id}/career-history/{entryId}",operation_id="correctStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID"),("entryId"=Uuid,Path,description="History entry ID")),request_body=CorrectStaffCareerHistoryRequest,responses((status=200,description="Correction acknowledgement",body=ApiResponse<StaffCareerMutationAck>),(status=400,description="Invalid correction or missing reason",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Staff update permission denied",body=ApiErrorResponse),(status=404,description="Staff member or entry not found",body=ApiErrorResponse),(status=409,description="Revision or current status changed",body=ApiErrorResponse))))]
 pub async fn correct_career_history(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

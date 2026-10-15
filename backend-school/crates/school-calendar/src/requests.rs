@@ -7,10 +7,12 @@ use school_errors::AppError;
 use school_permissions::registry::codes;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum CalendarRequestStatus {
@@ -19,7 +21,8 @@ pub enum CalendarRequestStatus {
     Rejected,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCalendarRequest {
     pub title: String,
@@ -32,7 +35,8 @@ pub struct CreateCalendarRequest {
     pub end_time: Option<NaiveTime>,
 }
 
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventRequest {
     pub id: Uuid,
@@ -40,28 +44,29 @@ pub struct CalendarEventRequest {
     pub requester_name: String,
     pub title: String,
     pub description: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub location: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub all_day: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub start_time: Option<NaiveTime>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub end_time: Option<NaiveTime>,
     pub status: CalendarRequestStatus,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reviewed_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub rejection_reason: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub event_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default, IntoParams)]
+#[derive(Debug, Clone, Deserialize, Default)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct CalendarRequestQuery {
     pub status: Option<CalendarRequestStatus>,
     #[serde(default)]
@@ -69,22 +74,25 @@ pub struct CalendarRequestQuery {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarRequestPage {
     pub records: Vec<CalendarEventRequest>,
     pub has_more: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct PendingCalendarQuery {
     pub from: NaiveDate,
     pub to: NaiveDate,
 }
 
-#[derive(Debug, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PendingCalendarRequest {
     pub id: Uuid,
@@ -92,26 +100,29 @@ pub struct PendingCalendarRequest {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub all_day: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub start_time: Option<NaiveTime>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub end_time: Option<NaiveTime>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PendingCalendarPage {
     pub records: Vec<PendingCalendarRequest>,
     pub has_more: bool,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RejectCalendarRequest {
     pub reason: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarRequestApproval {
     pub request: CalendarEventRequest,

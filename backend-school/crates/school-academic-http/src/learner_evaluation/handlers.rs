@@ -6,8 +6,10 @@ use axum::{
 use school_academic_assessment::learner_evaluation::{models::*, services};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_http::{ApiResponse, EmptyData};
 use uuid::Uuid;
 
 fn signal(
@@ -26,7 +28,7 @@ fn signal(
     );
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/policies",operation_id="listLearnerEvaluationPolicies",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<AggregationPolicyVersion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/policies",operation_id="listLearnerEvaluationPolicies",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<AggregationPolicyVersion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_policies(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -37,7 +39,7 @@ pub async fn list_policies(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/policies",operation_id="createLearnerEvaluationPolicy",tag="academic",params(EvaluationContext),request_body=AggregationPolicyInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/policies",operation_id="createLearnerEvaluationPolicy",tag="academic",params(EvaluationContext),request_body=AggregationPolicyInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -51,7 +53,7 @@ pub async fn create_policy(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/policies/{policy_id}/activate",operation_id="activateLearnerEvaluationPolicy",tag="academic",params(EvaluationContext,("policy_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/policies/{policy_id}/activate",operation_id="activateLearnerEvaluationPolicy",tag="academic",params(EvaluationContext,("policy_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<AggregationPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn activate_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -72,7 +74,7 @@ pub async fn activate_policy(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/subjects",operation_id="listLearnerEvaluationSubjects",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<EvaluationSubject>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/subjects",operation_id="listLearnerEvaluationSubjects",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<EvaluationSubject>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_subjects(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -83,7 +85,7 @@ pub async fn list_subjects(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/lock-readiness",operation_id="getLearnerEvaluationLockReadiness",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<LearnerEvaluationSubjectLockReadiness>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/lock-readiness",operation_id="getLearnerEvaluationLockReadiness",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<LearnerEvaluationSubjectLockReadiness>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_readiness(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -95,7 +97,7 @@ pub async fn lock_readiness(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/catalog",operation_id="listLearnerEvaluationCatalog",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<CatalogCriterion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/catalog",operation_id="listLearnerEvaluationCatalog",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<CatalogCriterion>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_catalog(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -106,7 +108,7 @@ pub async fn list_catalog(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/catalog",operation_id="createLearnerEvaluationCatalog",tag="academic",params(EvaluationContext),request_body=CatalogInput,responses((status=200,body=ApiResponse<CatalogCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/catalog",operation_id="createLearnerEvaluationCatalog",tag="academic",params(EvaluationContext),request_body=CatalogInput,responses((status=200,body=ApiResponse<CatalogCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_catalog(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -120,7 +122,7 @@ pub async fn create_catalog(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(put,path="/api/academic/learner-evaluations/catalog/{criterion_id}",operation_id="updateLearnerEvaluationCatalog",tag="academic",params(EvaluationContext,("criterion_id"=Uuid,Path)),request_body=CatalogInput,responses((status=200,body=ApiResponse<CatalogCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/learner-evaluations/catalog/{criterion_id}",operation_id="updateLearnerEvaluationCatalog",tag="academic",params(EvaluationContext,("criterion_id"=Uuid,Path)),request_body=CatalogInput,responses((status=200,body=ApiResponse<CatalogCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn update_catalog(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -141,7 +143,7 @@ pub async fn update_catalog(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(delete,path="/api/academic/learner-evaluations/catalog/{criterion_id}",operation_id="removeLearnerEvaluationCatalog",tag="academic",params(EvaluationContext,("criterion_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<EmptyData>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/academic/learner-evaluations/catalog/{criterion_id}",operation_id="removeLearnerEvaluationCatalog",tag="academic",params(EvaluationContext,("criterion_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<EmptyData>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn remove_catalog(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -162,7 +164,7 @@ pub async fn remove_catalog(
     Ok(Json(ApiResponse::empty()))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/controls",operation_id="listLearnerEvaluationControls",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<EvaluationControl>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/controls",operation_id="listLearnerEvaluationControls",tag="academic",params(EvaluationContext),responses((status=200,body=ApiResponse<Vec<EvaluationControl>>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_controls(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -173,7 +175,7 @@ pub async fn list_controls(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(put,path="/api/academic/learner-evaluations/controls/{domain}",operation_id="updateLearnerEvaluationControl",tag="academic",params(EvaluationContext,("domain"=LearnerEvaluationDomain,Path)),request_body=ControlInput,responses((status=200,body=ApiResponse<EvaluationControl>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/learner-evaluations/controls/{domain}",operation_id="updateLearnerEvaluationControl",tag="academic",params(EvaluationContext,("domain"=LearnerEvaluationDomain,Path)),request_body=ControlInput,responses((status=200,body=ApiResponse<EvaluationControl>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn update_control(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -189,7 +191,7 @@ pub async fn update_control(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration",operation_id="getLearnerEvaluationConfiguration",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationConfiguration>),(status=403,body=ApiErrorResponse),(status=404,description="Subject or historical configuration does not exist",body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/configuration",operation_id="getLearnerEvaluationConfiguration",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationConfiguration>),(status=403,body=ApiErrorResponse),(status=404,description="Subject or historical configuration does not exist",body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn get_configuration(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -208,7 +210,7 @@ pub async fn get_configuration(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria",operation_id="createSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=CriterionInput,responses((status=200,body=ApiResponse<EvaluationCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria",operation_id="createSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=CriterionInput,responses((status=200,body=ApiResponse<EvaluationCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_criterion(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -231,7 +233,7 @@ pub async fn create_criterion(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(put,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",operation_id="updateSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path),("criterion_id"=Uuid,Path)),request_body=CriterionInput,responses((status=200,body=ApiResponse<EvaluationCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",operation_id="updateSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path),("criterion_id"=Uuid,Path)),request_body=CriterionInput,responses((status=200,body=ApiResponse<EvaluationCriterion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn update_criterion(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -254,7 +256,7 @@ pub async fn update_criterion(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(delete,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",operation_id="removeSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path),("criterion_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<CriterionRemoval>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/criteria/{criterion_id}",operation_id="removeSubjectEvaluationCriterion",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path),("criterion_id"=Uuid,Path)),request_body=VersionInput,responses((status=200,body=ApiResponse<CriterionRemoval>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn remove_criterion(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -277,7 +279,7 @@ pub async fn remove_criterion(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}",operation_id="getLearnerEvaluationWorkspace",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}",operation_id="getLearnerEvaluationWorkspace",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<EvaluationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn get_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -296,7 +298,7 @@ pub async fn get_workspace(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(put,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses",operation_id="saveLearnerEvaluationResponses",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=ResponseBatchInput,responses((status=200,body=ApiResponse<EvaluationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/responses",operation_id="saveLearnerEvaluationResponses",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=ResponseBatchInput,responses((status=200,body=ApiResponse<EvaluationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_responses(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -318,7 +320,7 @@ pub async fn save_responses(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm",operation_id="confirmLearnerEvaluationGroup",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=ConfirmationInput,responses((status=200,body=ApiResponse<ConfirmationOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/groups/{group_id}/domains/{domain}/confirm",operation_id="confirmLearnerEvaluationGroup",tag="academic",params(EvaluationContext,("group_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),request_body=ConfirmationInput,responses((status=200,body=ApiResponse<ConfirmationOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn confirm_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -340,7 +342,7 @@ pub async fn confirm_group(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock",operation_id="lockLearnerEvaluationSubject",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<LockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/learner-evaluations/subjects/{subject_id}/domains/{domain}/lock",operation_id="lockLearnerEvaluationSubject",tag="academic",params(EvaluationContext,("subject_id"=Uuid,Path),("domain"=LearnerEvaluationDomain,Path)),responses((status=200,body=ApiResponse<LockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_subject(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -360,7 +362,7 @@ pub async fn lock_subject(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/learner-evaluations/students/{student_academic_year_id}/summary",operation_id="getStudentLearnerEvaluationSummary",tag="academic",params(EvaluationContext,("student_academic_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<StudentEvaluationSummary>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/learner-evaluations/students/{student_academic_year_id}/summary",operation_id="getStudentLearnerEvaluationSummary",tag="academic",params(EvaluationContext,("student_academic_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<StudentEvaluationSummary>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn student_summary(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

@@ -1,6 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -10,40 +11,43 @@ use school_academic_core::models::HomeroomLookupItem;
 use school_academic_core::models::{GradeLevelLookupItem, RequirementKind, StudyProgramOption};
 
 /// Staff lookup item with title
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffLookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub title: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct Room {
     pub id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub building_id: Option<Uuid>,
     pub name_th: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub name_en: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub code: Option<String>,
     pub room_type: String,
     pub capacity: i32,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub floor: Option<i32>,
     pub status: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[sqlx(default)]
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub building_name: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum LearningOfferingKind {
@@ -51,7 +55,8 @@ pub enum LearningOfferingKind {
     Activity,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum LearningOfferingStatus {
@@ -61,7 +66,8 @@ pub enum LearningOfferingStatus {
     Closed,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum OfferingTargetKind {
@@ -69,7 +75,8 @@ pub enum OfferingTargetKind {
     GradeProgram,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum ActivityRegistrationType {
@@ -79,7 +86,8 @@ pub enum ActivityRegistrationType {
     Assigned,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum ActivitySchedulingMode {
@@ -87,7 +95,8 @@ pub enum ActivitySchedulingMode {
     Independent,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum LearningTeacherRole {
@@ -96,7 +105,8 @@ pub enum LearningTeacherRole {
     Assistant,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum RosterStatus {
@@ -105,7 +115,8 @@ pub enum RosterStatus {
     Closed,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum MembershipStatus {
@@ -114,14 +125,16 @@ pub enum MembershipStatus {
     Removed,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RosterOverrideAction {
     Add,
     Remove,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CurriculumPreviewAction {
     Create,
@@ -129,7 +142,8 @@ pub enum CurriculumPreviewAction {
     Conflict,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PreparationAction {
     Apply,
@@ -137,7 +151,8 @@ pub enum PreparationAction {
     DeferGroups,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PreparationGroupingState {
     Proposed,
@@ -145,7 +160,8 @@ pub enum PreparationGroupingState {
     Conflict,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicTermChangeSetStatus {
@@ -154,7 +170,8 @@ pub enum AcademicTermChangeSetStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicTermChangeActionKind {
@@ -166,7 +183,8 @@ pub enum AcademicTermChangeActionKind {
     StopGroupTeacher,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "actionKind",
     rename_all = "snake_case",
@@ -175,123 +193,124 @@ pub enum AcademicTermChangeActionKind {
 pub enum AcademicTermChangeItem {
     AddOffering {
         id: Uuid,
-        #[schema(rename = "learningOfferingId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningOfferingId"))]
         learning_offering_id: Uuid,
-        #[schema(rename = "weeklyPeriodTarget")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "weeklyPeriodTarget"))]
         weekly_period_target: i32,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
     StopOffering {
         id: Uuid,
-        #[schema(rename = "learningOfferingId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningOfferingId"))]
         learning_offering_id: Uuid,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
     AdjustWeeklyPeriodTarget {
         id: Uuid,
-        #[schema(rename = "learningOfferingId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningOfferingId"))]
         learning_offering_id: Uuid,
-        #[schema(rename = "weeklyPeriodTarget")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "weeklyPeriodTarget"))]
         weekly_period_target: i32,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
     AddGroupTeacher {
         id: Uuid,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "learningGroupLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupLabel"))]
         learning_group_label: String,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
-        #[schema(rename = "teacherLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherLabel"))]
         teacher_label: String,
-        #[schema(rename = "teacherRole")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherRole"))]
         teacher_role: LearningTeacherRole,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
     AdjustGroupTeacherRole {
         id: Uuid,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "learningGroupLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupLabel"))]
         learning_group_label: String,
-        #[schema(rename = "learningGroupTeacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupTeacherId"))]
         learning_group_teacher_id: Uuid,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
-        #[schema(rename = "teacherLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherLabel"))]
         teacher_label: String,
-        #[schema(rename = "teacherRole")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherRole"))]
         teacher_role: LearningTeacherRole,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
     StopGroupTeacher {
         id: Uuid,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "learningGroupLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupLabel"))]
         learning_group_label: String,
-        #[schema(rename = "learningGroupTeacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupTeacherId"))]
         learning_group_teacher_id: Uuid,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
-        #[schema(rename = "teacherLabel")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherLabel"))]
         teacher_label: String,
-        #[schema(rename = "teacherRole")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherRole"))]
         teacher_role: LearningTeacherRole,
-        #[schema(rename = "rowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "rowVersion"))]
         row_version: i64,
-        #[schema(rename = "createdBy")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdBy"))]
         created_by: Uuid,
-        #[schema(rename = "createdAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "createdAt"))]
         created_at: DateTime<Utc>,
-        #[schema(rename = "updatedAt")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "updatedAt"))]
         updated_at: DateTime<Utc>,
     },
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSet {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_from: Option<NaiveDate>,
     pub reference_date: NaiveDate,
     pub reason: String,
@@ -311,13 +330,14 @@ pub struct AcademicTermChangeSet {
     pub offering_labels: Vec<versions::DeliveryResourceLabel>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSetSummary {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_from: Option<NaiveDate>,
     pub reference_date: NaiveDate,
     pub reason: String,
@@ -326,7 +346,8 @@ pub struct AcademicTermChangeSetSummary {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicTermChangeSetRequest {
     pub academic_term_id: Uuid,
@@ -334,7 +355,8 @@ pub struct CreateAcademicTermChangeSetRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicTermChangeSetRequest {
     pub row_version: i64,
@@ -342,14 +364,16 @@ pub struct UpdateAcademicTermChangeSetRequest {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AcademicTermChangeSetQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(
     tag = "action",
     rename_all = "snake_case",
@@ -357,71 +381,71 @@ pub struct AcademicTermChangeSetQuery {
 )]
 pub enum UpsertAcademicTermChangeItemRequest {
     AddCourse {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
         offering: CreateCourseOfferingRequest,
     },
     AddActivity {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "weeklyPeriodTarget")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "weeklyPeriodTarget"))]
         weekly_period_target: i32,
         offering: CreateActivityOfferingRequest,
     },
     StopOffering {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "itemRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "itemRowVersion"))]
         item_row_version: Option<i64>,
-        #[schema(rename = "learningOfferingId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningOfferingId"))]
         learning_offering_id: Uuid,
     },
     AdjustWeeklyPeriodTarget {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "itemRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "itemRowVersion"))]
         item_row_version: Option<i64>,
-        #[schema(rename = "learningOfferingId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningOfferingId"))]
         learning_offering_id: Uuid,
-        #[schema(rename = "weeklyPeriodTarget")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "weeklyPeriodTarget"))]
         weekly_period_target: i32,
     },
     AddGroupTeacher {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "itemRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "itemRowVersion"))]
         item_row_version: Option<i64>,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
-        #[schema(rename = "teacherRole")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherRole"))]
         teacher_role: LearningTeacherRole,
     },
     AdjustGroupTeacherRole {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "itemRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "itemRowVersion"))]
         item_row_version: Option<i64>,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "learningGroupTeacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupTeacherId"))]
         learning_group_teacher_id: Uuid,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
-        #[schema(rename = "teacherRole")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherRole"))]
         teacher_role: LearningTeacherRole,
     },
     StopGroupTeacher {
-        #[schema(rename = "changeSetRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "changeSetRowVersion"))]
         change_set_row_version: i64,
-        #[schema(rename = "itemRowVersion")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "itemRowVersion"))]
         item_row_version: Option<i64>,
-        #[schema(rename = "learningGroupId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupId"))]
         learning_group_id: Uuid,
-        #[schema(rename = "learningGroupTeacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "learningGroupTeacherId"))]
         learning_group_teacher_id: Uuid,
-        #[schema(rename = "teacherId")]
+        #[cfg_attr(feature = "api-docs", schema(rename = "teacherId"))]
         teacher_id: Uuid,
     },
 }
@@ -497,25 +521,24 @@ impl UpsertAcademicTermChangeItemRequest {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteAcademicTermChangeItemRequest {
     pub change_set_row_version: i64,
     pub item_row_version: i64,
 }
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AcademicChangeFindingSeverity {
     Blocking,
     Warning,
 }
 
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, ToSchema,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AcademicChangeFindingCode {
     ChangeSetNoItems,
@@ -531,7 +554,8 @@ pub enum AcademicChangeFindingCode {
     MissingEffectiveTeacher,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicChangeFinding {
     pub code: AcademicChangeFindingCode,
@@ -545,7 +569,8 @@ pub struct AcademicChangeFinding {
     pub learning_offering_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicChangeImpactCounts {
     pub groups: i64,
@@ -568,7 +593,8 @@ pub struct AcademicChangeImpactCounts {
     pub supervision_observations: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSetPreview {
     pub preliminary: bool,
@@ -583,7 +609,8 @@ pub struct AcademicTermChangeSetPreview {
     pub preview_hash: String,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishAcademicTermChangeSetRequest {
     pub effective_from: NaiveDate,
@@ -595,7 +622,8 @@ pub struct PublishAcademicTermChangeSetRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TeacherHandoffMode {
     AssignOne,
@@ -603,7 +631,8 @@ pub enum TeacherHandoffMode {
     Manual,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewTeacherHandoffRequest {
     pub timetable_version_id: Uuid,
@@ -617,14 +646,16 @@ pub struct PreviewTeacherHandoffRequest {
     pub instructor_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TeacherHandoffEntryVersion {
     pub entry_id: Uuid,
     pub row_version: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyTeacherHandoffRequest {
     pub timetable_version_id: Uuid,
@@ -639,7 +670,8 @@ pub struct ApplyTeacherHandoffRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TeacherHandoffInstructorPreview {
     pub instructor_id: Uuid,
@@ -647,7 +679,8 @@ pub struct TeacherHandoffInstructorPreview {
     pub role: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TeacherHandoffConflictKind {
     InstructorCollision,
@@ -656,7 +689,8 @@ pub enum TeacherHandoffConflictKind {
     EntryOutsideTarget,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TeacherHandoffConflict {
     pub kind: TeacherHandoffConflictKind,
@@ -666,7 +700,8 @@ pub struct TeacherHandoffConflict {
     pub timetable_route: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TeacherHandoffEntryPreview {
     pub entry_id: Uuid,
@@ -682,7 +717,8 @@ pub struct TeacherHandoffEntryPreview {
     pub after_instructors: Vec<TeacherHandoffInstructorPreview>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TeacherHandoffPreview {
     pub change_set_id: Uuid,
@@ -699,7 +735,8 @@ pub struct TeacherHandoffPreview {
     pub timetable_route: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyTeacherHandoffResponse {
     pub handoff: TeacherHandoffPreview,
@@ -707,15 +744,17 @@ pub struct ApplyTeacherHandoffResponse {
     pub replayed: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityAttendanceRequirement {
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Option<String>, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$"))]
     pub minimum_percent: Option<String>,
     pub required_sessions: Option<i32>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityPassCriteria {
     pub require_attendance: bool,
@@ -723,7 +762,8 @@ pub struct ActivityPassCriteria {
     pub outcomes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OfferingTargetInput {
     pub target_kind: OfferingTargetKind,
@@ -732,18 +772,20 @@ pub struct OfferingTargetInput {
     pub study_program_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCourseOfferingRequest {
     pub academic_term_id: Uuid,
     pub subject_version_id: Uuid,
     pub curriculum_course_requirement_id: Option<Uuid>,
     pub targets: Vec<OfferingTargetInput>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$"))]
     pub assessment_total_score: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateActivityOfferingRequest {
     #[serde(default)]
@@ -759,7 +801,8 @@ pub struct CreateActivityOfferingRequest {
     pub pass_criteria: ActivityPassCriteria,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CreateLearningOfferingRequest {
     Course(CreateCourseOfferingRequest),
@@ -782,36 +825,41 @@ impl CreateLearningOfferingRequest {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateLearningOfferingQuery {
     pub delivery_version_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateLearningOfferingRequest {
     pub row_version: i64,
     pub targets: Vec<OfferingTargetInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishLearningOfferingRequest {
     pub row_version: i64,
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LearningOfferingQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomDeliveryQuery {
     pub academic_year_id: Uuid,
@@ -819,28 +867,32 @@ pub struct HomeroomDeliveryQuery {
     pub delivery_version_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LearningGroupTermQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StudentActivityRegistrationQuery {
     pub academic_term_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewCurriculumOfferingsRequest {
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyCurriculumOfferingsRequest {
     pub academic_term_id: Uuid,
@@ -852,7 +904,8 @@ pub struct ApplyCurriculumOfferingsRequest {
     pub choices: Vec<CurriculumPreparationChoice>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningOfferingTarget {
     pub id: Uuid,
@@ -862,7 +915,8 @@ pub struct LearningOfferingTarget {
     pub study_program_id: Uuid,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CourseOfferingSnapshot {
     pub subject_version_id: Uuid,
@@ -871,11 +925,12 @@ pub struct CourseOfferingSnapshot {
     pub credit: String,
     pub hours: Option<String>,
     pub standard_periods_per_week: i32,
-    #[schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9]\d*)(\.\d{1,2})?$"))]
     pub assessment_total_score: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityOfferingSnapshot {
     pub activity_version_id: Uuid,
@@ -889,7 +944,8 @@ pub struct ActivityOfferingSnapshot {
     pub pass_criteria: ActivityPassCriteria,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentActivityGroupOption {
     pub id: Uuid,
@@ -903,7 +959,8 @@ pub struct StudentActivityGroupOption {
     pub registration_open: bool,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentActivityOfferingOption {
     pub id: Uuid,
@@ -916,7 +973,8 @@ pub struct StudentActivityOfferingOption {
     pub groups: Vec<StudentActivityGroupOption>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentActivityRegistrationResult {
     pub learning_offering_id: Uuid,
@@ -926,14 +984,16 @@ pub struct StudentActivityRegistrationResult {
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LearningOfferingSnapshot {
     Course(CourseOfferingSnapshot),
     Activity(ActivityOfferingSnapshot),
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningOffering {
     pub id: Uuid,
@@ -946,11 +1006,11 @@ pub struct LearningOffering {
     pub source_requirement_id: Option<Uuid>,
     pub status: LearningOfferingStatus,
     pub published_at: Option<DateTime<Utc>>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub starts_on: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ends_on: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub stop_reason: Option<String>,
     pub owning_organization_unit_id: Uuid,
     pub row_version: i64,
@@ -961,7 +1021,8 @@ pub struct LearningOffering {
     pub targets: Vec<LearningOfferingTarget>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningOfferingOverviewItem {
     pub offering: LearningOffering,
@@ -973,14 +1034,16 @@ pub struct LearningOfferingOverviewItem {
     pub published_roster_count: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningDeliveryOverview {
     pub academic_term_id: Uuid,
     pub offerings: Vec<LearningOfferingOverviewItem>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomOfferingState {
     Missing,
@@ -989,7 +1052,8 @@ pub enum HomeroomOfferingState {
     Closed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomGroupMode {
     Central,
@@ -1000,7 +1064,8 @@ pub enum HomeroomGroupMode {
     Deferred,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomTeacherState {
     Deferred,
@@ -1008,7 +1073,8 @@ pub enum HomeroomTeacherState {
     Assigned,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CurriculumDeliveryAlignmentState {
     MatchesCurriculum,
@@ -1018,7 +1084,8 @@ pub enum CurriculumDeliveryAlignmentState {
     OperationalPeriodsDiffer,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryPrerequisite {
     pub code: String,
@@ -1026,7 +1093,8 @@ pub struct DeliveryPrerequisite {
     pub recovery_path: String,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct UnlinkedDeliveryItem {
     pub offering_id: Uuid,
@@ -1036,7 +1104,8 @@ pub struct UnlinkedDeliveryItem {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomDeliveryGroupSummary {
     pub id: Uuid,
@@ -1050,7 +1119,8 @@ pub struct HomeroomDeliveryGroupSummary {
     pub primary_teacher_count: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomDeliveryItem {
     pub requirement_id: Uuid,
@@ -1060,9 +1130,9 @@ pub struct HomeroomDeliveryItem {
     pub name: String,
     pub requirement_kind: RequirementKind,
     pub standard_periods_per_week: Option<i32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub weekly_period_target: Option<i32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub offering_id: Option<Uuid>,
     pub offering_state: HomeroomOfferingState,
@@ -1072,7 +1142,8 @@ pub struct HomeroomDeliveryItem {
     pub groups: Vec<HomeroomDeliveryGroupSummary>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumDeliveryExtraOffering {
     pub offering_id: Uuid,
@@ -1080,16 +1151,17 @@ pub struct CurriculumDeliveryExtraOffering {
     pub catalog_version_id: Uuid,
     pub code: String,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub weekly_period_target: Option<i32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub starts_on: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ends_on: Option<NaiveDate>,
     pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomDeliveryRoom {
     pub homeroom: HomeroomLookupItem,
@@ -1103,37 +1175,40 @@ pub struct HomeroomDeliveryRoom {
     pub blockers: Vec<DeliveryPrerequisite>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomDeliveryWorkspace {
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub delivery_version_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub delivery_version_status: Option<versions::DeliveryVersionStatus>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub delivery_version_effective_from: Option<NaiveDate>,
     pub homerooms: Vec<HomeroomDeliveryRoom>,
     pub unlinked: Vec<UnlinkedDeliveryItem>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryCatalogVersionOption {
     pub id: Uuid,
     pub kind: LearningOfferingKind,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub code: String,
     pub name: String,
     pub version_no: i32,
     pub label: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub standard_periods_per_week: Option<i32>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeliveryManagementOptions {
     pub academic_term_id: Uuid,
@@ -1147,7 +1222,8 @@ pub struct DeliveryManagementOptions {
     pub rooms: Vec<Room>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumGroupProposal {
     pub group_key: String,
@@ -1155,7 +1231,8 @@ pub struct CurriculumGroupProposal {
     pub homeroom_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PreparationConflict {
     pub code: String,
@@ -1164,13 +1241,14 @@ pub struct PreparationConflict {
     pub group_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumPreparationProposal {
     pub proposal_id: String,
     pub offering_action: CurriculumPreviewAction,
     pub resource_kind: LearningOfferingKind,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub catalog_version_id: Uuid,
     pub requirement_ids: Vec<Uuid>,
@@ -1185,7 +1263,8 @@ pub struct CurriculumPreparationProposal {
     pub conflicts: Vec<PreparationConflict>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumPreparationChoice {
     pub proposal_id: String,
@@ -1193,7 +1272,8 @@ pub struct CurriculumPreparationChoice {
     pub groups: Vec<CurriculumGroupProposal>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Clone, Debug, Deserialize, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumPublicationSource {
     pub edition_id: Uuid,
@@ -1203,7 +1283,8 @@ pub struct CurriculumPublicationSource {
     pub edition_name: String,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOfferingPreview {
     pub curriculum_sources: Vec<CurriculumPublicationSource>,
@@ -1212,7 +1293,8 @@ pub struct CurriculumOfferingPreview {
     pub proposals: Vec<CurriculumPreparationProposal>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyCurriculumOfferingsResult {
     pub academic_term_id: Uuid,
@@ -1226,7 +1308,8 @@ pub struct ApplyCurriculumOfferingsResult {
     pub skipped_count: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateLearningGroupRequest {
     pub name: String,
@@ -1235,7 +1318,8 @@ pub struct CreateLearningGroupRequest {
     pub preferred_room_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateLearningGroupRequest {
     pub row_version: i64,
@@ -1245,14 +1329,16 @@ pub struct UpdateLearningGroupRequest {
     pub preferred_room_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TeacherAssignmentInput {
     pub teacher_id: Uuid,
     pub role: LearningTeacherRole,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningGroupTeacherAssignment {
     pub id: Uuid,
@@ -1264,25 +1350,29 @@ pub struct LearningGroupTeacherAssignment {
     pub row_version: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceLearningGroupTeachersRequest {
     pub row_version: i64,
     pub teachers: Vec<TeacherAssignmentInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceLearningGroupHomeroomsRequest {
     pub row_version: i64,
     pub homeroom_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(transparent)]
 pub struct LearningGroupHomeroomIds(pub Vec<Uuid>);
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningGroup {
     pub id: Uuid,
@@ -1306,7 +1396,8 @@ pub struct LearningGroup {
     pub preferred_room_ids: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RosterPreviewStudent {
     pub student_academic_year_id: Uuid,
@@ -1320,7 +1411,8 @@ pub struct RosterPreviewStudent {
     pub conflict_reason: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RosterPreview {
     pub learning_group_id: Uuid,
@@ -1332,14 +1424,16 @@ pub struct RosterPreview {
     pub students: Vec<RosterPreviewStudent>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RosterOverrideInput {
     pub student_academic_year_id: Uuid,
     pub action: RosterOverrideAction,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyRosterRequest {
     pub row_version: i64,
@@ -1347,14 +1441,16 @@ pub struct ApplyRosterRequest {
     pub overrides: Vec<RosterOverrideInput>,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishRosterRequest {
     pub row_version: i64,
     pub idempotency_key: Uuid,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningGroupStudent {
     pub id: Uuid,
@@ -1369,7 +1465,8 @@ pub struct LearningGroupStudent {
     pub row_version: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DatedRosterMembership {
     pub id: Uuid,
@@ -1386,7 +1483,8 @@ pub struct DatedRosterMembership {
     pub row_version: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AddDatedRosterMembershipRequest {
     pub group_row_version: i64,
@@ -1394,7 +1492,8 @@ pub struct AddDatedRosterMembershipRequest {
     pub joined_at: NaiveDate,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoveDatedRosterMembershipRequest {
     pub group_row_version: i64,
@@ -1474,14 +1573,16 @@ impl From<LearningGroupStudentRow> for LearningGroupStudent {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryPublicationPreviewQuery {
     pub effective_from: Option<NaiveDate>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum RosterTrackingMode {
@@ -1489,7 +1590,8 @@ pub enum RosterTrackingMode {
     Homeroom,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[derive(Clone, Debug, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearningGroupRosterTracking {
     pub mode: RosterTrackingMode,
@@ -1499,7 +1601,8 @@ pub struct LearningGroupRosterTracking {
     pub ends_on: NaiveDate,
 }
 
-#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateRosterTrackingRequest {
     pub mode: RosterTrackingMode,

@@ -52,7 +52,11 @@ jobs:
             [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ ]]
             [[ "$BENCH_VARIANTS" = default,api-batches || "$BENCH_VARIANTS" = default,http-routes ]]
           else
-            [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
+            if [ "$BENCH_VARIANTS" = default,api-docs ]; then
+              [[ "$BENCH_BACKEND" = backend-school ]]
+            else
+              [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
+            fi
           fi
       - name: Select exact baseline source for a bounded comparison
         id: source
@@ -140,6 +144,7 @@ jobs:
             -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
             -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
             -v "$PWD/scripts/profile_backend_compiler.sh:/profile.sh:ro" \
+            -v "$PWD/scripts/export_benchmark_openapi.sh:/export_benchmark_openapi.sh:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
             --entrypoint sleep schoolorbit-benchmark:builder infinity
           trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT
@@ -155,17 +160,16 @@ jobs:
           } > "$RUNNER_TEMP/build-benchmark/environment.txt"
           if [ "$BENCH_PROFILE_ONLY" = true ]; then
             if [ "$BENCH_BACKEND" = backend-school ]; then
-              docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
-                target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/openapi-baseline.json"
+              docker exec schoolorbit-benchmark bash /export_benchmark_openapi.sh > "$RUNNER_TEMP/build-benchmark/openapi-baseline.json"
             fi
           else
             IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
             for variant in "${variants[@]}"; do
               docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
-              if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+              if [ "$BENCH_VARIANTS" = default,http-routes ] || [ "$BENCH_VARIANTS" = default,api-docs ]; then
                 docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/academic" academic
               fi
-              if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ]; then
+              if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ] && [ "$BENCH_VARIANTS" != default,api-docs ]; then
                 for owner in academic attendance; do
                   docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"
                 done
@@ -178,8 +182,7 @@ jobs:
           docker exec schoolorbit-benchmark bash /profile.sh "$BENCH_BACKEND" /benchmark-results/compiler-profile \
             2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
           if [ "$BENCH_BACKEND" = backend-school ]; then
-            docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
-              target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/compiler-profile/openapi.json"
+            docker exec schoolorbit-benchmark bash /export_benchmark_openapi.sh > "$RUNNER_TEMP/build-benchmark/compiler-profile/openapi.json"
             python3 - "$RUNNER_TEMP/build-benchmark" <<'PY'
           import json, pathlib, sys
           root = pathlib.Path(sys.argv[1])
@@ -197,6 +200,7 @@ jobs:
               echo 'Each timed build links once. Profile/graph priming is reported separately.'
               echo 'Wrapper disabled for Cargo invalidation; builder cache evidence is separate.'
               echo 'Two CPU quota and two Cargo jobs throughout. Results are not deployment or API latency.'
+              echo 'School contracts use an api-docs build in a separate debug target outside timed release builds.'
               python3 scripts/render_backend_benchmark_summary.py "$RUNNER_TEMP/build-benchmark"
             fi
           } >>"$GITHUB_STEP_SUMMARY"

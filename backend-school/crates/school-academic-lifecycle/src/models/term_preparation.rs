@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -10,7 +11,8 @@ use school_academic_core::ports::{
 
 use super::{LifecycleFinding, LifecycleSeverity};
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TermPreparationEntityMapping {
     pub kind: TermPreparationMappingKind,
@@ -18,14 +20,16 @@ pub struct TermPreparationEntityMapping {
     pub target_id: Uuid,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TermPreparationDateMapping {
     pub source_date: NaiveDate,
     pub target_date: NaiveDate,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TermPreparationMappings {
     #[serde(default)]
@@ -34,7 +38,8 @@ pub struct TermPreparationMappings {
     pub dates: Vec<TermPreparationDateMapping>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewTermPreparationInput {
     pub source_term_id: Uuid,
@@ -44,7 +49,8 @@ pub struct PreviewTermPreparationInput {
     pub mappings: TermPreparationMappings,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyTermPreparationInput {
     pub request_id: Uuid,
@@ -56,14 +62,16 @@ pub struct ApplyTermPreparationInput {
     pub mappings: TermPreparationMappings,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationMappingOption {
     pub id: Uuid,
     pub label: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationMappingRequirement {
     pub kind: TermPreparationMappingKind,
@@ -75,7 +83,8 @@ pub struct TermPreparationMappingRequirement {
     pub target_options: Vec<TermPreparationMappingOption>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationDateRequirement {
     pub source_date: NaiveDate,
@@ -85,7 +94,8 @@ pub struct TermPreparationDateRequirement {
     pub suggested_target_date: Option<NaiveDate>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationModuleEvidence {
     pub module: TermPreparationModule,
@@ -96,7 +106,8 @@ pub struct TermPreparationModuleEvidence {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationWorkspace {
     pub context: TermPreparationContext,
@@ -108,7 +119,8 @@ pub struct TermPreparationWorkspace {
     pub source_checksum: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationOutcome {
     pub run_id: Uuid,

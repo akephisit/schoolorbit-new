@@ -124,7 +124,10 @@ Run `cargo test -p <package>` for each changed internal crate and focused unit o
 for changed application modules. For API-contract work:
 
 ```bash
-cargo test api_contract::tests -- --nocapture
+cargo check --workspace --all-targets --features api-docs --locked
+cargo test --bin backend-school --features api-docs api_contract::tests -- --nocapture
+cargo test -p school-staff --features api-docs career::schema_tests
+cargo test -p school-staff --features api-docs personnel_schema_enum_matches_serialized_codes
 ```
 
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
@@ -263,7 +266,12 @@ Each case primes its compiler flags before two to five timed source changes and 
 School also measures Academic HTTP and attendance domain changes under the default profile.
 Artifacts include per-unit Cargo times, actual linker flags, binary sizes, CPU/toolchain identity,
 and the original builder's cache evidence separately from warm Cargo measurements. All School
-exports must equal the default-profile OpenAPI, including across compiler variants.
+exports must equal the default-profile OpenAPI, including across compiler variants. Documentation
+exports compile the same source with `api-docs` in a separate debug target outside timed builds;
+they do not enable documentation in measured production artifacts or alter release fingerprints.
+Use `options={"backend":"backend-school","samples":"2","variants":"default,api-docs"}`
+to compare default production compilation with documentation enabled on the same source and runner.
+Both cases measure application and Academic HTTP edits; feature/dependency priming is separate.
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
 Academic HTTP routes use concrete `Router<AcademicHttpState>` factories in their owning crate.
 The application binds its existing narrow state before applying the shared session boundary;
@@ -593,7 +601,7 @@ Backend release builds use separate BuildKit/sccache namespaces for Admin and Sc
 shared release caches; local Cargo targets and npm dependencies stay on each developer's machine.
 Frontend bundle keys include source, actual Node version, build recipe and compiled public configuration.
 Bundles are hashed and checked again before unpacking. Test targets and release binaries never share
-interchangeable cache keys. The offline OpenAPI gate executes the locally compiled binary under
+interchangeable cache keys. The offline OpenAPI gate executes the locally compiled `api-docs` binary under
 `env -i`, verifying export without runtime configuration while preserving its compiler environment.
 
 The `setup-chromium` action caches the exact installed Playwright version's Chromium headless shell.
@@ -655,6 +663,17 @@ PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
 ```
 
 Generation must work offline without database credentials or a running backend.
+The generator enables the default-off `api-docs` Cargo feature automatically. Production builds
+exclude OpenAPI composition, schema derives and path metadata; the DTOs and Serde wire behavior
+remain available. A production binary rejects `export-openapi` with exit code 2 before runtime
+startup. To export directly from `backend-school`, use:
+
+```bash
+cargo run --locked --features api-docs --bin backend-school -- export-openapi
+```
+
+Local verification checks default and documentation-enabled workspace targets, runs the three
+domain endpoint-contract tests with `api-docs`, and compares generated JSON/TypeScript with Git.
 
 ## Database and Migration Tests
 

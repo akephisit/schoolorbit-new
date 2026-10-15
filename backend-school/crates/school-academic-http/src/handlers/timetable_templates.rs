@@ -16,11 +16,13 @@ use school_academic_timetable::services::timetable_template_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::origin::extract_subdomain_from_request;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
 use school_permissions::registry::codes;
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable-templates",
     operation_id = "listTimetableTemplates",
@@ -30,7 +32,7 @@ use school_permissions::registry::codes;
         (status = 403, description = "Timetable template read permission denied", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn list_templates(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -45,7 +47,7 @@ pub async fn list_templates(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/timetable-templates/{id}",
     operation_id = "getTimetableTemplate",
@@ -57,7 +59,7 @@ pub async fn list_templates(
         (status = 404, description = "Timetable template not found", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn get_template(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -73,7 +75,7 @@ pub async fn get_template(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-templates",
     operation_id = "createTimetableTemplate",
@@ -85,7 +87,7 @@ pub async fn get_template(
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn create_template(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -104,7 +106,7 @@ pub async fn create_template(
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/timetable-templates/{id}",
     operation_id = "updateTimetableTemplate",
@@ -118,7 +120,7 @@ pub async fn create_template(
         (status = 404, description = "Timetable template not found", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn update_template(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -134,7 +136,7 @@ pub async fn update_template(
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/timetable-templates/{id}",
     operation_id = "deleteTimetableTemplate",
@@ -146,7 +148,7 @@ pub async fn update_template(
         (status = 404, description = "Timetable template not found", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn delete_template(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -160,7 +162,7 @@ pub async fn delete_template(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-templates/from-current",
     operation_id = "createTimetableTemplateFromCurrent",
@@ -172,7 +174,7 @@ pub async fn delete_template(
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn from_current(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -191,7 +193,7 @@ pub async fn from_current(
     Ok(Json(ApiResponse::ok(template)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/timetable-templates/{template_id}/apply",
     operation_id = "applyTimetableTemplate",
@@ -205,7 +207,7 @@ pub async fn from_current(
         (status = 409, description = "Timetable conflict", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn apply_template(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -238,7 +240,7 @@ pub async fn apply_template(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/timetable-blocks/clear",
     operation_id = "clearTimetable",
@@ -250,7 +252,7 @@ pub async fn apply_template(
         (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse)
     ),
     tag = "academic"
-)]
+))]
 pub async fn clear_timetable(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

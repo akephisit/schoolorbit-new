@@ -3,6 +3,12 @@ name = "school-behavior"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+]
+
 [dependencies]
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
@@ -15,7 +21,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

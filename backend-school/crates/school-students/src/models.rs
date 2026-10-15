@@ -1,6 +1,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -8,73 +9,77 @@ use uuid::Uuid;
 // API Models (from handlers/students.rs)
 // =========================================
 
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ParentDto {
     pub id: Uuid,
     pub username: String,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub phone: Option<String>,
     pub relationship: String,
     pub is_primary: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StudentDbRow {
     // User fields
     pub id: Uuid,
     pub username: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub national_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub email: Option<String>,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub nickname: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub phone: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub date_of_birth: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub gender: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub address: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub profile_image_file_id: Option<Uuid>,
 
     // Student info fields
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub student_number: Option<i32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub blood_type: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub allergies: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub medical_conditions: Option<String>,
 
     // Additional fields needed for Detail View
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub status: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub grade_level: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub homeroom: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StudentProfile {
     #[serde(flatten)]
     pub info: StudentDbRow,
     pub parents: Vec<ParentDto>,
 }
 
-#[derive(Debug, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Serialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StudentListItem {
     pub id: Uuid,
     pub username: String,
@@ -87,27 +92,31 @@ pub struct StudentListItem {
     pub status: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StudentListResponse {
     pub items: Vec<StudentListItem>,
     pub page: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateStudentResponse {
     pub id: Uuid,
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateOwnProfileRequest {
     pub phone: Option<String>,
     pub address: Option<String>,
     pub nickname: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateStudentRequest {
     pub national_id: Option<String>,
     pub username: Option<String>, // Optional, will be generated if not provided
@@ -123,7 +132,8 @@ pub struct CreateStudentRequest {
     pub parents: Option<Vec<CreateParentRequest>>,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateParentRequest {
     pub title: Option<String>,
     pub first_name: String,
@@ -134,7 +144,8 @@ pub struct CreateParentRequest {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateStudentRequest {
     pub email: Option<String>,
     pub first_name: Option<String>,
@@ -144,8 +155,9 @@ pub struct UpdateStudentRequest {
     pub student_number: Option<i32>,
 }
 
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListStudentsQuery {
     pub academic_year_id: Uuid,
@@ -155,8 +167,9 @@ pub struct ListStudentsQuery {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StudentAcademicYearQuery {
     pub academic_year_id: Uuid,

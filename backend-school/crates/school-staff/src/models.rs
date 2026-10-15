@@ -1,19 +1,21 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub use crate::personnel::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct Role {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub name_en: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub description: Option<String>,
     pub user_type: String, // Changed from category to user_type
     pub level: i32,
@@ -24,7 +26,8 @@ pub struct Role {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateRoleRequest {
     pub code: String,
     pub name: String,
@@ -35,7 +38,8 @@ pub struct CreateRoleRequest {
     pub permissions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateRoleRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -46,7 +50,8 @@ pub struct UpdateRoleRequest {
     pub is_active: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct AssignRoleRequest {
     pub role_id: Uuid,
     pub is_primary: Option<bool>,
@@ -54,19 +59,20 @@ pub struct AssignRoleRequest {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UserRoleAssignmentResponse {
     pub id: Uuid,
     pub user_id: Uuid,
     pub role_id: Uuid,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub organization_unit_id: Option<Uuid>,
     pub role: Role,
     pub is_primary: bool,
     pub started_at: NaiveDate,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub ended_at: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -76,35 +82,37 @@ pub struct UserRoleAssignmentResponse {
 // Organization Unit (หน่วยงาน/กลุ่ม/ฝ่าย/กลุ่มสาระ)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationUnit {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub name_en: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub description: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub parent_unit_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub phone: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub email: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub location: Option<String>,
     pub is_active: bool,
     pub is_system: bool,
     pub display_order: i32,
     pub category: String,
     pub unit_type: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub subject_group_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateOrganizationUnitRequest {
     pub code: String,
     pub name: String,
@@ -119,7 +127,8 @@ pub struct CreateOrganizationUnitRequest {
     pub subject_group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateOrganizationUnitRequest {
     pub name: Option<String>,
     pub name_en: Option<String>,
@@ -138,49 +147,53 @@ pub struct UpdateOrganizationUnitRequest {
 // Response Models
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct RoleResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub name_en: Option<String>,
     pub user_type: String, // Changed from category to user_type
     pub level: i32,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub is_primary: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationUnitResponse {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub position_code: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub position_title: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub is_primary: Option<bool>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub category: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub unit_type: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub subject_group_id: Option<Uuid>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub responsibilities: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct StaffDashboardQuery {
     pub academic_year_id: Uuid,
 }
 
 /// กลุ่มการเรียนที่ครูสอนใน Academic Delivery
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TeachingAssignmentItem {
     pub learning_group_id: Uuid,
@@ -189,7 +202,7 @@ pub struct TeachingAssignmentItem {
     pub subject_id: Uuid,
     pub subject_code: String,
     pub subject_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub hours: Option<String>,
     pub academic_year_id: Uuid,
     pub academic_year: i32,
@@ -201,7 +214,8 @@ pub struct TeachingAssignmentItem {
 }
 
 /// ห้องประจำชั้นที่ครูเป็นที่ปรึกษา
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AdvisorHomeroomItem {
     pub homeroom_id: Uuid,
@@ -213,41 +227,42 @@ pub struct AdvisorHomeroomItem {
     pub role: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffProfileResponse {
     pub id: Uuid,
     pub username: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub national_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub email: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub nickname: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub phone: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub emergency_contact: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub line_id: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub date_of_birth: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub gender: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub address: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub hired_date: Option<String>,
     pub user_type: String,
     pub status: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub profile_image_file_id: Option<Uuid>,
 
     // Staff specific info
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub staff_info: Option<StaffInfoResponse>,
 
     // Roles
@@ -271,7 +286,8 @@ pub struct StaffProfileResponse {
 // Create Staff Request
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct CreateStaffRequest {
     // Basic User Info
     pub username: Option<String>,
@@ -302,7 +318,8 @@ pub struct CreateStaffRequest {
     pub organization_assignments: Option<Vec<OrganizationAssignment>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationAssignment {
     pub organization_unit_id: Uuid,
     pub position_code: String,
@@ -315,7 +332,8 @@ pub struct OrganizationAssignment {
 // Update Staff Request
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateStaffRequest {
     pub title: Option<String>,
     pub first_name: Option<String>,
@@ -345,8 +363,9 @@ pub struct UpdateStaffRequest {
 // List Filters
 // ===================================================================
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct StaffListFilter {
     pub user_type: Option<String>,
     pub role_id: Option<Uuid>,
@@ -361,7 +380,8 @@ pub struct StaffListFilter {
     pub subject_group_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffListItem {
     pub id: Uuid,
     pub username: String,
@@ -371,9 +391,9 @@ pub struct StaffListItem {
     pub roles: Vec<String>,
     pub organization_units: Vec<String>,
     pub status: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub job_position: Option<StaffJobPositionSummary>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub academic_rank: Option<StaffAcademicRank>,
 }
 
@@ -381,7 +401,8 @@ pub struct StaffListItem {
 // Permission (สิทธิ์การใช้งาน)
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct Permission {
     pub id: Uuid,
     pub code: String,
@@ -389,7 +410,7 @@ pub struct Permission {
     pub module: String,
     pub action: String,
     pub scope: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -397,13 +418,15 @@ pub struct Permission {
 // ===================================================================
 
 // ===================================================================
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationPermissionGrantInput {
     pub permission_id: Uuid,
     pub position_code: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateOrganizationPermissionsRequest {
     pub grants: Vec<OrganizationPermissionGrantInput>,
 }
@@ -418,7 +441,8 @@ pub enum StaffListAccess {
     School,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationMemberItem {
     pub user_id: Uuid,
     pub organization_unit_id: Uuid,
@@ -426,15 +450,16 @@ pub struct OrganizationMemberItem {
     pub name: String,
     pub title: String,
     pub position_code: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub position_title: Option<String>,
     pub is_primary: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub responsibilities: Option<String>,
     pub started_at: NaiveDate,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct DelegationItem {
     pub id: Uuid,
     pub from_user_id: Uuid,
@@ -444,37 +469,38 @@ pub struct DelegationItem {
     pub permission_id: Uuid,
     pub permission_code: String,
     pub permission_name: String,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub reason: Option<String>,
     pub started_at: DateTime<Utc>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Organization unit lookup item
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationUnitLookupItem {
     pub id: Uuid,
     pub code: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub name_en: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub category: Option<String>,
     pub display_order: i32,
     pub is_active: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Uuid))]
     pub parent_unit_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub unit_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Uuid))]
     pub subject_group_id: Option<Uuid>,
 }

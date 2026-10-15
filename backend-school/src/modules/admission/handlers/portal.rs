@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -20,10 +21,13 @@ use school_admission::portal as portal_service;
 use school_file_platform::{
     platform_service::UploadCommand, platform_types::FilePurpose, repository::SqlFileRepository,
 };
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PortalUploadDocumentData {
     pub file_id: Uuid,
@@ -32,10 +36,13 @@ pub struct PortalUploadDocumentData {
     pub doc_type: String,
 }
 
+#[cfg(feature = "api-docs")]
 pub struct PortalDocumentMultipart;
 
+#[cfg(feature = "api-docs")]
 impl utoipa::PartialSchema for PortalDocumentMultipart {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        #[cfg(feature = "api-docs")]
         use utoipa::openapi::{schema::Type, KnownFormat, ObjectBuilder, SchemaFormat};
 
         ObjectBuilder::new()
@@ -56,6 +63,7 @@ impl utoipa::PartialSchema for PortalDocumentMultipart {
     }
 }
 
+#[cfg(feature = "api-docs")]
 impl ToSchema for PortalDocumentMultipart {}
 
 pub async fn check_application(
@@ -124,7 +132,7 @@ pub async fn update_application(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admission/portal/upload",
     operation_id = "portalUploadAdmissionDocument",
@@ -137,7 +145,7 @@ pub async fn update_application(
         (status = 404, description = "Application not found", body = ApiErrorResponse),
         (status = 503, description = "Scanner or storage unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn portal_upload_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -249,7 +257,7 @@ pub async fn portal_upload_document(
     .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/admission/portal/documents/{doc_type}",
     operation_id = "portalDeleteAdmissionDocument",
@@ -262,7 +270,7 @@ pub async fn portal_upload_document(
         (status = 401, description = "Applicant credentials rejected", body = ApiErrorResponse),
         (status = 404, description = "Application document not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn portal_delete_document(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -293,7 +301,7 @@ pub async fn portal_delete_document(
     Ok(Json(ApiResponse::empty_with_message("ลบเอกสารเรียบร้อยแล้ว")).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/admission/portal/documents/{file_id}/download",
     operation_id = "portalDownloadAdmissionDocument",
@@ -307,7 +315,7 @@ pub async fn portal_delete_document(
         (status = 404, description = "Application document not found", body = ApiErrorResponse),
         (status = 409, description = "File is not ready", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn portal_download_document(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -6,20 +6,21 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use school_academic_delivery::models::{
-    ApplyTeacherHandoffRequest, ApplyTeacherHandoffResponse, PreviewTeacherHandoffRequest,
-    TeacherHandoffPreview,
-};
+use school_academic_delivery::models::{ApplyTeacherHandoffRequest, PreviewTeacherHandoffRequest};
+#[cfg(feature = "api-docs")]
+use school_academic_delivery::models::{ApplyTeacherHandoffResponse, TeacherHandoffPreview};
 use school_academic_timetable::services::teacher_handoff;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
-use school_http::{ApiErrorResponse, ApiResponse, HttpError as AppError};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::{ApiResponse, HttpError as AppError};
 use uuid::Uuid;
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/teacher-handoffs/{id}/preview",
     operation_id = "previewTeacherHandoff",
@@ -34,7 +35,7 @@ fn ok<T: serde::Serialize>(data: T) -> Response {
         (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
         (status = 409, description = "Teacher handoff conflict", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn preview_teacher_handoff(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -62,7 +63,7 @@ pub async fn preview_teacher_handoff(
     .await?))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/teacher-handoffs/{id}/apply",
     operation_id = "applyTeacherHandoff",
@@ -77,7 +78,7 @@ pub async fn preview_teacher_handoff(
         (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
         (status = 409, description = "Teacher handoff conflict or stale preview", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn apply_teacher_handoff(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

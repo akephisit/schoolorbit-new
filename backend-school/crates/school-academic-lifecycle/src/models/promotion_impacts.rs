@@ -1,13 +1,15 @@
 use super::*;
 
-#[derive(Debug, Clone, Deserialize, ToSchema, utoipa::IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, utoipa::IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct PromotionImpactQuery {
     pub after_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionCorrectionImpact {
     pub id: Uuid,
@@ -17,7 +19,8 @@ pub struct PromotionCorrectionImpact {
     pub resolution: Option<PromotionImpactResolution>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionImpactWorkspace {
     pub run_id: Uuid,

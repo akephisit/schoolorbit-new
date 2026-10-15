@@ -6,10 +6,13 @@ use axum::{
 };
 use uuid::Uuid;
 
+#[cfg(feature = "api-docs")]
 use crate::modules::facility::models::Room;
+use crate::modules::lookup::models::{AcademicLookupQuery, LookupQuery};
+#[cfg(feature = "api-docs")]
 use crate::modules::lookup::models::{
-    AcademicLookupQuery, HomeroomLookupItem, LookupItem, LookupQuery, OrganizationUnitLookupItem,
-    RoleLookupItem, StaffLookupItem, StudentLookupItem,
+    HomeroomLookupItem, LookupItem, OrganizationUnitLookupItem, RoleLookupItem, StaffLookupItem,
+    StudentLookupItem,
 };
 use crate::modules::lookup::services as lookup_service;
 use crate::utils::request_context::{
@@ -17,10 +20,13 @@ use crate::utils::request_context::{
     CurrentUserTenantContext,
 };
 use crate::AppState;
+#[cfg(feature = "api-docs")]
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 async fn active_lookup_context(
@@ -34,7 +40,7 @@ async fn active_lookup_context(
 
 /// GET /api/lookup/staff
 /// Returns minimal staff data for dropdowns (id, name, title)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/staff",
     operation_id = "lookupStaff",
@@ -44,7 +50,7 @@ async fn active_lookup_context(
         (status = 200, description = "Staff lookup items", body = ApiResponse<Vec<StaffLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_staff(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
@@ -57,7 +63,7 @@ pub async fn lookup_staff(
 
 /// GET /api/lookup/roles
 /// Returns minimal role data for dropdowns
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/roles",
     operation_id = "lookupRoles",
@@ -68,7 +74,7 @@ pub async fn lookup_staff(
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse),
         (status = 403, description = "Role lookup permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_roles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -86,7 +92,7 @@ pub async fn lookup_roles(
 
 /// GET /api/lookup/organization-units
 /// Returns organization unit data. Supports ?member_only=true to filter to user's own units.
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/organization-units",
     operation_id = "lookupOrganizationUnits",
@@ -96,7 +102,7 @@ pub async fn lookup_roles(
         (status = 200, description = "Organization unit lookup items", body = ApiResponse<Vec<OrganizationUnitLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_organization_units(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
@@ -111,7 +117,7 @@ pub async fn lookup_organization_units(
 
 /// GET /api/lookup/organization-units/:id
 /// Returns single organization unit by ID (auth only, no permission required)
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/organization-units/{id}",
     operation_id = "getLookupOrganizationUnit",
@@ -122,7 +128,7 @@ pub async fn lookup_organization_units(
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse),
         (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_organization_unit_by_id(
     Path(id): Path<Uuid>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -135,7 +141,7 @@ pub async fn lookup_organization_unit_by_id(
 
 /// GET /api/lookup/grade-levels
 /// Returns minimal grade level data for dropdowns
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/grade-levels",
     operation_id = "lookupGradeLevels",
@@ -145,7 +151,7 @@ pub async fn lookup_organization_unit_by_id(
         (status = 200, description = "Grade level lookup items", body = ApiResponse<Vec<GradeLevelLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_grade_levels(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<AcademicLookupQuery>,
@@ -158,7 +164,7 @@ pub async fn lookup_grade_levels(
 
 /// GET /api/lookup/homerooms
 /// Returns homerooms for the caller-selected academic year.
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/homerooms",
     operation_id = "lookupHomerooms",
@@ -168,7 +174,7 @@ pub async fn lookup_grade_levels(
         (status = 200, description = "Homeroom lookup items", body = ApiResponse<Vec<HomeroomLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_homerooms(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<AcademicLookupQuery>,
@@ -181,7 +187,7 @@ pub async fn lookup_homerooms(
 
 /// GET /api/lookup/academic-years
 /// Returns minimal academic year data for dropdowns
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/academic-years",
     operation_id = "lookupAcademicYears",
@@ -191,7 +197,7 @@ pub async fn lookup_homerooms(
         (status = 200, description = "Academic year lookup items", body = ApiResponse<Vec<AcademicYearLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_academic_years(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<LookupQuery>,
@@ -204,7 +210,7 @@ pub async fn lookup_academic_years(
 
 /// GET /api/lookup/students
 /// Returns students and placements for the caller-selected academic year.
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/students",
     operation_id = "lookupStudents",
@@ -214,7 +220,7 @@ pub async fn lookup_academic_years(
         (status = 200, description = "Student lookup items", body = ApiResponse<Vec<StudentLookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_students(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<AcademicLookupQuery>,
@@ -227,7 +233,7 @@ pub async fn lookup_students(
 
 /// GET /api/lookup/rooms
 /// Returns active rooms with building info
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/rooms",
     operation_id = "lookupRooms",
@@ -236,7 +242,7 @@ pub async fn lookup_students(
         (status = 200, description = "Active room lookup items", body = ApiResponse<Vec<Room>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_rooms(
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -248,7 +254,7 @@ pub async fn lookup_rooms(
 
 /// GET /api/lookup/subjects
 /// Returns minimal subject data for dropdowns
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/lookup/subjects",
     operation_id = "lookupSubjects",
@@ -258,7 +264,7 @@ pub async fn lookup_rooms(
         (status = 200, description = "Subject lookup items", body = ApiResponse<Vec<LookupItem>>),
         (status = 401, description = "Authentication required or account inactive", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn lookup_subjects(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<AcademicLookupQuery>,

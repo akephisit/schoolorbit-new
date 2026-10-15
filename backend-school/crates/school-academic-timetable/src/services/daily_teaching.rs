@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Datelike, Local, NaiveDate, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -11,16 +12,18 @@ use school_academic_delivery::models::ActivitySchedulingMode;
 use super::timetable_version_service;
 use school_errors::AppError;
 
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct DailyTeachingQuery {
     pub academic_term_id: Uuid,
     pub date: Option<NaiveDate>,
     pub include_empty_teachers: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingOverview {
     pub date: NaiveDate,
@@ -31,19 +34,21 @@ pub struct DailyTeachingOverview {
     pub summary: DailyTeachingSummary,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingPeriod {
     pub id: Uuid,
     pub name: Option<String>,
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub start_time: NaiveTime,
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub end_time: NaiveTime,
     pub order_index: i32,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingTeacher {
     pub id: Uuid,
@@ -51,14 +56,16 @@ pub struct DailyTeachingTeacher {
     pub periods: Vec<DailyTeachingPeriodCell>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingPeriodCell {
     pub bell_schedule_period_id: Uuid,
     pub entries: Vec<DailyTeachingEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingEntry {
     pub entry_id: Uuid,
@@ -80,7 +87,8 @@ pub struct DailyTeachingEntry {
     pub is_team_teaching: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DailyTeachingSummary {
     pub total_teacher_count: i64,

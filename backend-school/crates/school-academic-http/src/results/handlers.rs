@@ -6,11 +6,13 @@ use axum::{
 use school_academic_results::{models::*, services};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
-#[utoipa::path(get,path="/api/academic/results/annual-students",operation_id="listAnnualResultStudents",tag="academic",params(AnnualResultContext),responses((status=200,body=ApiResponse<Vec<AnnualResultStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/annual-students",operation_id="listAnnualResultStudents",tag="academic",params(AnnualResultContext),responses((status=200,body=ApiResponse<Vec<AnnualResultStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn list_annual_students(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -27,7 +29,7 @@ pub async fn list_annual_students(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-preview",operation_id="previewAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<AnnualResultPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-preview",operation_id="previewAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<AnnualResultPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn preview_annual(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -46,7 +48,7 @@ pub async fn preview_annual(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="listAnnualResultRevisions",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<AnnualResultRevision>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="listAnnualResultRevisions",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<AnnualResultRevision>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn list_annual_revisions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -65,7 +67,7 @@ pub async fn list_annual_revisions(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="lockAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),request_body=AnnualLockInput,responses((status=200,body=ApiResponse<AnnualResultRevision>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/students/{student_year_id}/annual-revisions",operation_id="lockAnnualResult",tag="academic",params(AnnualResultContext,("student_year_id"=Uuid,Path)),request_body=AnnualLockInput,responses((status=200,body=ApiResponse<AnnualResultRevision>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn lock_annual(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -109,7 +111,7 @@ fn signal(
     );
 }
 
-#[utoipa::path(get,path="/api/academic/results/aggregate-students",operation_id="listAggregateStudents",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<AggregateStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/aggregate-students",operation_id="listAggregateStudents",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<AggregateStudent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
 pub async fn list_aggregate_students(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -121,7 +123,7 @@ pub async fn list_aggregate_students(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/results/aggregate-policies",operation_id="listAggregatePolicies",tag="academic",responses((status=200,body=ApiResponse<Vec<AggregatePolicyVersion>>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/aggregate-policies",operation_id="listAggregatePolicies",tag="academic",responses((status=200,body=ApiResponse<Vec<AggregatePolicyVersion>>),(status=403,body=ApiErrorResponse))))]
 pub async fn list_aggregate_policies(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -132,7 +134,7 @@ pub async fn list_aggregate_policies(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/aggregate-policies",operation_id="createAggregatePolicy",tag="academic",request_body=AggregatePolicyInput,responses((status=200,body=ApiResponse<AggregatePolicyVersion>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/aggregate-policies",operation_id="createAggregatePolicy",tag="academic",request_body=AggregatePolicyInput,responses((status=200,body=ApiResponse<AggregatePolicyVersion>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
 pub async fn create_aggregate_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -152,7 +154,7 @@ pub async fn create_aggregate_policy(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-preview",operation_id="previewTermAggregate",tag="academic",params(AggregatePreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermAggregatePreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-preview",operation_id="previewTermAggregate",tag="academic",params(AggregatePreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermAggregatePreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
 pub async fn preview_aggregate(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -171,7 +173,7 @@ pub async fn preview_aggregate(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="listTermAggregateRevisions",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<TermAggregateRevision>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="listTermAggregateRevisions",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<Vec<TermAggregateRevision>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
 pub async fn list_term_aggregate_revisions(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -190,7 +192,7 @@ pub async fn list_term_aggregate_revisions(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="lockTermAggregate",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),request_body=AggregateLockInput,responses((status=200,body=ApiResponse<TermAggregateRevision>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/students/{student_year_id}/aggregate-revisions",operation_id="lockTermAggregate",tag="academic",params(ResultContext,("student_year_id"=Uuid,Path)),request_body=AggregateLockInput,responses((status=200,body=ApiResponse<TermAggregateRevision>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_term_aggregate(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -211,7 +213,7 @@ pub async fn lock_term_aggregate(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/students/{student_year_id}/term-preview",operation_id="previewStudentTermResults",tag="academic",params(TermResultPreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermResultPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/students/{student_year_id}/term-preview",operation_id="previewStudentTermResults",tag="academic",params(TermResultPreviewQuery,("student_year_id"=Uuid,Path)),responses((status=200,body=ApiResponse<TermResultPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
 pub async fn preview_student_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -230,7 +232,7 @@ pub async fn preview_student_term(
     )))
 }
 
-#[utoipa::path(get,path="/api/academic/results/policies",operation_id="listAcademicGradingPolicies",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<GradingPolicyVersion>>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/policies",operation_id="listAcademicGradingPolicies",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<Vec<GradingPolicyVersion>>),(status=403,body=ApiErrorResponse))))]
 pub async fn list_policies(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -242,7 +244,7 @@ pub async fn list_policies(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/policies",operation_id="createAcademicGradingPolicy",tag="academic",params(ResultContext),request_body=GradingPolicyInput,responses((status=200,body=ApiResponse<GradingPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/policies",operation_id="createAcademicGradingPolicy",tag="academic",params(ResultContext),request_body=GradingPolicyInput,responses((status=200,body=ApiResponse<GradingPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -256,7 +258,7 @@ pub async fn create_policy(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/results/policies/{policy_id}/activate",operation_id="activateAcademicGradingPolicy",tag="academic",params(ResultContext,("policy_id"=Uuid,Path)),request_body=PolicyActivationInput,responses((status=200,body=ApiResponse<GradingPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/policies/{policy_id}/activate",operation_id="activateAcademicGradingPolicy",tag="academic",params(ResultContext,("policy_id"=Uuid,Path)),request_body=PolicyActivationInput,responses((status=200,body=ApiResponse<GradingPolicyVersion>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn activate_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -277,7 +279,7 @@ pub async fn activate_policy(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/groups/{group_id}/course",operation_id="getCourseResultPreparation",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/groups/{group_id}/course",operation_id="getCourseResultPreparation",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn get_course_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -291,7 +293,7 @@ pub async fn get_course_workspace(
     )))
 }
 
-#[utoipa::path(put,path="/api/academic/results/groups/{group_id}/course/selection",operation_id="saveCourseResultSelection",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=SelectionInput,responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/results/groups/{group_id}/course/selection",operation_id="saveCourseResultSelection",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=SelectionInput,responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_selection(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -312,7 +314,7 @@ pub async fn save_selection(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/results/groups/{group_id}/course/confirm",operation_id="confirmCourseGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ResultConfirmationInput,responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/groups/{group_id}/course/confirm",operation_id="confirmCourseGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ResultConfirmationInput,responses((status=200,body=ApiResponse<CoursePreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn confirm_group_results(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -333,7 +335,7 @@ pub async fn confirm_group_results(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/groups/{group_id}/activity",operation_id="getActivityResultPreparation",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/groups/{group_id}/activity",operation_id="getActivityResultPreparation",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn get_activity_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -347,7 +349,7 @@ pub async fn get_activity_workspace(
     )))
 }
 
-#[utoipa::path(put,path="/api/academic/results/groups/{group_id}/activity/outcomes",operation_id="saveActivityResultOutcomes",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ActivityBatchInput,responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/results/groups/{group_id}/activity/outcomes",operation_id="saveActivityResultOutcomes",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ActivityBatchInput,responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_activity_outcomes(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -368,7 +370,7 @@ pub async fn save_activity_outcomes(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/results/groups/{group_id}/activity/confirm",operation_id="confirmActivityGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ResultConfirmationInput,responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/groups/{group_id}/activity/confirm",operation_id="confirmActivityGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),request_body=ResultConfirmationInput,responses((status=200,body=ApiResponse<ActivityPreparationWorkspace>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn confirm_activity(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -389,7 +391,7 @@ pub async fn confirm_activity(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/readiness",operation_id="getAcademicResultReadiness",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<ResultReadiness>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/readiness",operation_id="getAcademicResultReadiness",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<ResultReadiness>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn readiness(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -401,7 +403,7 @@ pub async fn readiness(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/subjects/{subject_id}/lock",operation_id="lockCourseSubjectResults",tag="academic",params(ResultContext,("subject_id"=Uuid,Path)),responses((status=200,body=ApiResponse<CourseResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/subjects/{subject_id}/lock",operation_id="lockCourseSubjectResults",tag="academic",params(ResultContext,("subject_id"=Uuid,Path)),responses((status=200,body=ApiResponse<CourseResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_course_subject(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -418,7 +420,7 @@ pub async fn lock_course_subject(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/results/groups/{group_id}/activity/lock",operation_id="lockActivityGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<ActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/groups/{group_id}/activity/lock",operation_id="lockActivityGroupResults",tag="academic",params(ResultContext,("group_id"=Uuid,Path)),responses((status=200,body=ApiResponse<ActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_activity_group(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -435,7 +437,7 @@ pub async fn lock_activity_group(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/academic/results/activities/lock-ready",operation_id="lockAllReadyActivityResults",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<BulkActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/activities/lock-ready",operation_id="lockAllReadyActivityResults",tag="academic",params(ResultContext),responses((status=200,body=ApiResponse<BulkActivityResultLockOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn lock_all_ready_activities(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -450,7 +452,7 @@ pub async fn lock_all_ready_activities(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/academic/results/effective",operation_id="searchEffectiveAcademicResults",tag="academic",params(EffectiveResultSearch),responses((status=200,body=ApiResponse<Vec<EffectiveResultSearchItem>>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/results/effective",operation_id="searchEffectiveAcademicResults",tag="academic",params(EffectiveResultSearch),responses((status=200,body=ApiResponse<Vec<EffectiveResultSearchItem>>),(status=403,body=ApiErrorResponse))))]
 pub async fn search_effective_results(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -462,7 +464,7 @@ pub async fn search_effective_results(
     )))
 }
 
-#[utoipa::path(post,path="/api/academic/results/corrections",operation_id="correctEffectiveAcademicResult",tag="academic",params(ResultContext),request_body=ResultCorrectionInput,responses((status=200,body=ApiResponse<EffectiveResult>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/results/corrections",operation_id="correctEffectiveAcademicResult",tag="academic",params(ResultContext),request_body=ResultCorrectionInput,responses((status=200,body=ApiResponse<EffectiveResult>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn correct_result(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Json as JsonResponse},
 };
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -12,6 +13,7 @@ use crate::modules::system::services::feature_toggle_service;
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
 
@@ -20,22 +22,24 @@ pub struct UpdateFeatureRequest {
     pub is_enabled: Option<bool>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct FeatureToggleResponse {
     pub success: bool,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub data: Option<FeatureToggle>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub message: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct FeatureListResponse {
     pub success: bool,
     pub data: Vec<FeatureToggle>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/features",
     operation_id = "listFeatures",
@@ -44,7 +48,7 @@ pub struct FeatureListResponse {
         (status = 200, description = "Feature toggles visible to the current user", body = FeatureListResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_features(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -71,7 +75,7 @@ pub async fn list_features(
     ))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/admin/features/{id}",
     operation_id = "getFeature",
@@ -83,7 +87,7 @@ pub async fn list_features(
         (status = 403, description = "Feature module access denied", body = ApiErrorResponse),
         (status = 404, description = "Feature toggle not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_feature(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

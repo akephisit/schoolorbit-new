@@ -13,11 +13,13 @@ use school_behavior::{
     models::*,
     services::{catalog, cleanup, manual, report as reports, schedules},
 };
-use school_http::{ApiErrorResponse, ApiResponse, HttpError as AppError};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::{ApiResponse, HttpError as AppError};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
-#[utoipa::path(get,path="/api/behavior/overview",operation_id="behavior_overview",tag="behavior",responses((status=200,body=ApiResponse<BehaviorOverview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/overview",operation_id="behavior_overview",tag="behavior",responses((status=200,body=ApiResponse<BehaviorOverview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn overview(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -29,7 +31,7 @@ pub async fn overview(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/items",operation_id="behavior_list_items",tag="behavior",params(BehaviorItemsQuery),responses((status=200,body=ApiResponse<Vec<BehaviorItem>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/items",operation_id="behavior_list_items",tag="behavior",params(BehaviorItemsQuery),responses((status=200,body=ApiResponse<Vec<BehaviorItem>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_items(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -42,7 +44,7 @@ pub async fn list_items(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/items",operation_id="behavior_save_item",tag="behavior",request_body=SaveBehaviorItem,responses((status=200,body=ApiResponse<BehaviorItem>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/items",operation_id="behavior_save_item",tag="behavior",request_body=SaveBehaviorItem,responses((status=200,body=ApiResponse<BehaviorItem>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_item(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -55,7 +57,7 @@ pub async fn save_item(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/rules",operation_id="behavior_list_rules",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorAttendanceRule>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/rules",operation_id="behavior_list_rules",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorAttendanceRule>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn list_rules(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -67,7 +69,7 @@ pub async fn list_rules(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/rules",operation_id="behavior_save_rule",tag="behavior",request_body=SaveBehaviorAttendanceRule,responses((status=200,body=ApiResponse<BehaviorAttendanceRule>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/rules",operation_id="behavior_save_rule",tag="behavior",request_body=SaveBehaviorAttendanceRule,responses((status=200,body=ApiResponse<BehaviorAttendanceRule>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_rule(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -80,7 +82,7 @@ pub async fn save_rule(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/settings",operation_id="behavior_get_settings",tag="behavior",responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/settings",operation_id="behavior_get_settings",tag="behavior",responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn get_settings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -92,7 +94,7 @@ pub async fn get_settings(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(put,path="/api/behavior/settings",operation_id="behavior_save_settings",tag="behavior",request_body=SaveBehaviorSettings,responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/behavior/settings",operation_id="behavior_save_settings",tag="behavior",request_body=SaveBehaviorSettings,responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_settings(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -111,7 +113,7 @@ pub async fn save_settings(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/students",operation_id="behavior_students",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorStudentPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students",operation_id="behavior_students",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorStudentPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn students(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -123,7 +125,7 @@ pub async fn students(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/options",operation_id="behavior_selector_options",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorSelectorOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/options",operation_id="behavior_selector_options",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorSelectorOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn selector_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -141,7 +143,7 @@ pub async fn selector_options(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/batches",operation_id="behavior_create_batch",tag="behavior",request_body=CreateBehaviorBatch,responses((status=200,body=ApiResponse<BehaviorBatchReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/batches",operation_id="behavior_create_batch",tag="behavior",request_body=CreateBehaviorBatch,responses((status=200,body=ApiResponse<BehaviorBatchReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_batch(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -153,7 +155,7 @@ pub async fn create_batch(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/entries",operation_id="behavior_report",tag="behavior",params(BehaviorReportQuery),responses((status=200,body=ApiResponse<BehaviorReportPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/entries",operation_id="behavior_report",tag="behavior",params(BehaviorReportQuery),responses((status=200,body=ApiResponse<BehaviorReportPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn report(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -165,7 +167,7 @@ pub async fn report(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/entries/cancel",operation_id="behavior_cancel_entries",tag="behavior",request_body=CancelBehaviorEntries,responses((status=200,body=ApiResponse<BehaviorCancellation>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/entries/cancel",operation_id="behavior_cancel_entries",tag="behavior",request_body=CancelBehaviorEntries,responses((status=200,body=ApiResponse<BehaviorCancellation>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn cancel_entries(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -177,7 +179,7 @@ pub async fn cancel_entries(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/cycles",operation_id="behavior_cycles",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorCycle>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cycles",operation_id="behavior_cycles",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorCycle>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn cycles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -189,7 +191,7 @@ pub async fn cycles(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/cleanup/preview",operation_id="behavior_preview_cleanup",tag="behavior",request_body=PreviewBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup/preview",operation_id="behavior_preview_cleanup",tag="behavior",request_body=PreviewBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn preview_cleanup(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -202,7 +204,7 @@ pub async fn preview_cleanup(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/cleanup",operation_id="behavior_execute_cleanup",tag="behavior",request_body=ExecuteBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup",operation_id="behavior_execute_cleanup",tag="behavior",request_body=ExecuteBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn execute_cleanup(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -221,7 +223,7 @@ pub async fn execute_cleanup(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/history/adjustments",operation_id="behavior_adjust_history",tag="behavior",request_body=AdjustBehaviorHistory,responses((status=200,body=ApiResponse<BehaviorHistoryAdjustment>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/history/adjustments",operation_id="behavior_adjust_history",tag="behavior",request_body=AdjustBehaviorHistory,responses((status=200,body=ApiResponse<BehaviorHistoryAdjustment>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn adjust_history(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -234,7 +236,7 @@ pub async fn adjust_history(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/reset/preview",operation_id="behavior_preview_reset",tag="behavior",request_body=PreviewBehaviorReset,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset/preview",operation_id="behavior_preview_reset",tag="behavior",request_body=PreviewBehaviorReset,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn preview_reset(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -247,7 +249,7 @@ pub async fn preview_reset(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(post,path="/api/behavior/reset",operation_id="behavior_reset",tag="behavior",request_body=ResetBehaviorScores,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset",operation_id="behavior_reset",tag="behavior",request_body=ResetBehaviorScores,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn reset(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -268,7 +270,7 @@ pub async fn reset(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(get,path="/api/behavior/students/{id}/summary",operation_id="behavior_student_summary",tag="behavior",params(("id"=Uuid,Path),BehaviorSummaryQuery),responses((status=200,body=ApiResponse<BehaviorStudentSummary>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students/{id}/summary",operation_id="behavior_student_summary",tag="behavior",params(("id"=Uuid,Path),BehaviorSummaryQuery),responses((status=200,body=ApiResponse<BehaviorStudentSummary>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
 pub async fn student_summary(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -285,7 +287,7 @@ pub async fn student_summary(
     .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(get,path="/api/behavior/cleanup/{id}",operation_id="behavior_cleanup_job",tag="behavior",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cleanup/{id}",operation_id="behavior_cleanup_job",tag="behavior",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
 pub async fn cleanup_job(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

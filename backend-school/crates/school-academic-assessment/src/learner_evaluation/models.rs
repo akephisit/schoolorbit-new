@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema, sqlx::Type,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type,
 )]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum LearnerEvaluationDomain {
@@ -20,9 +22,10 @@ impl LearnerEvaluationDomain {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(try_from = "i16", into = "i16")]
-#[schema(value_type=i16)]
+#[cfg_attr(feature = "api-docs", schema(value_type=i16))]
 pub struct LearnerEvaluationLevel(i16);
 impl TryFrom<i16> for LearnerEvaluationLevel {
     type Error = &'static str;
@@ -40,15 +43,17 @@ impl From<LearnerEvaluationLevel> for i16 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct EvaluationContext {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationCriterion {
     pub id: Uuid,
@@ -58,7 +63,8 @@ pub struct EvaluationCriterion {
     pub display_order: i32,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CriterionInput {
     pub name: String,
@@ -66,7 +72,8 @@ pub struct CriterionInput {
     pub active: bool,
     pub row_version: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogCriterion {
     pub id: Uuid,
@@ -77,7 +84,8 @@ pub struct CatalogCriterion {
     pub display_order: i32,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogInput {
     pub domain: LearnerEvaluationDomain,
@@ -85,7 +93,8 @@ pub struct CatalogInput {
     #[serde(flatten)]
     pub criterion: CriterionInput,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationConfiguration {
     pub subject_id: Uuid,
@@ -95,7 +104,8 @@ pub struct EvaluationConfiguration {
     pub can_manage: bool,
     pub criteria: Vec<EvaluationCriterion>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationControl {
     pub id: Uuid,
@@ -103,13 +113,15 @@ pub struct EvaluationControl {
     pub entry_enabled: bool,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ControlInput {
     pub entry_enabled: bool,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationStudent {
     pub membership_id: Uuid,
@@ -119,7 +131,8 @@ pub struct EvaluationStudent {
     pub homeroom_name: Option<String>,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationResponse {
     pub subject_term_criterion_id: Uuid,
@@ -127,7 +140,8 @@ pub struct EvaluationResponse {
     pub quality_level: i16,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResponseInput {
     pub subject_term_criterion_id: Uuid,
@@ -135,12 +149,14 @@ pub struct ResponseInput {
     pub quality_level: Option<LearnerEvaluationLevel>,
     pub row_version: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResponseBatchInput {
     pub cells: Vec<ResponseInput>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationConfirmation {
     pub id: Uuid,
@@ -150,26 +166,30 @@ pub struct EvaluationConfirmation {
     pub invalidated: bool,
     pub confirmed_by: Uuid,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmationInput {
     pub source_checksum: String,
     pub roster_checksum: String,
     pub row_version: Option<i64>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct MissingEvaluation {
     pub student_academic_year_id: Uuid,
     pub subject_term_criterion_id: Uuid,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmationOutcome {
     pub confirmation: Option<EvaluationConfirmation>,
     pub missing: Vec<MissingEvaluation>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationWorkspace {
     pub learning_group_id: Uuid,
@@ -187,7 +207,8 @@ pub struct EvaluationWorkspace {
     pub confirmation: Option<EvaluationConfirmation>,
     pub confirmation_is_current: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationLock {
     pub id: Uuid,
@@ -197,19 +218,22 @@ pub struct EvaluationLock {
     pub roster_checksum: String,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LockBlocker {
     pub learning_group_id: Uuid,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LockOutcome {
     pub lock: Option<EvaluationLock>,
     pub blockers: Vec<LockBlocker>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearnerEvaluationGroupLockReadiness {
     pub learning_group_id: Uuid,
@@ -217,7 +241,8 @@ pub struct LearnerEvaluationGroupLockReadiness {
     pub ready: bool,
     pub blockers: Vec<String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LearnerEvaluationSubjectLockReadiness {
     pub subject_id: Uuid,
@@ -228,34 +253,39 @@ pub struct LearnerEvaluationSubjectLockReadiness {
     pub ready: bool,
     pub groups: Vec<LearnerEvaluationGroupLockReadiness>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CriterionRemoval {
     pub id: Uuid,
     pub deleted: bool,
     pub criterion: Option<EvaluationCriterion>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct VersionInput {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregationPolicyBand {
     pub quality_level: i16,
     pub lower_bound: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AggregationPolicyInput {
     pub name: String,
     pub bands: Vec<AggregationPolicyBand>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AggregationPolicyVersion {
     pub id: Uuid,
@@ -265,14 +295,16 @@ pub struct AggregationPolicyVersion {
     pub row_version: i64,
     pub bands: Vec<AggregationPolicyBand>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ExactAverage {
     pub numerator: String,
     pub denominator: String,
     pub decimal: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LockedCriterionValue {
     pub id: Uuid,
@@ -284,26 +316,30 @@ pub struct LockedCriterionValue {
     pub quality_level: i16,
     pub row_version: i64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SubjectEvaluationSummary {
     pub subject_id: Uuid,
     pub average: ExactAverage,
     pub criteria: Vec<LockedCriterionValue>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogEvaluationSummary {
     pub school_criterion_id: Uuid,
     pub average: ExactAverage,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct MissingSubject {
     pub subject_id: Uuid,
     pub reason: String,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DomainEvaluationSummary {
     pub domain: LearnerEvaluationDomain,
@@ -314,7 +350,8 @@ pub struct DomainEvaluationSummary {
     pub catalog_criteria: Vec<CatalogEvaluationSummary>,
     pub subjects: Vec<SubjectEvaluationSummary>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentEvaluationSummary {
     pub student_academic_year_id: Uuid,
@@ -322,7 +359,8 @@ pub struct StudentEvaluationSummary {
     pub domains: Vec<DomainEvaluationSummary>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSubject {
     pub subject_id: Uuid,

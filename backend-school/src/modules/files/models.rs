@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -9,10 +10,13 @@ use school_file_platform::{
     repository::PlatformFile,
 };
 
+#[cfg(feature = "api-docs")]
 pub struct FileUploadMultipart;
 
+#[cfg(feature = "api-docs")]
 impl utoipa::PartialSchema for FileUploadMultipart {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        #[cfg(feature = "api-docs")]
         use utoipa::openapi::{
             schema::{SchemaType, Type},
             KnownFormat, ObjectBuilder, Ref, SchemaFormat,
@@ -38,15 +42,18 @@ impl utoipa::PartialSchema for FileUploadMultipart {
     }
 }
 
+#[cfg(feature = "api-docs")]
 impl ToSchema for FileUploadMultipart {}
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct FileAccessQuery {
     pub resource_id: Option<Uuid>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileDownloadGrantResponse {
     pub url: String,
@@ -70,7 +77,8 @@ impl TryFrom<DownloadGrant> for FileDownloadGrantResponse {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PublicFileDeliveryResponse {
     pub url: String,
@@ -84,7 +92,8 @@ impl From<PublicDelivery> for PublicFileDeliveryResponse {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadata {
     pub id: Uuid,
@@ -93,9 +102,9 @@ pub struct FileMetadata {
     pub display_filename: String,
     pub detected_mime_type: String,
     pub byte_size: i64,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub current_version: Option<u32>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub public_content_url: Option<String>,
 }
 
@@ -118,7 +127,8 @@ impl From<PlatformFile> for FileMetadata {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FileDeleteResult {
     pub pending_retry: bool,

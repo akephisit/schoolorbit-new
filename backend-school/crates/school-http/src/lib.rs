@@ -7,15 +7,17 @@ use axum::{
 };
 use school_errors::AppError;
 use serde::Serialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: T,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub message: Option<String>,
 }
 
@@ -37,7 +39,8 @@ impl<T> ApiResponse<T> {
     }
 }
 
-#[derive(Debug, Default, Serialize, ToSchema)]
+#[derive(Debug, Default, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct EmptyData {}
 
 impl ApiResponse<EmptyData> {
@@ -56,7 +59,8 @@ pub struct IdData<T> {
 }
 
 /// OpenAPI transport schema for the UUID identifier payload emitted by `IdData<Uuid>`.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UuidIdData {
     pub id: uuid::Uuid,
 }
@@ -67,13 +71,14 @@ impl<T> IdData<T> {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponse {
     pub success: bool,
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub message: Option<String>,
 }
 
@@ -87,7 +92,8 @@ impl ApiErrorResponse {
     }
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponseWithData<T> {
     pub success: bool,
@@ -97,13 +103,14 @@ pub struct ApiErrorResponseWithData<T> {
     pub data: T,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ApiErrorResponseWithOptionalData<T> {
     pub success: bool,
     pub error: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,

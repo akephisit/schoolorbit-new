@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TimetableSourceIssueCode {
     MissingOffering,
@@ -15,7 +17,8 @@ pub enum TimetableSourceIssueCode {
     SchedulingModeMismatch,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq, ToSchema)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableSourceIssue {
     pub block_id: Uuid,

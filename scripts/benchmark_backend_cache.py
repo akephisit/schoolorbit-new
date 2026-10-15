@@ -181,6 +181,7 @@ class Benchmark:
         self.sequence += 1
         builder = f"{self.namespace}-{self.sequence}"
         image = f"schoolorbit-cache-benchmark:{self.sequence}"
+        docs_image = f"{image}-docs"
         folder = self.output / ("compiler-seed" if compiler_seed else f"{scenario}-{sample}-{backend}")
         folder.mkdir(parents=True)
         ref = f"ghcr.io/{os.environ['GITHUB_REPOSITORY_OWNER'].lower()}/schoolorbit-{self.namespace}:buildcache"
@@ -212,10 +213,15 @@ class Benchmark:
             after = network_bytes(builder)
             run(base + ["--target", "build-timings", "--output", f"type=local,dest={folder / 'timings'}", str(source)],
                 folder / "evidence.log")
-            api = run(["docker", "run", "--rm", "--entrypoint", "env", image, "-i",
-                       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "/app/backend-school", "export-openapi"])
+            # Contract verification is untimed and uses the same source with documentation enabled.
+            # It must not add metadata or a documentation target to the measured production image.
+            run(base + ["--target", "builder", "--load", "--tag", docs_image, str(source)],
+                folder / "documentation-builder.log")
+            api = run(["docker", "run", "--rm", "--entrypoint", "bash",
+                       "-v", f"{self.root / 'scripts/export_benchmark_openapi.sh'}:/export_benchmark_openapi.sh:ro",
+                       docs_image, "/export_benchmark_openapi.sh"])
             if json.loads(api) != self.reference:
-                raise ValueError("Runtime OpenAPI differs from the canonical contract")
+                raise ValueError("Documentation export differs from the canonical contract")
             uid = run(["docker", "run", "--rm", "--entrypoint", "id", image, "-u"])
             config = json.loads(run(["docker", "image", "inspect", image]))[0]
             if uid != "1000" or config["Config"]["Cmd"] != ["/app/backend-school"]:
@@ -237,6 +243,7 @@ class Benchmark:
                           wall_seconds=wall, network_received_bytes=after[0] - before[0],
                           network_sent_bytes=after[1] - before[1], image_id=config["Id"],
                           runtime_uid=1000, openapi_equal=True, registry_cache_layer_bytes=stored_bytes,
+                          openapi_source="separate documentation build; outside production timing",
                           compiler_snapshot_sha256=self.snapshot_digest,
                           compiler_priming_seconds=priming,
                           phases=buildkit_phases((folder / "build.log").read_text()),
@@ -247,6 +254,7 @@ class Benchmark:
             # Remove only this sample's owned builder and local image, including failure paths.
             subprocess.run(["docker", "buildx", "rm", "--force", builder], check=False)
             subprocess.run(["docker", "image", "rm", image], check=False)
+            subprocess.run(["docker", "image", "rm", docs_image], check=False)
 
 
 def main():

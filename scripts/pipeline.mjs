@@ -67,11 +67,23 @@ try {
         const cwd = path.join(root, suite);
         run('cargo', ['fmt', '--all', '--', '--check'], cwd);
         run('cargo', ['check', '--workspace', '--all-targets', '--locked'], cwd);
+        const productionDependencies = execFileSync('cargo', ['tree', '-p', 'backend-school', '--edges', 'normal', '--prefix', 'none', '--format', '{p}', '--locked'], { cwd, encoding: 'utf8' });
+        if (/^utoipa(?:-gen)? v/m.test(productionDependencies)) throw new Error('Production dependency graph must exclude Utoipa');
         run('cargo', ['test', '--test', 'static_architecture', '--locked'], cwd);
-        run('cargo', ['test', '--bin', 'backend-school', 'api_contract::tests', '--locked'], cwd);
         run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '-p', 'school-behavior', '--lib', '--locked'], cwd);
-        run('node', ['scripts/generate-api-contracts.mjs', '--check']);
+        run('cargo', ['build', '--bin', 'backend-school', '--locked'], cwd);
         const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
+        const unsupportedExport = spawnSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8' });
+        if (unsupportedExport.status !== 2 || unsupportedExport.stdout !== '' || !unsupportedExport.stderr.includes('--features api-docs')) throw new Error('Production binary must reject OpenAPI export before runtime startup');
+        run('cargo', ['check', '--workspace', '--all-targets', '--features', 'api-docs', '--locked'], cwd);
+        run('cargo', ['test', '--bin', 'backend-school', '--features', 'api-docs', 'api_contract::tests', '--locked'], cwd);
+        for (const contractTest of ['gradebook_review_group_phase_contract_uses_phase_codes', 'learner_endpoint_contract_requires_full_context_and_typed_domains', 'results_endpoint_contract_requires_exact_context_and_typed_envelopes']) {
+          run('cargo', ['test', '--bin', 'backend-school', '--features', 'api-docs', contractTest, '--locked'], cwd);
+        }
+        for (const schemaTest of ['career::schema_tests::career_schema_codes_match_serialized_values', 'personnel::tests::personnel_schema_enum_matches_serialized_codes']) {
+          run('cargo', ['test', '-p', 'school-staff', '--features', 'api-docs', schemaTest, '--locked', '--', '--exact'], cwd);
+        }
+        run('node', ['scripts/generate-api-contracts.mjs', '--check']);
         JSON.parse(execFileSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
         run('node', ['--test', 'scripts/tests/postgres-compatibility.test.mjs']);
         run('bash', ['scripts/test_school_database_suite.sh']);

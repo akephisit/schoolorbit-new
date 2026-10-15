@@ -15,12 +15,14 @@ use school_calendar::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
     UpsertCalendarTagRequest,
 };
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/calendar/events",
     operation_id = "listCalendarEvents",
@@ -32,7 +34,7 @@ use uuid::Uuid;
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_calendar_events(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -46,7 +48,7 @@ pub async fn list_calendar_events(
     Ok(Json(ApiResponse::ok(events)))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/calendar/events",
     operation_id = "createCalendarEvent",
@@ -58,7 +60,7 @@ pub async fn list_calendar_events(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
     )
-)]
+))]
 pub async fn create_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -94,7 +96,7 @@ pub async fn create_calendar_event(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(event))))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/calendar/events/{id}",
     operation_id = "updateCalendarEvent",
@@ -108,7 +110,7 @@ pub async fn create_calendar_event(
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
         (status = 404, description = "Event not found", body = ApiErrorResponse),
     )
-)]
+))]
 pub async fn update_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -145,7 +147,7 @@ pub async fn update_calendar_event(
     Ok(Json(ApiResponse::ok(event)))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/calendar/events/{id}",
     operation_id = "deleteCalendarEvent",
@@ -157,7 +159,7 @@ pub async fn update_calendar_event(
         (status = 403, description = "Calendar manage permission required", body = ApiErrorResponse),
         (status = 404, description = "Event not found", body = ApiErrorResponse),
     )
-)]
+))]
 pub async fn delete_calendar_event(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -171,7 +173,7 @@ pub async fn delete_calendar_event(
     Ok(Json(ApiResponse::empty()))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/calendar/categories",
     operation_id = "listCalendarCategories",
@@ -181,7 +183,7 @@ pub async fn delete_calendar_event(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_calendar_categories(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -234,7 +236,7 @@ pub async fn delete_calendar_category(
     Ok(Json(ApiResponse::empty()))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/calendar/tags",
     operation_id = "listCalendarTags",
@@ -244,7 +246,7 @@ pub async fn delete_calendar_category(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Calendar read permission required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_calendar_tags(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -297,7 +299,7 @@ pub async fn delete_calendar_tag(
     Ok(Json(ApiResponse::empty()))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/me/calendar/events",
     operation_id = "listMyCalendarEvents",
@@ -309,7 +311,7 @@ pub async fn delete_calendar_tag(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student or staff account required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_my_calendar_events(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<CalendarEventQuery>,
@@ -320,7 +322,7 @@ pub async fn list_my_calendar_events(
     Ok(Json(ApiResponse::ok(events)))
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/public/calendar/events",
     operation_id = "listPublicCalendarEvents",
@@ -330,7 +332,7 @@ pub async fn list_my_calendar_events(
         (status = 200, description = "Public calendar events", body = ApiResponse<Vec<school_calendar::models::CalendarPublicEvent>>),
         (status = 400, description = "Invalid date range", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_public_calendar_events(
     State(state): State<AppState>,
     headers: HeaderMap,

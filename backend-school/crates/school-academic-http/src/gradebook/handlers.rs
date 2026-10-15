@@ -8,8 +8,10 @@ use school_academic_assessment::gradebook::services as gradebook_adapter;
 use school_academic_assessment::gradebook::services as gradebook_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse};
 use uuid::Uuid;
 
 fn signal(
@@ -28,7 +30,7 @@ fn signal(
     );
 }
 
-#[utoipa::path(get,path="/api/academic/gradebook/subjects",operation_id="listGradebookSubjects",tag="academic",params(GradebookContext),responses((status=200,body=ApiResponse<Vec<GradebookSubject>>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/gradebook/subjects",operation_id="listGradebookSubjects",tag="academic",params(GradebookContext),responses((status=200,body=ApiResponse<Vec<GradebookSubject>>),(status=403,body=ApiErrorResponse))))]
 pub async fn list_subjects(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -39,7 +41,7 @@ pub async fn list_subjects(
         gradebook_service::list_subjects(&context.tenant.pool, &context.actor, &query).await?,
     )))
 }
-#[utoipa::path(get,path="/api/academic/gradebook/controls",operation_id="listGradebookControls",tag="academic",params(GradebookContext),responses((status=200,body=ApiResponse<Vec<GradebookControl>>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/gradebook/controls",operation_id="listGradebookControls",tag="academic",params(GradebookContext),responses((status=200,body=ApiResponse<Vec<GradebookControl>>),(status=403,body=ApiErrorResponse))))]
 pub async fn list_controls(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -50,7 +52,7 @@ pub async fn list_controls(
         gradebook_service::list_controls(&context.tenant.pool, &context.actor, &query).await?,
     )))
 }
-#[utoipa::path(put,path="/api/academic/gradebook/controls/{control_id}",operation_id="updateGradebookControl",tag="academic",params(GradebookContext,("control_id"=Uuid,Path)),request_body=UpdateControlInput,responses((status=200,body=ApiResponse<GradebookControl>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/gradebook/controls/{control_id}",operation_id="updateGradebookControl",tag="academic",params(GradebookContext,("control_id"=Uuid,Path)),request_body=UpdateControlInput,responses((status=200,body=ApiResponse<GradebookControl>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn update_control(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -65,7 +67,7 @@ pub async fn update_control(
     signal(&state, &session, &query, id);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(get,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}",operation_id="getGradebookGroupPhaseWorkspace",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),responses((status=200,body=ApiResponse<GroupPhaseWorkspace>),(status=403,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}",operation_id="getGradebookGroupPhaseWorkspace",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),responses((status=200,body=ApiResponse<GroupPhaseWorkspace>),(status=403,body=ApiErrorResponse))))]
 pub async fn get_group_phase_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -87,7 +89,7 @@ pub async fn get_group_phase_workspace(
         .await?,
     )))
 }
-#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items",operation_id="createGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items",operation_id="createGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn create_item(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -112,7 +114,7 @@ pub async fn create_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="updateGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="updateGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=ItemInput,responses((status=200,body=ApiResponse<ScoreItem>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn update_item(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -138,7 +140,7 @@ pub async fn update_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(delete,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="removeGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=RemoveItemInput,responses((status=200,body=ApiResponse<ScoreItemRemovalOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/items/{item_id}",operation_id="removeGradebookItem",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path),("item_id"=Uuid,Path)),request_body=RemoveItemInput,responses((status=200,body=ApiResponse<ScoreItemRemovalOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn remove_item(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -164,7 +166,7 @@ pub async fn remove_item(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores",operation_id="saveGradebookScoresBatch",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ScoreBatchInput,responses((status=200,body=ApiResponse<ScoreBatchOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/scores",operation_id="saveGradebookScoresBatch",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ScoreBatchInput,responses((status=200,body=ApiResponse<ScoreBatchOutcome>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn save_scores_batch(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -189,7 +191,7 @@ pub async fn save_scores_batch(
     signal(&state, &session, &query, group);
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm",operation_id="confirmGradebookPhase",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ConfirmInput,responses((status=200,body=ApiResponse<PhaseConfirmation>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/gradebook/groups/{group_id}/phases/{phase_code}/confirm",operation_id="confirmGradebookPhase",tag="academic",params(GradebookContext,("group_id"=Uuid,Path),("phase_code"=school_academic_assessment::assessment::models::AssessmentPhaseCode,Path)),request_body=ConfirmInput,responses((status=200,body=ApiResponse<PhaseConfirmation>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
 pub async fn confirm_phase(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

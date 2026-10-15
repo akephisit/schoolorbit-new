@@ -3,6 +3,11 @@ name = "school-academic-core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
 [dependencies]
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
@@ -16,7 +21,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

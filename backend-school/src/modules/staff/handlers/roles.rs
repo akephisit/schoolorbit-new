@@ -8,16 +8,20 @@ use axum::{
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData, IdData, UuidIdData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData, UuidIdData};
+use school_http::{ApiResponse, IdData};
 use school_permissions::registry::codes;
 use school_staff::models::*;
 use school_staff::services::{organization_unit_service, role_service};
 use serde::Deserialize;
+#[cfg(feature = "api-docs")]
 use utoipa::IntoParams;
 use uuid::Uuid;
 
-#[derive(Debug, Default, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct ListManagedResourcesQuery {
     pub include_inactive: Option<bool>,
 }
@@ -26,7 +30,7 @@ pub struct ListManagedResourcesQuery {
 // Roles
 // ============================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/roles",
     operation_id = "listRoles",
@@ -37,7 +41,7 @@ pub struct ListManagedResourcesQuery {
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_roles(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -52,7 +56,7 @@ pub async fn list_roles(
     Ok(Json(ApiResponse::ok(roles)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/roles/{id}",
     operation_id = "getRole",
@@ -64,7 +68,7 @@ pub async fn list_roles(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Role not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -79,7 +83,7 @@ pub async fn get_role(
     Ok(Json(ApiResponse::ok(role)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/roles",
     operation_id = "createRole",
@@ -91,7 +95,7 @@ pub async fn get_role(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -113,7 +117,7 @@ pub async fn create_role(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/roles/{id}",
     operation_id = "updateRole",
@@ -128,7 +132,7 @@ pub async fn create_role(
         (status = 404, description = "Role not found", body = ApiErrorResponse),
         (status = 409, description = "Protected role or invalid status transition", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -155,7 +159,7 @@ pub async fn update_role(
     Ok(Json(ApiResponse::empty_with_message("อัปเดตบทบาทสำเร็จ")).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/roles/{id}",
     operation_id = "deleteRole",
@@ -168,7 +172,7 @@ pub async fn update_role(
         (status = 404, description = "Role not found", body = ApiErrorResponse),
         (status = 409, description = "System role cannot be deactivated", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn deactivate_role(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -193,7 +197,7 @@ pub async fn deactivate_role(
 // Organization Units
 // ============================================
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units",
     operation_id = "listOrganizationUnits",
@@ -204,7 +208,7 @@ pub async fn deactivate_role(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_organization_units(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -223,7 +227,7 @@ pub async fn list_organization_units(
     Ok(Json(ApiResponse::ok(units)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units/{id}",
     operation_id = "getOrganizationUnit",
@@ -235,7 +239,7 @@ pub async fn list_organization_units(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Organization unit not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_organization_unit(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -250,7 +254,7 @@ pub async fn get_organization_unit(
     Ok(Json(ApiResponse::ok(unit)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/organization/units",
     operation_id = "createOrganizationUnit",
@@ -262,7 +266,7 @@ pub async fn get_organization_unit(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_organization_unit(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -284,7 +288,7 @@ pub async fn create_organization_unit(
         .into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/organization/units/{id}",
     operation_id = "updateOrganizationUnit",
@@ -299,7 +303,7 @@ pub async fn create_organization_unit(
         (status = 404, description = "Organization unit not found", body = ApiErrorResponse),
         (status = 409, description = "Protected unit or invalid hierarchy transition", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_organization_unit(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -325,7 +329,7 @@ pub async fn update_organization_unit(
     Ok(Json(ApiResponse::empty_with_message("อัปเดตหน่วยงานสำเร็จ")).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/organization/units/{id}",
     operation_id = "deactivateOrganizationUnit",
@@ -338,7 +342,7 @@ pub async fn update_organization_unit(
         (status = 404, description = "Organization unit not found", body = ApiErrorResponse),
         (status = 409, description = "System unit or active child prevents deactivation", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn deactivate_organization_unit(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

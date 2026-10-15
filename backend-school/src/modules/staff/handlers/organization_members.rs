@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -13,18 +14,23 @@ use crate::utils::request_context::{
 };
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
+#[cfg(feature = "api-docs")]
+use school_http::EmptyData;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
+#[cfg(feature = "api-docs")]
 use school_staff::models::OrganizationMemberItem;
 use school_staff::services::organization_member_service;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct ListMembersQuery {
     pub include_children: Option<bool>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct AddMemberRequest {
     pub user_id: Uuid,
     pub position_code: String,
@@ -33,7 +39,8 @@ pub struct AddMemberRequest {
     pub responsibilities: Option<String>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct UpdateMemberRequest {
     pub position_code: String,
     pub position_title: Option<String>,
@@ -42,7 +49,7 @@ pub struct UpdateMemberRequest {
     pub new_organization_unit_id: Option<Uuid>,
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/organization/units/{id}/members",
     operation_id = "listOrganizationMembers",
@@ -55,7 +62,7 @@ pub struct UpdateMemberRequest {
         (status = 200, description = "Organization members", body = ApiResponse<Vec<OrganizationMemberItem>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_members(
     Path(organization_unit_id): Path<Uuid>,
     Query(query): Query<ListMembersQuery>,
@@ -72,7 +79,7 @@ pub async fn list_members(
     Ok(Json(ApiResponse::ok(members)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/organization/units/{id}/members",
     operation_id = "addOrganizationMember",
@@ -85,7 +92,7 @@ pub async fn list_members(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn add_member(
     State(state): State<AppState>,
     Path(organization_unit_id): Path<Uuid>,
@@ -125,7 +132,7 @@ pub async fn add_member(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/organization/units/{id}/members/{user_id}",
     operation_id = "updateOrganizationMember",
@@ -142,7 +149,7 @@ pub async fn add_member(
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Membership not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_member(
     State(state): State<AppState>,
     Path((organization_unit_id, user_id)): Path<(Uuid, Uuid)>,
@@ -185,7 +192,7 @@ pub async fn update_member(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/organization/units/{id}/members/{user_id}",
     operation_id = "removeOrganizationMember",
@@ -199,7 +206,7 @@ pub async fn update_member(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn remove_member(
     State(state): State<AppState>,
     Path((organization_unit_id, user_id)): Path<(Uuid, Uuid)>,

@@ -1,12 +1,14 @@
 use crate::career::{CreateStaffCareerRequest, StaffCareerCurrent, UpdateStaffCareerRequest};
 use chrono::NaiveDate;
 use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 macro_rules! personnel_enum {
     ($name:ident { $($variant:ident => ($code:literal, $label:literal)),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "api-docs", derive(ToSchema))]
         #[serde(rename_all = "snake_case")]
         pub enum $name { $(#[serde(rename = $code)] $variant),+ }
         impl std::str::FromStr for $name {
@@ -41,7 +43,8 @@ personnel_enum!(StaffEducationLevel {
     Doctorate => ("doctorate", "ปริญญาเอก"),
     Other => ("other", "อื่น ๆ"),
 });
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffJobPositionSummary {
     pub id: Uuid,
@@ -51,7 +54,8 @@ pub struct StaffJobPositionSummary {
     pub is_selectable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CreateStaffInfoRequest {
     pub career: Option<CreateStaffCareerRequest>,
@@ -70,7 +74,8 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(deny_unknown_fields)]
 pub struct UpdateStaffInfoRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,27 +125,31 @@ impl UpdateStaffInfoRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffInfoResponse {
     pub current_career: StaffCareerCurrent,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub job_position: Option<StaffJobPositionSummary>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub academic_rank: Option<StaffAcademicRank>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub education_level: Option<StaffEducationLevel>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub major: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub university: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "api-docs")]
+    #[cfg(feature = "api-docs")]
     use utoipa::PartialSchema;
 
     #[test]
+    #[cfg(feature = "api-docs")]
     fn personnel_schema_enum_matches_serialized_codes() {
         let schema = serde_json::to_value(StaffAcademicRank::schema()).unwrap();
         let expected = StaffAcademicRank::ALL
@@ -173,16 +182,18 @@ mod tests {
     }
 }
 
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct JobPositionListQuery {
     pub search: Option<String>,
     pub selectable_only: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct JobPositionPage {
     pub items: Vec<StaffJobPositionSummary>,
@@ -191,7 +202,8 @@ pub struct JobPositionPage {
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffSubjectGroupSummary {
     pub id: Uuid,
@@ -208,20 +220,23 @@ personnel_enum!(PersonnelDimension {
     JobPosition => ("job_position", "ตำแหน่งงาน"), AcademicRank => ("academic_rank", "วิทยฐานะ"),
     EducationLevel => ("education_level", "วุฒิการศึกษาสูงสุด"),
 });
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in=Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
 pub struct PersonnelOverviewQuery {
     pub status: Option<PersonnelStatusFilter>,
 }
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PersonnelBucket {
     pub key: String,
     pub label: String,
     pub count: i64,
 }
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PersonnelOverview {
     pub as_of: chrono::DateTime<chrono::Utc>,

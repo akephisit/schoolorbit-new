@@ -1,5 +1,6 @@
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -28,7 +29,8 @@ pub use year_reopening::YearRecoveryState;
 mod term_lifecycle;
 pub use term_lifecycle::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicYearStatus {
@@ -40,7 +42,8 @@ pub enum AcademicYearStatus {
     Archived,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicTermStatus {
@@ -52,7 +55,8 @@ pub enum AcademicTermStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AcademicTermType {
@@ -62,7 +66,8 @@ pub enum AcademicTermType {
     Custom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum VersionStatus {
@@ -71,7 +76,8 @@ pub enum VersionStatus {
     Archived,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum TimetableVersionStatus {
@@ -80,7 +86,8 @@ pub enum TimetableVersionStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatalogDisplayState {
     Current,
@@ -89,7 +96,8 @@ pub enum CatalogDisplayState {
     Unpublished,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum StudentAcademicYearStatus {
@@ -100,7 +108,8 @@ pub enum StudentAcademicYearStatus {
     Graduated,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum GradeProgressionKind {
@@ -110,7 +119,8 @@ pub enum GradeProgressionKind {
     Exception,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicYearRequest {
     pub year: i32,
@@ -120,7 +130,8 @@ pub struct CreateAcademicYearRequest {
     pub school_days: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicYearRequest {
     pub year: i32,
@@ -131,7 +142,8 @@ pub struct UpdateAcademicYearRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicTermRequest {
     pub academic_year_id: Uuid,
@@ -144,7 +156,8 @@ pub struct CreateAcademicTermRequest {
     pub bell_schedule_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicTermRequest {
     pub term_type: AcademicTermType,
@@ -157,7 +170,8 @@ pub struct UpdateAcademicTermRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BellSchedulePeriodInput {
     pub name: Option<String>,
@@ -168,14 +182,16 @@ pub struct BellSchedulePeriodInput {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceBellSchedulePeriodsRequest {
     pub periods: Vec<BellSchedulePeriodInput>,
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GradeProgressionInput {
     pub from_grade_level_id: Uuid,
@@ -185,14 +201,16 @@ pub struct GradeProgressionInput {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceGradeProgressionsRequest {
     pub progressions: Vec<GradeProgressionInput>,
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicYear {
     pub id: Uuid,
@@ -208,7 +226,8 @@ pub struct AcademicYear {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTerm {
     pub id: Uuid,
@@ -218,9 +237,9 @@ pub struct AcademicTerm {
     pub name: String,
     pub term_type: AcademicTermType,
     pub start_date: NaiveDate,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub planned_end_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
@@ -232,7 +251,8 @@ pub struct AcademicTerm {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicYearOption {
     pub id: Uuid,
@@ -243,7 +263,8 @@ pub struct AcademicYearOption {
     pub status: AcademicYearStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermOption {
     pub id: Uuid,
@@ -253,16 +274,17 @@ pub struct AcademicTermOption {
     pub name: String,
     pub term_type: AcademicTermType,
     pub start_date: NaiveDate,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub planned_end_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub closed_on: Option<NaiveDate>,
     pub included_in_year_result: bool,
     pub blocks_year_closure: bool,
     pub status: AcademicTermStatus,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicContextOptions {
     pub years: Vec<AcademicYearOption>,
@@ -271,7 +293,8 @@ pub struct AcademicContextOptions {
     pub active_academic_term_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateBellScheduleRequest {
     pub academic_year_id: Uuid,
@@ -279,7 +302,8 @@ pub struct CreateBellScheduleRequest {
     pub owning_organization_unit_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateBellScheduleRequest {
     pub name: String,
@@ -288,7 +312,8 @@ pub struct UpdateBellScheduleRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BellSchedule {
     pub id: Uuid,
@@ -303,7 +328,8 @@ pub struct BellSchedule {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BellSchedulePeriod {
     pub id: Uuid,
@@ -316,7 +342,8 @@ pub struct BellSchedulePeriod {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradeProgression {
     pub id: Uuid,
@@ -329,14 +356,16 @@ pub struct GradeProgression {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct GradeProgressionSet {
     pub row_version: i64,
     pub progressions: Vec<GradeProgression>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSubject {
     pub id: Uuid,
@@ -349,14 +378,16 @@ pub struct CatalogSubject {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCatalogSubjectRequest {
     pub code: String,
     pub subject_group_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCatalogSubjectRequest {
     pub code: String,
@@ -365,7 +396,8 @@ pub struct UpdateCatalogSubjectRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SubjectVersion {
     pub id: Uuid,
@@ -390,12 +422,13 @@ pub struct SubjectVersion {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSubjectVersionRequest {
     pub name_th: String,
     pub name_en: Option<String>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub credit: String,
     pub hours_per_semester: Option<i32>,
     pub subject_type: String,
@@ -407,12 +440,13 @@ pub struct CreateSubjectVersionRequest {
     pub grade_level_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateSubjectVersionRequest {
     pub name_th: String,
     pub name_en: Option<String>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub credit: String,
     pub hours_per_semester: Option<i32>,
     pub subject_type: String,
@@ -425,7 +459,8 @@ pub struct UpdateSubjectVersionRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogActivity {
     pub id: Uuid,
@@ -438,13 +473,15 @@ pub struct CatalogActivity {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCatalogActivityRequest {
     pub activity_type: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCatalogActivityRequest {
     pub activity_type: String,
@@ -452,7 +489,8 @@ pub struct UpdateCatalogActivityRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityVersion {
     pub id: Uuid,
@@ -460,9 +498,9 @@ pub struct ActivityVersion {
     pub version_no: i32,
     pub name: String,
     pub description: Option<String>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_week: String,
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
@@ -477,7 +515,8 @@ pub struct ActivityVersion {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOwnerOption {
     pub organization_unit_id: Option<Uuid>,
@@ -485,7 +524,8 @@ pub struct CatalogOwnerOption {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSubjectGroupOption {
     pub subject_group_id: Uuid,
@@ -495,7 +535,8 @@ pub struct CatalogSubjectGroupOption {
     pub can_manage: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSubjectOverviewItem {
     pub subject: CatalogSubject,
@@ -506,7 +547,8 @@ pub struct CatalogSubjectOverviewItem {
     pub can_manage: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSubjectOverview {
     pub items: Vec<CatalogSubjectOverviewItem>,
@@ -514,7 +556,8 @@ pub struct CatalogSubjectOverview {
     pub subject_group_options: Vec<CatalogSubjectGroupOption>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogActivityOverviewItem {
     pub activity: CatalogActivity,
@@ -525,7 +568,8 @@ pub struct CatalogActivityOverviewItem {
     pub can_manage: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogActivityOverview {
     pub items: Vec<CatalogActivityOverviewItem>,
@@ -533,14 +577,15 @@ pub struct CatalogActivityOverview {
     pub can_create: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateActivityVersionRequest {
     pub name: String,
     pub description: Option<String>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_week: String,
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
@@ -549,14 +594,15 @@ pub struct CreateActivityVersionRequest {
     pub grade_level_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateActivityVersionRequest {
     pub name: String,
     pub description: Option<String>,
-    #[schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_week: String,
-    #[schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$")]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Option<String>, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$"))]
     pub hours_per_term: Option<String>,
     pub scheduling_mode: String,
     pub effective_from: NaiveDate,
@@ -566,21 +612,24 @@ pub struct UpdateActivityVersionRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DefaultTeacher {
     pub user_id: Uuid,
     pub role: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceDefaultTeachersRequest {
     pub teachers: Vec<DefaultTeacher>,
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SubjectGroup {
     pub id: Uuid,
@@ -594,7 +643,8 @@ pub struct SubjectGroup {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSubjectGroupRequest {
     pub code: String,
@@ -604,7 +654,8 @@ pub struct CreateSubjectGroupRequest {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateSubjectGroupRequest {
     pub code: String,
@@ -615,7 +666,8 @@ pub struct UpdateSubjectGroupRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumEdition {
     pub current_publication_id: Option<Uuid>,
@@ -634,21 +686,24 @@ pub struct CurriculumEdition {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, utoipa::IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumViewQuery {
     pub draft_id: Option<Uuid>,
     pub publication_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenCurriculumDraftRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiscardCurriculumDraftRequest {
     pub draft_id: Uuid,
@@ -656,14 +711,16 @@ pub struct DiscardCurriculumDraftRequest {
     pub content_hash: String,
 }
 
-#[derive(Debug, Clone, Deserialize, utoipa::IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumDraftDiscardPreviewQuery {
     pub draft_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumDraftDiscardPreview {
     pub draft_id: Uuid,
@@ -676,7 +733,8 @@ pub struct CurriculumDraftDiscardPreview {
     pub activity_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishCurriculumRequest {
     pub draft_id: Uuid,
@@ -684,7 +742,8 @@ pub struct PublishCurriculumRequest {
     pub change_note: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumPublication {
     pub id: Uuid,
@@ -707,7 +766,8 @@ pub struct CurriculumPublication {
     pub activity_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumPublicationChange {
     pub resource_kind: String,
@@ -716,14 +776,16 @@ pub struct CurriculumPublicationChange {
     pub after: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumPublicationHistory {
     pub publication: CurriculumPublication,
     pub changes: Vec<CurriculumPublicationChange>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumRequest {
     pub name: String,
@@ -731,7 +793,8 @@ pub struct CreateCurriculumRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumRequest {
     pub draft_id: Uuid,
@@ -741,7 +804,8 @@ pub struct UpdateCurriculumRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumLevel {
     pub draft_id: Option<Uuid>,
@@ -763,7 +827,8 @@ pub struct CurriculumLevel {
     pub status: VersionStatus,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOverviewItem {
     pub edition: CurriculumEdition,
@@ -771,19 +836,22 @@ pub struct CurriculumOverviewItem {
     pub study_program_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOverview {
     pub items: Vec<CurriculumOverviewItem>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumLevelView {
     pub level: CurriculumLevel,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumLevelRequest {
     pub draft_id: Uuid,
@@ -792,7 +860,8 @@ pub struct CreateCurriculumLevelRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumLevelRequest {
     pub draft_id: Uuid,
@@ -802,7 +871,8 @@ pub struct UpdateCurriculumLevelRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CopyStudyProgramRequest {
     pub draft_id: Uuid,
@@ -812,7 +882,8 @@ pub struct CopyStudyProgramRequest {
     pub name_th: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudyProgram {
     pub id: Uuid,
@@ -827,7 +898,8 @@ pub struct StudyProgram {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudyProgramOption {
     pub id: Uuid,
@@ -841,7 +913,8 @@ pub struct StudyProgramOption {
     pub grade_level_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStudyProgramRequest {
     pub draft_id: Uuid,
@@ -849,7 +922,8 @@ pub struct CreateStudyProgramRequest {
     pub is_default: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStudyProgramRequest {
     pub draft_id: Uuid,
@@ -858,7 +932,8 @@ pub struct UpdateStudyProgramRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum RequirementKind {
@@ -867,7 +942,8 @@ pub enum RequirementKind {
     Optional,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum RequirementResourceKind {
@@ -875,7 +951,8 @@ pub enum RequirementResourceKind {
     Activity,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCatalogVersionOption {
     pub id: Uuid,
@@ -887,20 +964,23 @@ pub struct CurriculumCatalogVersionOption {
     pub effective_until: Option<NaiveDate>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCreateOptions {
     pub grade_levels: Vec<GradeLevelLookupItem>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumManagementOptions {
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub catalog_versions: Vec<CurriculumCatalogVersionOption>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumTermSlot {
     pub id: Uuid,
@@ -912,14 +992,16 @@ pub struct CurriculumTermSlot {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CatalogWeeklyUnit {
     Period,
     Hour,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum CurriculumDocumentSection {
     BasicCourse,
@@ -927,7 +1009,8 @@ pub enum CurriculumDocumentSection {
     StudentDevelopment,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogCurriculumMetrics {
     pub weekly_value: Option<String>,
@@ -936,7 +1019,8 @@ pub struct CatalogCurriculumMetrics {
     pub total_hours: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumStructureRequirement {
     pub id: Uuid,
@@ -953,7 +1037,8 @@ pub struct CurriculumStructureRequirement {
     pub display_order: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumValidationNotice {
     pub code: String,
@@ -961,14 +1046,16 @@ pub struct CurriculumValidationNotice {
     pub catalog_version_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumStructureValidation {
     pub blockers: Vec<CurriculumValidationNotice>,
     pub warnings: Vec<CurriculumValidationNotice>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumStructureWorkspace {
     pub level: CurriculumLevel,
@@ -980,7 +1067,8 @@ pub struct CurriculumStructureWorkspace {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumTermSlotInput {
     pub id: Option<Uuid>,
@@ -990,7 +1078,8 @@ pub struct CurriculumTermSlotInput {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceCurriculumTermSlotsRequest {
     pub draft_id: Uuid,
@@ -998,7 +1087,8 @@ pub struct ReplaceCurriculumTermSlotsRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CurriculumStructureRequirementInput {
     pub resource_kind: RequirementResourceKind,
@@ -1009,7 +1099,8 @@ pub struct CurriculumStructureRequirementInput {
     pub display_order: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceCurriculumStructureRequest {
     pub draft_id: Uuid,
@@ -1017,7 +1108,8 @@ pub struct ReplaceCurriculumStructureRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicSetupWorkspace {
     pub years: Vec<AcademicYear>,
@@ -1025,13 +1117,15 @@ pub struct AcademicSetupWorkspace {
     pub bell_schedules: Vec<BellSchedule>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishVersionRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Homeroom {
     pub id: Uuid,
@@ -1051,7 +1145,8 @@ pub struct Homeroom {
     pub student_count: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateHomeroomRequest {
     pub academic_year_id: Uuid,
@@ -1062,7 +1157,8 @@ pub struct CreateHomeroomRequest {
     pub capacity: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateHomeroomRequest {
     pub custom_name: Option<String>,
@@ -1073,7 +1169,8 @@ pub struct UpdateHomeroomRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomAdvisor {
     pub id: Uuid,
@@ -1081,7 +1178,8 @@ pub struct HomeroomAdvisor {
     pub role: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomAdvisorAssignment {
     pub id: Uuid,
@@ -1090,21 +1188,24 @@ pub struct HomeroomAdvisorAssignment {
     pub role: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomAdvisorInput {
     pub user_id: Uuid,
     pub role: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceHomeroomAdvisorsRequest {
     pub advisors: Vec<HomeroomAdvisorInput>,
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentAcademicYear {
     pub id: Uuid,
@@ -1123,7 +1224,8 @@ pub struct StudentAcademicYear {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStudentAcademicYearRequest {
     pub academic_year_id: Uuid,
@@ -1132,7 +1234,8 @@ pub struct CreateStudentAcademicYearRequest {
     pub study_program_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStudentAcademicYearRequest {
     pub grade_level_id: Uuid,
@@ -1140,8 +1243,9 @@ pub struct UpdateStudentAcademicYearRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StudentAcademicYearFilter {
     pub academic_year_id: Uuid,
@@ -1152,7 +1256,8 @@ pub struct StudentAcademicYearFilter {
     pub status: Option<StudentAcademicYearStatus>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentYearCandidate {
     pub id: Uuid,
@@ -1160,17 +1265,19 @@ pub struct StudentYearCandidate {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StudentYearCandidateQuery {
     pub academic_year_id: Uuid,
     pub search: Option<String>,
-    #[param(minimum = 1, maximum = 100)]
+    #[cfg_attr(feature = "api-docs", param(minimum = 1, maximum = 100))]
     pub limit: Option<i32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum HomeroomPlacementStatus {
@@ -1180,7 +1287,8 @@ pub enum HomeroomPlacementStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomPlacement {
     pub id: Uuid,
@@ -1198,7 +1306,8 @@ pub struct HomeroomPlacement {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateHomeroomPlacementRequest {
     pub homeroom_id: Uuid,
@@ -1209,7 +1318,8 @@ pub struct CreateHomeroomPlacementRequest {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TransferHomeroomPlacementRequest {
     pub target_homeroom_id: Uuid,
@@ -1221,7 +1331,8 @@ pub struct TransferHomeroomPlacementRequest {
     pub idempotency_key: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomPlacementTransfer {
     pub ended_placement: HomeroomPlacement,
@@ -1229,7 +1340,8 @@ pub struct HomeroomPlacementTransfer {
     pub replayed: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomRosterStudent {
     pub placement_id: Uuid,
@@ -1247,7 +1359,8 @@ pub struct HomeroomRosterStudent {
     pub student_year_row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomRoster {
     pub homeroom: Homeroom,
@@ -1256,7 +1369,8 @@ pub struct HomeroomRoster {
     pub students: Vec<HomeroomRosterStudent>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomNumberingMethod {
     Name,
@@ -1264,36 +1378,41 @@ pub enum HomeroomNumberingMethod {
     GenderName,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomNumberingQuery {
     pub method: HomeroomNumberingMethod,
     pub start_number: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomNumberInput {
     pub placement_id: Uuid,
     pub class_number: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateHomeroomNumbersRequest {
     pub revision: String,
     pub numbers: Vec<HomeroomNumberInput>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomNumberingPreview {
     pub roster: HomeroomRoster,
     pub numbers: Vec<HomeroomNumberInput>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct HomeroomRosterCandidate {
     pub student_academic_year_id: Uuid,
@@ -1303,14 +1422,16 @@ pub struct HomeroomRosterCandidate {
     pub row_version: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
-#[into_params(parameter_in = Query)]
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomCandidateQuery {
     pub search: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomRosterAction {
     Add,
@@ -1318,7 +1439,8 @@ pub enum HomeroomRosterAction {
     Remove,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HomeroomRosterSelection {
     pub student_academic_year_id: Uuid,
@@ -1327,7 +1449,8 @@ pub struct HomeroomRosterSelection {
     pub placement_row_version: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MutateHomeroomRosterRequest {
     pub revision: String,

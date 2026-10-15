@@ -3,12 +3,14 @@ use chrono::{DateTime, NaiveDate, Utc};
 use school_errors::AppError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 macro_rules! career_enum {
     ($name:ident { $($variant:ident => $code:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+        #[cfg_attr(feature = "api-docs", derive(ToSchema))]
         #[serde(rename_all = "snake_case")]
         pub enum $name { $(#[serde(rename = $code)] $variant),+ }
         impl $name {
@@ -48,22 +50,23 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StaffCareerFact {
     PersonnelType {
         #[serde(deserialize_with = "required_nullable")]
-        #[schema(required = true)]
+        #[cfg_attr(feature = "api-docs", schema(required = true))]
         value: Option<StaffPersonnelType>,
     },
     JobPosition {
         #[serde(deserialize_with = "required_nullable")]
-        #[schema(required = true)]
+        #[cfg_attr(feature = "api-docs", schema(required = true))]
         value: Option<Uuid>,
     },
     AcademicRank {
         #[serde(deserialize_with = "required_nullable")]
-        #[schema(required = true)]
+        #[cfg_attr(feature = "api-docs", schema(required = true))]
         value: Option<StaffAcademicRank>,
     },
 }
@@ -78,7 +81,8 @@ impl StaffCareerFact {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StaffCareerEntryInput {
     pub fact: StaffCareerFact,
@@ -88,39 +92,42 @@ pub struct StaffCareerEntryInput {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StaffCareerReference {
     pub id: Uuid,
     pub revision: i64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffCareerCurrent {
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub personnel_type: Option<StaffCareerEntry>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub job_position: Option<StaffCareerEntry>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub academic_rank: Option<StaffCareerEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffCareerEntry {
     pub id: Uuid,
     pub staff_id: Uuid,
     pub fact: StaffCareerFact,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub job_position: Option<StaffJobPositionSummary>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub effective_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub order_date: Option<NaiveDate>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub order_number: Option<String>,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub note: Option<String>,
     pub source: StaffCareerSource,
     pub revision: i64,
@@ -129,36 +136,41 @@ pub struct StaffCareerEntry {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStaffCareerRequest {
     pub entries: Vec<StaffCareerEntryInput>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StaffCareerCurrentChange {
     #[serde(deserialize_with = "required_nullable")]
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub expected_current: Option<StaffCareerReference>,
     pub entry: StaffCareerEntryInput,
     pub correction_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStaffCareerRequest {
     pub changes: Vec<StaffCareerCurrentChange>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStaffCareerHistoryRequest {
     pub id: Uuid,
     pub entry: StaffCareerEntryInput,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CorrectStaffCareerHistoryRequest {
     pub expected_revision: i64,
@@ -167,25 +179,28 @@ pub struct CorrectStaffCareerHistoryRequest {
     pub reason: String,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Default, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct StaffCareerHistoryQuery {
     pub cursor: Option<Uuid>,
     pub page_size: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffCareerHistoryPage {
     pub rank_milestone: crate::rank_milestones::RankMilestone,
     pub items: Vec<StaffCareerEntry>,
     pub current: StaffCareerCurrent,
-    #[schema(required = true)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub next_cursor: Option<Uuid>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StaffCareerMutationAck {
     pub id: Uuid,
@@ -380,9 +395,10 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "api-docs"))]
 mod schema_tests {
     use super::*;
+    #[cfg(feature = "api-docs")]
     use utoipa::PartialSchema;
     #[test]
     fn career_schema_codes_match_serialized_values() {

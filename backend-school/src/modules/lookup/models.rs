@@ -1,34 +1,38 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 pub use school_academic_core::models::HomeroomLookupItem;
 
 /// Generic lookup item - minimal data for dropdowns
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct LookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Vec<Uuid>)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = Vec<Uuid>))]
     pub grade_level_ids: Option<Vec<Uuid>>,
 }
 
 /// Staff lookup item with title
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffLookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub title: Option<String>,
 }
 
 /// Role lookup item
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct RoleLookupItem {
     pub id: Uuid,
     pub code: String,
@@ -39,26 +43,28 @@ pub struct RoleLookupItem {
 pub use school_staff::models::OrganizationUnitLookupItem;
 
 /// Student lookup item with the placement in the caller-selected academic year.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct StudentLookupItem {
     pub id: Uuid,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub student_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
+    #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub homeroom: Option<String>,
 }
 
 /// Query parameters for lookup endpoints
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct LookupQuery {
     /// Filter for active items only (default: true)
     pub active_only: Option<bool>,
@@ -71,9 +77,10 @@ pub struct LookupQuery {
 }
 
 /// Query parameters for lookup data whose meaning changes by academic year.
-#[derive(Debug, Deserialize, IntoParams)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct AcademicLookupQuery {
     /// Academic year selected by the caller. The server never infers the active year.
     pub academic_year_id: Uuid,

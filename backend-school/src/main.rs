@@ -1,5 +1,6 @@
 #![deny(dead_code, unused_imports)]
 
+#[cfg(feature = "api-docs")]
 pub mod api_contract;
 mod app;
 mod behavior_provider_adapter;
@@ -88,20 +89,29 @@ async fn main() {
             std::process::exit(2);
         }
 
-        match api_contract::render_school_api() {
-            Ok(document) => {
-                use std::io::Write;
-                if let Err(error) = std::io::stdout().write_all(document.as_bytes()) {
-                    eprintln!("failed to write OpenAPI document: {error}");
+        #[cfg(not(feature = "api-docs"))]
+        {
+            eprintln!("OpenAPI export requires building backend-school with --features api-docs");
+            std::process::exit(2);
+        }
+
+        #[cfg(feature = "api-docs")]
+        {
+            match api_contract::render_school_api() {
+                Ok(document) => {
+                    use std::io::Write;
+                    if let Err(error) = std::io::stdout().write_all(document.as_bytes()) {
+                        eprintln!("failed to write OpenAPI document: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                Err(error) => {
+                    eprintln!("failed to render OpenAPI document: {error}");
                     std::process::exit(1);
                 }
             }
-            Err(error) => {
-                eprintln!("failed to render OpenAPI document: {error}");
-                std::process::exit(1);
-            }
+            return;
         }
-        return;
     }
 
     dotenv().ok();

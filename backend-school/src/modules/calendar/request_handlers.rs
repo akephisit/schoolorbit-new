@@ -6,16 +6,20 @@ use axum::{
     Json,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_calendar::{
-    models::UpsertCalendarEventRequest,
-    requests::{
-        self, CalendarEventRequest, CalendarRequestApproval, CalendarRequestPage,
-        CalendarRequestQuery, CreateCalendarRequest, PendingCalendarPage, PendingCalendarQuery,
-        RejectCalendarRequest,
-    },
-    target_options::{self, CalendarTargetOptions, CalendarTargetOptionsQuery},
+use school_calendar::models::UpsertCalendarEventRequest;
+use school_calendar::requests::{
+    self, CalendarRequestQuery, CreateCalendarRequest, PendingCalendarQuery, RejectCalendarRequest,
 };
-use school_http::{ApiErrorResponse, ApiResponse, HttpError as AppError};
+#[cfg(feature = "api-docs")]
+use school_calendar::requests::{
+    CalendarEventRequest, CalendarRequestApproval, CalendarRequestPage, PendingCalendarPage,
+};
+#[cfg(feature = "api-docs")]
+use school_calendar::target_options::CalendarTargetOptions;
+use school_calendar::target_options::{self, CalendarTargetOptionsQuery};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::{ApiResponse, HttpError as AppError};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
@@ -26,11 +30,11 @@ fn require_staff(session: &AuthenticatedSession) -> Result<(), AppError> {
     Ok(())
 }
 
-#[utoipa::path(get,path="/api/calendar/requests/calendar",operation_id="listPendingCalendarRequests",tag="calendar",params(PendingCalendarQuery),responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/calendar/requests/calendar",operation_id="listPendingCalendarRequests",tag="calendar",params(PendingCalendarQuery),responses(
     (status=200,description="Pending request dates; managers see the school, requesters see their own. Up to 500 records with explicit overflow.",body=ApiResponse<PendingCalendarPage>),
     (status=400,description="Invalid or excessive date range",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Staff calendar request access required",body=ApiErrorResponse)
-))]
+)))]
 pub async fn list_pending_calendar(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -43,11 +47,11 @@ pub async fn list_pending_calendar(
     )))
 }
 
-#[utoipa::path(get,path="/api/calendar/requests",operation_id="listCalendarRequests",tag="calendar",params(CalendarRequestQuery),responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/calendar/requests",operation_id="listCalendarRequests",tag="calendar",params(CalendarRequestQuery),responses(
     (status=200,description="Own request history or authorized oldest-first school review queue excluding approved requests",body=ApiResponse<CalendarRequestPage>),
     (status=400,description="Invalid page",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Request or review access denied",body=ApiErrorResponse)
-))]
+)))]
 pub async fn list_requests(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -60,12 +64,12 @@ pub async fn list_requests(
     )))
 }
 
-#[utoipa::path(get,path="/api/calendar/requests/{id}",operation_id="getCalendarRequestForReview",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/calendar/requests/{id}",operation_id="getCalendarRequestForReview",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),responses(
     (status=200,description="Full request details loaded when a calendar manager opens review",body=ApiResponse<CalendarEventRequest>),
     (status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Staff calendar manager required",body=ApiErrorResponse),
     (status=404,description="Request missing",body=ApiErrorResponse)
-))]
+)))]
 pub async fn get_request_for_review(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -78,11 +82,11 @@ pub async fn get_request_for_review(
     )))
 }
 
-#[utoipa::path(post,path="/api/calendar/requests",operation_id="createCalendarRequest",tag="calendar",request_body=CreateCalendarRequest,responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/calendar/requests",operation_id="createCalendarRequest",tag="calendar",request_body=CreateCalendarRequest,responses(
     (status=201,description="Pending request submitted; no calendar event created",body=ApiResponse<CalendarEventRequest>),
     (status=400,description="Invalid request",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Request capability required",body=ApiErrorResponse)
-))]
+)))]
 pub async fn create_request(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -104,12 +108,12 @@ pub async fn create_request(
     ))
 }
 
-#[utoipa::path(post,path="/api/calendar/requests/{id}/approve",operation_id="approveCalendarRequest",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),request_body=UpsertCalendarEventRequest,responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/calendar/requests/{id}/approve",operation_id="approveCalendarRequest",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),request_body=UpsertCalendarEventRequest,responses(
     (status=200,description="Request approved and one event published atomically",body=ApiResponse<CalendarRequestApproval>),
     (status=400,description="Invalid event configuration",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Calendar manager required",body=ApiErrorResponse),(status=404,description="Request missing",body=ApiErrorResponse),
     (status=409,description="Request already decided",body=ApiErrorResponse)
-))]
+)))]
 pub async fn approve_request(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -142,12 +146,12 @@ pub async fn approve_request(
     Ok(Json(ApiResponse::ok(outcome)))
 }
 
-#[utoipa::path(post,path="/api/calendar/requests/{id}/reject",operation_id="rejectCalendarRequest",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),request_body=RejectCalendarRequest,responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/calendar/requests/{id}/reject",operation_id="rejectCalendarRequest",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),request_body=RejectCalendarRequest,responses(
     (status=200,description="Request rejected with reason",body=ApiResponse<CalendarEventRequest>),
     (status=400,description="Reason required",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Calendar manager required",body=ApiErrorResponse),(status=404,description="Request missing",body=ApiErrorResponse),
     (status=409,description="Request already decided",body=ApiErrorResponse)
-))]
+)))]
 pub async fn reject_request(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -167,10 +171,10 @@ pub async fn reject_request(
     )))
 }
 
-#[utoipa::path(get,path="/api/calendar/target-options",operation_id="listCalendarTargetOptions",tag="calendar",params(CalendarTargetOptionsQuery),responses(
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/calendar/target-options",operation_id="listCalendarTargetOptions",tag="calendar",params(CalendarTargetOptionsQuery),responses(
     (status=200,description="Classroom audience options for the event date",body=ApiResponse<CalendarTargetOptions>),
     (status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Calendar manager required",body=ApiErrorResponse)
-))]
+)))]
 pub async fn list_target_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,

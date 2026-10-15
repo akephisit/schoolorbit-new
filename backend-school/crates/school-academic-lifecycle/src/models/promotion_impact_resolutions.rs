@@ -1,7 +1,8 @@
 use super::*;
 use chrono::{DateTime, Utc};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum PromotionImpactResolutionKind {
@@ -9,7 +10,8 @@ pub enum PromotionImpactResolutionKind {
     ReplaceDecision,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ResolvePromotionImpactInput {
     pub request_id: Uuid,
@@ -19,7 +21,8 @@ pub struct ResolvePromotionImpactInput {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionImpactResolutionOutcome {
     pub adjusted: bool,
@@ -28,7 +31,8 @@ pub struct PromotionImpactResolutionOutcome {
     pub source_row_version: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PromotionImpactResolution {
     pub id: Uuid,

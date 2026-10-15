@@ -388,7 +388,9 @@ async fn gradebook_review_phase_code_resolution_checks_context() {
 
 // Catches the public handler contract drifting back to UUID phase paths.
 #[test]
+#[cfg(feature = "api-docs")]
 fn gradebook_review_group_phase_contract_uses_phase_codes() {
+    #[cfg(feature = "api-docs")]
     use utoipa::OpenApi;
     #[derive(OpenApi)]
     #[openapi(paths(

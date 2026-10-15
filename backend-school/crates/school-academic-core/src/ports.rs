@@ -1,5 +1,6 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -12,9 +13,8 @@ pub struct PendingTermWork {
     pub blocks_closure: bool,
 }
 
-#[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, Eq, Hash, Ord, PartialEq, PartialOrd, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TermPreparationModule {
     Delivery,
@@ -54,9 +54,8 @@ impl TermPreparationModule {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, Eq, Hash, Ord, PartialEq, PartialOrd, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TermPreparationMappingKind {
     LearningOffering,
@@ -82,7 +81,8 @@ impl TermPreparationMappingKind {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationContext {
     pub source_term_id: Uuid,
@@ -97,7 +97,8 @@ pub struct TermPreparationContext {
     pub target_end_date: NaiveDate,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermPreparationModuleOutcome {
     pub module: TermPreparationModule,

@@ -1,10 +1,12 @@
 use super::{ActivityOutcome, CourseOfficialOutcome};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// One expected subject in one student's term, including an absent locked result.
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CourseAggregateInput {
     pub subject_id: Uuid,
@@ -16,7 +18,8 @@ pub struct CourseAggregateInput {
     pub numeric_grade: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CourseCreditTotals {
     pub attempted_credits: String,
@@ -32,7 +35,8 @@ pub struct CourseCreditTotals {
     pub all_outcomes_numeric: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityAggregateInput {
     pub learning_group_id: Uuid,
@@ -42,7 +46,8 @@ pub struct ActivityAggregateInput {
     pub outcome: Option<ActivityOutcome>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityOutcomeTotals {
     pub expected_group_count: usize,
@@ -53,9 +58,10 @@ pub struct ActivityOutcomeTotals {
     pub all_passed: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema, IntoParams))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[into_params(parameter_in = Query)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct TermResultPreviewQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
@@ -63,7 +69,8 @@ pub struct TermResultPreviewQuery {
     pub passing_grade: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TermResultPreview {
     pub academic_year_id: Uuid,

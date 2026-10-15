@@ -12,17 +12,20 @@ use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
 use school_file_platform::{platform_types::DownloadGrant, repository::SqlFileRepository};
+use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+#[cfg(feature = "api-docs")]
+use school_http::{ApiErrorResponse, EmptyData};
 use school_question_bank::models::{
-    QuestionBankExportDataRequest, QuestionBankListQuery, QuestionBankOptions, QuestionBankPage,
-    QuestionDetail, UpsertQuestionRequest,
+    QuestionBankExportDataRequest, QuestionBankListQuery, UpsertQuestionRequest,
 };
+#[cfg(feature = "api-docs")]
+use school_question_bank::models::{QuestionBankOptions, QuestionBankPage, QuestionDetail};
 use school_question_bank::{
     access_policy as question_bank_access_policy, services as question_bank_service,
 };
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/question-bank/questions",
     operation_id = "listQuestionBankQuestions",
@@ -34,7 +37,7 @@ use school_question_bank::{
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Question bank access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_questions(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -48,7 +51,7 @@ pub async fn list_questions(
     Ok(Json(ApiResponse::ok(questions)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/question-bank/options",
     operation_id = "listQuestionBankOptions",
@@ -58,7 +61,7 @@ pub async fn list_questions(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Question bank access denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn list_options(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -70,7 +73,7 @@ pub async fn list_options(
     Ok(Json(ApiResponse::ok(options)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/question-bank/questions/{id}",
     operation_id = "getQuestionBankQuestion",
@@ -82,7 +85,7 @@ pub async fn list_options(
         (status = 403, description = "Question bank access denied", body = ApiErrorResponse),
         (status = 404, description = "Question not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_question(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -94,7 +97,7 @@ pub async fn get_question(
     Ok(Json(ApiResponse::ok(question)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     get,
     path = "/api/academic/question-bank/questions/{question_id}/files/{file_id}",
     operation_id = "getQuestionBankQuestionFile",
@@ -109,7 +112,7 @@ pub async fn get_question(
         (status = 403, description = "Question image access denied", body = ApiErrorResponse),
         (status = 404, description = "Question image not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn get_question_file(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -143,7 +146,7 @@ pub async fn get_question_file(
     }
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/question-bank/questions",
     operation_id = "createQuestionBankQuestion",
@@ -155,7 +158,7 @@ pub async fn get_question_file(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Question bank management denied", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn create_question(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -172,7 +175,7 @@ pub async fn create_question(
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(question))).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     put,
     path = "/api/academic/question-bank/questions/{id}",
     operation_id = "updateQuestionBankQuestion",
@@ -186,7 +189,7 @@ pub async fn create_question(
         (status = 403, description = "Question bank management denied", body = ApiErrorResponse),
         (status = 404, description = "Question not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn update_question(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -211,7 +214,7 @@ pub async fn update_question(
     Ok(Json(ApiResponse::ok(result.question)).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     delete,
     path = "/api/academic/question-bank/questions/{id}",
     operation_id = "deleteQuestionBankQuestion",
@@ -223,7 +226,7 @@ pub async fn update_question(
         (status = 403, description = "Question bank management denied", body = ApiErrorResponse),
         (status = 404, description = "Question not found", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn delete_question(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -236,7 +239,7 @@ pub async fn delete_question(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
-#[utoipa::path(
+#[cfg_attr(feature = "api-docs", utoipa::path(
     post,
     path = "/api/academic/question-bank/questions/export-data",
     operation_id = "exportQuestionBankData",
@@ -249,7 +252,7 @@ pub async fn delete_question(
         (status = 403, description = "Question bank access denied", body = ApiErrorResponse),
         (status = 404, description = "Question selection unavailable", body = ApiErrorResponse)
     )
-)]
+))]
 pub async fn export_question_data(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
