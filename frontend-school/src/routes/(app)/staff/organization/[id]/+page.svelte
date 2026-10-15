@@ -5,6 +5,8 @@
 	import { requireApiData } from '#lib/api/client.js';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { organizationReturnHref } from '#lib/navigation/organization.js';
 	import {
 		getOrganizationUnit,
 		listOrganizationUnits,
@@ -136,7 +138,6 @@
 	let contextPanel = $derived.by(() => ({
 		parentName:
 			parentUnit?.name ?? (department?.unit_type === 'school' ? 'ระดับโรงเรียน' : 'ไม่มีข้อมูล'),
-		parentCode: parentUnit?.code ?? '',
 		childCount: structureLoaded ? childDepts.length : '—',
 		memberCount: membersLoaded ? deptMembers.length : '—'
 	}));
@@ -532,7 +533,7 @@
 <PageShell
 	title="รายละเอียดหน่วยงาน"
 	description={department?.name ?? 'ข้อมูลหน่วยงานในโครงสร้างโรงเรียน'}
-	backHref="/staff/organization"
+	backHref={organizationReturnHref(page.url)}
 	backLabel="โครงสร้าง"
 	backPreload="tap"
 >
@@ -571,7 +572,6 @@
 						<div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
 							<div class="min-w-0 space-y-4">
 								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant="outline">{department?.code ?? '—'}</Badge>
 									<Badge variant="secondary">{categoryText}</Badge>
 									<Badge
 										variant={department.unit_type === 'management_group' ? 'default' : 'outline'}
@@ -653,7 +653,7 @@
 			</section>
 
 			<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-				<main class="min-w-0 space-y-4">
+				<div class="min-w-0 space-y-4">
 					<div class="flex gap-2 overflow-x-auto rounded-lg border bg-card p-1">
 						{#each detailTabs as tab (tab.id)}
 							<button
@@ -715,8 +715,8 @@
 									</p>
 								</div>
 								<div class="rounded-lg border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">รหัส</p>
-									<p class="mt-1 font-mono text-sm font-medium">{department?.code ?? '—'}</p>
+									<p class="text-xs text-muted-foreground">สังกัดภายใต้</p>
+									<p class="mt-1 break-words text-sm font-medium">{contextPanel.parentName}</p>
 								</div>
 								<div class="rounded-lg border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">ตำแหน่งหลัก</p>
@@ -782,7 +782,6 @@
 										>
 											<div class="min-w-0">
 												<p class="truncate text-sm font-medium">{child.name}</p>
-												<p class="mt-1 font-mono text-xs text-muted-foreground">{child.code}</p>
 											</div>
 											<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 										</a>
@@ -876,7 +875,7 @@
 							{/if}
 						</section>
 					{/if}
-				</main>
+				</div>
 
 				<aside class="space-y-4">
 					<section class="rounded-lg border bg-card p-5">
@@ -888,11 +887,6 @@
 							<div class="rounded-lg border bg-muted/20 p-3">
 								<p class="text-xs text-muted-foreground">สังกัดภายใต้</p>
 								<p class="mt-1 font-medium">{contextPanel.parentName}</p>
-								{#if contextPanel.parentCode}
-									<p class="mt-1 font-mono text-xs text-muted-foreground">
-										{contextPanel.parentCode}
-									</p>
-								{/if}
 							</div>
 							{#each contactItems as item (item.key)}
 								<div class="flex items-start gap-3 rounded-lg border px-3 py-2">
@@ -1013,7 +1007,6 @@
 									>
 										<div class="min-w-0">
 											<p class="truncate font-medium">{child.name}</p>
-											<p class="font-mono text-xs text-muted-foreground">{child.code}</p>
 										</div>
 										<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 									</a>

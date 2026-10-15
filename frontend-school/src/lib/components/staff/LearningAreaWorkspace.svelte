@@ -63,9 +63,7 @@
 	let search = $state('');
 	const visibleGroups = $derived(
 		groups.filter((group) =>
-			`${group.nameTh} ${group.nameEn} ${group.code}`
-				.toLowerCase()
-				.includes(search.trim().toLowerCase())
+			`${group.nameTh} ${group.nameEn}`.toLowerCase().includes(search.trim().toLowerCase())
 		)
 	);
 	let dialogOpen = $state(false),
@@ -336,8 +334,8 @@
 						{:else}
 							<dl class="grid gap-3 text-sm sm:grid-cols-2">
 								<div>
-									<dt class="text-muted-foreground">รหัส</dt>
-									<dd class="mt-1">{selected.code}</dd>
+									<dt class="text-muted-foreground">ชื่อภาษาอังกฤษ</dt>
+									<dd class="mt-1 break-words">{selected.nameEn || 'ไม่ได้ระบุ'}</dd>
 								</div>
 								<div>
 									<dt class="text-muted-foreground">ลำดับ</dt>
