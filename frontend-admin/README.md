@@ -2,7 +2,11 @@
 
 ## Purpose
 
-The administration web application supports school provisioning and control-plane operations through backend-admin and selected server-side backend-school calls. Its public homepage introduces SchoolOrbit; authenticated administrators continue to the existing dashboard. School-specific public information and services remain on each school’s website.
+The apex-domain public site and customer portal manage email-verified accounts,
+school service requests and monthly/yearly service periods. Customers see only
+schools explicitly assigned by an operator. Expiry warns without restricting
+school access. Operators retain provisioning, deployment and migration tools;
+school deletion is unavailable. The theme follows the public homepage.
 
 ## Stack
 
@@ -38,9 +42,13 @@ npm run build
 ## Environment
 
 - `PUBLIC_API_URL` points browser requests to backend-admin.
-- `BACKEND_SCHOOL_URL` and `INTERNAL_API_SECRET` support server-side migration coordination.
+- The Worker has no internal-service credentials. Migration operations use the
+  authenticated backend-admin operator API, never a Worker-held internal secret.
 
-For production deployment, `BACKEND_ADMIN_URL`, `BACKEND_SCHOOL_URL`, `BASE_DOMAIN`, and `CLOUDFLARE_ACCOUNT_ID` are GitHub repository variables. The workflow maps `BACKEND_ADMIN_URL` to the build-time `PUBLIC_API_URL`. `INTERNAL_API_SECRET` is a Cloudflare Worker secret binding supplied from the GitHub repository secret with the same name.
+For production deployment, `BACKEND_ADMIN_URL`, `BASE_DOMAIN`, and
+`CLOUDFLARE_ACCOUNT_ID` are GitHub repository variables. The workflow maps
+`BACKEND_ADMIN_URL` to build-time `PUBLIC_API_URL`, routes the apex to the Worker,
+and retains `admin.<base-domain>` solely for a permanent redirect.
 
 Public browser variables must use the `PUBLIC_` prefix. Never expose internal secrets as public variables. A committed Wrangler file defines only environment-neutral application configuration; it never owns production credentials or URLs. The deployment workflow generates its environment-specific Wrangler file at runtime.
 

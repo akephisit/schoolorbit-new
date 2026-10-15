@@ -218,7 +218,7 @@ Core backend-school secrets:
 - `BLIND_INDEX_KEY`
 - `DEPLOY_KEY`
 
-Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SESSION_HMAC_KEY` must differ from the backend-admin `JWT_SECRET`. School has no JWT runtime key or pre-session rollback mapping. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses `PG_PROVISIONING_DATABASE_URL` (CREATEDB/CREATEROLE,
+Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. Admin uses independent opaque sessions; it never consumes the School session key. School has no JWT runtime key or pre-session rollback mapping. Backend-admin retains ownership of its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses `PG_PROVISIONING_DATABASE_URL` (CREATEDB/CREATEROLE,
 non-superuser), `PG_TENANT_DATABASE_URL` (TLS connection template without tenant
 passwords), and `DATABASE_CREDENTIALS_KEY` (32 random bytes as 64 hex characters).
 `ADMIN_MIGRATION_DATABASE_URL` belongs only to explicit migration jobs; the normal
@@ -320,7 +320,7 @@ Selected backend services use immutable digests, canonical rootless Podman topol
 migration completion and cutover audits. Admin starts before School on a full release. School
 frontends consume one prepared bundle, synchronize menus through authenticated VPS loopback,
 promote exactly their staged Worker version and apply routes. Asset propagation and real browser
-mount checks precede acceptance. Admin uploads code and secrets together in one inactive version,
+mount checks precede acceptance. Admin uploads its credential-free code in one inactive version,
 promotes the exact ID from structured Wrangler output and verifies it. Node 24 and the application
 lockfile own Wrangler versions. Temporary secrets are mode `0600` and always removed.
 
@@ -642,7 +642,7 @@ Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity
 
 ## School Session Runtime and Cutover
 
-`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments. Replacing it invalidates every current school session. It must never equal the admin JWT or rollback key.
+`SESSION_HMAC_KEY` is the stable backend-school owner for opaque browser-session hashes and domain-separated CSRF HMACs. Generate a unique random value of at least 32 characters in the deployment secret store, never print it, and keep it unchanged across ordinary deployments. Replacing it invalidates every current school session. Keep it independent of other service credentials.
 
 `BASE_DOMAIN` owns the production tenant-domain boundary. `TRUSTED_PROXY_CIDRS` must contain only the networks of proxies that are allowed to supply forwarded client addresses; broad or unverified networks let clients spoof rate-limit identity. `SCHOOL_ALLOWED_DEV_ORIGINS` is only for explicit local origins such as `http://localhost:5173` and `http://127.0.0.1:5173`; leave it empty in production. Nginx must allow credentials and expose `X-CSRF-Token` while preserving exact tenant-origin validation.
 
@@ -680,7 +680,7 @@ session queries; actual database resource savings also depend on other traffic a
 School authentication uses only opaque sessions. The completed JWT-to-session
 bridge and its key-provisioning script are retired. Keep the applied session migration
 and stable `SESSION_HMAC_KEY`; recovery uses session-capable releases. Do not deploy
-pre-session School images or change backend-admin's independent `JWT_SECRET`.
+pre-session School images or reintroduce Admin JWT authentication.
 
 ## Replacement VPS Migration and DNS Rollback
 
@@ -1228,3 +1228,76 @@ Large cleanup/reset operations persist a job before deleting bounded chunks. Whi
 Staff identity and qualification cutover uses migrations 113–114. Migration 113 preserves raw language values, expands the name read projection and backfills the person-owned qualification collection with the original staff-info identity and timestamps. Migration 114 holds the affected tables while reconciling counts, fingerprints, identities, ownership and all source values before removing the old single-qualification columns. Missing or stale evidence raises only `STAFF_PROFILE_RECONCILIATION_REQUIRED`; retain Maintenance Mode and remediate through a reviewed forward recovery. The deployment migration-status report requires all four `staffProfileCutover` checks before promoting the new consumers. After 114, recovery must roll forward with compatible code; the old staff binary cannot read the contracted schema. Do not restore an older binary against a migrated tenant or modify applied migrations. Rehearsal and failure-gate commands are in [testing](TESTING.md).
 
 Migration 115 adds a nullable staff teaching-licence file reference without changing existing licence metadata. Files purpose `teaching_license` requires private scanned PDF/JPEG/PNG/WebP uploads. Before the first such upload, the additive column remains compatible with the previous application; after uploads begin, retain code that recognizes that purpose and recover by rolling forward. Attachment saves promote temporary uploads to standard retention; replaced/removed documents and abandoned drafts use the existing Files retention worker. Never remove an attached object directly from storage.
+
+## Admin customer portal and account cutover
+
+Migration 010 replaces only legacy central `admin_users` accounts under the
+approved reset. A transaction compares every school and deployment-history row
+before/after and refuses unknown account dependencies. It never opens or changes
+a tenant database. School UUIDs, names, subdomains, credentials, DNS metadata,
+users, academic data and deployment history remain unchanged. New memberships,
+service periods and service requests belong exclusively to the Admin database.
+
+Deploy backend/frontend together through Pipeline and universal maintenance.
+After 010, old Admin binaries are incompatible; recover by rolling forward or
+through the reviewed backup restore procedure, never by restoring an old binary
+against the new schema. Keep a fresh backup and rehearse on an isolated database.
+The new runtime accepts only the host-only `__Host-schoolorbit_admin` opaque
+cookie. Legacy JWT cookies cannot authenticate. Logout and password resets revoke
+persisted sessions. The apex Origin plus session-derived `X-CSRF-Token` is required
+for mutations; tenant Origins cannot invoke central account mutations.
+
+Before promoting this cutover, configure server-only `RESEND_API_KEY` and
+`RESEND_FROM` in the VPS runtime environment and verify the sender domain in
+Resend. Use a dedicated sending subdomain if desired. The installer requires both
+values; they never belong in a Worker or `PUBLIC_*` variable. Production must not
+set `ADMIN_ALLOWED_DEV_ORIGIN`. Email verification expires after 24 hours; password
+reset after one hour. Links store their token in the fragment, require explicit
+confirmation and are single use. An undelivered message can be requested again;
+only the newest link remains valid. Delivery failure preserves the pending
+account and reports a recoverable unavailable response. No real customer email
+is used by tests.
+
+The release checks `/app/create_admin --check-ready` before stopping the previous
+Admin backend or running automatic migrations. It refuses missing mail settings,
+an unprepared account schema or the absence of a verified operator. The initial
+cutover therefore needs a reviewed one-time preparation under the shared
+production lock and universal maintenance: run the release image's canonical
+`/app/backend-admin --migrate-admin`, then bootstrap and verify the operator as
+below, then retry the normal Pipeline. An accidental merge cannot silently reset
+accounts through the automatic deployment path. Keep maintenance active throughout
+preparation and recover by rolling forward on any failure.
+
+During that preparation, run `/app/create_admin --bootstrap` from the release image with the
+owner-only `ADMIN_MIGRATION_DATABASE_URL`, `ADMIN_BOOTSTRAP_EMAIL`,
+`ADMIN_BOOTSTRAP_PASSWORD` and `ADMIN_BOOTSTRAP_NAME` supplied through a protected
+one-shot environment, not command arguments. It never prints credentials and
+refuses an existing email, including a self-registered customer. Do not retain
+bootstrap secrets in ordinary runtime configuration. Bootstrap sends a Resend verification email. While the public site remains in
+maintenance, read that email in the operator mailbox and provide its fragment token
+through a protected one-shot `ADMIN_BOOTSTRAP_TOKEN` environment to
+`/app/create_admin --verify-email`. Never print or pass the token in command
+arguments. A failed delivery uses `--resend-verification` with
+`ADMIN_BOOTSTRAP_EMAIL`; this never changes the operator password. After the
+verified-operator readiness check passes, retry Pipeline and complete dedicated
+operator/customer acceptance before public handoff.
+
+The frontend Worker serves `<base-domain>/*` and `admin.<base-domain>/*`; the old
+Admin host redirects to the apex before rendering, including during maintenance.
+Ensure both names have proxied Cloudflare DNS records before the release and
+review preexisting apex routes/custom domains for competing Workers. Keep
+Cloudflare Workers Builds disconnected so Pipeline is the sole deployment writer.
+The Worker has no internal migration secret; remove any obsolete
+`INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.
+Never alter tenant routes or delete school Workers/DNS during this change.
+
+Verified customers submit requests. Operators verify ownership, provision new
+schools through the existing pipeline, then approve the matching school and
+service period. Existing schools are assigned by verified customer email in the
+operator request workspace. Approvals are transactional and serialize against
+the school; concurrent decisions cannot grant duplicate periods. Renewal extends
+from the later of now or the latest service expiry by one calendar month/year.
+There is no automatic payment collection. Expiry is warning-only, independent of
+school deployment/active status, and never blocks School login or reads. School
+deletion has no public Admin HTTP route in this release. Account deletion,
+suspension and school-data cleanup are not automatic subscription actions.

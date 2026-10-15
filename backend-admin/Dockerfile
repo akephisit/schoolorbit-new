@@ -39,10 +39,10 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
         SCCACHE_GHA_VERSION=schoolorbit-backend-admin \
         SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
         RUSTC_WRAPPER=/usr/local/bin/sccache \
-        cargo build --release --locked --bin backend-admin --timings; \
+        cargo build --release --locked --bin backend-admin --bin create_admin --timings; \
         /usr/local/bin/sccache --show-stats || true; \
     else \
-        cargo build --release --locked --bin backend-admin --timings; \
+        cargo build --release --locked --bin backend-admin --bin create_admin --timings; \
     fi; \
     compile_nanoseconds=$(($(date +%s%N) - compile_started)); \
     mkdir -p target/cargo-timings; \
@@ -71,6 +71,7 @@ RUN apt-get update -y \
     && install -d -o 1000 -g 1000 /app
 
 COPY --chown=1000:1000 --from=builder /app/target/release/backend-admin /app/backend-admin
+COPY --chown=1000:1000 --from=builder /app/target/release/create_admin /app/create_admin
 COPY --chown=1000:1000 migrations ./migrations
 
 USER appuser

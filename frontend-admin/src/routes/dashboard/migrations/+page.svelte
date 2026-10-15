@@ -192,7 +192,7 @@
 
 	.btn-primary {
 		padding: 0.75rem 1.5rem;
-		background: var(--color-primary, #3b82f6);
+		background: var(--color-primary, #237c9b);
 		color: white;
 		border: none;
 		border-radius: 0.5rem;
@@ -205,7 +205,7 @@
 	}
 
 	.btn-primary:hover:not(:disabled) {
-		background: var(--color-primary-dark, #2563eb);
+		background: var(--color-primary-dark, #185c75);
 		transform: translateY(-2px);
 		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 	}
@@ -255,7 +255,7 @@
 	}
 
 	.stat-card.pending .stat-value {
-		color: #6366f1;
+		color: #237c9b;
 	}
 
 	.table-container {
@@ -379,7 +379,7 @@
 		height: 3rem;
 		border-width: 3px;
 		border-color: #e5e7eb;
-		border-top-color: #3b82f6;
+		border-top-color: #237c9b;
 	}
 
 	@keyframes spin {

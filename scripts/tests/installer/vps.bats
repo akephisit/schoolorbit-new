@@ -33,7 +33,8 @@ setup() {
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]=runtime-only-value
     SO_SECRETS[SCHOOLORBIT_RUNTIME_GITHUB_TOKEN]=runtime-github-value
     SO_SECRETS[DATABASE_URL]="${database_scheme}://schoolorbit:DbPass@db.invalid/schoolorbit"
-    SO_SECRETS[JWT_SECRET]=jwt-runtime-secret-value
+    SO_SECRETS[RESEND_API_KEY]=re_synthetic-test-key
+    SO_CONFIG[runtime:RESEND_FROM]=noreply@example.test
     SO_SECRETS[SESSION_HMAC_KEY]=session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz
     SO_SECRETS[INTERNAL_API_SECRET]=internal-runtime-secret-value
     SO_SECRETS[ENCRYPTION_KEY]=encryption-runtime-secret-value-32chars

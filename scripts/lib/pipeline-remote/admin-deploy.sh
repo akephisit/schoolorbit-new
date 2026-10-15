@@ -132,8 +132,6 @@ podman pull "$backend_image_reference"
 schoolorbit_timer_report image_pull "$image_pull_started"
 backend_readiness_started="$(schoolorbit_timer_now)"
 export BACKEND_ADMIN_IMAGE="$backend_image_reference"
-podman stop schoolorbit-backend-admin || true
-podman rm schoolorbit-backend-admin || true
 test -r /opt/stack/postgresql/ca.crt || {
     echo 'PostgreSQL CA is missing'
     exit 78
@@ -144,6 +142,18 @@ test -r /opt/stack/postgresql/ca.crt || {
 . "$deployment_root/scripts/lib/pipeline-remote/runtime-env.sh"
 ADMIN_MIGRATION_DATABASE_URL=$(schoolorbit_runtime_env_value ADMIN_MIGRATION_DATABASE_URL /opt/stack/.env)
 export ADMIN_MIGRATION_DATABASE_URL
+# Fail before replacing accounts or stopping the previous backend. Initial cutover
+# uses the same migration binary under reviewed maintenance, then verifies its operator.
+RESEND_API_KEY=$(schoolorbit_runtime_env_value RESEND_API_KEY /opt/stack/.env)
+RESEND_FROM=$(schoolorbit_runtime_env_value RESEND_FROM /opt/stack/.env)
+export RESEND_API_KEY RESEND_FROM
+podman run --rm --network schoolorbit-web --env ADMIN_MIGRATION_DATABASE_URL \
+    --env BASE_DOMAIN --env RESEND_API_KEY --env RESEND_FROM \
+    --volume /opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro \
+    "$backend_image_reference" /app/create_admin --check-ready
+unset RESEND_API_KEY RESEND_FROM
+podman stop schoolorbit-backend-admin || true
+podman rm schoolorbit-backend-admin || true
 podman run --rm --network schoolorbit-web --env ADMIN_MIGRATION_DATABASE_URL \
     --volume /opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro \
     "$backend_image_reference" /app/backend-admin --migrate-admin

@@ -43,7 +43,9 @@ services:
     environment:
       - RUST_LOG=info
       - DATABASE_URL=postgres://schoolorbit_admin_runtime:local-runtime-password@postgres:5432/schoolorbit_admin
-      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this-in-production}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-}
+      - ADMIN_ALLOWED_DEV_ORIGIN=https://localhost:5173
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-internal-secret-change-this}
       - BACKEND_SCHOOL_URL=${BACKEND_SCHOOL_URL:-http://backend-school:8081}
       - PG_PROVISIONING_DATABASE_URL=postgres://schoolorbit_provisioner:password@postgres:5432/postgres?sslmode=disable

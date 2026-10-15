@@ -145,7 +145,7 @@ verify_public_services() {
     [[ -x $smoke_script ]] || die 69 'Smoke test script is unavailable' || return
 
     _verify_api_services public || return
-    _verify_html_service "https://admin.${SO_CONFIG[base_domain]}/" 'Frontend Admin' || return
+    _verify_html_service "https://${SO_CONFIG[base_domain]}/" 'Frontend Admin' || return
     _verify_html_service "https://$smoke_subdomain.${SO_CONFIG[base_domain]}/" 'Tenant frontend' || return
 
     if ! smoke_output=$(

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -41,30 +41,26 @@ test('direct noninteractive Wrangler API commands receive credentials independen
 	assert.ok(directCommands > 5, 'the guard must cover actual deployment commands');
 });
 
-test('Admin uploads code with secrets and promotes only its recorded Worker version', async () => {
+test('Admin has no internal credentials and promotes only its recorded Worker version', async () => {
 	const workflow = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
 	);
 	const steps = workflow.jobs.deploy.steps;
-	const prepare = steps.find((step) => step.name === 'Prepare versioned Worker secrets');
-	const upload = steps.find(
-		(step) => step.name === 'Upload frontend-admin Worker with its secrets'
-	);
+	const prepare = steps.find((step) => step.name === 'Prepare Worker upload receipt');
+	const upload = steps.find((step) => step.name === 'Upload frontend-admin Worker');
 	const record = steps.find((step) => step.id === 'uploaded-version');
 	const promote = steps.find(
 		(step) => step.name === 'Promote uploaded frontend-admin Worker and apply routes'
 	);
-	const cleanup = steps.find((step) => step.name === 'Remove temporary Worker secrets');
-	assert.match(
-		upload.with.command,
-		/^versions upload .*--secrets-file \.wrangler\/admin-release-secrets\.json/
-	);
+	const cleanup = steps.find((step) => step.name === 'Remove temporary upload receipt');
+	assert.match(upload.with.command, /^versions upload --config wrangler\.deploy\.json --tag/);
 	assert.equal(
 		upload.env.WRANGLER_OUTPUT_FILE_PATH,
 		'${{ github.workspace }}/frontend-admin/.wrangler/admin-release-upload.ndjson'
 	);
 	assert.equal(upload.env.PUBLIC_API_URL, '${{ vars.BACKEND_ADMIN_URL }}');
-	assert.equal(upload.env.BACKEND_SCHOOL_URL, '${{ vars.BACKEND_SCHOOL_URL }}');
+	assert.equal(upload.env.BACKEND_SCHOOL_URL, undefined);
+	assert.doesNotMatch(JSON.stringify(workflow), /INTERNAL_API_SECRET|secrets-file/);
 	assert.match(
 		promote.with.command,
 		/--version-id \$\{\{ steps\.uploaded-version\.outputs\.id \}\} --percentage 100 --yes/
@@ -87,21 +83,9 @@ test('Admin uploads code with secrets and promotes only its recorded Worker vers
 			encoding: 'utf8'
 		});
 	try {
-		assert.notEqual(run(prepare, { INTERNAL_API_SECRET: '' }).status, 0);
-		await mkdir(path.join(temp, '.wrangler'), { recursive: true });
-		const fakeSecret = 'disposable-test-binding';
-		const prepared = run(prepare, { INTERNAL_API_SECRET: fakeSecret });
+		const prepared = run(prepare);
 		assert.equal(prepared.status, 0, prepared.stderr);
-		assert.doesNotMatch(prepared.stdout + prepared.stderr, /disposable-test-binding/);
-		assert.equal(
-			(await stat(path.join(temp, '.wrangler/admin-release-secrets.json'))).mode & 0o777,
-			0o600
-		);
-		assert.equal(
-			JSON.parse(await readFile(path.join(temp, '.wrangler/admin-release-secrets.json'), 'utf8'))
-				.INTERNAL_API_SECRET,
-			fakeSecret
-		);
+		await assert.rejects(access(path.join(temp, '.wrangler/admin-release-secrets.json')));
 		await writeFile(
 			path.join(temp, 'wrangler.deploy.json'),
 			JSON.stringify({ name: 'schoolorbit-frontend-admin' })

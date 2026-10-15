@@ -2,12 +2,7 @@
 	import { apiClient, type School, type CreateSchool } from '#lib/api/client.js';
 	import { onMount } from 'svelte';
 	import { z } from 'zod';
-	import {
-		createSchoolSSE,
-		deleteSchoolSSE,
-		type LogMessage,
-		type Progress
-	} from '#lib/utils/sse.js';
+	import { createSchoolSSE, type LogMessage, type Progress } from '#lib/utils/sse.js';
 	import InlineConsole from '#lib/components/InlineConsole.svelte';
 	import { PUBLIC_API_URL } from '$app/env/public';
 	import { toast } from 'svelte-sonner';
@@ -111,53 +106,58 @@
 
 			// Use SSE to stream logs
 
-			await createSchoolSSE<School>(PUBLIC_API_URL, validated, {
-				onLog: (level, message) => {
-					schools = schools.map((s) =>
-						s.id === pendingSchoolId
-							? {
-									...s,
-									logs: [...(s.logs || []), { level, message, timestamp: new Date() }]
-								}
-							: s
-					);
+			await createSchoolSSE<School>(
+				PUBLIC_API_URL,
+				validated,
+				{
+					onLog: (level, message) => {
+						schools = schools.map((s) =>
+							s.id === pendingSchoolId
+								? {
+										...s,
+										logs: [...(s.logs || []), { level, message, timestamp: new Date() }]
+									}
+								: s
+						);
+					},
+
+					onProgress: (step, total, message) => {
+						schools = schools.map((s) =>
+							s.id === pendingSchoolId ? { ...s, progress: { step, total, message } } : s
+						);
+					},
+
+					onComplete: (data) => {
+						schools = schools.map((s) =>
+							s.id === pendingSchoolId ? { ...data, logs: undefined, isDeploying: false } : s
+						);
+						createError = null;
+
+						// Show success toast
+						toast.success('สร้างโรงเรียนสำเร็จ');
+
+						// Reset form
+						showCreateForm = false;
+						createData = {
+							name: '',
+							subdomain: '',
+							adminUsername: '',
+							adminPassword: '',
+							adminTitle: '',
+							adminFirstName: '',
+							adminLastName: ''
+						};
+					},
+
+					onError: (errorMsg) => {
+						const failure = schoolCreationFailure(schools, pendingSchoolId, errorMsg);
+						schools = failure.schools;
+						createError = failure.message;
+						toast.error(failure.message);
+					}
 				},
-
-				onProgress: (step, total, message) => {
-					schools = schools.map((s) =>
-						s.id === pendingSchoolId ? { ...s, progress: { step, total, message } } : s
-					);
-				},
-
-				onComplete: (data) => {
-					schools = schools.map((s) =>
-						s.id === pendingSchoolId ? { ...data, logs: undefined, isDeploying: false } : s
-					);
-					createError = null;
-
-					// Show success toast
-					toast.success('สร้างโรงเรียนสำเร็จ');
-
-					// Reset form
-					showCreateForm = false;
-					createData = {
-						name: '',
-						subdomain: '',
-						adminUsername: '',
-						adminPassword: '',
-						adminTitle: '',
-						adminFirstName: '',
-						adminLastName: ''
-					};
-				},
-
-				onError: (errorMsg) => {
-					const failure = schoolCreationFailure(schools, pendingSchoolId, errorMsg);
-					schools = failure.schools;
-					createError = failure.message;
-					toast.error(failure.message);
-				}
-			});
+				apiClient.csrfHeaders()
+			);
 		} catch (error) {
 			if (error instanceof z.ZodError) {
 				// Handle Zod validation errors
@@ -181,63 +181,6 @@
 			}
 		} finally {
 			creating = false;
-		}
-	}
-
-	async function deleteSchool(id: string, name: string) {
-		if (!confirm(`คุณแน่ใจหรือไม่ที่จะลบโรงเรียน "${name}"?`)) return;
-
-		const school = schools.find((s) => s.id === id);
-		if (!school) return;
-		// Update school state to show it's deleting
-		schools = schools.map((s) => (s.id === id ? { ...s, isDeleting: true, logs: [] } : s));
-
-		try {
-			await deleteSchoolSSE(PUBLIC_API_URL, id, {
-				onLog: (level, message) => {
-					schools = schools.map((s) =>
-						s.id === id
-							? {
-									...s,
-									logs: [...(s.logs || []), { level, message, timestamp: new Date() }]
-								}
-							: s
-					);
-				},
-
-				onProgress: (step, total, message) => {
-					schools = schools.map((s) =>
-						s.id === id ? { ...s, progress: { step, total, message } } : s
-					);
-				},
-
-				onComplete: () => {
-					// Remove school from list
-					schools = schools.filter((s) => s.id !== id);
-					toast.success('ลบโรงเรียนสำเร็จ');
-				},
-
-				onError: (errorMsg) => {
-					schools = schools.map((s) =>
-						s.id === id
-							? {
-									...s,
-									logs: [
-										...(s.logs || []),
-										{ level: 'error', message: errorMsg, timestamp: new Date() }
-									],
-									isDeleting: false
-								}
-							: s
-					);
-					toast.error(errorMsg);
-				}
-			});
-		} catch (error) {
-			schools = schools.map((s) =>
-				s.id === id ? { ...s, isDeleting: false, logs: undefined } : s
-			);
-			toast.error(error instanceof Error ? error.message : 'Failed to delete school');
 		}
 	}
 
@@ -475,14 +418,6 @@
 						>
 							{deploying === school.id ? '🔄 Deploying...' : '🚀 Deploy'}
 						</button>
-
-						<button
-							class="btn-danger btn-sm"
-							onclick={() => deleteSchool(school.id, school.name)}
-							disabled={deploying === school.id || school.deploymentStatus === 'provisioning'}
-						>
-							🗑️ ลบ
-						</button>
 					</div>
 
 					<!-- Inline Console for real-time logs -->
@@ -518,15 +453,15 @@
 	h1 {
 		font-size: 2rem;
 		font-weight: 700;
-		color: #1a202c;
+		color: var(--portal-ink);
 	}
 
 	.btn-primary {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: linear-gradient(135deg, #237c9b 0%, #32939e 100%);
 		color: white;
 		border: none;
 		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
+		border-radius: 16px;
 		font-weight: 600;
 		cursor: pointer;
 		transition: transform 0.2s;
@@ -544,19 +479,13 @@
 
 	.btn-secondary {
 		background: white;
-		color: #667eea;
-		border: 2px solid #667eea;
-	}
-
-	.btn-danger {
-		background: #e53e3e;
-		color: white;
-		border: none;
+		color: #237c9b;
+		border: 2px solid #237c9b;
 	}
 
 	.btn-sm {
 		padding: 0.5rem 1rem;
-		border-radius: 6px;
+		border-radius: 14px;
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
@@ -570,21 +499,21 @@
 	.create-form-card {
 		background: white;
 		padding: 2rem;
-		border-radius: 12px;
+		border-radius: 24px;
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 		margin-bottom: 2rem;
 	}
 
 	.create-form-card h2 {
 		margin-bottom: 1.5rem;
-		color: #2d3748;
+		color: var(--portal-ink);
 	}
 
 	.create-error {
 		margin-bottom: 1.5rem;
 		padding: 0.875rem 1rem;
 		border: 1px solid #feb2b2;
-		border-radius: 8px;
+		border-radius: 16px;
 		background: #fff5f5;
 		color: #c53030;
 		font-size: 0.875rem;
@@ -599,21 +528,21 @@
 		display: block;
 		margin-bottom: 0.5rem;
 		font-weight: 600;
-		color: #4a5568;
+		color: var(--portal-muted);
 	}
 
 	input {
 		width: 100%;
 		padding: 0.75rem;
-		border: 2px solid #e2e8f0;
-		border-radius: 8px;
+		border: 2px solid var(--portal-line);
+		border-radius: 16px;
 		font-size: 1rem;
 		transition: border-color 0.2s;
 	}
 
 	input:focus {
 		outline: none;
-		border-color: #667eea;
+		border-color: #237c9b;
 	}
 
 	small {
@@ -653,7 +582,7 @@
 	.school-card {
 		background: white;
 		padding: 1.5rem;
-		border-radius: 12px;
+		border-radius: 24px;
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 		transition: transform 0.2s;
 	}
@@ -672,7 +601,7 @@
 
 	.school-header h3 {
 		font-size: 1.25rem;
-		color: #2d3748;
+		color: var(--portal-ink);
 		margin: 0;
 		flex: 1;
 	}
@@ -685,12 +614,12 @@
 
 	.status {
 		padding: 0.25rem 0.75rem;
-		border-radius: 12px;
+		border-radius: 24px;
 		font-size: 0.75rem;
 		font-weight: 600;
 		text-transform: uppercase;
-		background: #e2e8f0;
-		color: #4a5568;
+		background: var(--portal-line);
+		color: var(--portal-muted);
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
@@ -744,12 +673,12 @@
 
 	.school-info p {
 		margin: 0.5rem 0;
-		color: #4a5568;
+		color: var(--portal-muted);
 		font-size: 0.875rem;
 	}
 
 	.subdomain-url a {
-		color: #667eea;
+		color: #237c9b;
 		text-decoration: none;
 		font-weight: 600;
 		display: inline-flex;
@@ -759,7 +688,7 @@
 	}
 
 	.subdomain-url a:hover {
-		color: #764ba2;
+		color: #32939e;
 		text-decoration: underline;
 	}
 
@@ -772,7 +701,7 @@
 		padding: 0.75rem;
 		background: #fed7d7;
 		color: #c53030;
-		border-radius: 6px;
+		border-radius: 14px;
 		font-size: 0.875rem;
 		border-left: 3px solid #e53e3e;
 	}
@@ -799,17 +728,17 @@
 
 	.pagination button {
 		padding: 0.5rem 1rem;
-		border: 2px solid #e2e8f0;
+		border: 2px solid var(--portal-line);
 		background: white;
-		border-radius: 8px;
+		border-radius: 16px;
 		cursor: pointer;
 		font-weight: 600;
 		transition: all 0.2s;
 	}
 
 	.pagination button:hover:not(:disabled) {
-		border-color: #667eea;
-		color: #667eea;
+		border-color: #237c9b;
+		color: #237c9b;
 	}
 
 	.pagination button:disabled {
@@ -818,14 +747,14 @@
 	}
 
 	.pagination span {
-		color: #4a5568;
+		color: var(--portal-muted);
 		font-weight: 500;
 	}
 
 	/* Status badges animations */
 	.status.deploying,
 	.status.deleting {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: linear-gradient(135deg, #237c9b 0%, #32939e 100%);
 		color: white;
 		animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 	}

@@ -2,6 +2,9 @@ use crate::error::AppError;
 use bcrypt::{hash, verify, DEFAULT_COST};
 
 pub fn hash_password(password: &str) -> Result<String, AppError> {
+    crate::portal::auth::validate_password(password).map_err(|_| {
+        AppError::ValidationError("Password exceeds the supported bcrypt bounds".into())
+    })?;
     hash(password, DEFAULT_COST)
         .map_err(|e| AppError::InternalServerError(format!("Password hashing failed: {}", e)))
 }

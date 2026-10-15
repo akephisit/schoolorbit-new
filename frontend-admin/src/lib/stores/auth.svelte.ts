@@ -1,25 +1,19 @@
 // Auth Store using Svelte 5 runes
 
-import { apiClient, type LoginRequest } from '#lib/api/client.js';
+import { apiClient, type LoginRequest, type Account } from '#lib/api/client.js';
 import { goto } from '$app/navigation';
 import { browser } from '$app/env';
 import { resolve } from '$app/paths';
 
-interface User {
-	id: string;
-	nationalId: string;
-	name: string;
-	role: string;
-}
-
 interface AuthState {
-	user: User | null;
+	user: Account | null;
 	isAuthenticated: boolean;
 	isLoading: boolean;
 	error: string | null;
 }
 
 class AuthStore {
+	ready: Promise<void> = Promise.resolve();
 	private state = $state<AuthState>({
 		user: null,
 		isAuthenticated: false,
@@ -29,7 +23,7 @@ class AuthStore {
 
 	constructor() {
 		if (browser) {
-			this.initialize();
+			this.ready = this.initialize();
 		}
 	}
 
@@ -51,7 +45,7 @@ class AuthStore {
 	}
 
 	// Initialize from backend (Cookie check only - no localStorage)
-	private async initialize() {
+	async initialize() {
 		this.state.isLoading = true;
 
 		try {
@@ -80,6 +74,7 @@ class AuthStore {
 
 	// Login
 	async login(credentials: LoginRequest) {
+		await this.ready;
 		this.state.isLoading = true;
 		this.state.error = null;
 
@@ -112,9 +107,14 @@ class AuthStore {
 	// Logout
 	async logout() {
 		try {
-			await apiClient.logout();
-		} catch (error) {
-			console.error('Logout API call failed:', error);
+			const response = await apiClient.logout();
+			if (!response.success) {
+				this.state.error = response.error || 'ออกจากระบบไม่สำเร็จ';
+				return;
+			}
+		} catch {
+			this.state.error = 'ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง';
+			return;
 		}
 
 		this.state.user = null;
