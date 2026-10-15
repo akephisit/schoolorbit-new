@@ -36,14 +36,8 @@ async function setup(page: Page, permissions?: string[]) {
 				success: true,
 				data: {
 					asOf: '2026-10-01T00:00:00Z',
-					total: 3,
-					active: 2,
-					otherStatuses: 1,
+					total: 2,
 					filteredTotal: 2,
-					statuses: [
-						{ key: 'active', label: 'ปฏิบัติงาน', count: 2 },
-						{ key: 'inactive', label: 'ไม่ใช้งาน', count: 1 }
-					],
 					subjectGroups: [{ key: 'unassigned', label: 'ยังไม่มีสังกัดกลุ่มสาระ', count: 2 }],
 					jobPositions: [{ key: ref, label: 'ครู', count: 2 }],
 					academicRanks: [{ key: 'none', label: 'ไม่มีวิทยฐานะ', count: 2 }],
@@ -75,33 +69,37 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/staff/manage/overview');
 	await expect(page.getByRole('heading', { name: 'ภาพรวมงานบุคคล', exact: true })).toBeVisible();
-	await page.screenshot({
-		path: testInfo.outputPath('dashboard-mobile.png'),
-		fullPage: true
-	});
-	await page.setViewportSize({ width: 1440, height: 1000 });
-	await page.screenshot({
-		path: testInfo.outputPath('dashboard-desktop.png'),
-		fullPage: true
-	});
-	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(page.getByTestId('personnel-overview')).toContainText('ไม่มีวิทยฐานะ');
-	const statusLabel = page
-		.getByRole('region', { name: 'สถานะบุคลากรทั้งหมด', exact: true })
-		.getByText('ปฏิบัติงาน', { exact: true });
-	// Keep status labels readable beside counts instead of wrapping into a narrow column.
-	expect(
-		await statusLabel.evaluate(
-			(element) =>
-				element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight)
-		)
-	).toBeLessThanOrEqual(2);
-	await page
-		.getByRole('heading', { name: 'บุคลากรตามกลุ่มสาระ', exact: true })
-		.scrollIntoViewIfNeeded();
-	await page.screenshot({
-		path: testInfo.outputPath('dashboard-mobile-charts.png')
-	});
+	const summary = page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true });
+	await expect(summary).toContainText('2 คน');
+	await expect(summary).toContainText('เฉพาะบุคลากรที่เปิดใช้งาน');
+	await expect(summary.getByRole('link', { name: 'ดูรายชื่อบุคลากรทั้งหมด' })).toHaveAttribute(
+		'href',
+		'/staff/manage?status=active'
+	);
+	await expect(page.getByRole('region', { name: 'สถานะบุคลากรทั้งหมด', exact: true })).toHaveCount(
+		0
+	);
+	await expect(page.getByTestId('personnel-overview')).not.toContainText('สถานะอื่น');
+
+	for (const width of [390, 1440]) {
+		for (const theme of ['light', 'dark']) {
+			await page.setViewportSize({ width, height: 1000 });
+			await page.evaluate(
+				(mode) => document.documentElement.classList.toggle('dark', mode === 'dark'),
+				theme
+			);
+			await expect(summary).toBeVisible();
+			expect(await summary.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+			await page.screenshot({
+				path: testInfo.outputPath(`dashboard-${width}-${theme}.png`),
+				fullPage: true
+			});
+		}
+	}
 	await expect(page.getByTestId('personnel-overview')).toContainText('หนึ่งคนอาจอยู่หลายกลุ่มสาระ');
 	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 	await page.getByRole('link', { name: 'ครู 2 คน', exact: true }).click();
@@ -109,6 +107,41 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 	await page.getByRole('link', { name: 'ดูข้อมูล', exact: true }).click();
 	await page.getByRole('link', { name: 'กลับรายชื่อบุคลากร', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`job_position_id=${ref}`));
+});
+test('active summary remains independent of the detail status and opens the active directory', async ({
+	page
+}) => {
+	await setup(page);
+	await page.route('**/api/staff/personnel-overview**', (route) =>
+		route.fulfill({
+			json: {
+				success: true,
+				data: {
+					asOf: '2026-10-01T00:00:00Z',
+					total: 2,
+					filteredTotal: 1,
+					subjectGroups: [],
+					jobPositions: [{ key: ref, label: 'ครู', count: 1 }],
+					academicRanks: [],
+					educationLevels: []
+				}
+			}
+		})
+	);
+	await page.goto('/staff/manage/overview?status=inactive');
+	const summary = page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true });
+	await expect(summary).toContainText('2 คน');
+	await expect(page.getByRole('link', { name: 'ครู 1 คน', exact: true })).toHaveAttribute(
+		'href',
+		/status=inactive/
+	);
+	const directory = summary.getByRole('link', { name: 'ดูรายชื่อบุคลากรทั้งหมด' });
+	await directory.focus();
+	await page.keyboard.press('Enter');
+	await expect(page).toHaveURL(
+		(url) => url.pathname === '/staff/manage' && url.searchParams.get('status') === 'active'
+	);
+	await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
 });
 test('existing inactive position remains readable and clearing sends explicit null', async ({
 	page
@@ -256,10 +289,7 @@ test('overview owns its first error and retains data during refresh', async ({ p
 				data: {
 					asOf: '2026-10-01T00:00:00Z',
 					total: 0,
-					active: 0,
-					otherStatuses: 0,
 					filteredTotal: 0,
-					statuses: [],
 					subjectGroups: [],
 					jobPositions: [],
 					academicRanks: [],
@@ -278,8 +308,10 @@ test('overview owns its first error and retains data during refresh', async ({ p
 	await expect(region).toContainText('บุคลากรทั้งหมด');
 	release();
 	await expect(region).toHaveAttribute('aria-busy', 'false');
-	await expect(region).toContainText('ยังไม่มีบุคลากรในขอบเขตที่ดูได้');
-	expect(await region.locator('circle[pathLength]').count()).toBe(0);
+	await expect(region).toContainText('ไม่มีบุคลากรในสถานะที่เลือก');
+	await expect(page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true })).toContainText(
+		'0 คน'
+	);
 });
 
 test('a superseded overview status cannot paint a late result', async ({ page }) => {
@@ -296,10 +328,7 @@ test('a superseded overview status cannot paint a late result', async ({ page })
 				data: {
 					asOf: '2026-10-01T00:00:00Z',
 					total: 1,
-					active: 1,
-					otherStatuses: 0,
 					filteredTotal: 1,
-					statuses: [{ key: 'active', label: 'ปฏิบัติงาน', count: 1 }],
 					subjectGroups: [],
 					jobPositions: [{ key: ref, label, count: 1 }],
 					academicRanks: [],
@@ -321,6 +350,9 @@ test('a superseded overview status cannot paint a late result', async ({ page })
 	release();
 	await expect(page.getByTestId('personnel-overview')).not.toContainText('ผลเก่าที่ช้า');
 	await expect(page).toHaveURL(/status=all/);
+	await expect(
+		page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true }).getByRole('link')
+	).toHaveAttribute('href', '/staff/manage?status=active');
 });
 
 test('position picker retries and discards superseded search choices', async ({ page }) => {

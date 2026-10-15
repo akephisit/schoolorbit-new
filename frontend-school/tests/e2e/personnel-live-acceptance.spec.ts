@@ -48,8 +48,11 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 		const overview = await read<Schemas['PersonnelOverview']>(
 			'/api/staff/personnel-overview?status=active'
 		);
-		expect(overview.active + overview.otherStatuses).toBe(overview.total);
-		expect(overview.statuses.reduce((n, b) => n + b.count, 0)).toBe(overview.total);
+		expect(overview.total).toBe(overview.filteredTotal);
+		const activeDirectory = await read<Schemas['StaffListData']>(
+			'/api/staff?status=active&page_size=1'
+		);
+		expect(overview.total).toBe(activeDirectory.total);
 		for (const buckets of [overview.jobPositions, overview.academicRanks, overview.educationLevels])
 			expect(buckets.reduce((n, b) => n + b.count, 0)).toBe(overview.filteredTotal);
 		phase = 'overview_ui';

@@ -240,11 +240,10 @@ pub struct PersonnelBucket {
 #[serde(rename_all = "camelCase")]
 pub struct PersonnelOverview {
     pub as_of: chrono::DateTime<chrono::Utc>,
+    /// Number of active staff in the authorized scope, independent of the detail status filter.
     pub total: i64,
-    pub active: i64,
-    pub other_statuses: i64,
+    /// Number of staff matching the selected status in the authorized scope.
     pub filtered_total: i64,
-    pub statuses: Vec<PersonnelBucket>,
     pub subject_groups: Vec<PersonnelBucket>,
     pub job_positions: Vec<PersonnelBucket>,
     pub academic_ranks: Vec<PersonnelBucket>,

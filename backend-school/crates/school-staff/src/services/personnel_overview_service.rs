@@ -16,26 +16,18 @@ pub async fn get_personnel_overview(
         sql.push(" WHERE status=").push_bind(status.as_str());
     }
     sql.push("), groups AS (").push(CURRENT_SUBJECT_GROUPS).push(r#"), buckets AS (
-      SELECT 'status' AS dimension,status AS key,status AS label,count(*) AS count FROM matched GROUP BY status
-      UNION ALL SELECT 'job_position',coalesce(position.id::text,'unspecified'),coalesce(position.name,'ยังไม่ระบุตำแหน่ง'),count(*) FROM filtered f LEFT JOIN staff_job_positions position ON position.id=f.job_position_id GROUP BY position.id,position.name
+      SELECT 'job_position' AS dimension,coalesce(position.id::text,'unspecified') AS key,coalesce(position.name,'ยังไม่ระบุตำแหน่ง') AS label,count(*) AS count FROM filtered f LEFT JOIN staff_job_positions position ON position.id=f.job_position_id GROUP BY position.id,position.name
       UNION ALL SELECT 'academic_rank',coalesce(academic_rank,'unspecified'),coalesce(academic_rank,'ยังไม่ระบุวิทยฐานะ'),count(*) FROM filtered GROUP BY academic_rank
       UNION ALL SELECT 'education_level',coalesce(education_level,'unspecified'),coalesce(education_level,'ยังไม่ระบุวุฒิ'),count(*) FROM filtered GROUP BY education_level
       UNION ALL SELECT 'subject_group',coalesce(g.id::text,'unassigned'),coalesce(g.name,'ยังไม่มีสังกัดกลุ่มสาระ'),count(*) FROM filtered f LEFT JOIN groups g ON g.user_id=f.id GROUP BY g.id,g.name
     ), arrays AS (SELECT dimension,jsonb_agg(jsonb_build_object('key',key,'label',label,'count',count) ORDER BY count DESC,label,key) AS items FROM buckets GROUP BY dimension)
-    SELECT jsonb_build_object('asOf',CURRENT_TIMESTAMP,'total',(SELECT count(*) FROM matched),'active',(SELECT count(*) FROM matched WHERE status='active'),'otherStatuses',(SELECT count(*) FROM matched WHERE status<>'active'),'filteredTotal',(SELECT count(*) FROM filtered),
-    'statuses',coalesce((SELECT items FROM arrays WHERE dimension='status'),'[]'::jsonb),
+    SELECT jsonb_build_object('asOf',CURRENT_TIMESTAMP,'total',(SELECT count(*) FROM matched WHERE status='active'),'filteredTotal',(SELECT count(*) FROM filtered),
     'subjectGroups',coalesce((SELECT items FROM arrays WHERE dimension='subject_group'),'[]'::jsonb),
     'jobPositions',coalesce((SELECT items FROM arrays WHERE dimension='job_position'),'[]'::jsonb),
     'academicRanks',coalesce((SELECT items FROM arrays WHERE dimension='academic_rank'),'[]'::jsonb),
     'educationLevels',coalesce((SELECT items FROM arrays WHERE dimension='education_level'),'[]'::jsonb))"#);
     let Json(mut overview): Json<PersonnelOverview> =
         sql.build_query_scalar().fetch_one(pool).await?;
-    label_buckets(
-        &mut overview.statuses,
-        PersonnelStatusFilter::ALL
-            .iter()
-            .map(|v| (v.as_str(), v.label())),
-    );
     label_buckets(
         &mut overview.academic_ranks,
         StaffAcademicRank::ALL

@@ -890,7 +890,7 @@ async fn personnel_overview_matches_directory_counts() {
     personnel_membership(&pool, c, child, "2000-01-01", None).await;
     for (scope, total) in [
         (StaffListAccess::OrganizationUnit(a), 2),
-        (StaffListAccess::OrganizationTree(a), 3),
+        (StaffListAccess::OrganizationTree(a), 2),
     ] {
         let overview = get_personnel_overview(
             &pool,
@@ -904,7 +904,7 @@ async fn personnel_overview_matches_directory_counts() {
         let (_, directory_total, _, _) = list_staff(
             &pool,
             StaffListFilter {
-                status: Some("all".into()),
+                status: Some("active".into()),
                 ..Default::default()
             },
             scope,
@@ -928,7 +928,11 @@ async fn personnel_overview_matches_directory_counts() {
             assert_eq!(count, bucket.count);
         }
     }
-    for status in [PersonnelStatusFilter::Active, PersonnelStatusFilter::All] {
+    for status in [
+        PersonnelStatusFilter::Active,
+        PersonnelStatusFilter::All,
+        PersonnelStatusFilter::Inactive,
+    ] {
         let overview = get_personnel_overview(
             &pool,
             PersonnelOverviewQuery {
@@ -938,34 +942,33 @@ async fn personnel_overview_matches_directory_counts() {
         )
         .await
         .unwrap();
-        assert_eq!(
-            (overview.total, overview.active, overview.other_statuses),
-            (3, 2, 1)
-        );
-        let expected = if status == PersonnelStatusFilter::All {
-            3
-        } else {
-            2
+        assert_eq!(overview.total, 2);
+        let expected = match status {
+            PersonnelStatusFilter::All => 3,
+            PersonnelStatusFilter::Inactive => 1,
+            _ => 2,
         };
         assert_eq!(overview.filtered_total, expected);
-        assert_eq!(
-            overview
-                .subject_groups
-                .iter()
-                .find(|v| v.key == math.to_string())
-                .unwrap()
-                .count,
-            2
-        );
-        assert_eq!(
-            overview
-                .subject_groups
-                .iter()
-                .find(|v| v.key == science.to_string())
-                .unwrap()
-                .count,
-            1
-        );
+        if status != PersonnelStatusFilter::Inactive {
+            assert_eq!(
+                overview
+                    .subject_groups
+                    .iter()
+                    .find(|v| v.key == math.to_string())
+                    .unwrap()
+                    .count,
+                2
+            );
+            assert_eq!(
+                overview
+                    .subject_groups
+                    .iter()
+                    .find(|v| v.key == science.to_string())
+                    .unwrap()
+                    .count,
+                1
+            );
+        }
         for (dimension, buckets) in [
             ("job_position_id", &overview.job_positions),
             ("academic_rank", &overview.academic_ranks),
@@ -1003,7 +1006,7 @@ async fn personnel_overview_matches_directory_counts() {
     )
     .await
     .unwrap();
-    assert_eq!((own.total, own.filtered_total), (1, 0));
+    assert_eq!((own.total, own.filtered_total), (0, 0));
     for status in ["suspended", "resigned", "retired"] {
         let user = canonical_person(&pool).await;
         sqlx::query("UPDATE users SET status=$2 WHERE id=$1")
@@ -1022,8 +1025,18 @@ async fn personnel_overview_matches_directory_counts() {
     )
     .await
     .unwrap();
-    assert_eq!(all.total, 6);
-    assert_eq!(all.statuses.iter().map(|b| b.count).sum::<i64>(), 6);
+    assert_eq!((all.total, all.filtered_total), (2, 6));
+    let (_, active_total, _, _) = list_staff(
+        &pool,
+        StaffListFilter {
+            status: Some("active".into()),
+            ..Default::default()
+        },
+        StaffListAccess::School,
+    )
+    .await
+    .unwrap();
+    assert_eq!(all.total, active_total);
     let empty = get_personnel_overview(
         &pool,
         PersonnelOverviewQuery { status: None },
