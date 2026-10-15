@@ -10,7 +10,9 @@ mod personnel_migration_test_support;
 mod personnel_simplification_test_support;
 pub mod role_service;
 pub mod staff_career_service;
+pub mod staff_education_service;
 pub mod staff_info_service;
+mod staff_name_service;
 pub mod staff_service;
 pub mod user_role_service;
 
@@ -56,3 +58,6 @@ mod staff_directory_query;
 pub use staff_directory_query::{subject_groups_for_users, StaffSubjectGroupAssignment};
 
 pub mod rank_milestone_service;
+
+#[cfg(test)]
+mod staff_profile_tests;

@@ -40,6 +40,7 @@ export async function mockOwnAchievements(
 		created_at: timestamp,
 		updated_at: timestamp,
 		user_first_name: 'ทดสอบ',
+		user_display_name: 'นายทดสอบ รายการ',
 		user_last_name: 'รายการ',
 		user_profile_image_file_id: null
 	}));
@@ -129,6 +130,7 @@ export async function mockOwnAchievements(
 				created_at: timestamp,
 				updated_at: timestamp,
 				user_first_name: 'ทดสอบ',
+				user_display_name: 'นายทดสอบ รายการ',
 				user_last_name: 'รายการ',
 				user_profile_image_file_id: null
 			};

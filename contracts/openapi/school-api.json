@@ -1324,6 +1324,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "user_display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_first_name": {
             "type": [
               "string",
@@ -1359,6 +1365,7 @@
           "created_at",
           "updated_at",
           "user_first_name",
+          "user_display_name",
           "user_last_name",
           "user_profile_image_file_id"
         ],
@@ -3330,6 +3337,12 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "user_display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "user_first_name": {
                 "type": [
                   "string",
@@ -3365,6 +3378,7 @@
               "created_at",
               "updated_at",
               "user_first_name",
+              "user_display_name",
               "user_last_name",
               "user_profile_image_file_id"
             ],
@@ -7316,6 +7330,9 @@
         "properties": {
           "data": {
             "properties": {
+              "displayName": {
+                "type": "string"
+              },
               "firstName": {
                 "type": "string"
               },
@@ -7360,6 +7377,7 @@
               "username",
               "firstName",
               "lastName",
+              "displayName",
               "userType",
               "status",
               "profileImageFileId",
@@ -12306,6 +12324,9 @@
                   "null"
                 ]
               },
+              "displayName": {
+                "type": "string"
+              },
               "email": {
                 "type": [
                   "string",
@@ -12401,6 +12422,7 @@
               "nationalId",
               "firstName",
               "lastName",
+              "displayName",
               "userType",
               "status",
               "createdAt",
@@ -13254,6 +13276,9 @@
         "properties": {
           "data": {
             "properties": {
+              "display_name": {
+                "type": "string"
+              },
               "email": {
                 "type": [
                   "string",
@@ -13329,6 +13354,7 @@
               "username",
               "first_name",
               "last_name",
+              "display_name",
               "nickname",
               "title",
               "email",
@@ -14315,6 +14341,9 @@
                   "null"
                 ]
               },
+              "display_name": {
+                "type": "string"
+              },
               "email": {
                 "type": [
                   "string",
@@ -14330,11 +14359,20 @@
               "first_name": {
                 "type": "string"
               },
+              "first_name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "gender": {
                 "type": [
                   "string",
                   "null"
                 ]
+              },
+              "has_complete_name": {
+                "type": "boolean"
               },
               "hired_date": {
                 "type": [
@@ -14348,6 +14386,12 @@
               },
               "last_name": {
                 "type": "string"
+              },
+              "last_name_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "line_id": {
                 "type": [
@@ -14392,6 +14436,12 @@
                   "null"
                 ]
               },
+              "resigned_date": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "roles": {
                 "items": {
                   "$ref": "#/components/schemas/RoleResponse"
@@ -14429,6 +14479,12 @@
                   "null"
                 ]
               },
+              "title_en": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "user_type": {
                 "type": "string"
               },
@@ -14444,6 +14500,11 @@
               "title",
               "first_name",
               "last_name",
+              "display_name",
+              "has_complete_name",
+              "title_en",
+              "first_name_en",
+              "last_name_en",
               "nickname",
               "phone",
               "emergency_contact",
@@ -14452,6 +14513,7 @@
               "gender",
               "address",
               "hired_date",
+              "resigned_date",
               "user_type",
               "status",
               "profile_image_file_id",
@@ -18044,6 +18106,12 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "user_display_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "user_first_name": {
                   "type": [
                     "string",
@@ -18079,6 +18147,7 @@
                 "created_at",
                 "updated_at",
                 "user_first_name",
+                "user_display_name",
                 "user_last_name",
                 "user_profile_image_file_id"
               ],
@@ -23956,6 +24025,7 @@
                   "type": "string"
                 },
                 "name": {
+                  "description": "Complete preferred display name, including its title.",
                   "type": "string"
                 },
                 "title": {
@@ -34220,21 +34290,11 @@
               }
             ]
           },
-          "education_level": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/StaffEducationLevel"
-              }
-            ]
-          },
-          "major": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "educations": {
+            "items": {
+              "$ref": "#/components/schemas/StaffEducationInput"
+            },
+            "type": "array"
           },
           "teaching_license_expiry": {
             "format": "date",
@@ -34244,12 +34304,6 @@
             ]
           },
           "teaching_license_number": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "university": {
             "type": [
               "string",
               "null"
@@ -34288,6 +34342,12 @@
           "first_name": {
             "type": "string"
           },
+          "first_name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "gender": {
             "type": [
               "string",
@@ -34303,6 +34363,12 @@
           },
           "last_name": {
             "type": "string"
+          },
+          "last_name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "line_id": {
             "type": [
@@ -34377,6 +34443,12 @@
               "null"
             ]
           },
+          "title_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "username": {
             "type": [
               "string",
@@ -34386,8 +34458,6 @@
         },
         "required": [
           "password",
-          "first_name",
-          "last_name",
           "role_ids"
         ],
         "type": "object"
@@ -35093,6 +35163,9 @@
       },
       "CurrentUserResponse": {
         "properties": {
+          "displayName": {
+            "type": "string"
+          },
           "firstName": {
             "type": "string"
           },
@@ -35137,6 +35210,7 @@
           "username",
           "firstName",
           "lastName",
+          "displayName",
           "userType",
           "status",
           "profileImageFileId",
@@ -45168,6 +45242,9 @@
               "null"
             ]
           },
+          "displayName": {
+            "type": "string"
+          },
           "email": {
             "type": [
               "string",
@@ -45263,6 +45340,7 @@
           "nationalId",
           "firstName",
           "lastName",
+          "displayName",
           "userType",
           "status",
           "createdAt",
@@ -46655,6 +46733,9 @@
       },
       "PublicStaffProfile": {
         "properties": {
+          "display_name": {
+            "type": "string"
+          },
           "email": {
             "type": [
               "string",
@@ -46730,6 +46811,7 @@
           "username",
           "first_name",
           "last_name",
+          "display_name",
           "nickname",
           "title",
           "email",
@@ -48026,6 +48108,26 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "ReplaceStaffEducation": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StaffEducationInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "items"
+        ],
         "type": "object"
       },
       "RequestSupervisionObservationRequest": {
@@ -50628,6 +50730,78 @@
         ],
         "type": "object"
       },
+      "StaffEducation": {
+        "properties": {
+          "education_level": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffEducationLevel"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "major": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "university": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "education_level",
+          "major",
+          "university"
+        ],
+        "type": "object"
+      },
+      "StaffEducationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "education_level": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffEducationLevel"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "major": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "university": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "StaffEducationLevel": {
         "enum": [
           "primary",
@@ -50658,7 +50832,17 @@
           "current_career": {
             "$ref": "#/components/schemas/StaffCareerCurrent"
           },
-          "education_level": {
+          "education_revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "educations": {
+            "items": {
+              "$ref": "#/components/schemas/StaffEducation"
+            },
+            "type": "array"
+          },
+          "highest_education_level": {
             "oneOf": [
               {
                 "type": "null"
@@ -50678,13 +50862,14 @@
               }
             ]
           },
-          "major": {
+          "teaching_license_expiry": {
+            "format": "date",
             "type": [
               "string",
               "null"
             ]
           },
-          "university": {
+          "teaching_license_number": {
             "type": [
               "string",
               "null"
@@ -50695,9 +50880,11 @@
           "current_career",
           "job_position",
           "academic_rank",
-          "education_level",
-          "major",
-          "university"
+          "educations",
+          "education_revision",
+          "highest_education_level",
+          "teaching_license_number",
+          "teaching_license_expiry"
         ],
         "type": "object"
       },
@@ -50775,6 +50962,9 @@
               }
             ]
           },
+          "display_name": {
+            "type": "string"
+          },
           "first_name": {
             "type": "string"
           },
@@ -50831,6 +51021,7 @@
           "first_name",
           "last_name",
           "profile_image_file_id",
+          "display_name",
           "roles",
           "organization_units",
           "status",
@@ -50889,6 +51080,9 @@
               "null"
             ]
           },
+          "display_name": {
+            "type": "string"
+          },
           "email": {
             "type": [
               "string",
@@ -50904,11 +51098,20 @@
           "first_name": {
             "type": "string"
           },
+          "first_name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "gender": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "has_complete_name": {
+            "type": "boolean"
           },
           "hired_date": {
             "type": [
@@ -50922,6 +51125,12 @@
           },
           "last_name": {
             "type": "string"
+          },
+          "last_name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "line_id": {
             "type": [
@@ -50966,6 +51175,12 @@
               "null"
             ]
           },
+          "resigned_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "roles": {
             "items": {
               "$ref": "#/components/schemas/RoleResponse"
@@ -51003,6 +51218,12 @@
               "null"
             ]
           },
+          "title_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_type": {
             "type": "string"
           },
@@ -51018,6 +51239,11 @@
           "title",
           "first_name",
           "last_name",
+          "display_name",
+          "has_complete_name",
+          "title_en",
+          "first_name_en",
+          "last_name_en",
           "nickname",
           "phone",
           "emergency_contact",
@@ -51026,6 +51252,7 @@
           "gender",
           "address",
           "hired_date",
+          "resigned_date",
           "user_type",
           "status",
           "profile_image_file_id",
@@ -58939,20 +59166,14 @@
               }
             ]
           },
-          "education_level": {
+          "education": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/StaffEducationLevel"
+                "$ref": "#/components/schemas/ReplaceStaffEducation"
               }
-            ]
-          },
-          "major": {
-            "type": [
-              "string",
-              "null"
             ]
           },
           "teaching_license_expiry": {
@@ -58963,12 +59184,6 @@
             ]
           },
           "teaching_license_number": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "university": {
             "type": [
               "string",
               "null"
@@ -59010,6 +59225,12 @@
               "null"
             ]
           },
+          "first_name_en": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "gender": {
             "type": [
               "string",
@@ -59024,6 +59245,12 @@
             ]
           },
           "last_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_name_en": {
             "type": [
               "string",
               "null"
@@ -59097,6 +59324,12 @@
             ]
           },
           "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title_en": {
             "type": [
               "string",
               "null"
@@ -97260,7 +97493,7 @@
                 }
               }
             },
-            "description": "Career reference changed"
+            "description": "Career or education revision changed"
           }
         },
         "tags": [

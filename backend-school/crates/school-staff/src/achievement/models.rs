@@ -26,6 +26,9 @@ pub struct Achievement {
     pub user_first_name: Option<String>,
     #[sqlx(default)]
     #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub user_display_name: Option<String>,
+    #[sqlx(default)]
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub user_last_name: Option<String>,
     #[sqlx(default)]
     #[cfg_attr(feature = "api-docs", schema(required = true))]

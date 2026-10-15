@@ -189,6 +189,7 @@ async function mock(
 					id: actor,
 					username: 'E2E-LIFECYCLE-office',
 					firstName: 'ฝ่าย',
+					displayName: 'ฝ่าย วิชาการ',
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'active',

@@ -4,6 +4,7 @@ use super::{
         validate_directory_filters,
     },
     staff_info_service,
+    staff_name_service::{normalize_create_names, normalize_updated_names},
 };
 use crate::models::*;
 use chrono::NaiveDate;
@@ -26,6 +27,10 @@ struct UserBasicRow {
     title: Option<String>,
     first_name: String,
     last_name: String,
+    title_en: Option<String>,
+    first_name_en: Option<String>,
+    last_name_en: Option<String>,
+    display_name: String,
     nickname: Option<String>,
     phone: Option<String>,
     emergency_contact: Option<String>,
@@ -34,6 +39,7 @@ struct UserBasicRow {
     gender: Option<String>,
     address: Option<String>,
     hired_date: Option<NaiveDate>,
+    resigned_date: Option<NaiveDate>,
     user_type: String,
     status: String,
     profile_image_file_id: Option<Uuid>,
@@ -302,6 +308,7 @@ pub struct PublicStaffProfile {
     pub username: String,
     pub first_name: String,
     pub last_name: String,
+    pub display_name: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub nickname: Option<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
@@ -360,9 +367,9 @@ pub async fn list_staff(
 
     let search_pattern = staff_search_pattern(filter.search.clone());
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status, u.profile_image_file_id,
+        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status, u.profile_image_file_id, u.display_name,
          CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id',position.id,'code',position.code,'name',position.name,'isActive',position.is_active,'isSelectable',position.is_selectable) END,
-         info.academic_rank FROM users u
+         info.academic_rank FROM user_display_names u
          LEFT JOIN staff_info info ON info.user_id=u.id
          LEFT JOIN staff_job_positions position ON position.id=info.job_position_id
          WHERE u.user_type = 'staff'",
@@ -383,6 +390,7 @@ pub async fn list_staff(
             String,
             String,
             Option<Uuid>,
+            String,
             Option<sqlx::types::Json<StaffJobPositionSummary>>,
             Option<String>,
         )>()
@@ -394,7 +402,7 @@ pub async fn list_staff(
         })?;
 
     let mut count_query = QueryBuilder::<Postgres>::new(
-        "SELECT COUNT(DISTINCT u.id) FROM users u WHERE u.user_type = 'staff'",
+        "SELECT COUNT(DISTINCT u.id) FROM user_display_names u WHERE u.user_type = 'staff'",
     );
     push_staff_list_filters(&mut count_query, &filter, search_pattern.as_deref(), access);
     let total: i64 = count_query
@@ -455,6 +463,7 @@ pub async fn list_staff(
                 last_name,
                 status,
                 profile_image_file_id,
+                display_name,
                 position,
                 rank,
             )|
@@ -466,6 +475,7 @@ pub async fn list_staff(
                     first_name,
                     last_name,
                     profile_image_file_id,
+                    display_name,
                     roles: roles.remove(&id).unwrap_or_default(),
                     organization_units: organizations.remove(&id).unwrap_or_default(),
                     status,
@@ -513,11 +523,18 @@ fn push_staff_list_filters<'args>(
             .push_bind(pattern)
             .push(" OR u.last_name ILIKE ")
             .push_bind(pattern)
+            .push(" OR u.first_name_en ILIKE ")
+            .push_bind(pattern)
+            .push(" OR u.last_name_en ILIKE ")
+            .push_bind(pattern)
+            .push(" OR u.first_name_th ILIKE ")
+            .push_bind(pattern)
+            .push(" OR u.last_name_th ILIKE ")
+            .push_bind(pattern)
             .push(" OR u.username ILIKE ")
             .push_bind(pattern)
             .push(")");
     }
-
     push_personnel_filters(query, filter);
     push_staff_access_filter(query, access);
 }
@@ -529,8 +546,9 @@ pub async fn get_staff_profile(
     include_pii: bool,
 ) -> Result<StaffProfileResponse, AppError> {
     let mut user = sqlx::query_as::<_, UserBasicRow>(
-        "SELECT id, username, national_id, email, title, first_name, last_name, nickname, phone,
-                emergency_contact, line_id, date_of_birth, gender, address, hired_date,
+        "SELECT id, username, national_id, email, title, first_name, last_name, title_en, first_name_en, last_name_en,
+                (SELECT display_name FROM user_display_names names WHERE names.id=users.id) AS display_name, nickname, phone,
+                emergency_contact, line_id, date_of_birth, gender, address, hired_date, resigned_date,
                 user_type, status, profile_image_file_id
          FROM users
          WHERE id = $1 AND user_type = 'staff'",
@@ -633,7 +651,13 @@ pub async fn get_staff_profile(
         read_subject_groups(pool, staff_id)
     );
 
-    let staff_info = staff_info_res?;
+    let mut staff_info = staff_info_res?;
+    if !include_pii {
+        if let Some(info) = staff_info.as_mut() {
+            info.teaching_license_number = None;
+            info.teaching_license_expiry = None;
+        }
+    }
 
     let roles: Vec<RoleResponse> = roles_res?
         .into_iter()
@@ -702,9 +726,21 @@ pub async fn get_staff_profile(
         username: user.username,
         national_id: user.national_id,
         email: user.email,
+        has_complete_name: school_auth::person_names::has_complete_name([
+            user.title.as_deref().unwrap_or(""),
+            &user.first_name,
+            &user.last_name,
+            user.title_en.as_deref().unwrap_or(""),
+            user.first_name_en.as_deref().unwrap_or(""),
+            user.last_name_en.as_deref().unwrap_or(""),
+        ]),
+        display_name: user.display_name,
         title: user.title,
         first_name: user.first_name,
         last_name: user.last_name,
+        title_en: user.title_en,
+        first_name_en: user.first_name_en,
+        last_name_en: user.last_name_en,
         nickname: user.nickname,
         phone: user.phone,
         emergency_contact: user.emergency_contact,
@@ -713,6 +749,7 @@ pub async fn get_staff_profile(
         gender: user.gender,
         address: user.address,
         hired_date: user.hired_date.map(|d| d.to_string()),
+        resigned_date: user.resigned_date.map(|d| d.to_string()),
         user_type: user.user_type,
         status: user.status,
         profile_image_file_id: user.profile_image_file_id,
@@ -729,9 +766,10 @@ pub async fn get_staff_profile(
 /// Create staff — encrypt national_id, insert user + staff_info + roles + organization memberships in transaction
 pub async fn create_staff(
     pool: &PgPool,
-    payload: CreateStaffRequest,
+    mut payload: CreateStaffRequest,
     actor_id: Uuid,
 ) -> Result<Uuid, AppError> {
+    normalize_create_names(&mut payload)?;
     if payload.profile_image_file_id.is_some() {
         return Err(AppError::ValidationError(
             "กรุณาสร้างบุคลากรก่อนอัปโหลดรูปโปรไฟล์".to_string(),
@@ -790,8 +828,8 @@ pub async fn create_staff(
         "INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash, title, first_name, last_name, nickname,
             phone, emergency_contact, line_id, date_of_birth, gender, address,
-            user_type, hired_date, status, profile_image_file_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'staff', $16, 'active', $17)
+            user_type, hired_date, status, profile_image_file_id, title_en, first_name_en, last_name_en
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'staff', $16, 'active', $17, $18, $19, $20)
         RETURNING id",
     )
     .bind(&username)
@@ -811,6 +849,7 @@ pub async fn create_staff(
     .bind(&payload.address)
     .bind(payload.hired_date)
     .bind(&payload.profile_image_file_id)
+    .bind(&payload.title_en).bind(&payload.first_name_en).bind(&payload.last_name_en)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
@@ -856,7 +895,7 @@ pub async fn create_staff(
 pub async fn update_staff(
     pool: &PgPool,
     staff_id: Uuid,
-    payload: UpdateStaffRequest,
+    mut payload: UpdateStaffRequest,
     actor_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
@@ -882,6 +921,7 @@ pub async fn update_staff(
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบบุคลากร".to_string()))?
     .0;
+    normalize_updated_names(&mut tx, staff_id, &mut payload).await?;
     if let Some(file_id) = payload.profile_image_file_id {
         let valid = sqlx::query_scalar::<_, bool>(
             r#"
@@ -938,6 +978,7 @@ SELECT EXISTS(
             hired_date = COALESCE($13, hired_date),
             status = COALESCE($14, status),
             profile_image_file_id = COALESCE($15, profile_image_file_id),
+            title_en=COALESCE($16,title_en),first_name_en=COALESCE($17,first_name_en),last_name_en=COALESCE($18,last_name_en),
             updated_at = NOW()
          WHERE id = $1 AND user_type = 'staff'",
     )
@@ -956,6 +997,7 @@ SELECT EXISTS(
     .bind(payload.hired_date)
     .bind(&payload.status)
     .bind(&payload.profile_image_file_id)
+    .bind(&payload.title_en).bind(&payload.first_name_en).bind(&payload.last_name_en)
     .execute(&mut *tx)
     .await
     .map_err(|e| {
@@ -1047,6 +1089,7 @@ pub async fn get_public_staff_profile(
         username: String,
         first_name: String,
         last_name: String,
+        display_name: String,
         nickname: Option<String>,
         email: Option<String>,
         user_type: String,
@@ -1058,8 +1101,8 @@ pub async fn get_public_staff_profile(
     }
 
     let user_rec = sqlx::query_as::<_, PublicUserRow>(
-        "SELECT id, username, first_name, last_name, nickname, email, user_type, status, profile_image_file_id, title, phone, hired_date
-         FROM users WHERE id = $1 AND user_type = 'staff'",
+        "SELECT id, username, first_name, last_name, display_name, nickname, email, user_type, status, profile_image_file_id, title, phone, hired_date
+         FROM user_display_names WHERE id = $1 AND user_type = 'staff'",
     )
     .bind(staff_id)
     .fetch_optional(pool)
@@ -1112,6 +1155,7 @@ pub async fn get_public_staff_profile(
         username: user_rec.username,
         first_name: user_rec.first_name,
         last_name: user_rec.last_name,
+        display_name: user_rec.display_name,
         nickname: user_rec.nickname,
         title: user_rec.title,
         email: user_rec.email,

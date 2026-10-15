@@ -156,16 +156,16 @@ pub async fn evaluator_availability(
 
     let rows = sqlx::query_as::<_, EvaluatorAvailabilityRow>(
         r#"
-        SELECT u.id, u.title, u.first_name, u.last_name,
+        SELECT u.id, u.title, u.display_name,
                conflict.observation_id AS conflict_observation_id,
                conflict.observed_display_name AS conflict_observed_display_name,
                conflict.observed_at AS conflict_observed_at,
                conflict.subject_name AS conflict_subject_name,
                conflict.period_label AS conflict_period_label
-        FROM users u
+        FROM user_display_names u
         LEFT JOIN LATERAL (
             SELECT o.id AS observation_id,
-                   NULLIF(TRIM(CONCAT(COALESCE(observed.title, ''), observed.first_name, ' ', observed.last_name)), '')
+                   NULLIF(observed.display_name, '')
                        AS observed_display_name,
                    o.observed_at,
                    COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
@@ -174,7 +174,7 @@ pub async fn evaluator_availability(
                        AS period_label
             FROM supervision_evaluators e
             JOIN supervision_observations o ON o.id = e.observation_id
-            JOIN users observed ON observed.id = o.observed_user_id
+            JOIN user_display_names observed ON observed.id = o.observed_user_id
             WHERE e.evaluator_user_id = u.id
               AND o.id <> $1
               AND o.observed_at = $2
@@ -776,7 +776,7 @@ fn observation_select_sql() -> &'static str {
     r#"
     SELECT o.id, o.cycle_id, o.academic_year_id, o.academic_term_id,
            o.learning_group_id, o.homeroom_id, o.observed_user_id,
-           NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
+           NULLIF(u.display_name, '')
                AS observed_display_name,
            o.requested_by, o.approved_by, o.template_id,
            o.timetable_block_group_id AS timetable_block_group_id,
@@ -786,7 +786,7 @@ fn observation_select_sql() -> &'static str {
            o.lesson_snapshot, o.status, o.requested_at, o.approved_at,
            o.cancelled_at, o.created_at, o.updated_at
     FROM supervision_observations o
-    JOIN users u ON u.id = o.observed_user_id
+    JOIN user_display_names u ON u.id = o.observed_user_id
     WHERE 1 = 1
     "#
 }
@@ -863,12 +863,12 @@ async fn load_observation_evaluators<'e>(
     let rows = sqlx::query_as::<_, SupervisionEvaluatorRow>(
         r#"
         SELECT e.id, e.observation_id, e.evaluator_user_id,
-               NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
+               NULLIF(u.display_name, '')
                    AS evaluator_display_name,
                e.role_label, e.is_required, e.status, e.submitted_at,
                e.created_at, e.updated_at
         FROM supervision_evaluators e
-        JOIN users u ON u.id = e.evaluator_user_id
+        JOIN user_display_names u ON u.id = e.evaluator_user_id
         WHERE e.observation_id = ANY($1)
         ORDER BY e.observation_id, e.is_required DESC, e.created_at
         "#,
@@ -899,11 +899,11 @@ async fn load_observation_actions<'e>(
     let rows = sqlx::query_as::<_, SupervisionActionRow>(
         r#"
         SELECT a.id, a.observation_id, a.actor_user_id,
-               NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), '')
+               NULLIF(u.display_name, '')
                    AS actor_display_name,
                a.action_kind, a.from_status, a.to_status, a.comment, a.created_at
         FROM supervision_actions a
-        LEFT JOIN users u ON u.id = a.actor_user_id
+        LEFT JOIN user_display_names u ON u.id = a.actor_user_id
         WHERE a.observation_id = ANY($1)
         ORDER BY a.observation_id, a.created_at DESC
         "#,

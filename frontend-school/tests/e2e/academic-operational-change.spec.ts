@@ -123,6 +123,7 @@ async function mockWorkspace(
 					id: ids.user,
 					username: 'academic-change-test',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

@@ -462,7 +462,7 @@
 								>
 								<Select.Content
 									>{#each staffOptions as staff (staff.id)}<Select.Item value={staff.id}
-											>{staff.title ? `${staff.title} ` : ''}{staff.name}</Select.Item
+											>{staff.name}</Select.Item
 										>{/each}</Select.Content
 								>
 							</Select.Root>

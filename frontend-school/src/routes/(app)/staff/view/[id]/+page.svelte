@@ -172,9 +172,7 @@
 
 <PageShell
 	title="ผลงานบุคลากร"
-	description={staff
-		? `${staff.title ?? ''}${staff.first_name} ${staff.last_name}`
-		: 'ข้อมูลบุคลากรและผลงาน'}
+	description={staff ? staff.display_name : 'ข้อมูลบุคลากรและผลงาน'}
 	backHref="/staff/achievements"
 >
 	<div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -228,9 +226,7 @@
 							<div class="text-center md:text-left space-y-2 flex-1">
 								<div>
 									<h1 class="text-3xl font-bold tracking-tight text-foreground">
-										{staff.title
-											? `${staff.title}${staff.first_name} ${staff.last_name}`
-											: `${staff.first_name} ${staff.last_name}`}
+										{staff.display_name}
 									</h1>
 									{#if staff.nickname}
 										<p class="text-lg text-muted-foreground font-medium">({staff.nickname})</p>

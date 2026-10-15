@@ -2949,11 +2949,6 @@
 																						)}
 																					/>
 																					<span>{evaluator.name}</span>
-																					{#if evaluator.title}
-																						<span class="ml-1 text-xs text-muted-foreground"
-																							>({evaluator.title})</span
-																						>
-																					{/if}
 																				</Command.Item>
 																			{/each}
 																		</Command.Group>

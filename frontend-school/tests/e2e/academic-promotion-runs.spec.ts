@@ -170,6 +170,7 @@ async function mock(
 					id: id(20),
 					username: 'E2E-LIFECYCLE-run',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

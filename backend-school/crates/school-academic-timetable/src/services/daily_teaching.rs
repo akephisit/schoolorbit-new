@@ -174,11 +174,8 @@ pub async fn get_daily_teaching_overview(
     let include_empty_teachers = query.include_empty_teachers.unwrap_or(false);
     let teachers: Vec<TeacherSeed> = sqlx::query_as(
         r#"SELECT DISTINCT user_account.id,
-                  concat_ws(' ',
-                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
-                      nullif(user_account.last_name, '')
-                  ) AS display_name
-           FROM users user_account
+                  user_account.display_name AS display_name
+           FROM user_display_names user_account
            WHERE user_account.user_type = 'staff'
              AND (EXISTS (
                  SELECT 1

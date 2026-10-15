@@ -47,7 +47,6 @@ pub(super) fn push_personnel_filters(query: &mut QueryBuilder<Postgres>, filter:
     for (field, value) in [
         ("job_position_id", &filter.job_position_id),
         ("academic_rank", &filter.academic_rank),
-        ("education_level", &filter.education_level),
     ] {
         if let Some(value) = value {
             if value == "unspecified" {
@@ -56,6 +55,15 @@ pub(super) fn push_personnel_filters(query: &mut QueryBuilder<Postgres>, filter:
                 query.push(" AND EXISTS (SELECT 1 FROM staff_info info WHERE info.user_id=u.id AND info.").push(field).push("::text = ").push_bind(value.clone()).push(")");
             }
         }
+    }
+    if let Some(level) = &filter.education_level {
+        query.push(if level == "unspecified" { " AND NOT EXISTS(SELECT 1 FROM staff_highest_education highest WHERE highest.staff_id=u.id" } else { " AND EXISTS(SELECT 1 FROM staff_highest_education highest WHERE highest.staff_id=u.id" });
+        if level != "unspecified" {
+            query
+                .push(" AND highest.education_level=")
+                .push_bind(level.clone());
+        }
+        query.push(")");
     }
     if let Some(group) = &filter.subject_group_id {
         query

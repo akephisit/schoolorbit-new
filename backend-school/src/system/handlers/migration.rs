@@ -54,6 +54,8 @@ struct SchoolMigrationStatus {
     gradebook_results_cutover: GradebookResultsCutoverStatus,
     #[serde(rename = "deliveryTimetableCutover")]
     delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
+    #[serde(rename = "staffProfileCutover")]
+    staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus,
 }
 
 #[derive(Serialize)]
@@ -82,6 +84,23 @@ struct DeliveryTimetableCutoverStatus {
     passed: Option<bool>,
     checks: Vec<school_academic_delivery::services::versions::DeliveryCutoverCheck>,
 }
+async fn staff_profile_cutover_status(
+    pool: Option<&PgPool>,
+    version: i32,
+) -> school_staff::profile_cutover::ProfileCutoverStatus {
+    if version >= 114 {
+        if let Some(pool) = pool {
+            match school_staff::profile_cutover::read_profile_cutover(pool).await {
+                Ok(status) => return status,
+                Err(error) => {
+                    tracing::warn!(reason="staff_profile_cutover_audit_query_failed",database_code=?error.database_code())
+                }
+            }
+        }
+    }
+    school_staff::profile_cutover::ProfileCutoverStatus::unavailable(version)
+}
+
 fn delivery_timetable_cutover_unavailable() -> DeliveryTimetableCutoverStatus {
     DeliveryTimetableCutoverStatus {
         status: "failed".into(),
@@ -374,45 +393,52 @@ pub async fn migration_status(
             .migration_status
             .unwrap_or_else(|| "pending".to_string());
 
-        let (version, academic_core_cutover, gradebook_results_cutover, delivery_timetable_cutover) =
-            if let Some(database_url) = school
-                .db_connection_string
-                .as_deref()
-                .filter(|value| !value.is_empty())
+        let (
+            version,
+            academic_core_cutover,
+            gradebook_results_cutover,
+            delivery_timetable_cutover,
+            staff_profile_cutover,
+        ) = if let Some(database_url) = school
+            .db_connection_string
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            match state
+                .pool_manager
+                .get_pool_for_read_only_status(database_url, &school.subdomain)
+                .await
             {
-                match state
-                    .pool_manager
-                    .get_pool_for_read_only_status(database_url, &school.subdomain)
-                    .await
-                {
-                    Ok(pool) => {
-                        let (version, academic_core_cutover) =
-                            academic_core_cutover_status_from_database(&pool, reported_version)
-                                .await;
-                        let gradebook_results_cutover =
-                            gradebook_results_cutover_status(Some(&pool), version).await;
-                        (
-                            version,
-                            academic_core_cutover,
-                            gradebook_results_cutover,
-                            delivery_timetable_cutover_status(Some(&pool), version).await,
-                        )
-                    }
-                    Err(_) => (
-                        reported_version,
-                        academic_core_cutover_unavailable(reported_version),
-                        gradebook_results_cutover_unavailable(reported_version),
-                        delivery_timetable_cutover_unavailable(),
-                    ),
+                Ok(pool) => {
+                    let (version, academic_core_cutover) =
+                        academic_core_cutover_status_from_database(&pool, reported_version).await;
+                    let gradebook_results_cutover =
+                        gradebook_results_cutover_status(Some(&pool), version).await;
+                    (
+                        version,
+                        academic_core_cutover,
+                        gradebook_results_cutover,
+                        delivery_timetable_cutover_status(Some(&pool), version).await,
+                        staff_profile_cutover_status(Some(&pool), version).await,
+                    )
                 }
-            } else {
-                (
+                Err(_) => (
                     reported_version,
-                    academic_core_cutover_status(None, reported_version).await,
-                    gradebook_results_cutover_status(None, reported_version).await,
-                    delivery_timetable_cutover_status(None, reported_version).await,
-                )
-            };
+                    academic_core_cutover_unavailable(reported_version),
+                    gradebook_results_cutover_unavailable(reported_version),
+                    delivery_timetable_cutover_unavailable(),
+                    staff_profile_cutover_status(None, reported_version).await,
+                ),
+            }
+        } else {
+            (
+                reported_version,
+                academic_core_cutover_status(None, reported_version).await,
+                gradebook_results_cutover_status(None, reported_version).await,
+                delivery_timetable_cutover_status(None, reported_version).await,
+                staff_profile_cutover_status(None, reported_version).await,
+            )
+        };
 
         match status.as_str() {
             "migrated" => {
@@ -439,6 +465,7 @@ pub async fn migration_status(
             academic_core_cutover,
             gradebook_results_cutover,
             delivery_timetable_cutover,
+            staff_profile_cutover,
         });
     }
 
@@ -938,6 +965,9 @@ mod tests {
                 checks: Vec::new(),
             },
             delivery_timetable_cutover: delivery_timetable_cutover_unavailable(),
+            staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus::unavailable(
+                114,
+            ),
             gradebook_results_cutover: GradebookResultsCutoverStatus {
                 status: "cutoverCompleted".to_string(),
                 migration_version: 60,

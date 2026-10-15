@@ -24,7 +24,10 @@ fn test_create_staff_request(
         national_id: None,
         email: None,
         password: "Test1234!".to_string(),
-        title: None,
+        title_en: None,
+        first_name_en: None,
+        last_name_en: None,
+        title: Some("นาย".into()),
         first_name: "Status".to_string(),
         last_name: "Target".to_string(),
         nickname: None,
@@ -48,6 +51,9 @@ fn test_update_staff_request(
     organization_assignments: Option<Vec<OrganizationAssignment>>,
 ) -> UpdateStaffRequest {
     UpdateStaffRequest {
+        title_en: None,
+        first_name_en: None,
+        last_name_en: None,
         title: None,
         first_name: None,
         last_name: None,

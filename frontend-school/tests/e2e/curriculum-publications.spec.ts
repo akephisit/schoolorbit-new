@@ -101,6 +101,7 @@ async function mock(
 					id: ids.user,
 					username: 'publication-test',
 					firstName: 'ผู้ดูแล',
+					displayName: 'ผู้ดูแล ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

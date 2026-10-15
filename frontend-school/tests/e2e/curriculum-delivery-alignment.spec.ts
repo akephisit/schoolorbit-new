@@ -144,6 +144,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					id: ids.user,
 					username: 'curriculum-alignment-test',
 					firstName: 'หลักสูตร',
+					displayName: 'หลักสูตร ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

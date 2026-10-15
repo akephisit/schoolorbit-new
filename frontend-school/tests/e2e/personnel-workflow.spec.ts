@@ -57,12 +57,18 @@ test('personnel editor selects standardized degree and sends an HR-only patch', 
 }) => {
 	await setup(page);
 	await page.goto(staffPath(undefined, '/edit') + '?section=education');
-	await page.getByRole('button', { name: 'วุฒิการศึกษาสูงสุด', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มวุฒิการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ระดับวุฒิ รายการที่ 1', exact: true }).click();
 	await page.getByRole('option', { name: 'ปริญญาตรี', exact: true }).click();
 	const saved = page.waitForRequest((r) => r.method() === 'PUT' && r.url().includes('/api/staff/'));
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	const payload = (await saved).postDataJSON();
-	expect(payload.staff_info).toEqual({ education_level: 'bachelor' });
+	expect(payload.staff_info).toEqual({
+		education: {
+			expected_revision: 0,
+			items: [{ education_level: 'bachelor', major: null, university: null }]
+		}
+	});
 	expect(payload).not.toHaveProperty('role_ids');
 	expect(payload).not.toHaveProperty('organization_assignments');
 });
@@ -203,9 +209,8 @@ test('existing inactive position remains readable and clearing sends explicit nu
 				academicRank: careerEntry()
 			},
 			academic_rank: 'none',
-			education_level: 'bachelor',
-			major: null,
-			university: null
+			educations: [{ id: ref, education_level: 'bachelor', major: null, university: null }],
+			highest_education_level: 'bachelor'
 		})
 	});
 	let reads = 0;
@@ -249,13 +254,15 @@ test('new personnel selection survives draft reload and appears in review and cr
 }) => {
 	await setup(page);
 	await page.goto('/staff/manage/new');
+	await page.getByLabel('คำนำหน้า (ไทย)', { exact: true }).fill('นาย');
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรใหม่');
 	await page.getByPlaceholder('นามสกุล', { exact: true }).fill('ทดสอบ');
 	await page.getByRole('button', { name: 'ตำแหน่งงาน', exact: true }).click();
 	await page.getByRole('option', { name: 'ครู', exact: true }).click();
 	await page.getByRole('button', { name: 'วิทยฐานะ', exact: true }).click();
 	await page.getByRole('option', { name: 'ไม่มีวิทยฐานะ', exact: true }).click();
-	await page.getByRole('button', { name: 'วุฒิการศึกษาสูงสุด', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มวุฒิการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ระดับวุฒิ รายการที่ 1', exact: true }).click();
 	await page.getByRole('option', { name: 'ปริญญาตรี', exact: true }).click();
 	await page.getByLabel('สาขาวิชา', { exact: true }).fill('วิทยาศาสตร์');
 	await page.getByLabel('สถาบันการศึกษา', { exact: true }).fill('มหาวิทยาลัยทดสอบ');
@@ -274,8 +281,8 @@ test('new personnel selection survives draft reload and appears in review and cr
 	await page.getByRole('option', { name: /สังกัด หน่วยงานตัวเลือก/ }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await expect(page.getByTestId('staff-create-review')).toContainText('ตำแหน่ง: ครู');
-	await expect(page.getByTestId('staff-create-review')).toContainText('สาขา: วิทยาศาสตร์');
-	await expect(page.getByTestId('staff-create-review')).toContainText('สถาบัน: มหาวิทยาลัยทดสอบ');
+	await expect(page.getByTestId('staff-create-review')).toContainText('วิทยาศาสตร์');
+	await expect(page.getByTestId('staff-create-review')).toContainText('มหาวิทยาลัยทดสอบ');
 	const saved = page.waitForRequest(
 		(r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/staff'
 	);
@@ -299,9 +306,9 @@ test('new personnel selection survives draft reload and appears in review and cr
 				}
 			]
 		},
-		education_level: 'bachelor',
-		major: 'วิทยาศาสตร์',
-		university: 'มหาวิทยาลัยทดสอบ'
+		educations: [
+			{ education_level: 'bachelor', major: 'วิทยาศาสตร์', university: 'มหาวิทยาลัยทดสอบ' }
+		]
 	});
 });
 
@@ -433,6 +440,9 @@ test('education text validation and failed save retain draft without catalog req
 		return route.abort();
 	});
 	await page.goto(staffPath(undefined, '/edit') + '?section=education');
+	await page.getByRole('button', { name: 'เพิ่มวุฒิการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ระดับวุฒิ รายการที่ 1', exact: true }).click();
+	await page.getByRole('option', { name: 'ปริญญาตรี', exact: true }).click();
 	const major = page.getByLabel('สาขาวิชา', { exact: true });
 	await major.fill('ก'.repeat(201));
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
@@ -448,8 +458,12 @@ test('education text validation and failed save retain draft without catalog req
 	const saved = page.waitForRequest((r) => r.method() === 'PUT');
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	expect((await saved).postDataJSON().staff_info).toEqual({
-		major: 'คณิตศาสตร์  ประยุกต์',
-		university: 'สถาบันทดสอบ'
+		education: {
+			expected_revision: 0,
+			items: [
+				{ education_level: 'bachelor', major: 'คณิตศาสตร์  ประยุกต์', university: 'สถาบันทดสอบ' }
+			]
+		}
 	});
 	await expect(major).toHaveValue('  คณิตศาสตร์  ประยุกต์  ');
 	expect(obsolete).toBe(0);
@@ -474,6 +488,7 @@ test('personnel fields and expanded dates remain readable on mobile and desktop 
 		await page.goto(staffPath(undefined, '/edit') + '?section=education');
 		const fields = page.getByTestId('staff-personnel-fields');
 		await expect(fields).toBeVisible();
+		await fields.getByRole('button', { name: 'เพิ่มวุฒิการศึกษา', exact: true }).click();
 		await page.getByLabel('สาขาวิชา', { exact: true }).fill('คณิตศาสตร์  ประยุกต์');
 		await page.getByLabel('สถาบันการศึกษา', { exact: true }).fill('มหาวิทยาลัยทดสอบ');
 		for (const kind of ['ประเภทบุคลากร', 'ตำแหน่ง', 'วิทยฐานะ']) {
@@ -496,30 +511,29 @@ test('personnel fields and expanded dates remain readable on mobile and desktop 
 			expect(Math.abs(controls[0].height - controls[1].height)).toBeLessThan(1);
 			if (width >= 768) expect(Math.abs(controls[0].top - controls[1].top)).toBeLessThan(1);
 			const education = await fields.evaluate((element) =>
-				['[aria-label="วุฒิการศึกษาสูงสุด"]', '#staff-major', '#staff-university'].map(
-					(selector) => {
-						const control = element.querySelector(selector)!;
-						const rect = control.getBoundingClientRect();
-						const label = control.parentElement!.querySelector('label, p')!;
-						return {
-							top: rect.top,
-							height: rect.height,
-							labelHeight: label.getBoundingClientRect().height
-						};
-					}
-				)
+				[
+					'[aria-label="ระดับวุฒิ รายการที่ 1"]',
+					'input[id^="major-"]',
+					'input[id^="university-"]'
+				].map((selector) => {
+					const control = element.querySelector(selector)!;
+					const rect = control.getBoundingClientRect();
+					const label = control.parentElement!.querySelector('label, p')!;
+					return {
+						top: rect.top,
+						height: rect.height,
+						labelHeight: label.getBoundingClientRect().height
+					};
+				})
 			);
 			for (const control of education) {
 				expect(Math.abs(control.height - education[0].height)).toBeLessThan(1);
 				expect(Math.abs(control.labelHeight - education[0].labelHeight)).toBeLessThan(1);
 			}
 			if (width >= 768) expect(Math.abs(education[0].top - education[1].top)).toBeLessThan(1);
-			await fields
-				.locator(':scope > div')
-				.last()
-				.screenshot({
-					path: testInfo.outputPath(`personnel-education-${width}-${theme}.png`)
-				});
+			await fields.getByTestId('staff-education-fields').screenshot({
+				path: testInfo.outputPath(`personnel-education-${width}-${theme}.png`)
+			});
 
 			await fields
 				.locator(':scope > div')

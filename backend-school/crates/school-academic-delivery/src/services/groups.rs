@@ -737,12 +737,10 @@ async fn hydrate_many(
     let group_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
     let teacher_rows: Vec<GroupTeacherRow> = sqlx::query_as(
         r#"SELECT teacher.learning_group_id, teacher.id, teacher.teacher_id,
-                  concat_ws(' ',
-                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
-                      nullif(user_account.last_name, '')) AS display_name,
+                  user_account.display_name AS display_name,
                   teacher.role, teacher.starts_on, teacher.ends_on, teacher.row_version
            FROM learning_group_teachers teacher
-           JOIN users user_account ON user_account.id = teacher.teacher_id
+           JOIN user_display_names user_account ON user_account.id = teacher.teacher_id
            WHERE teacher.learning_group_id = ANY($1)
            ORDER BY teacher.learning_group_id,
                     CASE teacher.role
@@ -1276,12 +1274,11 @@ async fn enrich_roster_preview(
         r#"
         SELECT student_year.id AS student_academic_year_id,
                info.student_id AS student_code,
-               concat_ws(' ', nullif(btrim(student.title), ''),
-                                student.first_name, student.last_name) AS display_name,
+               student.display_name AS display_name,
                grade.level_type, grade.year AS grade_year,
                homeroom.name AS homeroom_name
         FROM student_academic_years student_year
-        JOIN users student ON student.id = student_year.student_id
+        JOIN user_display_names student ON student.id = student_year.student_id
         LEFT JOIN student_info info ON info.user_id = student.id
         JOIN grade_levels grade ON grade.id = student_year.grade_level_id
         LEFT JOIN LATERAL (

@@ -119,6 +119,7 @@ async function mockAcademicContextApis(
 					id: '30000000-0000-4000-8000-000000000001',
 					username: 'academic-admin',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

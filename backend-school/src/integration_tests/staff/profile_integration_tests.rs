@@ -13,7 +13,7 @@ async fn public_profile_does_not_hide_failed_role_or_organization_reads() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 85).await.unwrap();
+    apply_migrations_through(&pool, 114).await.unwrap();
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     assert!(
         school_staff::services::staff_service::get_public_staff_profile(&pool, staff_id)
@@ -51,7 +51,7 @@ async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 85).await.unwrap();
+    apply_migrations_through(&pool, 114).await.unwrap();
 
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let homeroom_id: Uuid = sqlx::query_scalar(
@@ -72,10 +72,16 @@ async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
     .await
     .unwrap();
 
+    sqlx::query("UPDATE users SET title=NULL,first_name='',last_name='',title_en='Dr.',first_name_en='Alice',last_name_en='Example' WHERE id=$1").bind(staff_id).execute(&pool).await.unwrap();
     let profile = school_staff::services::staff_service::get_staff_profile(&pool, staff_id, false)
         .await
         .unwrap();
 
+    assert_eq!(profile.display_name, "Dr. Alice Example");
+    let public = school_staff::services::staff_service::get_public_staff_profile(&pool, staff_id)
+        .await
+        .unwrap();
+    assert_eq!(public.display_name, profile.display_name);
     assert!(profile
         .teaching_assignments
         .iter()
@@ -93,7 +99,7 @@ async fn private_profile_does_not_turn_failed_relations_into_empty_success() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 85).await.unwrap();
+    apply_migrations_through(&pool, 114).await.unwrap();
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     assert!(
         school_staff::services::staff_service::get_staff_profile(&pool, staff_id, false)

@@ -7,11 +7,7 @@
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { CalendarDays, ChevronDown } from '@lucide/svelte';
 	import type { StaffJobPositionSummary } from '#lib/api/personnel.js';
-	import {
-		ACADEMIC_RANK_LABELS,
-		EDUCATION_LEVEL_LABELS,
-		type StaffPersonnelDraft
-	} from '#lib/forms/staff-personnel.js';
+	import { ACADEMIC_RANK_LABELS, type StaffPersonnelDraft } from '#lib/forms/staff-personnel.js';
 	import {
 		PERSONNEL_TYPE_LABELS,
 		CAREER_KIND_LABELS,
@@ -23,6 +19,8 @@
 		type StaffPersonnelType
 	} from '#lib/forms/staff-career.js';
 	import StaffJobPositionPicker from './StaffJobPositionPicker.svelte';
+	import StaffEducationFields from './StaffEducationFields.svelte';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import StaffCareerDates from './StaffCareerDates.svelte';
 	let {
 		value = $bindable(),
@@ -156,56 +154,29 @@
 		{/each}
 	</div>
 	{#if errors.career}<p class="text-sm text-destructive" role="alert">{errors.career}</p>{/if}
-	<div class="grid min-w-0 gap-5 sm:grid-cols-2">
+	<StaffEducationFields bind:value={value.educations} {errors} {disabled} />
+	<div class="grid gap-4 sm:grid-cols-2">
 		<div class="space-y-2">
-			<Label for="staff-education-level">วุฒิการศึกษาสูงสุด</Label>
-			<Select.Root
-				type="single"
-				value={value.education_level ?? 'unspecified'}
-				onValueChange={(v) => {
-					value.education_level =
-						v === 'unspecified' ? null : (v as keyof typeof EDUCATION_LEVEL_LABELS);
-				}}
+			<Label for="staff-license-number">เลขที่ใบอนุญาตประกอบวิชาชีพ</Label><Input
+				id="staff-license-number"
+				bind:value={value.teaching_license_number}
+				aria-invalid={Boolean(errors.teaching_license_number)}
+				aria-describedby={errors.teaching_license_number ? 'staff-license-error' : undefined}
 				{disabled}
-			>
-				<Select.Trigger id="staff-education-level" class="w-full" aria-label="วุฒิการศึกษาสูงสุด"
-					>{value.education_level
-						? EDUCATION_LEVEL_LABELS[value.education_level]
-						: 'ยังไม่ระบุ'}</Select.Trigger
-				>
-				<Select.Content
-					><Select.Item value="unspecified">ยังไม่ระบุ</Select.Item
-					>{#each Object.entries(EDUCATION_LEVEL_LABELS) as [code, label] (code)}<Select.Item
-							value={code}>{label}</Select.Item
-						>{/each}</Select.Content
-				>
-			</Select.Root>
+			/>
 		</div>
-		{#each [{ key: 'major', label: 'สาขาวิชา' }, { key: 'university', label: 'สถาบันการศึกษา' }] as field (field.key)}
-			<div class="space-y-2">
-				<Label for={`staff-${field.key}`}>{field.label}</Label>
-				<Input
-					id={`staff-${field.key}`}
-					value={value[field.key as 'major' | 'university'] ?? ''}
-					oninput={(event) => {
-						value[field.key as 'major' | 'university'] = event.currentTarget.value;
-					}}
-					{disabled}
-					aria-invalid={Boolean(errors[field.key])}
-					aria-describedby={errors[field.key] ? `staff-${field.key}-error` : undefined}
-					placeholder={`พิมพ์${field.label}`}
-				/>
-				{#if errors[field.key]}<p
-						id={`staff-${field.key}-error`}
-						class="text-sm text-destructive"
-						role="alert"
-					>
-						{errors[field.key]}
-					</p>{/if}
-			</div>
-		{/each}
-		<p class="text-sm text-muted-foreground sm:col-span-2">
-			กลุ่มสาระใช้สังกัดปัจจุบันในระบบโดยอัตโนมัติ จัดการได้ในส่วนสังกัดหน่วยงาน
-		</p>
+		<div class="space-y-2">
+			<Label for="staff-license-expiry">วันหมดอายุใบอนุญาต</Label><DatePicker
+				id="staff-license-expiry"
+				ariaLabel="วันหมดอายุใบอนุญาต"
+				clearable
+				bind:value={value.teaching_license_expiry}
+				{disabled}
+			/>
+		</div>
 	</div>
+	{#if errors.teaching_license_number}<p id="staff-license-error" class="text-sm text-destructive">
+			{errors.teaching_license_number}
+		</p>{/if}
+	<p class="text-xs text-muted-foreground">จัดการกลุ่มสาระและหน่วยงานได้ในส่วนสังกัดหน่วยงาน</p>
 </div>

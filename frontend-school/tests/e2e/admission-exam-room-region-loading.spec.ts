@@ -75,6 +75,7 @@ async function mock(page: Page, manager = true) {
 					id: id(20),
 					username: 'E2E-exam-room',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

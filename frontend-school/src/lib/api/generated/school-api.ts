@@ -7567,6 +7567,7 @@ export interface components {
 			title: string;
 			/** Format: date-time */
 			updated_at: string;
+			user_display_name: string | null;
 			user_first_name: string | null;
 			/** Format: uuid */
 			user_id: string;
@@ -8131,6 +8132,7 @@ export interface components {
 				title: string;
 				/** Format: date-time */
 				updated_at: string;
+				user_display_name: string | null;
 				user_first_name: string | null;
 				/** Format: uuid */
 				user_id: string;
@@ -9196,6 +9198,7 @@ export interface components {
 		};
 		ApiResponse_CurrentUserResponse: {
 			data: {
+				displayName: string;
 				firstName: string;
 				/** Format: uuid */
 				id: string;
@@ -10565,6 +10568,7 @@ export interface components {
 				createdAt: string;
 				/** Format: date */
 				dateOfBirth: string | null;
+				displayName: string;
 				email: string | null;
 				emergencyContact: string | null;
 				firstName: string;
@@ -10814,6 +10818,7 @@ export interface components {
 		};
 		ApiResponse_PublicStaffProfile: {
 			data: {
+				display_name: string;
 				email: string | null;
 				first_name: string;
 				/** Format: date */
@@ -11091,14 +11096,18 @@ export interface components {
 				address: string | null;
 				advisor_homerooms: components['schemas']['AdvisorHomeroomItem'][];
 				date_of_birth: string | null;
+				display_name: string;
 				email: string | null;
 				emergency_contact: string | null;
 				first_name: string;
+				first_name_en: string | null;
 				gender: string | null;
+				has_complete_name: boolean;
 				hired_date: string | null;
 				/** Format: uuid */
 				id: string;
 				last_name: string;
+				last_name_en: string | null;
 				line_id: string | null;
 				national_id: string | null;
 				nickname: string | null;
@@ -11107,12 +11116,14 @@ export interface components {
 				phone: string | null;
 				/** Format: uuid */
 				profile_image_file_id: string | null;
+				resigned_date: string | null;
 				roles: components['schemas']['RoleResponse'][];
 				staff_info: null | components['schemas']['StaffInfoResponse'];
 				status: string;
 				subject_groups: components['schemas']['StaffSubjectGroupSummary'][];
 				teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
 				title: string | null;
+				title_en: string | null;
 				user_type: string;
 				username: string;
 			};
@@ -12113,6 +12124,7 @@ export interface components {
 				title: string;
 				/** Format: date-time */
 				updated_at: string;
+				user_display_name: string | null;
 				user_first_name: string | null;
 				/** Format: uuid */
 				user_id: string;
@@ -13705,6 +13717,7 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				id: string;
+				/** @description Complete preferred display name, including its title. */
 				name: string;
 				title?: string;
 			}[];
@@ -16512,12 +16525,10 @@ export interface components {
 		};
 		CreateStaffInfoRequest: {
 			career?: null | components['schemas']['CreateStaffCareerRequest'];
-			education_level?: null | components['schemas']['StaffEducationLevel'];
-			major?: string | null;
+			educations?: components['schemas']['StaffEducationInput'][];
 			/** Format: date */
 			teaching_license_expiry?: string | null;
 			teaching_license_number?: string | null;
-			university?: string | null;
 		};
 		CreateStaffRequest: {
 			address?: string | null;
@@ -16525,11 +16536,13 @@ export interface components {
 			date_of_birth?: string | null;
 			email?: string | null;
 			emergency_contact?: string | null;
-			first_name: string;
+			first_name?: string;
+			first_name_en?: string | null;
 			gender?: string | null;
 			/** Format: date */
 			hired_date?: string | null;
-			last_name: string;
+			last_name?: string;
+			last_name_en?: string | null;
 			line_id?: string | null;
 			national_id?: string | null;
 			nickname?: string | null;
@@ -16543,6 +16556,7 @@ export interface components {
 			role_ids: string[];
 			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
 			title?: string | null;
+			title_en?: string | null;
 			username?: string | null;
 		};
 		CreateStructuralTimetableBlocksRequest: {
@@ -16727,6 +16741,7 @@ export interface components {
 			id: string;
 		};
 		CurrentUserResponse: {
+			displayName: string;
 			firstName: string;
 			/** Format: uuid */
 			id: string;
@@ -19584,6 +19599,7 @@ export interface components {
 			createdAt: string;
 			/** Format: date */
 			dateOfBirth: string | null;
+			displayName: string;
 			email: string | null;
 			emergencyContact: string | null;
 			firstName: string;
@@ -19995,6 +20011,7 @@ export interface components {
 			position_title: string | null;
 		};
 		PublicStaffProfile: {
+			display_name: string;
 			email: string | null;
 			first_name: string;
 			/** Format: date */
@@ -20389,6 +20406,11 @@ export interface components {
 		};
 		ReplaceObservationEvaluatorsRequest: {
 			evaluators?: components['schemas']['EvaluatorAssignmentInput'][];
+		};
+		ReplaceStaffEducation: {
+			/** Format: int64 */
+			expected_revision: number;
+			items: components['schemas']['StaffEducationInput'][];
 		};
 		RequestSupervisionObservationRequest: {
 			/** Format: uuid */
@@ -21103,6 +21125,20 @@ export interface components {
 			/** Format: binary */
 			file: string;
 		};
+		StaffEducation: {
+			education_level: null | components['schemas']['StaffEducationLevel'];
+			/** Format: uuid */
+			id: string;
+			major: string | null;
+			university: string | null;
+		};
+		StaffEducationInput: {
+			education_level?: null | components['schemas']['StaffEducationLevel'];
+			/** Format: uuid */
+			id?: string | null;
+			major?: string | null;
+			university?: string | null;
+		};
 		/** @enum {string} */
 		StaffEducationLevel:
 			| 'primary'
@@ -21118,10 +21154,14 @@ export interface components {
 		StaffInfoResponse: {
 			academic_rank: null | components['schemas']['StaffAcademicRank'];
 			current_career: components['schemas']['StaffCareerCurrent'];
-			education_level: null | components['schemas']['StaffEducationLevel'];
+			/** Format: int64 */
+			education_revision: number;
+			educations: components['schemas']['StaffEducation'][];
+			highest_education_level: null | components['schemas']['StaffEducationLevel'];
 			job_position: null | components['schemas']['StaffJobPositionSummary'];
-			major: string | null;
-			university: string | null;
+			/** Format: date */
+			teaching_license_expiry: string | null;
+			teaching_license_number: string | null;
 		};
 		StaffJobPositionSummary: {
 			code: string;
@@ -21144,6 +21184,7 @@ export interface components {
 		};
 		StaffListItem: {
 			academic_rank: null | components['schemas']['StaffAcademicRank'];
+			display_name: string;
 			first_name: string;
 			/** Format: uuid */
 			id: string;
@@ -21175,14 +21216,18 @@ export interface components {
 			address: string | null;
 			advisor_homerooms: components['schemas']['AdvisorHomeroomItem'][];
 			date_of_birth: string | null;
+			display_name: string;
 			email: string | null;
 			emergency_contact: string | null;
 			first_name: string;
+			first_name_en: string | null;
 			gender: string | null;
+			has_complete_name: boolean;
 			hired_date: string | null;
 			/** Format: uuid */
 			id: string;
 			last_name: string;
+			last_name_en: string | null;
 			line_id: string | null;
 			national_id: string | null;
 			nickname: string | null;
@@ -21191,12 +21236,14 @@ export interface components {
 			phone: string | null;
 			/** Format: uuid */
 			profile_image_file_id: string | null;
+			resigned_date: string | null;
 			roles: components['schemas']['RoleResponse'][];
 			staff_info: null | components['schemas']['StaffInfoResponse'];
 			status: string;
 			subject_groups: components['schemas']['StaffSubjectGroupSummary'][];
 			teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
 			title: string | null;
+			title_en: string | null;
 			user_type: string;
 			username: string;
 		};
@@ -23384,12 +23431,10 @@ export interface components {
 		};
 		UpdateStaffInfoRequest: {
 			career?: null | components['schemas']['UpdateStaffCareerRequest'];
-			education_level?: null | components['schemas']['StaffEducationLevel'];
-			major?: string | null;
+			education?: null | components['schemas']['ReplaceStaffEducation'];
 			/** Format: date */
 			teaching_license_expiry?: string | null;
 			teaching_license_number?: string | null;
-			university?: string | null;
 		};
 		UpdateStaffRequest: {
 			address?: string | null;
@@ -23398,10 +23443,12 @@ export interface components {
 			email?: string | null;
 			emergency_contact?: string | null;
 			first_name?: string | null;
+			first_name_en?: string | null;
 			gender?: string | null;
 			/** Format: date */
 			hired_date?: string | null;
 			last_name?: string | null;
+			last_name_en?: string | null;
 			line_id?: string | null;
 			nickname?: string | null;
 			organization_assignments?: components['schemas']['OrganizationAssignment'][] | null;
@@ -23414,6 +23461,7 @@ export interface components {
 			staff_info?: null | components['schemas']['UpdateStaffInfoRequest'];
 			status?: string | null;
 			title?: string | null;
+			title_en?: string | null;
 		};
 		UpdateStudentAcademicYearRequest: {
 			/** Format: uuid */
@@ -51115,7 +51163,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Career reference changed */
+			/** @description Career or education revision changed */
 			409: {
 				headers: {
 					[name: string]: unknown;

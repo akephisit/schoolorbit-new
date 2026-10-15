@@ -23,3 +23,5 @@ mod session_schema_tests;
 pub mod consent;
 #[cfg(test)]
 mod session_service_tests;
+
+pub mod person_names;

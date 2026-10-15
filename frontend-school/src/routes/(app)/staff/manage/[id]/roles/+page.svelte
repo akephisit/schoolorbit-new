@@ -57,16 +57,14 @@
 
 <PageShell
 	title="บทบาทและสิทธิ์บุคลากร"
-	description={staff
-		? `${staff.first_name} ${staff.last_name} • ${staff.username}`
-		: `บัญชีบุคลากร ${userId}`}
+	description={staff ? `${staff.display_name} • ${staff.username}` : `บัญชีบุคลากร ${userId}`}
 	backHref={profileHref}
 	backLabel="กลับข้อมูลบุคลากร"
 	backPreload="tap"
 >
 	{#snippet meta()}<StaffBreadcrumb
 			{returnHref}
-			name={staff ? `${staff.first_name} ${staff.last_name}` : undefined}
+			name={staff ? staff.display_name : undefined}
 			{profileHref}
 			current="บทบาทและสิทธิ์"
 		/>{/snippet}

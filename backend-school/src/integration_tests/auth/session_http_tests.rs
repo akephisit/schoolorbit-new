@@ -256,6 +256,7 @@ fn current_user_json_has_no_default_pii() {
         id: Uuid::nil(),
         username: "teacher".to_string(),
         first_name: "Test".to_string(),
+        display_name: "Test User".to_string(),
         last_name: "Teacher".to_string(),
         user_type: "staff".to_string(),
         status: "active".to_string(),

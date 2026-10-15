@@ -192,7 +192,7 @@ pub async fn create_staff(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse),
-        (status = 409, description = "Career reference changed", body = ApiErrorResponse)
+        (status = 409, description = "Career or education revision changed", body = ApiErrorResponse)
     )
 ))]
 pub async fn update_staff(

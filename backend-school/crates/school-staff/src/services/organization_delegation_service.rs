@@ -48,11 +48,11 @@ pub async fn list_delegations(
 ) -> Result<Vec<DelegationItem>, AppError> {
     let rows = sqlx::query(
         r#"SELECT opd.id, opd.from_user_id,
-                  (SELECT CONCAT(u_from.title, u_from.first_name, ' ', u_from.last_name)
-                   FROM users u_from WHERE u_from.id = opd.from_user_id) AS from_user_name,
+                  (SELECT u_from.display_name
+                   FROM user_display_names u_from WHERE u_from.id = opd.from_user_id) AS from_user_name,
                   opd.to_user_id,
-                  (SELECT CONCAT(u_to.title, u_to.first_name, ' ', u_to.last_name)
-                   FROM users u_to WHERE u_to.id = opd.to_user_id) AS to_user_name,
+                  (SELECT u_to.display_name
+                   FROM user_display_names u_to WHERE u_to.id = opd.to_user_id) AS to_user_name,
                   opd.permission_id, p.code AS permission_code, p.name AS permission_name,
                   opd.reason, opd.started_at, opd.expires_at
            FROM organization_permission_delegations opd

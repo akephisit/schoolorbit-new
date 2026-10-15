@@ -4,11 +4,17 @@
 	import { page } from '$app/state';
 	import { staffReturnHref, withStaffReturn } from '#lib/navigation/staff-management.js';
 	import StaffBreadcrumb from '#lib/components/staff/StaffBreadcrumb.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import StaffNameFields from '#lib/components/staff/StaffNameFields.svelte';
+	import { STAFF_NAME_FIELDS, staffNameDraft, staffNameErrors } from '#lib/forms/staff-name.js';
 	import StaffPersonnelFields from '#lib/components/staff/StaffPersonnelFields.svelte';
 	import {
 		buildStaffPersonnelPatch,
 		staffPersonnelDraft,
-		normalizeStaffEducationText
+		staffPersonnelErrors,
+		orderedStaffEducations,
+		EDUCATION_LEVEL_LABELS,
+		type StaffPersonnelDraft
 	} from '#lib/forms/staff-personnel.js';
 	import { staffStatusLabel } from '#lib/forms/staff-status.js';
 	import { resolve } from '$app/paths';
@@ -61,7 +67,7 @@
 	let currentStep = $state(1);
 	const sections = [
 		{ value: 'personal', label: 'ข้อมูลส่วนตัว' },
-		{ value: 'education', label: 'การศึกษา' },
+		{ value: 'education', label: 'งานและการศึกษา' },
 		{ value: 'organizations', label: 'สังกัดหน่วยงาน' }
 	];
 	const returnHref = $derived(staffReturnHref(new URL(page.url.href)));
@@ -97,16 +103,14 @@
 		// Personal Information
 		profile_image_file_id: '',
 		username: '',
-		title: '',
-		first_name: '',
-		last_name: '',
+		...staffNameDraft(),
 		nickname: '',
 		email: '',
 		phone: '',
 		emergency_contact: '',
 		line_id: '',
 		date_of_birth: '',
-		gender: 'male',
+		gender: '',
 		address: '',
 		hired_date: '',
 		status: 'active',
@@ -145,6 +149,7 @@
 	let errors = $state<Record<string, string>>({});
 	let correctionReasons = $state<StaffCareerCorrectionReasons>({});
 	let careerConflict = $state(false);
+	let latestEducation = $state<StaffPersonnelDraft | null>(null);
 
 	$effect.pre(() => {
 		const id = staffId,
@@ -152,6 +157,8 @@
 		untrack(() => {
 			if (activeId !== id) {
 				activeId = id;
+				latestEducation = null;
+				careerConflict = false;
 				mutationEpoch++;
 				staff = null;
 				saving = false;
@@ -193,16 +200,14 @@
 			formData = {
 				profile_image_file_id: staff.profile_image_file_id || '',
 				username: staff.username || '',
-				title: staff.title || 'นาย',
-				first_name: staff.first_name,
-				last_name: staff.last_name,
+				...staffNameDraft(staff),
 				nickname: staff.nickname || '',
 				email: staff.email || '',
 				phone: staff.phone || '',
 				emergency_contact: staff.emergency_contact || '',
 				line_id: staff.line_id || '',
 				date_of_birth: staff.date_of_birth || '',
-				gender: staff.gender || 'male',
+				gender: staff.gender || '',
 				address: staff.address || '',
 				hired_date: staff.hired_date || '',
 				status: staff.status,
@@ -271,8 +276,11 @@
 	function validateStep1(): boolean {
 		errors = {};
 
-		if (!formData.first_name.trim()) errors.first_name = 'กรุณากรอกชื่อ';
-		if (!formData.last_name.trim()) errors.last_name = 'กรุณากรอกนามสกุล';
+		if (
+			originalForm &&
+			STAFF_NAME_FIELDS.some((field) => formData[field].trim() !== originalForm![field].trim())
+		)
+			Object.assign(errors, staffNameErrors(formData));
 
 		if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
 			errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
@@ -282,13 +290,7 @@
 			errors.phone = 'หมายเลขโทรศัพท์ไม่ถูกต้อง';
 		}
 
-		for (const key of ['major', 'university'] as const) {
-			try {
-				normalizeStaffEducationText(formData.personnel[key]);
-			} catch (error) {
-				errors[key] = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
-			}
-		}
+		Object.assign(errors, staffPersonnelErrors(formData.personnel));
 		Object.assign(errors, careerFieldErrors(formData.personnel.career));
 		if (originalForm) {
 			try {
@@ -383,9 +385,7 @@
 		try {
 			const payload: UpdateStaffRequest = {};
 			const personalFields = [
-				'title',
-				'first_name',
-				'last_name',
+				...STAFF_NAME_FIELDS,
 				'nickname',
 				'email',
 				'phone',
@@ -403,7 +403,9 @@
 						field === 'first_name' || field === 'last_name'
 							? formData[field].trim()
 							: formData[field];
-					payload[field] = value || undefined;
+					payload[field] = STAFF_NAME_FIELDS.some((name) => name === field)
+						? value
+						: value || undefined;
 				}
 			}
 			const hrPatch = buildStaffPersonnelPatch(
@@ -450,9 +452,10 @@
 		try {
 			const latest = await getStaffProfile(owner, { signal: ticket.signal });
 			if (disposed || owner !== staffId || !staffRequest.isCurrent(ticket.revision)) return;
-			const updated = staffPersonnelDraft(
+			const latestPersonnel = staffPersonnelDraft(
 				requireApiData(latest, 'โหลดข้อมูลล่าสุดไม่สำเร็จ').staff_info
-			).career;
+			);
+			const updated = latestPersonnel.career;
 			const previous = originalForm.personnel.career;
 			for (const key of ['personnelType', 'jobPosition', 'academicRank'] as const) {
 				const draft = formData.personnel.career[key];
@@ -469,7 +472,19 @@
 				draft.reference = fresh.reference;
 			}
 			originalForm.personnel.career = updated;
-			careerConflict = false;
+			if (latestPersonnel.education_revision !== originalForm.personnel.education_revision) {
+				const changed =
+					JSON.stringify(formData.personnel.educations) !==
+					JSON.stringify(originalForm.personnel.educations);
+				if (changed) latestEducation = latestPersonnel;
+				else {
+					formData.personnel.educations = structuredClone(latestPersonnel.educations);
+					formData.personnel.education_revision = latestPersonnel.education_revision;
+					originalForm.personnel.educations = structuredClone(latestPersonnel.educations);
+					originalForm.personnel.education_revision = latestPersonnel.education_revision;
+				}
+			}
+			careerConflict = latestEducation !== null;
 			toast.success('โหลดข้อมูลล่าสุดแล้ว กรุณาตรวจสอบร่างก่อนบันทึก');
 		} catch (error) {
 			if (!disposed && owner === staffId)
@@ -479,20 +494,18 @@
 		}
 	}
 
-	// Get display label for value
-	function getTitleLabel(value: string): string {
-		const labels: Record<string, string> = {
-			นาย: 'นาย',
-			นาง: 'นาง',
-			นางสาว: 'นางสาว',
-			'ดร.': 'ดร.',
-			'ศ.': 'ศ.',
-			'รศ.': 'รศ.',
-			'ผศ.': 'ผศ.'
-		};
-		return labels[value] || value;
+	function useLatestEducation() {
+		if (!latestEducation || !originalForm || saving) return;
+		formData.personnel.educations = structuredClone($state.snapshot(latestEducation.educations));
+		originalForm.personnel.educations = structuredClone(
+			$state.snapshot(latestEducation.educations)
+		);
+		formData.personnel.education_revision = latestEducation.education_revision;
+		originalForm.personnel.education_revision = latestEducation.education_revision;
+		latestEducation = null;
+		careerConflict = false;
 	}
-
+	// Get display label for value
 	function getGenderLabel(value: string): string {
 		const labels: Record<string, string> = {
 			male: 'ชาย',
@@ -539,7 +552,7 @@
 <PageShell
 	title="แก้ไขข้อมูลบุคลากร"
 	description={staff && canReadStaff
-		? `${staff.first_name} ${staff.last_name} • เลือกหมวดที่ต้องการแก้ไข`
+		? `${staff.display_name} • เลือกหมวดที่ต้องการแก้ไข`
 		: 'แก้ไขข้อมูลบุคลากร'}
 	backHref={profileHref}
 	backLabel="กลับข้อมูลบุคลากร"
@@ -547,7 +560,7 @@
 >
 	{#snippet meta()}<StaffBreadcrumb
 			{returnHref}
-			name={staff && canReadStaff ? `${staff.first_name} ${staff.last_name}` : undefined}
+			name={staff && canReadStaff ? staff.display_name : undefined}
 			{profileHref}
 			current="แก้ไข"
 		/>{/snippet}
@@ -605,65 +618,52 @@
 					void handleSubmit();
 				}}
 			>
-				<div class="bg-card border border-border rounded-lg p-6">
-					{#if currentStep === 1}
-						{@const imageOwner = staffId}
-						<!-- Step 1: Personal Information -->
-						<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
+				<Card.Root class="py-0"
+					><Card.Content class="p-4 sm:p-5">
+						{#if currentStep === 1}
+							{@const imageOwner = staffId}
+							<!-- Step 1: Personal Information -->
+							<h2 class="text-base font-semibold mb-4">ข้อมูลส่วนตัว</h2>
 
-						<div class="flex justify-center mb-8">
-							{#key staffId}<ProfileImageUpload
-									currentFileId={formData.profile_image_file_id}
-									resourceId={staffId}
-									disabled={saving}
-									onsuccess={(upload) => updateProfileImage(upload.fileId, imageOwner)}
-									onerror={(message) => {
-										if (!disposed && imageOwner === staffId) errors.profile_image = message;
-									}}
-								/>{/key}
-						</div>
-
-						<div class="space-y-4">
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">รหัสบุคลากร (Username)</Label>
-									<Input
-										type="text"
-										value={formData.username}
-										readonly
-										class="bg-muted text-muted-foreground w-full px-3 py-2 border border-border rounded-md"
-									/>
-								</div>
-								<div>
-									<!-- Spacer -->
+							<div class="mb-5 flex flex-wrap items-center gap-4 rounded-xl bg-muted/30 p-3">
+								{#key staffId}<ProfileImageUpload
+										size="sm"
+										currentFileId={formData.profile_image_file_id}
+										resourceId={staffId}
+										disabled={saving}
+										onsuccess={(upload) => updateProfileImage(upload.fileId, imageOwner)}
+										onerror={(message) => {
+											if (!disposed && imageOwner === staffId) errors.profile_image = message;
+										}}
+										>{#snippet helper()}<span class="sr-only">เปลี่ยนรูปบุคลากร</span
+											>{/snippet}</ProfileImageUpload
+									>{/key}
+								<div class="min-w-0 flex-1">
+									<p class="break-words text-sm font-semibold">{staff.display_name}</p>
+									<dl class="mt-1 text-xs text-muted-foreground">
+										<dt class="inline">รหัสบุคลากร:</dt>
+										<dd class="inline">{formData.username}</dd>
+									</dl>
+									<p class="mt-2 text-xs text-muted-foreground">
+										JPG, PNG, WebP, HEIC · สูงสุด 10 MB
+									</p>
 								</div>
 							</div>
 
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">
-										คำนำหน้า <span class="text-destructive">*</span>
-									</Label>
-									<Select.Root type="single" bind:value={formData.title}>
-										<Select.Trigger>{getTitleLabel(formData.title)}</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="นาย">นาย</Select.Item>
-											<Select.Item value="นาง">นาง</Select.Item>
-											<Select.Item value="นางสาว">นางสาว</Select.Item>
-											<Select.Item value="ดร.">ดร.</Select.Item>
-											<Select.Item value="ศ.">ศ.</Select.Item>
-											<Select.Item value="รศ.">รศ.</Select.Item>
-											<Select.Item value="ผศ.">ผศ.</Select.Item>
-										</Select.Content>
-									</Select.Root>
-								</div>
-
-								<div>
-									<Label class="mb-2">
-										เพศ <span class="text-destructive">*</span>
-									</Label>
-									<Select.Root type="single" bind:value={formData.gender}>
-										<Select.Trigger>{getGenderLabel(formData.gender)}</Select.Trigger>
+							<div class="space-y-4">
+								<StaffNameFields
+									bind:value={formData}
+									{errors}
+									disabled={saving || !canMutateStaff}
+								/>
+								<div class="max-w-sm space-y-2">
+									<Label for="staff-gender">เพศ</Label><Select.Root
+										type="single"
+										bind:value={formData.gender}
+									>
+										<Select.Trigger id="staff-gender"
+											>{getGenderLabel(formData.gender)}</Select.Trigger
+										>
 										<Select.Content>
 											<Select.Item value="male">ชาย</Select.Item>
 											<Select.Item value="female">หญิง</Select.Item>
@@ -671,323 +671,334 @@
 										</Select.Content>
 									</Select.Root>
 								</div>
-							</div>
-
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
-									<Label class="mb-2">
-										ชื่อ <span class="text-destructive">*</span>
-									</Label>
+									<Label for="staff-nickname" class="mb-2">ชื่อเล่น</Label>
 									<Input
+										id="staff-nickname"
 										type="text"
-										bind:value={formData.first_name}
-										aria-label="ชื่อ"
-										aria-invalid={Boolean(errors.first_name)}
-										placeholder="ชื่อ"
-										class="w-full px-3 py-2 border border-border rounded-md
-										{errors.first_name ? 'border-destructive' : ''}"
+										bind:value={formData.nickname}
+										placeholder="ชื่อเล่น"
 									/>
-									{#if errors.first_name}
-										<p class="text-xs text-destructive mt-1">{errors.first_name}</p>
-									{/if}
 								</div>
 
-								<div>
-									<Label class="mb-2">
-										นามสกุล <span class="text-destructive">*</span>
-									</Label>
-									<Input
-										type="text"
-										bind:value={formData.last_name}
-										aria-label="นามสกุล"
-										aria-invalid={Boolean(errors.last_name)}
-										placeholder="นามสกุล"
-										class="w-full px-3 py-2 border border-border rounded-md
-										{errors.last_name ? 'border-destructive' : ''}"
-									/>
-									{#if errors.last_name}
-										<p class="text-xs text-destructive mt-1">{errors.last_name}</p>
-									{/if}
-								</div>
-							</div>
-
-							<div>
-								<Label class="mb-2">ชื่อเล่น</Label>
-								<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
-							</div>
-
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">อีเมล</Label>
-									<Input
-										type="email"
-										bind:value={formData.email}
-										aria-label="อีเมล"
-										aria-invalid={Boolean(errors.email)}
-										placeholder="email@school.ac.th (ไม่บังคับ)"
-										class="w-full px-3 py-2 border border-border rounded-md
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									<div>
+										<Label for="staff-email" class="mb-2">อีเมล</Label>
+										<Input
+											id="staff-email"
+											type="email"
+											bind:value={formData.email}
+											aria-label="อีเมล"
+											aria-invalid={Boolean(errors.email)}
+											placeholder="email@school.ac.th (ไม่บังคับ)"
+											class="w-full px-3 py-2 border border-border rounded-md
 										{errors.email ? 'border-destructive' : ''}"
-									/>
-									{#if errors.email}
-										<p class="text-xs text-destructive mt-1">{errors.email}</p>
-									{/if}
-								</div>
+										/>
+										{#if errors.email}
+											<p class="text-xs text-destructive mt-1">{errors.email}</p>
+										{/if}
+									</div>
 
-								<div>
-									<Label class="mb-2">หมายเลขโทรศัพท์</Label>
-									<Input
-										type="tel"
-										bind:value={formData.phone}
-										aria-label="เบอร์โทรศัพท์"
-										aria-invalid={Boolean(errors.phone)}
-										placeholder="081-234-5678"
-										class="w-full px-3 py-2 border border-border rounded-md
+									<div>
+										<Label for="staff-phone" class="mb-2">หมายเลขโทรศัพท์</Label>
+										<Input
+											id="staff-phone"
+											type="tel"
+											bind:value={formData.phone}
+											aria-label="เบอร์โทรศัพท์"
+											aria-invalid={Boolean(errors.phone)}
+											placeholder="081-234-5678"
+											class="w-full px-3 py-2 border border-border rounded-md
 										{errors.phone ? 'border-destructive' : ''}"
+										/>
+										{#if errors.phone}
+											<p class="text-xs text-destructive mt-1">{errors.phone}</p>
+										{/if}
+									</div>
+								</div>
+
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									<div>
+										<Label for="staff-date_of_birth" class="mb-2">วันเกิด</Label>
+										<DatePicker
+											id="staff-date_of_birth"
+											ariaLabel="วันเกิด"
+											bind:value={formData.date_of_birth}
+											placeholder="เลือกวันเกิด"
+										/>
+									</div>
+
+									<div>
+										<Label for="staff-hired_date" class="mb-2">วันที่เริ่มงาน</Label>
+										<DatePicker
+											ariaLabel="วันที่เริ่มงาน"
+											id="staff-hired_date"
+											bind:value={formData.hired_date}
+											placeholder="เลือกวันที่เริ่มงาน"
+										/>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									<div>
+										<Label for="staff-line_id" class="mb-2">Line ID</Label>
+										<Input
+											id="staff-line_id"
+											type="text"
+											bind:value={formData.line_id}
+											placeholder="@lineid"
+										/>
+									</div>
+
+									<div>
+										<Label for="staff-emergency_contact" class="mb-2">เบอร์ติดต่อฉุกเฉิน</Label>
+										<Input
+											id="staff-emergency_contact"
+											type="tel"
+											bind:value={formData.emergency_contact}
+											placeholder="081-234-5678"
+										/>
+									</div>
+								</div>
+
+								<div>
+									<Label for="staff-address" class="mb-2">ที่อยู่</Label>
+									<Textarea
+										id="staff-address"
+										bind:value={formData.address}
+										placeholder="ที่อยู่ปัจจุบัน"
+										rows={3}
 									/>
-									{#if errors.phone}
-										<p class="text-xs text-destructive mt-1">{errors.phone}</p>
-									{/if}
-								</div>
-							</div>
-
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">วันเกิด</Label>
-									<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
 								</div>
 
 								<div>
-									<Label class="mb-2">วันที่เริ่มงาน</Label>
-									<DatePicker bind:value={formData.hired_date} placeholder="เลือกวันที่เริ่มงาน" />
+									<Label class="mb-2">สถานะ</Label>
+									<Select.Root type="single" bind:value={formData.status}>
+										<Select.Trigger>{staffStatusLabel(formData.status)}</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="active">ใช้งาน</Select.Item>
+											<Select.Item value="inactive">ปิดการใช้งาน</Select.Item>
+											<Select.Item value="suspended">ระงับ</Select.Item>
+											<Select.Item value="resigned">ลาออก</Select.Item>
+											<Select.Item value="retired">เกษียณ</Select.Item>
+										</Select.Content>
+									</Select.Root>
 								</div>
 							</div>
-
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">Line ID</Label>
-									<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
-								</div>
-
-								<div>
-									<Label class="mb-2">เบอร์ติดต่อฉุกเฉิน</Label>
-									<Input
-										type="tel"
-										bind:value={formData.emergency_contact}
-										placeholder="081-234-5678"
-									/>
-								</div>
-							</div>
-
-							<div>
-								<Label class="mb-2">ที่อยู่</Label>
-								<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
-							</div>
-
-							<div>
-								<Label class="mb-2">สถานะ</Label>
-								<Select.Root type="single" bind:value={formData.status}>
-									<Select.Trigger>{staffStatusLabel(formData.status)}</Select.Trigger>
-									<Select.Content>
-										<Select.Item value="active">ใช้งาน</Select.Item>
-										<Select.Item value="inactive">ปิดการใช้งาน</Select.Item>
-										<Select.Item value="suspended">ระงับ</Select.Item>
-										<Select.Item value="resigned">ลาออก</Select.Item>
-										<Select.Item value="retired">เกษียณ</Select.Item>
-									</Select.Content>
-								</Select.Root>
-							</div>
-						</div>
-					{:else if currentStep === 2}
-						<h2 class="text-xl font-semibold mb-6">ตำแหน่งและการศึกษา</h2>
-						{#if careerConflict}<div
-								class="mb-4 space-y-3 rounded-xl border bg-muted/40 p-4"
-								role="alert"
-							>
-								<p class="text-sm">
-									ข้อมูลบุคลากรเปลี่ยนไปแล้ว ร่างของคุณยังอยู่
-									กรุณาโหลดข้อมูลล่าสุดและตรวจสอบก่อนบันทึก
-								</p>
-								<Button
-									type="button"
-									variant="outline"
-									disabled={saving}
-									onclick={reconcileCareerDraft}>โหลดข้อมูลล่าสุดและตรวจสอบร่าง</Button
+						{:else if currentStep === 2}
+							<h2 class="text-base font-semibold mb-4">ตำแหน่งและการศึกษา</h2>
+							{#if careerConflict}<div
+									class="mb-4 space-y-3 rounded-xl border bg-muted/40 p-4"
+									role="alert"
 								>
-							</div>{/if}
-
-						<StaffPersonnelFields
-							bind:value={formData.personnel}
-							originalCareer={originalForm?.personnel.career}
-							bind:correctionReasons
-							bind:selectedPosition
-							{errors}
-							disabled={saving || !canMutateStaff}
-						/>
-					{:else if currentStep === 3}
-						<!-- Step 4: Organization Units -->
-						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
-
-						{#if !canReadOptions}<PageState
-								variant="permission"
-								title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
-							/>
-						{:else if loadingOrganizationUnits}<div
-								role="status"
-								aria-label="กำลังโหลดตัวเลือกหน่วยงาน"
-							>
-								<PageSkeleton variant="form" rows={3} />
-							</div>
-						{:else if organizationError}<PageState
-								variant="error"
-								title="โหลดตัวเลือกหน่วยงานไม่สำเร็จ"
-								description={organizationError}
-								actionLabel="ลองอีกครั้ง"
-								onaction={loadOrganizationOptions}
-							/>
-						{:else}
-							<div class="space-y-4">
-								<p class="text-sm text-muted-foreground">
-									ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
-								</p>
-
-								{#if errors.organization_units}
-									<p class="text-sm text-destructive">{errors.organization_units}</p>
-								{/if}
-
-								{#each formData.organization_assignments as dept, i (i)}
-									<div class="p-4 border border-border rounded-lg">
-										<div class="flex items-start justify-between mb-4">
-											<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
-											{#if formData.organization_assignments.length > 1}
-												<Button
-													variant="ghost"
-													size="sm"
-													type="button"
-													onclick={() => removeOrganizationUnit(i)}
-													class="text-destructive hover:text-destructive/80 text-sm"
-												>
-													ลบ
-												</Button>
-											{/if}
-										</div>
-
-										<div class="space-y-3">
-											<div>
-												<Label class="mb-2">ชื่อหน่วยงาน</Label>
-												<Select.Root type="single" bind:value={dept.organization_unit_id}>
-													<Select.Trigger>
-														{#if dept.organization_unit_id}
-															{organizationUnits.find((d) => d.id === dept.organization_unit_id)
-																?.name || 'เลือกหน่วยงาน'}
-														{:else}
-															เลือกหน่วยงาน
-														{/if}
-													</Select.Trigger>
-													<Select.Content
-														class="max-h-[300px] overflow-y-auto w-full max-w-[400px]"
+									<p class="text-sm">
+										ข้อมูลบุคลากรเปลี่ยนไปแล้ว ร่างของคุณยังอยู่
+										กรุณาโหลดข้อมูลล่าสุดและตรวจสอบก่อนบันทึก
+									</p>
+									<Button
+										type="button"
+										variant="outline"
+										disabled={saving}
+										onclick={reconcileCareerDraft}>โหลดข้อมูลล่าสุดและตรวจสอบร่าง</Button
+									>
+									{#if latestEducation}
+										<div class="space-y-3 border-t pt-3">
+											<p class="text-sm font-medium">รายการวุฒิล่าสุดในระบบ</p>
+											<ul class="space-y-2 text-sm">
+												{#each orderedStaffEducations(latestEducation.educations) as row (row.key)}<li
 													>
-														<Select.Item value="">เลือกหน่วยงาน</Select.Item>
+														{row.education_level
+															? EDUCATION_LEVEL_LABELS[row.education_level]
+															: 'ยังไม่ระบุระดับ'} · {row.major || 'ยังไม่ระบุสาขา'} · {row.university ||
+															'ยังไม่ระบุสถาบัน'}
+													</li>{:else}<li>ยังไม่มีรายการ</li>{/each}
+											</ul>
+											<p class="text-xs text-muted-foreground">
+												ร่างวุฒิของคุณยังอยู่ด้านล่าง
+												เปรียบเทียบและจดข้อมูลที่ต้องการเก็บก่อนใช้รายการล่าสุด แล้วจึงแก้ไขต่อ
+												ข้อมูลส่วนอื่นในร่างจะยังอยู่
+											</p>
+											<Button type="button" variant="outline" onclick={useLatestEducation}
+												>ใช้รายการวุฒิล่าสุดแทนร่างวุฒิ</Button
+											>
+										</div>
+									{/if}
+								</div>{/if}
 
-														<!-- Group by Parent Organization Units (Administrative Groups) -->
-														{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
-															<Select.Group>
-																<Select.Label
-																	class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
-																>
-																	<Building2 class="w-3 H-3" />
-																	{parentDept.name}
-																</Select.Label>
+							<StaffPersonnelFields
+								bind:value={formData.personnel}
+								originalCareer={originalForm?.personnel.career}
+								bind:correctionReasons
+								bind:selectedPosition
+								{errors}
+								disabled={saving || !canMutateStaff}
+							/>
+						{:else if currentStep === 3}
+							<!-- Step 4: Organization Units -->
+							<h2 class="text-base font-semibold mb-4">สังกัดหน่วยงาน</h2>
 
-																<!-- Parent itself (Optional, allow assigning to root group) -->
-																<Select.Item
-																	value={parentDept.id}
-																	class="pl-4 font-semibold text-muted-foreground/80"
-																>
-																	— สังกัด {parentDept.name} (ส่วนกลาง) —
-																</Select.Item>
+							{#if !canReadOptions}<PageState
+									variant="permission"
+									title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
+								/>
+							{:else if loadingOrganizationUnits}<div
+									role="status"
+									aria-label="กำลังโหลดตัวเลือกหน่วยงาน"
+								>
+									<PageSkeleton variant="form" rows={3} />
+								</div>
+							{:else if organizationError}<PageState
+									variant="error"
+									title="โหลดตัวเลือกหน่วยงานไม่สำเร็จ"
+									description={organizationError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadOrganizationOptions}
+								/>
+							{:else}
+								<div class="space-y-4">
+									<p class="text-sm text-muted-foreground">
+										ระบุหน่วยงาน/กลุ่มที่บุคลากรสังกัดและตำแหน่งในหน่วยงาน
+									</p>
 
-																<!-- Child Organization Units -->
-																{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
-																	<Select.Item value={childDept.id} class="pl-6">
-																		<div class="flex flex-col">
-																			<span>{childDept.name}</span>
-																			{#if childDept.code}
-																				<span class="text-[10px] text-muted-foreground">
-																					{childDept.code}
-																				</span>
-																			{/if}
-																		</div>
+									{#if errors.organization_units}
+										<p class="text-sm text-destructive">{errors.organization_units}</p>
+									{/if}
+
+									{#each formData.organization_assignments as dept, i (i)}
+										<div class="p-4 border border-border rounded-lg">
+											<div class="flex items-start justify-between mb-4">
+												<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
+												{#if formData.organization_assignments.length > 1}
+													<Button
+														variant="ghost"
+														size="sm"
+														type="button"
+														onclick={() => removeOrganizationUnit(i)}
+														class="text-destructive hover:text-destructive/80 text-sm"
+													>
+														ลบ
+													</Button>
+												{/if}
+											</div>
+
+											<div class="space-y-3">
+												<div>
+													<Label class="mb-2">ชื่อหน่วยงาน</Label>
+													<Select.Root type="single" bind:value={dept.organization_unit_id}>
+														<Select.Trigger>
+															{#if dept.organization_unit_id}
+																{organizationUnits.find((d) => d.id === dept.organization_unit_id)
+																	?.name || 'เลือกหน่วยงาน'}
+															{:else}
+																เลือกหน่วยงาน
+															{/if}
+														</Select.Trigger>
+														<Select.Content
+															class="max-h-[300px] overflow-y-auto w-full max-w-[400px]"
+														>
+															<Select.Item value="">เลือกหน่วยงาน</Select.Item>
+
+															<!-- Group by Parent Organization Units (Administrative Groups) -->
+															{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
+																<Select.Group>
+																	<Select.Label
+																		class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
+																	>
+																		<Building2 class="w-3 H-3" />
+																		{parentDept.name}
+																	</Select.Label>
+
+																	<!-- Parent itself (Optional, allow assigning to root group) -->
+																	<Select.Item
+																		value={parentDept.id}
+																		class="pl-4 font-semibold text-muted-foreground/80"
+																	>
+																		— สังกัด {parentDept.name} (ส่วนกลาง) —
 																	</Select.Item>
-																{/each}
-															</Select.Group>
-															<Select.Separator />
-														{/each}
 
-														<!-- Orphan Organization Units (No Parent) -->
-														{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
-															<Select.Group>
-																<Select.Label class="font-bold text-muted-foreground"
-																	>อื่นๆ</Select.Label
-																>
-																{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
-																	<Select.Item value={orphan.id} class="pl-6">
-																		{orphan.name}
-																	</Select.Item>
-																{/each}
-															</Select.Group>
-														{/if}
-													</Select.Content>
-												</Select.Root>
-											</div>
+																	<!-- Child Organization Units -->
+																	{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
+																		<Select.Item value={childDept.id} class="pl-6">
+																			<div class="flex flex-col">
+																				<span>{childDept.name}</span>
+																				{#if childDept.code}
+																					<span class="text-[10px] text-muted-foreground">
+																						{childDept.code}
+																					</span>
+																				{/if}
+																			</div>
+																		</Select.Item>
+																	{/each}
+																</Select.Group>
+																<Select.Separator />
+															{/each}
 
-											<div>
-												<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
-												<Select.Root type="single" bind:value={dept.position_code}>
-													<Select.Trigger>{getPositionLabel(dept.position_code)}</Select.Trigger>
-													<Select.Content>
-														<Select.Item value="member">สมาชิก</Select.Item>
-														<Select.Item value="head">หัวหน้า</Select.Item>
-													</Select.Content>
-												</Select.Root>
-											</div>
+															<!-- Orphan Organization Units (No Parent) -->
+															{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
+																<Select.Group>
+																	<Select.Label class="font-bold text-muted-foreground"
+																		>อื่นๆ</Select.Label
+																	>
+																	{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
+																		<Select.Item value={orphan.id} class="pl-6">
+																			{orphan.name}
+																		</Select.Item>
+																	{/each}
+																</Select.Group>
+															{/if}
+														</Select.Content>
+													</Select.Root>
+												</div>
 
-											<div>
-												<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
-												<Textarea
-													bind:value={dept.responsibilities}
-													placeholder="ระบุหน้าที่รับผิดชอบ..."
-													rows={2}
-												/>
-											</div>
+												<div>
+													<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
+													<Select.Root type="single" bind:value={dept.position_code}>
+														<Select.Trigger>{getPositionLabel(dept.position_code)}</Select.Trigger>
+														<Select.Content>
+															<Select.Item value="member">สมาชิก</Select.Item>
+															<Select.Item value="head">หัวหน้า</Select.Item>
+														</Select.Content>
+													</Select.Root>
+												</div>
 
-											<div>
-												<div class="flex items-center gap-2 cursor-pointer">
-													<Checkbox
-														checked={dept.is_primary}
-														onCheckedChange={() => setPrimaryOrganizationUnit(i)}
+												<div>
+													<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
+													<Textarea
+														bind:value={dept.responsibilities}
+														placeholder="ระบุหน้าที่รับผิดชอบ..."
+														rows={2}
 													/>
-													<span class="text-sm">สังกัดหลัก</span>
+												</div>
+
+												<div>
+													<div class="flex items-center gap-2 cursor-pointer">
+														<Checkbox
+															checked={dept.is_primary}
+															onCheckedChange={() => setPrimaryOrganizationUnit(i)}
+														/>
+														<span class="text-sm">สังกัดหลัก</span>
+													</div>
 												</div>
 											</div>
 										</div>
-									</div>
-								{/each}
+									{/each}
 
-								<Button
-									type="button"
-									onclick={addOrganizationUnit}
-									variant="outline"
-									class="w-full"
-								>
-									+ เพิ่มหน่วยงาน
-								</Button>
-							</div>
+									<Button
+										type="button"
+										onclick={addOrganizationUnit}
+										variant="outline"
+										class="w-full"
+									>
+										+ เพิ่มหน่วยงาน
+									</Button>
+								</div>
+							{/if}
 						{/if}
-					{/if}
-				</div>
+					</Card.Content></Card.Root
+				>
 
 				<div
-					class="sticky bottom-3 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur"
+					class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3"
 				>
 					<p class="text-sm text-muted-foreground" role="status">
 						{dirty ? 'มีข้อมูลที่ยังไม่บันทึก' : 'ยังไม่มีการเปลี่ยนแปลง'}

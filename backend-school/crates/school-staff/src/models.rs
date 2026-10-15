@@ -240,6 +240,14 @@ pub struct StaffProfileResponse {
     pub title: Option<String>,
     pub first_name: String,
     pub last_name: String,
+    pub display_name: String,
+    pub has_complete_name: bool,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub title_en: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub first_name_en: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub last_name_en: Option<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub nickname: Option<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
@@ -256,6 +264,8 @@ pub struct StaffProfileResponse {
     pub address: Option<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub hired_date: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub resigned_date: Option<String>,
     pub user_type: String,
     pub status: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
@@ -295,8 +305,13 @@ pub struct CreateStaffRequest {
     pub email: Option<String>,
     pub password: String,
     pub title: Option<String>,
+    #[serde(default)]
     pub first_name: String,
+    #[serde(default)]
     pub last_name: String,
+    pub title_en: Option<String>,
+    pub first_name_en: Option<String>,
+    pub last_name_en: Option<String>,
     pub nickname: Option<String>,
     pub phone: Option<String>,
     pub emergency_contact: Option<String>,
@@ -338,6 +353,9 @@ pub struct UpdateStaffRequest {
     pub title: Option<String>,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
+    pub title_en: Option<String>,
+    pub first_name_en: Option<String>,
+    pub last_name_en: Option<String>,
     pub nickname: Option<String>,
     pub email: Option<String>,
     pub phone: Option<String>,
@@ -390,6 +408,7 @@ pub struct StaffListItem {
     pub last_name: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub profile_image_file_id: Option<Uuid>,
+    pub display_name: String,
     pub roles: Vec<String>,
     pub organization_units: Vec<String>,
     pub status: String,

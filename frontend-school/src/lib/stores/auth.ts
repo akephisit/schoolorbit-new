@@ -6,6 +6,7 @@ export interface User {
 	username?: string;
 	firstName: string;
 	lastName: string;
+	displayName: string;
 	role: string;
 	user_type?: string; // 'staff' | 'student'
 	status: string;

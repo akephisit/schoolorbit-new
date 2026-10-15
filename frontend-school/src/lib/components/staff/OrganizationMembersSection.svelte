@@ -625,9 +625,6 @@
 														: 'opacity-0'}"
 												/>
 												<span class="truncate">{staffDisplayName(staff)}</span>
-												<span class="ml-auto shrink-0 text-xs text-muted-foreground">
-													{staff.title ?? 'บุคลากร'}
-												</span>
 											</Command.Item>
 										{/each}
 									</Command.Group>

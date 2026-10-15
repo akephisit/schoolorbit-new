@@ -440,6 +440,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					id: timetableIds.user,
 					username: 'timetable-test',
 					firstName: 'ตารางสอน',
+					displayName: 'ตารางสอน ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

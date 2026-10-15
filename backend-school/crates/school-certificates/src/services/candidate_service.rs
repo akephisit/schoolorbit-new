@@ -481,14 +481,15 @@ pub async fn search_accounts(
     let pattern = format!("%{search}%");
     let rows = match query.recipient_type {
         RecipientType::Student => sqlx::query_as::<_, AccountRow>(
-            "SELECT u.id, u.username, student.student_id, u.title, u.first_name,
-                        u.last_name, u.user_type, u.status
-                 FROM users u
+            "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
+                        person_name.last_name, u.user_type, u.status
+                 FROM users u JOIN user_display_names person_name ON person_name.id=u.id
+
                  JOIN student_info student ON student.user_id = u.id
                  WHERE u.user_type = 'student' AND u.status = 'active'
-                   AND (student.student_id ILIKE $1 OR u.first_name ILIKE $1
-                        OR u.last_name ILIKE $1 OR u.username ILIKE $1)
-                 ORDER BY u.first_name, u.last_name, student.student_id
+                   AND (student.student_id ILIKE $1 OR person_name.first_name ILIKE $1
+                        OR person_name.last_name ILIKE $1 OR u.username ILIKE $1)
+                 ORDER BY person_name.first_name, person_name.last_name, student.student_id
                  LIMIT 20",
         )
         .bind(pattern)
@@ -496,12 +497,13 @@ pub async fn search_accounts(
         .await
         .map_err(candidate_db_error)?,
         RecipientType::Staff => sqlx::query_as::<_, AccountRow>(
-            "SELECT u.id, u.username, NULL::text AS student_id, u.title, u.first_name,
-                        u.last_name, u.user_type, u.status
-                 FROM users u
+            "SELECT u.id, u.username, NULL::text AS student_id, person_name.title, person_name.first_name,
+                        person_name.last_name, u.user_type, u.status
+                 FROM users u JOIN user_display_names person_name ON person_name.id=u.id
+
                  WHERE u.user_type = 'staff' AND u.status = 'active'
-                   AND (u.username ILIKE $1 OR u.first_name ILIKE $1 OR u.last_name ILIKE $1)
-                 ORDER BY u.first_name, u.last_name, u.username
+                   AND (u.username ILIKE $1 OR person_name.first_name ILIKE $1 OR person_name.last_name ILIKE $1)
+                 ORDER BY person_name.first_name, person_name.last_name, u.username
                  LIMIT 20",
         )
         .bind(pattern)
@@ -1356,9 +1358,10 @@ async fn load_import_accounts(
         Vec::new()
     } else {
         sqlx::query_as::<_, AccountRow>(
-            "SELECT u.id, u.username, NULL::text AS student_id, u.title, u.first_name,
-                    u.last_name, u.user_type, u.status
-             FROM users u
+            "SELECT u.id, u.username, NULL::text AS student_id, person_name.title, person_name.first_name,
+                    person_name.last_name, u.user_type, u.status
+             FROM users u JOIN user_display_names person_name ON person_name.id=u.id
+
              WHERE u.username = ANY($1::text[]) AND u.user_type = 'staff'
              ORDER BY u.id
              FOR SHARE OF u",
@@ -2251,9 +2254,10 @@ fn selected_name(candidate: &CertificateCandidateDetail) -> (Option<String>, Str
 
 async fn load_account_by_id(pool: &PgPool, user_id: Uuid) -> Result<AccountRow, AppError> {
     sqlx::query_as(
-        "SELECT u.id, u.username, student.student_id, u.title, u.first_name,
-                u.last_name, u.user_type, u.status
-         FROM users u
+        "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
+                person_name.last_name, u.user_type, u.status
+         FROM users u JOIN user_display_names person_name ON person_name.id=u.id
+
          LEFT JOIN student_info student ON student.user_id = u.id
          WHERE u.id = $1 AND u.user_type IN ('student', 'staff')",
     )
@@ -2269,9 +2273,10 @@ async fn load_account_by_id_tx(
     user_id: Uuid,
 ) -> Result<AccountRow, AppError> {
     sqlx::query_as(
-        "SELECT u.id, u.username, student.student_id, u.title, u.first_name,
-                u.last_name, u.user_type, u.status
-         FROM users u
+        "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
+                person_name.last_name, u.user_type, u.status
+         FROM users u JOIN user_display_names person_name ON person_name.id=u.id
+
          LEFT JOIN student_info student ON student.user_id = u.id
          WHERE u.id = $1 AND u.user_type IN ('student', 'staff')
          FOR SHARE OF u",

@@ -37,11 +37,11 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 97).await
+    prepare_core_fixture_through(name, 114).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 97).await
+    prepare_core_fixture_through(name, 114).await
 }
 
 async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -124,7 +124,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 100).await;
+    let pool = prepare_core_fixture_through(name, 114).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -5994,7 +5994,7 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
     use school_academic_core::models::*;
     use school_academic_core::services::homeroom_roster;
     let pool = prepare_current_core_fixture("homeroom_roster_management").await;
-    apply_migrations_through(&pool, 99).await.unwrap();
+    apply_migrations_through(&pool, 114).await.unwrap();
     let actor = fixture_actor(&pool).await;
     let room: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",

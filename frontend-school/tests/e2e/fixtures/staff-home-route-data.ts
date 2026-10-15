@@ -37,6 +37,7 @@ export async function mockStaffHome(
 		id: actor,
 		username: 'E2E-staff-home',
 		firstName: 'เจ้าของ',
+		displayName: 'เจ้าของ โปรไฟล์',
 		lastName: 'โปรไฟล์',
 		nickname,
 		email: 'staff@example.invalid',
@@ -168,6 +169,7 @@ export async function mockStaffHome(
 				return reply(route, {
 					id: resource.includes(secondStaff) ? secondStaff : firstStaff,
 					first_name: resource.includes(secondStaff) ? 'บุคลากรสอง' : 'บุคลากรแรก',
+					display_name: resource.includes(secondStaff) ? 'บุคลากรสอง ทดสอบ' : 'บุคลากรแรก ทดสอบ',
 					last_name: 'ทดสอบ',
 					username: 'E2E-public',
 					email: null,

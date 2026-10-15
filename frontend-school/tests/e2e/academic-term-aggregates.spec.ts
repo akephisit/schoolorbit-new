@@ -103,6 +103,7 @@ async function mock(page: Page, manager = false, conflict = false) {
 					id: actor,
 					username: 'E2E-LIFECYCLE-office',
 					firstName: 'ฝ่าย',
+					displayName: 'ฝ่าย วิชาการ',
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'active',

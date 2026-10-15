@@ -14,8 +14,10 @@ pub async fn read_staff_info(
     let sql = format!(
         r#"SELECT jsonb_build_object(
           'job_position', CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id', position.id, 'code', position.code, 'name', position.name, 'isActive', position.is_active, 'isSelectable', position.is_selectable) END,
-          'academic_rank', info.academic_rank, 'education_level', info.education_level,
-          'major', info.major, 'university', info.university,
+          'academic_rank', info.academic_rank, 'education_revision',info.education_revision,
+          'highest_education_level',(SELECT education_level FROM staff_highest_education WHERE staff_id=info.user_id),
+          'teaching_license_number',info.teaching_license_number,'teaching_license_expiry',info.teaching_license_expiry,
+          'educations',coalesce((SELECT jsonb_agg(jsonb_build_object('id',e.id,'education_level',e.education_level,'major',e.major,'university',e.university) ORDER BY CASE WHEN staff_education_tier(e.education_level)=0 THEN 99 ELSE staff_education_tier(e.education_level) END,e.education_level,e.created_at,e.id) FROM staff_educations e WHERE e.staff_id=info.user_id),'[]'::jsonb),
           'current_career',jsonb_build_object('personnelType',{type_entry},'jobPosition',{position_entry},'academicRank',{rank_entry})
         ) FROM staff_info info
         LEFT JOIN staff_job_positions position ON position.id = info.job_position_id
@@ -45,6 +47,11 @@ pub fn normalize_education_text(value: &str) -> Result<Option<String>, AppError>
     Ok((!value.is_empty()).then(|| value.to_owned()))
 }
 
+fn normalize_license(value: &str) -> Result<Option<String>, AppError> {
+    let value = school_auth::person_names::normalize_name_part(value, 100)?;
+    Ok((!value.is_empty()).then_some(value))
+}
+
 pub(crate) async fn validate_position(
     tx: &mut Transaction<'_, Postgres>,
     selected: Option<Uuid>,
@@ -72,21 +79,18 @@ pub async fn create_staff_info(
     input: &CreateStaffInfoRequest,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    let major = input
-        .major
+    let license = input
+        .teaching_license_number
         .as_deref()
-        .map(normalize_education_text)
+        .map(normalize_license)
         .transpose()?
         .flatten();
-    let university = input
-        .university
-        .as_deref()
-        .map(normalize_education_text)
-        .transpose()?
-        .flatten();
-    sqlx::query("INSERT INTO staff_info(user_id,education_level,major,university,teaching_license_number,teaching_license_expiry) VALUES($1,$2,$3,$4,$5,$6)")
-        .bind(user_id).bind(input.education_level.map(|value| value.as_str())).bind(major).bind(university)
-        .bind(&input.teaching_license_number).bind(input.teaching_license_expiry).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO staff_info(user_id,teaching_license_number,teaching_license_expiry) VALUES($1,$2,$3)")
+        .bind(user_id).bind(license).bind(input.teaching_license_expiry).execute(&mut **tx).await?;
+    if !input.educations.is_empty() {
+        super::staff_education_service::replace_educations(tx, user_id, 0, &input.educations, true)
+            .await?;
+    }
     if let Some(career) = &input.career {
         super::staff_career_service::create_current_career(tx, user_id, actor_id, career).await?;
     }
@@ -103,51 +107,32 @@ pub async fn patch_staff_info(
     if patch.is_empty() {
         return Ok(());
     }
-    let major = patch
-        .major
-        .as_ref()
-        .and_then(|v| v.as_deref())
-        .map(normalize_education_text)
-        .transpose()?
-        .flatten();
-    let university = patch
-        .university
-        .as_ref()
-        .and_then(|v| v.as_deref())
-        .map(normalize_education_text)
-        .transpose()?
-        .flatten();
     sqlx::query("INSERT INTO staff_info (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING")
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
-    sqlx::query(
-        r#"UPDATE staff_info SET
-        education_level=CASE WHEN $2 THEN $3 ELSE education_level END,
-        major=CASE WHEN $4 THEN $5 ELSE major END,
-        university=CASE WHEN $6 THEN $7 ELSE university END,
-        teaching_license_number=CASE WHEN $8 THEN $9 ELSE teaching_license_number END,
-        teaching_license_expiry=CASE WHEN $10 THEN $11 ELSE teaching_license_expiry END,
-        updated_at=NOW() WHERE user_id=$1"#,
-    )
-    .bind(user_id)
-    .bind(patch.education_level.is_some())
-    .bind(patch.education_level.flatten().map(|value| value.as_str()))
-    .bind(patch.major.is_some())
-    .bind(major)
-    .bind(patch.university.is_some())
-    .bind(university)
-    .bind(patch.teaching_license_number.is_some())
-    .bind(
-        patch
-            .teaching_license_number
-            .as_ref()
-            .and_then(|value| value.as_deref()),
-    )
-    .bind(patch.teaching_license_expiry.is_some())
-    .bind(patch.teaching_license_expiry.flatten())
-    .execute(&mut **tx)
-    .await?;
+    let license = patch
+        .teaching_license_number
+        .as_ref()
+        .and_then(|v| v.as_deref())
+        .map(normalize_license)
+        .transpose()?
+        .flatten();
+    sqlx::query("UPDATE staff_info SET teaching_license_number=CASE WHEN $2 THEN $3 ELSE teaching_license_number END,teaching_license_expiry=CASE WHEN $4 THEN $5 ELSE teaching_license_expiry END,updated_at=now() WHERE user_id=$1")
+        .bind(user_id).bind(patch.teaching_license_number.is_some())
+        .bind(license)
+        .bind(patch.teaching_license_expiry.is_some()).bind(patch.teaching_license_expiry.flatten())
+        .execute(&mut **tx).await?;
+    if let Some(education) = &patch.education {
+        super::staff_education_service::replace_educations(
+            tx,
+            user_id,
+            education.expected_revision,
+            &education.items,
+            false,
+        )
+        .await?;
+    }
     if let Some(career) = &patch.career {
         super::staff_career_service::patch_current_career(tx, user_id, actor_id, career).await?;
     }

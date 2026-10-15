@@ -13,6 +13,7 @@ pub struct SessionLoginUser {
     pub user_type: String,
     pub first_name: String,
     pub last_name: String,
+    pub display_name: String,
     pub profile_image_file_id: Option<Uuid>,
 }
 
@@ -24,6 +25,7 @@ pub struct ActiveUserShell {
     pub user_type: String,
     pub first_name: String,
     pub last_name: String,
+    pub display_name: String,
     pub profile_image_file_id: Option<Uuid>,
 }
 
@@ -37,9 +39,9 @@ pub async fn find_session_login_user_by_username(
 ) -> Result<Option<SessionLoginUser>, AppError> {
     sqlx::query_as::<_, SessionLoginUser>(
         r#"
-        SELECT id, username, password_hash, status, user_type, first_name, last_name,
+        SELECT id, username, password_hash, status, user_type, first_name, last_name, display_name,
                profile_image_file_id
-        FROM users
+        FROM user_display_names
         WHERE username = $1
         "#,
     )
@@ -55,8 +57,8 @@ pub async fn find_active_user_shell_by_id(
 ) -> Result<Option<ActiveUserShell>, AppError> {
     sqlx::query_as::<_, ActiveUserShell>(
         r#"
-        SELECT id, username, status, user_type, first_name, last_name, profile_image_file_id
-        FROM users
+        SELECT id, username, status, user_type, first_name, last_name, display_name, profile_image_file_id
+        FROM user_display_names
         WHERE id = $1 AND status = 'active'
         "#,
     )
@@ -76,6 +78,7 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
             password_hash,
             first_name,
             last_name,
+            display_name,
             user_type,
             phone,
             date_of_birth,
@@ -92,7 +95,7 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
             profile_image_file_id,
             hired_date,
             resigned_date
-         FROM users 
+         FROM user_display_names
          WHERE id = $1",
     )
     .bind(user_id)
@@ -127,25 +130,68 @@ pub async fn get_primary_role_name(
 pub async fn update_profile(
     connection: &mut PgConnection,
     user_id: Uuid,
-    payload: UpdateProfileRequest,
+    mut payload: UpdateProfileRequest,
 ) -> Result<ProfileUpdateResult, AppError> {
     let date_of_birth = parse_profile_date(payload.date_of_birth.as_deref());
 
-    let old_file_id = sqlx::query_as::<_, (Option<Uuid>,)>(
-        "SELECT profile_image_file_id FROM users WHERE id = $1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *connection)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".to_string()))?
-    .0;
+    let (old_file_id, user_type, title, given, family, title_en, given_en, family_en): (Option<Uuid>,String,Option<String>,String,String,Option<String>,Option<String>,Option<String>) = sqlx::query_as(
+        "SELECT profile_image_file_id,user_type,title,first_name,last_name,title_en,first_name_en,last_name_en FROM users WHERE id=$1 FOR UPDATE")
+        .bind(user_id).fetch_optional(&mut *connection).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".into()))?;
+    let english = user_type == "staff"
+        && !crate::person_names::has_complete_name([
+            title.as_deref().unwrap_or_default(),
+            &given,
+            &family,
+            "",
+            "",
+            "",
+        ])
+        && crate::person_names::has_complete_name([
+            "",
+            "",
+            "",
+            title_en.as_deref().unwrap_or_default(),
+            given_en.as_deref().unwrap_or_default(),
+            family_en.as_deref().unwrap_or_default(),
+        ]);
+    if let Some(next) = &payload.title {
+        let next = crate::person_names::normalize_name_part(next, 50)?;
+        let previous = if english {
+            title_en.as_deref()
+        } else {
+            title.as_deref()
+        }
+        .unwrap_or_default()
+        .trim();
+        if user_type == "staff" && next != previous {
+            crate::person_names::require_complete_name([
+                if english {
+                    title.as_deref().unwrap_or_default()
+                } else {
+                    &next
+                },
+                &given,
+                &family,
+                if english {
+                    &next
+                } else {
+                    title_en.as_deref().unwrap_or_default()
+                },
+                given_en.as_deref().unwrap_or_default(),
+                family_en.as_deref().unwrap_or_default(),
+            ])?;
+        }
+        payload.title = Some(next);
+    }
 
     let profile_image_update_requested = payload.profile_image_file_id.is_some();
     let new_file_id = payload.profile_image_file_id.unwrap_or(old_file_id);
 
     sqlx::query(
         "UPDATE users 
-         SET title = COALESCE($1, title),
+         SET title = CASE WHEN $13 THEN title ELSE COALESCE($1, title) END,
+             title_en = CASE WHEN $13 THEN COALESCE($1,title_en) ELSE title_en END,
              nickname = COALESCE($2, nickname),
              email = COALESCE($3, email),
              phone = COALESCE($4, phone),
@@ -170,6 +216,7 @@ pub async fn update_profile(
     .bind(profile_image_update_requested)
     .bind(new_file_id)
     .bind(user_id)
+    .bind(english)
     .execute(&mut *connection)
     .await?;
 
@@ -282,6 +329,7 @@ INSERT INTO file_versions (
             password_hash: "hash".to_string(),
             first_name: "Test".to_string(),
             last_name: "User".to_string(),
+            display_name: "Test User".to_string(),
             user_type: "staff".to_string(),
             phone: None,
             date_of_birth: None,
@@ -404,5 +452,39 @@ INSERT INTO file_versions (
             .expect("cleared user should load");
         assert_eq!(cleared_user.profile_image_file_id, None);
         assert_eq!(cleared.replaced_file_id, Some(new_file_id));
+    }
+    #[tokio::test]
+    async fn bilingual_self_profile_prefix_updates_selected_language() {
+        let pool = create_test_pool().await;
+        run_test_migrations(&pool).await;
+        let user = create_test_user(
+            &pool,
+            &format!("bilingual-{}@example.invalid", Uuid::now_v7()),
+            "Synthetic-123!",
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE users SET user_type='staff',title=NULL,first_name='',last_name='',title_en='Ms.',first_name_en='Alice',last_name_en='Example' WHERE id=$1").bind(user).execute(&pool).await.unwrap();
+        let mut input = profile_update(None);
+        input.title = Some("Dr.".into());
+        let mut tx = pool.begin().await.unwrap();
+        update_profile(&mut tx, user, input).await.unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            find_user_by_id(&pool, user).await.unwrap().display_name,
+            "Dr. Alice Example"
+        );
+        let raw: (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT title,title_en FROM users WHERE id=$1")
+                .bind(user)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(raw, (None, Some("Dr.".into())));
+        let mut input = profile_update(None);
+        input.title = Some(" ".into());
+        let mut tx = pool.begin().await.unwrap();
+        assert!(update_profile(&mut tx, user, input).await.is_err());
+        tx.rollback().await.unwrap();
     }
 }

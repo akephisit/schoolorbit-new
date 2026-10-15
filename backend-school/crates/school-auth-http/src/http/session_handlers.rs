@@ -325,6 +325,7 @@ fn current_user_response(user: LoginUserSnapshot) -> CurrentUserResponse {
         username: user.username,
         first_name: user.first_name,
         last_name: user.last_name,
+        display_name: user.display_name,
         user_type: user.user_type,
         status: user.status,
         primary_role_name: user.primary_role_name,

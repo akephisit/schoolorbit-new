@@ -128,33 +128,19 @@ pub async fn list_invigilator_staff_options(
         SELECT user_account.id AS staff_id,
                COALESCE(
                    NULLIF(
-                       concat_ws(
-                           ' ',
-                           NULLIF(
-                               concat_ws('', NULLIF(TRIM(user_account.title), ''), NULLIF(TRIM(user_account.first_name), '')),
-                               ''
-                           ),
-                           NULLIF(TRIM(user_account.last_name), '')
-                       ),
+                       user_account.display_name,
                        ''
                    ),
                    user_account.id::TEXT
                ) AS display_name
-        FROM users user_account
+        FROM user_display_names user_account
         WHERE user_account.user_type = 'staff'
           AND user_account.status = 'active'
           AND (
               $1::TEXT IS NULL
               OR user_account.first_name ILIKE $1
               OR user_account.last_name ILIKE $1
-              OR concat_ws(
-                    ' ',
-                    NULLIF(
-                        concat_ws('', NULLIF(TRIM(user_account.title), ''), NULLIF(TRIM(user_account.first_name), '')),
-                        ''
-                    ),
-                    NULLIF(TRIM(user_account.last_name), '')
-                 ) ILIKE $1
+              OR user_account.display_name ILIKE $1
           )
         ORDER BY user_account.first_name, user_account.last_name, user_account.id
         LIMIT $2
@@ -405,7 +391,7 @@ async fn validate_active_staff_users(
         r#"
         SELECT COUNT(*)::BIGINT
         FROM unnest($1::uuid[]) AS requested(staff_id)
-        LEFT JOIN users user_account
+        LEFT JOIN user_display_names user_account
           ON user_account.id = requested.staff_id
          AND user_account.user_type = 'staff'
          AND user_account.status = 'active'
@@ -651,14 +637,7 @@ async fn fetch_invigilator_staff_workloads(
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
                invigilator.staff_id,
-               concat_ws(
-                   ' ',
-                   NULLIF(
-                       concat_ws('', NULLIF(TRIM(user_account.title), ''), NULLIF(TRIM(user_account.first_name), '')),
-                       ''
-                   ),
-                   NULLIF(TRIM(user_account.last_name), '')
-               )
+               user_account.display_name
                    AS staff_name,
                session.starts_at,
                session.ends_at
@@ -666,7 +645,7 @@ async fn fetch_invigilator_staff_workloads(
         JOIN academic_exam_day_room_assignments assignment
           ON assignment.id = invigilator.day_room_assignment_id
         JOIN academic_exam_days day ON day.id = assignment.exam_day_id
-        JOIN users user_account ON user_account.id = invigilator.staff_id
+        JOIN user_display_names user_account ON user_account.id = invigilator.staff_id
         JOIN academic_exam_sessions session
           ON session.exam_day_id = assignment.exam_day_id
          AND session.exam_round_id = day.exam_round_id
@@ -755,17 +734,10 @@ pub(super) async fn fetch_invigilator_views_by_assignment_ids(
         r#"
         SELECT invigilator.day_room_assignment_id,
                invigilator.staff_id,
-               concat_ws(
-                   ' ',
-                   NULLIF(
-                       concat_ws('', NULLIF(TRIM(user_account.title), ''), NULLIF(TRIM(user_account.first_name), '')),
-                       ''
-                   ),
-                   NULLIF(TRIM(user_account.last_name), '')
-               )
+               user_account.display_name
                    AS display_name
         FROM academic_exam_day_invigilators invigilator
-        JOIN users user_account ON user_account.id = invigilator.staff_id
+        JOIN user_display_names user_account ON user_account.id = invigilator.staff_id
         WHERE invigilator.day_room_assignment_id = ANY($1)
         ORDER BY invigilator.day_room_assignment_id,
                  user_account.first_name,
@@ -837,19 +809,12 @@ pub(super) async fn fetch_invigilators_by_assignment_ids(
                invigilator.day_room_assignment_id,
                invigilator.staff_id,
                NULLIF(
-                   concat_ws(
-                       ' ',
-                       NULLIF(
-                           concat_ws('', NULLIF(TRIM(user_account.title), ''), NULLIF(TRIM(user_account.first_name), '')),
-                           ''
-                       ),
-                       NULLIF(TRIM(user_account.last_name), '')
-                   ),
+                   user_account.display_name,
                    ''
                ) AS staff_name,
                invigilator.role_label
         FROM academic_exam_day_invigilators invigilator
-        JOIN users user_account ON user_account.id = invigilator.staff_id
+        JOIN user_display_names user_account ON user_account.id = invigilator.staff_id
         WHERE invigilator.day_room_assignment_id = ANY($1)
         ORDER BY invigilator.day_room_assignment_id,
                  invigilator.role_label NULLS LAST,

@@ -112,6 +112,7 @@ async function mockAssessmentApis(
 					id: teacherId,
 					username: 'academic-admin',
 					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ระบบ',
 					lastName: 'ระบบ',
 					userType: 'staff',
 					status: 'ACTIVE',

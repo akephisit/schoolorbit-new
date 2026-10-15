@@ -107,7 +107,7 @@
 	// Derived state for filtering
 	const filteredAchievements = $derived(
 		achievements.filter((a) => {
-			const staffName = `${a.user_first_name || ''} ${a.user_last_name || ''}`;
+			const staffName = a.user_display_name || '';
 			const searchLower = searchTerm.toLowerCase();
 
 			return (
@@ -467,12 +467,11 @@
 											{/if}
 										</TableCell>
 										<TableCell>
-											{#if achievement.user_first_name}
+											{#if achievement.user_display_name}
 												<div class="flex items-center gap-2">
 													<UserIcon class="w-4 h-4 text-muted-foreground" />
 													<span>
-														{achievement.user_first_name}
-														{achievement.user_last_name}
+														{achievement.user_display_name}
 													</span>
 												</div>
 											{:else}

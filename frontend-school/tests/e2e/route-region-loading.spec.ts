@@ -120,6 +120,7 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 						id: '90000000-0000-4000-8000-000000000001',
 						username: 'route-region-test',
 						firstName: 'ทดสอบ',
+						displayName: 'ทดสอบ การโหลด',
 						lastName: 'การโหลด',
 						userType: 'staff',
 						status: 'ACTIVE',

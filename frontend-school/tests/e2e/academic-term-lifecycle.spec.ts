@@ -107,6 +107,7 @@ async function mock(
 					id: actor,
 					username: 'E2E-LIFECYCLE-reader',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

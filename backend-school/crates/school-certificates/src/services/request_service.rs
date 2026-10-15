@@ -47,12 +47,10 @@ const REQUEST_SELECT: &str = r#"
         owner.name AS owner_organization_unit_name,
         request.status,
         request.submitted_by,
-        BTRIM(CONCAT(COALESCE(submitter.title, ''), submitter.first_name, ' ',
-                     submitter.last_name)) AS submitted_by_name,
+        BTRIM(submitter.display_name) AS submitted_by_name,
         request.reviewed_by,
         CASE WHEN reviewer.id IS NULL THEN NULL
-             ELSE BTRIM(CONCAT(COALESCE(reviewer.title, ''), reviewer.first_name, ' ',
-                               reviewer.last_name)) END AS reviewed_by_name,
+             ELSE BTRIM(reviewer.display_name) END AS reviewed_by_name,
         request.submitted_at,
         request.reviewed_at,
         request.returned_at,
@@ -86,8 +84,8 @@ const REQUEST_SELECT: &str = r#"
       ON campaign.id = request.campaign_id
      AND campaign.status <> 'purging'
     LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
-    JOIN users submitter ON submitter.id = request.submitted_by
-    LEFT JOIN users reviewer ON reviewer.id = request.reviewed_by
+    JOIN user_display_names submitter ON submitter.id = request.submitted_by
+    LEFT JOIN user_display_names reviewer ON reviewer.id = request.reviewed_by
 "#;
 
 #[derive(Debug, FromRow)]

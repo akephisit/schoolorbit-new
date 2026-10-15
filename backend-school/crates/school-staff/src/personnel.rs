@@ -56,12 +56,41 @@ pub struct StaffJobPositionSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub struct StaffEducation {
+    pub id: Uuid,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub education_level: Option<StaffEducationLevel>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub major: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub university: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(deny_unknown_fields)]
-pub struct CreateStaffInfoRequest {
-    pub career: Option<CreateStaffCareerRequest>,
+pub struct StaffEducationInput {
+    pub id: Option<Uuid>,
     pub education_level: Option<StaffEducationLevel>,
     pub major: Option<String>,
     pub university: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceStaffEducation {
+    pub expected_revision: i64,
+    pub items: Vec<StaffEducationInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CreateStaffInfoRequest {
+    pub career: Option<CreateStaffCareerRequest>,
+    #[serde(default)]
+    pub educations: Vec<StaffEducationInput>,
     pub teaching_license_number: Option<String>,
     pub teaching_license_expiry: Option<NaiveDate>,
 }
@@ -80,24 +109,8 @@ where
 pub struct UpdateStaffInfoRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub career: Option<UpdateStaffCareerRequest>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub education_level: Option<Option<StaffEducationLevel>>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub major: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub university: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub education: Option<ReplaceStaffEducation>,
     #[serde(
         default,
         deserialize_with = "deserialize_nullable",
@@ -117,9 +130,7 @@ impl UpdateStaffInfoRequest {
         self.career
             .as_ref()
             .is_none_or(|career| career.changes.is_empty())
-            && self.education_level.is_none()
-            && self.major.is_none()
-            && self.university.is_none()
+            && self.education.is_none()
             && self.teaching_license_number.is_none()
             && self.teaching_license_expiry.is_none()
     }
@@ -133,18 +144,19 @@ pub struct StaffInfoResponse {
     pub job_position: Option<StaffJobPositionSummary>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub academic_rank: Option<StaffAcademicRank>,
+    pub educations: Vec<StaffEducation>,
+    pub education_revision: i64,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub education_level: Option<StaffEducationLevel>,
+    pub highest_education_level: Option<StaffEducationLevel>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub major: Option<String>,
+    pub teaching_license_number: Option<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub university: Option<String>,
+    pub teaching_license_expiry: Option<NaiveDate>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "api-docs")]
     #[cfg(feature = "api-docs")]
     use utoipa::PartialSchema;
 
@@ -162,21 +174,22 @@ mod tests {
     #[test]
     fn personnel_patch_serialization_preserves_explicit_null() {
         let omitted: UpdateStaffInfoRequest = serde_json::from_str("{}").unwrap();
-        let cleared: UpdateStaffInfoRequest =
-            serde_json::from_str(r#"{"education_level":null}"#).unwrap();
-        let explicit: UpdateStaffInfoRequest =
-            serde_json::from_str(r#"{"education_level":"bachelor"}"#).unwrap();
+        let cleared: UpdateStaffInfoRequest = serde_json::from_str(
+            r#"{"teaching_license_number":null,"education":{"expected_revision":2,"items":[]}}"#,
+        )
+        .unwrap();
         assert!(omitted.is_empty());
-        assert_eq!(omitted.education_level, None);
-        assert_eq!(cleared.education_level, Some(None));
-        assert_eq!(
-            explicit.education_level,
-            Some(Some(StaffEducationLevel::Bachelor))
-        );
+        assert_eq!(cleared.teaching_license_number, Some(None));
+        assert_eq!(cleared.education.as_ref().unwrap().items.len(), 0);
+        assert_eq!(cleared.education.as_ref().unwrap().expected_revision, 2);
         assert_eq!(
             serde_json::to_string(&cleared).unwrap(),
-            r#"{"education_level":null}"#
+            r#"{"education":{"expected_revision":2,"items":[]},"teaching_license_number":null}"#
         );
+        assert!(serde_json::from_str::<UpdateStaffInfoRequest>(
+            r#"{"education_level":"bachelor"}"#
+        )
+        .is_err());
         assert_eq!(StaffAcademicRank::None.label(), "ไม่มีวิทยฐานะ");
         assert_eq!(StaffEducationLevel::Bachelor.as_str(), "bachelor");
     }

@@ -49,9 +49,7 @@
 	let statsYear = '';
 
 	const numberFormatter = new Intl.NumberFormat('th-TH');
-	const displayName = $derived(
-		[$authStore.user?.firstName, $authStore.user?.lastName].filter(Boolean).join(' ') || 'ผู้ใช้งาน'
-	);
+	const displayName = $derived($authStore.user?.displayName || 'ผู้ใช้งาน');
 	const roleName = $derived($authStore.user?.primaryRoleName || $authStore.user?.role || 'บุคลากร');
 	const navigation = $derived(buildSidebarNavigation(menuGroups));
 	const serviceWorkspaces = $derived(

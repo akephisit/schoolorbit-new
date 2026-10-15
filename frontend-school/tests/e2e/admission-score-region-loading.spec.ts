@@ -103,6 +103,7 @@ async function mock(page: Page, canScore = true) {
 					id: id(20),
 					username: 'E2E-scores',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

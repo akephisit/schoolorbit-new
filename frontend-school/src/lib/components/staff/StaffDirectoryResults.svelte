@@ -28,8 +28,8 @@
 		onDeactivate: (staff: StaffListItem) => void;
 	} = $props();
 
-	function displayName(staff: Pick<StaffListItem, 'title' | 'first_name' | 'last_name'>) {
-		return `${staff.title}${staff.first_name} ${staff.last_name}`.trim();
+	function displayName(staff: Pick<StaffListItem, 'display_name'>) {
+		return staff.display_name;
 	}
 </script>
 

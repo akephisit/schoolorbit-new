@@ -1063,7 +1063,7 @@ fn build_schema_group_3() -> utoipa::openapi::OpenApi {
         AdvisorHomeroomItem,
         PersonnelOverview,PersonnelBucket,PersonnelStatusFilter,PersonnelDimension,ApiResponse<PersonnelOverview>,
         StaffSubjectGroupSummary, StaffAcademicRank, StaffEducationLevel, StaffJobPositionSummary,
-        UpdateStaffInfoRequest, JobPositionPage,
+        UpdateStaffInfoRequest, StaffEducation, StaffEducationInput, ReplaceStaffEducation, JobPositionPage,
         ApiResponse<JobPositionPage>,
         StaffPersonnelType,StaffCareerKind,StaffCareerSource,StaffCareerFact,StaffCareerEntryInput,StaffCareerReference,StaffCareerCurrent,StaffCareerEntry,CreateStaffCareerRequest,StaffCareerCurrentChange,UpdateStaffCareerRequest,CreateStaffCareerHistoryRequest,CorrectStaffCareerHistoryRequest,StaffCareerHistoryPage,StaffCareerMutationAck,ApiResponse<StaffCareerHistoryPage>,ApiResponse<StaffCareerMutationAck>,
         RankMilestone,RankMilestoneStatus,RankMilestoneReason,RankCriteriaVersion,RankCriteriaSource,RankMilestoneOverview,RankMilestonePerson,RankMilestoneCounts,ApiResponse<RankMilestoneOverview>

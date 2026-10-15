@@ -75,14 +75,9 @@ pub async fn list_registration_options(
                         AND member.membership_status = 'active'
                   ) AS member_count,
                   ARRAY(
-                      SELECT concat_ws(
-                                 ' ',
-                                 NULLIF(btrim(teacher.title), ''),
-                                 NULLIF(btrim(teacher.first_name), ''),
-                                 NULLIF(btrim(teacher.last_name), '')
-                             )
+                      SELECT teacher.display_name
                       FROM learning_group_teachers assignment
-                      JOIN users teacher ON teacher.id = assignment.teacher_id
+                      JOIN user_display_names teacher ON teacher.id = assignment.teacher_id
                       WHERE assignment.learning_group_id = learning_group.id
                         AND teacher.status = 'active'
                       ORDER BY assignment.role, assignment.created_at, assignment.id

@@ -63,7 +63,7 @@
 	const teacherOptions = $derived(
 		managementOptions.teachers.map((teacher) => ({
 			id: teacher.id,
-			label: [teacher.title, teacher.name].filter(Boolean).join(' ')
+			label: teacher.name
 		}))
 	);
 	const homeroomOptions = $derived(
@@ -80,7 +80,7 @@
 
 	function teacherName(id: string) {
 		const teacher = managementOptions.teachers.find((item) => item.id === id);
-		return teacher ? [teacher.title, teacher.name].filter(Boolean).join(' ') : 'ครูที่เลิกใช้งาน';
+		return teacher ? teacher.name : 'ครูที่เลิกใช้งาน';
 	}
 
 	function homeroomName(id: string) {

@@ -6144,7 +6144,7 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
     let term_lookup = authorize
         .find("sqlx::query_scalar::<_, bool>")
         .expect("socket authorization must verify the selected academic term");
-    assert!(service.contains("FROM users WHERE id = $1 AND status = 'active'"));
+    assert!(service.contains("FROM user_display_names WHERE id = $1 AND status = 'active'"));
     assert!(service.contains("FROM academic_terms WHERE id = $1"));
 
     assert!(
