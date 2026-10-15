@@ -126,7 +126,8 @@ for changed application modules. For API-contract work:
 ```bash
 cargo check --workspace --all-targets --features api-docs --locked
 cargo test --bin backend-school --features api-docs api_contract::tests -- --nocapture
-cargo test -p school-staff --features api-docs schema_
+cargo test -p school-staff --features api-docs career::schema_tests
+cargo test -p school-staff --features api-docs personnel_schema_enum_matches_serialized_codes
 ```
 
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
