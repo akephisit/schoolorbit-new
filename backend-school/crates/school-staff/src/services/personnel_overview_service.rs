@@ -9,7 +9,7 @@ pub async fn get_personnel_overview(
     access: StaffListAccess,
 ) -> Result<PersonnelOverview, AppError> {
     let status = query.status.unwrap_or(PersonnelStatusFilter::Active);
-    let mut sql=QueryBuilder::<Postgres>::new("WITH matched AS (SELECT u.id,u.status,info.job_position_id,info.academic_rank,info.education_level FROM users u LEFT JOIN staff_info info ON info.user_id=u.id WHERE u.user_type='staff'");
+    let mut sql=QueryBuilder::<Postgres>::new("WITH matched AS (SELECT u.id,u.status,info.job_position_id,info.academic_rank,highest.education_level FROM users u LEFT JOIN staff_info info ON info.user_id=u.id LEFT JOIN staff_highest_education highest ON highest.staff_id=u.id WHERE u.user_type='staff'");
     push_staff_access_filter(&mut sql, access);
     sql.push("), filtered AS (SELECT * FROM matched");
     if status != PersonnelStatusFilter::All {
@@ -18,7 +18,7 @@ pub async fn get_personnel_overview(
     sql.push("), groups AS (").push(CURRENT_SUBJECT_GROUPS).push(r#"), buckets AS (
       SELECT 'job_position' AS dimension,coalesce(position.id::text,'unspecified') AS key,coalesce(position.name,'ยังไม่ระบุตำแหน่ง') AS label,count(*) AS count FROM filtered f LEFT JOIN staff_job_positions position ON position.id=f.job_position_id GROUP BY position.id,position.name
       UNION ALL SELECT 'academic_rank',coalesce(academic_rank,'unspecified'),coalesce(academic_rank,'ยังไม่ระบุวิทยฐานะ'),count(*) FROM filtered GROUP BY academic_rank
-      UNION ALL SELECT 'education_level',coalesce(education_level,'unspecified'),coalesce(education_level,'ยังไม่ระบุวุฒิ'),count(*) FROM filtered GROUP BY education_level
+      UNION ALL SELECT 'education_level',coalesce(education_level,'unspecified'),coalesce(education_level,'ยังไม่ระบุระดับวุฒิ'),count(*) FROM filtered GROUP BY education_level
       UNION ALL SELECT 'subject_group',coalesce(g.id::text,'unassigned'),coalesce(g.name,'ยังไม่มีสังกัดกลุ่มสาระ'),count(*) FROM filtered f LEFT JOIN groups g ON g.user_id=f.id GROUP BY g.id,g.name
     ), arrays AS (SELECT dimension,jsonb_agg(jsonb_build_object('key',key,'label',label,'count',count) ORDER BY count DESC,label,key) AS items FROM buckets GROUP BY dimension)
     SELECT jsonb_build_object('asOf',CURRENT_TIMESTAMP,'total',(SELECT count(*) FROM matched WHERE status='active'),'filteredTotal',(SELECT count(*) FROM filtered),

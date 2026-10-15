@@ -129,10 +129,10 @@ pub struct CalendarRequestApproval {
     pub event: CalendarEvent,
 }
 
-const SELECT_REQUEST: &str = "SELECT r.id,r.requested_by,concat_ws(' ',u.first_name,u.last_name) AS requester_name,
+const SELECT_REQUEST: &str = "SELECT r.id,r.requested_by,u.display_name AS requester_name,
     r.title,r.description,r.location,r.start_date,r.end_date,r.all_day,r.start_time,r.end_time,r.status,
     r.reviewed_at,r.rejection_reason,r.event_id,r.created_at
-    FROM calendar_event_requests r JOIN users u ON u.id=r.requested_by";
+    FROM calendar_event_requests r JOIN user_display_names u ON u.id=r.requested_by";
 
 pub fn require_request_access(actor: &ActorContext, review: bool) -> Result<(), AppError> {
     actor.require_permission(codes::CALENDAR_READ_SCHOOL)?;

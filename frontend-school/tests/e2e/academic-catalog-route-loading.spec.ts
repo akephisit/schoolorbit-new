@@ -58,6 +58,7 @@ async function mockCatalog(
 					id: '90000000-0000-4000-8000-000000000001',
 					username: 'catalog-reader',
 					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ทะเบียน',
 					lastName: 'ทะเบียน',
 					userType: 'staff',
 					status: 'ACTIVE',

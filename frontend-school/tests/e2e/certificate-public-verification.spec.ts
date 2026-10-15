@@ -151,7 +151,7 @@ function harnessPlugin(): Plugin {
 					return {
 						status,
 						certificateNumber,
-						title: 'เด็กหญิง', firstName: 'กมลชนก', lastName: 'ใจดี',
+						title: 'เด็กหญิง', firstName: 'กมลชนก', displayName: 'กมลชนก ใจดี', lastName: 'ใจดี',
 						campaignName: 'กิจกรรมวันภาษาไทย', academicYear: 2569,
 						templateName: 'แบบรางวัลการแข่งขัน', activityItem: 'การแข่งขันคำคม',
 						awardOrRole: 'รองชนะเลิศอันดับที่ 1', issueDate: '2026-08-14',

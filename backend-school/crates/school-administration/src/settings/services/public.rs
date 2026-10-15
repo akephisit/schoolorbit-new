@@ -184,13 +184,13 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
 SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
-    CASE WHEN u.id IS NOT NULL THEN CONCAT(u.title, u.first_name, ' ', u.last_name) END AS member_name,
+    CASE WHEN u.id IS NOT NULL THEN u.display_name END AS member_name,
     CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title,
     CASE WHEN profile.id IS NOT NULL THEN m.id END AS avatar_member_id
 FROM organization_units o
 LEFT JOIN organization_members m ON m.organization_unit_id = o.id
     AND m.started_at <= CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
-LEFT JOIN users u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
+LEFT JOIN user_display_names u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
 LEFT JOIN files profile ON profile.id=u.profile_image_file_id AND profile.owner_user_id=u.id
     AND profile.purpose_code='profile_image' AND profile.visibility='private'
     AND profile.lifecycle_status='ready' AND profile.deleted_at IS NULL

@@ -34,7 +34,7 @@ async fn career_fixture(name: &str) -> (PgPool, Uuid, Uuid) {
         .execute(&pool)
         .await
         .unwrap();
-    migrate_through(&pool, 85).await.unwrap();
+    migrate_through(&pool, 114).await.unwrap();
     (pool, user, actor)
 }
 
@@ -360,14 +360,14 @@ async fn staff_career_retry_and_cursor_scope() {
 async fn staff_career_preserves_unrelated_profile_patch() {
     let (pool, user, actor) = career_fixture("career_domain_patch").await;
     let before = history(&pool, user).await;
-    let request = serde_json::from_value(serde_json::json!({"staff_info":{"education_level":"master","major":"วิทยาศาสตร์","teaching_license_expiry":"2030-01-01"}})).unwrap();
+    let request = serde_json::from_value(serde_json::json!({"staff_info":{"education":{"expected_revision":0,"items":[{"education_level":"master","major":"วิทยาศาสตร์"}]},"teaching_license_expiry":"2030-01-01"}})).unwrap();
     super::staff_service::update_staff(&pool, user, request, actor)
         .await
         .unwrap();
     let after = history(&pool, user).await;
     assert_eq!(before.items, after.items);
     assert_eq!(before.current, after.current);
-    let actual: (Option<String>,Option<String>,Option<String>) = sqlx::query_as("SELECT education_level,major,teaching_license_expiry::text FROM staff_info WHERE user_id=$1").bind(user).fetch_one(&pool).await.unwrap();
+    let actual: (Option<String>,Option<String>,Option<String>) = sqlx::query_as("SELECT e.education_level,e.major,i.teaching_license_expiry::text FROM staff_info i JOIN staff_educations e ON e.staff_id=i.user_id WHERE i.user_id=$1").bind(user).fetch_one(&pool).await.unwrap();
     assert_eq!(
         actual,
         (

@@ -167,6 +167,7 @@ async function mockGradebook(
 					id: ids.teacher,
 					username: 'teacher',
 					firstName: 'ครู',
+					displayName: 'ครู ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

@@ -52,6 +52,7 @@ async function mockRoute(
 					id: '90000000-0000-4000-8000-000000000001',
 					username: 'foundation-reader',
 					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ วิชาการ',
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',

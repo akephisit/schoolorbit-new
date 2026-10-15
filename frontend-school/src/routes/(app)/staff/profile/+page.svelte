@@ -54,6 +54,7 @@
 
 	// Read-only data - ข้อมูลที่แสดงผลเฉยๆ แก้ไม่ได้
 	let readOnlyData = $derived({
+		displayName: profile?.displayName || user?.displayName || '',
 		id: profile?.id || user?.id || '',
 		username: profile?.username || user?.username || '',
 		national_id: profile?.nationalId || '',
@@ -272,8 +273,7 @@
 							<div class="flex-1 space-y-2 text-center md:text-left py-4">
 								<div>
 									<h3 class="font-bold text-2xl text-foreground tracking-tight">
-										{readOnlyData.first_name}
-										{readOnlyData.last_name}
+										{readOnlyData.displayName}
 									</h3>
 									<p class="text-muted-foreground font-medium">
 										{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}

@@ -27,10 +27,11 @@ pub async fn list_achievements(
         SELECT
             a.*,
             u.first_name as user_first_name,
+            u.display_name as user_display_name,
             u.last_name as user_last_name,
             u.profile_image_file_id as user_profile_image_file_id
         FROM staff_achievements a
-        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN user_display_names u ON a.user_id = u.id
         WHERE 1=1
         ",
     );
@@ -86,6 +87,7 @@ pub async fn create_achievement(
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *,
          NULL::text as user_first_name,
+         NULL::text as user_display_name,
          NULL::text as user_last_name,
          NULL::uuid as user_profile_image_file_id",
     )
@@ -127,6 +129,7 @@ pub async fn update_achievement(
          WHERE id = $5
          RETURNING *,
          NULL::text as user_first_name,
+         NULL::text as user_display_name,
          NULL::text as user_last_name,
          NULL::uuid as user_profile_image_file_id",
     )

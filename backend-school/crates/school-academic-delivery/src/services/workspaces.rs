@@ -50,8 +50,7 @@ struct HomeroomOptionRow {
 struct StaffOptionRow {
     id: Uuid,
     title: Option<String>,
-    first_name: String,
-    last_name: String,
+    display_name: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -1232,8 +1231,8 @@ pub async fn delivery_management_options(
         .collect();
     let learning_groups = groups::list_for_term(pool, academic_term_id, filter).await?;
     let staff_rows: Vec<StaffOptionRow> = sqlx::query_as(
-        r#"SELECT id, title, first_name, last_name
-           FROM users
+        r#"SELECT id, title, display_name
+           FROM user_display_names
            WHERE user_type = 'staff' AND status = 'active'
            ORDER BY first_name, last_name
            LIMIT $1"#,
@@ -1246,7 +1245,7 @@ pub async fn delivery_management_options(
         .into_iter()
         .map(|row| StaffLookupItem {
             id: row.id,
-            name: format!("{} {}", row.first_name, row.last_name),
+            name: row.display_name,
             title: row.title,
         })
         .collect();

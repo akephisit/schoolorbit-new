@@ -55,6 +55,7 @@ async function mock(
 					id: id(20),
 					username: 'E2E-admission-final',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

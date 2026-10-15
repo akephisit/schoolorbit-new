@@ -99,8 +99,7 @@
 			<!-- User Info Section -->
 			<div class="px-2 py-2 border-b border-border">
 				<p class="text-sm font-semibold text-foreground">
-					{user.firstName}
-					{user.lastName}
+					{user.displayName}
 				</p>
 				<p class="text-xs text-muted-foreground mt-0.5">
 					{getDisplayRole()}

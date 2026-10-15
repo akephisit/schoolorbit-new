@@ -481,11 +481,8 @@ pub(crate) async fn get_workspace(
             .into_iter()
             .collect::<Vec<_>>();
     let staff = sqlx::query_as::<_, (Uuid, String, String)>(
-        r#"SELECT id, coalesce(nullif(concat_ws(' ',
-                      nullif(concat(coalesce(title, ''), first_name), ''),
-                      nullif(last_name, '')
-                  ), ''), username, email), status::text
-           FROM users WHERE id = ANY($1) AND user_type = 'staff'
+        r#"SELECT id, coalesce(nullif(display_name, ''), username, email), status::text
+           FROM user_display_names WHERE id = ANY($1) AND user_type = 'staff'
            ORDER BY 2, id LIMIT $2"#,
     )
     .bind(&staff_ids)
@@ -685,13 +682,10 @@ pub(crate) async fn get_blocks_on_connection(
         sqlx::query_as(
             r#"SELECT instructor.block_group_id,
                       instructor.instructor_id AS teacher_id,
-                      concat_ws(' ',
-                          nullif(concat(coalesce(account.title, ''), account.first_name), ''),
-                          nullif(account.last_name, '')
-                      ) AS display_name,
+                      account.display_name AS display_name,
                       instructor.role, instructor.display_order
                FROM academic_timetable_block_group_instructors instructor
-               JOIN users account ON account.id = instructor.instructor_id
+               JOIN user_display_names account ON account.id = instructor.instructor_id
                WHERE instructor.block_group_id = ANY($1)
                ORDER BY instructor.block_group_id, instructor.display_order, instructor.id"#,
         )
@@ -714,13 +708,10 @@ pub(crate) async fn get_blocks_on_connection(
     .await?;
     let teacher_rows: Vec<TeacherRow> = sqlx::query_as(
         r#"SELECT target.id, target.block_id, target.teacher_id,
-                  concat_ws(' ',
-                      nullif(concat(coalesce(account.title, ''), account.first_name), ''),
-                      nullif(account.last_name, '')
-                  ) AS display_name,
+                  account.display_name AS display_name,
                   target.row_version, target.is_active
            FROM academic_timetable_block_teachers target
-           JOIN users account ON account.id = target.teacher_id
+           JOIN user_display_names account ON account.id = target.teacher_id
            WHERE target.block_id = ANY($1) AND target.is_active
            ORDER BY target.block_id, display_name, target.id"#,
     )

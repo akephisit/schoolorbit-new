@@ -115,18 +115,18 @@ function harnessPlugin(): Plugin {
 					{ ...base, id: '40000000-0000-4000-8000-000000000001', templateId: '50000000-0000-4000-8000-000000000001',
 						templateName: 'แบบรางวัลการแข่งขัน', certificateSequence: 101,
 						certificateNumber: '2569-0042-000101-0', recipientType: 'student', title: 'เด็กหญิง',
-						firstName: 'กมลชนก', lastName: 'ใจดี', activityItem: 'การแข่งขันคำคม',
+						firstName: 'กมลชนก', displayName: 'กมลชนก ใจดี', lastName: 'ใจดี', activityItem: 'การแข่งขันคำคม',
 						awardOrRole: 'รองชนะเลิศอันดับที่ 1', status: 'issued',
 						capabilities: { canRead: true, canDownload: true, canRevoke: true } },
 					{ ...base, id: '40000000-0000-4000-8000-000000000002', templateId: '50000000-0000-4000-8000-000000000002',
 						templateName: 'แบบวิทยากร', certificateSequence: 102,
 						certificateNumber: '2569-0042-000102-8', recipientType: 'external', title: 'คุณ',
-						firstName: 'สายชล', lastName: 'คงดี', activityItem: null, awardOrRole: 'วิทยากร', status: 'issued',
+						firstName: 'สายชล', displayName: 'สายชล คงดี', lastName: 'คงดี', activityItem: null, awardOrRole: 'วิทยากร', status: 'issued',
 						capabilities: { canRead: true, canDownload: true, canRevoke: true } },
 					{ ...base, id: '40000000-0000-4000-8000-000000000003', templateId: '50000000-0000-4000-8000-000000000001',
 						templateName: 'แบบรางวัลการแข่งขัน', certificateSequence: 99,
 						certificateNumber: '2569-0042-000099-7', recipientType: 'staff', title: 'นาย',
-						firstName: 'สมชาย', lastName: 'ใจดี', activityItem: null, awardOrRole: 'กรรมการ', status: 'revoked',
+						firstName: 'สมชาย', displayName: 'สมชาย ใจดี', lastName: 'ใจดี', activityItem: null, awardOrRole: 'กรรมการ', status: 'revoked',
 						capabilities: { canRead: true, canDownload: false, canRevoke: false } }
 				];
 				const manifestRequests = [];

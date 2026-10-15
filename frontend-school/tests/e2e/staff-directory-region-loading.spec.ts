@@ -20,6 +20,7 @@ const profileEndpoint = `/api/staff/${firstStaff}`;
 const rolesEndpoint = `/api/users/${firstStaff}/roles`;
 const permissionsEndpoint = `/api/users/${firstStaff}/permissions`;
 async function fillCreate(page: Page) {
+	await page.getByLabel('คำนำหน้า (ไทย)', { exact: true }).fill('นาย');
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรใหม่');
 	await page.getByPlaceholder('นามสกุล', { exact: true }).fill('ทดสอบ');
 	await page.locator('input[type=password]').nth(0).fill('synthetic-passphrase');
@@ -102,9 +103,11 @@ test('editor validates personal data even when saving from another section', asy
 	const api = await mockStaffDirectory(page);
 	await page.goto(staffPath(firstStaff, '/edit'));
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('');
-	await page.getByRole('link', { name: 'การศึกษา', exact: true }).click();
+	await page.getByRole('link', { name: 'งานและการศึกษา', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
-	await expect(page.getByText('กรุณากรอกชื่อ', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('กรอกคำนำหน้า ชื่อ และนามสกุลให้ครบอย่างน้อยหนึ่งภาษา', { exact: true })
+	).toBeVisible();
 	expect(api.writes).toHaveLength(0);
 });
 test('editor warns before leaving and can discard the unsaved draft', async ({ page }) => {
@@ -127,13 +130,21 @@ test('editor warns before leaving and can discard the unsaved draft', async ({ p
 test('education deep link saves only the changed education field', async ({ page }) => {
 	await mockStaffDirectory(page);
 	await page.goto(`${staffPath(firstStaff, '/edit')}?section=education`);
-	await page.getByRole('button', { name: 'วุฒิการศึกษาสูงสุด', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มวุฒิการศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'ระดับวุฒิ รายการที่ 1', exact: true }).click();
 	await page.getByRole('option', { name: 'ปริญญาตรี', exact: true }).click();
 	const saved = page.waitForRequest(
 		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
 	);
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
-	expect((await saved).postDataJSON()).toEqual({ staff_info: { education_level: 'bachelor' } });
+	expect((await saved).postDataJSON()).toEqual({
+		staff_info: {
+			education: {
+				expected_revision: 0,
+				items: [{ education_level: 'bachelor', major: null, university: null }]
+			}
+		}
+	});
 });
 test('new staff is reviewed before creation and opens the newly created profile', async ({
 	page
@@ -421,7 +432,7 @@ test('editor organization choices are lazy and save navigates without shared ref
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรแก้ไข');
 	expect(api.count('/api/roles')).toBe(0);
-	await page.getByRole('link', { name: 'การศึกษา', exact: true }).click();
+	await page.getByRole('link', { name: 'งานและการศึกษา', exact: true }).click();
 	expect(api.count('/api/roles')).toBe(0);
 	expect(api.count('/api/organization/units')).toBe(0);
 	await page.getByRole('link', { name: 'สังกัดหน่วยงาน', exact: true }).click();

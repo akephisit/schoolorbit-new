@@ -1,3 +1,4 @@
+import { rankMilestone } from './staff-career-route-data';
 import type { Page, Route } from '@playwright/test';
 import type { components } from '../../../src/lib/api/generated/school-api';
 import { id, mockStaffHome, firstStaff, secondStaff } from './staff-home-route-data';
@@ -16,6 +17,7 @@ export async function mockStaffDirectory(
 		permissions?: string[];
 		fullPage?: boolean;
 		staffInfo?: components['schemas']['StaffInfoResponse'];
+		profile?: Partial<components['schemas']['StaffProfileResponse']>;
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -100,6 +102,7 @@ export async function mockStaffDirectory(
 		(url) =>
 			url.pathname === '/api/staff' ||
 			url.pathname === '/api/staff/personnel-overview' ||
+			/^\/api\/staff\/[\da-f-]+\/(career-history|rank-milestone)$/.test(url.pathname) ||
 			/^\/api\/staff\/[\da-f-]+$/.test(url.pathname) ||
 			url.pathname === '/api/roles' ||
 			url.pathname === '/api/lookup/roles' ||
@@ -134,15 +137,28 @@ export async function mockStaffDirectory(
 				reads.push(url);
 				counts.set(path, (counts.get(path) ?? 0) + 1);
 			} else writes.push({ method, path });
+			if (path.endsWith('/career-history'))
+				return reply(route, {
+					items: [],
+					current: { personnelType: null, jobPosition: null, academicRank: null },
+					nextCursor: null,
+					rankMilestone: rankMilestone()
+				});
+			if (path.endsWith('/rank-milestone')) return reply(route, rankMilestone());
 			if (path === '/api/staff/personnel-overview') return reply(route, { subjectGroups: [] });
 			if (path === '/api/lookup/roles')
 				return reply(route, [{ id: roleId, name: role.name, code: role.code, user_type: 'staff' }]);
 			if (path === '/api/lookup/organization-units')
 				return reply(route, [{ ...org, display_order: 0, name_en: null }]);
-			const profileSnapshot = {
-				id: path.split('/').at(-1),
+			const profileSnapshot: components['schemas']['StaffProfileResponse'] = {
+				id: path.split('/').at(-1) ?? firstStaff,
 				username: 'synthetic-staff',
-				title: null,
+				title: 'นาย',
+				title_en: null,
+				first_name_en: null,
+				last_name_en: null,
+				has_complete_name: true,
+				display_name: `นาย${path.includes(secondStaff) ? 'บุคลากรที่สอง' : firstName} ทดสอบ`,
 				first_name: path.includes(secondStaff) ? 'บุคลากรที่สอง' : firstName,
 				last_name: 'ทดสอบ',
 				nickname: null,
@@ -155,6 +171,7 @@ export async function mockStaffDirectory(
 				gender: 'male',
 				address: null,
 				hired_date: null,
+				resigned_date: null,
 				user_type: 'staff',
 				status: 'active',
 				profile_image_file_id: null,
@@ -162,10 +179,18 @@ export async function mockStaffDirectory(
 				subject_groups: [],
 				roles: [{ ...role, is_primary: true }],
 				organization_units: [
-					{ ...org, position_code: 'member', is_primary: true, responsibilities: '' }
+					{
+						...org,
+						position_code: 'member',
+						position_title: null,
+						is_primary: true,
+						responsibilities: ''
+					}
 				],
 				teaching_assignments: [],
-				advisor_homerooms: []
+				advisor_homerooms: [],
+				permissions: [],
+				...options.profile
 			};
 			const listSnapshot = path.includes(secondStaff) ? [] : [...assignments];
 			const achievementSnapshot =
@@ -214,6 +239,11 @@ export async function mockStaffDirectory(
 					{
 						profile_image_file_id: null,
 						username: profileSnapshot.username,
+						display_name: search
+							? `ค้นหา ${search} ทดสอบ`
+							: pageNumber > 1
+								? 'บุคลากรหน้าสอง ทดสอบ'
+								: profileSnapshot.display_name,
 						title: '',
 						last_name: profileSnapshot.last_name,
 						status: url.searchParams.get('status') === 'inactive' ? 'inactive' : 'active',

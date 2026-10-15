@@ -24,6 +24,7 @@ pub struct LookupItem {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct StaffLookupItem {
     pub id: Uuid,
+    /// Complete preferred display name, including its title.
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "api-docs", schema(value_type = String))]

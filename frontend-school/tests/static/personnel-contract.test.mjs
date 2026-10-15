@@ -11,9 +11,12 @@ test('personnel patch retains omitted fields and explicitly clears references', 
 		personnelDrilldownHref
 	} = await import('../../src/lib/forms/staff-personnel.ts');
 	assert.deepEqual(
-		buildStaffPersonnelPatch(personnel({ major: 'คณิตศาสตร์' }), personnel({ major: null })),
+		buildStaffPersonnelPatch(
+			personnel({ teaching_license_number: 'synthetic' }),
+			personnel({ teaching_license_number: '' })
+		),
 		{
-			major: null
+			teaching_license_number: null
 		}
 	);
 	assert.equal(buildStaffPersonnelPatch(personnel(), personnel()), undefined);
@@ -58,13 +61,18 @@ test('canonical personnel contract uses education text and a read-only position 
 		const fields = contract.components.schemas[dto].properties;
 		assert.equal(Object.hasOwn(fields, 'major_id'), false);
 		assert.equal(Object.hasOwn(fields, 'university_id'), false);
-		assert.ok(fields.major && fields.university && fields.career);
+		assert.ok(fields.career);
+		assert.ok(dto === 'CreateStaffInfoRequest' ? fields.educations : fields.education);
+		assert.equal(fields.education_level, undefined);
 		assert.equal(Object.hasOwn(fields, 'job_position_id'), false);
 		assert.equal(Object.hasOwn(fields, 'academic_rank'), false);
 	}
 	const fields = contract.components.schemas.StaffInfoResponse.properties;
 	for (const key of ['major', 'university'])
-		assert.ok(JSON.stringify(fields[key]).includes('string'));
+		assert.ok(
+			JSON.stringify(contract.components.schemas.StaffEducation.properties[key]).includes('string')
+		);
+	assert.ok(fields.educations && fields.education_revision && fields.highest_education_level);
 	assert.ok(JSON.stringify(fields.job_position).includes('StaffJobPositionSummary'));
 	assert.deepEqual(Object.keys(contract.paths['/api/staff/job-positions']), ['get']);
 	assert.equal(contract.paths['/api/staff/reference-items'], undefined);
@@ -82,13 +90,58 @@ test('education text normalization uses scalar counts and retains spelling', asy
 		assert.throws(() => normalizeStaffEducationText(value));
 	assert.equal(
 		buildStaffPersonnelPatch(
-			personnel({ university: 'สถาบันทดสอบ' }),
-			personnel({ university: 'สถาบันทดสอบ' })
+			personnel({
+				educations: [
+					{
+						key: 'new',
+						id: null,
+						education_level: 'bachelor',
+						major: null,
+						university: 'สถาบันทดสอบ'
+					}
+				]
+			}),
+			personnel({
+				educations: [
+					{
+						key: 'new',
+						id: null,
+						education_level: 'bachelor',
+						major: null,
+						university: 'สถาบันทดสอบ'
+					}
+				]
+			})
 		),
 		undefined
 	);
 	assert.deepEqual(
-		buildStaffPersonnelPatch(personnel({ major: 'คณิตศาสตร์' }), personnel({ major: '   ' })),
-		{ major: null }
+		buildStaffPersonnelPatch(
+			personnel({
+				educations: [
+					{
+						key: 'a',
+						id: 'saved',
+						education_level: 'bachelor',
+						major: 'คณิตศาสตร์',
+						university: null
+					}
+				],
+				education_revision: 3
+			}),
+			personnel({ educations: [] })
+		),
+		{ education: { expected_revision: 3, items: [] } }
+	);
+});
+
+test('clearing a date picker sends an explicit licence expiry clear', async () => {
+	const { buildStaffPersonnelPatch } = await import('../../src/lib/forms/staff-personnel.ts');
+	assert.deepEqual(
+		buildStaffPersonnelPatch(
+			personnel({ teaching_license_expiry: '2030-01-01' }),
+			personnel({ teaching_license_expiry: undefined })
+		),
+		{ teaching_license_expiry: null }
 	);
 });

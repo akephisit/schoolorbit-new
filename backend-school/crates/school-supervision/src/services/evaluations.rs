@@ -39,8 +39,7 @@ pub(super) struct EvaluationResponseBulkRow {
 pub(super) struct EvaluatorAvailabilityRow {
     pub(super) id: Uuid,
     pub(super) title: Option<String>,
-    pub(super) first_name: String,
-    pub(super) last_name: String,
+    pub(super) display_name: String,
     pub(super) conflict_observation_id: Option<Uuid>,
     pub(super) conflict_observed_display_name: Option<String>,
     pub(super) conflict_observed_at: Option<DateTime<Utc>>,
@@ -504,7 +503,7 @@ pub(super) async fn load_evaluator_submission_states<'e>(
 pub(super) fn evaluator_availability_from_row(
     row: EvaluatorAvailabilityRow,
 ) -> SupervisionEvaluatorAvailability {
-    let name = format!("{} {}", row.first_name, row.last_name);
+    let name = row.display_name;
     let conflict = row
         .conflict_observation_id
         .zip(row.conflict_observed_at)
@@ -566,9 +565,9 @@ pub(super) async fn validate_evaluator_availability_for_observation<'e>(
         .collect::<Vec<_>>();
     let conflict = sqlx::query_as::<_, EvaluatorConflictRow>(
         r#"
-        SELECT NULLIF(TRIM(CONCAT(COALESCE(evaluator.title, ''), evaluator.first_name, ' ', evaluator.last_name)), '')
+        SELECT NULLIF(evaluator.display_name, '')
                    AS evaluator_display_name,
-               NULLIF(TRIM(CONCAT(COALESCE(observed.title, ''), observed.first_name, ' ', observed.last_name)), '')
+               NULLIF(observed.display_name, '')
                    AS observed_display_name,
                COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
                    AS subject_name,
@@ -576,8 +575,8 @@ pub(super) async fn validate_evaluator_availability_for_observation<'e>(
                    AS period_label
         FROM supervision_evaluators e
         JOIN supervision_observations o ON o.id = e.observation_id
-        JOIN users evaluator ON evaluator.id = e.evaluator_user_id
-        JOIN users observed ON observed.id = o.observed_user_id
+        JOIN user_display_names evaluator ON evaluator.id = e.evaluator_user_id
+        JOIN user_display_names observed ON observed.id = o.observed_user_id
         WHERE e.evaluator_user_id = ANY($1::uuid[])
           AND o.id <> $2
           AND o.observed_at = $3

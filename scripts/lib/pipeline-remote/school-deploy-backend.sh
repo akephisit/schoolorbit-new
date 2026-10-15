@@ -494,7 +494,7 @@ if ! curl \
 fi
 migration_completion_filter="
     .latest_version as \$latest
-    | \$latest >= 84
+    | \$latest >= 114
     and .total_schools > 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
@@ -517,6 +517,11 @@ migration_completion_filter="
       and .deliveryTimetableCutover.passed == true
       and (.deliveryTimetableCutover.checks | length) == 30
       and all(.deliveryTimetableCutover.checks[]; .passed == true)
+      and .staffProfileCutover.migrationVersion == 114
+      and .staffProfileCutover.status == \"cutoverCompleted\"
+      and .staffProfileCutover.passed == true
+      and (.staffProfileCutover.checks | length) == 4
+      and all(.staffProfileCutover.checks[]; .passed == true)
     )
   "
 if ! podman run --rm -i "$jq_image" -e "$migration_completion_filter" <"$migration_response" >/dev/null; then

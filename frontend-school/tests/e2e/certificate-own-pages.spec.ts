@@ -90,7 +90,7 @@ function harnessPlugin(): Plugin {
 					academicYearValue: 2569,
 					activitySequence: 42,
 					recipientType: 'student',
-					title: 'เด็กหญิง', firstName: 'กมลชนก', lastName: 'ใจดี',
+					title: 'เด็กหญิง', firstName: 'กมลชนก', displayName: 'กมลชนก ใจดี', lastName: 'ใจดี',
 					issueDate: '2026-08-15', replacementForCertificateId: null,
 					replacedByCertificateId: null, replacementCandidateId: null, createdAt: timestamp
 				};

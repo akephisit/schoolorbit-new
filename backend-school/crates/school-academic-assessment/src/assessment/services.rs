@@ -292,10 +292,7 @@ pub async fn list_assessment_plans(
                plan.row_version,
                plan.assessment_coordinator_id,
                CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
-                   nullif(concat_ws(' ',
-                       nullif(concat(coalesce(coordinator.title, ''), coordinator.first_name), ''),
-                       nullif(coordinator.last_name, '')
-                   ), ''),
+                   nullif(coordinator.display_name, ''),
                    coordinator.username
                ) END AS assessment_coordinator_name,
                ARRAY(
@@ -316,7 +313,7 @@ pub async fn list_assessment_plans(
         JOIN course_offering_details detail ON detail.learning_offering_id = offering.id
         JOIN subject_versions version ON version.id = detail.subject_version_id
         LEFT JOIN course_assessment_plans plan ON plan.learning_offering_id = offering.id
-        LEFT JOIN users coordinator ON coordinator.id = plan.assessment_coordinator_id
+        LEFT JOIN user_display_names coordinator ON coordinator.id = plan.assessment_coordinator_id
         WHERE offering.academic_term_id = $1
           AND offering.kind = 'course'
           AND ($2::uuid IS NULL OR detail.subject_id = $2)
@@ -687,15 +684,12 @@ async fn load_plan_in_tx(
     Ok(sqlx::query_as(
         r#"SELECT plan.id, plan.assessment_coordinator_id,
                   CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
-                      nullif(concat_ws(' ',
-                          nullif(concat(coalesce(coordinator.title, ''), coordinator.first_name), ''),
-                          nullif(coordinator.last_name, '')
-                      ), ''),
+                      nullif(coordinator.display_name, ''),
                       coordinator.username
                   ) END AS assessment_coordinator_name,
                   plan.row_version
            FROM course_assessment_plans plan
-           LEFT JOIN users coordinator ON coordinator.id = plan.assessment_coordinator_id
+           LEFT JOIN user_display_names coordinator ON coordinator.id = plan.assessment_coordinator_id
            WHERE plan.learning_offering_id = $1
            FOR UPDATE OF plan"#,
     )
@@ -854,15 +848,12 @@ async fn fetch_plan_detail(
     let plan: Option<AssessmentPlanRow> = sqlx::query_as(
         r#"SELECT plan.id, plan.assessment_coordinator_id,
                   CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
-                      nullif(concat_ws(' ',
-                          nullif(concat(coalesce(coordinator.title, ''), coordinator.first_name), ''),
-                          nullif(coordinator.last_name, '')
-                      ), ''),
+                      nullif(coordinator.display_name, ''),
                       coordinator.username
                   ) END AS assessment_coordinator_name,
                   plan.row_version
            FROM course_assessment_plans plan
-           LEFT JOIN users coordinator ON coordinator.id = plan.assessment_coordinator_id
+           LEFT JOIN user_display_names coordinator ON coordinator.id = plan.assessment_coordinator_id
            WHERE plan.learning_offering_id = $1"#,
     )
     .bind(offering_id)
@@ -1048,10 +1039,7 @@ async fn load_coordinator_candidates(
         r#"SELECT offering.id AS offering_id,
                   teacher.teacher_id,
                   coalesce(
-                      nullif(concat_ws(' ',
-                          nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
-                          nullif(user_account.last_name, '')
-                      ), ''),
+                      nullif(user_account.display_name, ''),
                       user_account.username
                   ) AS display_name,
                   count(DISTINCT learning_group.id)::bigint AS learning_group_count,
@@ -1076,7 +1064,7 @@ async fn load_coordinator_candidates(
                     GREATEST(current_date, term.start_date), term.planned_end_date
                 )
             )
-           JOIN users user_account
+           JOIN user_display_names user_account
              ON user_account.id = teacher.teacher_id
             AND user_account.status = 'active'
            WHERE offering.id = ANY($1)
@@ -1126,7 +1114,7 @@ async fn load_candidate_ids_in_tx(
                     GREATEST(current_date, term.start_date), term.planned_end_date
                 )
             )
-           JOIN users user_account
+           JOIN user_display_names user_account
              ON user_account.id = teacher.teacher_id
             AND user_account.status = 'active'
            WHERE offering.id = $1"#,

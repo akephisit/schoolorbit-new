@@ -14,8 +14,7 @@ use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem}
 struct StaffRow {
     id: Uuid,
     title: Option<String>,
-    first_name: String,
-    last_name: String,
+    display_name: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -111,8 +110,8 @@ pub async fn lookup_staff(
     let active_only = query.active_only.unwrap_or(true);
 
     let mut sql = String::from(
-        "SELECT id, title, first_name, last_name
-         FROM users
+        "SELECT id, title, display_name
+         FROM user_display_names
          WHERE user_type = 'staff'",
     );
 
@@ -122,10 +121,13 @@ pub async fn lookup_staff(
 
     let search_pattern = search_pattern(query.search.clone());
     if search_pattern.is_some() {
-        sql.push_str(" AND (first_name ILIKE $1 OR last_name ILIKE $1 OR username ILIKE $1)");
+        sql.push_str(" AND (first_name_th ILIKE $1 OR last_name_th ILIKE $1 OR first_name_en ILIKE $1 OR last_name_en ILIKE $1 OR username ILIKE $1)");
     }
 
-    sql.push_str(&format!(" ORDER BY first_name, last_name LIMIT {}", limit));
+    sql.push_str(&format!(
+        " ORDER BY first_name, last_name, id LIMIT {}",
+        limit
+    ));
 
     let mut query_builder = sqlx::query_as::<_, StaffRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref pattern) = search_pattern {
@@ -141,7 +143,7 @@ pub async fn lookup_staff(
         .into_iter()
         .map(|row| StaffLookupItem {
             id: row.id,
-            name: format!("{} {}", row.first_name, row.last_name),
+            name: row.display_name,
             title: row.title,
         })
         .collect())

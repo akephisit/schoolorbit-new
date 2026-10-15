@@ -125,6 +125,7 @@ async function mockTeacherHandoff(
 					id: ids.user,
 					username: 'teacher-handoff-test',
 					firstName: 'ฝ่ายวิชาการ',
+					displayName: 'ฝ่ายวิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

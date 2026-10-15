@@ -31,6 +31,7 @@ function normalizeCurrentUser(userData: CurrentUserDto): {
 			username: userData.username,
 			firstName: userData.firstName,
 			lastName: userData.lastName,
+			displayName: userData.displayName,
 			role: userData.primaryRoleName ?? userData.userType,
 			user_type: userData.userType,
 			status: userData.status,

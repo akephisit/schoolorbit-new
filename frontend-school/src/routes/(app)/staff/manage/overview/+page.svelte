@@ -201,6 +201,7 @@
 				/>
 				<PersonnelBarChart
 					title="บุคลากรตามวุฒิการศึกษาสูงสุด"
+					note="ใช้ระดับวุฒิสูงสุดที่จัดลำดับได้ หากมีเฉพาะวุฒิอื่นจะแยกเป็นกลุ่มอื่น ๆ และแยกข้อมูลที่ยังไม่ระบุระดับ"
 					dimension="education_level"
 					buckets={overview.educationLevels}
 					status={data.status}

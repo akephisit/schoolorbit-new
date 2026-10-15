@@ -80,6 +80,7 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 					id: id(20),
 					username: 'E2E-admission',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

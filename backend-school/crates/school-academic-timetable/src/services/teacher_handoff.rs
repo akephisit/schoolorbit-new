@@ -642,16 +642,13 @@ async fn load_instructors(
     let rows: Vec<EntryInstructorRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         r#"SELECT instructor.block_group_id AS entry_id, instructor.instructor_id,
                   coalesce(
-                      nullif(concat_ws(' ',
-                          nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
-                          nullif(user_account.last_name, '')
-                      ), ''),
+                      nullif(user_account.display_name, ''),
                       user_account.username,
                       user_account.email
                   ) AS display_name,
                   instructor.role::text AS role
            FROM academic_timetable_block_group_instructors instructor
-           JOIN users user_account ON user_account.id = instructor.instructor_id
+           JOIN user_display_names user_account ON user_account.id = instructor.instructor_id
            WHERE instructor.block_group_id = ANY($1)
            ORDER BY instructor.block_group_id,
                     CASE instructor.role WHEN 'primary' THEN 1 ELSE 2 END,
@@ -686,14 +683,11 @@ async fn load_staff_names(
     Ok(sqlx::query_as::<_, (Uuid, String)>(
         r#"SELECT id,
                   coalesce(
-                      nullif(concat_ws(' ',
-                          nullif(concat(coalesce(title, ''), first_name), ''),
-                          nullif(last_name, '')
-                      ), ''),
+                      nullif(display_name, ''),
                       username,
                       email
                   )
-           FROM users WHERE id = ANY($1)"#,
+           FROM user_display_names WHERE id = ANY($1)"#,
     )
     .bind(teacher_ids)
     .fetch_all(&mut **transaction)

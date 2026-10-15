@@ -38,6 +38,7 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 					id: '90000000-0000-4000-8000-000000000001',
 					username: 'academic-admin',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'ACTIVE',

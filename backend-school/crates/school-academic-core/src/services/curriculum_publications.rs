@@ -8,7 +8,7 @@ use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-const PUBLICATION_COLUMNS: &str = "p.id,p.edition_id,p.publication_no,p.previous_publication_id,p.name,p.revision_year,p.description,p.published_by,NULLIF(concat_ws(' ',u.title,u.first_name,u.last_name),'') AS publisher_name,p.published_at,p.captured_at,p.change_note,p.is_baseline,p.level_count,p.program_count,p.slot_count,p.course_count,p.activity_count";
+const PUBLICATION_COLUMNS: &str = "p.id,p.edition_id,p.publication_no,p.previous_publication_id,p.name,p.revision_year,p.description,p.published_by,NULLIF(u.display_name,'') AS publisher_name,p.published_at,p.captured_at,p.change_note,p.is_baseline,p.level_count,p.program_count,p.slot_count,p.course_count,p.activity_count";
 
 pub(super) fn validate_draft_token(actual: Option<Uuid>, requested: Uuid) -> Result<(), AppError> {
     if actual == Some(requested) {
@@ -382,7 +382,7 @@ pub async fn list_publications(
     edition_id: Uuid,
 ) -> Result<Vec<CurriculumPublication>, AppError> {
     super::curriculum::get(pool, edition_id).await?;
-    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN users u ON u.id=p.published_by WHERE edition_id=$1 ORDER BY publication_no DESC LIMIT 501");
+    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 ORDER BY publication_no DESC LIMIT 501");
     let rows: Vec<CurriculumPublication> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(edition_id)
         .fetch_all(pool)
@@ -400,7 +400,7 @@ pub async fn history(
     edition_id: Uuid,
     publication_id: Uuid,
 ) -> Result<CurriculumPublicationHistory, AppError> {
-    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN users u ON u.id=p.published_by WHERE edition_id=$1 AND p.id=$2");
+    let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 AND p.id=$2");
     let publication: CurriculumPublication = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(edition_id)
         .bind(publication_id)

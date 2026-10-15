@@ -24,12 +24,13 @@ async function accepts(report) {
     });
 }
 
-function validReport(version = 88) {
+function validReport(version = 114) {
     const school = {
         migration_version: version, migration_status: 'migrated', migration_error: null,
         academicCoreCutover: { migrationVersion: 45, status: 'cleanupCompleted', passed: true, checks: [{ passed: true }] },
         gradebookResultsCutover: { migrationVersion: 60, status: 'cutoverCompleted', passed: true, checks: [{ passed: true }] },
-        deliveryTimetableCutover: { migrationVersion: 88, status: 'cutoverCompleted', passed: true, checks: Array.from({ length: 30 }, () => ({ passed: true })) }
+        deliveryTimetableCutover: { migrationVersion: 88, status: 'cutoverCompleted', passed: true, checks: Array.from({ length: 30 }, () => ({ passed: true })) },
+        staffProfileCutover: { migrationVersion: 114, status: 'cutoverCompleted', passed: true, checks: Array.from({ length: 4 }, () => ({ passed: true })) }
     };
     return {
         latest_version: version, total_schools: 2, migrated: 2, pending: 0, failed: 0, outdated: 0,
@@ -39,7 +40,7 @@ function validReport(version = 88) {
 
 test('fully migrated tenants pass without a retired personnel report', async () => {
     assert.equal(await accepts(validReport()), true);
-    assert.equal(await accepts(validReport(89)), true, 'future SQL migrations use the same completion gate');
+    assert.equal(await accepts(validReport(115)), true, 'future SQL migrations use the same completion gate');
 });
 
 test('migration completion refuses incomplete, failed or inconsistent tenant coverage', async () => {
@@ -61,7 +62,7 @@ test('migration completion refuses incomplete, failed or inconsistent tenant cov
 });
 
 test('retiring personnel hooks preserves the other domain audit gates', async () => {
-    for (const key of ['academicCoreCutover', 'gradebookResultsCutover', 'deliveryTimetableCutover']) {
+    for (const key of ['academicCoreCutover', 'gradebookResultsCutover', 'deliveryTimetableCutover', 'staffProfileCutover']) {
         for (const change of [
             a => { a.passed = false; },
             a => { a.status = 'pending'; },
@@ -89,4 +90,10 @@ test('delivery cutover requires both complete reconciliation audits before relea
         change(report);
         assert.equal(await accepts(report), false);
     }
+});
+
+test('staff profile cutover refuses missing or incomplete preservation proof',async()=>{
+ for (const change of [r=>{delete r.schools[1].staffProfileCutover;},r=>{r.schools[1].staffProfileCutover.checks=[];},r=>{r.schools[1].staffProfileCutover.checks.pop();}]) {
+  const report=validReport();change(report);assert.equal(await accepts(report),false);
+ }
 });

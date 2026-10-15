@@ -202,7 +202,7 @@ pub async fn cycle_teacher_status(
     let mut builder = QueryBuilder::<Postgres>::new(
         r#"
         SELECT u.id AS teacher_id,
-               COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.title, ''), u.first_name, ' ', u.last_name)), ''), u.username)
+               COALESCE(NULLIF(u.display_name, ''), u.username)
                    AS teacher_display_name,
                COALESCE(units.organization_unit_names, ARRAY[]::text[]) AS organization_unit_names,
                latest.id AS observation_id,
@@ -219,7 +219,7 @@ pub async fn cycle_teacher_status(
                ) AS lesson_title,
                COALESCE(evaluators.evaluator_names, ARRAY[]::text[]) AS evaluator_names,
                rating.average_rating
-        FROM users u
+        FROM user_display_names u
         LEFT JOIN LATERAL (
             SELECT ARRAY_AGG(DISTINCT sg.name_th ORDER BY sg.name_th) AS organization_unit_names
             FROM organization_members om
@@ -245,13 +245,13 @@ pub async fn cycle_teacher_status(
         LEFT JOIN LATERAL (
             SELECT ARRAY_AGG(
                        COALESCE(
-                           NULLIF(TRIM(CONCAT(COALESCE(eu.title, ''), eu.first_name, ' ', eu.last_name)), ''),
+                           NULLIF(eu.display_name, ''),
                            eu.username
                        )
                        ORDER BY e.is_required DESC, e.created_at
                    ) AS evaluator_names
             FROM supervision_evaluators e
-            JOIN users eu ON eu.id = e.evaluator_user_id
+            JOIN user_display_names eu ON eu.id = e.evaluator_user_id
             WHERE e.observation_id = latest.id
         ) evaluators ON latest.id IS NOT NULL
         LEFT JOIN LATERAL (

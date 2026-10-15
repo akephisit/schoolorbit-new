@@ -375,7 +375,7 @@ pub async fn options(
         })
         .collect();
     let teachers = if actor.has_permission(codes::ATTENDANCE_MANAGE_SCHOOL) {
-        sqlx::query_as("SELECT id,concat_ws(' ',title,first_name,last_name) name FROM users WHERE user_type='staff' AND status='active' ORDER BY first_name COLLATE schoolorbit_thai,id LIMIT 2000").fetch_all(pool).await?
+        sqlx::query_as("SELECT id,display_name name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY first_name COLLATE schoolorbit_thai,id LIMIT 2000").fetch_all(pool).await?
     } else {
         vec![]
     };

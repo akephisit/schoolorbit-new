@@ -877,8 +877,8 @@ async fn create_replacement_candidate(
     let account = if let Some(user_id) = certificate.user_id {
         sqlx::query_as::<_, AccountRow>(
             "SELECT users.id, users.username, student.student_id, users.user_type,
-                    users.status, users.title, users.first_name, users.last_name
-             FROM users
+                    users.status, person_name.title, person_name.first_name, person_name.last_name
+             FROM users JOIN user_display_names person_name ON person_name.id=users.id
              LEFT JOIN student_info student ON student.user_id = users.id
              WHERE users.id = $1",
         )
@@ -1289,8 +1289,8 @@ async fn load_accounts(
     }
     Ok(sqlx::query_as::<_, AccountRow>(
         "SELECT users.id, users.username, student.student_id, users.user_type,
-                users.status, users.title, users.first_name, users.last_name
-         FROM users
+                users.status, person_name.title, person_name.first_name, person_name.last_name
+         FROM users JOIN user_display_names person_name ON person_name.id=users.id
          LEFT JOIN student_info student ON student.user_id = users.id
          WHERE users.id = ANY($1::uuid[])
             OR (users.user_type = 'student' AND student.student_id = ANY($2::text[]))

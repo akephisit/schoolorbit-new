@@ -108,6 +108,7 @@ async function mock(page: Page, options: { canScore?: boolean; globalDefault?: b
 					id: id(20),
 					username: 'E2E-selections',
 					firstName: 'วิชาการ',
+					displayName: 'วิชาการ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

@@ -75,7 +75,7 @@ async fn migrated_pool_with_connections(name: &str, connections: u32) -> PgPool 
     apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical supervision fixture migrations should run");
-    apply_migrations_through(&pool, 67)
+    apply_migrations_through(&pool, 114)
         .await
         .expect("current supervision fixture migrations should run");
     pool

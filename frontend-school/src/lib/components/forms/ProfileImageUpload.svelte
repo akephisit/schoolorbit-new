@@ -9,6 +9,7 @@
 	import { cn } from '#lib/utils.js';
 
 	interface Props {
+		size?: 'sm' | 'md';
 		currentFileId?: string | null;
 		resourceId?: string;
 		disabled?: boolean;
@@ -20,6 +21,7 @@
 	}
 
 	let {
+		size = 'md',
 		currentFileId = null,
 		resourceId,
 		disabled = false,
@@ -164,7 +166,10 @@
 	<div class="relative group w-fit mx-auto">
 		<!-- Profile Avatar Circle -->
 		<div
-			class="relative w-32 h-32 rounded-full overflow-hidden ring-4 ring-background shadow-lg bg-muted flex items-center justify-center"
+			class={cn(
+				'relative shrink-0 rounded-full overflow-hidden ring-4 ring-background shadow-lg bg-muted flex items-center justify-center',
+				size === 'sm' ? 'size-20' : 'size-32'
+			)}
 		>
 			{#if uploading}
 				<div

@@ -1,6 +1,12 @@
 <script lang="ts">
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { PERSONNEL_TYPE_LABELS, formatCareerDate } from '#lib/forms/staff-career.js';
 	import StaffCareerHistory from '#lib/components/staff/StaffCareerHistory.svelte';
-	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '#lib/forms/staff-personnel.js';
+	import {
+		ACADEMIC_RANK_LABELS,
+		EDUCATION_LEVEL_LABELS,
+		orderedStaffEducations
+	} from '#lib/forms/staff-personnel.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -19,18 +25,7 @@
 	import { staffStatusLabel } from '#lib/forms/staff-status.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import {
-		User,
-		Mail,
-		Phone,
-		GraduationCap,
-		Building2,
-		BookOpen,
-		Pencil,
-		Award,
-		Plus,
-		IdCard
-	} from '@lucide/svelte';
+	import { User, GraduationCap, Building2, BookOpen, Pencil, Award, Plus } from '@lucide/svelte';
 	import type { Achievement } from '#lib/types/achievement.js';
 	import {
 		getAchievements,
@@ -291,7 +286,7 @@
 >
 	{#snippet meta()}<StaffBreadcrumb
 			{returnHref}
-			name={staff && canReadStaff ? `${staff.first_name} ${staff.last_name}` : undefined}
+			name={staff && canReadStaff ? staff.display_name : undefined}
 		/>{/snippet}
 	{#snippet actions()}
 		<Button variant="outline" onclick={loadStaffProfile} disabled={loading || !canReadStaff}
@@ -336,126 +331,120 @@
 				onaction={loadStaffProfile}
 			/>
 		{:else if staff}
-			<!-- Profile Card -->
-			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-				<!-- Left Column - Basic Info -->
-				<div class="lg:col-span-1 space-y-6">
-					<!-- Profile Card -->
-					<div class="bg-card border border-border rounded-lg p-6">
-						<div class="text-center">
-							<div
-								class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 overflow-hidden"
-							>
-								{#if staff.profile_image_file_id}
-									<PrivateFileImage
-										fileId={staff.profile_image_file_id}
-										resourceId={staff.id}
-										alt={`${staff.first_name} ${staff.last_name}`}
-										class="w-full h-full object-cover"
-									/>
-								{:else}
-									<User class="w-12 h-12 text-primary" />
-								{/if}
-							</div>
-							<h2 class="text-2xl font-bold text-foreground">
-								{staff.title || ''}{staff.first_name}
-								{staff.last_name}
-							</h2>
-							<div class="flex flex-col items-center mt-1 space-y-1">
-								{#if staff.nickname}
-									<p class="text-muted-foreground">({staff.nickname})</p>
-								{/if}
-								<div
-									class="flex items-center gap-1.5 text-sm text-muted-foreground bg-muted/50 px-3 py-1 rounded-full"
-								>
-									<IdCard class="w-3.5 h-3.5" />
-									<span>{staff.username}</span>
-								</div>
-							</div>
-
-							<div class="mt-4">
-								<Badge variant={staff.status === 'active' ? 'default' : 'secondary'}
-									>{staffStatusLabel(staff.status)}</Badge
-								>
-							</div>
-						</div>
-
-						<div class="mt-6 space-y-3 border-t border-border pt-6">
-							{#if canUpdateStaff}<Button
-									href={withStaffReturn(
-										`/staff/manage/${staff.id}/edit?section=personal`,
-										returnHref
-									)}
-									variant="outline"
-									size="sm">แก้ไขข้อมูลติดต่อ</Button
-								>{/if}
-							{#if staff.email}
-								<div class="flex items-center gap-3 text-sm">
-									<Mail class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">{staff.email}</span>
-								</div>
-							{/if}
-							{#if staff.phone}
-								<div class="flex items-center gap-3 text-sm">
-									<Phone class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">{staff.phone}</span>
-								</div>
-							{/if}
-							{#if staff.national_id && canReadStaffPii}
-								<div class="flex items-center gap-3 text-sm">
-									<User class="w-4 h-4 text-muted-foreground" />
-									<span class="text-foreground">บัตรปชช.: {staff.national_id}</span>
-								</div>
-							{/if}
+			<Card.Root class="mb-5 py-0">
+				<Card.Content class="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+					<div
+						class="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10"
+					>
+						{#if staff.profile_image_file_id}<PrivateFileImage
+								fileId={staff.profile_image_file_id}
+								resourceId={staff.id}
+								alt={staff.display_name}
+								class="size-full object-cover"
+							/>{:else}<User class="size-8 text-primary" />{/if}
+					</div>
+					<div class="min-w-0 flex-1">
+						<h2 class="break-words text-xl font-semibold">{staff.display_name}</h2>
+						<div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+							<span>{staff.username}</span><Badge
+								variant={staff.status === 'active' ? 'default' : 'secondary'}
+								>{staffStatusLabel(staff.status)}</Badge
+							>{#if staff.nickname}<span>ชื่อเล่น {staff.nickname}</span>{/if}
 						</div>
 					</div>
-
-					<div class="rounded-lg border bg-card p-6 space-y-4">
-						<h3 class="font-semibold">ตำแหน่งและการศึกษา</h3>
-						<dl class="space-y-3 text-sm">
-							<div>
-								<dt class="text-muted-foreground">ตำแหน่งงาน</dt>
-								<dd>{staff.staff_info?.job_position?.name ?? 'ยังไม่ระบุ'}</dd>
-							</div>
-							<div>
-								<dt class="text-muted-foreground">วิทยฐานะ</dt>
-								<dd>
-									{staff.staff_info?.academic_rank
-										? ACADEMIC_RANK_LABELS[staff.staff_info.academic_rank]
-										: 'ยังไม่ระบุ'}
-								</dd>
-							</div>
-							<div>
-								<dt class="text-muted-foreground">วุฒิการศึกษาสูงสุด</dt>
-								<dd>
-									{staff.staff_info?.education_level
-										? EDUCATION_LEVEL_LABELS[staff.staff_info.education_level]
-										: 'ยังไม่ระบุ'}
-								</dd>
-							</div>
-							<div>
-								<dt class="text-muted-foreground">สาขาวิชา</dt>
-								<dd>{staff.staff_info?.major ?? 'ยังไม่ระบุ'}</dd>
-							</div>
-							<div>
-								<dt class="text-muted-foreground">สถาบันการศึกษา</dt>
-								<dd>{staff.staff_info?.university ?? 'ยังไม่ระบุ'}</dd>
-							</div>
-							<div>
-								<dt class="text-muted-foreground">กลุ่มสาระจากสังกัดปัจจุบัน</dt>
-								<dd>
-									{(staff.subject_groups ?? []).map((group) => group.name).join(', ') ||
-										'ยังไม่มีสังกัดกลุ่มสาระ'}
-								</dd>
-							</div>
-						</dl>
-					</div>
+				</Card.Content>
+			</Card.Root>
+			<div class="grid items-start gap-5 xl:grid-cols-2">
+				<div class="min-w-0 space-y-5">
+					<Card.Root
+						><Card.Header><Card.Title>ข้อมูลส่วนตัวและการติดต่อ</Card.Title></Card.Header
+						><Card.Content>
+							<dl class="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+								{#each [{ label: 'ชื่อภาษาไทย', value: [staff.title, staff.first_name]
+												.filter(Boolean)
+												.join('') + (staff.last_name ? ' ' + staff.last_name : '') }, { label: 'ชื่อภาษาอังกฤษ', value: [staff.title_en, staff.first_name_en, staff.last_name_en]
+												.filter(Boolean)
+												.join(' ') }, { label: 'เพศ', value: staff.gender === 'male' ? 'ชาย' : staff.gender === 'female' ? 'หญิง' : staff.gender === 'other' ? 'อื่น ๆ' : null }, { label: 'วันเกิด', value: formatCareerDate(staff.date_of_birth) }, { label: 'อีเมล', value: staff.email }, { label: 'โทรศัพท์', value: staff.phone }, { label: 'Line ID', value: staff.line_id }, { label: 'ติดต่อฉุกเฉิน', value: staff.emergency_contact }, { label: 'ที่อยู่', value: staff.address }] as field (field.label)}<div
+										class="min-w-0"
+									>
+										<dt class="text-xs text-muted-foreground">{field.label}</dt>
+										<dd class="mt-1 whitespace-pre-line break-words">
+											{field.value || 'ยังไม่ระบุ'}
+										</dd>
+									</div>{/each}
+								{#if canReadStaffPii}<div>
+										<dt class="text-xs text-muted-foreground">เลขบัตรประชาชน</dt>
+										<dd class="mt-1">{staff.national_id || 'ยังไม่ระบุ'}</dd>
+									</div>{/if}
+							</dl>
+							{#if !staff.has_complete_name}<p
+									class="mt-4 rounded-lg bg-muted p-3 text-xs text-muted-foreground"
+								>
+									ข้อมูลชื่อเดิมยังไม่ครบ กรุณาระบุคำนำหน้า ชื่อ
+									และนามสกุลให้ครบอย่างน้อยหนึ่งภาษาเมื่อแก้ไขชื่อ
+								</p>{/if}
+						</Card.Content></Card.Root
+					>
+					<Card.Root
+						><Card.Header><Card.Title>ข้อมูลการทำงาน</Card.Title></Card.Header><Card.Content
+							><dl class="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+								{#each [{ label: 'ประเภทบุคลากร', value: staff.staff_info?.current_career.personnelType?.fact.kind === 'personnel_type' && staff.staff_info.current_career.personnelType.fact.value ? PERSONNEL_TYPE_LABELS[staff.staff_info.current_career.personnelType.fact.value] : null }, { label: 'ตำแหน่งงาน', value: staff.staff_info?.job_position?.name }, { label: 'วิทยฐานะ', value: staff.staff_info?.academic_rank ? ACADEMIC_RANK_LABELS[staff.staff_info.academic_rank] : null }, { label: 'วันที่เริ่มงาน', value: formatCareerDate(staff.hired_date) }, { label: 'วันที่สิ้นสุดงาน', value: formatCareerDate(staff.resigned_date) }, { label: 'กลุ่มสาระ', value: staff.subject_groups
+												.map((group) => group.name)
+												.join(', ') }] as field (field.label)}<div class="min-w-0">
+										<dt class="text-xs text-muted-foreground">{field.label}</dt>
+										<dd class="mt-1 break-words">{field.value || 'ยังไม่ระบุ'}</dd>
+									</div>{/each}
+								{#if canReadStaffPii}<div>
+										<dt class="text-xs text-muted-foreground">ใบอนุญาตประกอบวิชาชีพ</dt>
+										<dd class="mt-1">
+											{staff.staff_info?.teaching_license_number || 'ยังไม่ระบุ'}
+										</dd>
+									</div>
+									<div>
+										<dt class="text-xs text-muted-foreground">วันหมดอายุใบอนุญาต</dt>
+										<dd class="mt-1">
+											{formatCareerDate(staff.staff_info?.teaching_license_expiry ?? null)}
+										</dd>
+									</div>{/if}
+							</dl></Card.Content
+						></Card.Root
+					>
+					<Card.Root
+						><Card.Header
+							><Card.Title>วุฒิการศึกษา</Card.Title><Card.Description
+								>เรียงระดับวุฒิจากต่ำไปสูง ระดับอื่นหรือยังไม่ระบุอยู่ท้ายรายการ</Card.Description
+							></Card.Header
+						><Card.Content
+							><ol class="space-y-3">
+								{#each orderedStaffEducations(staff.staff_info?.educations ?? []) as row (row.id)}<li
+										class="rounded-lg border p-3"
+									>
+										<p class="text-sm font-medium">
+											{row.education_level
+												? EDUCATION_LEVEL_LABELS[row.education_level]
+												: 'ยังไม่ระบุระดับ'}
+										</p>
+										<dl class="mt-2 grid gap-3 text-sm sm:grid-cols-2">
+											<div>
+												<dt class="text-xs text-muted-foreground">สาขาวิชา</dt>
+												<dd class="mt-1 break-words">{row.major || 'ยังไม่ระบุ'}</dd>
+											</div>
+											<div>
+												<dt class="text-xs text-muted-foreground">สถาบันการศึกษา</dt>
+												<dd class="mt-1 break-words">{row.university || 'ยังไม่ระบุ'}</dd>
+											</div>
+										</dl>
+									</li>{:else}<li class="text-sm text-muted-foreground">
+										ยังไม่มีข้อมูลวุฒิการศึกษา
+									</li>{/each}
+							</ol></Card.Content
+						></Card.Root
+					>
 				</div>
-
 				<!-- Right Column - Details -->
-				<div class="lg:col-span-2 space-y-6">
+				<div class="min-w-0 space-y-5">
 					<!-- Roles Card -->
-					<div class="bg-card border border-border rounded-lg p-6">
+					<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
 						<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 							<GraduationCap class="w-5 h-5" />
 							บทบาทและตำแหน่ง
@@ -484,9 +473,6 @@
 												</span>
 											{/if}
 										</div>
-										<p class="text-xs text-muted-foreground mt-1">
-											{role.user_type} • ระดับ {role.level}
-										</p>
 									</div>
 								{/each}
 							</div>
@@ -496,7 +482,7 @@
 					</div>
 
 					<!-- Organization Units Card -->
-					<div class="bg-card border border-border rounded-lg p-6">
+					<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
 						<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 							<Building2 class="w-5 h-5" />
 							สังกัดหน่วยงาน
@@ -522,7 +508,11 @@
 											<div>
 												<p class="font-medium text-foreground">{dept.name}</p>
 												<p class="text-sm text-muted-foreground mt-1">
-													{dept.position_title || dept.position_code || 'สมาชิก'}
+													{dept.position_title ||
+														dept.position_code ||
+														'สมาชิก'}{#if dept.responsibilities}<span
+															class="mt-1 block whitespace-pre-line">{dept.responsibilities}</span
+														>{/if}
 												</p>
 											</div>
 											{#if dept.is_primary}
@@ -542,7 +532,7 @@
 					</div>
 
 					<!-- หน้าที่ทางวิชาการ: ครูที่ปรึกษา + วิชาที่สอน -->
-					<div class="bg-card border border-border rounded-lg p-6">
+					<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
 						<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 							<BookOpen class="w-5 h-5" />
 							หน้าที่ทางวิชาการ
@@ -665,7 +655,7 @@
 		{#if loadingAchievements && achievementsLoaded && canReadAchievements}<p role="status">
 				กำลังอัปเดตผลงาน...
 			</p>{/if}
-		<div class="bg-card border border-border rounded-lg p-6">
+		<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
 			<div class="flex items-center justify-between mb-4">
 				<h3 class="font-semibold text-foreground flex items-center gap-2">
 					<Award class="w-5 h-5" />

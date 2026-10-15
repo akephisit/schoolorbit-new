@@ -138,6 +138,7 @@ export async function mock(
 					id: id(20),
 					username: 'E2E-supervision',
 					firstName: 'นิเทศ',
+					displayName: 'นิเทศ ทดสอบ',
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',

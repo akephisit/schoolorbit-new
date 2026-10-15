@@ -1864,9 +1864,6 @@
 											)}
 										/>
 										<span>{staff.name}</span>
-										{#if staff.title}
-											<span class="ml-1 text-xs text-muted-foreground">({staff.title})</span>
-										{/if}
 									</Command.Item>
 								{/each}
 							</Command.Group>

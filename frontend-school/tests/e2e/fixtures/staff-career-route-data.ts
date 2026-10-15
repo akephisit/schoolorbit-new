@@ -28,9 +28,11 @@ export function personnelInfo(
 		job_position: null,
 		academic_rank: null,
 		current_career: { personnelType: null, jobPosition: null, academicRank: null },
-		education_level: null,
-		major: null,
-		university: null,
+		educations: [],
+		education_revision: 0,
+		highest_education_level: null,
+		teaching_license_number: null,
+		teaching_license_expiry: null,
 		...overrides
 	};
 }

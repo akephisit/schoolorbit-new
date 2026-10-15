@@ -28,13 +28,19 @@ test('draft persists allowed fields and excludes credentials and national ID', (
 			last_name: 'ทดสอบ',
 			password: 'synthetic-private-password',
 			confirmPassword: 'synthetic-private-password',
-			national_id: 'synthetic-private-identifier'
+			national_id: 'synthetic-private-identifier',
+			personnel: {
+				teaching_license_number: 'synthetic-private-license',
+				teaching_license_expiry: '2030-01-01'
+			}
 		},
 		100
 	);
 	const encoded = [...store.values.values()].join('');
 	assert.ok(!encoded.includes('synthetic-private-password'));
 	assert.ok(!encoded.includes('synthetic-private-identifier'));
+	assert.ok(!encoded.includes('synthetic-private-license'));
+	assert.ok(!encoded.includes('2030-01-01'));
 	assert.equal(readStaffCreateDraft(store, owner, 101)?.first_name, 'ร่าง');
 });
 test('draft is tenant/user scoped, expires, and removes ownerless legacy storage', () => {
@@ -69,16 +75,28 @@ test('invalid storage is removed and a completed draft clears only its owner', (
 	assert.equal(store.values.size, 0);
 });
 
-test('canonical v4 drafts retain text without renewing expiry', () => {
+test('canonical v5 drafts retain text without renewing expiry', () => {
 	const store = storage();
 	saveStaffCreateDraft(
 		store,
 		owner,
-		{ personnel: { major: 'คณิตศาสตร์', university: 'สถาบันทดสอบ' } },
+		{
+			personnel: {
+				educations: [
+					{
+						key: owner.userId,
+						id: null,
+						education_level: 'bachelor',
+						major: 'คณิตศาสตร์',
+						university: 'สถาบันทดสอบ'
+					}
+				]
+			}
+		},
 		100
 	);
-	assert.equal(readStaffCreateDraft(store, owner, 101).personnel.major, 'คณิตศาสตร์');
-	assert.ok([...store.values.keys()].every((key) => key.startsWith('staff-create-draft:v4:')));
+	assert.equal(readStaffCreateDraft(store, owner, 101).personnel.educations[0].major, 'คณิตศาสตร์');
+	assert.ok([...store.values.keys()].every((key) => key.startsWith('staff-create-draft:v5:')));
 });
 
 const oldKey = `staff-create-draft:v2:${owner.origin}:${owner.userId}`;
@@ -135,7 +153,7 @@ test('reading a canonical draft retains its original expiry and refuses unbounde
 	store.setItem(
 		currentKey,
 		JSON.stringify({
-			version: 4,
+			version: 5,
 			expiresAt: 31 * 60 * 1000,
 			fields: { first_name: 'invalid-future' }
 		})
@@ -146,7 +164,24 @@ test('reading a canonical draft retains its original expiry and refuses unbounde
 
 test('invalid new draft fields preserve the previous canonical draft before storage cleanup', () => {
 	const store = storage();
-	saveStaffCreateDraft(store, owner, { personnel: { major: 'คณิตศาสตร์' } }, 100);
+	saveStaffCreateDraft(
+		store,
+		owner,
+		{
+			personnel: {
+				educations: [
+					{
+						key: owner.userId,
+						id: null,
+						education_level: 'bachelor',
+						major: 'คณิตศาสตร์',
+						university: null
+					}
+				]
+			}
+		},
+		100
+	);
 	const currentKey = [...store.values.keys()][0];
 	const before = store.getItem(currentKey);
 	store.setItem(oldKey, 'obsolete-private-input');
@@ -160,12 +195,12 @@ test('invalid new draft fields preserve the previous canonical draft before stor
 	);
 	assert.equal(store.getItem(currentKey), before);
 	assert.equal(store.getItem(oldKey), 'obsolete-private-input');
-	assert.equal(readStaffCreateDraft(store, owner, 102).personnel.major, 'คณิตศาสตร์');
+	assert.equal(readStaffCreateDraft(store, owner, 102).personnel.educations[0].major, 'คณิตศาสตร์');
 	assert.equal(store.getItem(oldKey), null);
 });
 
 const legacyKey = `staff-create-draft:v3:${owner.origin}:${owner.userId}`;
-const currentKey = `staff-create-draft:v4:${owner.origin}:${owner.userId}`;
+const currentKey = `staff-create-draft:v5:${owner.origin}:${owner.userId}`;
 test('retired v3 drafts are discarded unread without conversion writes', () => {
 	const store = storage();
 	const another = `${legacyKey}:another-owner`;
@@ -213,4 +248,28 @@ test('canonical career survives storage failure and rejects retired career field
 		/storage unavailable/
 	);
 	assert.equal(store.getItem(currentKey), before);
+});
+
+test('v4 drafts migrate names and partial qualifications without extending expiry', () => {
+	const store = storage(),
+		key = `staff-create-draft:v4:${owner.origin}:${owner.userId}`;
+	store.setItem(
+		key,
+		JSON.stringify({
+			version: 4,
+			expiresAt: 1000,
+			fields: {
+				title: 'นาย',
+				first_name: 'เดิม',
+				last_name: 'ทดสอบ',
+				personnel: { major: 'Legacy partial', university: null, education_level: null }
+			}
+		})
+	);
+	const draft = readStaffCreateDraft(store, owner, 101);
+	assert.equal(draft.first_name, 'เดิม');
+	assert.equal(Object.hasOwn(draft.personnel, 'career'), false);
+	assert.equal(draft.personnel.educations[0].major, 'Legacy partial');
+	assert.equal(store.getItem(key), null);
+	assert.equal(JSON.parse(store.getItem(currentKey)).expiresAt, 1000);
 });

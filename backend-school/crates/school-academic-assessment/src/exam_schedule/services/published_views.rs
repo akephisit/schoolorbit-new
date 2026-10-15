@@ -187,7 +187,7 @@ async fn ensure_parent_student_link_for_exam_schedule(
         SELECT EXISTS(
             SELECT 1
             FROM student_parents
-            JOIN users user_account ON user_account.id = student_parents.student_user_id
+            JOIN user_display_names user_account ON user_account.id = student_parents.student_user_id
             WHERE student_parents.parent_user_id = $1
               AND student_parents.student_user_id = $2
               AND user_account.user_type = 'student'
@@ -313,18 +313,7 @@ async fn list_published_exam_schedule_for_staff(
                invigilator.staff_id,
                CASE
                    WHEN invigilator.staff_id IS NULL THEN NULL
-                   ELSE concat_ws(
-                       ' ',
-                       NULLIF(
-                           concat_ws(
-                               '',
-                               NULLIF(TRIM(user_account.title), ''),
-                               NULLIF(TRIM(user_account.first_name), '')
-                           ),
-                           ''
-                       ),
-                       NULLIF(TRIM(user_account.last_name), '')
-                   )
+                   ELSE user_account.display_name
                END AS display_name
         FROM academic_exam_day_room_assignments assignment
         JOIN academic_exam_days day ON day.id = assignment.exam_day_id
@@ -335,7 +324,7 @@ async fn list_published_exam_schedule_for_staff(
         LEFT JOIN academic_exam_day_invigilators invigilator
           ON invigilator.day_room_assignment_id = assignment.id
          AND invigilator.exam_day_id = day.id
-        LEFT JOIN users user_account ON user_account.id = invigilator.staff_id
+        LEFT JOIN user_display_names user_account ON user_account.id = invigilator.staff_id
         WHERE round.status = 'published'
           AND round.academic_term_id = $1
         ORDER BY round.published_at DESC NULLS LAST,

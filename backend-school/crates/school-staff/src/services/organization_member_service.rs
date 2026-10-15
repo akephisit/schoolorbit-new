@@ -17,11 +17,11 @@ pub async fn list_members(
     let rows = if include_children {
         sqlx::query(
             r#"SELECT om.user_id, om.organization_unit_id, ou.name AS organization_unit_name,
-                      CONCAT(u.title, u.first_name, ' ', u.last_name) AS name,
+                      u.display_name AS name,
                       COALESCE(u.title, '') AS title, om.position_code, om.position_title,
                       om.is_primary, om.responsibilities, om.started_at
                FROM organization_members om
-               JOIN users u ON u.id = om.user_id
+               JOIN user_display_names u ON u.id = om.user_id
                JOIN organization_units ou ON ou.id = om.organization_unit_id
                WHERE (om.organization_unit_id = $1 OR ou.parent_unit_id = $1)
                  AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
@@ -30,11 +30,11 @@ pub async fn list_members(
     } else {
         sqlx::query(
             r#"SELECT om.user_id, om.organization_unit_id, ou.name AS organization_unit_name,
-                      CONCAT(u.title, u.first_name, ' ', u.last_name) AS name,
+                      u.display_name AS name,
                       COALESCE(u.title, '') AS title, om.position_code, om.position_title,
                       om.is_primary, om.responsibilities, om.started_at
                FROM organization_members om
-               JOIN users u ON u.id = om.user_id
+               JOIN user_display_names u ON u.id = om.user_id
                JOIN organization_units ou ON ou.id = om.organization_unit_id
                WHERE om.organization_unit_id = $1
                  AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)

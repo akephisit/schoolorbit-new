@@ -41,6 +41,7 @@ async function mockLockQueue(
 					id: ids.user,
 					username: 'academic',
 					firstName: 'ฝ่าย',
+					displayName: 'ฝ่าย วิชาการ',
 					lastName: 'วิชาการ',
 					userType: 'staff',
 					status: 'ACTIVE',
