@@ -1,6 +1,7 @@
 const directoryPath = '/staff/manage';
 const listParameters = new Set([
 	'search',
+	'view',
 	'page',
 	'status',
 	'page_size',

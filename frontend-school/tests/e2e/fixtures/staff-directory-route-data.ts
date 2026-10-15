@@ -212,6 +212,7 @@ export async function mockStaffDirectory(
 			return reply(route, {
 				items: [
 					{
+						profile_image_file_id: null,
 						username: profileSnapshot.username,
 						title: '',
 						last_name: profileSnapshot.last_name,

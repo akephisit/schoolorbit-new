@@ -35,29 +35,22 @@
 		DialogTitle
 	} from '#lib/components/ui/dialog/index.js';
 	import {
-		Table,
-		TableBody,
-		TableCell,
-		TableHead,
-		TableHeader,
-		TableRow
-	} from '#lib/components/ui/table/index.js';
-	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
 	} from '#lib/components/ui/card/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
+	import StaffDirectoryResults from '#lib/components/staff/StaffDirectoryResults.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		ChartNoAxesCombined,
 		ChevronLeft,
 		ChevronRight,
-		Eye,
-		Pencil,
+		LayoutGrid,
+		List,
 		Plus,
 		Search,
 		Trash2
@@ -104,13 +97,22 @@
 		else groupOptionsError = result.error;
 	}
 	function navigatePersonnelFilter(field: string, value: string) {
-		const query = new SvelteURLSearchParams(page.url.search);
+		const query = new SvelteURLSearchParams(directoryUrl.search);
 		if (value && value !== 'all') query.set(field, value);
 		else query.delete(field);
 		query.delete('page');
 		void goto(resolve(`staff/manage?${query}`));
 	}
-	const directoryHref = $derived(`${page.url.pathname}${page.url.search}`);
+	const directoryUrl = $derived(page.shallow?.url ?? page.url);
+	const view = $derived(directoryUrl.searchParams.get('view') === 'cards' ? 'cards' : 'list');
+	function chooseView(value: string) {
+		if (value !== 'list' && value !== 'cards') return;
+		const query = new SvelteURLSearchParams(directoryUrl.search);
+		if (value === 'cards') query.set('view', value);
+		else query.delete('view');
+		void goto(resolve(`staff/manage?${query}`), { shallow: true, state: page.state });
+	}
+	const directoryHref = $derived(`${directoryUrl.pathname}${directoryUrl.search}`);
 	let currentPage = $state(1);
 	let totalPages = $state(1);
 	let total = $state(0);
@@ -296,7 +298,7 @@
 		organization = data.organizationId
 	) {
 		if (deleting || nextPage < 1) return;
-		const query = new SvelteURLSearchParams(page.url.search);
+		const query = new SvelteURLSearchParams(directoryUrl.search);
 
 		if (search) query.set('search', search);
 		else query.delete('search');
@@ -308,7 +310,7 @@
 		else query.delete('organization_unit_id');
 		if (nextPage > 1) query.set('page', String(nextPage));
 		else query.delete('page');
-		if (query.toString() === page.url.searchParams.toString()) void loadStaff();
+		if (query.toString() === directoryUrl.searchParams.toString()) void loadStaff();
 		else void goto(resolve(`staff/manage?${query}`));
 	}
 	function handleSearch() {
@@ -326,13 +328,10 @@
 	title="จัดการบุคลากร"
 	description="ค้นหา ดูข้อมูล และจัดการบัญชีบุคลากรที่คุณมีสิทธิ์เข้าถึง"
 >
-	<nav aria-label="เมนูงานบุคคล" class="flex flex-wrap items-center gap-2">
-		<Button href="/staff/manage/overview" variant="outline" data-sveltekit-preload-data="tap">
-			<ChartNoAxesCombined class="size-4" aria-hidden="true" />
-			ภาพรวมงานบุคคล
-		</Button>
-	</nav>
 	{#snippet actions()}
+		<Button href="/staff/manage/overview" variant="outline" data-sveltekit-preload-data="tap">
+			<ChartNoAxesCombined class="size-4" aria-hidden="true" />ภาพรวมงานบุคคล
+		</Button>
 		<Button variant="outline" onclick={loadStaff} disabled={loading || deleting || !canReadStaff}
 			>รีเฟรช</Button
 		>
@@ -551,7 +550,7 @@
 				/>{/if}
 			{#if loading && loaded}<p role="status">กำลังอัปเดตรายชื่อ...</p>{/if}
 			{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดรายชื่อบุคลากร">
-					<PageSkeleton variant="table" rows={6} columns={5} />
+					<PageSkeleton variant={view === 'cards' ? 'cards' : 'table'} rows={6} columns={5} />
 				</div>
 			{:else if error && !loaded}
 				<PageState
@@ -569,113 +568,39 @@
 					href={canCreateStaff ? withStaffReturn('/staff/manage/new', directoryHref) : undefined}
 				/>
 			{:else}
-				<Card>
-					<CardHeader>
-						<CardTitle>รายชื่อบุคลากร</CardTitle>
-						<CardDescription>แสดง {staffList.length} จาก {total} รายการ</CardDescription>
+				<Card class={view === 'cards' ? 'border-0 bg-transparent py-0 shadow-none' : ''}>
+					<CardHeader
+						class={`flex flex-wrap items-center justify-between gap-3 ${view === 'cards' ? 'px-0' : ''}`}
+					>
+						<div class="space-y-1">
+							<CardTitle>รายชื่อบุคลากร</CardTitle>
+							<CardDescription
+								>แสดง {staffList.length} จาก {total} รายการ · เรียงตามชื่อจริง</CardDescription
+							>
+						</div>
+						<ToggleGroup.Root
+							type="single"
+							aria-label="มุมมองบุคลากร"
+							bind:value={() => view, chooseView}
+						>
+							<ToggleGroup.Item value="list" aria-label="มุมมองรายชื่อ"
+								><List class="size-4" aria-hidden="true" />รายชื่อ</ToggleGroup.Item
+							>
+							<ToggleGroup.Item value="cards" aria-label="มุมมองการ์ด"
+								><LayoutGrid class="size-4" aria-hidden="true" />การ์ด</ToggleGroup.Item
+							>
+						</ToggleGroup.Root>
 					</CardHeader>
 					<CardContent class="p-0">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>ชื่อ-นามสกุล</TableHead>
-									<TableHead>ตำแหน่ง / วิทยฐานะ</TableHead><TableHead>บทบาท</TableHead>
-									<TableHead>สังกัด</TableHead>
-									<TableHead>สถานะ</TableHead>
-									<TableHead class="text-right">จัดการ</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{#each staffList as staff (staff.id)}
-									<TableRow>
-										<TableCell>
-											<a
-												href={resolve(
-													withStaffReturn(`/staff/manage/${staff.id}`, directoryHref).slice(
-														1
-													) as `staff/manage/${string}`
-												)}
-												data-sveltekit-preload-data="tap"
-												class="font-medium text-foreground hover:text-primary hover:underline"
-												>{staff.title}{staff.first_name} {staff.last_name}</a
-											>
-											<p class="text-xs text-muted-foreground">{staff.username}</p>
-										</TableCell><TableCell
-											><p class="text-sm">{staff.job_position?.name ?? 'ยังไม่ระบุตำแหน่ง'}</p>
-											<p class="text-xs text-muted-foreground">
-												{staff.academic_rank
-													? ACADEMIC_RANK_LABELS[staff.academic_rank]
-													: 'ยังไม่ระบุวิทยฐานะ'}
-											</p></TableCell
-										>
-										<TableCell>
-											<div class="flex flex-wrap gap-1">
-												{#if staff.roles && staff.roles.length > 0}
-													{#each staff.roles.slice(0, 2) as role (role)}
-														<Badge variant="secondary">{role}</Badge>
-													{/each}
-													{#if staff.roles.length > 2}
-														<Badge variant="outline" title={staff.roles.slice(2).join(', ')}
-															>+{staff.roles.length - 2}</Badge
-														>
-													{/if}
-												{:else}
-													<span class="text-sm text-muted-foreground">-</span>
-												{/if}
-											</div>
-										</TableCell>
-										<TableCell
-											><p class="text-sm">{staff.organization_units[0] ?? 'ยังไม่มีสังกัด'}</p>
-											{#if staff.organization_units.length > 1}<p
-													class="text-xs text-muted-foreground"
-													title={staff.organization_units.slice(1).join(', ')}
-												>
-													อีก {staff.organization_units.length - 1} หน่วยงาน
-												</p>{/if}</TableCell
-										>
-										<TableCell>
-											<Badge variant={staff.status === 'active' ? 'default' : 'secondary'}>
-												{staffStatusLabel(staff.status)}
-											</Badge>
-										</TableCell>
-										<TableCell>
-											<div class="flex justify-end gap-2">
-												<Button
-													href={withStaffReturn(`/staff/manage/${staff.id}`, directoryHref)}
-													data-sveltekit-preload-data="tap"
-													variant="ghost"
-													size="icon-sm"
-													aria-label="ดูข้อมูล"
-												>
-													<Eye class="h-4 w-4" />
-												</Button>
-												{#if canUpdateStaff}
-													<Button
-														href={withStaffReturn(`/staff/manage/${staff.id}/edit`, directoryHref)}
-														data-sveltekit-preload-data="tap"
-														variant="ghost"
-														size="icon-sm"
-														aria-label="แก้ไข"
-													>
-														<Pencil class="h-4 w-4" />
-													</Button>
-												{/if}
-												{#if canDeleteStaff}
-													<Button
-														onclick={() => openDeleteDialog(staff)}
-														variant="ghost"
-														size="icon-sm"
-														aria-label="ปิดการใช้งาน"
-													>
-														<Trash2 class="h-4 w-4" />
-													</Button>
-												{/if}
-											</div>
-										</TableCell>
-									</TableRow>
-								{/each}
-							</TableBody>
-						</Table>
+						<StaffDirectoryResults
+							{staffList}
+							{view}
+							{directoryHref}
+							canUpdate={canUpdateStaff}
+							canDelete={canDeleteStaff}
+							{deleting}
+							onDeactivate={openDeleteDialog}
+						/>
 					</CardContent>
 					{#if totalPages > 1}
 						<div

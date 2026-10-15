@@ -388,6 +388,8 @@ pub struct StaffListItem {
     pub title: String,
     pub first_name: String,
     pub last_name: String,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub profile_image_file_id: Option<Uuid>,
     pub roles: Vec<String>,
     pub organization_units: Vec<String>,
     pub status: String,
