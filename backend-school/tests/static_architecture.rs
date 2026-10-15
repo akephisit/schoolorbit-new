@@ -602,7 +602,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-permissions",
-                "school-staff",
             ],
         ),
         (
@@ -616,7 +615,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
-                "school-staff",
             ],
         ),
         (
@@ -717,6 +715,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         (
             "school-certificates-http",
             &[
+                "school-administration",
                 "school-auth",
                 "school-auth-http",
                 "school-certificates",
@@ -725,7 +724,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-fonts",
                 "school-http",
                 "school-permissions",
-                "school-staff",
             ],
         ),
         ("school-crypto", &[]),

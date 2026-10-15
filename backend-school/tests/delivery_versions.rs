@@ -1,6 +1,9 @@
 pub use school_test_db::cutover_test_preflight;
 pub use school_test_db::cutover_test_support;
 
+#[path = "../src/adapters/staff_directory.rs"]
+mod staff_directory;
+
 use school_academic_delivery::services::versions;
 use school_test_db::create_named_test_pool_with_max_connections;
 use sqlx::PgPool;
@@ -1141,6 +1144,7 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
             includes_school_owned: true,
             ..Default::default()
         },
+        &staff_directory::STAFF_DIRECTORY,
     )
     .await
     .unwrap();

@@ -1145,6 +1145,7 @@ mod protected_router {
             .insert_session(&fixture.tenant_a_pool, user_id, 74, false)
             .await;
         let narrow = AcademicHttpState {
+            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: fixture.runtime.clone(),
             websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
             placement_rosters: &ROSTERS,

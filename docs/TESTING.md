@@ -372,6 +372,26 @@ fixtures do not exhaust the disposable PostgreSQL instance.
 
 The static architecture suite owns backend-only boundaries such as tenant request context, thin handlers, service/database separation, permission invalidation, structured logging, and realtime identity.
 
+For the Staff directory/Timetable boundary, run the application-owned fixtures through the local
+Docker database runner:
+
+```bash
+./scripts/test_backend_school.sh migration_060_subject_group_projections_support_timetable_load -- --nocapture
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_block_service_tests -- --nocapture --test-threads=4
+./scripts/test_backend_school.sh concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries -- --nocapture
+```
+
+The projection fixture traverses the real application adapter and Staff query, covering active,
+date-effective, deduplicated affiliations, unknown users and an empty selection. The workspace
+fixture checks directory injection, bounded distinct user IDs, retained group data and propagation
+of provider failures. The protected-router fixture covers the same concrete Academic state.
+Lookup DTO ownership changes also require the canonical API export comparison and the existing
+Administration lookup and Certificate transport checks; wire schema names and serialization stay
+unchanged. Before-and-after compile comparisons must prime each graph separately, use the same
+toolchain/host/release flags and at least two source-changing samples for both the executable and
+Staff service. Record rebuilt packages as well as wall time; warm Cargo results do not measure
+complete build/push/deployment time.
+
 ### School session authentication
 
 Session changes require the schema, repository, service, HTTP/middleware, and realtime

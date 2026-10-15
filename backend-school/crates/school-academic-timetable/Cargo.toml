@@ -8,10 +8,10 @@ api-docs = [
     "dep:utoipa",
     "school-academic-core/api-docs",
     "school-academic-delivery/api-docs",
-    "school-staff/api-docs",
 ]
 
 [dependencies]
+async-trait = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
 school-academic-core = { workspace = true }
@@ -19,7 +19,6 @@ school-academic-delivery = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-permissions = { workspace = true }
-school-staff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

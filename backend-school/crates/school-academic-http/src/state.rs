@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AcademicHttpState {
+    pub staff_directory: &'static dyn school_academic_timetable::ports::StaffDirectoryPort,
     pub placement_rosters: &'static dyn school_academic_core::ports::PlacementRosterPort,
     pub auth_runtime: AuthRuntime,
     pub websocket_manager: Arc<dyn AcademicRealtimePort>,
