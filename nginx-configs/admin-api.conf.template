@@ -31,7 +31,7 @@ server {
     add_header Access-Control-Allow-Origin $admin_allow_origin always;
     add_header Access-Control-Allow-Credentials "true" always;
     add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "Authorization,Content-Type,Accept,Cookie,X-Requested-With" always;
+    add_header Access-Control-Allow-Headers "Authorization,Content-Type,Accept,Cookie,X-Requested-With,X-CSRF-Token" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;

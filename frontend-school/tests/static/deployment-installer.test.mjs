@@ -100,7 +100,7 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 	}
 });
 
-test('school session runtime is required and isolated from admin JWT', async () => {
+test('school session runtime is independent of Admin opaque sessions', async () => {
 	for (const file of ['compose.local.yml', 'podman-compose.yml']) {
 		const compose = await readRepo(file);
 		const adminStart = compose.indexOf('  backend-admin:');
@@ -110,7 +110,8 @@ test('school session runtime is required and isolated from admin JWT', async () 
 
 		const admin = compose.slice(adminStart, schoolStart);
 		const school = compose.slice(schoolStart, schoolEnd);
-		assert.match(admin, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
+		assert.doesNotMatch(admin, /JWT_SECRET/);
+		assert.match(admin, /RESEND_API_KEY/);
 		assert.doesNotMatch(school, /JWT_SECRET/);
 		assert.doesNotMatch(school, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
 		assert.match(school, /SESSION_HMAC_KEY[^\n]*\$\{SESSION_HMAC_KEY/);
@@ -146,7 +147,6 @@ test('backend-school deployment validates session runtime before compose activat
 	);
 	const guard = workflow.slice(validatorStart, composeActivation);
 	for (const name of [
-		'JWT_SECRET',
 		'SESSION_HMAC_KEY',
 		'BASE_DOMAIN',
 		'TRUSTED_PROXY_CIDRS',
@@ -155,7 +155,7 @@ test('backend-school deployment validates session runtime before compose activat
 		assert.match(guard, new RegExp(`runtime_env_value ${name}`));
 	}
 	assert.match(guard, /\$\{#session_hmac_key\}[^\n]*-lt 32/);
-	assert.match(guard, /session_hmac_key[^\n]*admin_jwt_secret/);
+	assert.doesNotMatch(guard, /admin_jwt_secret/);
 	assert.doesNotMatch(guard, /school_rollback_jwt_secret/);
 	assert.match(guard, /runtime_base_domain[^\n]*base_domain/);
 	assert.doesNotMatch(guard, /echo[^\n]*(?:session_hmac_key|admin_jwt_secret)/);
@@ -921,7 +921,9 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
 			assert.match(
 				dockerfile,
-				new RegExp(`cargo build --release --locked --bin ${binary} --timings`)
+				new RegExp(
+					`cargo build --release --locked --bin ${binary}${binary === 'backend-admin' ? ' --bin create_admin' : ''} --timings`
+				)
 			);
 		} else {
 			const release = await readRepo('backend-school/scripts/build_release.sh');
@@ -1086,10 +1088,9 @@ test('frontend deployments keep environment values out of committed Worker confi
 	assert.equal(wrangler.vars, undefined);
 
 	const admin = await readRepo('.github/workflows/deploy-frontend-admin.yml');
-	assert.match(admin, /INTERNAL_API_SECRET: \$\{\{ secrets\.INTERNAL_API_SECRET \}\}/);
-	assert.match(admin, /versions upload .*--secrets-file \.wrangler\/admin-release-secrets\.json/);
+	assert.doesNotMatch(admin, /INTERNAL_API_SECRET|secrets-file/);
+	assert.match(admin, /versions upload --config wrangler\.deploy\.json/);
 	assert.match(admin, /vars\.BACKEND_ADMIN_URL/);
-	assert.match(admin, /vars\.BACKEND_SCHOOL_URL/);
 	assert.match(admin, /vars\.BASE_DOMAIN/);
 	assert.match(admin, /vars\.CLOUDFLARE_ACCOUNT_ID/);
 	assert.match(admin, /wrangler\.deploy\.json/);
@@ -1099,11 +1100,7 @@ test('frontend deployments keep environment values out of committed Worker confi
 		admin.indexOf('- name: Read locked Wrangler version')
 	);
 	assert.match(adminWorkerConfig, /PUBLIC_API_URL: \$\{\{ vars\.BACKEND_ADMIN_URL \}\}/);
-	assert.match(adminWorkerConfig, /BACKEND_SCHOOL_URL: \$\{\{ vars\.BACKEND_SCHOOL_URL \}\}/);
-	assert.match(
-		adminWorkerConfig,
-		/vars:\{PUBLIC_API_URL:\$admin_api,BACKEND_SCHOOL_URL:\$school_api\}/
-	);
+	assert.match(adminWorkerConfig, /vars:\{PUBLIC_API_URL:\$admin_api\}/);
 
 	for (const file of [
 		'.github/workflows/deploy-school-release.yml',
@@ -1273,7 +1270,7 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 	assert.match(setup, /schoolorbit-web/);
 	assert.doesNotMatch(setup, /certbot/i);
 	assert.match(adminReadme, /repository variables/);
-	assert.match(adminReadme, /Worker secret binding/);
+	assert.match(adminReadme, /no internal-service credentials/);
 	assert.match(adminReadme, /never owns production credentials or URLs/);
 });
 

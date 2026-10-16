@@ -31,10 +31,12 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/admin-deploy.sh
-          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,RELEASE_SHA,BACKEND_IMAGE_DIGEST
+          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,RELEASE_SHA,BACKEND_IMAGE_DIGEST,ADMIN_BOOTSTRAP_EMAIL,ADMIN_BOOTSTRAP_PASSWORD
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
           BACKEND_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          ADMIN_BOOTSTRAP_EMAIL: ${{ secrets.ADMIN_BOOTSTRAP_EMAIL }}
+          ADMIN_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}

@@ -193,8 +193,8 @@
 	.spinner {
 		width: 48px;
 		height: 48px;
-		border: 4px solid #e2e8f0;
-		border-top-color: #667eea;
+		border: 4px solid var(--portal-line);
+		border-top-color: var(--portal-brand);
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}
@@ -232,29 +232,29 @@
 	.back-button {
 		padding: 0.5rem 1rem;
 		background: white;
-		border: 2px solid #e2e8f0;
-		border-radius: 8px;
+		border: 2px solid var(--portal-line);
+		border-radius: 16px;
 		cursor: pointer;
 		font-weight: 600;
 		transition: all 0.2s;
 	}
 
 	.back-button:hover {
-		border-color: #667eea;
-		color: #667eea;
+		border-color: var(--portal-brand);
+		color: var(--portal-brand);
 	}
 
 	.header h1 {
 		flex: 1;
 		font-size: 2rem;
 		font-weight: 700;
-		color: #1a202c;
+		color: var(--portal-ink);
 		margin: 0;
 	}
 
 	.status-badge {
 		padding: 0.5rem 1rem;
-		border-radius: 12px;
+		border-radius: 24px;
 		font-size: 0.875rem;
 		font-weight: 600;
 	}
@@ -269,14 +269,14 @@
 	.card {
 		background: white;
 		padding: 1.5rem;
-		border-radius: 12px;
+		border-radius: 24px;
 		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 	}
 
 	.card h2 {
 		font-size: 1.25rem;
 		font-weight: 600;
-		color: #2d3748;
+		color: var(--portal-ink);
 		margin-bottom: 1rem;
 	}
 
@@ -285,7 +285,7 @@
 		grid-template-columns: 120px 1fr;
 		gap: 1rem;
 		padding: 0.75rem 0;
-		border-bottom: 1px solid #e2e8f0;
+		border-bottom: 1px solid var(--portal-line);
 	}
 
 	.info-row:last-child {
@@ -294,11 +294,11 @@
 
 	.label {
 		font-weight: 600;
-		color: #4a5568;
+		color: var(--portal-muted);
 	}
 
 	.value {
-		color: #2d3748;
+		color: var(--portal-ink);
 	}
 
 	.font-mono {
@@ -307,25 +307,25 @@
 	}
 
 	.link {
-		color: #667eea;
+		color: var(--portal-brand);
 		text-decoration: none;
 		font-weight: 600;
 		transition: color 0.2s;
 	}
 
 	.link:hover {
-		color: #764ba2;
+		color: #32939e;
 		text-decoration: underline;
 	}
 
 	.config-json {
-		background: #f7fafc;
+		background: var(--portal-bg);
 		padding: 1rem;
-		border-radius: 8px;
+		border-radius: 16px;
 		font-family: monospace;
 		font-size: 0.875rem;
 		overflow-x: auto;
-		color: #2d3748;
+		color: var(--portal-ink);
 	}
 
 	.text-gray-500 {
@@ -341,7 +341,7 @@
 	.btn-primary,
 	.btn-secondary {
 		padding: 0.75rem 1.5rem;
-		border-radius: 8px;
+		border-radius: 16px;
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s;
@@ -349,7 +349,7 @@
 	}
 
 	.btn-primary {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		background: linear-gradient(135deg, var(--portal-brand) 0%, #32939e 100%);
 		color: white;
 	}
 
@@ -360,12 +360,12 @@
 
 	.btn-secondary {
 		background: white;
-		color: #667eea;
-		border: 2px solid #667eea;
+		color: var(--portal-brand);
+		border: 2px solid var(--portal-brand);
 	}
 
 	.btn-secondary:hover {
-		background: #667eea;
+		background: var(--portal-brand);
 		color: white;
 	}
 
@@ -374,7 +374,7 @@
 		padding: 1rem;
 		background: #fed7d7;
 		color: #c53030;
-		border-radius: 8px;
+		border-radius: 16px;
 		border-left: 4px solid #e53e3e;
 	}
 </style>

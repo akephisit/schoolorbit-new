@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The control-plane API manages school records, tenant database provisioning metadata, and deployment coordination. Backend-school uses its authenticated internal endpoints to resolve tenant database information.
+The control-plane API manages email-verified customer/operator accounts, scoped school memberships, manual monthly/yearly service requests and warning-only expiry, alongside school records, tenant database provisioning metadata, and deployment coordination. Opaque persisted sessions replace legacy JWT authentication. Backend-school uses its authenticated internal endpoints to resolve tenant database information.
 
 ## Stack
 
@@ -43,7 +43,7 @@ Run focused tests first for changed handlers, clients, or services.
 
 The main groups are:
 
-- `DATABASE_URL`, `JWT_SECRET`, and `INTERNAL_API_SECRET`;
+- `DATABASE_URL`, `RESEND_API_KEY`, `RESEND_FROM`, and `INTERNAL_API_SECRET`;
 - `BACKEND_SCHOOL_URL` for internal coordination;
 - PostgreSQL provisioning URL, TLS template and authenticated credential-storage key;
 - Cloudflare and GitHub credentials for DNS/deployment operations;

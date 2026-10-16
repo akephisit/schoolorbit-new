@@ -11,6 +11,7 @@ bats scripts/tests/installer
 node --test frontend-school/tests/static/deployment-installer.test.mjs scripts/tests/pipeline*.test.mjs \
     scripts/tests/backend-school-test-database.test.mjs \
     scripts/tests/runtime-env.test.mjs \
+    scripts/tests/admin-account-release.test.mjs \
     scripts/tests/admin-worker-bootstrap.test.mjs \
     scripts/tests/postgres-runtime.test.mjs \
     scripts/tests/migration-completion-gate.test.mjs

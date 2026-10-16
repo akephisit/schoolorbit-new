@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { asset, resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import {
 		ArrowDown,
@@ -21,9 +20,6 @@
 	} from '@lucide/svelte';
 
 	let menuOpen = $state(false);
-	$effect(() => {
-		if (authStore.isAuthenticated) void goto(resolve('dashboard'));
-	});
 
 	const services = [
 		{
@@ -44,8 +40,8 @@
 		},
 		{
 			title: 'ดูแลระบบจากศูนย์กลาง',
-			description: 'ผู้ดูแลระบบจัดการโรงเรียนและการให้บริการผ่าน SchoolOrbit Admin',
-			label: 'เข้าสู่ระบบผู้ดูแล',
+			description: 'สมัครบัญชีเพื่อขอเปิดบริการและดูแลแพ็กเกจของโรงเรียนคุณ',
+			label: 'เข้าสู่ระบบบัญชีบริการ',
 			route: '/login' as const,
 			icon: BadgeCheck,
 			tone: 'sand'
@@ -99,10 +95,11 @@
 					</nav>
 					<div class="flex items-center gap-1 sm:gap-3">
 						<a
-							href={resolve('login')}
+							href={authStore.isAuthenticated ? resolve('dashboard') : resolve('register')}
 							class="inline-flex items-center justify-center gap-2 login-button h-10 rounded-full px-4 sm:px-5"
 						>
-							เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" />
+							{authStore.isAuthenticated ? 'บัญชีของฉัน' : 'เริ่มต้นใช้งาน'}
+							<ArrowUpRight class="hidden size-4 sm:block" />
 						</a>
 						<button
 							class="flex size-10 items-center justify-center rounded-full md:hidden"
@@ -150,10 +147,10 @@
 					</p>
 					<div class="mt-9 flex flex-wrap items-center gap-4">
 						<a
-							href={resolve('login')}
+							href={authStore.isAuthenticated ? resolve('dashboard') : resolve('register')}
 							class="inline-flex items-center justify-center gap-2 login-button hero-login h-14 rounded-full px-7 text-base"
 						>
-							เข้าสู่ระบบผู้ดูแล <span
+							เข้าสู่ระบบบัญชีบริการ <span
 								class="ml-2 flex size-8 items-center justify-center rounded-full bg-white/15"
 								><ArrowUpRight class="size-5" /></span
 							>
@@ -341,9 +338,9 @@
 						</p>
 					</div>
 					<a
-						href={resolve('login')}
+						href={authStore.isAuthenticated ? resolve('dashboard') : resolve('register')}
 						class="inline-flex items-center justify-center gap-2 h-14 rounded-full bg-white px-7 text-base text-[#236581] hover:bg-[#e8f3f7]"
-						>เข้าสู่ระบบผู้ดูแล <ArrowRight class="ml-2 size-5" /></a
+						>เข้าสู่ระบบบัญชีบริการ <ArrowRight class="ml-2 size-5" /></a
 					>
 				</div>
 			</div>

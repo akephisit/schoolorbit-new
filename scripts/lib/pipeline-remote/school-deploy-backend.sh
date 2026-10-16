@@ -86,7 +86,7 @@ test -f "$maintenance_proxy_template" || {
 runtime_env_value() {
     local key=$1
     case "$key" in
-        JWT_SECRET | SESSION_HMAC_KEY | \
+        SESSION_HMAC_KEY | \
             BASE_DOMAIN | TRUSTED_PROXY_CIDRS | SCHOOL_ALLOWED_DEV_ORIGINS | \
             R2_ACCOUNT_ID | R2_ACCESS_KEY_ID | R2_SECRET_ACCESS_KEY | \
             R2_PUBLIC_BUCKET_NAME | R2_PRIVATE_BUCKET_NAME) ;;
@@ -117,18 +117,11 @@ if ! session_hmac_key="$(runtime_env_value SESSION_HMAC_KEY)"; then
     exit 1
 fi
 
-if ! admin_jwt_secret="$(runtime_env_value JWT_SECRET)"; then
-    echo "Required backend-admin runtime value is unavailable: JWT_SECRET"
-    exit 1
-fi
 if [ "${#session_hmac_key}" -lt 32 ]; then
     echo "Backend-school runtime value is too short: SESSION_HMAC_KEY"
     exit 1
 fi
-if [ "$session_hmac_key" = "$admin_jwt_secret" ]; then
-    echo "School SESSION_HMAC_KEY must differ from admin JWT_SECRET"
-    exit 1
-fi
+
 if ! runtime_base_domain="$(runtime_env_value BASE_DOMAIN)"; then
     echo "Required backend-school runtime value is unavailable: BASE_DOMAIN"
     exit 1
@@ -146,7 +139,6 @@ if ! school_allowed_dev_origins="$(runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS)
     echo "Required backend-school runtime value is unavailable: SCHOOL_ALLOWED_DEV_ORIGINS"
     exit 1
 fi
-unset admin_jwt_secret
 
 install -m 0755 "$renderer_source" "$renderer"
 install -m 0755 "$origin_root_installer_source" "$origin_root_installer"

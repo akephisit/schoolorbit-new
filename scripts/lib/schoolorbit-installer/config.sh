@@ -8,7 +8,7 @@ declare -ga SO_REQUIRED_SECRETS=(
     SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN
     SCHOOLORBIT_SERVER_PASSWORD
     DATABASE_URL
-    JWT_SECRET
+    RESEND_API_KEY
     SESSION_HMAC_KEY
     INTERNAL_API_SECRET
     ENCRYPTION_KEY
@@ -37,6 +37,7 @@ declare -ga SO_REQUIRED_RUNTIME_VALUES=(
     R2_PRIVATE_BUCKET_NAME
     R2_PUBLIC_URL
     VAPID_PUBLIC_KEY
+    RESEND_FROM
 )
 
 SO_COMMAND=
@@ -341,10 +342,6 @@ load_inputs() {
     local input_json name value
     input_json=$(_read_input_json) || return
     _load_named_secrets "$input_json" "${SO_REQUIRED_SECRETS[@]}" || return
-    if [[ ${SO_SECRETS[SESSION_HMAC_KEY]} == "${SO_SECRETS[JWT_SECRET]}" ]]; then
-        die 64 'School SESSION_HMAC_KEY must differ from admin JWT_SECRET'
-        return
-    fi
 
     for name in "${SO_REQUIRED_RUNTIME_VALUES[@]}"; do
         value=${!name-}

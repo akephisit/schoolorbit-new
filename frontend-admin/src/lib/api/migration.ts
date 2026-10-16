@@ -1,3 +1,4 @@
+import { apiClient } from '#lib/api/client.js';
 // Migration API Client for frontend-admin
 
 export interface MigrationResult {
@@ -35,43 +36,16 @@ export interface MigrationStatusResponse {
 }
 
 class MigrationAPI {
-	private baseUrl = '/api/migration';
+	private baseUrl = '/api/v1/operator/migration';
 
 	/**
 	 * Get migration status for all schools
 	 */
 	async getStatus(): Promise<MigrationStatusResponse> {
-		const response = await fetch(`${this.baseUrl}/status`);
-		if (!response.ok) {
-			throw new Error('Failed to fetch migration status');
-		}
-		return response.json();
+		return apiClient.raw(`${this.baseUrl}/status`);
 	}
-
-	/**
-	 * Migrate all schools
-	 */
 	async migrateAll(): Promise<MigrateAllResponse> {
-		const response = await fetch(`${this.baseUrl}/migrate-all`, {
-			method: 'POST'
-		});
-		if (!response.ok) {
-			throw new Error('Failed to migrate schools');
-		}
-		return response.json();
-	}
-
-	/**
-	 * Migrate a single school
-	 */
-	async migrateSchool(subdomain: string): Promise<MigrationResult> {
-		const response = await fetch(`${this.baseUrl}/migrate/${subdomain}`, {
-			method: 'POST'
-		});
-		if (!response.ok) {
-			throw new Error(`Failed to migrate ${subdomain}`);
-		}
-		return response.json();
+		return apiClient.raw(`${this.baseUrl}/migrate-all`, { method: 'POST' });
 	}
 }
 

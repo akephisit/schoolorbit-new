@@ -47,7 +47,7 @@ case "$url" in
     https://admin-api.example.test/) printf "{\"service\":\"%s\"}\n" "$FAKE_ADMIN_IDENTITY" >"$output" ;;
     https://school-api.example.test/ready) printf "%s\n" "{\"status\":\"ready\",\"controlPlane\":\"connected\",\"filePlatform\":\"ready\"}" >"$output" ;;
     https://school-api.example.test/) printf "{\"service\":\"%s\"}\n" "$FAKE_SCHOOL_IDENTITY" >"$output" ;;
-    https://admin.example.test/|https://smoke-school.example.test/) printf "%s\n" "<!doctype html><html></html>" >"$output" ;;
+    https://example.test/|https://smoke-school.example.test/) printf "%s\n" "<!doctype html><html></html>" >"$output" ;;
     https://server.example.test/ping) printf "%s\n" "{\"service\":\"cockpit\"}" >"$output" ;;
     https://server.example.test/) printf "%s\n" "<!doctype html><html><title>Cockpit Login</title></html>" >"$output" ;;
     http://192.0.2.20:9090/ping) exit 7 ;;
@@ -273,7 +273,7 @@ install_orchestration_fakes() {
 @test "public verification checks APIs frontends and authenticated smoke" {
     verify_public_services
 
-    grep -Fq 'https://admin.example.test/' "$FAKE_COMMAND_LOG"
+    grep -Fq 'https://example.test/' "$FAKE_COMMAND_LOG"
     grep -Fq 'https://smoke-school.example.test/' "$FAKE_COMMAND_LOG"
     grep -Fq 'smoke authenticated' "$FAKE_COMMAND_LOG"
 }

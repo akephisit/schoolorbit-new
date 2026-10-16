@@ -132,8 +132,6 @@ podman pull "$backend_image_reference"
 schoolorbit_timer_report image_pull "$image_pull_started"
 backend_readiness_started="$(schoolorbit_timer_now)"
 export BACKEND_ADMIN_IMAGE="$backend_image_reference"
-podman stop schoolorbit-backend-admin || true
-podman rm schoolorbit-backend-admin || true
 test -r /opt/stack/postgresql/ca.crt || {
     echo 'PostgreSQL CA is missing'
     exit 78
@@ -144,10 +142,18 @@ test -r /opt/stack/postgresql/ca.crt || {
 . "$deployment_root/scripts/lib/pipeline-remote/runtime-env.sh"
 ADMIN_MIGRATION_DATABASE_URL=$(schoolorbit_runtime_env_value ADMIN_MIGRATION_DATABASE_URL /opt/stack/.env)
 export ADMIN_MIGRATION_DATABASE_URL
+# Preflight also runs before maintenance in release.yml. Repeat it defensively
+# before stopping the old process; missing first-release secrets never reset accounts.
+bash "$deployment_root/scripts/lib/pipeline-remote/admin-accounts.sh" --check-deploy-inputs
+podman stop schoolorbit-backend-admin || true
+podman rm schoolorbit-backend-admin || true
 podman run --rm --network schoolorbit-web --env ADMIN_MIGRATION_DATABASE_URL \
     --volume /opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro \
     "$backend_image_reference" /app/backend-admin --migrate-admin
 unset ADMIN_MIGRATION_DATABASE_URL
+bash "$deployment_root/scripts/lib/pipeline-remote/admin-accounts.sh" --prepare-release
+bash "$deployment_root/scripts/lib/pipeline-remote/admin-accounts.sh" --check-release-ready
+unset ADMIN_BOOTSTRAP_EMAIL ADMIN_BOOTSTRAP_PASSWORD
 compose_up_quiet --no-deps backend-admin
 unset BACKEND_ADMIN_IMAGE
 validate_backend_network schoolorbit-backend-admin backend-admin

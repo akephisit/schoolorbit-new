@@ -13,7 +13,8 @@ services:
     environment:
       # Admin runtime database (PostgreSQL VPS)
       DATABASE_URL: ${DATABASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
 
       # Backend-School communication

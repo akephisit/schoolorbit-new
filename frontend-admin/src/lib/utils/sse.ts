@@ -86,12 +86,14 @@ export function connectSSE<T = unknown>(
 export async function createSchoolSSE<T = unknown>(
 	apiUrl: string,
 	data: unknown,
-	callbacks: SseCallbacks<T>
+	callbacks: SseCallbacks<T>,
+	csrfHeaders: Record<string, string> = {}
 ): Promise<void> {
 	const response = await fetch(`${apiUrl}/api/v1/schools/stream`, {
 		method: 'POST',
 		headers: {
-			'Content-Type': 'application/json'
+			'Content-Type': 'application/json',
+			...csrfHeaders
 		},
 		body: JSON.stringify(data),
 		credentials: 'include'
@@ -156,79 +158,6 @@ export async function createSchoolSSE<T = unknown>(
 		}
 
 		callbacks.onError?.('Connection lost');
-	} finally {
-		reader.releaseLock();
-	}
-}
-
-// Helper for DELETE SSE requests
-export async function deleteSchoolSSE(
-	apiUrl: string,
-	schoolId: string,
-	callbacks: SseCallbacks
-): Promise<void> {
-	const response = await fetch(`${apiUrl}/api/v1/schools/${schoolId}/stream`, {
-		method: 'DELETE',
-		credentials: 'include'
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to start SSE: ${response.statusText}`);
-	}
-
-	const reader = response.body?.getReader();
-	if (!reader) {
-		throw new Error('No response body');
-	}
-
-	const decoder = new TextDecoder();
-	let buffer = '';
-
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-
-			if (done) break;
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop() || '';
-
-			for (const line of lines) {
-				if (line.startsWith('data: ')) {
-					const data = line.slice(6);
-					try {
-						const msg: SseMessage = JSON.parse(data);
-
-						switch (msg.type) {
-							case 'log':
-								if (msg.level && msg.message) {
-									callbacks.onLog?.(msg.level, msg.message);
-								}
-								break;
-
-							case 'progress':
-								if (msg.step !== undefined && msg.total !== undefined && msg.message) {
-									callbacks.onProgress?.(msg.step, msg.total, msg.message);
-								}
-								break;
-
-							case 'complete':
-								callbacks.onComplete?.(msg.data);
-								return;
-
-							case 'error':
-								if (msg.error) {
-									callbacks.onError?.(msg.error);
-								}
-								return;
-						}
-					} catch (err) {
-						console.error('Failed to parse SSE message:', err);
-					}
-				}
-			}
-		}
 	} finally {
 		reader.releaseLock();
 	}

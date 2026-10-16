@@ -127,24 +127,6 @@ teardown() {
     done
 }
 
-@test "school session key differs from admin JWT" {
-    local input="$TEST_ROOT/duplicate-session-secret.json"
-    local shared_value=12345678901234567890123456789012
-    local filter
-    local -a filters=(
-        '.JWT_SECRET = $value | .SESSION_HMAC_KEY = $value'
-    )
-
-    for filter in "${filters[@]}"; do
-        jq --arg value "$shared_value" "$filter" \
-            "$BATS_TEST_DIRNAME/fixtures/secrets.json" >"$input"
-        parse_args migrate-vps --repository owner/repo --target 192.0.2.20 --secrets-stdin
-
-        run load_inputs <"$input"
-        [ "$status" -eq 64 ]
-        [[ "$output" != *"$shared_value"* ]]
-    done
-}
 
 @test "accepts a non-empty existing smoke password without imposing creation policy" {
     local input="$TEST_ROOT/short-smoke-password.json"

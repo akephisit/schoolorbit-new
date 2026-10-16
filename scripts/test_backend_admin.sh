@@ -15,7 +15,7 @@ done
 # Compile-time SQL metadata and tests use only an owned local disposable database.
 # The utility binary is compiled, never executed.
 for migration in backend-admin/migrations/*.sql; do
-    docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U schoolorbit_test -d schoolorbit_test <"$migration" >/dev/null
+    docker exec -i "$container" psql -X --single-transaction -v ON_ERROR_STOP=1 -U schoolorbit_test -d schoolorbit_test <"$migration" >/dev/null
 done
 binding=$(docker port "$container" 5432/tcp)
 [[ $binding =~ ^127\.0\.0\.1:[0-9]+$ ]] || exit 70

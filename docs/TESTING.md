@@ -1221,6 +1221,48 @@ Keep fixture browser evidence distinct from real device-format and private-stora
 
 For bilingual staff identity and multiple qualifications, use `./scripts/test_backend_school.sh --package school-staff staff_profile_ -- --test-threads=1 --nocapture` and `./scripts/test_backend_school.sh --package school-auth bilingual_ -- --nocapture`. These cover language-set validation, Thai preference/English fallback, both-language search, pagination, raw-value preservation, partial legacy qualifications, revision and ownership rejection, rollback, migration retry, and failed/missing/stale reconciliation. Run the changed personnel form/draft static files directly and `tests/e2e/staff-bilingual-profile.spec.ts` against a ready frontend preview for responsive create/edit/detail flows; retain the focused personnel workflow cases when changing their shared controls. The all-tenant migration gate is exercised by `node --test scripts/tests/migration-completion-gate.test.mjs`.
 
+## Admin customer account preservation
+
+Run `./scripts/test_backend_admin.sh` for the Admin migration and account cutover.
+The fixture also exercises first-release CLI preflight before schema changes,
+bootstrap-secret requirements, unchanged account/password/name on retries,
+customer-adoption and conflicting-operator refusal, pending-login denial,
+expired/active verification-link readiness, and subsequent releases without
+bootstrap secrets. It never sends real email. Run
+`node --test scripts/tests/admin-account-release.test.mjs` for the remote account
+helper's immutable-image selection, private environment transport and failure
+propagation; the deployment verification scope includes this test.
+`node --test scripts/tests/admin-worker-bootstrap.test.mjs` covers exact Admin
+service lookup, recognized absence, existing-worker preservation, fail-closed
+permission/transport/response errors and the isolated 503 bootstrap configuration.
+Use the owning locked Wrangler `deploy --dry-run` against that generated bootstrap
+to verify packaging without publishing code. Actual Worker recreation and route
+acceptance require a reviewed production release and are separate from offline tests.
+The disposable PostgreSQL suite covers complete school/deployment-row preservation,
+unknown-FK rollback, repeated migrations, expired-but-accessible schools, scoped
+memberships, idempotent requests/concurrent approval, opaque session revocation,
+legacy cookie denial, exact-Origin/CSRF checks, verification/reset expiry and replay,
+and unverified registration without role escalation. Missing Resend configuration
+is tested without sending email. Real Resend delivery and sender-domain readiness
+require explicit cutover acceptance with the operator's dedicated account.
+
+Admin checks: `npm run lint`, `npm run check`, `npm run test:unit`, and
+`npm run build` from `frontend-admin`. Run the deployment suite for apex routes,
+installer/runtime configuration and Worker promotion. Public deployment smoke and
+real email acceptance must be reported unrun until the required target/credentials
+are configured; successful compilation is not proof of production cutover.
+
+For the isolated Admin browser fixture, start an HTTP fixture on
+`127.0.0.1:8089` that returns `{ "status": "ready" }` at `/deployment-status`, then
+run the Admin dev server with `PUBLIC_API_URL=http://127.0.0.1:8089` on port 4174
+(the existing local TLS plugin serves HTTPS). From `frontend-school`, run
+`npx playwright test tests/e2e/admin-customer-portal.spec.ts --project=chromium --workers=1`.
+The browser intercepts fixture API calls, aborts external fonts, and covers
+registration/explicit verification, email login, operator approval/CSRF, denied
+operator rendering, expiry warnings and mobile password reset. It uses only
+synthetic accounts and cannot contact Resend. `E2E_ADMIN_URL` can select another
+isolated Admin preview; never point this mocked fixture at a production tenant.
+
 ## Organization and learning areas
 
 The organization route owns separate administration and learning-area sections. The academic

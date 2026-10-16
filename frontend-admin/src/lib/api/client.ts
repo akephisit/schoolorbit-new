@@ -1,155 +1,179 @@
-// API Client for backend-admin
 import { PUBLIC_API_URL } from '$app/env/public';
-import { authStore } from '#lib/stores/auth.svelte.js';
-
-const API_BASE_URL = PUBLIC_API_URL;
 
 export interface ApiResponse<T> {
 	success: boolean;
 	data?: T;
 	error?: string;
+	message?: string;
 }
 export interface LoginRequest {
-	nationalId: string;
+	email: string;
 	password: string;
 }
-
+export interface Account {
+	id: string;
+	email: string;
+	name: string;
+	role: 'operator' | 'customer';
+}
 export interface LoginResponse {
-	// Token is handled via HttpOnly cookie
-	user: {
-		id: string;
-		nationalId: string;
-		name: string;
-		role: string;
-	};
+	user: Account;
+	csrfToken: string;
+}
+export interface CustomerSchool {
+	id: string;
+	name: string;
+	subdomain: string;
+	cadence: string | null;
+	endsAt: string | null;
+	expired: boolean;
+}
+export interface ServiceRequestInput {
+	id: string;
+	schoolId: string | null;
+	kind: 'open_school' | 'renew_school';
+	schoolName: string;
+	subdomain: string;
+	cadence: 'monthly' | 'yearly';
+}
+export interface ServiceRequest extends ServiceRequestInput {
+	accountId: string;
+	email: string;
+	status: 'pending' | 'approved' | 'rejected';
+	decisionReason: string | null;
+	createdAt: string;
 }
 
 class ApiClient {
-	private baseUrl: string;
-
-	constructor(baseUrl: string = API_BASE_URL) {
-		this.baseUrl = baseUrl;
+	private csrfToken = '';
+	csrfHeaders(): Record<string, string> {
+		return this.csrfToken ? { 'X-CSRF-Token': this.csrfToken } : {};
 	}
-
-	private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-		const url = `${this.baseUrl}${endpoint}`;
-
+	clearSession() {
+		this.csrfToken = '';
+	}
+	async raw<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+		const response = await fetch(`${PUBLIC_API_URL}${endpoint}`, {
+			...options,
+			credentials: 'include',
+			cache: 'no-store',
+			headers: { 'Content-Type': 'application/json', ...this.csrfHeaders(), ...options.headers }
+		});
+		if (!response.ok) {
+			const body: { error?: string } = await response.json().catch(() => ({}));
+			throw new Error(body.error || `ไม่สามารถดำเนินการได้ (${response.status})`);
+		}
+		return response.json();
+	}
+	async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
 		try {
-			const response = await fetch(url, {
-				...options,
-				credentials: 'include', // Important for HttpOnly cookies
-				headers: {
-					'Content-Type': 'application/json',
-					...options.headers
-				}
-			});
-
-			const data = await response.json();
-
-			if (!response.ok) {
-				// Auto logout on 401 Unauthorized (except for /me endpoint during initialization)
-				// /me is expected to return 401 when not logged in
-				if (response.status === 401 && typeof window !== 'undefined' && !url.includes('/auth/me')) {
-					console.warn('Session expired (401), logging out...');
-					authStore.logout();
-				}
-
-				return {
-					success: false,
-					error: data.error || `HTTP error! status: ${response.status}`
-				};
-			}
-
-			return data as ApiResponse<T>;
+			return await this.raw<ApiResponse<T>>(endpoint, options);
 		} catch (error) {
-			console.error('API request failed:', error);
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : 'Network error'
+				error: error instanceof Error ? error.message : 'ไม่สามารถเชื่อมต่อบริการได้'
 			};
 		}
 	}
-
-	async login(credentials: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-		return this.request<LoginResponse>('/api/v1/auth/login', {
+	async login(credentials: LoginRequest) {
+		const result = await this.request<LoginResponse>('/api/v1/auth/login', {
 			method: 'POST',
 			body: JSON.stringify(credentials)
 		});
+		if (result.success && result.data) this.csrfToken = result.data.csrfToken;
+		return result;
 	}
-
-	async logout(): Promise<ApiResponse<void>> {
-		return this.request<void>('/api/v1/auth/logout', {
-			method: 'POST'
+	async getCurrentUser() {
+		const result = await this.request<LoginResponse>('/api/v1/auth/me');
+		if (result.success && result.data) this.csrfToken = result.data.csrfToken;
+		else this.clearSession();
+		return result;
+	}
+	async logout() {
+		const result = await this.request<void>('/api/v1/auth/logout', { method: 'POST' });
+		if (result.success) this.clearSession();
+		return result;
+	}
+	register(input: { email: string; password: string; name: string }) {
+		return this.request<void>('/api/v1/auth/register', {
+			method: 'POST',
+			body: JSON.stringify(input)
 		});
 	}
-
-	async getCurrentUser(): Promise<ApiResponse<LoginResponse>> {
-		return this.request<LoginResponse>('/api/v1/auth/me', {
-			method: 'GET'
+	emailAction(action: 'resend-verification' | 'forgot-password', email: string) {
+		return this.request<void>(`/api/v1/auth/${action}`, {
+			method: 'POST',
+			body: JSON.stringify({ email })
 		});
 	}
-
-	async healthCheck(): Promise<boolean> {
+	verify(token: string) {
+		return this.request<void>('/api/v1/auth/verify-email', {
+			method: 'POST',
+			body: JSON.stringify({ token })
+		});
+	}
+	resetPassword(token: string, password: string) {
+		return this.request<void>('/api/v1/auth/reset-password', {
+			method: 'POST',
+			body: JSON.stringify({ token, password })
+		});
+	}
+	customerSchools() {
+		return this.request<CustomerSchool[]>('/api/v1/portal/schools');
+	}
+	serviceRequests() {
+		return this.request<ServiceRequest[]>('/api/v1/portal/requests');
+	}
+	createServiceRequest(input: ServiceRequestInput) {
+		return this.request<void>('/api/v1/portal/requests', {
+			method: 'POST',
+			body: JSON.stringify(input)
+		});
+	}
+	decideRequest(id: string, input: { approve: boolean; schoolId: string | null; reason: string }) {
+		return this.request<void>(`/api/v1/operator/requests/${id}/decision`, {
+			method: 'POST',
+			body: JSON.stringify(input)
+		});
+	}
+	assignSchool(id: string, email: string) {
+		return this.request<void>(`/api/v1/operator/schools/${id}/members`, {
+			method: 'POST',
+			body: JSON.stringify({ email })
+		});
+	}
+	async healthCheck() {
 		try {
-			const response = await fetch(`${this.baseUrl}/health`);
-			return response.ok;
+			return (await fetch(`${PUBLIC_API_URL}/health`)).ok;
 		} catch {
 			return false;
 		}
 	}
-
-	// School Management
-	async createSchool(data: CreateSchool): Promise<ApiResponse<School>> {
-		return this.request<School>('/api/v1/schools', {
-			method: 'POST',
-			body: JSON.stringify(data)
-		});
+	createSchool(data: CreateSchool): Promise<ApiResponse<School>> {
+		return this.request('/api/v1/schools', { method: 'POST', body: JSON.stringify(data) });
 	}
-
-	async listSchools(page = 1, limit = 10): Promise<ApiResponse<SchoolListResponse>> {
-		return this.request<SchoolListResponse>(`/api/v1/schools?page=${page}&limit=${limit}`, {
-			method: 'GET'
-		});
+	listSchools(page = 1, limit = 10): Promise<ApiResponse<SchoolListResponse>> {
+		return this.request(`/api/v1/schools?page=${page}&limit=${limit}`);
 	}
-
-	async getSchool(id: string): Promise<ApiResponse<School>> {
-		return this.request<School>(`/api/v1/schools/${id}`, {
-			method: 'GET'
-		});
+	getSchool(id: string): Promise<ApiResponse<School>> {
+		return this.request(`/api/v1/schools/${id}`);
 	}
-
-	async updateSchool(id: string, data: UpdateSchool): Promise<ApiResponse<School>> {
-		return this.request<School>(`/api/v1/schools/${id}`, {
-			method: 'PUT',
-			body: JSON.stringify(data)
-		});
+	updateSchool(id: string, data: UpdateSchool): Promise<ApiResponse<School>> {
+		return this.request(`/api/v1/schools/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 	}
-
-	async deleteSchool(id: string): Promise<ApiResponse<void>> {
-		return this.request<void>(`/api/v1/schools/${id}`, {
-			method: 'DELETE'
-		});
+	deploySchool(id: string): Promise<ApiResponse<DeployResponse>> {
+		return this.request(`/api/v1/schools/${id}/deploy`, { method: 'POST' });
 	}
-
-	// Deployment methods
-	async deploySchool(id: string): Promise<ApiResponse<DeployResponse>> {
-		return this.request<DeployResponse>(`/api/v1/schools/${id}/deploy`, {
-			method: 'POST'
-		});
-	}
-
-	async bulkDeploySchools(schoolIds: string[]): Promise<ApiResponse<BulkDeployResult>> {
-		return this.request<BulkDeployResult>('/api/v1/schools/deploy/bulk', {
+	bulkDeploySchools(schoolIds: string[]): Promise<ApiResponse<BulkDeployResult>> {
+		return this.request('/api/v1/schools/deploy/bulk', {
 			method: 'POST',
 			body: JSON.stringify({ school_ids: schoolIds })
 		});
 	}
-
-	async getDeploymentHistory(id: string): Promise<ApiResponse<DeploymentHistory[]>> {
-		return this.request<DeploymentHistory[]>(`/api/v1/schools/${id}/deployments`);
+	getDeploymentHistory(id: string): Promise<ApiResponse<DeploymentHistory[]>> {
+		return this.request(`/api/v1/schools/${id}/deployments`);
 	}
 }
-
 export const apiClient = new ApiClient();
 
 // Types

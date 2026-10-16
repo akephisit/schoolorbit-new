@@ -21,6 +21,8 @@ fn build_provisioning_failure_message(primary_error: &str, cleanup_errors: &[Str
 }
 
 fn validate_school_subdomain(subdomain: &str) -> Result<(), AppError> {
+    crate::portal::service::validate_subdomain(subdomain)
+        .map_err(|_| AppError::ValidationError("Subdomain must contain only lowercase letters, numbers, and hyphens and must not be reserved".into()))?;
     if !subdomain.is_empty()
         && subdomain.len() <= 50
         && !subdomain.starts_with('-')
