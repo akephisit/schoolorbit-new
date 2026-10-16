@@ -187,10 +187,26 @@ test('logout during child prerequisite never launches child primary', async ({ p
 	const pending = page.waitForResponse((r) => r.url().includes('/academic-context/options'));
 	await page.goto(childRoute('exams'));
 	await expect.poll(() => api.count('context')).toBe(1);
-	await page.getByRole('banner').getByRole('button').last().click();
-	await page.getByRole('menuitem', { name: 'ออกจากระบบ' }).click();
-	await expect(page).toHaveURL(/\/login/);
-	api.release();
+	try {
+		await page
+			.getByRole('banner')
+			.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })
+			.click();
+		const logout = page.waitForRequest(
+			(request) =>
+				request.method() === 'POST' && new URL(request.url()).pathname === '/api/auth/logout'
+		);
+		await page.getByRole('menuitem', { name: 'ออกจากระบบ', exact: true }).click();
+		await logout;
+		await expect(page).toHaveURL(new URL('/', page.url()).href);
+		await expect(
+			page.getByRole('banner').getByRole('link', { name: 'เข้าสู่ระบบ', exact: true })
+		).toBeVisible();
+		await expect(page.getByTestId('parent-exams-region')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })).toHaveCount(0);
+	} finally {
+		api.release();
+	}
 	await pending;
 	await page.evaluate(
 		() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))

@@ -50,6 +50,19 @@ for (const fail of ['menu', 'counts', 'overview']) {
 		);
 		await expect(region.getByText('region ไม่พร้อม')).toBeVisible();
 		await region.getByRole('button', { name: /ลอง/ }).click();
+		const retriedPath =
+			fail === 'menu'
+				? '/api/menu/user'
+				: fail === 'counts'
+					? '/api/me/work-items/counts'
+					: '/api/staff/dashboard';
+		await expect.poll(() => api.count(retriedPath)).toBe(2);
+		await expect(region).toHaveAttribute('aria-busy', 'false');
+		await expect(
+			region.getByText(fail === 'menu' ? 'โปรไฟล์ทดสอบ' : fail === 'counts' ? '8' : '18', {
+				exact: true
+			})
+		).toBeVisible();
 		await expect(region.getByText('region ไม่พร้อม')).toHaveCount(0);
 		expect(api.count('/api/menu/user')).toBe(fail === 'menu' ? 2 : 1);
 		expect(api.count('/api/me/work-items/counts')).toBe(fail === 'counts' ? 2 : 1);
@@ -75,6 +88,9 @@ test('home aggregate retains values through refresh failure', async ({ page }) =
 	await expect(region).toContainText('region ไม่พร้อม');
 	await expect(region).toContainText('18');
 	await region.getByRole('button', { name: /ลอง/ }).click();
+	await expect.poll(() => api.count('/api/staff/dashboard')).toBe(3);
+	await expect(region).toHaveAttribute('aria-busy', 'false');
+	await expect(region).toContainText('18');
 	await expect(region).not.toContainText('region ไม่พร้อม');
 	expect(api.count('/api/staff/dashboard')).toBe(3);
 });

@@ -79,8 +79,19 @@ test('does not prompt a published timetable to update when opening data changes'
 }) => {
 	const mock = await installTimetableMock(page, { status: 'published' });
 	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+	expect(mock.workspaceRequestCount()).toBe(1);
 	mock.publishNewOpening();
+	const refreshed = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			url.pathname === '/api/academic/timetable-blocks/workspace' &&
+			url.searchParams.get('timetableVersionId') === timetableIds.publishedVersion
+		);
+	});
 	await revalidatePage(page);
+	await (await refreshed).finished();
 	await expect.poll(mock.workspaceRequestCount).toBe(2);
 	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();

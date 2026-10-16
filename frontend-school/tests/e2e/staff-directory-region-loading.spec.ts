@@ -179,7 +179,15 @@ test('list focused retry and retained refresh error', async ({ page }) => {
 	await expect(page.getByTestId('staff-directory')).toContainText('region list ไม่พร้อม');
 	await expect(page.getByTestId('staff-directory')).toContainText('บุคลากรแรก');
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect.poll(() => api.count('/api/staff')).toBe(3);
+	await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByTestId('staff-directory').getByText('region list ไม่พร้อม')).toHaveCount(
+		0
+	);
+	await expect(page.getByTestId('staff-directory')).toContainText('บุคลากรแรก');
 	expect(api.count('/api/staff')).toBe(3);
+	expect(api.reads.map((url) => url.pathname)).toEqual(['/api/staff', '/api/staff', '/api/staff']);
+	expect(api.writes).toEqual([]);
 });
 test('list search and paging follow URL history', async ({ page }) => {
 	await mockStaffDirectory(page, { fullPage: true });

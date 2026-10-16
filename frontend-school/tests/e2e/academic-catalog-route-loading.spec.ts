@@ -483,6 +483,7 @@ test('activity create failure retains the selection and blocks duplicate pending
 	await page.getByRole('option', { name: 'ชุมนุม', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' }).click();
 	try {
+		await expect.poll(() => writes).toBe(1);
 		await expect(page.getByRole('button', { name: 'กำลังเพิ่มกิจกรรม...' })).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'ยกเลิก' })).toBeDisabled();
 		expect(writes).toBe(1);
@@ -500,6 +501,7 @@ test('activity create failure retains the selection and blocks duplicate pending
 	});
 	await expect(page.getByRole('dialog').getByLabel(/^ประเภทกิจกรรม/)).toContainText('ชุมนุม');
 	await expect(page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' })).toBeEnabled();
+	expect(writes).toBe(1);
 });
 
 test('activity readers can inspect history without create or version actions', async ({ page }) => {
