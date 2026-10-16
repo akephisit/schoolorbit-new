@@ -330,10 +330,11 @@ that exact Cloudflare service. Existing Workers are preserved. Only a recognized
 missing-service response permits a minimal 503 bootstrap; permission, transport
 and malformed-response failures stop release. The bootstrap has no application
 assets/bindings, custom routes, workers.dev or preview access. The prepared
-application then follows normal inactive-version upload with versioned secrets,
+application then follows normal credential-free inactive-version upload,
 exact-version promotion, route application and browser acceptance. No manual
-Worker creation or Git integration is required. The configured Admin custom domain
-is reapplied through Wrangler, including its Cloudflare-managed DNS record.
+Worker creation or Git integration is required. Wrangler reapplies the legacy Admin
+redirect custom domain, including its Cloudflare-managed DNS record, and the exact
+apex zone route over the existing proxied apex DNS.
 Deleting the Admin Worker removes its previous deployment history and managed
 domains and makes the Admin frontend unavailable until release recreates it.
 This recovery path never targets a School Worker, tenant DNS record or database.
@@ -1324,10 +1325,12 @@ a verified operator. Recovery-only `--bootstrap`, `--resend-verification` and
 `ADMIN_BOOTSTRAP_TOKEN` for token consumption. They are not ordinary deployment
 steps. Never print or pass tokens in command arguments.
 
-The frontend Worker declares custom domains `<base-domain>` and `admin.<base-domain>`;
-the old Admin host redirects to the apex before rendering, including during
-maintenance. Cloudflare manages their DNS records. Review preexisting apex records,
-routes and custom domains for competing owners before the release. Keep
+The frontend Worker uses an exact `<base-domain>/*` zone route and the managed
+custom domain `admin.<base-domain>`. The old Admin host redirects to the apex
+before rendering, including during maintenance. Preserve the existing proxied
+apex A/AAAA/CNAME record; do not convert it into a Worker custom domain or delete
+it to resolve Cloudflare error 100117. This leaves tenant DNS and routes unchanged.
+Review the exact apex route and legacy custom domain for competing owners. Keep
 Cloudflare Workers Builds disconnected so Pipeline is the sole deployment writer.
 The Worker has no internal migration secret; remove any obsolete
 `INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.

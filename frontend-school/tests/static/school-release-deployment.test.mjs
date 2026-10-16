@@ -9,6 +9,38 @@ import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
+test('Admin configuration uses an exact apex zone route while preserving the redirect custom domain', async (t) => {
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
+	);
+	const step = workflow.jobs.deploy.steps.find(
+		(item) => item.name === 'Create environment-specific deployment configuration'
+	);
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'admin-apex-route-'));
+	t.after(() => rm(temporary, { recursive: true, force: true }));
+	await writeFile(
+		path.join(temporary, 'wrangler.json'),
+		JSON.stringify({ name: 'schoolorbit-frontend-admin', build: { command: 'never-run' } })
+	);
+	const result = spawnSync('bash', ['-c', step.run], {
+		cwd: temporary,
+		encoding: 'utf8',
+		env: {
+			...process.env,
+			BASE_DOMAIN: 'example.test',
+			PUBLIC_API_URL: 'https://admin-api.example.test'
+		}
+	});
+	assert.equal(result.status, 0, result.stderr);
+	const config = JSON.parse(await readFile(path.join(temporary, 'wrangler.deploy.json'), 'utf8'));
+	assert.deepEqual(config.routes, [
+		{ pattern: 'example.test/*', zone_name: 'example.test' },
+		{ pattern: 'admin.example.test', custom_domain: true }
+	]);
+	assert.equal(config.build, undefined);
+	assert.deepEqual(config.vars, { PUBLIC_API_URL: 'https://admin-api.example.test' });
+});
+
 test('Admin deploy resolves its image artifact locally instead of crossing a secret-bearing job output', async () => {
 	const release = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
