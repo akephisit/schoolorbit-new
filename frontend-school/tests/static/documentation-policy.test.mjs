@@ -5,10 +5,12 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { parse as parseYaml } from 'yaml';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
+const skillRoot = path.join(repoRoot, '.agents/skills/schoolorbit-development');
 
 const MARKDOWN_ALLOWLIST = [
 	'AGENTS.md',
@@ -87,6 +89,51 @@ function requiredSection(source, startHeading, endHeading) {
 	assert.notEqual(end, -1, `.rules must contain section boundary: ${endHeading}`);
 	return source.slice(start, end);
 }
+
+function assertMapping(value, label) {
+	assert.ok(
+		value !== null && typeof value === 'object' && !Array.isArray(value),
+		`${label} must be a mapping`
+	);
+}
+
+function assertNonblankString(value, label) {
+	assert.equal(typeof value, 'string', `${label} must be a string`);
+	assert.ok(value.trim(), `${label} must not be blank`);
+}
+
+test('project skill has valid YAML frontmatter and an instruction body', async () => {
+	const source = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8');
+	const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+	assert.ok(frontmatter, 'SKILL.md must start with delimited YAML frontmatter');
+	const metadata = parseYaml(frontmatter[1]);
+	assertMapping(metadata, 'skill frontmatter');
+	assert.equal(metadata.name, path.basename(skillRoot), 'skill name must match its directory');
+	assertNonblankString(metadata.description, 'skill description');
+	assert.ok(source.slice(frontmatter[0].length).trim(), 'skill must contain instructions');
+});
+
+test('project skill invocation metadata has valid types and references the skill', async () => {
+	const metadata = parseYaml(await readFile(path.join(skillRoot, 'agents/openai.yaml'), 'utf8'));
+	assertMapping(metadata, 'agent metadata');
+	assertMapping(metadata.interface, 'agent interface');
+	for (const field of ['display_name', 'short_description', 'default_prompt']) {
+		assertNonblankString(metadata.interface[field], `interface.${field}`);
+	}
+	assert.match(
+		metadata.interface.default_prompt,
+		new RegExp(`\\$${path.basename(skillRoot)}(?![\\w-])`),
+		'default prompt must reference this skill'
+	);
+	if (metadata.policy !== undefined) {
+		assertMapping(metadata.policy, 'agent policy');
+		const implicitInvocation = metadata.policy.allow_implicit_invocation;
+		assert.ok(
+			implicitInvocation == null || typeof implicitInvocation === 'boolean',
+			'policy.allow_implicit_invocation must be a boolean when supplied, or null'
+		);
+	}
+});
 
 test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
 	const accepted = [
