@@ -36,6 +36,29 @@ pub struct SchoolListResponse {
     pub total_pages: i64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PublicSchoolQuery {
+    pub after: Option<String>,
+}
+
+pub async fn public_school_sites(
+    State(state): State<AppState>,
+    Query(params): Query<PublicSchoolQuery>,
+) -> Response {
+    match SchoolService::new(state.pool.clone()).public_sites(params.after.as_deref()).await {
+        Ok(sites) => Json(ApiResponse::success(sites)).into_response(),
+        Err(crate::error::AppError::ValidationError(_)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"success":false,"error":"Invalid school cursor"})),
+        ).into_response(),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [("Retry-After", "60")],
+            Json(serde_json::json!({"success":false,"error":"School directory temporarily unavailable"})),
+        ).into_response(),
+    }
+}
+
 // Create school
 pub async fn create_school(
     State(state): State<AppState>,

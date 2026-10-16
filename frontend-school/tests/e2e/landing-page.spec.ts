@@ -382,14 +382,19 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	).toEqual(['/api/school/public']);
 });
 
-test('one statistics table includes all rooms, grade and stage subtotals without disclosure', async ({
-	page
-}) => {
+test('grade disclosures preserve all rooms, grade and stage subtotals', async ({ page }) => {
 	await page.goto(baseUrl);
-	await expect(page.getByRole('rowheader', { name: /ยังไม่ได้จัดห้อง/ })).toBeVisible();
+	await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
 	const table = page.getByTestId('school-student-summary');
 	await expect(page.locator('#statistics table')).toHaveCount(1);
-	await expect(table.getByRole('button')).toHaveCount(0);
+	await expect(table.getByRole('button')).toHaveCount(2);
+	for (const name of ['มัธยมศึกษาปีที่ 1', 'มัธยมศึกษาปีที่ 2']) {
+		const toggle = table.getByRole('button', { name, exact: true });
+		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+		await toggle.click();
+		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	}
+	await expect(page.getByRole('rowheader', { name: /ยังไม่ได้จัดห้อง/ })).toBeVisible();
 	await expect(table.getByRole('row', { name: 'ม.2/2 0 0 0 0', exact: true })).toBeVisible();
 	await expect
 		.poll(() =>
@@ -403,13 +408,13 @@ test('one statistics table includes all rooms, grade and stage subtotals without
 		)
 		.toEqual([
 			['ชั้น / ห้อง', 'ชาย', 'หญิง', 'อื่น ๆ / ไม่ระบุ', 'รวม'],
+			['มัธยมศึกษาปีที่ 1', '31', '32', '1', '64'],
 			['ม.1/1', '16', '16', '1', '33'],
 			['ม.1/2', '15', '15', '0', '30'],
 			['มัธยมศึกษาปีที่ 1 · ยังไม่ได้จัดห้อง', '0', '1', '0', '1'],
-			['มัธยมศึกษาปีที่ 1', '31', '32', '1', '64'],
+			['มัธยมศึกษาปีที่ 2', '30', '30', '0', '60'],
 			['ม.2/1', '30', '30', '0', '60'],
 			['ม.2/2', '0', '0', '0', '0'],
-			['มัธยมศึกษาปีที่ 2', '30', '30', '0', '60'],
 			['รวมมัธยมศึกษาตอนต้น', '61', '62', '1', '124'],
 			['รวมทั้งโรงเรียน', '61', '62', '1', '124']
 		]);

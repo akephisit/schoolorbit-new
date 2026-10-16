@@ -1329,7 +1329,24 @@ a verified operator. Recovery-only `--bootstrap`, `--resend-verification` and
 `ADMIN_BOOTSTRAP_TOKEN` for token consumption. They are not ordinary deployment
 steps. Never print or pass tokens in command arguments.
 
-The frontend Worker uses only the exact `<base-domain>/*` zone route. The former
+Public search discovery uses the apex homepage and `/schools`, with an anonymous,
+keyset-paginated `GET /api/v1/public/schools` that selects only active school names
+and subdomains. Sandbox/reserved names and inactive schools are omitted. The
+central `/robots.txt` advertises `/sitemap.xml`; the sitemap contains only the two
+public central pages and does not depend on backend availability. The directory's
+server-rendered links discover production school homepages, each with its existing
+host-specific canonical, robots and sitemap. Account/private/error pages carry
+`noindex`; previews cannot advertise production indexing. No tenant database is
+opened and no school/account data is modified by this discovery flow.
+
+After release, use Search Console's domain property to submit the central sitemap
+and inspect the previously failing www URLs. Check HTTP and HTTPS www redirect to
+the apex and finish at 200 before requesting validation. Report samples and crawl dates identify which historical URLs need validation. Maintenance intentionally returns bounded 503 responses
+with Retry-After; do not bypass maintenance or return a success page to crawlers.
+
+The frontend Worker serves the portal on the exact `<base-domain>/*` zone route.
+Its exact `www.<base-domain>/*` zone route permanently redirects both HTTP and HTTPS
+to the HTTPS apex while preserving path/query; no portal content or API Origin is enabled on www. The former
 `admin.<base-domain>` hostname is retired and its Origin is not allowed. Preserve the existing proxied
 apex A/AAAA/CNAME record; do not convert it into a Worker custom domain or delete
 it to resolve Cloudflare error 100117. This leaves tenant DNS and routes unchanged.
@@ -1342,7 +1359,7 @@ The shared wildcard DNS may still resolve the retired name; do not delete that
 wildcard because schools use it. Both normal and maintenance origin configurations
 return uncached 410 for that hostname, without proxying it. The Admin Worker also
 rejects it if a stale mapping reaches the runtime.
-Review the exact apex route for competing owners. Keep
+Review the exact apex and www routes for competing owners. Keep
 Cloudflare Workers Builds disconnected so Pipeline is the sole deployment writer.
 The Worker has no internal migration secret; remove any obsolete
 `INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.

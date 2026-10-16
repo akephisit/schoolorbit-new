@@ -1,5 +1,8 @@
 use crate::error::AppError;
-use crate::models::{CreateSchool, School, SchoolConfig, SchoolResponse, UpdateSchool};
+use crate::models::{
+    CreateSchool, PublicSchoolSite, PublicSchoolSites, School, SchoolConfig, SchoolResponse,
+    UpdateSchool,
+};
 use sqlx::{types::Json, PgPool};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -560,6 +563,34 @@ impl SchoolService {
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
         Ok((schools, total))
+    }
+
+    pub async fn public_sites(&self, after: Option<&str>) -> Result<PublicSchoolSites, AppError> {
+        if let Some(cursor) = after {
+            validate_school_subdomain(cursor)?;
+        }
+        let mut schools = sqlx::query_as::<_, PublicSchoolSite>(
+            "SELECT name, subdomain FROM schools
+             WHERE status = 'active' AND subdomain <> ALL($1)
+               AND subdomain ~ '^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$'
+               AND ($2::text IS NULL OR subdomain > $2)
+             ORDER BY subdomain LIMIT 101",
+        )
+        .bind(crate::portal::service::RESERVED_SUBDOMAINS)
+        .bind(after)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        let next_cursor = if schools.len() > 100 {
+            schools.truncate(100);
+            schools.last().map(|school| school.subdomain.clone())
+        } else {
+            None
+        };
+        Ok(PublicSchoolSites {
+            schools,
+            next_cursor,
+        })
     }
 
     pub async fn get_school(&self, id: Uuid) -> Result<School, AppError> {

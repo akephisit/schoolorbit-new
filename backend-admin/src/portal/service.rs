@@ -3,20 +3,21 @@ use axum::http::StatusCode;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub(crate) const RESERVED_SUBDOMAINS: &[&str] = &[
+    "www",
+    "admin",
+    "school-api",
+    "admin-api",
+    "server",
+    "sandbox",
+    "api",
+    "mail",
+    "cdn",
+    "local",
+    "assets",
+];
+
 pub fn validate_subdomain(value: &str) -> Result<(), PortalError> {
-    const RESERVED: &[&str] = &[
-        "www",
-        "admin",
-        "school-api",
-        "admin-api",
-        "server",
-        "sandbox",
-        "api",
-        "mail",
-        "cdn",
-        "local",
-        "assets",
-    ];
     if value.is_empty()
         || value.len() > 50
         || value.starts_with('-')
@@ -24,7 +25,7 @@ pub fn validate_subdomain(value: &str) -> Result<(), PortalError> {
         || !value
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        || RESERVED.contains(&value)
+        || RESERVED_SUBDOMAINS.contains(&value)
     {
         return Err(PortalError::invalid());
     }

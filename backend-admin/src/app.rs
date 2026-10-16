@@ -21,6 +21,10 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
+        .route(
+            "/api/v1/public/schools",
+            get(handlers::school::public_school_sites),
+        )
         .nest(
             "/api/v1/auth",
             Router::new()

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import PublicPageSeo from '#lib/components/PublicPageSeo.svelte';
+	import type { PageProps } from './$types';
+	let { data }: PageProps = $props();
 	import { asset, resolve } from '$app/paths';
 	import { authStore } from '#lib/stores/auth.svelte.js';
 	import {
@@ -55,13 +58,29 @@
 	];
 </script>
 
-<svelte:head>
-	<title>SchoolOrbit — เชื่อมทุกเรื่องของโรงเรียนไว้ในที่เดียว</title>
-	<meta
-		name="description"
-		content="รู้จัก SchoolOrbit ระบบบริหารโรงเรียนที่เชื่อมครู นักเรียน และผู้ปกครอง พร้อมพื้นที่สำหรับผู้ดูแลระบบส่วนกลาง"
-	/>
-</svelte:head>
+<PublicPageSeo
+	title="SchoolOrbit — เชื่อมทุกเรื่องของโรงเรียนไว้ในที่เดียว"
+	description="SchoolOrbit ระบบบริหารโรงเรียนที่เชื่อมครู นักเรียน และผู้ปกครอง ค้นหาเว็บไซต์โรงเรียน และเปิดบริการโรงเรียนจากบัญชีเดียว"
+	site={data.publicSite}
+	structuredData={{
+		'@context': 'https://schema.org',
+		'@graph': [
+			{
+				'@type': 'Organization',
+				'@id': data.publicSite.homeUrl + '#organization',
+				name: 'SchoolOrbit',
+				url: data.publicSite.homeUrl
+			},
+			{
+				'@type': 'WebSite',
+				name: 'SchoolOrbit',
+				url: data.publicSite.homeUrl,
+				inLanguage: 'th',
+				publisher: { '@id': data.publicSite.homeUrl + '#organization' }
+			}
+		]
+	}}
+/>
 
 <div class="landing-page bg-[#f8fbfc] text-[#163441]">
 	<a href="#main-content" class="skip-link">ข้ามไปเนื้อหาหลัก</a>
@@ -90,6 +109,7 @@
 					</a>
 					<nav id="main-navigation" aria-label="เมนูหลัก" class:mobile-open={menuOpen}>
 						<a href="#services" onclick={() => (menuOpen = false)}>บริการ</a>
+						<a href={resolve('schools')}>เว็บไซต์โรงเรียน</a>
 						<a href="#about" onclick={() => (menuOpen = false)}>รู้จัก SchoolOrbit</a>
 						<a href="#get-started" onclick={() => (menuOpen = false)}>เริ่มต้นใช้งาน</a>
 					</nav>
@@ -355,7 +375,7 @@
 			><Orbit class="size-5 text-[#237c9b]" /> SchoolOrbit</a
 		>
 		<p>เชื่อมทุกเรื่องของโรงเรียนไว้ในที่เดียว</p>
-		<span>SchoolOrbit Admin</span>
+		<a href={resolve('schools')} class="text-[#237c9b] hover:underline">ค้นหาเว็บไซต์โรงเรียน</a>
 	</footer>
 </div>
 

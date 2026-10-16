@@ -9,7 +9,7 @@ import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
-test('Admin configuration uses only the exact apex zone route and retires the former alias after promotion', async (t) => {
+test('Admin configuration uses exact apex and canonical-www zone routes and retires the former alias after promotion', async (t) => {
 	const workflow = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
 	);
@@ -33,7 +33,10 @@ test('Admin configuration uses only the exact apex zone route and retires the fo
 	});
 	assert.equal(result.status, 0, result.stderr);
 	const config = JSON.parse(await readFile(path.join(temporary, 'wrangler.deploy.json'), 'utf8'));
-	assert.deepEqual(config.routes, [{ pattern: 'example.test/*', zone_name: 'example.test' }]);
+	assert.deepEqual(config.routes, [
+		{ pattern: 'example.test/*', zone_name: 'example.test' },
+		{ pattern: 'www.example.test/*', zone_name: 'example.test' }
+	]);
 	assert.equal(config.build, undefined);
 	assert.deepEqual(config.vars, { PUBLIC_API_URL: 'https://admin-api.example.test' });
 	const steps = workflow.jobs.deploy.steps;
