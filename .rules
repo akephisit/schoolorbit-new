@@ -71,8 +71,8 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 ### Git branches, worktrees, and integration
 
 - Start every change from the latest `origin/main` on a dedicated feature, fix, or chore branch. Do not implement directly on `main`.
-- When one session is working sequentially, use a branch in the repository root by default so the existing dependencies and build caches remain available.
-- Use a separate worktree when multiple sessions or independent tasks must run concurrently, or when the work needs filesystem isolation. Work size alone does not require a worktree.
+- For one coordinated feature team, use one feature branch and shared checkout in the repository root by default so existing dependencies and build caches remain available. Frontend and Backend may edit disjoint assigned files concurrently under the shared-checkout ownership rules below; parallel agents alone do not require separate branches or worktrees.
+- Use a separate worktree only when unrelated tasks need different branches, incompatible toolchain/dependency state needs isolation, or the host requires isolated execution. State the concrete reason before creating it; prefer serializing overlapping work over duplicating a Rust build environment merely to parallelize roles. Work size alone does not require a worktree.
 - Every worktree owns a distinct branch. Never check out or mutate another session's branch or remove a worktree until its owner is finished and its working tree is clean.
 - When `schoolorbit-development` is selected explicitly or implicitly for a SchoolOrbit task, this project's standing preference authorizes bounded subagent delegation under `Agent roles and coordination`; do not request separate permission for each assignment. Prefer parallel work when independent tasks justify coordination. Keep small or tightly coupled work inline, and honor the user's inline-only preference.
 - Delegation preserves the user's requested outcome and authorization. A read-only review remains read-only; assigning agents does not authorize additional implementation, PR delivery, merge or production operations beyond that scope. Outside this project workflow, follow the user's delegation instructions.
@@ -84,7 +84,7 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Every change enters `main` through a pull request. Do not push directly to `main` or force-push shared branches. After required local checks pass, commit and push the feature branch, open a PR and attach it to the task.
 - Trusted team collaborators with write access use automatic squash merge after the stable `Pipeline gate` succeeds; human approval is not mandatory. External/fork PRs are never auto-merged.
 - The merge controller serializes integration, validates the merged candidate against the latest `main`, and leaves stale branches blocked until their developer updates and retests them. A cached compiler output or an unverified local report cannot authorize merge or deployment; the stable `Pipeline gate` remains the integration authority.
-- Independent developers own distinct branches/worktrees. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
+- Independent developer sessions own distinct branches/worktrees; agents coordinated on one feature use the shared-checkout policy above. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
 - Keep the feature branch and any worktree until required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
 
 ### Agent roles and coordination
@@ -148,22 +148,38 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
   starting dependent work; do not silently treat partial completion as an agreed interface.
 - If the host lacks subagent tools, carry out the roles inline and report that limitation once.
   Host instructions and actual supported controls take precedence over role preferences.
-- Each writer has its own branch and worktree. Shared-file changes, generated contracts/locks,
-  router composition, migrations numbering, aggregate commands and integration have one explicit
-  owner. The Coordinator assigns that owner before work starts and serializes overlapping changes.
-  Separate worktrees do not make conflicting edits safe to integrate automatically.
+- In a shared checkout, assign non-overlapping file ownership before writers start. Frontend and
+  Backend can work concurrently within their assigned files; stop the affected assignment and
+  notify the Coordinator before crossing a boundary or touching another owner's changes. Never
+  overwrite or revert another agent's work. Separate directories alone are not an ownership map.
+- Shared files, generated contracts/locks, router composition, migration numbering and aggregate
+  commands have one designated owner. The Coordinator serializes their changes and generators,
+  dependency installation and broad formatters. Writers may use scoped formatters on owned files;
+  no repository-wide rewrite or shared-output mutation runs while another writer depends on it.
+- The Coordinator alone performs Git mutations in the shared checkout: staging, commits, branch
+  switches, merges, stash/reset/clean, rebase and push. Children deliver owned changed paths,
+  relevant checks and findings in place, without staging or committing other writers' files.
+  If isolation is needed, record the assigned worktree/branch and integrate its commits only after
+  the owner finishes; a separate worktree does not make conflicting edits safe to integrate.
 - Explorer and Reviewer are read-only. Verifier may produce ignored test/build outputs and owned
   disposable fixtures, but does not fix source, install/update dependencies, run generators that
   change tracked files, or merge. Findings return to the designated writer.
-- Only the Coordinator integrates child commits, changes the shared main checkout, opens/updates
+- Only the Coordinator reconciles shared changes or integrates isolated commits, manages shared Git state, opens/updates
   PRs, authorizes readiness or triggers production operations. Child completion is evidence for
   integration, not permission to push main, deploy or claim the full feature complete.
-- Run at most one heavy Cargo verification owner at a time; never share a writable target directory
-  across concurrent compiler processes. Independent test jobs use distinct disposable databases.
-  Reuse existing compiled outputs only with compatible toolchain, profile and dependency state.
+- Assign one Rust build/verification owner at a time. Reuse the existing compatible Cargo target
+  sequentially; never run concurrent Cargo processes against it or create per-agent targets merely
+  to evade serialization. Keep compiler job parallelism within the machine's available memory.
+  Sharing a checkout avoids duplicate dependency/target disk usage but does not bound compiler RAM.
+  Run focused checks only while their relevant source/configuration inputs are stable. Independent
+  database test jobs use distinct disposable databases; reuse compiled outputs only with compatible
+  toolchain, profile and dependency state.
 - For parallel tasks, after integration freeze the candidate tree and dispatch the read-only Rules/Security review and
   Verifier in parallel when independent. Source changes invalidate affected review/test results;
   freeze again and rerun affected checks. Review must cover the complete integrated diff.
+- In the shared checkout, wait for every writer and source-mutating tool to finish before the
+  Coordinator stages/freezes the complete candidate and dispatches final review and QA. Keep those
+  inputs unchanged until both finish; a child cannot treat the live shared tree as its own commit.
 - Handoffs report commit/tree IDs, changed paths, checks actually run, results, findings and remaining
   uncertainty. On compaction/resume, reread current rules and revalidate task/base/ownership/results.
   Keep incomplete checks or unresolved blocking findings in draft; never invent a passing result.
@@ -174,7 +190,7 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
 
 - Before opening or updating a ready PR, run the impact-based checks selected under section 11 on the developer's machine. Use focused owning commands or explicit pipeline scopes that match the affected behavior and consumers; the automatic application's entire suite is not mandatory for every edit. Record the scope rationale, exact commands, results and any missing environment in the PR; an unrun or cancelled check must not be reported as passing.
 - GitHub runs planning, selected release builds and deployment only. Do not add unit, database, architecture, lint, type-check or browser E2E suites to Actions, and do not implement local receipt uploads, signatures, registered verifiers or test-result attestations. The `Pipeline gate` proves planning/build success, not local test execution.
-- Each developer owns a separate branch/worktree and disposable fixtures. Refresh `origin/main` before local verification and integration. When main advances, update the feature branch and rerun affected suites before making the PR ready; the merge controller must never update a branch or silently substitute untested source.
+- Each independent developer session owns its branch/worktree and disposable fixtures; a coordinated feature team may share its checkout under the ownership policy above. Refresh `origin/main` before local verification and integration. When main advances, update the feature branch and rerun affected suites before making the PR ready; the merge controller must never update a branch or silently substitute untested source.
 - Trusted same-repository team PRs may auto-squash merge after the latest-main `Pipeline gate` succeeds, with no mandatory human approval. Keep incomplete or failing work in draft; external/fork work needs maintainer-owned local verification before integration.
 - Production readiness, tenant migrations, deployed browser/asset acceptance, authenticated proxy smoke and universal Maintenance Mode remain mandatory deployment gates. They verify the actual deployed artifacts and environment after selected builds; local tests do not replace them.
 

@@ -40,12 +40,15 @@ This skill routes work; domain conventions and agent policy stay in `.rules`.
    writer implements its layer and focused tests; the Senior resolves shared decisions and
    integrates their work. Open optional Explorer, Data/Migration or Pipeline roles only as needed.
    Read-only requests assign only read-only work; do not create writers for an instruction review.
-3. Spawn only ready tasks with the assignment below. Establish separate worktrees before parallel
-   writers start. Assign every shared file and generated artifact to one owner.
+3. Spawn only ready tasks with the assignment below. Use one feature branch/shared checkout by
+   default and assign disjoint files before parallel writers start. Keep shared files, generators
+   and Git mutations with the designated owner under `.rules`. Use a separate worktree only for
+   the concrete isolation cases defined there, not merely because Frontend and Backend run together.
 4. Advance independent Coordinator work while children run. Follow their results at dependency
    boundaries, resolve overlaps or blockers, and start dependent work only after inspecting the
    prerequisite output. Keep spawning and reassignment with the Coordinator.
-5. Once implementation is integrated, switch to the independent Reviewer and QA/Verifier phase.
+5. Once every writer finishes and the Senior reconciles the changes, freeze the complete candidate
+   and switch to the independent Reviewer and QA/Verifier phase. Keep the shared source unchanged.
    The Reviewer checks correctness and rules; QA runs the selected checks. Return defects to the
    owning writer, then repeat affected review/checks. The Senior accepts the result only after
    reconciling both reports. Keep the role roster, actual settings and handoffs in task state.
@@ -57,19 +60,23 @@ For every child, provide this assignment in the tool message:
 ```text
 Role and outcome:
 Requested model/reasoning profile and host-confirmed settings or fallback:
-Repository/worktree and branch:
+Repository/shared checkout and branch, or isolated worktree with its reason:
 Base commit and tree:
 Allowed paths and read-only or writer status:
 Protected/shared files and their designated owner:
+Shared Git, generator, formatter and Rust build ownership:
 Dependencies and agreed interface:
 Completion criteria and blocking conditions:
 Applicable .rules sections and canonical references to read:
 Focused verification and fixture ownership:
-Deliverable: commits/tree, changed files, evidence, findings and remaining uncertainty.
+Deliverable: owned changed paths, evidence, findings and remaining uncertainty;
+commits only for an assigned isolated worktree, candidate tree supplied by the Senior.
+In a shared checkout, do not stage/commit, switch branches, stash/reset/clean or revert others' work.
 No independent PR readiness, main changes or production operations.
 ```
 
-Start writer work only after the Coordinator establishes a distinct branch/worktree and file owner.
+Start writer work only after the Coordinator establishes checkout mode and non-overlapping file
+ownership. Shared-checkout writers hand back edits in place; the Senior owns the shared Git index.
 Prefer fresh, bounded task context over copying the whole conversation. Include the current user
 decisions explicitly, especially API, migration, maintenance and integration constraints.
 When a child discovers overlap or an interface change, stop that dependent work, report it to the
@@ -77,12 +84,14 @@ Coordinator and obtain a revised assignment. Independent work can continue.
 
 ## Integrate and verify
 
-1. Inspect each deliverable and integrate in dependency order on the Coordinator's branch.
-   The designated owner reconciles shared files and generated artifacts. A child test result covers
-   only its tested tree and environment.
+1. Inspect each deliverable and reconcile shared-checkout edits in dependency order on the feature
+   branch; integrate child commits only when isolated worktrees were necessary. The designated
+   owner reconciles shared files and generated artifacts. A child test result covers only its
+   tested inputs and environment.
 2. Freeze the integrated candidate. For parallel work, delegate its read-only
    Rules/Security review and local verification concurrently when independent. Assign one heavy
-   Cargo owner and isolated database fixtures under `.rules`.
+   Cargo owner, reuse the compatible target sequentially, and use isolated database fixtures under
+   `.rules`. No per-agent Rust target or dependency copy is needed for the shared-checkout team.
 3. The Verifier selects checks under `.rules` section 11 and uses the matching owning runners or
    focused recipes in [testing](../../../docs/TESTING.md). Record the affected scope and rationale;
    automatic application-wide verification is not a prerequisite for every edit. Reuse valid

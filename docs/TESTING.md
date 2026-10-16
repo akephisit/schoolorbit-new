@@ -107,6 +107,13 @@ candidate. Model/reasoning defaults and escalation belong to the coordination ru
 the host's real spawn controls and report requested/confirmed settings or fallbacks. The skill
 cannot switch the primary session's model or enable unsupported model overrides.
 
+One coordinated feature team normally shares one feature branch/checkout with non-overlapping
+file ownership. The Senior alone manages its Git state and serializes shared generators and
+dependency changes. Reuse the existing compatible Rust target with one Cargo owner at a time;
+additional worktrees or per-agent targets are not prerequisites for parallel Frontend/Backend work.
+Freeze all writers before final Reviewer/QA checks. Isolation exceptions and resource limits belong
+to the coordination rules above.
+
 For a skill-instruction-only change, run
 `node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior
 also changes, select its checks under `.rules` section 11. Verify the skill appears in the
