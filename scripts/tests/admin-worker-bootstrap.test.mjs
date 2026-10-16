@@ -63,11 +63,37 @@ test('an absent alias is idempotent and a no-content deletion is accepted only a
     return Response.json({success: true, result: []});
   }}), false);
   assert.equal(calls, 1);
-  let reads = 0;
-  assert.equal(await retireAdminAlias({...options, fetchImpl: async (url, request) => {
-    if (request.method === 'DELETE') return new Response(null, {status: 204});
-    return Response.json({success: true, result: reads++ ? [] : [alias]});
-  }}), true);
+  for (const status of [200, 204]) {
+    let reads = 0;
+    assert.equal(await retireAdminAlias({...options, fetchImpl: async (url, request) => {
+      if (request.method === 'DELETE') return new Response(null, {status});
+      return Response.json({success: true, result: reads++ ? [] : [alias]});
+    }}), true);
+    assert.equal(reads, 2, 'empty success still requires the authoritative absence lookup');
+  }
+});
+
+test('empty deletion responses never bypass ownership, HTTP errors or confirmed absence', async () => {
+  for (const response of [new Response(null, {status: 403}), new Response(null, {status: 503}),
+    new Response('not-json', {status: 200}), Response.json({success: false})]) {
+    let deletes = 0;
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test',
+      fetchImpl: async (url, request) => {
+        if (request.method === 'DELETE') { deletes++; return response; }
+        return Response.json({success: true, result: [alias]});
+      }}), /HTTP/);
+    assert.equal(deletes, 1);
+  }
+  for (const status of [200, 204]) {
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test',
+      wait: async () => {}, fetchImpl: async (url, request) => request.method === 'DELETE' ?
+        new Response(null, {status}) : Response.json({success: true, result: [alias]})}), /not yet confirmed/);
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test',
+      fetchImpl: async (url, request) => {
+        assert.equal(request.method, 'GET');
+        return new Response(null, {status});
+      }}), /invalid JSON/);
+  }
 });
 
 test('unexpected aliases, environments, owners and incomplete lookup results never authorize deletion', async () => {
