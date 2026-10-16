@@ -364,17 +364,28 @@ Successful replay uses accepted component baselines rather than a parallel legac
 Provisioning reuses the trusted accepted School artifact and its public configuration, with an
 exact request UUID; it has the same maintenance and acceptance discipline.
 
-Team development uses one branch/worktree per independent developer and a PR for every main
-change. Write collaborators automatically squash merge when the latest-main candidate passes;
+Team development uses one branch/worktree per independent developer session; a coordinated feature
+team normally shares a checkout under `.rules`. Every main change enters through a PR.
+Write collaborators automatically merge with a two-parent merge commit when the latest-main candidate passes;
 no human approval is mandatory. Fork/external PRs cannot auto-merge. The trusted controller
 leaves stale branches blocked until their developer updates and reruns affected local tests, merges one at a time, then dispatches the main
 pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Native protection for `main`
 requires a PR, the GitHub Actions `Pipeline gate`, and an up-to-date branch, including for admins.
-It requires zero human approvals, linear history, and forbids force pushes and branch deletion.
+It requires zero human approvals and forbids force pushes and branch deletion. The required
+repository merge settings enable merge commits and disable squash/rebase. Required linear history
+must be off so both parent histories can be retained; preserve all other branch protections.
 The `Pipeline gate` certifies planning and selected build success, not local test execution.
 Local commands/results belong in each PR; keep work in draft until affected checks pass.
 GitHub does not maintain test receipts or compiler snapshots. Deployed readiness, migrations,
 browser mount/assets and authenticated smoke always execute under universal maintenance.
+
+For the first PR that changes the merge strategy, verify the repository settings above before
+marking it ready. The trusted controller still runs from main until that PR is merged, so disabling
+squash first prevents it from using the previous strategy. Once local checks and the latest-main
+Pipeline gate pass, a maintainer merges this transition PR with `Create a merge commit`; subsequent
+team PRs use the updated controller automatically. Do not bypass PR/status checks or rewrite old
+history to add graph connections. If repository administration is unavailable, keep the transition
+PR in draft and report the exact settings that remain unverified or unapplied.
 
 ### Build, deployment timing, and image retention
 

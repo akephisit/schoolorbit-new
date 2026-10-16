@@ -55,6 +55,11 @@ Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, proven
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
 browser verification after integration. Caches never replace a required test result.
+For a bounded change to the team merge controller, run `node --test scripts/tests/pipeline-github.test.mjs`
+and the documentation-policy suite. Its fake GitHub API verifies that the eligible PR is merged
+with `merge_method: merge` and the exact gated head, dispatches the main Pipeline, and rejects stale
+or behind branches without mutating their source. Repository method/protection settings and the
+first-controller transition require the separate checks in [operations](./OPERATIONS.md).
 
 For backend network changes, run `bats scripts/tests/installer/network_remote.bats`
 and `node --test scripts/tests/pipeline-network.test.mjs` with the local Docker engine.

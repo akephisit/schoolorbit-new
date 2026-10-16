@@ -129,6 +129,8 @@ Only the Coordinator performs the PR/integration and production workflow defined
 Create the draft early, keep progress in checkpoint commits, and record review and actual local
 checks in that same PR; leave incomplete work in draft. Follow
 [operations](../../../docs/OPERATIONS.md) for selected production changes and acceptance.
+For authorized integration, preserve branch history with the merge-commit method in `.rules`;
+check its repository settings and first-controller transition requirements before ready status.
 Track CI, integration and required acceptance to completion before claiming delivery.
 
 At a handoff or compaction, retain a short task-state checkpoint in chat/tool state:
