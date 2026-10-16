@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { verifyCanonicalWwwRedirect } from '../../scripts/lib/pipeline-public-redirect.mjs';
 
 const origin = new URL(process.env.ADMIN_ORIGIN);
 const directory = path.resolve('../frontend-admin/build/client');
@@ -28,6 +29,7 @@ for (let attempt = 1; attempt <= 12; attempt++) {
 			!(await response.text()).includes('กำลังปรับปรุงระบบ')
 		)
 			throw new Error('Admin maintenance document is not active');
+		await verifyCanonicalWwwRedirect(origin);
 		for (let start = 0; start < expected.length; start += 8) {
 			await Promise.all(
 				expected.slice(start, start + 8).map(async (file) => {

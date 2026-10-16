@@ -37,6 +37,20 @@ pub struct UpdateSchool {
     pub config: Option<SchoolConfig>,
 }
 
+/// Anonymous discovery publishes only already-public school identity.
+#[derive(Debug, Serialize, FromRow)]
+pub struct PublicSchoolSite {
+    pub name: String,
+    pub subdomain: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicSchoolSites {
+    pub schools: Vec<PublicSchoolSite>,
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SchoolConfig {
     pub dns_record_id: Option<String>,

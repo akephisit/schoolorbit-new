@@ -40,7 +40,7 @@ jobs:
           jq \
             --arg domain "${BASE_DOMAIN}" \
             --arg admin_api "$PUBLIC_API_URL" \
-            'del(.build) + {routes:[{pattern:($domain+"/*"),zone_name:$domain}],vars:{PUBLIC_API_URL:$admin_api}}' \
+            'del(.build) + {routes:[{pattern:($domain+"/*"),zone_name:$domain},{pattern:("www."+$domain+"/*"),zone_name:$domain}],vars:{PUBLIC_API_URL:$admin_api}}' \
             wrangler.json >wrangler.deploy.json
       - name: Read locked Wrangler version
         id: wrangler-version
