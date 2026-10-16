@@ -12,11 +12,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (host.startsWith('admin-api.')) {
 			const base = host.slice('admin-api.'.length);
 			if (event.url.hostname === `admin.${base}`) {
-				const canonical = new URL(event.url);
-				canonical.protocol = 'https:';
-				canonical.host = base;
-				canonical.port = '';
-				return Response.redirect(canonical, 308);
+				return new Response(null, { status: 410, headers: { 'Cache-Control': 'no-store' } });
 			}
 		}
 	}

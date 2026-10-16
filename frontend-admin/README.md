@@ -47,8 +47,9 @@ npm run build
 
 For production deployment, `BACKEND_ADMIN_URL`, `BASE_DOMAIN`, and
 `CLOUDFLARE_ACCOUNT_ID` are GitHub repository variables. The workflow maps
-`BACKEND_ADMIN_URL` to build-time `PUBLIC_API_URL`, routes the apex to the Worker,
-and retains `admin.<base-domain>` solely for a permanent redirect.
+`BACKEND_ADMIN_URL` to build-time `PUBLIC_API_URL` and routes only the apex to the
+Worker. The former `admin.<base-domain>` custom domain is retired by the release;
+it is not recreated or retained as a redirect.
 
 Public browser variables must use the `PUBLIC_` prefix. Never expose internal secrets as public variables. A committed Wrangler file defines only environment-neutral application configuration; it never owns production credentials or URLs. The deployment workflow generates its environment-specific Wrangler file at runtime.
 

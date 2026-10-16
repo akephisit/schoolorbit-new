@@ -1147,7 +1147,7 @@ test('explicit Admin Worker recreation holds the production lock and prepares be
 		/ADMIN_MIGRATION_DATABASE_URL|DATABASE_URL|--migrate-admin|force=true/
 	);
 	const admin = await readRepo('.github/workflows/deploy-frontend-admin.yml');
-	assert.match(admin, /pattern:\$redirect_domain,custom_domain:true/);
+	assert.doesNotMatch(admin, /redirect_domain|custom_domain:true/);
 });
 
 test('runtime diagnostics expose container state without environment or application logs', async () => {

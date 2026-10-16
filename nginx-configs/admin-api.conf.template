@@ -1,6 +1,5 @@
 map $http_origin $admin_allow_origin {
     default "";
-    "https://admin.${BASE_DOMAIN}" $http_origin;
     "https://${BASE_DOMAIN}" $http_origin;
     "http://localhost:5173" $http_origin;
     "http://127.0.0.1:5173" $http_origin;
@@ -69,4 +68,17 @@ server {
     location / {
         proxy_pass http://schoolorbit-backend-admin:8080;
     }
+}
+
+# Shared wildcard DNS can still resolve the retired hostname. Never proxy it.
+server {
+    listen 80;
+    listen 443 ssl;
+    server_name admin.${BASE_DOMAIN};
+    ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    access_log off;
+    add_header Cache-Control "no-store" always;
+    return 410;
 }

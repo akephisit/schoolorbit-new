@@ -1235,6 +1235,8 @@ propagation; the deployment verification scope includes this test.
 `node --test scripts/tests/admin-worker-bootstrap.test.mjs` covers exact Admin
 service lookup, recognized absence, existing-worker preservation, fail-closed
 permission/transport/response errors and the isolated 503 bootstrap configuration.
+It also covers exact-alias ownership, idempotent retirement, malformed/ambiguous
+lookups, failed deletion, delayed absence and protection of unrelated domains.
 Use the owning locked Wrangler `deploy --dry-run` against that generated bootstrap
 to verify packaging without publishing code. Actual Worker recreation and route
 acceptance require a reviewed production release and are separate from offline tests.
