@@ -2381,6 +2381,7 @@ mod tests {
         assert_eq!(
             required(schema),
             vec![
+                "displayName",
                 "firstName",
                 "id",
                 "lastName",
@@ -2424,6 +2425,7 @@ mod tests {
         assert_eq!(
             required(current_user),
             vec![
+                "displayName",
                 "firstName",
                 "id",
                 "lastName",
@@ -2807,6 +2809,11 @@ mod tests {
         assert!(schemas["UpdateStudentRequest"]["properties"]
             .get("student_id")
             .is_none());
+        let update = &schemas["UpdateStudentRequest"];
+        // OpenAPI omits `required` when every property is optional.
+        if update.get("required").is_some() {
+            assert!(required(update).is_empty());
+        }
         for field in [
             "email",
             "phone",
@@ -2816,8 +2823,6 @@ mod tests {
             "gender",
             "enrollment_date",
         ] {
-            let update = &schemas["UpdateStudentRequest"];
-            assert!(!required(update).contains(&field));
             assert!(contains_null(&update["properties"][field]));
         }
         assert_eq!(
