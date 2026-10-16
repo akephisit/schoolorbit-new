@@ -764,7 +764,7 @@ for (const route of ['management-groups', 'subject-groups']) {
 	}) => {
 		failedRegion = '/api/school/public/organization';
 		await page.goto(`${baseUrl}/${route}`);
-		await expect(page.getByRole('heading', { name: 'โหลดรายชื่อบุคลากรไม่สำเร็จ' })).toBeVisible();
+		await expect(page.getByRole('alert')).toContainText('โหลดรายชื่อบุคลากรไม่สำเร็จ');
 		expect(
 			requests
 				.filter((r) => isRegionRead(r.path))
