@@ -1,6 +1,6 @@
 ---
 name: schoolorbit-development
-description: Automatically use for ordinary SchoolOrbit implementation, bug fixes, refactoring, tests, code reviews, contracts, database, pipeline, development-rule or skill changes; explicit invocation is optional. Run a Senior-led team with the needed writers and independent Review and QA under repository model/reasoning profiles. Route reports to the Senior, repair failures, track delivery and summarize the outcome. Apply only the repository's explicit inline exceptions. Do not turn general questions into implementation or use for unrelated chat.
+description: Automatically use for ordinary SchoolOrbit implementation, bug fixes, refactoring, tests, code reviews, contracts, database, pipeline, development-rule or skill changes; explicit invocation is optional. Run a Senior-led team with the needed writers and independent Review and QA under repository model/reasoning profiles. Route reports to the Senior, repair failures, track delivery and summarize the outcome. Every implementation uses a delegated writer; the Senior never takes over edits. Scale checks to impact and report unavailable subagents as a concrete blocker. Do not turn general questions into implementation or use for unrelated chat.
 ---
 
 # SchoolOrbit development workflow
@@ -26,30 +26,36 @@ another Coordinator. Explanation-only requests do not start implementation or PR
    Automatic workflow activation applies the project's standing delegation preference;
    choose implementation owners and independent final review/QA under those rules without
    requesting permission for each child. A single writer does not waive independent acceptance.
-   Preserve the user's scope, including read-only and inline-only requests.
+   The Senior reads/analyzes/diagnoses and owns Git; separate writers make every implementation
+   edit, including text, documentation, workflow, tests and repairs. Preserve read-only scope,
+   explicit newer user instructions and higher-priority host requirements.
 4. Select each needed role's model/reasoning profile from `.rules` and pass it through the host's
    actual agent-spawn controls. Use fresh bounded context when model overrides require it, and
    record requested settings and any confirmed settings or fallback. Retain the primary session's
-   model for the Senior; this skill cannot change it. If subagents are unavailable,
-   carry out the roles inline and report that limitation once.
+   model for the Senior; this skill cannot change it. If subagents are unavailable, report the
+   concrete blocker; never simulate independent identities inline.
    Do not assume a custom agent configuration file creates agents or is loaded in Codex Cloud.
 
 ## Split and schedule work
 
 1. Identify independently useful outcomes and their completion criteria, then record each task's
-   owner, allowed paths, prerequisites and status in the existing plan/chat state. One owner may
-   implement inline; use separate Reviewer and QA agents for nontrivial changes under `.rules`.
-   Record the reason for an explicit inline exception. Shared-file work or unresolved contracts
-   require an ordered assignment.
+   owner, allowed paths, prerequisites and status in the existing plan/chat state. Every
+   implementation uses a delegated writer plus separate Reviewer and QA agents under `.rules`,
+   however small. Scale model effort and checks to impact; trivial text needs no pointless tests.
+   Shared-file work or unresolved contracts require an ordered assignment.
 2. Choose the smallest useful role roster under `.rules`. For a full-stack task, the Senior agrees
    the wire contract and assigns Backend and Frontend writers to their respective owners. Each
    writer implements its layer and focused tests; the Senior resolves shared decisions and
-   integrates their work. Open optional Explorer, Data/Migration or Pipeline roles only as needed.
+   coordinates their work without editing it. Use phases: Senior + relevant writer(s), then
+   Senior + Reviewer + QA; all roles need not run together. Open optional Explorer, Data/Migration
+   or Pipeline roles only as needed.
    Read-only requests assign only read-only work; do not create writers for an instruction review.
 3. Spawn only ready tasks with the assignment below. Use one feature branch/shared checkout by
    default and assign disjoint files before parallel writers start. Keep shared files, generators
    and Git mutations with the designated owner under `.rules`. Use a separate worktree only for
    the concrete isolation cases defined there, not merely because Frontend and Backend run together.
+   Concurrent distinct features require distinct branches/checkouts; one checkout cannot have two
+   branches simultaneously. If one checkout is requested, serialize feature-writing phases.
 4. Advance independent Coordinator work while children run. Follow their results at dependency
    boundaries, resolve overlaps or blockers, and start dependent work only after inspecting the
    prerequisite output. Keep spawning and reassignment with the Coordinator.
@@ -115,8 +121,14 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    branch; integrate child commits only when isolated worktrees were necessary. The designated
    owner reconciles shared files and generated artifacts. A child test result covers only its
    tested inputs and environment.
-2. Freeze the integrated candidate. For nontrivial changes, including single-writer work, delegate its read-only
-   Rules/Security review and local verification concurrently when independent. Assign one heavy
+2. Before final acceptance, the Senior fetches `origin` and checks
+   `git merge-base --is-ancestor origin/main HEAD`; freshness of local `main` alone is insufficient.
+   Follow `.rules` → `Git branches, worktrees, and integration` if behind/diverged: pause/save
+   writers, require a clean tree, merge latest main under Senior Git ownership, assign semantic
+   conflict edits to a writer, inspect and repeat affected checks/review, push and re-establish
+   the latest-main `Pipeline gate`. Repeat if another feature merges; never blindly use GitHub
+   update-branch or bypass protection. Freeze the integrated candidate for every implementation
+   and delegate separate Rules/Security review and QA concurrently when independent. Assign one heavy
    Cargo owner, reuse the compatible target sequentially, and use isolated database fixtures under
    `.rules`. No per-agent Rust target or dependency copy is needed for the shared-checkout team.
 3. The Verifier selects checks under `.rules` section 11 and uses the matching owning runners or
@@ -126,9 +138,15 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    cancelled checks and unrun required checks.
 4. The Reviewer reads current `.rules` and inspects the complete integrated diff for scope, ownership,
    API/permission contracts, tenant isolation, data preservation and operational invariants.
-   Check the working agreement and justified exceptions under `Consistency decisions and final review`.
+   Check the working agreement and justified decisions under `Consistency decisions and final review`.
+   Follow `.rules` → `Test integrity and legitimate corrections`: writers justify old/new test
+   requirements and evidence; Reviewer independently assesses changes and QA checks actual
+   outcomes and regression detection. Fix unchanged-behavior production regressions at their cause;
+   preserve equivalent-or-stronger coverage for legitimate test corrections.
    Report actionable findings with file/line evidence, severity and required correction.
 5. Send failures and blocking findings to the Senior for diagnosis/fix assignment to the writer.
+   The Senior escalates/reassigns when needed and never takes over file edits; QA never fixes source.
+   Reviewer and QA acceptance remain separate.
    Follow the repair loop in `.rules` → `Reports, failure recovery and completion`; investigate
    pre-existing failures rather than treating them as an automatic stopping condition. After any
    source/base/environment change, apply the evidence invalidation rules in `.rules`; repeat

@@ -15,8 +15,13 @@ Do not replace a failed check by disabling it or by running a narrower command t
 
 ## Local verification and GitHub delivery
 
-From the repository root, refresh `origin/main`, update your feature branch if needed, and select
-checks using [the verification scope policy](../.rules#11-verification-matrix) before opening or
+Before final acceptance, readiness and integration, the Senior fetches `origin` and checks
+`git merge-base --is-ancestor origin/main HEAD`; updating local `main` alone is insufficient.
+If behind/diverged, pause/save writers and require a clean tree before the Senior merges
+`origin/main`; a delegated writer resolves semantic conflicts. Inspect the integrated result,
+repeat affected checks/review, push and re-establish the latest-main `Pipeline gate`. Repeat
+if another feature merges; do not blindly update the branch on GitHub or bypass protection.
+Select checks using [the verification scope policy](../.rules#11-verification-matrix) before opening or
 updating a ready PR. The commands below are recipes for the affected owners and workflows.
 Open a draft after the first meaningful commit and use checkpoint commits to preserve progress
 under [the Git workflow](../.rules#git-branches-worktrees-and-integration). Drafts may contain
@@ -110,14 +115,18 @@ automatically use it through `AGENTS.md` and [the activation policy](../.rules#a
 typing `$schoolorbit-development` is an optional shortcut, not a prerequisite. If a host does not
 surface the skill, the agent reads its local file and follows the workflow with available tools.
 Bounded delegation follows [the coordination rules](../.rules#agent-roles-and-coordination).
-One owner may implement inline, but nontrivial changes still receive separate Reviewer and
-QA/Verifier acceptance. Trivial edits, an explicit inline-only preference or unavailable subagent
-tools use only the exceptions defined in those rules. Questions do not authorize implementation
-or PR creation, and review-only work remains read-only. Child agents retain their assigned roles.
+Every implementation, however small, has a Senior, delegated writer, separate read-only Reviewer
+and separate QA/Verifier, including text, documentation, workflow and tests. The Senior reads,
+analyzes, diagnoses and owns Git without writing tracked source/configuration/tests/docs or taking
+over repairs. Scale checks and model effort to impact; trivial text needs no pointless tests.
+Unavailable subagents are a concrete blocker, not inline independent roles. Explicit newer user
+instructions and higher-priority host requirements still apply. Questions do not authorize
+implementation or PR creation, and read-only work needs no writer. Children retain assigned roles.
 
 The primary session is the Senior/Coordinator. A full-stack task normally uses Frontend and
 Backend implementation roles, then independent Reviewer and QA/Verifier roles for the integrated
-candidate; frontend-only and development-workflow changes also need independent acceptance.
+candidate. Use Senior + one relevant writer for a single-owner change, then Senior + Reviewer +
+QA; no irrelevant Backend writer or simultaneous full roster is required.
 Model/reasoning defaults and escalation belong to the coordination rules above; use
 the host's real spawn controls and report requested/confirmed settings or fallbacks. The skill
 cannot switch the primary session's model or enable unsupported model overrides.
@@ -125,7 +134,10 @@ cannot switch the primary session's model or enable unsupported model overrides.
 One coordinated feature team normally shares one feature branch/checkout with non-overlapping
 file ownership. The Senior alone manages its Git state and serializes shared generators and
 dependency changes. Reuse the existing compatible Rust target with one Cargo owner at a time;
-additional worktrees or per-agent targets are not prerequisites for parallel Frontend/Backend work.
+never create per-agent targets/caches merely to parallelize Rust verification. Concurrent distinct
+features need distinct branches/checkouts; a single checkout cannot hold two branches simultaneously.
+Use worktrees for actual concurrent editing needs, or serialize feature-writing phases when one
+checkout is requested. A single feature team shares its branch and assigned files.
 Freeze all writers before final Reviewer/QA checks. Isolation exceptions and resource limits belong
 to the coordination rules above.
 
@@ -140,13 +152,22 @@ they do not prove live discovery, model selection, agent isolation or autonomous
 For workflow changes, have the independent Reviewer inspect the complete candidate against
 [reports, recovery and completion](../.rules#reports-failure-recovery-and-completion), and QA run
 the owning documentation-policy suite. Inspect actual task handoffs and delivery results separately.
-When exercising a feature workflow, check that a single writer still receives independent review/QA;
-child failures reach the Senior and return to the writer; a bounded pre-existing required failure
+When exercising a feature workflow, check that every implementation uses a delegated writer and
+separate review/QA; child failures reach the Senior for diagnosis and return to the writer without
+Senior/QA source edits; a bounded pre-existing required failure
 is diagnosed and repaired; and ready status is followed through automatic merge and selected
 acceptance. A genuine access/scope blocker should produce an explicit blocked handoff. Verify the
 Senior's final chat/PR summary includes the outcome, roles/settings, encountered problems and
 resolutions, actual checks, delivery status and limitations. Static checks alone do not establish
 that these scenarios ran; do not invent failures or production changes just to rehearse them.
+
+For changes to existing tests, follow [test integrity](../.rules#test-integrity-and-legitimate-corrections).
+Record the old/new requirement, reason and reproducer/before-after evidence where feasible; an
+approved workflow-policy change can legitimately replace an obsolete guard. Retain equivalent-or-
+stronger coverage. The Reviewer independently assesses that rationale; QA checks actual outcomes
+and regression detection. An unchanged-behavior regression needs a production-cause fix, while an
+evidenced faulty/brittle test or environment/fixture defect may need a justified test correction.
+Never weaken coverage, skip required checks or blindly bless snapshots merely to get green.
 
 From the repository root:
 

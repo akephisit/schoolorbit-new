@@ -40,7 +40,7 @@ This file is the single authoritative development standard for this repository. 
 - Treat ordinary requests to implement, fix, refactor, test or review SchoolOrbit project work as activation of `.agents/skills/schoolorbit-development/SKILL.md`. Load and follow that workflow automatically; do not wait for the user to type `$schoolorbit-development`, select a skill, or repeat a delegation request. Thai and English task requests have the same behavior.
 - If the host does not expose the project skill in its selector, read the local `SKILL.md` directly and execute its workflow with the tools actually available. Do not require a plugin installation or claim that reading a file proves host-level skill discovery. Report a missing workflow file rather than silently substituting another project's instructions.
 - Activation starts work only within the user's request. An explanation or general question remains an answer, not a request to implement, create a branch or open a PR. Implementation requests follow the end-to-end delivery policy below; read-only, local-only, no-push, no-merge and no-deploy restrictions still apply. The workflow is not a background monitor.
-- A delegated agent reads the rules and relevant workflow while retaining its assigned role, paths and permissions; it must not start another Senior/team merely because it loaded the workflow. Explicit inline-only, read-only, local-only and model preferences continue to apply.
+- A delegated agent reads the rules and relevant workflow while retaining its assigned role, paths and permissions; it must not start another Senior/team merely because it loaded the workflow. Explicit newer user instructions, read-only/local-only scope and model preferences continue to apply; host requirements take precedence.
 
 Before every change:
 
@@ -79,12 +79,12 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 
 - Start every change from the latest `origin/main` on a dedicated feature, fix, or chore branch. Do not implement directly on `main`.
 - For one coordinated feature team, use one feature branch and shared checkout in the repository root by default so existing dependencies and build caches remain available. Frontend and Backend may edit disjoint assigned files concurrently under the shared-checkout ownership rules below; parallel agents alone do not require separate branches or worktrees.
-- Use a separate worktree only when unrelated tasks need different branches, incompatible toolchain/dependency state needs isolation, or the host requires isolated execution. State the concrete reason before creating it; prefer serializing overlapping work over duplicating a Rust build environment merely to parallelize roles. Work size alone does not require a worktree.
+- Concurrent distinct features need separate branches and checkouts; one checkout cannot hold two branches simultaneously. Use worktrees when actual concurrent editing needs different branches, incompatible toolchain/dependency state needs isolation, or the host requires isolated execution. State the concrete reason before creating one. If only one checkout is requested, serialize feature-writing phases and save each feature before switching branches; do not duplicate a Rust build environment merely to parallelize roles. Work size alone does not require a worktree.
 - Every worktree owns a distinct branch. Never check out or mutate another session's branch or remove a worktree until its owner is finished and its working tree is clean.
-- For SchoolOrbit development work under the automatic workflow above, this project's standing preference authorizes bounded subagent delegation under `Agent roles and coordination`; do not request separate permission for each assignment or require an explicit skill invocation. Prefer parallel work when independent tasks justify coordination. A single implementation owner or tightly coupled implementation does not waive independent final review and QA; apply only the explicit exceptions below.
+- For SchoolOrbit development work under the automatic workflow above, this project's standing preference authorizes bounded subagent delegation under `Agent roles and coordination`; do not request separate permission for each assignment or require an explicit skill invocation. Prefer parallel work when independent tasks justify coordination. Every implementation task retains a Senior, delegated writer, independent Reviewer and independent QA under those rules, regardless of size.
 - Delegation preserves the user's requested outcome and authorization. A read-only review remains read-only; assigning agents does not authorize additional implementation, PR delivery, merge or production operations beyond that scope. Outside this project workflow, follow the user's delegation instructions.
 - Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; preserve progress with checkpoint commits on their feature branch under the draft workflow below.
-- Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.
+- Before final acceptance, readiness and integration, the Senior fetches `origin` and checks `git merge-base --is-ancestor origin/main HEAD`. A fresh local `main` alone does not prove that the feature contains latest main. If the feature is behind or diverged, pause writers and source-mutating tools, obtain their acknowledgements, save their work and require a clean tree before the Senior merges `origin/main` into the feature branch. Assign semantic conflict resolution to a writer under the Senior's Git ownership; the Senior does not edit the resolution itself. Inspect the integrated result, repeat affected review and focused/matrix checks, push the updated candidate and re-establish the latest-main `Pipeline gate`.
 - Verification evidence names the tested Git tree, affected source/configuration/test inputs, and relevant test environment, not just a branch name or commit hash. Reuse a completed result after documentation-only or unrelated-owner changes only after confirming its relevant inputs and environment are unchanged; record that comparison and verify the newly changed scope. After a conflict-free merge from an unchanged base, identical feature and integrated root tree object IDs establish source equality. Do not rerun checks only because the branch or commit hash changed.
 - When the base advances, conflicts are resolved, or the candidate changes, inspect the diff and rerun checks whose relevant inputs or environment changed. Also rerun incomplete or failed required coverage. Changes to the toolchain, dependencies, generators or external test fixtures invalidate affected evidence. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
 - For authorized implementation delivery, push the first meaningful reviewable commit and open/attach one draft PR early, then update that same PR throughout the feature. A draft may precede completed implementation, local verification and final review; record failed, pending and unrun checks honestly. Do not invent empty commits, unrelated scaffolding or new status documents merely to open a PR, and honor local-only or no-push requests.
@@ -95,30 +95,32 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Repository settings must allow merge commits and disable squash/rebase merges. Main protection must permit merge commits (no required linear history) while retaining PR, latest-main Pipeline gate, up-to-date branch and other existing protections. Verify these settings before the transition PR becomes ready; if administrative access is unavailable, report that blocker and keep it in draft. Follow `docs/OPERATIONS.md` for the first merge while main still has the previous controller.
 - Every change enters `main` through a pull request. Do not push directly to `main` or force-push shared branches. The Coordinator owns draft creation, checkpoint pushes and readiness changes within the user's delivery scope; opening a draft does not add merge or deployment authority.
 - Trusted team collaborators with write access use automatic merge commits after the stable `Pipeline gate` succeeds; human approval is not mandatory. External/fork PRs are never auto-merged.
-- The merge controller serializes integration, validates the merged candidate against the latest `main`, and leaves stale branches blocked until their developer updates and retests them. A cached compiler output or an unverified local report cannot authorize merge or deployment; the stable `Pipeline gate` remains the integration authority.
+- The merge controller/protection serializes integration, rechecks latest `main`, validates the merged candidate and leaves stale branches blocked until their team updates and retests them. If another feature merges meanwhile, repeat the fetch, ancestry check, update and affected revalidation; never use a blind untested GitHub update-branch action, force push or protection bypass. A cached compiler output or an unverified local report cannot authorize merge or deployment; the stable `Pipeline gate` remains the integration authority.
 - Independent developer sessions own distinct branches/worktrees; agents coordinated on one feature use the shared-checkout policy above. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
 - Keep the feature branch and any worktree until required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
 
 ### Agent roles and coordination
 
-The primary agent is the Senior/Coordinator: it owns the technical direction, agreed contracts,
-task assignments, integration and final acceptance within the user's scope. Assign implementation
-to roles matching the affected owners; do not create a Backend writer for frontend-only work.
-One implementation owner, including the Senior for workflow changes, may write inline. Every
-nontrivial implementation or development-workflow change still needs a separate read-only Reviewer
-and a separate QA/Verifier, neither of whom wrote the candidate. Frontend-only work is not an
-exception. The Senior resolves cross-owner decisions and returns defects to the responsible writer;
-it must not duplicate delegated implementation or treat a child report as final acceptance.
-Only trivial text/mechanical edits without behavior, contract or workflow changes may keep all
-roles inline, with a brief reason recorded. An explicit inline-only request or unavailable subagent
-tools also permits inline execution; disclose the limitation and do not claim independent review.
-These are responsibilities, not eight mandatory processes; open only roles with useful work.
+The primary agent is the Senior/Coordinator: it reads, analyzes and diagnoses, owns technical
+direction, agreed contracts, task assignments, Git/integration and final acceptance within the
+user's scope. Every implementation task, however small, uses a separate delegated writer,
+a separate read-only Reviewer and a separate QA/Verifier, neither of whom wrote the candidate.
+This includes text, documentation, workflow and test edits. The Senior does not write tracked
+source, configuration, tests or documentation, including workflow changes and failure repairs.
+Assign writers matching the affected owners; do not create a Backend writer for frontend-only work.
+The Senior resolves cross-owner decisions and assigns corrections to writers; it must not take over
+edits or treat a child report as final acceptance. Scale model effort and checks to impact, and do
+not add pointless tests for trivial text. Explanatory/read-only questions do not need writers.
+Explicit newer user instructions and higher-priority host requirements still apply. If subagents
+are unavailable, report the concrete blocker; never silently substitute inline roles or claim
+that one identity provided independent acceptance. These are responsibilities, not eight mandatory
+simultaneous processes; open only roles with useful work.
 
 Before assigning work, identify independently useful outcomes, their owners, prerequisite
 decisions and completion criteria. Delegate only ready tasks; a consumer may investigate in
 parallel, but dependent implementation waits for the agreed contract or provider output.
 Use the existing task/plan state to record assignments, dependencies and blocked/completed
-status. Explain briefly which work stays inline and why when splitting would add overhead.
+status. The Senior can advance independent analysis and coordination while writers work.
 
 | Role | Responsibility | Preferred model when available | Reasoning |
 | --- | --- | --- | --- |
@@ -148,7 +150,8 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
 
 - Default parallel work to 2–4 active agents including the Coordinator, at most two implementation
   writers, and the host's lower concurrency limit. Use phases rather than opening the whole roster:
-  Senior + Frontend + Backend for independent implementation, then Senior + Reviewer + QA/Verifier
+  Senior + one relevant writer (or Frontend + Backend for independent full-stack implementation),
+  then Senior + Reviewer + QA/Verifier
   for the frozen candidate. Reuse a role's agent for follow-up within its configuration; changing
   the role label alone does not change the model. One implementation owner does not remove the
   independent final review and QA requirement above.
@@ -164,7 +167,8 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
   works, the Coordinator advances independent work without duplicating that assignment.
   If an output is blocked, missing or incorrect, revise or reassign its bounded task before
   starting dependent work; do not silently treat partial completion as an agreed interface.
-- If the host lacks subagent tools, carry out the roles inline and report that limitation once.
+- If the host lacks subagent tools, report the concrete implementation blocker and available
+  read-only progress; do not simulate separate writer, Reviewer or QA identities inline.
   Host instructions and actual supported controls take precedence over role preferences.
 - In a shared checkout, assign non-overlapping file ownership before writers start. Frontend and
   Backend can work concurrently within their assigned files; stop the affected assignment and
@@ -193,8 +197,9 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
   Run focused checks only while their relevant source/configuration inputs are stable. Independent
   database test jobs use distinct disposable databases; reuse compiled outputs only with compatible
   toolchain, profile and dependency state.
-- For nontrivial changes, including single-writer work, freeze the candidate tree and dispatch the read-only Rules/Security review and
-  Verifier in parallel when independent. Source changes invalidate affected review/test results;
+- For every implementation change, including text and single-writer work, freeze the candidate
+  tree and dispatch the separate read-only Rules/Security Reviewer and QA/Verifier in parallel
+  when independent, with proportional checks. Source changes invalidate affected review/test results;
   freeze again and rerun affected checks. Review must cover the complete integrated diff.
 - In the shared checkout, wait for every writer and source-mutating tool to finish before the
   Coordinator stages/freezes the complete candidate and dispatches final review and QA. Keep those
@@ -212,11 +217,14 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
   problems encountered, their known causes, remaining work and uncertainty. Keep role and actual
   model/reasoning settings in task state. The Senior reconciles reports and assigns the next action;
   do not forward a child's final answer as the whole task's final answer.
-- A failed required check or blocking review finding starts a repair loop: the Senior assigns
-  diagnosis to the responsible writer, inspects the proposed correction, freezes the new candidate,
+- A failed required check or blocking review finding starts a repair loop: reports go to the
+  Senior, who diagnoses the issue and assigns the correction to the responsible writer, inspects
+  the proposed correction, freezes the new candidate,
   and obtains affected review and QA again. Continue until the required checks pass and blocking
   findings are resolved, or a concrete blocker genuinely prevents authorized progress. Escalate
-  the model/reasoning or revise the assignment when diagnosis stalls; do not repeat guesses.
+  the model/reasoning or reassign the correction when diagnosis stalls; do not repeat guesses
+  or let the Senior silently edit files itself. QA never fixes source; Reviewer acceptance and
+  QA acceptance remain separate.
 - A failure existing on main is not by itself a reason to stop. Reproduce and bound its impact;
   fix related or delivery-blocking defects when the correction is bounded, reversible and within
   the requested outcome, even if the failing file was not initially assigned. The Senior revises
@@ -247,7 +255,7 @@ assignment and revalidate affected evidence rather than repeatedly guessing at a
 
 - Before opening or updating a ready PR, run the impact-based checks selected under section 11 on the developer's machine. Use focused owning commands or explicit pipeline scopes that match the affected behavior and consumers; the automatic application's entire suite is not mandatory for every edit. Record the scope rationale, exact commands, results and any missing environment in the PR; an unrun or cancelled check must not be reported as passing.
 - GitHub runs planning, selected release builds and deployment only. Do not add unit, database, architecture, lint, type-check or browser E2E suites to Actions, and do not implement local receipt uploads, signatures, registered verifiers or test-result attestations. The `Pipeline gate` proves planning/build success, not local test execution.
-- Each independent developer session owns its branch/worktree and disposable fixtures; a coordinated feature team may share its checkout under the ownership policy above. Refresh `origin/main` before local verification and integration. When main advances, update the feature branch and rerun affected suites before making the PR ready; the merge controller must never update a branch or silently substitute untested source.
+- Each independent developer session owns its branch/worktree and disposable fixtures; a coordinated feature team may share its checkout under the ownership policy above. The Senior fetches `origin` and checks that `origin/main` is an ancestor of feature HEAD before final acceptance, readiness and integration, following the update/revalidation procedure above. When main advances, update the feature branch and rerun affected suites and review before making the PR ready; the merge controller must never update a branch or silently substitute untested source.
 - Trusted same-repository team PRs may auto-merge with a merge commit after the latest-main `Pipeline gate` succeeds, with no mandatory human approval. Keep incomplete or failing work in draft; external/fork work needs maintainer-owned local verification before integration.
 - Production readiness, tenant migrations, deployed browser/asset acceptance, authenticated proxy smoke and universal Maintenance Mode remain mandatory deployment gates. They verify the actual deployed artifacts and environment after selected builds; local tests do not replace them.
 
@@ -887,6 +895,14 @@ npm run generate:api-contracts
 npm run check:api-contracts
 npm run test:api-contracts
 ```
+
+### Test integrity and legitimate corrections
+
+- When approved behavior is unchanged, including a refactor, fix the production cause of a regression instead of editing expected results to match broken output.
+- Test edits are valid for an approved behavior/contract change, an evidenced faulty or brittle test, or an environment/fixture defect. Retain equivalent-or-stronger coverage. Correct justified implementation-detail checks to the observable contract; legitimate test fixes are allowed.
+- The writer records the old and new requirement and why each expectation, fixture or snapshot change is valid, with a reproducer and before/after evidence where feasible. Include this rationale in the PR, including existing workflow guards changed because an approved policy intentionally changed.
+- The Reviewer independently assesses test changes against requirements and evidence. QA checks actual outcomes and regression detection; a green check alone does not establish correctness.
+- Never remove cases, weaken assertions, disable/skip required checks, blindly bless snapshots, add retries or narrow coverage merely to get green. Repair the cause or report a genuine blocker under the recovery policy.
 
 ### Selecting verification scope
 
