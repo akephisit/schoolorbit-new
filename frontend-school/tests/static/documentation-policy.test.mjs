@@ -135,6 +135,75 @@ test('project skill invocation metadata has valid types and references the skill
 	}
 });
 
+test('development workflow keeps independent acceptance for single-writer changes', async () => {
+	const [rules, skill, metadataSource, testing] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(skillRoot, 'SKILL.md'), 'utf8'),
+		readFile(path.join(skillRoot, 'agents/openai.yaml'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8')
+	]);
+	const coordination = requiredSection(
+		rules,
+		'### Agent roles and coordination',
+		'### Reports, failure recovery and completion'
+	);
+	assert.match(coordination, /nontrivial implementation or development-workflow change/);
+	assert.match(coordination, /separate read-only Reviewer\s+and a separate QA\/Verifier/);
+	assert.match(coordination, /neither of whom wrote the candidate/);
+	assert.match(
+		coordination,
+		/Only trivial text\/mechanical edits without behavior, contract or workflow changes/
+	);
+	assert.match(coordination, /explicit inline-only request or unavailable subagent/);
+	assert.match(coordination, /do not claim independent review/);
+	for (const source of [
+		rules,
+		skill,
+		parseYaml(metadataSource).interface.default_prompt,
+		testing
+	]) {
+		assert.doesNotMatch(
+			source,
+			/(?:small or tightly coupled (?:work|tasks)|(?:small|bounded) one-owner (?:work|change)) (?:can )?stay(?:s)? inline/i,
+			'entry points must not restore a blanket one-owner acceptance exception'
+		);
+	}
+});
+
+test('development workflow routes reports through recovery and verified delivery to a summary', async () => {
+	const [rules, skill, testing] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(skillRoot, 'SKILL.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8')
+	]);
+	const completion = requiredSection(
+		rules,
+		'### Reports, failure recovery and completion',
+		'### Local verification and GitHub delivery'
+	);
+	// These guards check instruction boundaries, not live agent behavior or delivery success.
+	for (const boundary of [
+		/Child reports are handoffs to the Senior/,
+		/failed required check or blocking review finding starts a repair loop/,
+		/A failure existing on main is not by itself a reason to stop/,
+		/A draft PR[^.]*is not a stopping condition/,
+		/Ordinary implementation requests include PR delivery and eligible trusted-team integration/,
+		/track CI and automatic merge to a verified terminal result/,
+		/Do not invent a deployment when the planner selects none/,
+		/concise user-facing summary/,
+		/actual model\/reasoning settings or fallbacks/,
+		/known causes and resolutions/,
+		/remaining blockers, limitations or work/,
+		/blocked handoff must not claim the task is complete/
+	]) {
+		assert.match(completion, boundary);
+	}
+	assert.match(skill, /Reports, failure recovery\s+and completion/);
+	assert.match(skill, /Both report to the\s+Senior/);
+	assert.match(testing, /\.\.\/\.rules#reports-failure-recovery-and-completion/);
+	assert.match(testing, /Static checks alone do not establish\s+that these scenarios ran/);
+});
+
 test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
 	const accepted = [
 		'.agents/skills/schoolorbit-development/SKILL.md',

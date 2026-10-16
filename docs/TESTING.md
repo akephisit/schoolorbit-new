@@ -110,13 +110,15 @@ automatically use it through `AGENTS.md` and [the activation policy](../.rules#a
 typing `$schoolorbit-development` is an optional shortcut, not a prerequisite. If a host does not
 surface the skill, the agent reads its local file and follows the workflow with available tools.
 Bounded delegation follows [the coordination rules](../.rules#agent-roles-and-coordination).
-Small or tightly coupled work stays inline, as do tasks with an inline-only user preference or
-a host without subagent tools. Questions do not authorize implementation or PR creation, and
-review-only work remains read-only. Child agents retain their assigned roles.
+One owner may implement inline, but nontrivial changes still receive separate Reviewer and
+QA/Verifier acceptance. Trivial edits, an explicit inline-only preference or unavailable subagent
+tools use only the exceptions defined in those rules. Questions do not authorize implementation
+or PR creation, and review-only work remains read-only. Child agents retain their assigned roles.
 
 The primary session is the Senior/Coordinator. A full-stack task normally uses Frontend and
 Backend implementation roles, then independent Reviewer and QA/Verifier roles for the integrated
-candidate. Model/reasoning defaults and escalation belong to the coordination rules above; use
+candidate; frontend-only and development-workflow changes also need independent acceptance.
+Model/reasoning defaults and escalation belong to the coordination rules above; use
 the host's real spawn controls and report requested/confirmed settings or fallbacks. The skill
 cannot switch the primary session's model or enable unsupported model overrides.
 
@@ -131,8 +133,20 @@ For a skill-instruction-only change, run
 `node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior
 also changes, select its checks under `.rules` section 11. Verify the skill appears in the
 target host's skill selector after checkout refresh; Codex detects skill changes automatically,
-and restarting it is the documented fallback when an update does not appear. File/metadata checks
-prove repository packaging, not live discovery or agent isolation in a different host.
+and restarting it is the documented fallback when an update does not appear. File/metadata and
+instruction-policy checks prove packaging and the presence/consistency of required instructions;
+they do not prove live discovery, model selection, agent isolation or autonomous completion.
+
+For workflow changes, have the independent Reviewer inspect the complete candidate against
+[reports, recovery and completion](../.rules#reports-failure-recovery-and-completion), and QA run
+the owning documentation-policy suite. Inspect actual task handoffs and delivery results separately.
+When exercising a feature workflow, check that a single writer still receives independent review/QA;
+child failures reach the Senior and return to the writer; a bounded pre-existing required failure
+is diagnosed and repaired; and ready status is followed through automatic merge and selected
+acceptance. A genuine access/scope blocker should produce an explicit blocked handoff. Verify the
+Senior's final chat/PR summary includes the outcome, roles/settings, encountered problems and
+resolutions, actual checks, delivery status and limitations. Static checks alone do not establish
+that these scenarios ran; do not invent failures or production changes just to rehearse them.
 
 From the repository root:
 
