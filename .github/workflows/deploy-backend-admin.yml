@@ -2,7 +2,7 @@ name: Admin backend release implementation
 on:
   workflow_call:
     inputs:
-      image_digest:
+      input_hash:
         type: string
         required: true
       target_origin_ip:
@@ -14,6 +14,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Resolve inside this job: GitHub can redact raw digests passed through
+      # outputs of a job that also receives deployment secrets.
+      - name: Download prepared Admin backend manifest
+        uses: actions/download-artifact@v7
+        with:
+          name: prepared-backend-admin
+          path: ${{ runner.temp }}/prepared
+      - name: Validate Admin backend digest
+        id: manifest
+        env:
+          INPUT_HASH: ${{ inputs.input_hash }}
+        run: |
+          set -euo pipefail
+          digest=$(jq -er --arg sha "$GITHUB_SHA" --arg hash "$INPUT_HASH" '
+            if .schemaVersion == 1 and .component == "backend-admin" and .sha == $sha and .inputHash == $hash and (.digest | test("^sha256:[0-9a-f]{64}$")) then .digest else error("Prepared image identity mismatch") end
+          ' "$RUNNER_TEMP/prepared/backend-admin.json")
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
       - name: Upload canonical runtime and proxy templates
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -37,6 +54,6 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
-          BACKEND_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          BACKEND_IMAGE_DIGEST: ${{ steps.manifest.outputs.digest }}
           ADMIN_BOOTSTRAP_EMAIL: ${{ secrets.ADMIN_BOOTSTRAP_EMAIL }}
           ADMIN_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}

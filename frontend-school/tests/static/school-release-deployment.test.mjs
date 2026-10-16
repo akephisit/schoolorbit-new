@@ -9,6 +9,84 @@ import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
+test('Admin deploy resolves its image artifact locally instead of crossing a secret-bearing job output', async () => {
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	const backend = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-backend-admin.yml'), 'utf8')
+	);
+	assert.equal(release.jobs.preflight.outputs.admin_digest, undefined);
+	assert.equal(
+		release.jobs['admin-backend'].with.input_hash,
+		"${{ fromJson(needs.preflight.outputs.plan).hashes['backend-admin'] }}"
+	);
+	assert.equal(backend.on.workflow_call.inputs.input_hash.required, true);
+	assert.equal(backend.on.workflow_call.inputs.image_digest, undefined);
+	const steps = backend.jobs.deploy.steps;
+	const download = steps.findIndex((step) => step.with?.name === 'prepared-backend-admin');
+	const validation = steps.findIndex((step) => step.id === 'manifest');
+	const deploy = steps.findIndex((step) => step.uses?.startsWith('appleboy/ssh-action@'));
+	assert.ok(download >= 0 && download < validation && validation < deploy);
+	assert.equal(steps[validation].env.INPUT_HASH, '${{ inputs.input_hash }}');
+	assert.equal(steps[deploy].env.BACKEND_IMAGE_DIGEST, '${{ steps.manifest.outputs.digest }}');
+});
+
+test('both Admin image consumers reject stale or malformed artifact identities before remote deployment', async (t) => {
+	const temporary = await mkdtemp(path.join(os.tmpdir(), 'admin-image-artifact-'));
+	t.after(() => rm(temporary, { recursive: true, force: true }));
+	await mkdir(path.join(temporary, 'prepared'));
+	const manifest = {
+		schemaVersion: 1,
+		component: 'backend-admin',
+		sha: 'a'.repeat(40),
+		inputHash: 'b'.repeat(64),
+		digest: 'sha256:' + '22'.repeat(32)
+	};
+	for (const [file, job] of [
+		['release.yml', 'preflight'],
+		['deploy-backend-admin.yml', 'deploy']
+	]) {
+		const workflow = parseYaml(
+			await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8')
+		);
+		const script = workflow.jobs[job].steps.find((step) => step.id === 'manifest').run;
+		for (const patch of [
+			{},
+			{ schemaVersion: 2 },
+			{ component: 'backend-school' },
+			{ sha: 'c'.repeat(40) },
+			{ inputHash: 'd'.repeat(64) },
+			{ digest: 'latest' },
+			{ digest: null }
+		]) {
+			await writeFile(
+				path.join(temporary, 'prepared/backend-admin.json'),
+				JSON.stringify({ ...manifest, ...patch })
+			);
+			const output = path.join(temporary, 'output');
+			await writeFile(output, '');
+			const result = spawnSync('bash', ['-c', script], {
+				encoding: 'utf8',
+				env: {
+					...process.env,
+					RUNNER_TEMP: temporary,
+					GITHUB_SHA: manifest.sha,
+					INPUT_HASH: manifest.inputHash,
+					GITHUB_OUTPUT: output
+				}
+			});
+			if (Object.keys(patch).length === 0) {
+				assert.equal(result.status, 0, result.stderr);
+				assert.equal(await readFile(output, 'utf8'), `digest=${manifest.digest}\n`);
+			} else {
+				assert.notEqual(result.status, 0, `${file}: ${JSON.stringify(patch)}`);
+				assert.equal(await readFile(output, 'utf8'), '');
+			}
+		}
+	}
+});
+
 test('direct noninteractive Wrangler API commands receive credentials independently of action inputs', async () => {
 	let directCommands = 0;
 	for (const file of [

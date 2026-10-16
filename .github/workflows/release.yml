@@ -19,7 +19,6 @@ jobs:
   preflight:
     runs-on: ubuntu-24.04
     outputs:
-      admin_digest: ${{ steps.manifest.outputs.digest }}
       plan: ${{ steps.reconcile.outputs.plan }}
       deploy: ${{ steps.reconcile.outputs.deploy }}
     steps:
@@ -120,7 +119,7 @@ jobs:
     if: needs.preflight.result == 'success' && contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
     uses: ./.github/workflows/deploy-backend-admin.yml
     with:
-      image_digest: ${{ needs.preflight.outputs.admin_digest }}
+      input_hash: ${{ fromJson(needs.preflight.outputs.plan).hashes['backend-admin'] }}
       target_origin_ip: ${{ inputs.target_origin_ip }}
     secrets: inherit
   admin-frontend:
