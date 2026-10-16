@@ -276,19 +276,33 @@
 					<span id="student-status-label" class="text-sm font-medium">สถานะนักเรียน</span>
 					<ToggleGroup.Root
 						type="single"
-						value={statusFilter}
 						aria-labelledby="student-status-label"
 						disabled={deleting}
-						onValueChange={(value) => {
-							if (value) {
-								statusFilter = value;
-								handleSearch();
+						bind:value={
+							() => statusFilter,
+							(value) => {
+								if (value) {
+									statusFilter = value;
+									handleSearch();
+								}
 							}
-						}}
+						}
 					>
-						<ToggleGroup.Item value="active">ใช้งาน</ToggleGroup.Item>
-						<ToggleGroup.Item value="inactive">ไม่ใช้งาน</ToggleGroup.Item>
-						<ToggleGroup.Item value="all">ทั้งหมด</ToggleGroup.Item>
+						<ToggleGroup.Item
+							value="active"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ใช้งาน</ToggleGroup.Item
+						>
+						<ToggleGroup.Item
+							value="inactive"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ไม่ใช้งาน</ToggleGroup.Item
+						>
+						<ToggleGroup.Item
+							value="all"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ทั้งหมด</ToggleGroup.Item
+						>
 					</ToggleGroup.Root>
 				</div>
 				<div class="flex gap-2">

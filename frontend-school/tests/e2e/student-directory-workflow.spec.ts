@@ -113,3 +113,17 @@ test('detail return link restores search, status and page', async ({ page }) => 
 	await expect(page).toHaveURL(directoryURL);
 	await expect(page.getByLabel('ค้นหานักเรียน', { exact: true })).toHaveValue('ชื่อ');
 });
+
+test.describe('touch directory filters', () => {
+	test.use({ viewport: { width: 375, height: 900 }, hasTouch: true, isMobile: true });
+	test('status can be selected in one tap without writes', async ({ page }) => {
+		const api = await mockStaffStudents(page);
+		await page.goto(listPath());
+		const inactive = page.getByRole('radio', { name: 'ไม่ใช้งาน', exact: true });
+		await inactive.tap();
+		await expect(inactive).toHaveAttribute('aria-checked', 'true');
+		await inactive.tap();
+		await expect(inactive).toHaveAttribute('aria-checked', 'true');
+		expect(api.writes).toHaveLength(0);
+	});
+});
