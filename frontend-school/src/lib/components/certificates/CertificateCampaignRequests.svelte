@@ -237,6 +237,7 @@
 		{:else if loaded}
 			<div
 				class="relative space-y-4 before:absolute before:inset-y-5 before:left-[21px] before:w-px before:bg-border"
+				aria-busy={loading}
 			>
 				{#each requests as request (request.id)}
 					{@const meta = statusMeta[request.status]}

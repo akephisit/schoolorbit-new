@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -295,7 +296,7 @@ test('failed phase controls retry without hiding the plan list', async ({ page }
 	await expect(page.getByLabel('แก้โครงสร้างคะแนนรายวิชา').first()).toBeVisible();
 });
 
-test('manual plan refresh retains the list during a delayed failure and retries only that region', async ({
+test('page revalidation retains the plan list during a delayed failure and retries only that region', async ({
 	page
 }) => {
 	const refresh = deferred();
@@ -309,9 +310,15 @@ test('manual plan refresh retains the list during a delayed failure and retries 
 		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
 	);
 	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรชรายวิชา' }).click();
+	await revalidatePage(page);
 	try {
-		await expect(page.getByRole('status', { name: 'กำลังอัปเดตโครงสร้างคะแนน...' })).toBeVisible();
+		await expectSilentBackground(
+			page,
+			page
+				.locator('main [aria-busy]')
+				.filter({ has: page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }) })
+				.last()
+		);
 		await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
 	} finally {
 		refresh.resolve();

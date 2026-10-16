@@ -423,7 +423,7 @@
 			/>
 		{/if}
 		{#if request}
-			<div class="space-y-5">
+			<div class="space-y-5" aria-busy={loading}>
 				{#if issuedOutcome}
 					<section class="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
 						<div class="flex items-start gap-3 p-5 text-emerald-950">

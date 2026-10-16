@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Locator } from '@playwright/test';
 import {
 	mockStaffStudents,
@@ -57,7 +58,7 @@ for (const route of ['list', 'profile', 'edit'] as const) {
 		await expectStudentName(region, 'นักเรียนแรก', route === 'edit');
 		if (route === 'edit')
 			await region.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('ชื่อร่างที่ต้องเก็บ');
-		await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+		await revalidatePage(page);
 		await expect(region).toContainText('region นักเรียนไม่พร้อม');
 		await expectStudentName(
 			region,
@@ -241,15 +242,13 @@ test('person links wait for tap rather than reading private details on hover', a
 	await expect(page.getByTestId('student-profile')).toContainText('นักเรียนแรก');
 	expect(api.count(`/api/students/${firstStudent}`)).toBe(1);
 });
-test('same-person refresh keeps data and exposes updating status while pending', async ({
-	page
-}) => {
+test('same-person page revalidation keeps data and updates silently', async ({ page }) => {
 	const api = await mockStaffStudents(page, { hold: 'profile', holdAt: 2 });
 	await page.goto(studentPath());
 	const region = page.getByTestId('student-profile');
 	await expect(region).toContainText('นักเรียนแรก');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
-	await expect(region.getByRole('status')).toContainText('กำลังอัปเดต');
+	await revalidatePage(page);
+	await expectSilentBackground(page, region);
 	await expect(region).toContainText('นักเรียนแรก');
 	api.release();
 	await expect(region.getByRole('status')).toHaveCount(0);

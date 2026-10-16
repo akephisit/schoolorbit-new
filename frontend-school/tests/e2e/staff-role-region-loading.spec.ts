@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import { mockStaffRoles, rolePath, firstRole, secondRole } from './fixtures/staff-role-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -32,7 +33,7 @@ test('list retains its rows through a refresh error', async ({ page }) => {
 	await mockStaffRoles(page, { fail: 'list', failAt: 2 });
 	await page.goto('/staff/roles');
 	await expect(page.getByText('บทบาทแรก', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('roles-list')).toContainText('region บทบาทไม่พร้อม');
 	await expect(page.getByText('บทบาทแรก', { exact: true })).toBeVisible();
 });

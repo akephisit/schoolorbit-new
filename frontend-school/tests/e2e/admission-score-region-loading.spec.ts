@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -191,7 +192,7 @@ test('slow room roster does not hide independent round and subject regions', asy
 	state.holdRoster();
 	await page.goto(path, { waitUntil: 'domcontentloaded' });
 	await expect(page.getByText(`${round.name} | 2 วิชา`, { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'โหลดวิชาสอบใหม่' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'โหลดวิชาสอบใหม่' })).toHaveCount(0);
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
 	expect(state.reads.some((read) => read.endsWith('/exam-seats'))).toBe(false);
 	expect(state.reads.some((read) => read.includes('/applications'))).toBe(false);
@@ -223,8 +224,8 @@ test('same-round score refresh retains the usable table until the new result arr
 	await expect(cell).toHaveValue('10');
 	state.setScoreValue(22);
 	state.holdNextScores();
-	await page.getByRole('button', { name: 'โหลดคะแนนใหม่' }).click();
-	await expect(page.getByText('กำลังอัปเดตคะแนน...')).toBeVisible();
+	await revalidatePage(page);
+	await expectSilentBackground(page, page.locator('[aria-busy]').filter({ has: cell }).last());
 	await expect(cell).toHaveValue('10');
 	state.releaseScores();
 	await expect(cell).toHaveValue('22');

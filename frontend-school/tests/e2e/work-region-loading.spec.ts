@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import { mockWork, itemsPath, countsPath, windowsPath } from './fixtures/work-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -75,7 +76,7 @@ test('window refresh retains data on failure and retries without options', async
 	const api = await mockWork(page, { fail: 'windows', failAt: 2 });
 	await page.goto('/staff/work/manage');
 	await expect(page.getByTestId('work-windows')).toContainText('รอบงานแรก');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('work-windows')).toContainText('region windows ไม่พร้อม');
 	await expect(page.getByTestId('work-windows')).toContainText('รอบงานแรก');
 	await page.getByTestId('work-windows').getByRole('button', { name: 'ลองอีกครั้ง' }).click();

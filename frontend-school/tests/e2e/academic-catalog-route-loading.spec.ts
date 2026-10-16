@@ -1,3 +1,4 @@
+import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { CatalogActivityOverview } from '../../src/lib/api/academic-core.js';
 
@@ -243,11 +244,10 @@ for (const entry of [
 			await expect(
 				page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
 			).toBeVisible();
-			await expect(
-				page.getByRole('status', {
-					name: entry.kind === 'subject' ? 'กำลังอัปเดตทะเบียนรายวิชา' : 'กำลังอัปเดตทะเบียนกิจกรรม'
-				})
-			).toBeVisible();
+			await expectSilentBackground(
+				page,
+				page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
+			);
 			await expect(page.locator('main [data-slot="skeleton"]')).toHaveCount(0);
 		} finally {
 			refreshGate.release();

@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page } from '@playwright/test';
 import {
 	mockStaffStudents,
@@ -130,7 +131,7 @@ test('failed refresh and failed save preserve the edit draft', async ({ page }) 
 	await mockStaffStudents(page, { fail: 'profile', failAt: 2, failMutation: true });
 	await page.goto(studentPath(firstStudent, '/edit'));
 	await page.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('ชื่อร่าง');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByText('region นักเรียนไม่พร้อม', { exact: true })).toBeVisible();
 	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue('ชื่อร่าง');
 	await page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();

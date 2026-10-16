@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
 
@@ -742,7 +743,7 @@ test('promotion run list keeps prior rows visible during a failed refresh', asyn
 		}
 		return route.fallback();
 	});
-	await page.getByRole('button', { name: 'โหลดรอบใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.getByText('เปิดรอบ')).toBeVisible();
 	release();
 	await expect(page.getByText('อ่านรอบชั่วคราวไม่สำเร็จ')).toBeVisible();
@@ -795,7 +796,7 @@ test('manual refresh lets a manager recalculate with a new version after conflic
 	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('มีการแก้ไขรอบ');
-	await page.getByRole('button', { name: 'โหลดข้อมูลรอบใหม่', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true })).toBeEnabled();
 	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();

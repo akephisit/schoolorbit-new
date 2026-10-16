@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import { mockSelfProfile, studentRoute, year } from './fixtures/self-profile-route-data';
 test.use({ serviceWorkers: 'block' });
@@ -36,7 +37,7 @@ for (const route of ['/student', '/student/profile']) {
 	test(`${route}: retained refresh failure keeps profile visible`, async ({ page }) => {
 		const api = await mockSelfProfile(page, { fail: 'profile', failAt: 2 });
 		await page.goto(studentRoute(route));
-		await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
+		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
 		expect(api.count('context')).toBe(1);

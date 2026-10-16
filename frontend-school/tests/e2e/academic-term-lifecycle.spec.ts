@@ -352,7 +352,7 @@ test('term readiness starts with a skeleton and retries only its workspace', asy
 	expect(attempts).toBe(2);
 });
 
-test('term readiness remains visible during refresh failure and local retry', async ({ page }) => {
+test('term readiness browser reload shows a fresh skeleton and focused retry', async ({ page }) => {
 	await mock(page, true);
 	await page.goto(url);
 	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
@@ -369,12 +369,13 @@ test('term readiness remains visible during refresh failure and local retry', as
 		}
 		return route.fallback();
 	});
-	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
-	await expect(page.getByText('กำลังอัปเดตความพร้อมภาคเรียน...')).toBeVisible();
-	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
+	await page.reload();
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: /กำลังอัปเดต/ })).toHaveCount(0);
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toHaveCount(0);
 	release();
 	await expect(page.getByText('อ่านความพร้อมภาคเรียนไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
 	expect(attempts).toBe(2);
 });

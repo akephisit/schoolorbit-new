@@ -387,7 +387,7 @@ test('year readiness starts with a skeleton and retries only its workspace', asy
 	expect(attempts).toBe(2);
 });
 
-test('year readiness remains visible during refresh failure and local retry', async ({ page }) => {
+test('year readiness browser reload shows a fresh skeleton and focused retry', async ({ page }) => {
 	await mock(page, { reader: true, ready: false });
 	await page.goto(url);
 	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
@@ -404,12 +404,13 @@ test('year readiness remains visible during refresh failure and local retry', as
 		}
 		return route.fallback();
 	});
-	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
-	await expect(page.getByText('กำลังอัปเดตความพร้อมปีการศึกษา...')).toBeVisible();
-	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
+	await page.reload();
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: /กำลังอัปเดต/ })).toHaveCount(0);
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toHaveCount(0);
 	release();
 	await expect(page.getByText('อ่านความพร้อมปีไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
 	expect(attempts).toBe(2);
 });

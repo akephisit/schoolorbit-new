@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -325,7 +326,7 @@ test('a list refresh keeps usable rounds and exposes a busy region', async ({ pa
 	});
 	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
 	state.holdList();
-	await page.getByRole('button', { name: 'โหลดรอบใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
 		'aria-busy',
 		'true'
@@ -346,7 +347,7 @@ test('an older list refresh cannot undo a successful status mutation', async ({ 
 	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
 	state.useStaleListResponse();
 	state.holdList();
-	await page.getByRole('button', { name: 'โหลดรอบใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
 		'aria-busy',
 		'true'

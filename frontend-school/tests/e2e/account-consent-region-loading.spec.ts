@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import { year } from './fixtures/staff-home-route-data';
 import {
@@ -85,7 +86,7 @@ for (const [route, region] of [
 		const ready = page.getByTestId(region === 'sessions' ? 'session-list' : 'consent-region');
 		const label = region === 'sessions' ? 'อุปกรณ์ปัจจุบัน' : 'ความยินยอมเสริม';
 		await expect(ready).toContainText(label);
-		await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
+		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(ready).toContainText(label);
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
@@ -99,10 +100,14 @@ test('session removal patches one row and a pending refresh cannot restore it', 
 	const api = await mockAccountConsent(page, { hold: 'sessions', holdAt: 2 });
 	await page.goto('/account/security');
 	await expect(page.getByTestId(`session-row-${otherSession}`)).toBeVisible();
-	await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
-	await expect(
-		page.getByRole('status', { name: 'กำลังอัปเดตรายการอุปกรณ์', exact: true })
-	).toBeVisible();
+	await revalidatePage(page);
+	await expectSilentBackground(
+		page,
+		page
+			.locator('[aria-busy]')
+			.filter({ has: page.getByTestId('session-list') })
+			.last()
+	);
 	await page
 		.getByTestId(`session-row-${otherSession}`)
 		.getByRole('button', { name: 'นำอุปกรณ์ออก', exact: true })
@@ -150,10 +155,8 @@ test('consent withdrawal refreshes only its status and late refresh cannot undo 
 	const api = await mockAccountConsent(page, { hold: 'consent', holdAt: 2 });
 	await page.goto('/settings/consent');
 	await expect(page.getByRole('button', { name: 'ถอนความยินยอม', exact: true })).toHaveCount(1);
-	await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
-	await expect(
-		page.getByRole('status', { name: 'กำลังอัปเดตความยินยอม', exact: true })
-	).toBeVisible();
+	await revalidatePage(page);
+	await expectSilentBackground(page, page.getByTestId('consent-region'));
 	page.once('dialog', (dialog) => dialog.accept());
 	await page.getByRole('button', { name: 'ถอนความยินยอม', exact: true }).click();
 	await expect(page.getByText('ความยินยอมที่ถอนแล้ว', { exact: true })).toBeVisible();

@@ -184,7 +184,7 @@
 				<p>ใช้ได้ {issuedCount} · เพิกถอน {revokedCount}</p>
 			</div>
 
-			<div class="certificate-grid" data-testid="my-certificate-list">
+			<div class="certificate-grid" data-testid="my-certificate-list" aria-busy={loading}>
 				{#each certificates as certificate (certificate.id)}
 					{@const downloadable =
 						certificate.status === 'issued' && certificate.capabilities.canDownload === true}

@@ -483,7 +483,7 @@ test('clears incompatible homerooms before painting a new route context', async 
 	}
 });
 
-test('keeps loaded homerooms visible and announces a background refresh', async ({ page }) => {
+test('browser reload clears homerooms before loading the current route again', async ({ page }) => {
 	let releaseRefresh: () => void = () => {};
 	const homeroomRefreshGate = new Promise<void>((resolve) => {
 		releaseRefresh = resolve;
@@ -499,15 +499,15 @@ test('keeps loaded homerooms visible and announces a background refresh', async 
 		);
 		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
 		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
-		await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
+		await page.reload();
 
 		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
-		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
-		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await expect(page.getByText('ม.1/1', { exact: true })).toHaveCount(0);
+		await expect(page.getByTestId('delivery-homerooms-ready')).toHaveCount(0);
 		await expect(
 			homeroomRegion.getByRole('status', { name: 'กำลังอัปเดตภาพรวมรายห้อง' })
-		).toBeVisible();
-		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).toHaveCount(0);
+		).toHaveCount(0);
+		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).not.toHaveCount(0);
 	} finally {
 		releaseRefresh();
 	}

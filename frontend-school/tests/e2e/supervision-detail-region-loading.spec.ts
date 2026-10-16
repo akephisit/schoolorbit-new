@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import {
 	id,
@@ -61,7 +62,7 @@ test('detail refresh preserves content when identity fails', async ({ page }) =>
 	const api = await mock(page, { fail: 'observation-detail', failAt: 2 });
 	await page.goto(detailPath());
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByText('region ไม่พร้อม')).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
 	await page.getByTestId('supervision-detail').getByRole('button', { name: 'ลองใหม่' }).click();
@@ -123,7 +124,7 @@ test('cancel patches identity and beats a stale refresh', async ({ page }) => {
 	const api = await mock(page, { hold: 'observation-detail', holdAt: 2 });
 	await page.goto(detailPath());
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect.poll(() => api.count(observationPath)).toBe(2);
 	await page.getByRole('button', { name: 'ยกเลิก', exact: true }).first().click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยันยกเลิก' }).click();

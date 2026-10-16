@@ -38,9 +38,10 @@ test('public SSR and month navigation use actual academic-year dates and retain 
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page).toHaveURL(/month=2026-11/);
 	await expect(page.locator('[data-calendar-date="2026-11-01"]')).toBeVisible();
-	await expect(page.getByRole('status', { name: /กำลังโหลดกิจกรรม/ })).toBeVisible();
-	fixture.release();
+	await expect(page.locator('main [aria-busy]').last()).toHaveAttribute('aria-busy', 'true');
 	await expect(page.getByRole('status', { name: /กำลังโหลดกิจกรรม/ })).toHaveCount(0);
+	fixture.release();
+	await expect(page.locator('main [aria-busy]').last()).toHaveAttribute('aria-busy', 'false');
 	await page.goto(`${fixture.baseUrl}/calendar?month=2027-04&academicYearId=${year}`);
 	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeDisabled();
 	expect(

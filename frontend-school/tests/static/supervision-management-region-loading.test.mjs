@@ -30,7 +30,8 @@ test('supervision management regions retain data, retry independently, and super
 	assert.match(workspace, /cyclesLoaded/);
 	assert.match(workspace, /templatesLoaded/);
 	assert.match(workspace, /teacherStatusLoaded/);
-	assert.match(workspace, /RegionUpdatingState/);
+	assert.doesNotMatch(workspace, /RegionUpdatingState/);
+	assert.match(workspace, /aria-busy/);
 	assert.doesNotMatch(workspace, /onMount\(/);
 	assert.match(workspace, /retryManagementCycles/);
 	assert.match(workspace, /retryManagementTemplates/);

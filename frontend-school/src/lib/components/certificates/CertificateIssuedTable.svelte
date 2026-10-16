@@ -274,7 +274,7 @@
 				<PageSkeleton variant="table" />
 			</div>
 		{:else if loaded}
-			<div class="space-y-4">
+			<div class="space-y-4" aria-busy={loading}>
 				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
 					<div class="grid gap-px bg-border sm:grid-cols-3">
 						<div class="relative overflow-hidden bg-card p-5">

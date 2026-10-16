@@ -191,7 +191,7 @@
 				description="เมื่อหน่วยงานส่งรายชื่อพร้อมออก คำขอจะปรากฏในถาดงานนี้"
 			/>
 		{:else if loaded}
-			<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
+			<div class="overflow-x-auto rounded-xl border bg-card shadow-sm" aria-busy={loading}>
 				<Table.Root class="min-w-[1040px]">
 					<Table.Header>
 						<Table.Row class="bg-muted/40 hover:bg-muted/40">

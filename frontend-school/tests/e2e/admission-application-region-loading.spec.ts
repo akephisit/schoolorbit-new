@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -606,7 +607,7 @@ test('a late list refresh cannot undo a verified status', async ({ page }) => {
 	});
 	await expect(page.getByText(app.fullName, { exact: true })).toBeVisible();
 	state.holdList();
-	await page.getByRole('button', { name: 'โหลดใบสมัครใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
 	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
 	await expect(page.getByText('ผ่านการตรวจสอบ', { exact: true })).toBeVisible();
@@ -674,7 +675,7 @@ test('a late detail refresh cannot undo verification', async ({ page }) => {
 	});
 	await expect(page.getByText(app.nationalId, { exact: true })).toBeVisible();
 	state.holdDetail();
-	await page.getByRole('button', { name: 'โหลดรายละเอียดใบสมัครใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
 	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
 	await expect(page.getByText('ผ่านการตรวจสอบ', { exact: true })).toBeVisible();

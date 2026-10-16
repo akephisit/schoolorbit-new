@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -127,7 +128,7 @@ test('round refresh retains rows and retries only its list request after failure
 	await fulfill(pending[0], [round(termOne, 'รอบเดิม')]);
 	const ready = page.getByTestId('exam-rounds-ready');
 	await expect(ready).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect.poll(() => pending.length).toBe(2);
 	await expect(ready).toHaveAttribute('aria-busy', 'true');
 	await expect(page.getByText('รอบเดิม')).toBeVisible();
@@ -155,7 +156,7 @@ test('deleting a round locally cannot be undone by an older list response', asyn
 	await expect.poll(() => pending.length).toBe(1);
 	await fulfill(pending[0], [round(termOne, 'รอบที่จะลบ')]);
 	await expect(page.getByText('รอบที่จะลบ')).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect.poll(() => pending.length).toBe(2);
 	await page.getByRole('button', { name: 'ลบรอบสอบ รอบที่จะลบ' }).click();
 	await page.getByRole('button', { name: 'ลบรอบสอบถาวร' }).click();
@@ -178,7 +179,7 @@ test('staff schedule keeps its previous result during refresh and clears another
 	await fulfill(pending[0], []);
 	const ready = page.getByTestId('staff-exams-ready');
 	await expect(ready).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect.poll(() => pending.length).toBe(2);
 	await expect(ready).toHaveAttribute('aria-busy', 'true');
 	await pending[1].fulfill({

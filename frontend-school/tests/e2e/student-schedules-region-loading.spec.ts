@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { test, expect, type Page } from '@playwright/test';
 import {
 	mockStudentSchedules,
@@ -52,30 +53,18 @@ for (const resource of Object.keys(resources) as Resource[]) {
 		const api = await mockStudentSchedules(page, { fail: resource, failAt: 2 });
 		await page.goto(scheduleRoute(resource));
 		await expect(readyRegion(page, resource)).toBeVisible();
-		await page
-			.getByRole('button', {
-				name: resource === 'calendar' ? 'รีเฟรช' : 'โหลดข้อมูลใหม่',
-				exact: true
-			})
-			.click();
+		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(readyRegion(page, resource)).toBeVisible();
 		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 	});
-	test(`${resource}: retained refresh exposes local updating status`, async ({ page }) => {
+	test(`${resource}: page revalidation retains data and updates silently`, async ({ page }) => {
 		const api = await mockStudentSchedules(page, { hold: resource, holdAt: 2 });
 		await page.goto(scheduleRoute(resource));
 		await expect(readyRegion(page, resource)).toBeVisible();
-		await page
-			.getByRole('button', {
-				name: resource === 'calendar' ? 'รีเฟรช' : 'โหลดข้อมูลใหม่',
-				exact: true
-			})
-			.click();
+		await revalidatePage(page);
 		await expect.poll(() => api.count(resource)).toBe(2);
-		await expect(
-			page.getByRole('status', { name: 'กำลังอัปเดตข้อมูล', exact: true })
-		).toBeVisible();
+		await expectSilentBackground(page, page.getByTestId(`student-${resource}-region`));
 		await expect(readyRegion(page, resource)).toBeVisible();
 		await expect(page.getByTestId(`student-${resource}-region`)).toHaveAttribute(
 			'aria-busy',

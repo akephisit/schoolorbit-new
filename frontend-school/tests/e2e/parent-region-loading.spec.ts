@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import {
 	mockParent,
@@ -144,7 +145,7 @@ for (const [route, label] of [
 		const api = await mockParent(page, { fail: 'profile', failAt: 2 });
 		await page.goto(route);
 		await expect(page.getByTestId('parent-profile-region')).toContainText(label);
-		await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
+		await revalidatePage(page);
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('parent-profile-region')).toContainText(label);
 		expect(api.count('profile')).toBe(3);

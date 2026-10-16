@@ -49,7 +49,6 @@ test('all auth bootstrap call sites branch on explicit refresh states', async ()
 	const files = {
 		appLayout: frontendPath('src/routes/(app)/+layout.svelte'),
 		loginPage: frontendPath('src/routes/login/+page.svelte'),
-		debugPage: frontendPath('src/routes/(app)/debug/+page.svelte'),
 		staffProfile: frontendPath('src/routes/(app)/staff/profile/+page.svelte')
 	};
 	const sources = Object.fromEntries(

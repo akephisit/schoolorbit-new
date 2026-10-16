@@ -678,7 +678,7 @@ test('module navigation keeps academic context and marks the current page', asyn
 		}
 	}
 });
-test('explicit refresh discards input while search preserves current edits without submitting', async ({
+test('browser reload discards input while search preserves current edits without submitting', async ({
 	page
 }) => {
 	const api = await mockAttendance(page);
@@ -686,7 +686,8 @@ test('explicit refresh discards input while search preserves current edits witho
 	await chooseRound(page);
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
-	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
+	await page.reload();
+	await chooseRound(page);
 	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่ได้เช็ค');
 	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('');
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
@@ -1401,9 +1402,7 @@ for (const overlap of [false, true])
 		else expect(writes[1].students.some((row) => row.studentId === second)).toBe(false);
 		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่ได้เช็ค' : 'สาย');
 	});
-test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
-	page
-}) => {
+test('browser reload reloads selected detail and discards unsaved input', async ({ page }) => {
 	await mockAttendance(page);
 	const current = detail();
 	await page.route(
@@ -1415,7 +1414,8 @@ test('manual workspace refresh reloads selected detail and discards unsaved inpu
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	current.session.rowVersion = 2;
 	current.students[0].result = 'late';
-	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
+	await page.reload();
+	await chooseRound(page);
 	await expectResult(page, 'นักเรียนคนแรก', 'สาย');
 	await expect(page.getByLabel(/หมายเหตุของ/)).toHaveCount(0);
 });

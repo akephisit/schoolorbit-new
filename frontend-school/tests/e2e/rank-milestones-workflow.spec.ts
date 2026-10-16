@@ -120,9 +120,10 @@ test('an old status link keeps milestone planning active while charts render ind
 }) => {
 	const api = await setup(page, { hold: true });
 	await page.goto('/staff/manage/overview?status=inactive');
-	await expect(
-		region(page).getByRole('button', { name: 'รีเฟรชกำหนดเวลาวิทยฐานะ' })
-	).toBeDisabled();
+	await expect(region(page).getByRole('button', { name: 'รีเฟรชกำหนดเวลาวิทยฐานะ' })).toHaveCount(
+		0
+	);
+	await expect(region(page)).toHaveAttribute('aria-busy', 'true');
 	await expect(page.getByRole('region', { name: 'บุคลากรทั้งหมด', exact: true })).toContainText(
 		'2 คน'
 	);

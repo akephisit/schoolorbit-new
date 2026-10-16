@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -271,7 +272,7 @@ test('manual workspace refresh retains the current round and reports its own fai
 	await fulfill(requests[0], workspace());
 	const ready = page.getByTestId('exam-detail-ready');
 	await expect(ready).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect.poll(() => requests.length).toBe(2);
 	await expect(ready).toHaveAttribute('aria-busy', 'true');
 	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();

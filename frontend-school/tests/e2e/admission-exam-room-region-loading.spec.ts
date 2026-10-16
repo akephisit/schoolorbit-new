@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -302,9 +303,15 @@ test('room refresh retains usable rows and only rereads rooms', async ({ page })
 	});
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
 	state.holdRooms();
-	await page.getByRole('button', { name: 'โหลดห้องสอบใหม่' }).click();
+	await revalidatePage(page);
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
-	await expect(page.getByText('กำลังอัปเดตห้องสอบ...')).toBeVisible();
+	await expectSilentBackground(
+		page,
+		page
+			.locator('main [aria-busy]')
+			.filter({ has: page.getByText(examRoom.roomName, { exact: true }) })
+			.last()
+	);
 	state.releaseRooms();
 	await expect
 		.poll(() => state.reads.filter((path) => path.endsWith('/exam-rooms')).length)

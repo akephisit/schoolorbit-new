@@ -664,9 +664,6 @@
 	description={round?.name ?? 'ตั้งค่าห้องสอบและจัดเลขที่นั่งสอบ'}
 	backHref="/staff/academic/admission/{id}"
 >
-	{#snippet actions()}
-
-	{/snippet}
 	{#if roundLoading && roomsLoading && configLoading && !roundLoaded && !roomsLoaded && !configLoaded}
 		<PageSkeleton variant="detail" />
 	{:else if !canManageAdmission}

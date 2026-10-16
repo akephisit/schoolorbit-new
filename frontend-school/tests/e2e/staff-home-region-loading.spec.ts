@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import {
@@ -70,7 +71,7 @@ test('home aggregate retains values through refresh failure', async ({ page }) =
 	await page.goto(homePath());
 	const region = page.getByTestId('staff-overview');
 	await expect(region).toContainText('18');
-	await region.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect(region).toContainText('region ไม่พร้อม');
 	await expect(region).toContainText('18');
 	await region.getByRole('button', { name: /ลอง/ }).click();

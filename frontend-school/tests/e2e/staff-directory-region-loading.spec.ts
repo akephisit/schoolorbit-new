@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page } from '@playwright/test';
 import {
 	mockStaffDirectory,
@@ -174,7 +175,7 @@ test('list focused retry and retained refresh error', async ({ page }) => {
 	const api = await mockStaffDirectory(page, { fail: 'list', failAt: 2 });
 	await page.goto(directoryPath);
 	await expect(page.getByTestId('staff-directory')).toContainText('บุคลากรแรก');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('staff-directory')).toContainText('region list ไม่พร้อม');
 	await expect(page.getByTestId('staff-directory')).toContainText('บุคลากรแรก');
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
@@ -472,7 +473,7 @@ test('same-person editor refresh retains the draft and reports a localized error
 	await page.goto(staffPath(firstStaff, '/edit'));
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('ร่างที่ยังไม่บันทึก');
-	await page.getByRole('button', { name: 'รีเฟรชข้อมูล', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('staff-edit-profile')).toContainText('region profile ไม่พร้อม');
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('ร่างที่ยังไม่บันทึก');
 });

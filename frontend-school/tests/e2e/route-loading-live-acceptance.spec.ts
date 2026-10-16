@@ -185,7 +185,7 @@ async function measure(page: Page, representative: Representative, selected: Sel
 		for (let run = 0; run < 6; run++) {
 			phase = 'navigation';
 			await page.goto('/debug');
-			await page.getByRole('button', { name: 'Force Refresh Auth', exact: true }).waitFor();
+			await page.getByRole('heading', { name: 'Debug: Auth State', exact: true }).waitFor();
 			await page.evaluate((target) => {
 				const link = document.createElement('a');
 				link.href = target;

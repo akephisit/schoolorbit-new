@@ -393,7 +393,7 @@
 						: 'ที่คุณบันทึกไว้'}</CardDescription
 				>
 			</CardHeader>
-			<CardContent>
+			<CardContent aria-busy={loading}>
 				<!-- Search -->
 				<div class="flex items-center gap-2 mb-6">
 					<div class="relative flex-1 max-w-sm">
