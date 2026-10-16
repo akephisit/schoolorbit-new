@@ -10,6 +10,7 @@ type Schemas = components['schemas'];
 
 export type StudentParent = Schemas['ParentDto'];
 export type Student = Schemas['StudentProfile'];
+export type StudentRegister = Schemas['StudentRegisterProfile'];
 export type StudentListItem = Schemas['StudentListItem'];
 export type StudentListResponse = Schemas['StudentListResponse'];
 export type ListStudentsQuery = NonNullable<operations['listStudents']['parameters']['query']>;
@@ -39,14 +40,17 @@ export async function listStudents(
  */
 export async function getStudent(
 	id: string,
-	academicYearId: string,
+	academicYearId: string | null = null,
 	options: ApiRequestOptions = {}
-): Promise<Student> {
-	const query = { academicYearId } satisfies NonNullable<
+): Promise<StudentRegister> {
+	const query = { academicYearId: academicYearId || undefined } satisfies NonNullable<
 		operations['getStudent']['parameters']['query']
 	>;
 	return requireApiData(
-		await apiClient.get<Student>(`/api/students/${encodeURIComponent(id)}`, { ...options, query }),
+		await apiClient.get<StudentRegister>(`/api/students/${encodeURIComponent(id)}`, {
+			...options,
+			query
+		}),
 		'Failed to get student'
 	);
 }
@@ -69,7 +73,7 @@ export async function updateStudent(
 	id: string,
 	data: UpdateStudentRequest
 ): Promise<{ success: boolean }> {
-	const response = await apiClient.put<EmptyData>(`/api/students/${id}`, data);
+	const response = await apiClient.put<EmptyData>(`/api/students/${encodeURIComponent(id)}`, data);
 	if (!response.success) throw new Error(response.error || 'Failed to update student');
 	return { success: true };
 }
@@ -78,7 +82,7 @@ export async function updateStudent(
  * Delete student (Admin)
  */
 export async function deleteStudent(id: string): Promise<{ success: boolean }> {
-	const response = await apiClient.delete<EmptyData>(`/api/students/${id}`);
+	const response = await apiClient.delete<EmptyData>(`/api/students/${encodeURIComponent(id)}`);
 	if (!response.success) throw new Error(response.error || 'Failed to delete student');
 	return { success: true };
 }
@@ -117,7 +121,10 @@ export async function addParentToStudent(
 	studentId: string,
 	data: CreateParentRequest
 ): Promise<{ success: boolean; message: string }> {
-	const response = await apiClient.post<EmptyData>(`/api/students/${studentId}/parents`, data);
+	const response = await apiClient.post<EmptyData>(
+		`/api/students/${encodeURIComponent(studentId)}/parents`,
+		data
+	);
 	if (!response.success) throw new Error(response.error || 'Failed to add parent');
 	return { success: true, message: response.message || 'เพิ่มผู้ปกครองสำเร็จ' };
 }
@@ -130,7 +137,7 @@ export async function removeParentFromStudent(
 	parentId: string
 ): Promise<{ success: boolean; message: string }> {
 	const response = await apiClient.delete<EmptyData>(
-		`/api/students/${studentId}/parents/${parentId}`
+		`/api/students/${encodeURIComponent(studentId)}/parents/${encodeURIComponent(parentId)}`
 	);
 	if (!response.success) throw new Error(response.error || 'Failed to remove parent');
 	return { success: true, message: response.message || 'ลบผู้ปกครองสำเร็จ' };

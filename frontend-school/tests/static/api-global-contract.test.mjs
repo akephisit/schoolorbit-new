@@ -1257,16 +1257,15 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',
 				'PERMISSIONS.STUDENT_UPDATE_ALL',
-				'PERMISSIONS.STUDENT_DELETE_ALL',
 				'PERMISSIONS.STUDENT_PII_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_PII_READ_ASSIGNED'
 			],
-			identifiers: ['canReadStudent', 'canUpdateStudent', 'canDeleteStudent', 'canReadStudentPii']
+			identifiers: ['canReadStudent', 'canUpdateStudent', 'canReadStudentPii']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/new/+page.svelte',
 			imports: ['#lib/components/app-state/index.js'],
-			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL', 'PERMISSIONS.STUDENT_PII_READ_SCHOOL'],
+			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL'],
 			identifiers: ['canCreateStudent', 'canHandleStudentPii']
 		}
 	];

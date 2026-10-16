@@ -1,55 +1,49 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '#lib/async/latest-request.js';
-	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Card } from '#lib/components/ui/card/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { PERMISSIONS } from '#lib/permissions/registry.js';
-	import { can } from '#lib/stores/permissions.js';
-	import { toast } from 'svelte-sonner';
-	import { Edit, Save, X, Trash2 } from '@lucide/svelte';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import {
 		getStudent,
 		updateStudent,
-		deleteStudent,
 		addParentToStudent,
 		removeParentFromStudent,
-		type Student
+		type StudentRegister
 	} from '#lib/api/students.js';
+	import {
+		studentRegisterDraft,
+		studentRegisterReadScope,
+		studentRegisterErrors,
+		updateStudentRegisterInput,
+		studentParentDraft,
+		studentParentErrors
+	} from '#lib/forms/student-register.js';
+	import StudentRegisterForm from '#lib/components/student/registry/StudentRegisterForm.svelte';
+	import StudentParentFields from '#lib/components/student/registry/StudentParentFields.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { Plus, Trash2, RefreshCw } from '@lucide/svelte';
 	let { data }: PageProps = $props();
-	const studentId = $derived(data.studentId);
-	const profileKey = $derived(data.profileKey);
-	const source = $derived(data.student);
-	const studentRequest = new LatestRequest();
-	let activeKey = '';
-	let disposed = false;
-	let mutationEpoch = 0;
-	let student = $state.raw<Student | null>(null);
-	let loading = $state(true);
-	let loadError = $state('');
-	let editing = $state(false);
-	let saving = $state(false);
-	let deleting = $state(false);
-	let mutating = $state(false);
-	let parentEpoch = 0;
-	const academicYearId = $derived(data.academicYearId);
-
-	const academicYearQuery = $derived(
-		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
+	const readScope = $derived(
+		studentRegisterReadScope({
+			school: $can.has(PERMISSIONS.STUDENT_READ_SCHOOL),
+			assigned: $can.has(PERMISSIONS.STUDENT_READ_ASSIGNED),
+			own: $can.has(PERMISSIONS.STUDENT_READ_OWN),
+			piiSchool: $can.has(PERMISSIONS.STUDENT_PII_READ_SCHOOL),
+			piiAssigned: $can.has(PERMISSIONS.STUDENT_PII_READ_ASSIGNED),
+			piiOwn: $can.has(PERMISSIONS.STUDENT_PII_READ_OWN)
+		})
 	);
 
-	const listHref = $derived(`${resolve('staff/students')}${academicYearQuery}`);
 	const canReadStudent = $derived(
 		$can.hasAny(
 			PERMISSIONS.STUDENT_READ_SCHOOL,
@@ -58,7 +52,6 @@
 		)
 	);
 	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
-	const canDeleteStudent = $derived($can.has(PERMISSIONS.STUDENT_DELETE_ALL));
 	const canReadStudentPii = $derived(
 		$can.hasAny(
 			PERMISSIONS.STUDENT_PII_READ_SCHOOL,
@@ -66,718 +59,361 @@
 			PERMISSIONS.STUDENT_PII_READ_OWN
 		)
 	);
-
-	// Form data
-	let formData = $state({
-		email: '',
-		first_name: '',
-		last_name: '',
-		phone: '',
-		address: '',
-		grade_level: '',
-		homeroom: '',
-		student_number: null as number | null
-	});
-
-	// Parent Dialog
-	let isAddParentOpen = $state(false);
-	let parentLoading = $state(false);
-	let parentForm = $state({
-		title: '',
-		first_name: '',
-		last_name: '',
-		phone: '',
-		relationship: 'บิดา',
-		national_id: '',
-		email: ''
-	});
-
-	let parentErrors = $state<Record<string, string>>({});
-
+	let student = $state.raw<StudentRegister | null>(null);
+	let draft = $state(studentRegisterDraft());
+	let errors = $state<Record<string, string>>({});
+	let loading = $state(true),
+		saving = $state(false),
+		formError = $state(''),
+		loadError = $state('');
+	let parentOpen = $state(false),
+		parentBusy = $state(false),
+		parentError = $state('');
+	let parentDraft = $state(studentParentDraft()),
+		parentErrors = $state<Record<string, string>>({});
+	let removingParent = $state<string | null>(null);
+	let disposed = false,
+		revision = 0,
+		owner = '',
+		parentRevision = 0,
+		draftInitialized = false;
+	const request = new LatestRequest();
 	$effect.pre(() => {
-		const key = profileKey,
-			read = source;
+		const nextOwner = `${data.studentId}:${$authStore.user?.id ?? ''}:${readScope}:${canUpdateStudent}`;
 		untrack(() => {
-			if (key !== activeKey) {
-				activeKey = key;
-				mutationEpoch++;
+			if (owner !== nextOwner) {
+				owner = nextOwner;
+				revision++;
+				request.abort();
 				student = null;
-				editing = false;
+				draft = studentRegisterDraft();
+				draftInitialized = false;
+				errors = {};
+				formError = '';
 				saving = false;
-				deleting = false;
-				mutating = false;
-				isAddParentOpen = false;
-				parentLoading = false;
-				resetParentForm();
+				parentOpen = false;
+				parentBusy = false;
+				parentDraft = studentParentDraft();
+				parentErrors = {};
+				removingParent = null;
+				parentError = '';
+				parentRevision++;
 			}
-			const ticket = studentRequest.begin();
+		});
+	});
+	$effect.pre(() => {
+		const source = data.student;
+		untrack(() => {
+			const ticket = request.begin(),
+				session = authStore.sessionEpoch,
+				scope = readScope;
 			loading = true;
 			loadError = '';
-			void read.then((result) => applyStudent(result, ticket.revision));
+			void source.then((result) => {
+				if (
+					session !== authStore.sessionEpoch ||
+					scope !== readScope ||
+					!request.isCurrent(ticket.revision) ||
+					!canReadStudent
+				)
+					return;
+				loading = false;
+				if (result.ok) {
+					student = result.data;
+					if (student && !draftInitialized) {
+						draft = studentRegisterDraft(student);
+						draftInitialized = true;
+					}
+				} else loadError = result.error;
+			});
 		});
-		return () => studentRequest.abort();
+		return () => request.abort();
+	});
+	$effect.pre(() => {
+		const open = parentOpen;
+		untrack(() => {
+			if (!open) {
+				parentRevision++;
+				parentDraft = studentParentDraft();
+				parentErrors = {};
+				parentError = '';
+			}
+		});
 	});
 	onDestroy(() => {
 		disposed = true;
-		mutationEpoch++;
-		studentRequest.abort();
+		revision++;
+		parentRevision++;
+		request.abort();
+		draft = studentRegisterDraft();
+		parentDraft = studentParentDraft();
 	});
-	function applyStudent(result: Awaited<typeof data.student>, revision: number) {
-		if (!studentRequest.isCurrent(revision)) return;
-		loading = false;
-		if (result.ok) {
-			student = result.data;
-			if (student && !editing) resetForm();
-		} else loadError = result.error;
-	}
-	async function reloadCurrentYear() {
-		if (!academicYearId || !canReadStudent) return;
-		const ticket = studentRequest.begin();
+	async function reloadProfile() {
+		if (!canReadStudent || saving || parentBusy) return;
+		const ticket = request.begin(),
+			session = authStore.sessionEpoch,
+			scope = readScope;
 		loading = true;
 		loadError = '';
 		const result = await captureRouteLoad(
-			getStudent(studentId, academicYearId, { signal: ticket.signal }),
+			getStudent(data.studentId, null, { signal: ticket.signal }),
 			'โหลดข้อมูลนักเรียนไม่สำเร็จ'
 		);
-		applyStudent(result, ticket.revision);
-	}
-
-	function resetForm() {
-		if (!student) return;
-		formData = {
-			email: student.email || '',
-			first_name: student.first_name || '',
-			last_name: student.last_name || '',
-			phone: student.phone || '',
-			address: student.address || '',
-			grade_level: student.grade_level || '',
-			homeroom: student.homeroom || '',
-			student_number: student.student_number ?? null
-		};
-	}
-	function resetParentForm() {
-		parentForm = {
-			title: '',
-			first_name: '',
-			last_name: '',
-			phone: '',
-			relationship: 'บิดา',
-			national_id: '',
-			email: ''
-		};
-		parentErrors = {};
-	}
-	$effect.pre(() => {
-		const open = isAddParentOpen;
-		untrack(() => {
-			parentEpoch++;
-			if (!open) resetParentForm();
-		});
-	});
-	function beginMutation() {
-		const key = profileKey,
-			epoch = ++mutationEpoch;
-		studentRequest.abort();
+		if (
+			!request.isCurrent(ticket.revision) ||
+			session !== authStore.sessionEpoch ||
+			scope !== readScope ||
+			!canReadStudent
+		)
+			return;
 		loading = false;
-		mutating = true;
-		return () => !disposed && epoch === mutationEpoch && key === profileKey;
+		if (result.ok) {
+			student = result.data;
+			if (student && !draftInitialized) {
+				draft = studentRegisterDraft(student);
+				draftInitialized = true;
+			}
+		} else loadError = result.error;
 	}
-	async function handleSave() {
-		if (!canUpdateStudent || mutating || !student) return;
-		const current = beginMutation();
+	function mutation() {
+		const currentRevision = ++revision,
+			session = authStore.sessionEpoch,
+			scope = readScope,
+			person = data.studentId;
+		request.abort();
+		loading = false;
+		return () =>
+			!disposed &&
+			revision === currentRevision &&
+			session === authStore.sessionEpoch &&
+			scope === readScope &&
+			person === data.studentId &&
+			canReadStudent &&
+			canUpdateStudent;
+	}
+	async function save() {
+		if (!student || !canReadStudent || !canUpdateStudent || saving || parentBusy) return;
+		errors = studentRegisterErrors(draft, 'edit');
+		if (Object.keys(errors).length) {
+			formError = 'ตรวจสอบข้อมูลที่ระบุด้านล่าง';
+			return;
+		}
+		const current = mutation(),
+			destination = data.detailHref;
 		saving = true;
+		formError = '';
 		try {
-			const { grade_level: _gradeLevel, homeroom: _homeroom, ...updateData } = formData;
-			await updateStudent(studentId, {
-				...updateData,
-				student_number: formData.student_number ?? undefined
+			await updateStudent(data.studentId, updateStudentRegisterInput(draft));
+			if (current())
+				await goto(resolve(destination), {
+					invalidate: [`school:student-register-profile:${data.studentId}`]
+				});
+		} catch (error) {
+			if (current()) formError = error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ';
+		} finally {
+			if (current()) saving = false;
+		}
+	}
+	async function addParent() {
+		if (!student || !canUpdateStudent || !canReadStudent || saving || parentBusy || !parentOpen)
+			return;
+		parentErrors = studentParentErrors(parentDraft);
+		if (Object.keys(parentErrors).length) return;
+		const current = mutation(),
+			draftRevision = parentRevision;
+		parentBusy = true;
+		parentError = '';
+		try {
+			await addParentToStudent(data.studentId, {
+				...parentDraft,
+				title: parentDraft.title.trim() || undefined,
+				first_name: parentDraft.first_name.trim(),
+				last_name: parentDraft.last_name.trim(),
+				phone: parentDraft.phone.trim(),
+				relationship: parentDraft.relationship.trim(),
+				email: parentDraft.email.trim() || undefined,
+				national_id: canReadStudentPii ? parentDraft.national_id.trim() || undefined : undefined
 			});
 			if (!current()) return;
-			toast.success('บันทึกข้อมูลสำเร็จ');
-			editing = false;
-			await reloadCurrentYear();
+			const result = await getStudent(data.studentId);
+			if (!current()) return;
+			student = result;
+			if (draftRevision === parentRevision) parentOpen = false;
 		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
+			if (current() && draftRevision === parentRevision)
+				parentError = error instanceof Error ? error.message : 'เพิ่มผู้ปกครองไม่สำเร็จ';
 		} finally {
-			if (current()) {
-				saving = false;
-				mutating = false;
-			}
+			if (current()) parentBusy = false;
 		}
 	}
-	function handleCancel() {
-		resetForm();
-		editing = false;
-	}
-	async function handleDelete() {
-		if (
-			!canDeleteStudent ||
-			mutating ||
-			!student ||
-			!confirm('คุณแน่ใจหรือไม่ที่จะลบนักเรียนคนนี้?')
-		)
-			return;
-		const current = beginMutation();
-		deleting = true;
-		const destination = academicYearId
-			? resolve(`staff/students?academicYearId=${encodeURIComponent(academicYearId)}`)
-			: resolve('staff/students');
+	async function removeParent() {
+		if (!removingParent || !canUpdateStudent || !canReadStudent || saving || parentBusy) return;
+		const current = mutation(),
+			id = removingParent;
+		parentBusy = true;
+		formError = '';
 		try {
-			await deleteStudent(studentId);
+			await removeParentFromStudent(data.studentId, id);
 			if (!current()) return;
-			toast.success('ลบนักเรียนสำเร็จ');
-			await goto(destination);
+			if (student)
+				student = { ...student, parents: student.parents.filter((parent) => parent.id !== id) };
+			removingParent = null;
 		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
+			if (current()) formError = error instanceof Error ? error.message : 'นำผู้ปกครองออกไม่สำเร็จ';
 		} finally {
-			if (current()) {
-				deleting = false;
-				mutating = false;
-			}
-		}
-	}
-	async function handleAddParent() {
-		if (!canUpdateStudent || mutating || !isAddParentOpen || !student) return;
-		parentErrors = {};
-		if (!parentForm.first_name) parentErrors.first_name = 'กรุณากรอกชื่อ';
-		if (!parentForm.last_name) parentErrors.last_name = 'กรุณากรอกนามสกุล';
-		if (!parentForm.phone) parentErrors.phone = 'กรุณากรอกเบอร์โทร';
-		if (parentForm.phone && !/^\d{9,10}$/.test(parentForm.phone))
-			parentErrors.phone = 'เบอร์โทรไม่ถูกต้อง';
-		if (Object.keys(parentErrors).length > 0) return;
-		const current = beginMutation(),
-			draft = parentEpoch;
-		parentLoading = true;
-		try {
-			await addParentToStudent(studentId, {
-				...parentForm,
-				email: parentForm.email || undefined,
-				national_id: parentForm.national_id || undefined
-			});
-			if (!current()) return;
-			if (draft === parentEpoch) {
-				toast.success('เพิ่มผู้ปกครองสำเร็จ');
-				isAddParentOpen = false;
-				resetParentForm();
-			}
-			await reloadCurrentYear();
-		} catch (error) {
-			if (current() && draft === parentEpoch)
-				toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
-		} finally {
-			if (current()) {
-				parentLoading = false;
-				mutating = false;
-			}
-		}
-	}
-	async function handleDeleteParent(parentId: string) {
-		if (
-			!canUpdateStudent ||
-			mutating ||
-			!student ||
-			!confirm('ยืนยันลบผู้ปกครองท่านนี้ออกจากนักเรียน?')
-		)
-			return;
-		const current = beginMutation();
-		try {
-			await removeParentFromStudent(studentId, parentId);
-			if (!current()) return;
-			toast.success('ลบผู้ปกครองสำเร็จ');
-			await reloadCurrentYear();
-		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
-		} finally {
-			if (current()) mutating = false;
+			if (current()) parentBusy = false;
 		}
 	}
 </script>
 
 <PageShell
-	title={student && canReadStudent ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
-	description="รายละเอียดและจัดการข้อมูลนักเรียน"
-	backHref={listHref}
+	title="แก้ไขทะเบียนนักเรียน"
+	description={student
+		? `${student.title ?? ''}${student.first_name} ${student.last_name}`
+		: 'ข้อมูลประจำตัวและสถานะทะเบียนกลาง'}
+	backHref={data.detailHref}
 	backPreload={false}
 >
-	{#snippet actions()}
-		<Button
+	{#snippet actions()}<Button
 			variant="outline"
-			onclick={reloadCurrentYear}
-			disabled={loading || !canReadStudent || editing || mutating}>รีเฟรช</Button
-		>
-		{#if student && canReadStudent && !editing && !loading && (canUpdateStudent || canDeleteStudent)}
-			<div class="flex gap-2">
-				{#if canUpdateStudent}
-					<Button onclick={() => (editing = true)} disabled={mutating}>
-						<Edit class="w-4 h-4 mr-2" />
-						แก้ไข
-					</Button>
-				{/if}
-				{#if canDeleteStudent}
-					<Button variant="destructive" onclick={handleDelete} disabled={mutating}>
-						{#if deleting}
-							กำลังลบ...
-						{:else}
-							<Trash2 class="w-4 h-4 mr-2" />
-							ลบ
-						{/if}
-					</Button>
-				{/if}
-			</div>
-		{/if}
-	{/snippet}
-
+			onclick={reloadProfile}
+			disabled={loading || saving || parentBusy || !canReadStudent}
+			><RefreshCw aria-hidden="true" />รีเฟรช</Button
+		>{/snippet}
 	<section data-testid="student-profile" aria-busy={loading}>
-		{#if loadError && student && canReadStudent}<PageState
-				title="อัปเดตข้อมูลนักเรียนไม่สำเร็จ"
-				description={loadError}
-				actionLabel="ลองอีกครั้ง"
-				onaction={reloadCurrentYear}
-			/>{/if}
-		{#if loading && student && canReadStudent}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
-		{#if !canReadStudent}
-			<PageState
-				variant="permission"
-				title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน"
-				description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต"
-			/>
-		{:else if canReadStudent && !canUpdateStudent}
-			<PageState
+		{#if !canReadStudent}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน" />
+		{:else if !canUpdateStudent}<PageState
 				variant="permission"
 				title="อ่านได้อย่างเดียว"
 				description="บัญชีนี้ยังไม่มีสิทธิ์แก้ไขข้อมูลนักเรียน"
+				href={data.detailHref}
+				actionLabel="ดูข้อมูลนักเรียน"
 			/>
-		{/if}
-
-		{#if canReadStudent}
-			{#if loading && !student}
-				<div role="status" aria-label="กำลังโหลดข้อมูลนักเรียน">
-					<PageSkeleton variant="form" rows={6} />
-				</div>
-			{:else if loadError && !student}
-				<PageState
+		{:else if loading && !student}<div role="status" aria-label="กำลังโหลดข้อมูลนักเรียน">
+				<PageSkeleton variant="form" rows={6} />
+			</div>
+		{:else if loadError && !student}<PageState
+				variant="error"
+				title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+				description={loadError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={reloadProfile}
+			/>
+		{:else if student}
+			{#if loadError}<PageState
 					variant="error"
-					title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+					title="อัปเดตข้อมูลนักเรียนไม่สำเร็จ"
 					description={loadError}
 					actionLabel="ลองอีกครั้ง"
-					onaction={reloadCurrentYear}
-				/>
-			{:else if student}
-				<!-- Student ID & Status -->
-				<Card class="p-6">
-					<div class="flex items-center justify-between">
-						<div>
-							<p class="text-sm text-muted-foreground">รหัสนักเรียน</p>
-							<p class="text-2xl font-bold">{student.student_id}</p>
-						</div>
-						<Badge
-							variant={student.status === 'active' ? 'default' : 'secondary'}
-							class={student.status === 'active' ? 'bg-green-500' : ''}
+					onaction={reloadProfile}
+				/>{/if}
+			{#if loading}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
+			<StudentRegisterForm
+				mode="edit"
+				bind:value={draft}
+				{errors}
+				{saving}
+				disabled={parentBusy}
+				{formError}
+				cancelHref={data.detailHref}
+				onsubmit={save}
+			>
+				{#snippet guardians()}
+					<Card.Root
+						><Card.Header
+							><div class="flex flex-wrap items-center justify-between gap-3">
+								<Card.Title><h2>ผู้ปกครอง</h2></Card.Title><Button
+									type="button"
+									variant="outline"
+									onclick={() => (parentOpen = true)}
+									disabled={saving || parentBusy}><Plus aria-hidden="true" />เพิ่มผู้ปกครอง</Button
+								>
+							</div></Card.Header
 						>
-							{student.status === 'active' ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-						</Badge>
-					</div>
-				</Card>
-
-				<!-- Basic Information -->
-				<Card class="p-6">
-					<h2 class="text-xl font-semibold mb-6">ข้อมูลพื้นฐาน</h2>
-
-					{#if editing && canUpdateStudent}
-						<div class="space-y-4">
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<Label for="first_name">ชื่อ</Label>
-									<Input
-										id="first_name"
-										type="text"
-										bind:value={formData.first_name}
-										disabled={mutating}
-									/>
-								</div>
-
-								<div>
-									<Label for="last_name">นามสกุล</Label>
-									<Input
-										id="last_name"
-										type="text"
-										bind:value={formData.last_name}
-										disabled={mutating}
-									/>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-2 gap-4">
-								<div>
-									<Label for="email">อีเมล</Label>
-									<Input id="email" type="email" bind:value={formData.email} disabled={mutating} />
-								</div>
-
-								<div>
-									<Label for="phone">เบอร์โทรศัพท์</Label>
-									<Input id="phone" type="tel" bind:value={formData.phone} disabled={mutating} />
-								</div>
-							</div>
-
-							<div>
-								<Label for="address">ที่อยู่</Label>
-								<Input id="address" type="text" bind:value={formData.address} disabled={mutating} />
-							</div>
-						</div>
-					{:else}
-						<div class="grid grid-cols-2 gap-6">
-							<div>
-								<Label>ชื่อ-นามสกุล</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.title || ''}
-									{student.first_name}
-									{student.last_name}
-								</div>
-							</div>
-
-							<div>
-								<Label>เพศ</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.gender === 'male' ? 'ชาย' : student.gender === 'female' ? 'หญิง' : '-'}
-								</div>
-							</div>
-
-							<div>
-								<Label>วันเกิด</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.date_of_birth || '-'}
-								</div>
-							</div>
-
-							{#if canReadStudentPii}
-								<div>
-									<Label>เลขบัตรประชาชน</Label>
-									<div class="px-3 py-2 bg-muted/50 rounded-md">
-										{student.national_id || '-'}
+						<Card.Content class="space-y-3"
+							>{#each student.parents as parent (parent.id)}<div
+									class="flex items-start justify-between gap-3 rounded-lg border p-4"
+								>
+									<div class="min-w-0 space-y-1">
+										<p class="break-words font-medium">{parent.first_name} {parent.last_name}</p>
+										<p class="break-words text-sm text-muted-foreground">
+											{parent.relationship}{parent.is_primary
+												? ' · ผู้ปกครองหลัก'
+												: ''}{parent.phone ? ` · ${parent.phone}` : ''}
+										</p>
 									</div>
-								</div>
-							{:else}
-								<div>
-									<Label>เลขบัตรประชาชน</Label>
-									<div class="px-3 py-2 bg-muted/50 rounded-md text-muted-foreground">
-										ไม่มีสิทธิ์ดูข้อมูลส่วนบุคคล
-									</div>
-								</div>
-							{/if}
-
-							<div>
-								<Label>อีเมล</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.email || '-'}
-								</div>
-							</div>
-
-							<div>
-								<Label>เบอร์โทรศัพท์</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.phone || '-'}
-								</div>
-							</div>
-
-							<div class="col-span-2">
-								<Label>ที่อยู่</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.address || '-'}
-								</div>
-							</div>
-						</div>
-					{/if}
-				</Card>
-
-				<!-- Student Information -->
-				<Card class="p-6">
-					<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
-
-					{#if editing && canUpdateStudent}
-						<div class="space-y-4">
-							<div class="grid grid-cols-3 gap-4">
-								<div>
-									<Label for="grade_level">ระดับชั้น</Label>
-									<Input
-										id="grade_level"
-										type="text"
-										bind:value={formData.grade_level}
-										placeholder="ม.1"
-										disabled={mutating}
-									/>
-								</div>
-
-								<div>
-									<Label for="homeroom">ห้อง</Label>
-									<Input
-										id="homeroom"
-										type="text"
-										bind:value={formData.homeroom}
-										placeholder="1"
-										disabled={mutating}
-									/>
-								</div>
-
-								<div>
-									<Label for="student_number">เลขที่</Label>
-									<Input
-										id="student_number"
-										type="number"
-										bind:value={formData.student_number}
-										placeholder="1"
-										disabled={mutating}
-									/>
-								</div>
-							</div>
-
-							<div class="flex gap-3 mt-6">
-								<Button onclick={handleSave} disabled={mutating} class="flex-1">
-									{#if saving}
-										กำลังบันทึก...
-									{:else}
-										<Save class="w-4 h-4 mr-2" />
-										บันทึก
-									{/if}
-								</Button>
-								<Button variant="outline" onclick={handleCancel} disabled={mutating}>
-									<X class="w-4 h-4 mr-2" />
-									ยกเลิก
-								</Button>
-							</div>
-						</div>
-					{:else}
-						<div class="grid grid-cols-3 gap-6">
-							<div>
-								<Label>ระดับชั้น</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.grade_level || '-'}
-								</div>
-							</div>
-
-							<div>
-								<Label>ห้อง</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.homeroom || '-'}
-								</div>
-							</div>
-
-							<div>
-								<Label>เลขที่</Label>
-								<div class="px-3 py-2 bg-muted/50 rounded-md">
-									{student.student_number || '-'}
-								</div>
-							</div>
-						</div>
-					{/if}
-				</Card>
-
-				<!-- Medical Information (if any) -->
-				{#if student.blood_type || student.allergies || student.medical_conditions}
-					<Card class="p-6">
-						<h2 class="text-xl font-semibold mb-6">ข้อมูลสุขภาพ</h2>
-
-						<div class="grid grid-cols-2 gap-6">
-							{#if student.blood_type}
-								<div>
-									<Label>หมู่เลือด</Label>
-									<div class="px-3 py-2 bg-muted/50 rounded-md">
-										{student.blood_type}
-									</div>
-								</div>
-							{/if}
-
-							{#if student.allergies}
-								<div class="col-span-2">
-									<Label>อาการแพ้</Label>
-									<div class="px-3 py-2 bg-muted/50 rounded-md">
-										{student.allergies}
-									</div>
-								</div>
-							{/if}
-
-							{#if student.medical_conditions}
-								<div class="col-span-2">
-									<Label>โรคประจำตัว</Label>
-									<div class="px-3 py-2 bg-muted/50 rounded-md">
-										{student.medical_conditions}
-									</div>
-								</div>
-							{/if}
-						</div>
-					</Card>
-				{/if}
-
-				<!-- Parent Information -->
-				<Card class="p-6">
-					<div class="flex items-center justify-between mb-6">
-						<h2 class="text-xl font-semibold">ข้อมูลผู้ปกครอง</h2>
-						{#if editing && canUpdateStudent}
-							<Button
-								variant="outline"
-								size="sm"
-								onclick={() => (isAddParentOpen = true)}
-								disabled={mutating}
-							>
-								+ เพิ่มผู้ปกครอง
-							</Button>
-						{/if}
-					</div>
-
-					{#if student.parents && student.parents.length > 0}
-						<div class="space-y-4">
-							{#each student.parents as parent (parent.id)}
-								<div class="p-4 border rounded-lg bg-muted/10 relative">
-									{#if editing && canUpdateStudent}
-										<Button
-											variant="ghost"
-											size="icon"
-											class="absolute top-2 right-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-											onclick={() => handleDeleteParent(parent.id)}
-											aria-label="ลบผู้ปกครอง"
-											disabled={mutating}
-										>
-											<Trash2 class="w-4 h-4" />
-										</Button>
-									{/if}
-
-									<div class="grid grid-cols-2 gap-4">
-										<div>
-											<Label class="text-xs text-muted-foreground">ชื่อ-นามสกุล</Label>
-											<p class="font-medium">{parent.first_name} {parent.last_name}</p>
-										</div>
-										<div>
-											<Label class="text-xs text-muted-foreground">ความสัมพันธ์</Label>
-											<div class="flex items-center gap-2">
-												<p>{parent.relationship}</p>
-												{#if parent.is_primary}
-													<Badge variant="secondary" class="text-xs">หลัก</Badge>
-												{/if}
-											</div>
-										</div>
-										<div>
-											<Label class="text-xs text-muted-foreground">เบอร์โทรศัพท์</Label>
-											<p>{parent.phone || '-'}</p>
-										</div>
-										<div>
-											<Label class="text-xs text-muted-foreground">Username</Label>
-											<p class="font-mono text-sm">{parent.username}</p>
-										</div>
-									</div>
-								</div>
-							{/each}
-						</div>
-					{:else}
-						<div class="text-center py-8 text-muted-foreground">ยังไม่มีข้อมูลผู้ปกครอง</div>
-					{/if}
-				</Card>
-			{:else}
-				<PageState
-					title="ไม่พบข้อมูลนักเรียน"
-					description="ไม่พบข้อมูลนักเรียนสำหรับรายการนี้"
-					actionLabel="กลับหน้ารายชื่อนักเรียน"
-					href={listHref}
-				/>
-			{/if}
-		{/if}
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon"
+										aria-label="ลบผู้ปกครอง"
+										onclick={() => (removingParent = parent.id)}
+										disabled={saving || parentBusy}><Trash2 aria-hidden="true" /></Button
+									>
+								</div>{:else}<p class="text-sm text-muted-foreground">
+									ยังไม่มีข้อมูลผู้ปกครอง
+								</p>{/each}</Card.Content
+						></Card.Root
+					>
+				{/snippet}
+			</StudentRegisterForm>
+		{:else}<PageState title="ไม่พบนักเรียน" />{/if}
 	</section>
 </PageShell>
-
 {#if canReadStudent && canUpdateStudent}
-	<Dialog.Root bind:open={isAddParentOpen}>
-		<Dialog.Content class="sm:max-w-[425px]">
-			<Dialog.Header>
-				<Dialog.Title>เพิ่มผู้ปกครอง</Dialog.Title>
-				<Dialog.Description>
-					กรอกข้อมูลผู้ปกครองเพื่อเชื่อมโยงกับนักเรียน (ถ้าเบอร์โทรซ้ำระบบจะใช้บัญชีเดิม)
-				</Dialog.Description>
-			</Dialog.Header>
-			<div class="grid gap-4 py-4">
-				<div class="grid grid-cols-4 gap-4">
-					<div class="col-span-1">
-						<Label for="p_title">คำนำหน้า</Label>
-						<Select.Root type="single" bind:value={parentForm.title}>
-							<Select.Trigger>{parentForm.title || 'เลือก'}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="นาย">นาย</Select.Item>
-								<Select.Item value="นาง">นาง</Select.Item>
-								<Select.Item value="นางสาว">นางสาว</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="col-span-3">
-						<Label for="p_first_name">ชื่อ <span class="text-destructive">*</span></Label>
-						<Input
-							id="p_first_name"
-							bind:value={parentForm.first_name}
-							class={parentErrors.first_name ? 'border-destructive' : ''}
-						/>
-						{#if parentErrors.first_name}<p class="text-[10px] text-destructive">
-								{parentErrors.first_name}
-							</p>{/if}
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
-						<Input
-							id="p_last_name"
-							bind:value={parentForm.last_name}
-							class={parentErrors.last_name ? 'border-destructive' : ''}
-						/>
-						{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
-								{parentErrors.last_name}
-							</p>{/if}
-					</div>
-					<div>
-						<Label for="p_relationship">ความสัมพันธ์</Label>
-						<Select.Root type="single" bind:value={parentForm.relationship}>
-							<Select.Trigger>{parentForm.relationship}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="บิดา">บิดา</Select.Item>
-								<Select.Item value="มารดา">มารดา</Select.Item>
-								<Select.Item value="ผู้ปกครอง">ผู้ปกครอง</Select.Item>
-								<Select.Item value="ญาติ">ญาติ</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<Label for="p_phone">เบอร์โทรศัพท์ <span class="text-destructive">*</span></Label>
-						<Input
-							id="p_phone"
-							bind:value={parentForm.phone}
-							maxlength={10}
-							placeholder="08xxxxxxxx"
-							class={parentErrors.phone ? 'border-destructive' : ''}
-						/>
-						{#if parentErrors.phone}<p class="text-[10px] text-destructive">
-								{parentErrors.phone}
-							</p>{/if}
-					</div>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<Label for="p_email">อีเมล</Label>
-						<Input id="p_email" type="email" bind:value={parentForm.email} />
-					</div>
-					{#if canReadStudentPii}
-						<div>
-							<Label for="p_nid">เลขบัตรประชาชน</Label>
-							<Input id="p_nid" bind:value={parentForm.national_id} maxlength={13} />
-						</div>
-					{/if}
-				</div>
-			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (isAddParentOpen = false)}>ยกเลิก</Button>
-				<Button type="submit" onclick={handleAddParent} disabled={parentLoading}>
-					{#if parentLoading}กำลังบันทึก...{:else}บันทึก{/if}
-				</Button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+	<Dialog.Root bind:open={parentOpen}
+		><Dialog.Content
+			><Dialog.Header
+				><Dialog.Title>เพิ่มผู้ปกครอง</Dialog.Title><Dialog.Description
+					>เชื่อมโยงผู้ปกครองกับนักเรียน หากเบอร์โทรซ้ำระบบจะใช้บัญชีเดิม</Dialog.Description
+				></Dialog.Header
+			>
+			<form
+				class="space-y-4"
+				novalidate
+				onsubmit={(event) => {
+					event.preventDefault();
+					void addParent();
+				}}
+			>
+				<StudentParentFields
+					bind:value={parentDraft}
+					idPrefix="student-parent"
+					errors={parentErrors}
+					disabled={parentBusy}
+					allowNationalId={canReadStudentPii}
+				/>{#if parentError}<p role="alert" class="text-sm text-destructive">
+						{parentError}
+					</p>{/if}<Dialog.Footer
+					><Button
+						type="button"
+						variant="outline"
+						onclick={() => (parentOpen = false)}
+						disabled={parentBusy}>ยกเลิก</Button
+					><LoadingButton type="submit" loading={parentBusy} loadingLabel="กำลังเพิ่ม..."
+						>บันทึก</LoadingButton
+					></Dialog.Footer
+				>
+			</form></Dialog.Content
+		></Dialog.Root
+	>
+	<AlertDialog.Root
+		open={Boolean(removingParent)}
+		onOpenChange={(open) => {
+			if (!open && !parentBusy) removingParent = null;
+		}}
+		><AlertDialog.Content
+			><AlertDialog.Header
+				><AlertDialog.Title>นำผู้ปกครองออกจากนักเรียน?</AlertDialog.Title><AlertDialog.Description
+					>ยกเลิกความเชื่อมโยงนี้ โดยไม่ลบบัญชีผู้ปกครอง</AlertDialog.Description
+				></AlertDialog.Header
+			><AlertDialog.Footer
+				><AlertDialog.Cancel disabled={parentBusy}>ยกเลิก</AlertDialog.Cancel><Button
+					variant="destructive"
+					onclick={removeParent}
+					disabled={parentBusy}>{parentBusy ? 'กำลังนำออก...' : 'นำออก'}</Button
+				></AlertDialog.Footer
+			></AlertDialog.Content
+		></AlertDialog.Root
+	>
 {/if}

@@ -8,7 +8,8 @@ use school_errors::AppError;
 
 use super::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ListStudentsQuery, ParentDto,
-    StudentDbRow, StudentListItem, StudentListResponse, StudentProfile, UpdateOwnProfileRequest,
+    StudentDbRow, StudentListItem, StudentListResponse, StudentProfile, StudentRegisterInfo,
+    StudentRegisterProfile, StudentRegistrationStatus, UpdateOwnProfileRequest,
     UpdateStudentRequest,
 };
 
@@ -16,8 +17,7 @@ use super::models::{
 pub enum StudentListAccess {
     Own(Uuid),
     Assigned(Uuid),
-    OrganizationUnit(Uuid),
-    OrganizationTree(Uuid),
+    OwnAndAssigned(Uuid),
     School,
 }
 
@@ -121,143 +121,84 @@ pub async fn list_students(
     access: StudentListAccess,
 ) -> Result<StudentListResponse, AppError> {
     let page = filter.page.unwrap_or(1);
-    let page_size = filter.page_size.unwrap_or(20).min(100);
-    let offset = (page - 1) * page_size;
-
-    let mut query = String::from(
-        r#"
-        SELECT
-            u.id, u.username, u.title, u.first_name, u.last_name,
-            s.student_id,
-            CASE gl.level_type
-                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
-                WHEN 'primary' THEN CONCAT('ป.', gl.year)
-                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
-                ELSE CONCAT('?.', gl.year)
-            END as grade_level,
-            h.name as homeroom,
-            u.status
-        FROM users u
-        INNER JOIN student_info s ON u.id = s.user_id
-        INNER JOIN student_academic_years student_year
-          ON student_year.student_id = u.id
-         AND student_year.academic_year_id = $1
-        LEFT JOIN LATERAL (
-            SELECT homeroom_id
-            FROM homeroom_placements
-            WHERE student_academic_year_id = student_year.id
-            ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
-                     start_date DESC, created_at DESC
-            LIMIT 1
-        ) placement ON true
-        LEFT JOIN homerooms h ON placement.homeroom_id = h.id
-        LEFT JOIN grade_levels gl ON student_year.grade_level_id = gl.id
-        WHERE u.user_type = 'student'
-        "#,
-    );
-
-    let mut idx = 1u32;
-
-    if filter.status.is_some() {
-        idx += 1;
-        query.push_str(&format!(" AND u.status = ${idx}"));
+    let page_size = filter.page_size.unwrap_or(20);
+    if page < 1 || !(1..=100).contains(&page_size) {
+        return Err(AppError::BadRequest(
+            "เลขหน้าและจำนวนรายการต่อหน้าไม่ถูกต้อง".into(),
+        ));
     }
-    if filter
+    let offset = (page - 1)
+        .checked_mul(page_size)
+        .ok_or_else(|| AppError::BadRequest("เลขหน้ามากเกินไป".into()))?;
+    if filter.account_status.as_deref().is_some_and(|status| {
+        !matches!(
+            status,
+            "active" | "inactive" | "suspended" | "resigned" | "retired"
+        )
+    }) {
+        return Err(AppError::BadRequest("สถานะบัญชีไม่ถูกต้อง".into()));
+    }
+    let search = filter
         .search
-        .as_ref()
-        .is_some_and(|search| !search.is_empty())
-    {
-        idx += 1;
-        query.push_str(&format!(" AND (u.first_name ILIKE ${idx} OR u.last_name ILIKE ${idx} OR s.student_id ILIKE ${idx} OR u.username ILIKE ${idx})"));
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if search.is_some_and(|value| value.chars().count() > 200) {
+        return Err(AppError::BadRequest("คำค้นหาต้องไม่เกิน 200 ตัวอักษร".into()));
     }
-
-    push_student_list_access_filter(&mut query, &mut idx, access);
-
-    idx += 1;
-    let limit_idx = idx;
-    idx += 1;
-    let offset_idx = idx;
-    query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, h.name NULLS LAST, s.student_number");
-    query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
-
-    let mut q = sqlx::query_as::<_, StudentListItem>(sqlx::AssertSqlSafe(query));
-    q = q.bind(filter.academic_year_id);
-    if let Some(status) = &filter.status {
-        q = q.bind(status);
-    }
-    if let Some(search) = &filter.search {
-        if !search.is_empty() {
-            q = q.bind(format!("%{search}%"));
-        }
-    }
-    q = bind_student_list_access_filter(q, access);
-    q = q.bind(page_size);
-    q = q.bind(offset);
-
-    let items = q.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Failed to list students: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    let (school, own, assigned, actor) = match access {
+        StudentListAccess::School => (true, false, false, None),
+        StudentListAccess::Own(id) => (false, true, false, Some(id)),
+        StudentListAccess::Assigned(id) => (false, false, true, Some(id)),
+        StudentListAccess::OwnAndAssigned(id) => (false, true, true, Some(id)),
+    };
+    let items = sqlx::query_as::<_, StudentListItem>(
+        r#"
+        SELECT u.id, u.username, u.title, u.first_name, u.last_name,
+               s.student_id, s.enrollment_date,
+               COALESCE(s.registration_status, 'unrecorded') AS registration_status,
+               u.status AS account_status
+        FROM users u
+        LEFT JOIN student_info s ON s.user_id = u.id
+        WHERE u.user_type = 'student'
+          AND ($1::text IS NULL OR COALESCE(s.registration_status, 'unrecorded') = $1)
+          AND ($2::text IS NULL OR u.status = $2)
+          AND ($3::text IS NULL OR u.first_name ILIKE $3 OR u.last_name ILIKE $3
+               OR s.student_id ILIKE $3 OR u.username ILIKE $3)
+          AND ($4::boolean OR ($5::boolean AND u.id = $7)
+               OR ($6::boolean AND EXISTS (
+                   SELECT 1 FROM student_academic_years student_year
+                   JOIN homeroom_placements placement
+                     ON placement.student_academic_year_id = student_year.id
+                    AND placement.status = 'current'
+                   JOIN homeroom_advisors advisor ON advisor.homeroom_id = placement.homeroom_id
+                   WHERE student_year.student_id = u.id AND student_year.status = 'active'
+                     AND advisor.user_id = $7
+               )))
+        ORDER BY u.first_name, u.last_name, u.id
+        LIMIT $8 OFFSET $9
+    "#,
+    )
+    .bind(filter.registration_status)
+    .bind(filter.account_status)
+    .bind(search.map(|value| format!("%{value}%")))
+    .bind(school)
+    .bind(own)
+    .bind(assigned)
+    .bind(actor)
+    .bind(page_size)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to list student register: {}", error);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
     })?;
-
     Ok(StudentListResponse {
         items,
         page,
         page_size,
     })
-}
-
-fn push_student_list_access_filter(query: &mut String, idx: &mut u32, access: StudentListAccess) {
-    match access {
-        StudentListAccess::School => {}
-        StudentListAccess::Own(actor_user_id) | StudentListAccess::Assigned(actor_user_id) => {
-            *idx += 1;
-            let bind_index = *idx;
-            match access {
-                StudentListAccess::Own(_) => {
-                    query.push_str(&format!(" AND u.id = ${bind_index}"));
-                }
-                StudentListAccess::Assigned(_) => {
-                    query.push_str(&format!(
-                        r#" AND EXISTS (
-                            SELECT 1
-                            FROM student_academic_years scope_student_year
-                            JOIN homeroom_placements scope_placement
-                              ON scope_placement.student_academic_year_id = scope_student_year.id
-                            JOIN homeroom_advisors scope_advisor
-                              ON scope_advisor.homeroom_id = scope_placement.homeroom_id
-                            WHERE scope_student_year.student_id = u.id
-                              AND scope_student_year.academic_year_id = $1
-                              AND scope_advisor.user_id = ${bind_index}
-                        )"#
-                    ));
-                }
-                _ => unreachable!("matched own or assigned access only"),
-            }
-            let _ = actor_user_id;
-        }
-        StudentListAccess::OrganizationUnit(_) | StudentListAccess::OrganizationTree(_) => {
-            query.push_str(" AND false");
-        }
-    }
-}
-
-fn bind_student_list_access_filter<'q>(
-    query: sqlx::query::QueryAs<
-        'q,
-        Postgres,
-        StudentListItem,
-        <Postgres as sqlx::Database>::Arguments,
-    >,
-    access: StudentListAccess,
-) -> sqlx::query::QueryAs<'q, Postgres, StudentListItem, <Postgres as sqlx::Database>::Arguments> {
-    match access {
-        StudentListAccess::School
-        | StudentListAccess::OrganizationUnit(_)
-        | StudentListAccess::OrganizationTree(_) => query,
-        StudentListAccess::Own(actor_user_id) | StudentListAccess::Assigned(actor_user_id) => {
-            query.bind(actor_user_id)
-        }
-    }
 }
 
 pub struct CreatedStudent {
@@ -267,8 +208,10 @@ pub struct CreatedStudent {
 
 pub async fn create_student(
     pool: &PgPool,
-    payload: CreateStudentRequest,
+    actor_user_id: Uuid,
+    mut payload: CreateStudentRequest,
 ) -> Result<CreatedStudent, AppError> {
+    crate::validation::normalize_create(&mut payload)?;
     let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
         tracing::error!("Student password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
@@ -304,7 +247,7 @@ pub async fn create_student(
     )
     .await?;
 
-    insert_student_info(&mut tx, user_id, &payload).await?;
+    insert_student_info(&mut tx, user_id, actor_user_id, &payload).await?;
     let parent_ids = link_initial_parents(&mut tx, user_id, payload.parents.as_deref()).await?;
     assign_required_role(
         &mut tx,
@@ -332,36 +275,39 @@ pub async fn create_student(
 pub async fn get_student(
     pool: &PgPool,
     student_id: Uuid,
-    academic_year_id: Uuid,
+    academic_year_id: Option<Uuid>,
     include_pii: bool,
-) -> Result<StudentProfile, AppError> {
-    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
+) -> Result<StudentRegisterProfile, AppError> {
+    let mut student_row = sqlx::query_as::<_, StudentRegisterInfo>(
         r#"
         SELECT
-            u.id, u.username, u.national_id as national_id, u.email, u.first_name, u.last_name,
+            u.id, u.username, u.national_id, u.email, u.first_name, u.last_name,
             u.title, u.nickname, u.phone, u.date_of_birth, u.gender,
-            u.address, u.profile_image_file_id, u.status,
-            s.student_id,
-            CASE gl.level_type
-                WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
-                WHEN 'primary' THEN CONCAT('ป.', gl.year)
-                WHEN 'secondary' THEN CONCAT('ม.', gl.year)
-                ELSE CONCAT('?.', gl.year)
-            END as grade_level,
-            h.name as homeroom,
-            placement.class_number as student_number,
-            s.blood_type, s.allergies, s.medical_conditions as medical_conditions
+            u.address, u.profile_image_file_id, u.status AS account_status,
+            s.student_id, s.enrollment_date,
+            COALESCE(s.registration_status, 'unrecorded') AS registration_status,
+            s.registration_status_updated_at, s.registration_status_updated_by,
+            CASE WHEN student_year.id IS NULL THEN NULL ELSE
+                CASE gl.level_type
+                    WHEN 'kindergarten' THEN CONCAT('อ.', gl.year)
+                    WHEN 'primary' THEN CONCAT('ป.', gl.year)
+                    WHEN 'secondary' THEN CONCAT('ม.', gl.year)
+                    ELSE CONCAT('?.', gl.year)
+                END
+            END AS grade_level,
+            h.name AS homeroom,
+            placement.class_number AS student_number,
+            s.blood_type, s.allergies, s.medical_conditions
         FROM users u
         LEFT JOIN student_info s ON u.id = s.user_id
-        INNER JOIN student_academic_years student_year
-          ON student_year.student_id = u.id
-         AND student_year.academic_year_id = $2
+        LEFT JOIN student_academic_years student_year
+          ON student_year.student_id = u.id AND student_year.academic_year_id = $2
         LEFT JOIN LATERAL (
             SELECT homeroom_id, class_number
             FROM homeroom_placements
             WHERE student_academic_year_id = student_year.id
             ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
-                     start_date DESC, created_at DESC
+                     start_date DESC, created_at DESC, id
             LIMIT 1
         ) placement ON true
         LEFT JOIN homerooms h ON placement.homeroom_id = h.id
@@ -373,16 +319,23 @@ pub async fn get_student(
     .bind(academic_year_id)
     .fetch_optional(pool)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to get student: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+    .map_err(|error| {
+        tracing::error!("Failed to get student register profile: {}", error);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".into())
     })?
-    .ok_or(AppError::NotFound("Student not found".to_string()))?;
+    .ok_or_else(|| AppError::NotFound("ไม่พบนักเรียน".into()))?;
 
-    apply_student_pii_visibility(&mut student_row, include_pii);
+    if include_pii {
+        decrypt_student_field(&mut student_row.national_id);
+        decrypt_student_field(&mut student_row.medical_conditions);
+    } else {
+        student_row.national_id = None;
+        student_row.blood_type = None;
+        student_row.allergies = None;
+        student_row.medical_conditions = None;
+    }
     let parents = list_student_parents(pool, student_id).await?;
-
-    Ok(StudentProfile {
+    Ok(StudentRegisterProfile {
         info: student_row,
         parents,
     })
@@ -391,66 +344,91 @@ pub async fn get_student(
 pub async fn update_student(
     pool: &PgPool,
     student_id: Uuid,
-    payload: UpdateStudentRequest,
+    actor_user_id: Uuid,
+    mut payload: UpdateStudentRequest,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to start update student transaction: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่ม Transaction".to_string())
-    })?;
-
+    crate::validation::normalize_update(&mut payload)?;
+    let date_of_birth = payload
+        .date_of_birth
+        .as_ref()
+        .map(|value| crate::validation::parse_date(value.as_deref()))
+        .transpose()?
+        .flatten();
+    let enrollment_date = payload
+        .enrollment_date
+        .as_ref()
+        .map(|value| crate::validation::parse_date(value.as_deref()))
+        .transpose()?
+        .flatten();
+    let mut tx = pool.begin().await?;
     let user_update = sqlx::query(
         r#"
-        UPDATE users
-        SET
-            email = COALESCE($2, email),
-            first_name = COALESCE($3, first_name),
-            last_name = COALESCE($4, last_name),
-            phone = COALESCE($5, phone),
-            address = COALESCE($6, address),
+        UPDATE users SET
+            email = CASE WHEN $2 THEN $3 ELSE email END,
+            first_name = COALESCE($4, first_name), last_name = COALESCE($5, last_name),
+            title = CASE WHEN $6 THEN $7 ELSE title END,
+            phone = CASE WHEN $8 THEN $9 ELSE phone END,
+            address = CASE WHEN $10 THEN $11 ELSE address END,
+            date_of_birth = CASE WHEN $12 THEN $13 ELSE date_of_birth END,
+            gender = CASE WHEN $14 THEN $15 ELSE gender END,
             updated_at = NOW()
         WHERE id = $1 AND user_type = 'student'
-        "#,
+    "#,
     )
     .bind(student_id)
-    .bind(&payload.email)
-    .bind(&payload.first_name)
-    .bind(&payload.last_name)
-    .bind(&payload.phone)
-    .bind(&payload.address)
+    .bind(payload.email.is_some())
+    .bind(payload.email.flatten())
+    .bind(payload.first_name)
+    .bind(payload.last_name)
+    .bind(payload.title.is_some())
+    .bind(payload.title.flatten())
+    .bind(payload.phone.is_some())
+    .bind(payload.phone.flatten())
+    .bind(payload.address.is_some())
+    .bind(payload.address.flatten())
+    .bind(payload.date_of_birth.is_some())
+    .bind(date_of_birth)
+    .bind(payload.gender.is_some())
+    .bind(payload.gender.flatten())
     .execute(&mut *tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to update student user: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
+    .map_err(|error| {
+        // SQL errors can contain contact values. Return only a classified error.
+        map_duplicate_student_error(error, "ไม่สามารถอัพเดตข้อมูลได้")
     })?;
-
     if user_update.rows_affected() == 0 {
-        return Err(AppError::NotFound("ไม่พบนักเรียน".to_string()));
+        return Err(AppError::NotFound("ไม่พบนักเรียน".into()));
     }
-
-    sqlx::query(
-        r#"
-        UPDATE student_info
-        SET
-            student_number = COALESCE($2, student_number),
-            updated_at = NOW()
-        WHERE user_id = $1
+    if payload.registration_status.is_some() || payload.enrollment_date.is_some() {
+        let result = sqlx::query(
+            r#"
+            UPDATE student_info SET
+                registration_status_updated_at = CASE
+                    WHEN $2::text IS NOT NULL AND registration_status IS DISTINCT FROM $2
+                    THEN NOW() ELSE registration_status_updated_at END,
+                registration_status_updated_by = CASE
+                    WHEN $2::text IS NOT NULL AND registration_status IS DISTINCT FROM $2
+                    THEN $3 ELSE registration_status_updated_by END,
+                registration_status = COALESCE($2, registration_status),
+                enrollment_date = CASE WHEN $4 THEN $5 ELSE enrollment_date END,
+                updated_at = NOW()
+            WHERE user_id = $1
         "#,
-    )
-    .bind(student_id)
-    .bind(payload.student_number)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to update student_info: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลได้".to_string())
-    })?;
-
-    tx.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit update student transaction: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
-    })?;
-
+        )
+        .bind(student_id)
+        .bind(payload.registration_status)
+        .bind(actor_user_id)
+        .bind(payload.enrollment_date.is_some())
+        .bind(enrollment_date)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::Conflict(
+                "ไม่พบทะเบียนประจำตัวนักเรียน กรุณาตรวจสอบข้อมูลก่อน".into(),
+            ));
+        }
+    }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -504,8 +482,9 @@ pub async fn delete_student(
 pub async fn add_parent_to_student(
     pool: &PgPool,
     student_id: Uuid,
-    payload: CreateParentRequest,
+    mut payload: CreateParentRequest,
 ) -> Result<Uuid, AppError> {
+    crate::validation::normalize_parent(&mut payload)?;
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("Failed to begin add parent transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่มต้น transaction".to_string())
@@ -607,19 +586,15 @@ fn apply_student_pii_visibility(row: &mut StudentDbRow, include_pii: bool) {
         return;
     }
 
-    if let Some(national_id) = row.national_id.clone() {
-        match field_encryption::decrypt(&national_id) {
-            Ok(decrypted) => row.national_id = Some(decrypted),
-            Err(error) => tracing::error!("Failed to decrypt student national_id: {}", error),
-        }
-    }
+    decrypt_student_field(&mut row.national_id);
+    decrypt_student_field(&mut row.medical_conditions);
+}
 
-    if let Some(medical_conditions) = row.medical_conditions.clone() {
-        match field_encryption::decrypt(&medical_conditions) {
-            Ok(decrypted) => row.medical_conditions = Some(decrypted),
-            Err(error) => {
-                tracing::error!("Failed to decrypt student medical_conditions: {}", error)
-            }
+fn decrypt_student_field(value: &mut Option<String>) {
+    if let Some(encrypted) = value.take() {
+        match field_encryption::decrypt(&encrypted) {
+            Ok(decrypted) => *value = Some(decrypted),
+            Err(_) => tracing::error!("Failed to decrypt protected student field"),
         }
     }
 }
@@ -632,15 +607,7 @@ fn hide_student_pii_fields(row: &mut StudentDbRow) {
 }
 
 fn parse_optional_date(value: Option<&str>) -> Result<Option<NaiveDate>, AppError> {
-    match value {
-        Some(date) if !date.is_empty() => NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map(Some)
-            .map_err(|e| {
-                tracing::error!("Invalid student date_of_birth format: {}", e);
-                AppError::BadRequest("รูปแบบวันเกิดไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)".to_string())
-            }),
-        _ => Ok(None),
-    }
+    crate::validation::parse_date(value)
 }
 
 fn student_username_or_default(username: Option<String>, student_id: &str) -> String {
@@ -663,8 +630,8 @@ async fn insert_student_user(
         INSERT INTO users (
             username, national_id, national_id_hash, email, password_hash,
             first_name, last_name, title,
-            user_type, status, date_of_birth, gender
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'student', 'active', $9, $10)
+            user_type, status, date_of_birth, gender, phone, address
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'student', 'active', $9, $10, $11, $12)
         RETURNING id
         "#,
     )
@@ -678,35 +645,41 @@ async fn insert_student_user(
     .bind(&payload.title)
     .bind(date_of_birth)
     .bind(&payload.gender)
+    .bind(&payload.phone)
+    .bind(&payload.address)
     .fetch_one(&mut **tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to create student user: {}", e);
-        map_duplicate_student_error(e, "ไม่สามารถสร้างผู้ใช้งานได้")
-    })
+    .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างผู้ใช้งานได้"))
 }
 
 async fn insert_student_info(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    actor_user_id: Uuid,
     payload: &CreateStudentRequest,
 ) -> Result<(), AppError> {
     sqlx::query(
         r#"
         INSERT INTO student_info (
-            user_id, student_id, student_number
-        ) VALUES ($1, $2, $3)
+            user_id, student_id, registration_status,
+            registration_status_updated_at, registration_status_updated_by, enrollment_date
+        ) VALUES ($1, $2, $3, NOW(), $4, $5)
         "#,
     )
     .bind(user_id)
     .bind(payload.student_id.as_str())
-    .bind(payload.student_number)
+    .bind(
+        payload
+            .registration_status
+            .unwrap_or(StudentRegistrationStatus::Pending),
+    )
+    .bind(actor_user_id)
+    .bind(crate::validation::parse_date(
+        payload.enrollment_date.as_deref(),
+    )?)
     .execute(&mut **tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to create student_info: {}", e);
-        AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
-    })?;
+    .map_err(|e| map_duplicate_student_error(e, "ไม่สามารถสร้างข้อมูลนักเรียนได้"))?;
 
     Ok(())
 }
@@ -816,10 +789,7 @@ async fn create_parent_user(
     .bind(&payload.phone)
     .fetch_one(&mut **tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to create parent: {}", e);
-        AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
-    })?;
+    .map_err(|error| map_duplicate_student_error(error, "ไม่สามารถสร้างบัญชีผู้ปกครองได้"))?;
 
     assign_parent_role(tx, parent_id).await?;
 

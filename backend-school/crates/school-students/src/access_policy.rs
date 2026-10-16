@@ -2,11 +2,13 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use school_authorization::resource_access_policy::{
-    self, ResourceAccessPermissions, ResourceAccessTarget, UserResourceListAccess,
+    self, ResourceAccessPermissions, ResourceAccessTarget,
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_permissions::registry::codes;
+
+use crate::services::StudentListAccess;
 
 const STUDENT_PROFILE_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
     own: Some(codes::STUDENT_READ_OWN),
@@ -24,11 +26,18 @@ const STUDENT_PII_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions 
     school: Some(codes::STUDENT_PII_READ_SCHOOL),
 };
 
-pub fn resolve_student_list_access(
-    actor: &ActorContext,
-) -> Result<UserResourceListAccess, AppError> {
-    resource_access_policy::resolve_user_resource_list_access(actor, STUDENT_PROFILE_ACCESS)
-        .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายชื่อนักเรียน".to_string()))
+pub fn resolve_student_list_access(actor: &ActorContext) -> Result<StudentListAccess, AppError> {
+    if actor.has_permission(codes::STUDENT_READ_SCHOOL) {
+        return Ok(StudentListAccess::School);
+    }
+    let own = actor.has_permission(codes::STUDENT_READ_OWN);
+    let assigned = actor.has_permission(codes::STUDENT_READ_ASSIGNED);
+    match (own, assigned) {
+        (true, true) => Ok(StudentListAccess::OwnAndAssigned(actor.user_id)),
+        (true, false) => Ok(StudentListAccess::Own(actor.user_id)),
+        (false, true) => Ok(StudentListAccess::Assigned(actor.user_id)),
+        (false, false) => Err(AppError::Forbidden("ไม่มีสิทธิ์ดูรายชื่อนักเรียน".into())),
+    }
 }
 
 pub async fn can_read_student_profile(
@@ -116,7 +125,7 @@ mod tests {
 
         let access = resolve_student_list_access(&actor).expect("school access should resolve");
 
-        assert_eq!(access, UserResourceListAccess::School);
+        assert_eq!(access, StudentListAccess::School);
     }
 
     #[test]
@@ -126,6 +135,18 @@ mod tests {
 
         let access = resolve_student_list_access(&actor).expect("assigned access should resolve");
 
-        assert_eq!(access, UserResourceListAccess::Assigned(user_id));
+        assert_eq!(access, StudentListAccess::Assigned(user_id));
+    }
+    #[test]
+    fn student_list_access_retains_own_and_assigned_union() {
+        let user_id = Uuid::new_v4();
+        let actor = actor(
+            user_id,
+            &[codes::STUDENT_READ_OWN, codes::STUDENT_READ_ASSIGNED],
+        );
+        assert_eq!(
+            resolve_student_list_access(&actor).unwrap(),
+            StudentListAccess::OwnAndAssigned(user_id)
+        );
     }
 }

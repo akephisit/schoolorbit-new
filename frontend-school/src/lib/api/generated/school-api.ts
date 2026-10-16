@@ -11218,6 +11218,13 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_StudentRegisterProfile: {
+			data: components['schemas']['StudentRegisterInfo'] & {
+				parents: components['schemas']['ParentDto'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_StudyProgram: {
 			data: {
 				code: string;
@@ -16603,17 +16610,19 @@ export interface components {
 			studyProgramId: string;
 		};
 		CreateStudentRequest: {
+			address?: string | null;
 			date_of_birth?: string | null;
 			email?: string | null;
+			enrollment_date?: string | null;
 			first_name: string;
 			gender?: string | null;
 			last_name: string;
 			national_id?: string | null;
 			parents?: components['schemas']['CreateParentRequest'][] | null;
 			password: string;
+			phone?: string | null;
+			registration_status?: null | components['schemas']['StudentRegistrationStatus'];
 			student_id: string;
-			/** Format: int32 */
-			student_number?: number | null;
 			title?: string | null;
 			username?: string | null;
 		};
@@ -21478,16 +21487,17 @@ export interface components {
 			studentAcademicYearId: string;
 		};
 		StudentListItem: {
+			account_status: string;
+			/** Format: date */
+			enrollment_date: string | null;
 			first_name: string;
-			grade_level?: string | null;
-			homeroom?: string | null;
 			/** Format: uuid */
 			id: string;
 			last_name: string;
-			status: string;
-			student_id?: string | null;
-			title?: string | null;
-			username: string;
+			registration_status: components['schemas']['StudentRegistrationStatus'];
+			student_id: string | null;
+			title: string | null;
+			username: string | null;
 		};
 		StudentListResponse: {
 			items: components['schemas']['StudentListItem'][];
@@ -21508,6 +21518,53 @@ export interface components {
 		StudentProfile: components['schemas']['StudentDbRow'] & {
 			parents: components['schemas']['ParentDto'][];
 		};
+		/**
+		 * @description Staff projection deliberately names account status separately from registration.
+		 *     Annual placement fields are null unless the caller supplies an academic year.
+		 */
+		StudentRegisterInfo: {
+			account_status: string;
+			address: string | null;
+			allergies: string | null;
+			blood_type: string | null;
+			/** Format: date */
+			date_of_birth: string | null;
+			email: string | null;
+			/** Format: date */
+			enrollment_date: string | null;
+			first_name: string;
+			gender: string | null;
+			grade_level: string | null;
+			homeroom: string | null;
+			/** Format: uuid */
+			id: string;
+			last_name: string;
+			medical_conditions: string | null;
+			national_id: string | null;
+			nickname: string | null;
+			phone: string | null;
+			/** Format: uuid */
+			profile_image_file_id: string | null;
+			registration_status: components['schemas']['StudentRegistrationStatus'];
+			/** Format: date-time */
+			registration_status_updated_at: string | null;
+			/** Format: uuid */
+			registration_status_updated_by: string | null;
+			student_id: string | null;
+			/** Format: int32 */
+			student_number: number | null;
+			title: string | null;
+			username: string | null;
+		};
+		StudentRegisterProfile: components['schemas']['StudentRegisterInfo'] & {
+			parents: components['schemas']['ParentDto'][];
+		};
+		/**
+		 * @description Administrative registration assertion, independent of login and annual enrollment.
+		 * @enum {string}
+		 */
+		StudentRegistrationStatus:
+			'unrecorded' | 'pending' | 'studying' | 'transferred_out' | 'withdrawn' | 'graduated';
 		StudentYearCandidate: {
 			/** Format: uuid */
 			id: string;
@@ -23505,12 +23562,15 @@ export interface components {
 		};
 		UpdateStudentRequest: {
 			address?: string | null;
+			date_of_birth?: string | null;
 			email?: string | null;
+			enrollment_date?: string | null;
 			first_name?: string | null;
+			gender?: string | null;
 			last_name?: string | null;
 			phone?: string | null;
-			/** Format: int32 */
-			student_number?: number | null;
+			registration_status?: null | components['schemas']['StudentRegistrationStatus'];
+			title?: string | null;
 		};
 		UpdateStudyProgramRequest: {
 			/** Format: uuid */
@@ -51775,12 +51835,12 @@ export interface operations {
 	};
 	listStudents: {
 		parameters: {
-			query: {
-				academicYearId: string;
+			query?: {
+				accountStatus?: string;
 				page?: number;
 				pageSize?: number;
+				registrationStatus?: components['schemas']['StudentRegistrationStatus'];
 				search?: string;
-				status?: string;
 			};
 			header?: never;
 			path?: never;
@@ -51788,13 +51848,22 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Students in the selected academic year */
+			/** @description Permanent student register in the authorized scope */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_StudentListResponse'];
+				};
+			};
+			/** @description Invalid register filters or pagination */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Authentication required */
@@ -51879,8 +51948,8 @@ export interface operations {
 	};
 	getStudent: {
 		parameters: {
-			query: {
-				academicYearId: string;
+			query?: {
+				academicYearId?: string;
 			};
 			header?: never;
 			path: {
@@ -51891,13 +51960,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Student profile in the selected academic year */
+			/** @description Permanent student profile with optional annual context */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_StudentProfile'];
+					'application/json': components['schemas']['ApiResponse_StudentRegisterProfile'];
 				};
 			};
 			/** @description Authentication required */
@@ -51954,6 +52023,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Invalid or duplicate student profile data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Authentication required */
 			401: {
 				headers: {
@@ -51974,6 +52052,15 @@ export interface operations {
 			};
 			/** @description Student not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permanent student record requires reconciliation */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -52056,6 +52143,15 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid or duplicate guardian data */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Authentication required */

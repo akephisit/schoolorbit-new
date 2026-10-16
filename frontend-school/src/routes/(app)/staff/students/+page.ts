@@ -8,12 +8,13 @@ import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
+import { registrationStatus, studentAccountStatus } from '#lib/forms/student-register.js';
 import { listStudents } from '#lib/api/students.js';
 
 export const _meta = {
-	academicContext: 'year_required' as const,
+	academicContext: 'none' as const,
 	menu: {
-		title: 'รายชื่อนักเรียน',
+		title: 'ทะเบียนนักเรียน',
 		icon: 'GraduationCap',
 		group: 'academic_registry',
 		workspace: 'academic',
@@ -25,23 +26,20 @@ export const _meta = {
 
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
-	const academicYearId = url.searchParams.get('academicYearId') ?? '';
 	const search = url.searchParams.get('search') ?? '';
-	const requestedStatus = url.searchParams.get('status');
-	const status =
-		requestedStatus === 'all' || requestedStatus === 'inactive' ? requestedStatus : 'active';
+	const selectedRegistrationStatus = registrationStatus(url.searchParams.get('registrationStatus'));
+	const accountStatus = studentAccountStatus(url.searchParams.get('accountStatus'));
 	const requestedPage = Number(url.searchParams.get('page'));
 	const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 	const query = {
-		academicYearId,
+		registrationStatus: selectedRegistrationStatus,
+		accountStatus,
 		search: search || undefined,
-		status: status === 'all' ? undefined : status,
 		page,
 		pageSize: 20
 	};
 	const students = captureRouteLoad(
 		waitForAuthenticatedUser().then((user) =>
-			academicYearId &&
 			user?.user_type === 'staff' &&
 			get(can).hasAny(
 				PERMISSIONS.STUDENT_READ_SCHOOL,
@@ -55,12 +53,12 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	);
 	return {
 		title: _meta.menu.title,
-		academicYearId,
+		registrationStatus: selectedRegistrationStatus ?? 'all',
+		accountStatus: accountStatus ?? 'all',
 		search,
-		status,
 		page,
 		query,
-		listKey: JSON.stringify([academicYearId, search, status, page]),
+		listKey: JSON.stringify([search, selectedRegistrationStatus, accountStatus, page]),
 		students
 	};
 };

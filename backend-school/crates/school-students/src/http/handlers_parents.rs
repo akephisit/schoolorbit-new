@@ -32,6 +32,7 @@ use crate::models::CreateParentRequest;
     request_body = CreateParentRequest,
     responses(
         (status = 200, description = "Parent linked to student", body = ApiResponse<school_http::EmptyData>),
+        (status = 400, description = "Invalid or duplicate guardian data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse),

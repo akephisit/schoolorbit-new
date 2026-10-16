@@ -4716,6 +4716,7 @@ dependencies = [
  "school-permissions",
  "school-test-db",
  "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "tracing",
