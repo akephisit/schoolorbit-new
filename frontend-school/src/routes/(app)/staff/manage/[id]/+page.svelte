@@ -332,7 +332,7 @@
 				onaction={loadStaffProfile}
 			/>
 		{:else if staff}
-			<Card.Root class="mb-5 py-0">
+			<Card.Root class="mb-5 gap-0 py-0">
 				<Card.Content class="flex flex-wrap items-center gap-4 p-4 sm:p-5">
 					<div
 						class="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10"
