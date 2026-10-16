@@ -244,6 +244,7 @@ use utoipa::OpenApi;
         school_files_http::http::handlers::download_file,
         school_files_http::http::handlers::delete_file,
         school_files_http::http::handlers::get_public_file_content,
+        school_files_http::http::handlers::get_public_file_favicon,
         school_files_http::http::handlers::get_public_file_delivery,
         school_fonts::http::handlers::list_school_fonts,
         school_fonts::http::handlers::inspect_school_font_uploads,

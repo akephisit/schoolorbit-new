@@ -6057,6 +6057,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/public/files/{id}/favicon': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicFileFavicon'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/roles': {
 		parameters: {
 			query?: never;
@@ -50239,6 +50255,38 @@ export interface operations {
 				};
 			};
 			/** @description Public ready file not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicFileFavicon: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Ready public school crest ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Square school crest PNG */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'image/png': string;
+				};
+			};
+			/** @description Public school crest not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

@@ -17,6 +17,7 @@ let authenticated = false;
 let unavailable = false;
 let invalid = false;
 let redirected = false;
+let slowDirectory = false;
 const requests: { path: string; cookie?: string }[] = [];
 const schoolName = 'โรงเรียนทดสอบ </script><script>alert(1)</script>';
 
@@ -24,7 +25,7 @@ test.describe.configure({ mode: 'serial' });
 test.use({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
 
 test.beforeAll(async () => {
-	apiServer = createHttpServer((req, res) => {
+	apiServer = createHttpServer(async (req, res) => {
 		const url = new URL(req.url ?? '/', 'http://localhost');
 		requests.push({ path: url.pathname + url.search, cookie: req.headers.cookie });
 		res.setHeader('access-control-allow-origin', req.headers.origin ?? '*');
@@ -40,6 +41,7 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (url.pathname === '/api/v1/public/schools') {
+			if (slowDirectory) await new Promise((done) => setTimeout(done, 4000));
 			if (redirected) {
 				res.writeHead(302, { location: '/redirected-directory' }).end();
 				return;
@@ -93,7 +95,11 @@ test.beforeAll(async () => {
 	server = await createServer({
 		root: adminRoot,
 		logLevel: 'silent',
-		server: { host: '127.0.0.1', port: 0, hmr: false }
+		server: {
+			host: '127.0.0.1',
+			port: 0,
+			hmr: { host: '127.0.0.1', port: 0, clientPort: 0, protocol: 'wss' }
+		}
 	});
 	await server.listen();
 	const address = server.httpServer?.address();
@@ -106,6 +112,7 @@ test.beforeEach(() => {
 	unavailable = false;
 	invalid = false;
 	redirected = false;
+	slowDirectory = false;
 	requests.length = 0;
 });
 test.afterAll(async () => {
@@ -177,6 +184,13 @@ test('first HTML exposes safe unique metadata and school links without JavaScrip
 		(await page.locator('script[type="application/ld+json"]').textContent()) ?? '{}'
 	);
 	expect(structured.mainEntity.itemListElement[0].name).toBe(schoolName);
+	await expect(page.locator('link[rel="icon"]')).toHaveCount(1);
+	await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/schoolorbit.png');
+	const icon = await request.get(baseUrl + '/schoolorbit.png');
+	expect(icon.headers()['content-type']).toContain('image/png');
+	const png = await icon.body();
+	expect(png.readUInt32BE(16)).toBe(256);
+	expect(png.readUInt32BE(20)).toBe(256);
 	expect(
 		requests
 			.filter((item) => item.path.startsWith('/api/v1/public/schools'))
@@ -217,6 +231,16 @@ test('unavailable, invalid or redirected public data returns an uncached retryab
 	expect(requests.filter((item) => item.path.startsWith('/api/v1/public/schools')).length).toBe(
 		before
 	);
+});
+
+test('a directory API read slower than three seconds still renders its school links', async ({
+	request
+}) => {
+	slowDirectory = true;
+	const response = await request.get(baseUrl + '/schools');
+	expect(response.status()).toBe(200);
+	expect(await response.text()).toContain('https://alpha.127.0.0.1/');
+	expect(requests.filter((item) => item.path.startsWith('/api/v1/public/schools'))).toHaveLength(1);
 });
 
 test('an authenticated operator retains the dashboard entry on the public homepage', async ({

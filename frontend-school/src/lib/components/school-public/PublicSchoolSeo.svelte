@@ -15,11 +15,7 @@
 		site: SchoolPublicIndexing;
 	} = $props();
 	function metadata(info: PublicSchoolInfo | null): SchoolHomeSeo {
-		return buildSchoolHomeSeo(
-			info,
-			site,
-			info?.logoFileId ? new URL('/school-logo', site.homeUrl).href : null
-		);
+		return buildSchoolHomeSeo(info, site, new URL('/favicon.png', site.homeUrl).href);
 	}
 </script>
 
