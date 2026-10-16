@@ -11,6 +11,7 @@ on:
           - provision
           - smoke
           - diagnostics
+          - recreate-admin-frontend
           - benchmark
           - cache-benchmark
           - compiler-cache-diagnostic
@@ -40,6 +41,16 @@ permissions:
   actions: read
   packages: write
 jobs:
+  recreate-admin-frontend:
+    if: inputs.operation == 'recreate-admin-frontend' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/recreate-admin-frontend.yml
+    secrets: inherit
   smoke:
     if: inputs.operation == 'smoke'
     uses: ./.github/workflows/smoke-test.yml

@@ -709,6 +709,18 @@ These reviewed references guide the matching page responsibility. Inspect the cu
 - Deployment jobs reuse a minimal dependency closure derived from the owning application's lockfile. Cache identity includes locked versions/integrities, extraction recipe, runner platform and full Node version; only main writes this namespace. Validate restored tooling and install that same locked closure on a miss. Artifact preparation may prime it from its completed locked install; deployment tooling must not run application build/prepare hooks or replace another session's dependency directory.
 - Compiler summaries distinguish current BuildKit execution/reuse from recorded builder-layer Cargo timings, library cache counters and executable compilation/linking. Keep summaries bounded and publish complete timing evidence separately; missing metrics must be reported unavailable, never as a successful cache hit or zero work.
 - Frontend Admin stages code and secrets in the same inactive Worker version, promotes only the version ID from that upload's structured output, and applies its configured routes. Temporary secret files are mode `0600`, never logged, and always removed; legacy pre-deploy `secret bulk` is prohibited because inactive versions can block it.
+- If the Admin Worker is absent, its serialized release may first create a minimal 503
+  bootstrap without application code, bindings, routes, workers.dev or preview access.
+  Only a recognized missing-service response allows creation; authorization, transport
+  and malformed-response failures stop release. Preserve existing Workers and continue
+  to stage/promote the exact application version normally. This path never targets
+  School Workers, tenant DNS or application databases.
+- Explicit Admin Worker recreation belongs to `Operations` on main under the shared
+  production lock. Prepare a frontend-admin-only Pipeline and require its successful
+  build gate before maintenance/deletion; reject queued School/backend changes. Delete
+  only the named Admin script without forcing dependent-resource removal, then let
+  the already-prepared normal Pipeline own recreation and acceptance after lock release.
+  Declare the Admin custom domain so Cloudflare restores its managed DNS as well.
 - School Rust formatting, workspace/architecture, API export and selected database consumers have one verification owner and reuse compiled targets. A database suite uses one disposable Docker server with a fresh owned database per invocation; never point fixtures at a shared tenant or production database.
 - Use the pinned local Rust toolchain without removing other developer toolchains. Offline exporter verification reuses the compiled contract binary under a clean runtime environment.
 - Cached Playwright browser files must match the installed Playwright version, runner OS, and architecture. Always verify a real browser launch and install missing host dependencies before running the existing frontend acceptance or E2E gates, including on cache hits.

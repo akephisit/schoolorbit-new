@@ -95,6 +95,7 @@ test('component release changes keep pending siblings and never invalidate their
   for (const [file, owners] of [
     ['.github/workflows/deploy-backend-admin.yml', ['backend-admin']],
     ['.github/workflows/deploy-frontend-admin.yml', ['frontend-admin']],
+    ['scripts/lib/pipeline-admin-worker.mjs', ['frontend-admin']],
     ['.github/workflows/deploy-school-release.yml', ['backend-school', 'frontend-school']],
     ['scripts/lib/pipeline-remote/school-deploy-backend.sh', ['backend-school']],
     ['scripts/lib/pipeline-remote/school-verify-release.sh', ['backend-school', 'frontend-school']],
