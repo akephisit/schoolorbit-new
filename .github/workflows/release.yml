@@ -47,6 +47,13 @@ jobs:
         with:
           name: prepared-backend-admin
           path: ${{ runner.temp }}/prepared
+      - name: Check former Admin alias ownership before entering maintenance
+        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'frontend-admin')
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/lib/pipeline-admin-worker.mjs check-alias
       - name: Validate Admin backend digest
         if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
         id: manifest

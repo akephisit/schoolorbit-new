@@ -25,6 +25,23 @@ test('the tracked admin API proxy routes only to backend-admin', async () => {
 	assert.match(proxy, /access_log off/);
 });
 
+test('Admin ready and maintenance CORS permit the apex without the retired alias or school Origins', async () => {
+	for (const file of [
+		'nginx-configs/admin-api.conf.template',
+		'nginx-configs/admin-api.maintenance.conf.template'
+	]) {
+		const proxy = await renderProxy(file);
+		assert.match(proxy, /"https:\/\/example\.test" \$http_origin;/);
+		assert.doesNotMatch(proxy, /"https:\/\/admin\.example\.test"|\[\\w-\]/);
+		const start = proxy.indexOf('server_name admin.example.test;');
+		assert.ok(start >= 0);
+		const retired = proxy.slice(start, proxy.indexOf('\n}', start));
+		assert.match(retired, /return 410;/);
+		assert.match(retired, /Cache-Control "no-store" always/);
+		assert.doesNotMatch(retired, /proxy_pass|return 30[1278]/);
+	}
+});
+
 test('backend-admin deployment installs and verifies the tracked proxy fail-closed', async () => {
 	const workflow = await readRepoFile('.github/workflows/deploy-backend-admin.yml');
 

@@ -39,9 +39,8 @@ jobs:
           : "${PUBLIC_API_URL:?BACKEND_ADMIN_URL repository variable is required}"
           jq \
             --arg domain "${BASE_DOMAIN}" \
-            --arg redirect_domain "admin.${BASE_DOMAIN}" \
             --arg admin_api "$PUBLIC_API_URL" \
-            'del(.build) + {routes:[{pattern:($domain+"/*"),zone_name:$domain},{pattern:$redirect_domain,custom_domain:true}],vars:{PUBLIC_API_URL:$admin_api}}' \
+            'del(.build) + {routes:[{pattern:($domain+"/*"),zone_name:$domain}],vars:{PUBLIC_API_URL:$admin_api}}' \
             wrangler.json >wrangler.deploy.json
       - name: Read locked Wrangler version
         id: wrangler-version
@@ -113,6 +112,12 @@ jobs:
           command: |
             versions deploy --config wrangler.deploy.json --version-id ${{ steps.uploaded-version.outputs.id }} --percentage 100 --yes
             triggers deploy --config wrangler.deploy.json
+      - name: Retire the former Admin custom domain
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/lib/pipeline-admin-worker.mjs retire-alias
       - name: Verify the exact Admin Worker deployment and retain its receipt
         working-directory: frontend-admin
         env:

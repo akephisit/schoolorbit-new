@@ -7,7 +7,7 @@ map $http_x_schoolorbit_release_probe $admin_release_probe {
 
 map $http_origin $admin_maintenance_allow_origin {
     default "";
-    "~^https://([\w-]+\.)?${BASE_DOMAIN_REGEX}(:[0-9]+)?$" $http_origin;
+    "https://${BASE_DOMAIN}" $http_origin;
     "http://localhost:3000" $http_origin;
     "http://127.0.0.1:3000" $http_origin;
 }
@@ -74,4 +74,17 @@ server {
         default_type application/json;
         return 503 '{"success":false,"error":"maintenance","message":"ระบบกำลังปรับปรุง กรุณาลองใหม่อีกครั้ง"}';
     }
+}
+
+# Shared wildcard DNS can still resolve the retired hostname. Never proxy it.
+server {
+    listen 80;
+    listen 443 ssl;
+    server_name admin.${BASE_DOMAIN};
+    ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    access_log off;
+    add_header Cache-Control "no-store" always;
+    return 410;
 }

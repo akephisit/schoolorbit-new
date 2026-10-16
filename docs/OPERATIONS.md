@@ -332,9 +332,9 @@ and malformed-response failures stop release. The bootstrap has no application
 assets/bindings, custom routes, workers.dev or preview access. The prepared
 application then follows normal credential-free inactive-version upload,
 exact-version promotion, route application and browser acceptance. No manual
-Worker creation or Git integration is required. Wrangler reapplies the legacy Admin
-redirect custom domain, including its Cloudflare-managed DNS record, and the exact
-apex zone route over the existing proxied apex DNS.
+Worker creation or Git integration is required. Wrangler reapplies only the exact
+apex zone route over the existing proxied apex DNS, without restoring the retired
+Admin alias.
 Deleting the Admin Worker removes its previous deployment history and managed
 domains and makes the Admin frontend unavailable until release recreates it.
 This recovery path never targets a School Worker, tenant DNS record or database.
@@ -1325,12 +1325,20 @@ a verified operator. Recovery-only `--bootstrap`, `--resend-verification` and
 `ADMIN_BOOTSTRAP_TOKEN` for token consumption. They are not ordinary deployment
 steps. Never print or pass tokens in command arguments.
 
-The frontend Worker uses an exact `<base-domain>/*` zone route and the managed
-custom domain `admin.<base-domain>`. The old Admin host redirects to the apex
-before rendering, including during maintenance. Preserve the existing proxied
+The frontend Worker uses only the exact `<base-domain>/*` zone route. The former
+`admin.<base-domain>` hostname is retired and its Origin is not allowed. Preserve the existing proxied
 apex A/AAAA/CNAME record; do not convert it into a Worker custom domain or delete
 it to resolve Cloudflare error 100117. This leaves tenant DNS and routes unchanged.
-Review the exact apex route and legacy custom domain for competing owners. Keep
+Before maintenance, Pipeline checks the former alias's ownership without mutation.
+After promotion, it explicitly detaches the former alias only if its exact
+hostname belongs to `schoolorbit-frontend-admin` in production, then confirms its
+absence. Wrangler alone does not remove a custom domain when none are configured.
+Ambiguous ownership, unavailable lookup or failed removal keeps maintenance active.
+The shared wildcard DNS may still resolve the retired name; do not delete that
+wildcard because schools use it. Both normal and maintenance origin configurations
+return uncached 410 for that hostname, without proxying it. The Admin Worker also
+rejects it if a stale mapping reaches the runtime.
+Review the exact apex route for competing owners. Keep
 Cloudflare Workers Builds disconnected so Pipeline is the sole deployment writer.
 The Worker has no internal migration secret; remove any obsolete
 `INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.

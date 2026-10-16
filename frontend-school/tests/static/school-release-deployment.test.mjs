@@ -9,7 +9,7 @@ import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
-test('Admin configuration uses an exact apex zone route while preserving the redirect custom domain', async (t) => {
+test('Admin configuration uses only the exact apex zone route and retires the former alias after promotion', async (t) => {
 	const workflow = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
 	);
@@ -33,12 +33,30 @@ test('Admin configuration uses an exact apex zone route while preserving the red
 	});
 	assert.equal(result.status, 0, result.stderr);
 	const config = JSON.parse(await readFile(path.join(temporary, 'wrangler.deploy.json'), 'utf8'));
-	assert.deepEqual(config.routes, [
-		{ pattern: 'example.test/*', zone_name: 'example.test' },
-		{ pattern: 'admin.example.test', custom_domain: true }
-	]);
+	assert.deepEqual(config.routes, [{ pattern: 'example.test/*', zone_name: 'example.test' }]);
 	assert.equal(config.build, undefined);
 	assert.deepEqual(config.vars, { PUBLIC_API_URL: 'https://admin-api.example.test' });
+	const steps = workflow.jobs.deploy.steps;
+	const promote = steps.findIndex(
+		(item) => item.name === 'Promote uploaded frontend-admin Worker and apply routes'
+	);
+	const retire = steps.findIndex((item) =>
+		item.run?.endsWith('pipeline-admin-worker.mjs retire-alias')
+	);
+	const verify = steps.findIndex(
+		(item) => item.name === 'Verify the exact Admin Worker deployment and retain its receipt'
+	);
+	assert.ok(promote >= 0 && promote < retire && retire < verify);
+	assert.equal(steps[retire].env.BASE_DOMAIN, '${{ vars.BASE_DOMAIN }}');
+	assert.equal(steps[retire].env.CLOUDFLARE_API_TOKEN, '${{ secrets.CLOUDFLARE_API_TOKEN }}');
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	assert.ok(
+		release.jobs.preflight.steps.some((item) =>
+			item.run?.endsWith('pipeline-admin-worker.mjs check-alias')
+		)
+	);
 });
 
 test('Admin deploy resolves its image artifact locally instead of crossing a secret-bearing job output', async () => {

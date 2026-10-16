@@ -5,11 +5,116 @@ import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
-import {ADMIN_WORKER, adminWorkerExists, writeAdminBootstrap, prepareAdminWorker, removeAdminWorker} from '../lib/pipeline-admin-worker.mjs';
+import {ADMIN_WORKER, adminWorkerExists, writeAdminBootstrap, prepareAdminWorker, removeAdminWorker, retireAdminAlias} from '../lib/pipeline-admin-worker.mjs';
 import {requireFrontendOnly, preparedGate} from '../lib/pipeline-admin-recreate.mjs';
 
 const credentials = {accountId: 'a'.repeat(32), token: 'synthetic-token'};
 const reply = (status, body) => async () => new Response(JSON.stringify(body), {status});
+
+const alias = {id: 'b'.repeat(32), hostname: 'admin.example.test', service: ADMIN_WORKER, environment: 'production'};
+
+test('alias preflight verifies the same ownership without mutating Cloudflare', async () => {
+  let reads = 0;
+  assert.equal(await retireAdminAlias({...credentials, baseDomain: 'example.test', checkOnly: true,
+    fetchImpl: async (url, request) => {
+      assert.equal(request.method, 'GET');
+      reads++;
+      return Response.json({success: true, result: [alias]});
+    }}), true);
+  assert.equal(reads, 1);
+});
+
+test('alias retirement detaches only its confirmed Admin production owner and verifies absence', async () => {
+  const calls = [];
+  const responses = [{success: true, result: [alias]}, {success: true}, {success: true, result: []}];
+  assert.equal(await retireAdminAlias({...credentials, baseDomain: 'example.test', fetchImpl: async (url, options) => {
+    calls.push({url, method: options.method});
+    return Response.json(responses.shift());
+  }}), true);
+  const root = `https://api.cloudflare.com/client/v4/accounts/${credentials.accountId}/workers/domains`;
+  assert.deepEqual(calls, [
+    {url: root + '?hostname=admin.example.test', method: 'GET'},
+    {url: root + '/' + alias.id, method: 'DELETE'},
+    {url: root + '?hostname=admin.example.test', method: 'GET'}
+  ]);
+  assert.ok(calls.every(call => !call.url.includes('/zones/') && !call.url.includes('/workers/scripts/')));
+});
+
+test('an absent alias is idempotent and a no-content deletion is accepted only after confirmed absence', async () => {
+  const options = {...credentials, baseDomain: 'example.test'};
+  let calls = 0;
+  assert.equal(await retireAdminAlias({...options, fetchImpl: async () => {
+    calls++;
+    return Response.json({success: true, result: []});
+  }}), false);
+  assert.equal(calls, 1);
+  let reads = 0;
+  assert.equal(await retireAdminAlias({...options, fetchImpl: async (url, request) => {
+    if (request.method === 'DELETE') return new Response(null, {status: 204});
+    return Response.json({success: true, result: reads++ ? [] : [alias]});
+  }}), true);
+});
+
+test('unexpected aliases, environments, owners and incomplete lookup results never authorize deletion', async () => {
+  for (const body of [
+    {success: true, result: [{...alias, hostname: 'school.example.test'}]},
+    {success: true, result: [{...alias, service: 'schoolorbit-frontend-school'}]},
+    {success: true, result: [{...alias, environment: 'staging'}]},
+    {success: true, result: [{...alias, id: '../other'}]},
+    {success: true, result: [null]},
+    {success: true, result: [alias, alias]},
+    {success: true, result: [] , result_info: {total_count: 1}},
+    {success: true, result: [alias], result_info: {total_count: 'unknown'}},
+    {success: true, result: {}},
+    {success: false, result: []}
+  ]) {
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test', fetchImpl: async (url, request) => {
+      assert.equal(request.method, 'GET', 'unsafe ownership must never reach deletion');
+      return Response.json(body);
+    }}));
+  }
+});
+
+test('alias retirement fails closed on unavailable lookup or deletion without leaking credentials', async () => {
+  for (const fetchImpl of [
+    async () => { throw new Error(credentials.token); },
+    async () => new Response(credentials.token),
+    reply(403, {success: false}),
+    async (url, request) => request.method === 'DELETE' ? Response.json({success: false}) :
+      Response.json({success: true, result: [alias]})
+  ]) {
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test', fetchImpl}), error => {
+      assert.ok(!error.message.includes(credentials.token));
+      return true;
+    });
+  }
+});
+
+test('alias deletion waits for bounded absence confirmation without deleting again', async () => {
+  let deletes = 0;
+  let waits = 0;
+  await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test', wait: async () => { waits++; },
+    fetchImpl: async (url, request) => {
+      if (request.method === 'DELETE') { deletes++; return Response.json({success: true}); }
+      return Response.json({success: true, result: [alias]});
+    }}), /not yet confirmed/);
+  assert.equal(deletes, 1);
+  assert.equal(waits, 2);
+});
+
+test('alias retirement refuses invalid configuration and non-production callers before contacting Cloudflare', async () => {
+  for (const override of [{accountId: '../other'}, {token: ''}, {baseDomain: '*.example.test'}, {baseDomain: 'https://example.test'}]) {
+    await assert.rejects(retireAdminAlias({...credentials, baseDomain: 'example.test', ...override,
+      fetchImpl: () => assert.fail('Unexpected network request')}));
+  }
+  for (const override of [{GITHUB_REF: 'refs/heads/feature'}, {GITHUB_EVENT_NAME: 'pull_request'}]) {
+    const result = spawnSync(process.execPath, [path.resolve(import.meta.dirname, '../lib/pipeline-admin-worker.mjs'), 'retire-alias'], {
+      encoding: 'utf8', env: {...process.env, GITHUB_REF: 'refs/heads/main', GITHUB_EVENT_NAME: 'workflow_dispatch', ...override}
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /requires the main production Pipeline/);
+  }
+});
 
 test('the deletion CLI refuses non-main, non-explicit and non-manual callers before any API request', () => {
   for (const override of [{GITHUB_REF: 'refs/heads/feature'}, {GITHUB_EVENT_NAME: 'pull_request'}, {ADMIN_WORKER_RECREATE: 'false'}]) {
