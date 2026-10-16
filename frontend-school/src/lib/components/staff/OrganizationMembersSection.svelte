@@ -9,7 +9,7 @@
 	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -420,7 +420,7 @@
 <section
 	data-testid="organization-members"
 	aria-busy={loadingMembers}
-	class="rounded-lg border bg-card"
+	class="relative rounded-lg border bg-card"
 >
 	<div class="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
 		<div class="space-y-1">
@@ -429,8 +429,8 @@
 				สมาชิก
 			</h2>
 			<div class="flex flex-wrap gap-2">
-				<Badge variant="outline">{activeMemberCount} คน</Badge>
-				<Badge variant="secondary">{leaderCount} ผู้บริหาร/หัวหน้า</Badge>
+				<Badge variant="outline">{membersLoaded ? activeMemberCount : '—'} คน</Badge>
+				<Badge variant="secondary">{membersLoaded ? leaderCount : '—'} ผู้บริหาร/หัวหน้า</Badge>
 				{#if includeChildren}
 					<Badge variant="outline">{childUnits.length} หน่วยงานย่อย</Badge>
 				{/if}
@@ -457,7 +457,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={onRefresh}
 			/>{/if}
-		{#if loadingMembers && membersLoaded}<p role="status">กำลังอัปเดตสมาชิก...</p>{/if}
+		{#if loadingMembers && membersLoaded}<RegionUpdatingState label="กำลังอัปเดตสมาชิก" />{/if}
 		{#if loadingMembers && !membersLoaded}<div role="status" aria-label="กำลังโหลดสมาชิก">
 				<PageSkeleton variant="table" rows={3} />
 			</div>
@@ -500,7 +500,7 @@
 											{member.name.charAt(0)}
 										</div>
 										<div class="min-w-0">
-											<p class="truncate text-sm font-medium">{member.name}</p>
+											<p class="break-words text-sm font-medium">{member.name}</p>
 											<div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
 												<span
 													>{positionLabels[member.position_code as PositionCode] ??
