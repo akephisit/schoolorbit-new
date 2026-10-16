@@ -128,7 +128,7 @@ test('detail and immediate edit retain the full registry return context', async 
 	await expect(page.getByTestId('student-profile')).toContainText('นักเรียนแรก');
 	await expect(page.getByTestId('student-academic')).toHaveCount(0);
 	await page.getByRole('link', { name: 'แก้ไข', exact: true }).click();
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toBeEditable();
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toBeEditable();
 	await page.getByRole('link', { name: 'ยกเลิก', exact: true }).click();
 	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 	await expect(page).toHaveURL(directoryURL);

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import {
 	mockStaffStudents,
 	listPath,
@@ -8,6 +8,7 @@ import {
 	year,
 	nextYear
 } from './fixtures/staff-student-route-data';
+import { id } from './fixtures/staff-home-route-data';
 import { navigate } from './fixtures/supervision-route-data';
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ page }) => {
@@ -15,6 +16,13 @@ test.beforeEach(async ({ page }) => {
 		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
 	);
 });
+async function expectStudentName(region: Locator, name: string, editing: boolean) {
+	if (editing) {
+		const input = region.getByRole('textbox', { name: 'ชื่อ', exact: true });
+		await expect(input).toHaveValue(name);
+		await expect(input).toBeEditable();
+	} else await expect(region).toContainText(name);
+}
 test('directory has one route-owned read and first skeleton without optional reads', async ({
 	page
 }) => {
@@ -36,7 +44,7 @@ for (const route of ['list', 'profile', 'edit'] as const) {
 		const region = page.getByTestId(route === 'list' ? 'student-list' : 'student-profile');
 		await expect(region).toContainText('region นักเรียนไม่พร้อม');
 		await region.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
-		await expect(region).toContainText('นักเรียนแรก');
+		await expectStudentName(region, 'นักเรียนแรก', route === 'edit');
 		expect(api.reads).toHaveLength(2);
 		expect(api.count('/api/auth/me')).toBe(1);
 	});
@@ -46,10 +54,16 @@ for (const route of ['list', 'profile', 'edit'] as const) {
 			route === 'list' ? listPath() : studentPath(firstStudent, route === 'edit' ? '/edit' : '')
 		);
 		const region = page.getByTestId(route === 'list' ? 'student-list' : 'student-profile');
-		await expect(region).toContainText('นักเรียนแรก');
+		await expectStudentName(region, 'นักเรียนแรก', route === 'edit');
+		if (route === 'edit')
+			await region.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('ชื่อร่างที่ต้องเก็บ');
 		await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
 		await expect(region).toContainText('region นักเรียนไม่พร้อม');
-		await expect(region).toContainText('นักเรียนแรก');
+		await expectStudentName(
+			region,
+			route === 'edit' ? 'ชื่อร่างที่ต้องเก็บ' : 'นักเรียนแรก',
+			route === 'edit'
+		);
 	});
 }
 test('directory paging uses URL and back restores the first page', async ({ page }) => {
@@ -89,9 +103,19 @@ for (const suffix of ['', '/edit'])
 		await page.goto(studentPath(firstStudent, suffix));
 		await expect(page.getByTestId('student-profile').getByRole('status')).toBeVisible();
 		await navigate(page, studentPath(secondStudent, suffix));
-		await expect(page.getByTestId('student-profile')).toContainText('นักเรียนที่สอง');
+		const region = page.getByTestId('student-profile');
+		await expectStudentName(region, 'นักเรียนที่สอง', suffix === '/edit');
+		const destination = page.url();
 		api.release();
-		await expect(page.getByTestId('student-profile')).not.toContainText('นักเรียนแรก');
+		await expectStudentName(region, 'นักเรียนที่สอง', suffix === '/edit');
+		if (suffix === '/edit')
+			await expect(region.getByRole('textbox', { name: 'ชื่อ', exact: true })).not.toHaveValue(
+				'นักเรียนแรก'
+			);
+		else await expect(region).not.toContainText('นักเรียนแรก');
+		await expect(page).toHaveURL(destination);
+		expect(api.reads).toHaveLength(2);
+		expect(api.writes).toHaveLength(0);
 	});
 test('selected profile changes year and preserves contextual edit link', async ({ page }) => {
 	const api = await mockStaffStudents(page);
@@ -110,7 +134,13 @@ test('read-only editor loads one profile and no optional editor catalog', async 
 	await page.goto(studentPath(firstStudent, '/edit'));
 	await expect(page.getByText('อ่านได้อย่างเดียว', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'เพิ่มผู้ปกครอง' })).toHaveCount(0);
-	expect(api.reads).toHaveLength(1);
+	await expect.poll(() => api.reads.length).toBe(1);
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'ดูข้อมูลนักเรียน', exact: true })).toHaveAttribute(
+		'href',
+		studentPath(firstStudent)
+	);
 });
 test('write-only actor does not request a denied profile', async ({ page }) => {
 	const api = await mockStaffStudents(page, { permissions: ['student.update.all'] });
@@ -136,9 +166,14 @@ test('late save cannot reset the next student or redirect', async ({ page }) => 
 	await page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	await navigate(page, studentPath(secondStudent, '/edit'));
-	await expect(page.getByTestId('student-profile')).toContainText('นักเรียนที่สอง');
+	const name = page.getByRole('textbox', { name: 'ชื่อ', exact: true });
+	await expect(name).toHaveValue('นักเรียนที่สอง');
+	const destination = page.url();
 	api.release();
-	await expect(page.getByTestId('student-profile')).not.toContainText('ชื่อที่แก้');
+	await expect(name).toHaveValue('นักเรียนที่สอง');
+	await expect(name).not.toHaveValue('ชื่อที่แก้');
+	await expect(page).toHaveURL(destination);
+	expect(api.writes).toEqual([{ method: 'PUT', path: `/api/students/${firstStudent}` }]);
 	expect(api.reads).toHaveLength(2);
 });
 test('parent dialog is interaction-only and refreshes selected data after adding', async ({
@@ -159,14 +194,25 @@ test('parent dialog is interaction-only and refreshes selected data after adding
 	expect(api.reads).toHaveLength(2);
 	expect(api.writes[0].path).toBe(`/api/students/${firstStudent}/parents`);
 });
-test('parent removal refreshes only the selected profile', async ({ page }) => {
+test('parent removal patches the selected profile without refetching or resetting its draft', async ({
+	page
+}) => {
 	const api = await mockStaffStudents(page);
 	await page.goto(studentPath(firstStudent, '/edit'));
-	page.on('dialog', (dialog) => dialog.accept());
+	const name = page.getByRole('textbox', { name: 'ชื่อ', exact: true });
+	await expect(name).toHaveValue('นักเรียนแรก');
+	await name.fill('ชื่อร่างที่ต้องเก็บ');
 	await page.getByRole('button', { name: 'ลบผู้ปกครอง' }).click();
-	await page.getByRole('alertdialog').getByRole('button', { name: 'นำออก', exact: true }).click();
+	const confirmation = page.getByRole('alertdialog');
+	await expect(confirmation).toBeVisible();
+	await confirmation.getByRole('button', { name: 'นำออก', exact: true }).click();
+	await expect(confirmation).not.toBeVisible();
 	await expect(page.getByTestId('student-profile')).not.toContainText('ผู้ปกครองเดิม');
-	expect(api.reads).toHaveLength(2);
+	await expect(name).toHaveValue('ชื่อร่างที่ต้องเก็บ');
+	expect(api.reads).toHaveLength(1);
+	expect(api.writes).toEqual([
+		{ method: 'DELETE', path: `/api/students/${firstStudent}/parents/${id(65)}` }
+	]);
 });
 test('account deactivation keeps the permanent directory and refreshes only its region', async ({
 	page

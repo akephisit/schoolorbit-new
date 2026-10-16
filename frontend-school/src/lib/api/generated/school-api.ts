@@ -51969,6 +51969,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_StudentRegisterProfile'];
 				};
 			};
+			/** @description Invalid student profile context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Authentication required */
 			401: {
 				headers: {

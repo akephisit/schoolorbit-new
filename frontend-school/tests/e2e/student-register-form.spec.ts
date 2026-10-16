@@ -13,11 +13,11 @@ test.beforeEach(async ({ page }) => {
 	);
 });
 async function fillCreate(page: Page) {
-	await page.getByLabel('รหัสนักเรียน', { exact: true }).fill('00001');
-	await page.getByLabel('ชื่อ', { exact: true }).fill('นักเรียนใหม่');
-	await page.getByLabel('นามสกุล', { exact: true }).fill('ทดสอบ');
-	await page.getByLabel('รหัสผ่าน', { exact: true }).fill('password123');
-	await page.getByLabel('ยืนยันรหัสผ่าน', { exact: true }).fill('password123');
+	await page.getByRole('textbox', { name: 'รหัสนักเรียน', exact: true }).fill('00001');
+	await page.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('นักเรียนใหม่');
+	await page.getByRole('textbox', { name: 'นามสกุล', exact: true }).fill('ทดสอบ');
+	await page.getByLabel(/^รหัสผ่าน\s*\*?$/u).fill('password123');
+	await page.getByLabel(/^ยืนยันรหัสผ่าน\s*\*?$/u).fill('password123');
 }
 
 test('creation without a year ignores hidden guardian drafts and opens permanent detail', async ({
@@ -52,8 +52,8 @@ test('creation refuses short passwords and whitespace names before sending a req
 	const api = await mockStaffStudents(page);
 	await page.goto('/staff/students/new');
 	await fillCreate(page);
-	await page.getByLabel('ชื่อ', { exact: true }).fill('   ');
-	await page.getByLabel('รหัสผ่าน', { exact: true }).fill('short');
+	await page.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('   ');
+	await page.getByLabel(/^รหัสผ่าน\s*\*?$/u).fill('short');
 	await page.getByRole('button', { name: 'เพิ่มนักเรียน', exact: true }).click();
 	await expect(page.getByText('กรุณากรอกชื่อ', { exact: true })).toBeVisible();
 	await expect(page.getByText('รหัสผ่านต้องมี 8–128 ตัวอักษร', { exact: true })).toBeVisible();
@@ -84,8 +84,10 @@ test('failed create retains the entered draft and exposes a durable error', asyn
 	await fillCreate(page);
 	await page.getByRole('button', { name: 'เพิ่มนักเรียน', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('บันทึกตัวอย่างไม่สำเร็จ');
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toHaveValue('นักเรียนใหม่');
-	await expect(page.getByLabel('รหัสผ่าน', { exact: true })).toHaveValue('password123');
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue(
+		'นักเรียนใหม่'
+	);
+	await expect(page.getByLabel(/^รหัสผ่าน\s*\*?$/u)).toHaveValue('password123');
 });
 
 test('immediate permanent edit sends explicit clears with no annual or immutable fields', async ({
@@ -93,12 +95,12 @@ test('immediate permanent edit sends explicit clears with no annual or immutable
 }) => {
 	const api = await mockStaffStudents(page);
 	await page.goto(studentPath(firstStudent, '/edit'));
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toBeEditable();
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toBeEditable();
 	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('textbox', { name: 'รหัสนักเรียน', exact: true })).toHaveCount(0);
 	await expect(page.getByLabel('ระดับชั้น', { exact: true })).toHaveCount(0);
 	await expect(page.getByLabel('เลขที่', { exact: true })).toHaveCount(0);
-	await page.getByLabel('ชื่อ', { exact: true }).fill('ชื่อใหม่');
+	await page.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('ชื่อใหม่');
 	await page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`/staff/students/${firstStudent}$`));
 	const payload = api.payloads[0].data;
@@ -127,13 +129,13 @@ test('immediate permanent edit sends explicit clears with no annual or immutable
 test('failed refresh and failed save preserve the edit draft', async ({ page }) => {
 	await mockStaffStudents(page, { fail: 'profile', failAt: 2, failMutation: true });
 	await page.goto(studentPath(firstStudent, '/edit'));
-	await page.getByLabel('ชื่อ', { exact: true }).fill('ชื่อร่าง');
+	await page.getByRole('textbox', { name: 'ชื่อ', exact: true }).fill('ชื่อร่าง');
 	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
 	await expect(page.getByText('region นักเรียนไม่พร้อม', { exact: true })).toBeVisible();
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toHaveValue('ชื่อร่าง');
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue('ชื่อร่าง');
 	await page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('บันทึกตัวอย่างไม่สำเร็จ');
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toHaveValue('ชื่อร่าง');
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue('ชื่อร่าง');
 });
 
 test('guardian workflow hides national ID when PII read permission is absent', async ({ page }) => {
@@ -152,7 +154,7 @@ test('annual source survives permanent edit while malformed years cannot trigger
 	await page.goto(studentPath(firstStudent, '', year));
 	await expect(page.getByTestId('student-academic')).toContainText('ห้องปีเดิม');
 	await page.getByRole('link', { name: 'แก้ไข', exact: true }).click();
-	await expect(page.getByLabel('ชื่อ', { exact: true })).toBeEditable();
+	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toBeEditable();
 	expect(api.reads.at(-1)?.searchParams.has('academicYearId')).toBe(false);
 	await page.getByRole('link', { name: 'ยกเลิก', exact: true }).click();
 	await expect(page.getByTestId('student-academic')).toContainText('ห้องปีเดิม');
@@ -178,7 +180,7 @@ for (const width of [375, 1280])
 			await page.goto(
 				mode === 'create' ? '/staff/students/new' : studentPath(firstStudent, '/edit')
 			);
-			await expect(page.getByLabel('ชื่อ', { exact: true })).toBeEditable();
+			await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toBeEditable();
 			for (const theme of ['light', 'dark']) {
 				if (theme === 'dark') await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
 				expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{rejection::JsonRejection, Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -43,12 +43,13 @@ pub async fn add_parent_to_student(
     State(state): State<StudentHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
-    Json(payload): Json<CreateParentRequest>,
+    payload: Result<Json<CreateParentRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
+    let Json(payload) = payload.map_err(|_| AppError::BadRequest("ข้อมูลผู้ปกครองไม่ถูกต้อง".into()))?;
 
     let parent_id = student_service::add_parent_to_student(&pool, student_id, payload).await?;
     state

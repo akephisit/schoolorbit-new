@@ -34106,6 +34106,7 @@
         "type": "object"
       },
       "CreateParentRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "type": [
@@ -98820,6 +98821,16 @@
               }
             },
             "description": "Permanent student profile with optional annual context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid student profile context"
           },
           "401": {
             "content": {

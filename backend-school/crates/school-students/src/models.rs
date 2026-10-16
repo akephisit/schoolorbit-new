@@ -216,6 +216,7 @@ pub struct CreateStudentRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CreateParentRequest {
     pub title: Option<String>,
     pub first_name: String,
