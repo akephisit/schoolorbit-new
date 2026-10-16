@@ -20,8 +20,7 @@ const dragDropRoutes = [
 	'src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
 	'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte',
 	'src/routes/(app)/staff/academic/timetable/+page.svelte',
-	'src/routes/(app)/staff/menu/+page.svelte',
-	'src/routes/(app)/staff/organization/+page.svelte'
+	'src/routes/(app)/staff/menu/+page.svelte'
 ];
 
 test('mobile drag drop polyfill is not loaded by the authenticated app layout', async () => {
@@ -49,8 +48,20 @@ test('native drag drop app routes opt into the mobile polyfill explicitly', asyn
 
 		assert.match(
 			source,
-			/MobileDragDropPolyfill/,
+			/<MobileDragDropPolyfill\s*\/>/,
 			`${route} should render MobileDragDropPolyfill only where native drag/drop is used`
 		);
+	}
+});
+
+test('organization uses click selection without opting into a native drag/drop polyfill', async () => {
+	const route = await readProjectFile('src/routes/(app)/staff/organization/+page.svelte');
+	const hierarchy = await readProjectFile('src/lib/components/staff/OrganizationHierarchy.svelte');
+
+	assert.match(route, /<OrganizationHierarchy[^]*?onSelect=\{handleSelectUnit\}/);
+	assert.match(hierarchy, /onclick=\{\(\) => onSelect\(node\.unit\.id\)\}/);
+	for (const source of [route, hierarchy]) {
+		assert.doesNotMatch(source, /\b(?:draggable|ondragstart|ondragover|ondrop)\s*=/);
+		assert.doesNotMatch(source, /MobileDragDropPolyfill|mobile-drag-drop/);
 	}
 });
