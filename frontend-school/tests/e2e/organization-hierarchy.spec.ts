@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mockOrganization, firstUnit } from './fixtures/organization-route-data';
+import { expectCompactOrganizationToolbar } from './fixtures/organization-toolbar';
 import type { OrganizationUnit, UpdateOrganizationUnitRequest } from '../../src/lib/api/staff.js';
 
 test.use({ serviceWorkers: 'block' });
@@ -147,13 +148,14 @@ test('an empty structure does not masquerade as a filter result', async ({ page 
 });
 
 for (const theme of ['light', 'dark'] as const)
-	for (const width of [390, 1440]) {
+	for (const width of [390, 510, 1440]) {
 		test(`hierarchy layout ${theme} ${width}`, async ({ page }, info) => {
 			await page.setViewportSize({ width, height: 900 });
 			await page.emulateMedia({ colorScheme: theme });
 			await fixture(page);
 			await page.goto('/staff/organization');
 			await expect(choose(page, 'งานทะเบียน')).toBeVisible();
+			await expectCompactOrganizationToolbar(page, 'organization');
 			if (theme === 'dark') await expect(page.locator('html')).toHaveClass(/dark/);
 			else await expect(page.locator('html')).not.toHaveClass(/dark/);
 			await expect(page.locator('main')).not.toContainText('INTERNAL-');
@@ -171,6 +173,7 @@ for (const theme of ['light', 'dark'] as const)
 					.getByTestId('organization-selected-detail')
 					.getByRole('heading', { name: 'งานทะเบียน', exact: true })
 			).toBeVisible();
+			await expectCompactOrganizationToolbar(page, 'organization', true);
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);

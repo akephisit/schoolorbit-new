@@ -17,7 +17,11 @@ export const _meta = {
 		workspace: 'personnel',
 		order: 20,
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.ROLES
+		permission: [
+			PERMISSION_MODULES.ROLES,
+			PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL
+		]
 	},
 	access: {
 		user_type: 'staff',

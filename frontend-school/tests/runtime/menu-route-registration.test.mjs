@@ -177,6 +177,35 @@ test('staff achievements menu combines self-recorded and own-certificate access 
 	]);
 });
 
+test('organization is the only registered learning-area entry and remains discoverable by academic readers', async (t) => {
+	const routePaths = [
+		'src/routes/(app)/staff/organization/+page.ts',
+		'src/routes/(app)/staff/academic/catalog/subject-groups/+page.ts'
+	];
+	const files = Object.fromEntries(
+		await Promise.all(
+			routePaths.map(async (routePath) => [
+				routePath,
+				await readFile(path.join(projectRoot, routePath), 'utf8')
+			])
+		)
+	);
+	const result = await runSyncWithServer(t, files);
+	assert.equal(result.code, 0, result.stderr || result.stdout);
+	assert.deepEqual(result.receivedRequest.body.routes, [
+		{
+			path: '/staff/organization',
+			title: 'โครงสร้างโรงเรียน',
+			icon: 'Building2',
+			group: 'personnel',
+			workspace: 'personnel',
+			order: 20,
+			permission: 'roles|academic_catalog.read.school|academic_catalog.manage.school',
+			user_type: 'staff'
+		}
+	]);
+});
+
 test('student certificate menu exposes only the own-certificate permission', async (t) => {
 	const routePath = 'src/routes/(app)/student/certificates/+page.ts';
 	const route = await readFile(path.join(projectRoot, routePath), 'utf8');
