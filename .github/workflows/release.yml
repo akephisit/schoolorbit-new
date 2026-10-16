@@ -41,24 +41,50 @@ jobs:
           PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
         run: node scripts/release_preflight.mjs
+  private-preflight:
+    needs: preflight
+    if: needs.preflight.result == 'success' && needs.preflight.outputs.deploy != '[]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Validate reconciled plan transport before private checks
+        env:
+          PLAN: ${{ needs.preflight.outputs.plan }}
+          DEPLOY: ${{ needs.preflight.outputs.deploy }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {components, git} from './scripts/lib/pipeline-policy.mjs';
+          const plan = JSON.parse(process.env.PLAN);
+          if (plan?.schemaVersion !== 1 || plan.sha !== process.env.GITHUB_SHA ||
+              plan.tree !== git('.', 'rev-parse', 'HEAD^{tree}') ||
+              !Array.isArray(plan.deploy) || plan.deploy.length === 0 ||
+              new Set(plan.deploy).size !== plan.deploy.length ||
+              plan.deploy.some(part => !components.includes(part) || !/^[0-9a-f]{64}$/.test(plan.hashes?.[part])) ||
+              JSON.stringify(plan.deploy) !== process.env.DEPLOY) {
+            throw new Error('Missing or invalid reconciled plan; maintenance is blocked');
+          }
+          NODE
       - name: Download prepared Admin backend manifest
-        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
         uses: actions/download-artifact@v7
         with:
           name: prepared-backend-admin
           path: ${{ runner.temp }}/prepared
       - name: Check former Admin alias ownership before entering maintenance
-        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'frontend-admin')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'frontend-admin')
         env:
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/lib/pipeline-admin-worker.mjs check-alias
       - name: Validate Admin backend digest
-        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
         id: manifest
         env:
-          INPUT_HASH: ${{ fromJson(steps.reconcile.outputs.plan).hashes['backend-admin'] }}
+          INPUT_HASH: ${{ fromJson(needs.preflight.outputs.plan).hashes['backend-admin'] }}
         run: |
           set -euo pipefail
           digest=$(jq -er --arg sha "$GITHUB_SHA" --arg hash "$INPUT_HASH" '
@@ -66,7 +92,7 @@ jobs:
           ' "$RUNNER_TEMP/prepared/backend-admin.json")
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
       - name: Upload read-only Admin account preflight
-        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
         uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
@@ -76,7 +102,7 @@ jobs:
           source: scripts/lib/pipeline-remote/admin-accounts.sh,scripts/lib/pipeline-remote/runtime-env.sh
           target: /opt/stack/deployment
       - name: Check first-operator inputs before entering maintenance
-        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
         uses: appleboy/ssh-action@v1.2.5
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,8 +119,10 @@ jobs:
           envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,ADMIN_BOOTSTRAP_EMAIL,ADMIN_BOOTSTRAP_PASSWORD
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/admin-accounts.sh --check-deploy-inputs
   maintenance:
-    needs: preflight
-    if: needs.preflight.result == 'success' && needs.preflight.outputs.deploy != '[]'
+    needs:
+      - preflight
+      - private-preflight
+    if: needs.preflight.result == 'success' && needs.private-preflight.result == 'success' && needs.preflight.outputs.deploy != '[]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
