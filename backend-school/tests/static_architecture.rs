@@ -456,16 +456,24 @@ fn admin_auth_dependencies_follow_the_reviewed_policy() {
     ));
     assert!(!repo_root().join("backend-admin/src/auth/jwt.rs").exists());
     let auth = read_source(repo_root().join("backend-admin/src/portal/auth.rs"));
-    let token = extract_braced_block(&auth, "pub fn random_token(", false);
+    let function_source = |marker: &str| {
+        let structural = extract_braced_block(&auth, marker, false);
+        let start = lexical_mask(&auth, false)
+            .structural
+            .find(marker)
+            .expect("Admin authentication function must exist");
+        &auth[start..start + structural.len()]
+    };
+    let token = function_source("pub fn random_token(");
     assert!(token.contains("[0u8; 32]") && token.contains(".try_fill_bytes("));
     assert!(token.contains("Ok(hex::encode(bytes))"));
-    let token_validation = extract_braced_block(&auth, "pub fn valid_token(", false);
+    let token_validation = function_source("pub fn valid_token(");
     assert!(token_validation.contains("token.len() == 64"));
     assert!(token_validation.contains("b.is_ascii_hexdigit()"));
-    let login = extract_braced_block(&auth, "pub async fn login(", false);
+    let login = function_source("pub async fn login(");
     assert!(login.contains("INSERT INTO platform_sessions(token_hash,account_id,expires_at)"));
     assert!(login.contains(".bind(digest(&token))"));
-    let authenticate = extract_braced_block(&auth, "pub async fn authenticate(", false);
+    let authenticate = function_source("pub async fn authenticate(");
     assert!(authenticate.contains("if !valid_token(token)"));
     assert!(authenticate.contains("return Err(PortalError::unauthorized())"));
     assert!(authenticate.contains("JOIN platform_sessions s ON s.account_id=a.id"));
@@ -473,7 +481,7 @@ fn admin_auth_dependencies_follow_the_reviewed_policy() {
     assert!(authenticate.contains("a.verified_at IS NOT NULL"));
     assert!(authenticate.contains(".bind(digest(token))"));
     assert!(authenticate.contains(".ok_or_else(PortalError::unauthorized)"));
-    let logout = extract_braced_block(&auth, "pub async fn logout(", false);
+    let logout = function_source("pub async fn logout(");
     assert!(logout.contains("DELETE FROM platform_sessions WHERE token_hash=$1"));
     assert!(logout.contains(".bind(digest(token))"));
     assert!(!auth.contains("insecure_decode"));
