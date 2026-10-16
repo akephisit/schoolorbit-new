@@ -16,7 +16,6 @@ function menuGroup(source) {
 
 test('staff academic services declare the approved school-work sections', async () => {
 	const expected = new Map([
-		['catalog/subject-groups', 'academic_curriculum'],
 		['catalog/subjects', 'academic_curriculum'],
 		['curricula', 'academic_curriculum'],
 		['core', 'academic_delivery'],
@@ -49,6 +48,16 @@ test('staff academic services declare the approved school-work sections', async 
 	const personalExams = await readProjectFile('src/routes/(app)/staff/exams/+page.ts');
 	assert.equal(menuGroup(personalTimetable), 'main');
 	assert.equal(menuGroup(personalExams), 'main');
+});
+
+test('learning-area bookmarks redirect to the single organization menu without a second entry', async () => {
+	const source = await readProjectFile(
+		'src/routes/(app)/staff/academic/catalog/subject-groups/+page.ts'
+	);
+	assert.match(source, /access:\s*\{/);
+	assert.doesNotMatch(source, /menu:\s*\{/);
+	assert.match(source, /resolve\('staff\/organization'\)/);
+	assert.match(source, /set\('tab', 'subject-groups'\)/);
 });
 
 test('period editing has one owner under academic core', async () => {

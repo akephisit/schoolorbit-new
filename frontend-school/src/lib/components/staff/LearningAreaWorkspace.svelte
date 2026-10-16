@@ -37,7 +37,6 @@
 		ArrowLeft,
 		ChevronRight,
 		Search,
-		RotateCcw,
 		ShieldCheck
 	} from '@lucide/svelte';
 
@@ -61,8 +60,7 @@
 	);
 	let detailHeading: HTMLHeadingElement | undefined = $state();
 	let listHeading: HTMLHeadingElement | undefined = $state();
-	let detailPanel: HTMLDivElement | undefined = $state();
-	let listPanel: HTMLDivElement | undefined = $state();
+	let workspaceToolbar: HTMLDivElement | undefined = $state();
 	const canRead = $derived(
 		$can.hasAny(
 			PERMISSIONS.ROLES_READ_ALL,
@@ -119,7 +117,7 @@
 		await tick();
 		if (changingGroup && window.matchMedia('(max-width: 1023px)').matches) {
 			detailHeading?.focus({ preventScroll: true });
-			detailPanel?.scrollIntoView({ block: 'start' });
+			workspaceToolbar?.scrollIntoView({ block: 'start' });
 		}
 	}
 	async function showList() {
@@ -129,7 +127,7 @@
 		await goto(next.pathname + next.search, { shallow: true, reset: false });
 		await tick();
 		listHeading?.focus({ preventScroll: true });
-		listPanel?.scrollIntoView({ block: 'start' });
+		workspaceToolbar?.scrollIntoView({ block: 'start' });
 	}
 	function filterGroups(query: string, nextStatus: string) {
 		const next = new URL(url.href);
@@ -286,16 +284,25 @@
 </script>
 
 <section aria-label="กลุ่มสาระการเรียนรู้" aria-busy={loading} class="space-y-4">
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h2 class="font-semibold">ทะเบียนกลุ่มสาระ</h2>
-		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={refresh} disabled={!canRead || loading || saving}
-				><RotateCcw class="size-4" />รีเฟรชกลุ่มสาระ</Button
-			>
-			{#if canRead && canCreate}<Button onclick={() => edit(null)} disabled={!ready || saving}
-					><Plus class="size-4" />เพิ่มกลุ่มสาระ</Button
-				>{/if}
+	<div
+		bind:this={workspaceToolbar}
+		class="flex scroll-mt-20 flex-wrap items-start justify-between gap-3"
+		data-testid="learning-area-toolbar"
+	>
+		<div class={selectedId ? 'hidden lg:block' : ''}>
+			<h2 bind:this={listHeading} tabindex="-1" class="font-semibold outline-none">
+				เลือกกลุ่มสาระ
+			</h2>
+			{#if ready}<p class="mt-1 text-sm text-muted-foreground">
+					{groups.length} กลุ่มสาระในโรงเรียน
+				</p>{/if}
 		</div>
+		{#if selectedId}<Button variant="outline" onclick={showList} class="lg:hidden"
+				><ArrowLeft class="size-4" />กลับไปเลือกกลุ่มสาระ</Button
+			>{/if}
+		{#if canRead && canCreate}<Button onclick={() => edit(null)} disabled={!ready || saving}
+				><Plus class="size-4" />เพิ่มกลุ่มสาระ</Button
+			>{/if}
 	</div>
 	{#if !canRead}
 		<PageState variant="permission" title="ไม่มีสิทธิ์ดูทะเบียนกลุ่มสาระ" />
@@ -329,16 +336,9 @@
 			{:else}
 				<div class="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
 					<div
-						bind:this={listPanel}
 						class={`min-w-0 scroll-mt-20 space-y-4 ${selectedId ? 'hidden lg:block' : ''}`}
 						data-testid="learning-area-list"
 					>
-						<div class="space-y-1">
-							<h2 bind:this={listHeading} tabindex="-1" class="font-semibold outline-none">
-								เลือกกลุ่มสาระ
-							</h2>
-							<p class="text-sm text-muted-foreground">{groups.length} กลุ่มสาระในโรงเรียน</p>
-						</div>
 						<div class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
 							<div class="space-y-2">
 								<Label for="learning-area-search">ค้นหากลุ่มสาระ</Label>
@@ -408,13 +408,9 @@
 						{/if}
 					</div>
 					<div
-						bind:this={detailPanel}
 						class={`min-w-0 scroll-mt-20 space-y-4 ${selectedId ? '' : 'hidden lg:block'}`}
 						data-testid="learning-area-detail"
 					>
-						<Button variant="outline" onclick={showList} class="lg:hidden"
-							><ArrowLeft class="size-4" />กลับไปเลือกกลุ่มสาระ</Button
-						>
 						{#if selected}
 							<Card.Root class="gap-0 overflow-hidden py-0" aria-label="รายละเอียดกลุ่มสาระ">
 								<Card.Content class="border-b py-3">

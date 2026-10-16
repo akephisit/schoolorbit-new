@@ -39,15 +39,28 @@ test('overview selected members have focused retry and suppress a late prior sel
 	await expect(page.getByTestId('organization-selected-members')).not.toContainText('สมาชิกแรก');
 	expect(api.count(endpoint('structure'))).toBe(1);
 });
-test('overview retains catalog during failed refresh and retries only it', async ({ page }) => {
+test('overview retains catalog during failed route revalidation and retries only it', async ({
+	page
+}) => {
 	const api = await mockOrganization(page, { fail: 'structure', failAt: 2 });
 	await page.goto('/staff/organization');
 	await expect(page.getByTestId('organization-selected-members')).toContainText('สมาชิกแรก');
-	await page.getByRole('button', { name: 'รีเฟรชโครงสร้าง', exact: true }).click();
+	await navigate(page, '/staff/organization?tab=administration');
 	await expect(page.getByTestId('organization-catalog')).toContainText('region structure ไม่พร้อม');
 	await expect(page.getByTestId('organization-catalog')).toContainText('หน่วยงานแรก');
-	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
-	expect(api.count(endpoint('members'))).toBe(1);
+	await expect(page.getByTestId('organization-selected-members').getByRole('status')).toHaveCount(
+		0
+	);
+	const memberReads = api.count(endpoint('members'));
+	await page
+		.getByRole('alert')
+		.filter({ hasText: 'อัปเดตโครงสร้างไม่สำเร็จ' })
+		.locator('..')
+		.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })
+		.click();
+	await expect(page.getByText('อัปเดตโครงสร้างไม่สำเร็จ', { exact: true })).toHaveCount(0);
+	expect(api.count(endpoint('structure'))).toBe(3);
+	expect(api.count(endpoint('members'))).toBe(memberReads);
 });
 for (const kind of ['unit', 'structure', 'members'] as const) {
 	const region = () =>

@@ -15,6 +15,27 @@ export async function mockOrganization(
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
+		menuGroups: [
+			{
+				code: 'personnel',
+				name: 'งานบุคลากร',
+				icon: 'Users',
+				workspaceCode: 'personnel',
+				workspaceName: 'งานบุคลากร',
+				workspaceIcon: 'Users',
+				workspaceOrder: 2,
+				displayOrder: 1,
+				items: [
+					{
+						id: id(95),
+						name: 'โครงสร้างโรงเรียน',
+						path: '/staff/organization',
+						icon: 'Building2',
+						code: 'staff-organization'
+					}
+				]
+			}
+		],
 		permissions: options.permissions ?? [
 			'roles.read.all',
 			'roles.create.all',

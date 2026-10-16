@@ -74,8 +74,8 @@
 			'all'
 	);
 	let detailHeading: HTMLHeadingElement | undefined = $state();
-	let detailPanel: HTMLDivElement | undefined = $state();
 	let hierarchyHeading: HTMLHeadingElement | undefined = $state();
+	let workspaceToolbar: HTMLDivElement | undefined = $state();
 	let createParentId: string | undefined = $state();
 	const selectedUnitId = $derived(currentUrl.searchParams.get('unit'));
 	const canReadGroups = $derived(
@@ -249,7 +249,7 @@
 		await tick();
 		if (window.matchMedia('(max-width: 1023px)').matches) {
 			detailHeading?.focus({ preventScroll: true });
-			detailPanel?.scrollIntoView({ block: 'start' });
+			workspaceToolbar?.scrollIntoView({ block: 'start' });
 		}
 	}
 	async function showHierarchy() {
@@ -431,17 +431,11 @@
 	});
 </script>
 
-<PageShell title="โครงสร้างโรงเรียน" description="ดูกลุ่มบริหาร ฝ่าย/งาน และกลุ่มสาระการเรียนรู้">
-	{#snippet actions()}
-		{#if activeSection === 'administration'}
-			<Button variant="outline" onclick={loadDepartments} disabled={loading || !canReadOrganization}
-				><RotateCcw class="size-4" />รีเฟรชโครงสร้าง</Button
-			>
-			{#if canCreateOrganizationUnit}<Button onclick={() => handleCreate()}
-					><Plus class="size-4" />เพิ่มหน่วยงาน</Button
-				>{/if}
-		{/if}
-	{/snippet}
+<PageShell
+	title="โครงสร้างโรงเรียน"
+	description="ดูกลุ่มบริหาร ฝ่าย/งาน และกลุ่มสาระการเรียนรู้"
+	contentClass="space-y-4"
+>
 	<nav aria-label="ประเภทโครงสร้าง" class="flex flex-wrap gap-2">
 		{#if canReadOrganization}<Button
 				variant={activeSection === 'administration' ? 'default' : 'outline'}
@@ -462,6 +456,30 @@
 		<PageState variant="permission" title="ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน" />
 	{:else}
 		<section data-testid="organization-catalog" aria-busy={loading} class="space-y-4">
+			<div
+				bind:this={workspaceToolbar}
+				class="flex scroll-mt-20 flex-wrap items-start justify-between gap-3"
+				data-testid="organization-toolbar"
+			>
+				<div class={selectedUnitId ? 'hidden lg:block' : ''}>
+					<h2
+						bind:this={hierarchyHeading}
+						tabindex="-1"
+						class="scroll-mt-20 font-semibold outline-none"
+					>
+						เลือกหน่วยงาน
+					</h2>
+					{#if unitsLoaded}<p class="mt-1 text-sm text-muted-foreground">
+							{organizationStats.managementGroups} กลุ่มบริหาร · {organizationStats.divisions} ฝ่าย/งาน
+						</p>{/if}
+				</div>
+				{#if selectedUnitId}<Button variant="outline" onclick={showHierarchy} class="lg:hidden"
+						><ArrowLeft class="size-4" />กลับไปเลือกหน่วยงาน</Button
+					>{/if}
+				{#if canCreateOrganizationUnit}<Button onclick={() => handleCreate()}
+						><Plus class="size-4" />เพิ่มหน่วยงาน</Button
+					>{/if}
+			</div>
 			{#if error && unitsLoaded}<PageState
 					variant="error"
 					title="อัปเดตโครงสร้างไม่สำเร็จ"
@@ -490,14 +508,6 @@
 						class={`min-w-0 space-y-4 ${selectedUnitId ? 'hidden lg:block' : ''}`}
 						data-testid="organization-hierarchy"
 					>
-						<div class="space-y-1">
-							<h2 bind:this={hierarchyHeading} tabindex="-1" class="font-semibold outline-none">
-								เลือกหน่วยงาน
-							</h2>
-							<p class="text-sm text-muted-foreground">
-								{organizationStats.managementGroups} กลุ่มบริหาร · {organizationStats.divisions} ฝ่าย/งาน
-							</p>
-						</div>
 						<div class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
 							<div class="space-y-2">
 								<Label for="organization-search">ค้นหากลุ่มบริหารหรือฝ่าย/งาน</Label>
@@ -546,13 +556,9 @@
 					</div>
 					{#if selectedUnit}
 						<div
-							bind:this={detailPanel}
 							class={`min-w-0 scroll-mt-20 space-y-4 ${selectedUnitId ? '' : 'hidden lg:block'}`}
 							data-testid="organization-selected-detail"
 						>
-							<Button variant="outline" onclick={showHierarchy} class="lg:hidden"
-								><ArrowLeft class="size-4" />กลับไปเลือกหน่วยงาน</Button
-							>
 							<Card.Root class="gap-0 overflow-hidden py-0">
 								<div
 									class="space-y-4 border-b border-primary/10 bg-gradient-to-br from-primary/5 via-card to-card p-4 sm:p-5"
