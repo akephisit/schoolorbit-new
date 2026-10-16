@@ -1249,6 +1249,9 @@ migration preflight/retry and identity/grant preservation.
 Run `node --test scripts/tests/admin-worker-bootstrap.test.mjs` for exact Admin
 service lookup, recognized absence, existing-worker preservation, fail-closed
 permission/transport/response errors and the isolated 503 bootstrap configuration.
+It also covers fixed-name deletion without force, already-absent retries,
+deletion refusal, frontend-only scope and the successful preparation gate required
+before deliberate recreation.
 The deployment verification scope includes these cases. Use the owning locked
 Wrangler `deploy --dry-run` against the generated bootstrap to verify packaging
 without publishing code. Actual Worker recreation and route acceptance require

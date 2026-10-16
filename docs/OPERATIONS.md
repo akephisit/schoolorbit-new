@@ -332,11 +332,23 @@ and malformed-response failures stop release. The bootstrap has no application
 assets/bindings, custom routes, workers.dev or preview access. The prepared
 application then follows normal inactive-version upload with versioned secrets,
 exact-version promotion, route application and browser acceptance. No manual
-Worker creation or Git integration is required. Deleting the Admin Worker removes
-its previous deployment history and managed domains and makes the Admin frontend
-unavailable until release recreates it. Keep required proxied DNS records for the
-configured Admin hostname; the release reattaches its configured Worker route.
+Worker creation or Git integration is required. The configured Admin custom domain
+is reapplied through Wrangler, including its Cloudflare-managed DNS record.
+Deleting the Admin Worker removes its previous deployment history and managed
+domains and makes the Admin frontend unavailable until release recreates it.
 This recovery path never targets a School Worker, tenant DNS record or database.
+
+To deliberately test deletion/recreation, dispatch **Operations** on `main` with
+operation `recreate-admin-frontend`. Under the shared production lock it rejects
+queued changes outside frontend-admin, starts a normal frontend-only Pipeline and
+waits for that run's selected build and gate. It then enters universal maintenance,
+deletes only the Admin script without forcing removal of dependent resources, and
+releases the lock so the prepared Pipeline can recreate it and finish ordinary
+acceptance. Do not delete the Worker manually outside the production lock. A stale
+main or failed build stops before deletion. After deletion, maintenance remains
+until the Pipeline succeeds; retry the current reviewed main frontend release to
+recover. The operation uses only Cloudflare/SSH credentials, never database owner
+credentials, and does not run account or tenant migrations.
 
 The final acceptance owner verifies both proxy readiness paths and authenticated School academic
 smoke, advances only selected image aliases, persists component baselines, and opens maintenance

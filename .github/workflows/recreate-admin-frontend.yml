@@ -1,0 +1,59 @@
+name: Recreate only the Admin frontend
+on:
+  workflow_call:
+    inputs: {}
+permissions:
+  contents: read
+  actions: write
+jobs:
+  recreate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Prepare a frontend-only Pipeline and wait for its build gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: node scripts/lib/pipeline-admin-recreate.mjs
+      - name: Upload canonical maintenance implementation
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: podman-compose.yml,scripts/lib/pipeline-remote,scripts/render_nginx_config.sh,nginx-configs
+          target: /opt/stack/deployment
+      - name: Confirm current main before maintenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+      - name: Enter universal maintenance before removing the Admin Worker
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: BASE_DOMAIN,RELEASE_SHA
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh enter
+      - name: Delete only the Admin Worker and release the lock to the prepared Pipeline
+        env:
+          ADMIN_WORKER_RECREATE: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/lib/pipeline-admin-worker.mjs delete
