@@ -334,6 +334,7 @@ impl FilePlatform {
         &self,
         repository: &dyn FileRepository,
         file_id: Uuid,
+        size: crate::platform_types::PublicSchoolIconSize,
     ) -> Result<Bytes, FilePlatformError> {
         let delivery = ready_delivery(repository, file_id).await?;
         if delivery.file.visibility != FileVisibility::Public
@@ -348,7 +349,7 @@ impl FilePlatform {
             .limits
             .max_bytes;
         let source = self.provider.get(&object, limit).await?;
-        tokio::task::spawn_blocking(move || crate::favicon::render_png(&source))
+        tokio::task::spawn_blocking(move || crate::favicon::render_png(&source, size))
             .await
             .map_err(|_| FilePlatformError::InspectionRejected)?
     }
@@ -1172,7 +1173,13 @@ mod tests {
             "image/png",
         );
         assert_eq!(
-            service.public_favicon(&repository, id).await,
+            service
+                .public_favicon(
+                    &repository,
+                    id,
+                    crate::platform_types::PublicSchoolIconSize::default()
+                )
+                .await,
             Err(FilePlatformError::NotFound)
         );
         for (status, visibility, purpose) in [
@@ -1226,7 +1233,13 @@ mod tests {
                 },
                 object: Some(original.clone()),
             });
-            let result = service.public_favicon(&repository, id).await;
+            let result = service
+                .public_favicon(
+                    &repository,
+                    id,
+                    crate::platform_types::PublicSchoolIconSize::default(),
+                )
+                .await;
             if status == FileLifecycleStatus::Ready
                 && visibility == FileVisibility::Public
                 && purpose == FilePurpose::SchoolLogo

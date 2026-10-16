@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::{header, HeaderMap},
     response::{IntoResponse, Redirect, Response},
     Json,
@@ -9,7 +9,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::http::state::AdministrationHttpState;
-use crate::settings::models::UpdateSchoolSettingsRequest;
+use crate::settings::models::{PublicSchoolIconQuery, UpdateSchoolSettingsRequest};
 use crate::settings::services as school_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -102,6 +102,7 @@ pub async fn get_public_organization_avatar(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/school/public/favicon", operation_id = "getPublicSchoolFavicon", tag = "school",
+    params(("size" = Option<school_file_platform::platform_types::PublicSchoolIconSize>, Query, description = "Square PNG size; defaults to 256")),
     responses(
         (status = 200, description = "Current school crest as a square PNG", content_type = "image/png", body = inline(PublicFileFaviconPng)),
         (status = 404, description = "Current public school crest not found", body = ApiErrorResponse)
@@ -110,6 +111,7 @@ pub async fn get_public_organization_avatar(
 pub async fn get_public_favicon(
     State(state): State<AdministrationHttpState>,
     headers: HeaderMap,
+    Query(query): Query<PublicSchoolIconQuery>,
 ) -> Result<Response, AppError> {
     let tenant = tenant_context(&state.auth_runtime, &headers).await?;
     let file_id = school_service::get_settings_response(&tenant.pool)
@@ -119,7 +121,7 @@ pub async fn get_public_favicon(
     let repository = school_file_platform::repository::SqlFileRepository::new(tenant.pool);
     let png = state
         .file_platform
-        .public_favicon(&repository, file_id)
+        .public_favicon(&repository, file_id, query.size)
         .await
         .map_err(school_file_platform::consumer_service::map_public_platform_error)?;
     Ok((

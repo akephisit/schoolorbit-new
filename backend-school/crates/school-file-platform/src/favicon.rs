@@ -3,24 +3,30 @@ use image::{DynamicImage, ImageFormat, RgbaImage};
 use std::io::Cursor;
 
 use crate::{
-    file_inspector::inspect_file, file_processor::ImageProcessor,
-    platform_service::FilePlatformError, platform_types::FilePurpose,
+    file_inspector::inspect_file,
+    file_processor::ImageProcessor,
+    platform_service::FilePlatformError,
+    platform_types::{FilePurpose, PublicSchoolIconSize},
 };
 
 /// Reinspect stored crest bytes before decoding, then preserve the complete crest on a square.
-pub(crate) fn render_png(source: &[u8]) -> Result<Bytes, FilePlatformError> {
+pub(crate) fn render_png(
+    source: &[u8],
+    size: PublicSchoolIconSize,
+) -> Result<Bytes, FilePlatformError> {
     let inspected = inspect_file(FilePurpose::SchoolLogo, source)?;
     let decoded = ImageProcessor::decode_inspected_image(&inspected)
         .map_err(|_| FilePlatformError::InspectionRejected)?;
+    let pixels = size.pixels();
     let resized = decoded
-        .resize(256, 256, image::imageops::FilterType::Lanczos3)
+        .resize(pixels, pixels, image::imageops::FilterType::Lanczos3)
         .to_rgba8();
-    let mut square = RgbaImage::new(256, 256);
+    let mut square = RgbaImage::new(pixels, pixels);
     image::imageops::overlay(
         &mut square,
         &resized,
-        i64::from((256 - resized.width()) / 2),
-        i64::from((256 - resized.height()) / 2),
+        i64::from((pixels - resized.width()) / 2),
+        i64::from((pixels - resized.height()) / 2),
     );
     let mut encoded = Cursor::new(Vec::new());
     DynamicImage::ImageRgba8(square)
@@ -49,13 +55,22 @@ mod tests {
             } else {
                 source.write_to(&mut bytes, format).unwrap();
             }
-            let png = render_png(bytes.get_ref()).unwrap();
-            assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
-            let actual = image::load_from_memory(&png).unwrap().to_rgba8();
-            assert_eq!(actual.dimensions(), (256, 256));
-            assert_eq!(actual.get_pixel(128, 128).0[3], 255);
-            if width != height {
-                assert_eq!(actual.get_pixel(0, 0).0[3], 0);
+            for size in [
+                PublicSchoolIconSize::Icon192,
+                PublicSchoolIconSize::Favicon256,
+                PublicSchoolIconSize::Icon512,
+            ] {
+                let png = render_png(bytes.get_ref(), size).unwrap();
+                assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
+                let actual = image::load_from_memory(&png).unwrap().to_rgba8();
+                assert_eq!(actual.dimensions(), (size.pixels(), size.pixels()));
+                assert_eq!(
+                    actual.get_pixel(size.pixels() / 2, size.pixels() / 2).0[3],
+                    255
+                );
+                if width != height {
+                    assert_eq!(actual.get_pixel(0, 0).0[3], 0);
+                }
             }
         }
     }
@@ -63,7 +78,7 @@ mod tests {
     #[test]
     fn favicon_refuses_uninspected_or_non_image_bytes() {
         assert_eq!(
-            render_png(b"not an image"),
+            render_png(b"not an image", PublicSchoolIconSize::default()),
             Err(FilePlatformError::InspectionRejected)
         );
     }

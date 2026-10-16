@@ -166,7 +166,9 @@ test.beforeAll(async () => {
 				res.writeHead(404).end();
 			} else {
 				res.setHeader('content-type', 'image/png');
-				res.end(readFileSync(new URL('../../static/schoolorbit.png', import.meta.url)));
+				const size = new URL(req.url ?? '/', 'http://localhost').searchParams.get('size') ?? '256';
+				const file = size === '256' ? 'schoolorbit.png' : `schoolorbit-${size}.png`;
+				res.end(readFileSync(new URL(`../../static/${file}`, import.meta.url)));
 			}
 			return;
 		}
@@ -434,6 +436,78 @@ test('favicon reads only this school crest and uses the Admin brand when no cres
 	brokenLogo = false;
 	failedRegion = '/api/school/public/favicon';
 	const unavailable = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
+	expect(unavailable.status()).toBe(503);
+	expect(unavailable.headers()['cache-control']).toBe('no-store');
+});
+
+test('installation manifest and Apple icon use this school PNGs at their declared sizes', async ({
+	request,
+	page
+}) => {
+	await page.goto(`${baseUrl}/login`);
+	await expect(page.locator('link[rel="icon"]')).toHaveCount(1);
+	await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.png');
+	await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+		'href',
+		'/app-icon/192.png'
+	);
+	const manifestPath = await page.locator('link[rel="manifest"]').getAttribute('href');
+	expect(manifestPath).toBe('/manifest.webmanifest');
+	const session = await page.context().newCDPSession(page);
+	const parsed = await session.send('Page.getAppManifest');
+	expect(parsed.errors).toEqual([]);
+	const manifest = JSON.parse(parsed.data ?? '{}');
+	expect(manifest.icons).toEqual(
+		[192, 512].map((size) => ({
+			src: `/app-icon/${size}.png`,
+			sizes: `${size}x${size}`,
+			type: 'image/png',
+			purpose: 'any'
+		}))
+	);
+	for (const size of [192, 512]) {
+		const icon = await request.get(`${baseUrl}/app-icon/${size}.png?fileId=private-file`, {
+			headers: { Cookie: 'fixture-private-cookie=not-a-session' },
+			maxRedirects: 0
+		});
+		expect(icon.status()).toBe(200);
+		expect(icon.headers()['content-type']).toBe('image/png');
+		const bytes = await icon.body();
+		expect(bytes.readUInt32BE(16)).toBe(size);
+		expect(bytes.readUInt32BE(20)).toBe(size);
+	}
+	expect(
+		requests
+			.filter((r) => r.path === '/api/school/public/favicon')
+			.every((r) => !r.cookie && r.origin === baseUrl)
+	).toBe(true);
+	await session.detach();
+});
+
+test('installation icons use the Admin brand at the correct size for absent or deleted crests', async ({
+	request
+}) => {
+	for (const absent of ['not-configured', 'deleted']) {
+		logoAvailable = absent !== 'not-configured';
+		brokenLogo = absent === 'deleted';
+		for (const size of [192, 512]) {
+			const icon = await request.get(`${baseUrl}/app-icon/${size}.png`, { maxRedirects: 0 });
+			expect(icon.status()).toBe(307);
+			expect(icon.headers().location).toBe(`/schoolorbit-${size}.png`);
+			const png = await request.get(`${baseUrl}${icon.headers().location}`);
+			const bytes = await png.body();
+			expect(bytes.readUInt32BE(16)).toBe(size);
+			expect(bytes.readUInt32BE(20)).toBe(size);
+		}
+	}
+	logoAvailable = true;
+	brokenLogo = false;
+	requests.length = 0;
+	const invalid = await request.get(`${baseUrl}/app-icon/4096.png`);
+	expect(invalid.status()).toBe(404);
+	expect(requests).toHaveLength(0);
+	failedRegion = '/api/school/public/favicon';
+	const unavailable = await request.get(`${baseUrl}/app-icon/192.png`);
 	expect(unavailable.status()).toBe(503);
 	expect(unavailable.headers()['cache-control']).toBe('no-store');
 });

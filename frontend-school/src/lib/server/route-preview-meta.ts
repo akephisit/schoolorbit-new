@@ -1,6 +1,6 @@
 const SITE_NAME = 'SchoolOrbit';
 const DEFAULT_DESCRIPTION = 'ระบบจัดการโรงเรียนแบบครบวงจร';
-const DEFAULT_IMAGE_PATH = '/icon-192.png';
+const DEFAULT_IMAGE_PATH = '/app-icon/192.png';
 
 export const ROUTE_PREVIEW_MARKER = '<!-- schoolorbit-route-preview-meta -->';
 

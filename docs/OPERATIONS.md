@@ -1345,7 +1345,13 @@ Search results use the Admin Orbit PNG as the platform icon. Its vector source i
 the route makes one anonymous request to `/api/school/public/favicon`, selecting
 only that tenant's current crest without looking up the school name. The File Platform renders
 a 256-pixel square PNG, retaining the whole portrait/landscape image. The original
-file is never modified. Missing/deleted crests fall back to the platform icon;
+file is never modified. Installed-app PNGs use `/app-icon/192.png` and
+`/app-icon/512.png`, backed by the same public endpoint with a closed size query.
+The manifest declares the real dimensions and ordinary icon purpose; Apple touch
+and push notifications use the 192-pixel icon. Matching-size platform fallbacks
+are rendered from the Admin-owned vector. Existing installed apps may update
+icons on their browser/OS schedule; opening the updated app or reinstalling it
+refreshes platforms that retain the previous installation icon. Missing/deleted crests fall back to the platform icon;
 unavailable services return uncached 503 with Retry-After. Successful icons may be
 cached for five minutes. The favicon resolver allows up to fifteen seconds for
 a cold PNG response; this anonymous image request does not block homepage HTML. School titles use `ชื่อโรงเรียน - SchoolOrbit`, with
