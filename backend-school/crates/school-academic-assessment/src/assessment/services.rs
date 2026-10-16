@@ -1068,7 +1068,8 @@ async fn load_coordinator_candidates(
              ON user_account.id = teacher.teacher_id
             AND user_account.status = 'active'
            WHERE offering.id = ANY($1)
-           GROUP BY offering.id, teacher.teacher_id, user_account.id
+           GROUP BY offering.id, teacher.teacher_id,
+                    user_account.display_name, user_account.username
            ORDER BY offering.id, display_name, teacher.teacher_id"#,
     )
     .bind(offering_ids)
