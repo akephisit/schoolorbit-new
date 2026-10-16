@@ -152,7 +152,7 @@
 	}
 </script>
 
-<form class="max-w-5xl space-y-6" onsubmit={submit}>
+<form class="w-full min-w-0 space-y-6" onsubmit={submit}>
 	{#if error}<PageState
 			variant="error"
 			title="บันทึกไม่สำเร็จ"
@@ -163,122 +163,128 @@
 		>
 			{receipt}
 		</p>{/if}
-	<fieldset class="min-w-0 space-y-6" disabled={pending || !!frozen}>
+	<fieldset class="grid min-w-0 gap-6 xl:grid-cols-2 xl:items-start" disabled={pending || !!frozen}>
 		<legend class="sr-only">ข้อมูลบันทึกพฤติกรรม</legend>
-		<BehaviorFormSection
-			step={1}
-			title="รายการพฤติกรรม"
-			description="เลือกประเภทและรายการ คะแนนใช้ตามเกณฑ์ของโรงเรียน"
-		>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="space-y-2">
-					<Label id="behavior-side-label">ประเภท</Label>
-					<ToggleGroup.Root
-						type="single"
-						bind:value={() => side, chooseSide}
-						aria-labelledby="behavior-side-label"
-						class="mt-2 grid grid-cols-2 gap-2"
-						disabled={pending || !!frozen}
-					>
-						{#each sides as option (option)}
-							<ToggleGroup.Item
-								value={option}
-								class="gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
-							>
-								{#if option === 'merit'}<Award
-										class="size-4 shrink-0"
-										aria-hidden="true"
-									/>{:else}<ShieldAlert class="size-4 shrink-0" aria-hidden="true" />{/if}
-								{option === 'merit' ? 'ความดี' : 'ความผิด'}
-							</ToggleGroup.Item>
-						{/each}
-					</ToggleGroup.Root>
-				</div>
-				<div>
-					<BehaviorSelect
-						id="behavior-item"
-						label="รายการพฤติกรรม"
-						value={itemId}
-						options={items
-							.filter((i) => i.side === side && i.enabled && i.versionId !== null)
-							.map((i) => ({ value: i.id, label: `${i.name} · ${i.points} คะแนน` }))}
-						onValueChange={(v) => (itemId = v)}
-					/>{#if fieldErrors.item}<p class="text-sm text-destructive">{fieldErrors.item}</p>{/if}
-				</div>
-			</div>
-			<div class="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-				<LockKeyhole class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-				<div>
-					<p class="font-medium">คะแนนตามเกณฑ์: {item?.points ?? '—'} คะแนนต่อคน</p>
-					<p class="mt-1 text-sm text-muted-foreground">จำนวนคะแนนกำหนดจากรายการที่เลือก</p>
-				</div>
-			</div>
-		</BehaviorFormSection>
-		<BehaviorFormSection
-			step={2}
-			title="วันเวลาและรายละเอียด"
-			description="ใช้เวลาปัจจุบันเป็นค่าเริ่มต้น หรือเปลี่ยนตามวันที่เกิดเหตุ"
-		>
-			<Button
-				type="button"
-				variant="outline"
-				onclick={() => {
-					defaultInstant = new Date().toISOString();
-
-					date = defaultClock.date;
-					time = defaultClock.time;
-				}}>ใช้วันเวลาปัจจุบัน</Button
+		<div class="min-w-0 space-y-6">
+			<BehaviorFormSection
+				step={1}
+				title="รายการพฤติกรรม"
+				description="เลือกประเภทและรายการ คะแนนใช้ตามเกณฑ์ของโรงเรียน"
 			>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="space-y-2">
-					<Label for="behavior-date">วันที่เกิดเหตุ *</Label><DatePicker
-						id="behavior-date"
-						value={date}
-						onValueChange={(v) => {
-							if (v) date = v;
-						}}
-					/>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="space-y-2">
+						<Label id="behavior-side-label">ประเภท</Label>
+						<ToggleGroup.Root
+							type="single"
+							bind:value={() => side, chooseSide}
+							aria-labelledby="behavior-side-label"
+							class="mt-2 grid grid-cols-2 gap-2"
+							disabled={pending || !!frozen}
+						>
+							{#each sides as option (option)}
+								<ToggleGroup.Item
+									value={option}
+									class="gap-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+								>
+									{#if option === 'merit'}<Award
+											class="size-4 shrink-0"
+											aria-hidden="true"
+										/>{:else}<ShieldAlert class="size-4 shrink-0" aria-hidden="true" />{/if}
+									{option === 'merit' ? 'ความดี' : 'ความผิด'}
+								</ToggleGroup.Item>
+							{/each}
+						</ToggleGroup.Root>
+					</div>
+					<div>
+						<BehaviorSelect
+							id="behavior-item"
+							label="รายการพฤติกรรม"
+							value={itemId}
+							options={items
+								.filter((i) => i.side === side && i.enabled && i.versionId !== null)
+								.map((i) => ({ value: i.id, label: `${i.name} · ${i.points} คะแนน` }))}
+							onValueChange={(v) => (itemId = v)}
+						/>{#if fieldErrors.item}<p class="text-sm text-destructive">{fieldErrors.item}</p>{/if}
+					</div>
 				</div>
-				<div class="space-y-2">
-					<Label for="behavior-time">เวลาเกิดเหตุ *</Label><Input
-						id="behavior-time"
-						type="time"
-						step="1"
-						bind:value={time}
-						required
-					/>
+				<div class="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+					<LockKeyhole class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+					<div>
+						<p class="font-medium">คะแนนตามเกณฑ์: {item?.points ?? '—'} คะแนนต่อคน</p>
+						<p class="mt-1 text-sm text-muted-foreground">จำนวนคะแนนกำหนดจากรายการที่เลือก</p>
+					</div>
 				</div>
-			</div>
-			{#if date !== loadedDate || error}<LoadingButton
+			</BehaviorFormSection>
+			<BehaviorFormSection
+				step={2}
+				title="วันเวลาและรายละเอียด"
+				description="ใช้เวลาปัจจุบันเป็นค่าเริ่มต้น หรือเปลี่ยนตามวันที่เกิดเหตุ"
+			>
+				<Button
 					type="button"
 					variant="outline"
-					loading={refreshing}
-					onclick={() => void reload()}>โหลดเกณฑ์และรายชื่อใหม่</LoadingButton
-				>{/if}{#if fieldErrors.date}<p class="text-sm text-destructive">{fieldErrors.date}</p>{/if}
-			<div class="space-y-2">
-				<Label for="behavior-detail">รายละเอียดเพิ่มเติม</Label><Textarea
-					id="behavior-detail"
-					bind:value={detail}
-					maxlength={5000}
-					placeholder="อธิบายเหตุการณ์เพิ่มเติมได้"
-				/>
-			</div>
-		</BehaviorFormSection>
-		<BehaviorFormSection
-			step={3}
-			title="นักเรียน"
-			description="เลือกเป็นรายคน ทั้งห้อง หรือผสมจากหลายห้องได้"
-		>
-			<BehaviorStudentPicker
-				{term}
-				{date}
-				initial={roster}
-				bind:selected
-				onRosterChange={(token) => (rosterToken = token)}
-			/>{#if fieldErrors.students}<p class="text-sm text-destructive">
-					{fieldErrors.students}
-				</p>{/if}
-		</BehaviorFormSection>
+					onclick={() => {
+						defaultInstant = new Date().toISOString();
+
+						date = defaultClock.date;
+						time = defaultClock.time;
+					}}>ใช้วันเวลาปัจจุบัน</Button
+				>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="space-y-2">
+						<Label for="behavior-date">วันที่เกิดเหตุ *</Label><DatePicker
+							id="behavior-date"
+							value={date}
+							onValueChange={(v) => {
+								if (v) date = v;
+							}}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="behavior-time">เวลาเกิดเหตุ *</Label><Input
+							id="behavior-time"
+							type="time"
+							step="1"
+							bind:value={time}
+							required
+						/>
+					</div>
+				</div>
+				{#if date !== loadedDate || error}<LoadingButton
+						type="button"
+						variant="outline"
+						loading={refreshing}
+						onclick={() => void reload()}>โหลดเกณฑ์และรายชื่อใหม่</LoadingButton
+					>{/if}{#if fieldErrors.date}<p class="text-sm text-destructive">
+						{fieldErrors.date}
+					</p>{/if}
+				<div class="space-y-2">
+					<Label for="behavior-detail">รายละเอียดเพิ่มเติม</Label><Textarea
+						id="behavior-detail"
+						bind:value={detail}
+						maxlength={5000}
+						placeholder="อธิบายเหตุการณ์เพิ่มเติมได้"
+					/>
+				</div>
+			</BehaviorFormSection>
+		</div>
+		<div class="min-w-0">
+			<BehaviorFormSection
+				step={3}
+				title="นักเรียน"
+				description="เลือกเป็นรายคน ทั้งห้อง หรือผสมจากหลายห้องได้"
+			>
+				<BehaviorStudentPicker
+					{term}
+					{date}
+					initial={roster}
+					bind:selected
+					onRosterChange={(token) => (rosterToken = token)}
+				/>{#if fieldErrors.students}<p class="text-sm text-destructive">
+						{fieldErrors.students}
+					</p>{/if}
+			</BehaviorFormSection>
+		</div>
 	</fieldset>
 	<div
 		class="rounded-xl border border-primary/20 bg-gradient-to-r from-primary/10 to-card p-4 sm:p-5"

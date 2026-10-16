@@ -71,7 +71,7 @@
 {/snippet}
 
 <form
-	class="max-w-4xl space-y-6"
+	class="grid w-full min-w-0 gap-6 xl:grid-cols-2 xl:items-start"
 	novalidate
 	aria-label={mode === 'create' ? 'เพิ่มทะเบียนนักเรียน' : 'แก้ไขทะเบียนนักเรียน'}
 	aria-busy={saving}
@@ -80,7 +80,7 @@
 		if (!pending) onsubmit();
 	}}
 >
-	<Card.Root>
+	<Card.Root class={mode === 'create' ? 'min-w-0 xl:row-span-2' : 'min-w-0'}>
 		<Card.Header>
 			<Card.Title><h2>ทะเบียนและข้อมูลส่วนตัว</h2></Card.Title>
 			<Card.Description
@@ -286,7 +286,7 @@
 				</p>
 			</Card.Content>
 		</Card.Root>
-		<Card.Root>
+		<Card.Root class="min-w-0 xl:col-span-2">
 			<Card.Header>
 				<div class="flex items-center justify-between gap-4">
 					<div class="space-y-2">
@@ -349,15 +349,17 @@
 			{/if}
 		</Card.Root>
 	{:else}
-		{@render guardians?.()}
+		{#if guardians}
+			<div class="min-w-0 xl:col-span-2">{@render guardians()}</div>
+		{/if}
 	{/if}
 	{#if formError}<p
-			class="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+			class="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive xl:col-span-2"
 			role="alert"
 		>
 			{formError}
 		</p>{/if}
-	<div class="flex flex-wrap justify-end gap-3">
+	<div class="flex flex-wrap justify-end gap-3 xl:col-span-2">
 		<Button href={cancelHref} variant="outline" disabled={saving}>ยกเลิก</Button>
 		<LoadingButton type="submit" loading={saving} loadingLabel="กำลังบันทึก..." {disabled}
 			><Save aria-hidden="true" />{mode === 'create'

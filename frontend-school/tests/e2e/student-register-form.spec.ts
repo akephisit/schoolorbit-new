@@ -175,7 +175,7 @@ test('annual source survives permanent edit while malformed years cannot trigger
 	expect(api.reads.at(-1)?.searchParams.has('academicYearId')).toBe(false);
 });
 
-for (const width of [375, 1280])
+for (const width of [375, 1280, 1920])
 	for (const mode of ['create', 'edit'] as const) {
 		test(`${mode} form fits ${width}px in both themes`, async ({ page }, testInfo) => {
 			await page.setViewportSize({ width, height: 950 });
@@ -189,6 +189,43 @@ for (const width of [375, 1280])
 				expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
 					width
 				);
+				const form = page.getByRole('form', {
+					name: mode === 'create' ? 'เพิ่มทะเบียนนักเรียน' : 'แก้ไขทะเบียนนักเรียน'
+				});
+				const header = page
+					.locator('header')
+					.filter({ has: page.getByRole('heading', { level: 1 }) });
+				const formBox = (await form.boundingBox())!;
+				const headerBox = (await header.boundingBox())!;
+				expect(Math.abs(formBox.x - headerBox.x)).toBeLessThanOrEqual(1);
+				expect(Math.abs(formBox.width - headerBox.width)).toBeLessThanOrEqual(1);
+				const sectionBox = async (name: string) =>
+					(await form
+						.locator('[data-slot="card"]')
+						.filter({
+							has: page.getByRole('heading', { name, exact: true })
+						})
+						.boundingBox())!;
+				const personal = await sectionBox('ทะเบียนและข้อมูลส่วนตัว');
+				const contact = await sectionBox('ข้อมูลติดต่อ');
+				const guardians = await sectionBox('ผู้ปกครอง');
+				expect(Math.abs(guardians.width - formBox.width)).toBeLessThanOrEqual(1);
+				if (width >= 1280) {
+					expect(contact.x).toBeGreaterThan(personal.x + personal.width);
+					expect(Math.abs(contact.y - personal.y)).toBeLessThanOrEqual(1);
+				} else {
+					expect(contact.y).toBeGreaterThan(personal.y + personal.height);
+					expect(Math.abs(contact.x - personal.x)).toBeLessThanOrEqual(1);
+				}
+				expect(guardians.y).toBeGreaterThan(personal.y + personal.height);
+				expect(guardians.y).toBeGreaterThan(contact.y + contact.height);
+				const save = (await form
+					.getByRole('button', {
+						name: mode === 'create' ? 'เพิ่มนักเรียน' : 'บันทึกการแก้ไข',
+						exact: true
+					})
+					.boundingBox())!;
+				expect(Math.abs(save.x + save.width - formBox.x - formBox.width)).toBeLessThanOrEqual(1);
 				await page.screenshot({
 					path: testInfo.outputPath(`student-${mode}-${width}-${theme}.png`),
 					fullPage: true

@@ -33,7 +33,7 @@ const screens = [
 	}
 ];
 
-for (const width of [375, 1440]) {
+for (const width of [375, 1920]) {
 	test.describe(`behavior layout at ${width}px`, () => {
 		test.use({ hasTouch: width === 375 });
 		for (const theme of ['light', 'dark'] as const) {
@@ -71,6 +71,40 @@ for (const width of [375, 1440]) {
 					await expect
 						.poll(() => page.locator('html').evaluate((node) => node.classList.contains('dark')))
 						.toBe(theme === 'dark');
+					if (screen.name === 'record') {
+						const form = page.locator('form').filter({
+							has: page.getByRole('group', { name: 'ข้อมูลบันทึกพฤติกรรม' })
+						});
+						const header = page
+							.locator('header')
+							.filter({ has: page.getByRole('heading', { level: 1 }) });
+						const formBox = (await form.boundingBox())!;
+						const headerBox = (await header.boundingBox())!;
+						expect(Math.abs(formBox.x - headerBox.x)).toBeLessThanOrEqual(1);
+						expect(Math.abs(formBox.width - headerBox.width)).toBeLessThanOrEqual(1);
+						const sectionBox = async (name: string) =>
+							(await form
+								.locator('[data-slot="card"]')
+								.filter({
+									has: page.getByRole('heading', { name, exact: true })
+								})
+								.boundingBox())!;
+						const behavior = await sectionBox('รายการพฤติกรรม');
+						const details = await sectionBox('วันเวลาและรายละเอียด');
+						const students = await sectionBox('นักเรียน');
+						expect(details.y).toBeGreaterThan(behavior.y + behavior.height);
+						if (width >= 1280) {
+							expect(students.x).toBeGreaterThan(behavior.x + behavior.width);
+							expect(Math.abs(students.y - behavior.y)).toBeLessThanOrEqual(1);
+						} else {
+							expect(students.y).toBeGreaterThan(details.y + details.height);
+							expect(Math.abs(students.x - behavior.x)).toBeLessThanOrEqual(1);
+						}
+						const summary = (await page.getByLabel('สรุปก่อนบันทึก').boundingBox())!;
+						expect(Math.abs(summary.width - formBox.width)).toBeLessThanOrEqual(1);
+						expect(summary.y).toBeGreaterThan(details.y + details.height);
+						expect(summary.y).toBeGreaterThan(students.y + students.height);
+					}
 					await page.screenshot({
 						path: `/tmp/behavior-design-${screen.name}-${width}-${theme}.png`,
 						fullPage: true
