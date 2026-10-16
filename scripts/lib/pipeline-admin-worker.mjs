@@ -113,8 +113,11 @@ export async function retireAdminAlias({accountId, token, baseDomain, checkOnly 
     if (body.result.length === 0) return undefined;
     const domain = body.result[0];
     if (!domain || typeof domain !== 'object' || domain.hostname !== hostname || domain.service !== ADMIN_WORKER ||
-        domain.environment !== 'production' || typeof domain.id !== 'string' || !/^[0-9a-f]{32}$/i.test(domain.id)) {
+        domain.environment !== 'production') {
       throw new Error('Admin alias owner does not match the production Admin Worker');
+    }
+    if (typeof domain.id !== 'string' || !/^[0-9a-f]{32,64}$/i.test(domain.id)) {
+      throw new Error('Admin alias identifier has an unsupported format');
     }
     return domain;
   }

@@ -11,7 +11,22 @@ import {requireFrontendOnly, preparedGate} from '../lib/pipeline-admin-recreate.
 const credentials = {accountId: 'a'.repeat(32), token: 'synthetic-token'};
 const reply = (status, body) => async () => new Response(JSON.stringify(body), {status});
 
-const alias = {id: 'b'.repeat(32), hostname: 'admin.example.test', service: ADMIN_WORKER, environment: 'production'};
+// Workers Domains returns an opaque ID; actual records can be longer than account IDs.
+const alias = {id: 'b'.repeat(40), hostname: 'admin.example.test', service: ADMIN_WORKER, environment: 'production'};
+
+test('alias retirement accepts bounded opaque hexadecimal IDs without changing its exact owner scope', async () => {
+  for (const length of [32, 40, 64]) {
+    let reads = 0;
+    const domain = {...alias, id: 'b'.repeat(length)};
+    const calls = [];
+    assert.equal(await retireAdminAlias({...credentials, baseDomain: 'example.test', fetchImpl: async (url, request) => {
+      calls.push({url, method: request.method});
+      if (request.method === 'DELETE') return Response.json({success: true});
+      return Response.json({success: true, result: reads++ ? [] : [domain]});
+    }}), true);
+    assert.ok(calls[1].url.endsWith('/workers/domains/' + domain.id));
+  }
+});
 
 test('alias preflight verifies the same ownership without mutating Cloudflare', async () => {
   let reads = 0;
@@ -61,6 +76,8 @@ test('unexpected aliases, environments, owners and incomplete lookup results nev
     {success: true, result: [{...alias, service: 'schoolorbit-frontend-school'}]},
     {success: true, result: [{...alias, environment: 'staging'}]},
     {success: true, result: [{...alias, id: '../other'}]},
+    {success: true, result: [{...alias, id: 'b'.repeat(31)}]},
+    {success: true, result: [{...alias, id: 'b'.repeat(65)}]},
     {success: true, result: [null]},
     {success: true, result: [alias, alias]},
     {success: true, result: [] , result_info: {total_count: 1}},
