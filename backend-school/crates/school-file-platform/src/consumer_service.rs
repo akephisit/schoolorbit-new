@@ -34,6 +34,15 @@ pub fn map_platform_error(error: FilePlatformError) -> AppError {
     }
 }
 
+pub fn map_public_platform_error(error: FilePlatformError) -> AppError {
+    match error {
+        FilePlatformError::NotFound
+        | FilePlatformError::NotReady
+        | FilePlatformError::VisibilityMismatch => AppError::NotFound("ไม่พบไฟล์".to_string()),
+        other => map_platform_error(other),
+    }
+}
+
 /// Requests lifecycle deletion after a domain relationship transaction commits.
 /// Provider failures remain durable retry work; repository failures are surfaced.
 pub async fn request_deletions(

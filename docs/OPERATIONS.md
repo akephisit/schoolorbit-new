@@ -1342,15 +1342,16 @@ opened and no school/account data is modified by this discovery flow.
 Search results use the Admin Orbit PNG as the platform icon. Its vector source is
 `frontend-admin/static/schoolorbit.svg`; both frontend deployments carry matching
 `schoolorbit.png` assets. A School homepage advertises its stable `/favicon.png`:
-the route resolves only that tenant's current crest and the File Platform renders
+the route makes one anonymous request to `/api/school/public/favicon`, selecting
+only that tenant's current crest without looking up the school name. The File Platform renders
 a 256-pixel square PNG, retaining the whole portrait/landscape image. The original
 file is never modified. Missing/deleted crests fall back to the platform icon;
 unavailable services return uncached 503 with Retry-After. Successful icons may be
 cached for five minutes. School titles use `ชื่อโรงเรียน - SchoolOrbit`, with
 matching Open Graph titles and School logo metadata. Google chooses its final
 search appearance after recrawling; deploying does not force immediate updates.
-The central directory allows up to eight seconds for an anonymous API read before
-returning its retryable error; the independent marketing homepage and sitemap do
+Public school identity and the central directory allow up to eight seconds for an anonymous API read before
+returning their retryable errors; the independent marketing homepage and sitemap do
 not wait for directory data.
 
 After release, use Search Console's domain property to submit the central sitemap

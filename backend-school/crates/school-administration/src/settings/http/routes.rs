@@ -8,6 +8,7 @@ use axum::{
 pub fn public_routes() -> Router<AdministrationHttpState> {
     Router::new()
         .route("/school/public", get(handlers::get_public_info))
+        .route("/school/public/favicon", get(handlers::get_public_favicon))
         .route(
             "/school/public/statistics",
             get(handlers::get_public_statistics),

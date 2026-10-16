@@ -1,6 +1,6 @@
 use axum::{
     extract::{Extension, Path, State},
-    http::HeaderMap,
+    http::{header, HeaderMap},
     response::{IntoResponse, Redirect, Response},
     Json,
 };
@@ -14,6 +14,8 @@ use crate::settings::services as school_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_context;
+#[cfg(feature = "api-docs")]
+use school_file_platform::http_models::PublicFileFaviconPng;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
@@ -94,6 +96,40 @@ pub async fn get_public_organization_avatar(
     Ok((
         [(axum::http::header::CACHE_CONTROL, "no-store")],
         Redirect::temporary(&grant.url),
+    )
+        .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/school/public/favicon", operation_id = "getPublicSchoolFavicon", tag = "school",
+    responses(
+        (status = 200, description = "Current school crest as a square PNG", content_type = "image/png", body = inline(PublicFileFaviconPng)),
+        (status = 404, description = "Current public school crest not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_public_favicon(
+    State(state): State<AdministrationHttpState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let tenant = tenant_context(&state.auth_runtime, &headers).await?;
+    let file_id = school_service::get_settings_response(&tenant.pool)
+        .await?
+        .logo_file_id
+        .ok_or_else(|| AppError::NotFound("ไม่พบตราโรงเรียน".into()))?;
+    let repository = school_file_platform::repository::SqlFileRepository::new(tenant.pool);
+    let png = state
+        .file_platform
+        .public_favicon(&repository, file_id)
+        .await
+        .map_err(school_file_platform::consumer_service::map_public_platform_error)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=300"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::VARY, "Origin, X-School-Subdomain"),
+        ],
+        png,
     )
         .into_response())
 }

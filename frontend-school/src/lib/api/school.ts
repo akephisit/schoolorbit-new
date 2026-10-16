@@ -1,4 +1,10 @@
-import { apiClient, requireApiData, type ApiRequestOptions } from './client';
+import {
+	ApiClientError,
+	BACKEND_URL,
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions
+} from './client';
 import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
@@ -81,4 +87,18 @@ export async function getRequiredPublicSchoolInfo(
 	const result = await loadPublicSchoolInfo(options);
 	if (result.error) throw new Error(result.error);
 	return result.info;
+}
+
+export async function getPublicSchoolFavicon(options: ApiRequestOptions = {}): Promise<Blob> {
+	const requestFetch = options.requestFetch ?? globalThis.fetch;
+	const blob = requireApiData(
+		await apiClient.getExternalBlob(`${BACKEND_URL}/api/school/public/favicon`, {
+			...options,
+			requestFetch: (input, init) => requestFetch(input, { ...init, redirect: 'manual' })
+		}),
+		'ไม่สามารถอ่านไอคอนโรงเรียนได้'
+	);
+	if (blob.type !== 'image/png' || blob.size > 512 * 1024)
+		throw new ApiClientError('รูปแบบไอคอนโรงเรียนไม่ถูกต้อง', 502);
+	return blob;
 }

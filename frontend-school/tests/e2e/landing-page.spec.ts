@@ -157,6 +157,17 @@ test.beforeAll(async () => {
 			res.writeHead(204).end();
 			return;
 		}
+		if (endpoint === '/api/school/public/favicon') {
+			if (failedRegion === endpoint) {
+				res.writeHead(503).end(JSON.stringify({ success: false, error: 'Fixture read failure' }));
+			} else if (!logoAvailable || brokenLogo) {
+				res.writeHead(404).end();
+			} else {
+				res.setHeader('content-type', 'image/png');
+				res.end(readFileSync(new URL('../../static/schoolorbit.png', import.meta.url)));
+			}
+			return;
+		}
 		if (endpoint.startsWith('/api/public/files/') || endpoint.endsWith('/avatar')) {
 			if (brokenLogo) {
 				res.writeHead(404).end();
@@ -169,11 +180,6 @@ test.beforeAll(async () => {
 						data: { url: 'https://public-files.example/fixture-school-logo.svg' }
 					})
 				);
-				return;
-			}
-			if (endpoint.endsWith('/favicon')) {
-				res.setHeader('content-type', 'image/png');
-				res.end(readFileSync(new URL('../../static/schoolorbit.png', import.meta.url)));
 				return;
 			}
 			res.setHeader('content-type', 'image/svg+xml');
@@ -411,10 +417,7 @@ test('favicon reads only this school crest and uses the Admin brand when no cres
 	expect(await icon.body()).toEqual(
 		readFileSync(new URL('../../static/schoolorbit.png', import.meta.url))
 	);
-	expect(requests.map((r) => r.path)).toEqual([
-		'/api/school/public',
-		'/api/public/files/11111111-1111-4111-8111-111111111111/favicon'
-	]);
+	expect(requests.map((r) => r.path)).toEqual(['/api/school/public/favicon']);
 	expect(requests.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
 	logoAvailable = false;
 	const fallback = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
@@ -426,10 +429,30 @@ test('favicon reads only this school crest and uses the Admin brand when no cres
 		(await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 })).headers().location
 	).toBe('/schoolorbit.png');
 	brokenLogo = false;
-	failedRegion = '/api/school/public';
+	failedRegion = '/api/school/public/favicon';
 	const unavailable = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
 	expect(unavailable.status()).toBe(503);
 	expect(unavailable.headers()['cache-control']).toBe('no-store');
+});
+
+test('a four-second identity read still provides the school title in the first HTML', async ({
+	browser
+}) => {
+	identityGate = new Promise<void>((done) => (releaseIdentity = done));
+	const release = setTimeout(() => releaseIdentity?.(), 4_000);
+	const context = await browser.newContext({ javaScriptEnabled: false });
+	try {
+		const page = await context.newPage();
+		await page.goto(baseUrl);
+		await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
+		await expect(
+			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
+		).toBeVisible();
+		expect(requests.filter((r) => isRegionRead(r.path))).toHaveLength(3);
+	} finally {
+		clearTimeout(release);
+		await context.close();
+	}
 });
 
 test('a slow identity read is bounded while sibling reads start concurrently and retries remain local', async ({
@@ -440,7 +463,8 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	const navigation = page.goto(baseUrl);
 	await expect.poll(() => requests.filter((r) => isRegionRead(r.path)).length).toBe(3);
 	await navigation;
-	expect(Date.now() - started).toBeLessThan(6_000);
+	expect(Date.now() - started).toBeGreaterThanOrEqual(7_500);
+	expect(Date.now() - started).toBeLessThan(11_000);
 	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();

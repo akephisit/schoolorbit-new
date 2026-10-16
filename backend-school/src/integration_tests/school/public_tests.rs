@@ -345,10 +345,13 @@ async fn public_organization_only_exposes_active_units_and_current_members() {
         assert!(!data.contains(forbidden));
     }
 }
-struct UnexpectedStorageProvider;
+#[derive(Default)]
+struct PublicTestStorageProvider {
+    objects: std::sync::Mutex<HashMap<String, Bytes>>,
+}
 
 #[async_trait]
-impl StorageProvider for UnexpectedStorageProvider {
+impl StorageProvider for PublicTestStorageProvider {
     async fn check_readiness(&self) -> Result<(), StorageError> {
         panic!("public school HTTP operation must not check provider readiness")
     }
@@ -357,8 +360,13 @@ impl StorageProvider for UnexpectedStorageProvider {
         panic!("public school HTTP operation must not store another object")
     }
 
-    async fn get(&self, _object: &StoredObject, _max_bytes: u64) -> Result<Bytes, StorageError> {
-        panic!("public school HTTP operation must not read object bytes")
+    async fn get(&self, object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError> {
+        let objects = self.objects.lock().unwrap();
+        let bytes = objects
+            .get(object.object_key.as_str())
+            .expect("public school HTTP operation must never read an unpublished object");
+        assert!(bytes.len() as u64 <= max_bytes);
+        Ok(bytes.clone())
     }
 
     async fn head(&self, _object: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
@@ -390,13 +398,6 @@ impl MalwareScanner for UnexpectedScanner {
     async fn scan(&self, _content: &[u8]) -> ScanOutcome {
         panic!("public school HTTP operation runs after scanning")
     }
-}
-
-fn file_platform() -> FilePlatform {
-    FilePlatform::new(
-        Arc::new(UnexpectedStorageProvider),
-        Arc::new(UnexpectedScanner),
-    )
 }
 
 #[derive(Clone)]
@@ -470,6 +471,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         session_events: tokio::sync::broadcast::channel(8).0,
         permission_events: permission_events.clone(),
     };
+    let storage = Arc::new(PublicTestStorageProvider::default());
     let state = AppState {
         admin_client,
         pool_manager,
@@ -479,7 +481,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         notification_channel: tokio::sync::broadcast::channel(8).0,
 
         work_event_channel: tokio::sync::broadcast::channel(8).0,
-        file_platform: Arc::new(file_platform()),
+        file_platform: Arc::new(FilePlatform::new(
+            storage.clone(),
+            Arc::new(UnexpectedScanner),
+        )),
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
         ),
@@ -564,13 +569,19 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     .execute(&a)
     .await
     .unwrap();
-    for tenant in ["school-a", "school-b"] {
-        for file_id in [private_file, Uuid::new_v4()] {
+    // Only the relationship selects the crest; caller file IDs cannot expose other files.
+    for attached in [None, Some(private_file)] {
+        sqlx::query("UPDATE school_settings SET logo_file_id = $1")
+            .bind(attached)
+            .execute(&a)
+            .await
+            .unwrap();
+        for tenant in ["school-a", "school-b"] {
             let response = app
                 .clone()
                 .oneshot(
                     Request::builder()
-                        .uri(format!("/api/public/files/{file_id}/favicon"))
+                        .uri(format!("/api/school/public/favicon?fileId={private_file}"))
                         .header("Origin", format!("https://{tenant}.schoolorbit.app"))
                         .body(Body::empty())
                         .unwrap(),
@@ -578,6 +589,76 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+    }
+    sqlx::query("UPDATE school_settings SET logo_file_id = NULL")
+        .execute(&a)
+        .await
+        .unwrap();
+    let crest = Uuid::new_v4();
+    let crest_version = Uuid::new_v4();
+    let crest_key = school_file_platform::purpose_registry::original_object_key(
+        Uuid::new_v4(),
+        school_file_platform::platform_types::FilePurpose::SchoolLogo,
+        crest,
+        1,
+        school_file_platform::platform_types::DetectedContent::Png,
+    )
+    .unwrap();
+    // Synthetic 40×80 RGBA PNG; no production assets or object writes.
+    let source = vec![
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 40, 0, 0, 0, 80, 8,
+        6, 0, 0, 0, 107, 143, 55, 193, 0, 0, 0, 105, 73, 68, 65, 84, 120, 156, 237, 206, 49, 17, 0,
+        32, 0, 0, 33, 67, 24, 204, 56, 182, 215, 20, 222, 59, 48, 176, 51, 230, 218, 231, 103, 163,
+        14, 8, 10, 214, 1, 65, 193, 58, 32, 40, 88, 7, 4, 5, 235, 128, 160, 96, 29, 16, 20, 172, 3,
+        130, 130, 117, 64, 80, 176, 14, 8, 10, 214, 1, 65, 193, 58, 32, 40, 88, 7, 4, 5, 235, 128,
+        160, 96, 29, 16, 20, 172, 3, 130, 130, 117, 64, 80, 176, 14, 8, 10, 214, 1, 65, 193, 58,
+        32, 40, 88, 7, 4, 95, 187, 110, 219, 50, 218, 252, 22, 109, 19, 0, 0, 0, 0, 73, 69, 78, 68,
+        174, 66, 96, 130,
+    ];
+    storage
+        .objects
+        .lock()
+        .unwrap()
+        .insert(crest_key.as_str().into(), Bytes::from(source.clone()));
+    sqlx::query("INSERT INTO files (id,display_filename,purpose_code,visibility,lifecycle_status,retention_class,created_by) VALUES($1,'crest.png','school_logo','public','processing','standard',$2)")
+        .bind(crest).bind(actor_id).execute(&a).await.unwrap();
+    sqlx::query("INSERT INTO file_versions (id,file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,scanner_result_code,scanned_at,created_by) VALUES($1,$2,1,'r2','public','stored',$3,'image/png','png',$4,repeat('b',64),'clean','clean',now(),$5)")
+        .bind(crest_version).bind(crest).bind(crest_key.as_str()).bind(source.len() as i64).bind(actor_id).execute(&a).await.unwrap();
+    sqlx::query("UPDATE files SET current_version_id=$1,lifecycle_status='ready' WHERE id=$2")
+        .bind(crest_version)
+        .bind(crest)
+        .execute(&a)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE school_settings SET logo_file_id=$1")
+        .bind(crest)
+        .execute(&a)
+        .await
+        .unwrap();
+    for (tenant, expected) in [
+        ("school-a", StatusCode::OK),
+        ("school-b", StatusCode::NOT_FOUND),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/school/public/favicon?fileId={private_file}"))
+                    .header("Origin", format!("https://{tenant}.schoolorbit.app"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::OK {
+            assert_eq!(response.headers()["content-type"], "image/png");
+            assert_eq!(response.headers()["vary"], "Origin, X-School-Subdomain");
+            let png = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
+            assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+            assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 256);
+            assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 256);
         }
     }
     let still_private: String = sqlx::query_scalar("SELECT visibility FROM files WHERE id = $1")
