@@ -8,18 +8,6 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect the exact Admin alias metadata
-        env:
-          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error --max-time 20 --get \
-            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            --data-urlencode "hostname=admin.${BASE_DOMAIN}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/domains" \
-            | jq '{success,domains:[.result[]|{id,hostname,service,environment}]}'
       - name: Inspect runtime state
         uses: appleboy/ssh-action@v1.2.5
         with:
