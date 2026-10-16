@@ -135,7 +135,7 @@ test('project skill invocation metadata has valid types and references the skill
 	}
 });
 
-test('development workflow keeps independent acceptance for single-writer changes', async () => {
+test('every implementation delegates edits and keeps independent acceptance', async () => {
 	const [rules, skill, metadataSource, testing] = await Promise.all([
 		readFile(path.join(repoRoot, '.rules'), 'utf8'),
 		readFile(path.join(skillRoot, 'SKILL.md'), 'utf8'),
@@ -147,27 +147,132 @@ test('development workflow keeps independent acceptance for single-writer change
 		'### Agent roles and coordination',
 		'### Reports, failure recovery and completion'
 	);
-	assert.match(coordination, /nontrivial implementation or development-workflow change/);
-	assert.match(coordination, /separate read-only Reviewer\s+and a separate QA\/Verifier/);
+	// The approved policy replaces the obsolete trivial-inline exception; these are
+	// instruction guards, not proof that a host ran separate agents.
+	assert.match(coordination, /Every implementation task, however small/);
+	assert.match(coordination, /separate delegated writer/);
+	assert.match(coordination, /separate read-only Reviewer and a separate QA\/Verifier/);
 	assert.match(coordination, /neither of whom wrote the candidate/);
+	assert.match(coordination, /includes text, documentation, workflow and test edits/);
 	assert.match(
 		coordination,
-		/Only trivial text\/mechanical edits without behavior, contract or workflow changes/
+		/Senior does not write tracked\s+source, configuration, tests or documentation/
 	);
-	assert.match(coordination, /explicit inline-only request or unavailable subagent/);
-	assert.match(coordination, /do not claim independent review/);
+	assert.match(coordination, /including workflow changes and failure repairs/);
+	assert.match(coordination, /Explanatory\/read-only questions do not need writers/);
+	assert.match(
+		coordination,
+		/Explicit newer user instructions and higher-priority host requirements/
+	);
+	assert.match(coordination, /subagents\s+are unavailable, report the concrete blocker/);
+	assert.match(coordination, /never silently substitute inline roles/);
+	assert.match(coordination, /Senior \+ one relevant writer/);
+	assert.match(coordination, /then Senior \+ Reviewer \+ QA\/Verifier/);
+	assert.match(coordination, /do not create a Backend writer for frontend-only work/);
+	assert.match(coordination, /proportional checks/);
 	for (const source of [
 		rules,
 		skill,
 		parseYaml(metadataSource).interface.default_prompt,
 		testing
 	]) {
+		assert.match(source, /delegated writer/);
+		assert.match(source, /concrete blocker/);
 		assert.doesNotMatch(
 			source,
-			/(?:small or tightly coupled (?:work|tasks)|(?:small|bounded) one-owner (?:work|change)) (?:can )?stay(?:s)? inline/i,
-			'entry points must not restore a blanket one-owner acceptance exception'
+			/(?:may (?:write|implement) inline|carry out the roles inline|explicit inline exceptions|Only trivial text\/mechanical edits|nontrivial changes still receive)/i,
+			'entry points must not restore size-based or unavailable-subagent inline exceptions'
 		);
 	}
+});
+
+test('development workflow checks feature ancestry and coordinates latest-main integration', async () => {
+	const [rules, skill, testing] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(skillRoot, 'SKILL.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8')
+	]);
+	const integration = requiredSection(
+		rules,
+		'### Git branches, worktrees, and integration',
+		'### Agent roles and coordination'
+	);
+	assert.match(integration, /Before final acceptance, readiness and integration/);
+	assert.match(integration, /Senior fetches `origin`/);
+	assert.match(integration, /git merge-base --is-ancestor origin\/main HEAD/);
+	assert.match(integration, /fresh local `main` alone does not prove/);
+	assert.match(
+		integration,
+		/pause writers[\s\S]*acknowledgements[\s\S]*save their work[\s\S]*clean tree/
+	);
+	assert.match(integration, /Senior merges `origin\/main` into the feature branch/);
+	assert.match(integration, /semantic conflict resolution to a writer/);
+	assert.match(integration, /repeat affected review and focused\/matrix checks/);
+	assert.match(
+		integration,
+		/push the updated candidate and re-establish the latest-main `Pipeline gate`/
+	);
+	assert.match(integration, /merge controller\/protection serializes integration, rechecks latest/);
+	assert.match(integration, /another feature merges meanwhile, repeat/);
+	assert.match(integration, /never use a blind untested GitHub update-branch action/);
+	assert.match(integration, /Concurrent distinct features need separate branches and checkouts/);
+	assert.match(integration, /one checkout cannot hold two branches simultaneously/);
+	assert.match(integration, /only one checkout is requested, serialize feature-writing phases/);
+	for (const source of [skill, testing]) {
+		assert.match(source, /git merge-base --is-ancestor origin\/main HEAD/);
+		assert.match(source, /semantic\s+conflict/);
+		assert.match(source, /latest-main `Pipeline gate`/);
+		assert.match(source, /serialize feature-writing phases/);
+	}
+	const coordination = requiredSection(
+		rules,
+		'### Agent roles and coordination',
+		'### Reports, failure recovery and completion'
+	);
+	assert.match(coordination, /one Rust build\/verification owner at a time/);
+	assert.match(coordination, /compatible Cargo target\s+sequentially/);
+	assert.match(
+		coordination,
+		/never run concurrent Cargo processes[\s\S]*or create per-agent targets/
+	);
+});
+
+test('test integrity permits evidenced corrections while preserving regression coverage', async () => {
+	const [rules, skill, testing] = await Promise.all([
+		readFile(path.join(repoRoot, '.rules'), 'utf8'),
+		readFile(path.join(skillRoot, 'SKILL.md'), 'utf8'),
+		readFile(path.join(repoRoot, 'docs/TESTING.md'), 'utf8')
+	]);
+	const integrity = requiredSection(
+		rules,
+		'### Test integrity and legitimate corrections',
+		'### Selecting verification scope'
+	);
+	for (const boundary of [
+		/approved behavior is unchanged, including a refactor/,
+		/fix the production cause/,
+		/approved behavior\/contract change/,
+		/evidenced faulty or brittle test/,
+		/environment\/fixture defect/,
+		/Retain equivalent-or-stronger coverage/,
+		/implementation-detail checks to the observable contract/,
+		/writer records the old and new requirement/,
+		/expectation, fixture or snapshot change is valid/,
+		/reproducer and before\/after evidence where feasible/,
+		/PR[\s\S]*approved policy intentionally changed/,
+		/Reviewer independently assesses test changes/,
+		/QA checks actual outcomes and regression detection/,
+		/Never remove cases, weaken assertions, disable\/skip required checks, blindly bless snapshots, add retries or narrow coverage merely to get green/
+	]) {
+		assert.match(integrity, boundary);
+	}
+	assert.match(skill, /Test integrity and legitimate corrections/);
+	assert.match(skill, /Reviewer independently assesses changes and QA checks actual/);
+	assert.match(testing, /test-integrity-and-legitimate-corrections/);
+	assert.match(
+		testing,
+		/approved workflow-policy change can legitimately replace an obsolete guard/
+	);
 });
 
 test('development workflow routes reports through recovery and verified delivery to a summary', async () => {
@@ -185,6 +290,10 @@ test('development workflow routes reports through recovery and verified delivery
 	for (const boundary of [
 		/Child reports are handoffs to the Senior/,
 		/failed required check or blocking review finding starts a repair loop/,
+		/Senior, who diagnoses the issue and assigns the correction to the responsible writer/,
+		/reassign the correction when diagnosis stalls/,
+		/do not repeat guesses\s+or let the Senior silently edit files itself/,
+		/QA never fixes source; Reviewer acceptance and\s+QA acceptance remain separate/,
 		/A failure existing on main is not by itself a reason to stop/,
 		/A draft PR[^.]*is not a stopping condition/,
 		/Ordinary implementation requests include PR delivery and eligible trusted-team integration/,
