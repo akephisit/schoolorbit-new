@@ -95,9 +95,11 @@ pipeline or production latency measurements.
 
 The repository-owned [development skill](../.agents/skills/schoolorbit-development/SKILL.md)
 is discovered from `.agents/skills/` by supported Codex hosts. Invoke
-`$schoolorbit-development` for the approved coordinated workflow. Role ownership, concurrency,
-reasoning preferences and delegation authorization are defined in `.rules`; implicit discovery
-does not itself authorize subagents. The same workflow can run inline when the host lacks them.
+`$schoolorbit-development` for the coordinated workflow. Explicit or implicit selection of this
+skill applies the project's standing preference for bounded delegation of independent tasks under
+[the coordination rules](../.rules#agent-roles-and-coordination). Small or tightly coupled work
+stays inline, as do tasks with an inline-only user preference or a host without subagent tools.
+Delegation keeps the user's requested scope; review-only work remains read-only.
 
 For a skill-instruction-only change, run
 `node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior

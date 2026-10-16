@@ -1,6 +1,6 @@
 ---
 name: schoolorbit-development
-description: Coordinate SchoolOrbit implementation and review using repository rules, task-specific agent roles, local verification and the PR delivery flow. Use for SchoolOrbit code, contract, database or pipeline changes and explicit requests for parallel agents. Do not use for unrelated questions or general chat.
+description: Coordinate SchoolOrbit implementation and review, splitting independent tasks among bounded subagents under repository rules. Use for SchoolOrbit code, contract, database, pipeline, development-rule or skill changes and reviews. Keep small or tightly coupled tasks inline and honor inline-only requests. Do not use for unrelated questions or general chat.
 ---
 
 # SchoolOrbit development workflow
@@ -19,13 +19,28 @@ This skill routes work; domain conventions and agent policy stay in `.rules`.
    from `Consistency decisions and final review`; retain it through implementation and resume.
    Use the approved specification/plan process for architectural work.
 3. Consult `.rules` → `Agent roles and coordination`. The primary agent acts as Coordinator.
-   Use a bounded inline workflow for a one-owner change. When explicitly invoked as
-   `$schoolorbit-development`, this skill authorizes the bounded parallel workflow in `.rules`;
-   otherwise delegate only if the user has authorized it. Honor inline-only requests.
-4. For authorized independent work, delegate exploration, implementation or review using the host's
-   available subagent tools. Choose only needed roles and supported model/reasoning controls.
-   If subagents or configurable models are unavailable, carry out the same roles inline and say so.
+   Explicit or implicit skill selection applies the project's standing delegation preference;
+   choose parallel or inline work under those rules without requesting permission for each child.
+   Preserve the user's scope, including read-only and inline-only requests.
+4. Split independent work using the host's actual subagent tools and the scheduling steps below.
+   Choose only needed roles and supported model/reasoning controls. If subagents are unavailable,
+   carry out the roles inline and report that limitation once.
    Do not assume a custom agent configuration file creates agents or is loaded in Codex Cloud.
+
+## Split and schedule work
+
+1. Identify independently useful outcomes and their completion criteria, then record each task's
+   owner, allowed paths, prerequisites and status in the existing plan/chat state. Keep a small
+   one-owner change inline; shared-file work or unresolved contracts require an ordered assignment.
+2. Choose the smallest useful team under `.rules`. For example, an Explorer can trace consumers
+   while the Coordinator inspects a separate owner; Backend and Frontend writers can implement
+   separate paths after agreeing the wire contract; a Reviewer and Verifier can inspect a frozen
+   candidate concurrently. Read-only requests assign only read-only work.
+3. Spawn only ready tasks with the assignment below. Establish separate worktrees before parallel
+   writers start. Assign every shared file and generated artifact to one owner.
+4. Advance independent Coordinator work while children run. Follow their results at dependency
+   boundaries, resolve overlaps or blockers, and start dependent work only after inspecting the
+   prerequisite output. Keep spawning and reassignment with the Coordinator.
 
 ## Assign bounded tasks
 
@@ -38,6 +53,7 @@ Base commit and tree:
 Allowed paths and read-only or writer status:
 Protected/shared files and their designated owner:
 Dependencies and agreed interface:
+Completion criteria and blocking conditions:
 Applicable .rules sections and canonical references to read:
 Focused verification and fixture ownership:
 Deliverable: commits/tree, changed files, evidence, findings and remaining uncertainty.
@@ -55,7 +71,7 @@ Coordinator and obtain a revised assignment. Independent work can continue.
 1. Inspect each deliverable and integrate in dependency order on the Coordinator's branch.
    The designated owner reconciles shared files and generated artifacts. A child test result covers
    only its tested tree and environment.
-2. Freeze the integrated candidate. For authorized parallel work, delegate its read-only
+2. Freeze the integrated candidate. For parallel work, delegate its read-only
    Rules/Security review and local verification concurrently when independent. Assign one heavy
    Cargo owner and isolated database fixtures under `.rules`.
 3. The Verifier selects checks under `.rules` section 11 and uses the matching owning runners or
