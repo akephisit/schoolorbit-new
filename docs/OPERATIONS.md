@@ -324,6 +324,20 @@ mount checks precede acceptance. Admin uploads code and secrets together in one 
 promotes the exact ID from structured Wrangler output and verifies it. Node 24 and the application
 lockfile own Wrangler versions. Temporary secrets are mode `0600` and always removed.
 
+The Admin release supports first-time creation or recovery after deletion of
+`schoolorbit-frontend-admin`. Under the production lock and maintenance, it checks
+that exact Cloudflare service. Existing Workers are preserved. Only a recognized
+missing-service response permits a minimal 503 bootstrap; permission, transport
+and malformed-response failures stop release. The bootstrap has no application
+assets/bindings, custom routes, workers.dev or preview access. The prepared
+application then follows normal inactive-version upload with versioned secrets,
+exact-version promotion, route application and browser acceptance. No manual
+Worker creation or Git integration is required. Deleting the Admin Worker removes
+its previous deployment history and managed domains and makes the Admin frontend
+unavailable until release recreates it. Keep required proxied DNS records for the
+configured Admin hostname; the release reattaches its configured Worker route.
+This recovery path never targets a School Worker, tenant DNS record or database.
+
 The final acceptance owner verifies both proxy readiness paths and authenticated School academic
 smoke, advances only selected image aliases, persists component baselines, and opens maintenance
 last. Any earlier failure leaves maintenance active. A normal-proxy readiness failure restores
