@@ -131,7 +131,6 @@
 			if (disposed) return;
 			request.abort();
 			loading = false;
-			refreshing = false;
 			fonts = fonts.filter((font) => font.id !== target.id);
 			deleteTarget = null;
 			toast.success(`ลบ ${target.displayName} จากคลังแล้ว`);

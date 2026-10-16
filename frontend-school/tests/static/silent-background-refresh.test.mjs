@@ -27,7 +27,7 @@ function visibleText(node) {
 		.join(' ');
 }
 const routineLabel =
-	/^(?:รีเฟรช.*|โหลดใหม่|โหลดข้อมูลใหม่|โหลดผลล่าสุด|โหลดล่าสุด|ตรวจข้อมูลล่าสุด|โหลดวิชาสอบใหม่|โหลดคะแนนใหม่|โหลดห้องสอบใหม่|โหลดรอบใหม่|โหลดข้อมูลรอบใหม่|โหลดใบสมัครใหม่|โหลดรายละเอียดใบสมัครใหม่|Force Refresh Auth|Refresh|Reload)$/i;
+	/^(?:รีเฟรช.*|โหลดใหม่|โหลดข้อมูลใหม่|โหลดผลล่าสุด|โหลดล่าสุด|ตรวจข้อมูลล่าสุด|โหลดวิชาสอบใหม่|โหลดคะแนนใหม่|โหลดห้องสอบใหม่|โหลดรอบใหม่|โหลดข้อมูลรอบใหม่|โหลดใบสมัครใหม่|โหลดรายละเอียดใบสมัครใหม่|โหลดแบบใหม่|โหลดรายชื่อใหม่|Force Refresh Auth|Refresh|Reload)$/i;
 
 test('School markup has no routine page or region refresh controls or background updating labels', async () => {
 	const violations = [];

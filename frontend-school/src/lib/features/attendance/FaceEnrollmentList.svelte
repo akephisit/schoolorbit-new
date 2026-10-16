@@ -20,14 +20,12 @@
 		students,
 		enrollments,
 		disabled,
-		onremove,
-		onrefresh
+		onremove
 	}: {
 		students: AttendanceStudentOption[];
 		enrollments: AttendanceFaceEnrollment[];
 		disabled: boolean;
 		onremove: (id: string) => void;
-		onrefresh: () => void;
 	} = $props();
 	let search = $state('');
 	let page = $state(1);
@@ -63,8 +61,6 @@
 					oninput={() => (page = 1)}
 				/>
 			</div>
-			<Button type="button" variant="outline" onclick={onrefresh} {disabled}>โหลดรายชื่อใหม่</Button
-			>
 		</div>
 		{#if !rows.length}<PageState
 				variant="empty"

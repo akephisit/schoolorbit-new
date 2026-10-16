@@ -1697,6 +1697,7 @@ test('registered face list searches and withdraws the chosen student after confi
 	});
 	await page.goto(path('/faces'));
 	await expect(page.getByRole('heading', { name: 'รายชื่อที่ลงทะเบียนใบหน้า' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'โหลดรายชื่อใหม่', exact: true })).toHaveCount(0);
 	await page.getByLabel('ค้นหาชื่อหรือห้องเรียน').fill('ไม่พบคนนี้');
 	await expect(page.getByText('ไม่พบรายชื่อที่ค้นหา', { exact: true })).toBeVisible();
 	await page.getByLabel('ค้นหาชื่อหรือห้องเรียน').fill('');

@@ -142,6 +142,7 @@
 		campaignError = $state(''),
 		templatesLoading = $state(true),
 		templatesError = $state(''),
+		templatesLoaded = $state(false),
 		loaded = $state(false);
 	const campaignRequest = new LatestRequest(),
 		templateRequest = new LatestRequest(),
@@ -166,6 +167,7 @@
 				candidateRequest.abort();
 				campaign = null;
 				templates = [];
+				templatesLoaded = false;
 				candidates = [];
 				summary = { ...emptySummary };
 				selectedIds = [];
@@ -265,6 +267,7 @@
 		}
 		if (v.data.ownerKey !== context) return;
 		templates = v.data.record ?? [];
+		templatesLoaded = true;
 		templatesError = '';
 	}
 	function applyCandidates(v: Awaited<typeof initialCandidates>, revision: number) {
@@ -693,7 +696,10 @@
 	description="นำเข้ารายชื่อ เชื่อมบัญชี แก้คำเตือน และกำหนดแบบให้พร้อมก่อนส่งคำขอออกเกียรติบัตร"
 >
 	{#snippet meta()}
-		<div class="flex items-center gap-2 text-xs text-muted-foreground">
+		<div
+			class="flex items-center gap-2 text-xs text-muted-foreground"
+			aria-busy={campaignLoading || templatesLoading || loading}
+		>
 			<UsersRound class="size-4" />
 			{loaded
 				? `${summary.totalCount.toLocaleString('th-TH')} รายการ`
@@ -702,9 +708,6 @@
 	{/snippet}
 
 	{#snippet actions()}
-		{#if canReadCandidates}<Button variant="outline" onclick={() => loadCandidateList(campaignId)}
-				>โหลดรายชื่อใหม่</Button
-			>{/if}
 		{#if canCreateCandidates}
 			<div class="flex flex-wrap gap-2">
 				<Button variant="outline" onclick={() => (accountOpen = true)}>
@@ -727,7 +730,7 @@
 			description="สิทธิ์การอ่านและขอบเขตหน่วยงานตรวจจาก backend"
 		/>
 	{:else}
-		{#if campaignLoading}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
+		{#if campaignLoading && !campaign}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
 		{#if campaignError}<PageState
 				variant="error"
 				title="โหลดกิจกรรมไม่สำเร็จ"
@@ -735,7 +738,7 @@
 				actionLabel="ลองกิจกรรมอีกครั้ง"
 				onaction={retryCampaign}
 			/>{/if}
-		{#if templatesLoading}<p role="status">กำลังโหลดแบบเกียรติบัตร</p>{/if}
+		{#if templatesLoading && !templatesLoaded}<p role="status">กำลังโหลดแบบเกียรติบัตร</p>{/if}
 		{#if templatesError}<PageState
 				variant="error"
 				title="โหลดแบบไม่สำเร็จ"
@@ -759,6 +762,7 @@
 			<section
 				class="overflow-hidden rounded-xl border bg-card shadow-sm"
 				aria-label="สรุปความพร้อมของรายชื่อ"
+				aria-busy={campaignLoading || templatesLoading || loading}
 			>
 				<div
 					class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 px-5 py-3"

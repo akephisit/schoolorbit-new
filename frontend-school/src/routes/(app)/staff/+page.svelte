@@ -151,7 +151,10 @@
 				actionLabel="ลองใหม่"
 				onaction={() => void workStore.fetchCounts()}
 			/>{/if}
-		{#if $workStore.loadingCounts}<p role="status" class="text-sm text-muted-foreground">
+		{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
+				role="status"
+				class="text-sm text-muted-foreground"
+			>
 				กำลังโหลดจำนวนงาน...
 			</p>{/if}
 		<div>

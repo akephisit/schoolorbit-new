@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ page }) => {
@@ -85,10 +86,11 @@ for (const [route, path, refresh, ready] of [
 		const api = await mockPreparation(page, { fail: path, failAt: 2 });
 		await page.goto(route);
 		await expect(page.getByText(ready, { exact: true }).first()).toBeVisible();
-		await page.getByRole('button', { name: refresh, exact: true }).click();
+		await expect(page.getByRole('button', { name: refresh, exact: true })).toHaveCount(0);
+		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(page.getByText(ready, { exact: true }).first()).toBeVisible();
-		expect(api.count(campaignPath)).toBe(1);
+		expect(api.count(campaignPath)).toBe(2);
 	});
 }
 test('read-only template catalog never starts update references or manifest', async ({ page }) => {
@@ -152,5 +154,69 @@ test('read-only recipients cannot open action workflows even with stale capabili
 	await expect(page.getByText('ผู้รับ คนแรก', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'นำเข้า Excel/CSV', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'เพิ่มจากบัญชี', exact: true })).toHaveCount(0);
+	expect(api.writes).toEqual([]);
+});
+
+for (const route of [recipientRoute(), templateRoute]) {
+	for (const resource of [campaignPath, templatesPath]) {
+		test(`${route}: an empty loaded template list stays silent during ${resource} revalidation`, async ({
+			page
+		}) => {
+			const api = await mockPreparation(page, { emptyTemplates: true, hold: resource, holdAt: 2 });
+			await page.goto(route);
+			const ready =
+				route === templateRoute
+					? page.getByRole('heading', { name: 'ยังไม่มีแบบเกียรติบัตร', exact: true })
+					: page.getByText('ผู้รับ คนแรก', { exact: true });
+			await expect(ready).toBeVisible();
+			await expect(
+				page.getByRole('status').filter({ hasText: /กำลังโหลดกิจกรรม|กำลังโหลดแบบเกียรติบัตร/ })
+			).toHaveCount(0);
+			await revalidatePage(page);
+			await expect.poll(() => api.count(resource)).toBe(2);
+			await expect(page.locator('main [aria-busy="true"]').first()).toBeVisible();
+			await expect(ready).toBeVisible();
+			await expect(
+				page.getByRole('status').filter({ hasText: /กำลังโหลดกิจกรรม|กำลังโหลดแบบเกียรติบัตร/ })
+			).toHaveCount(0);
+			await expect(
+				page.getByRole('button', { name: /^(โหลดแบบใหม่|โหลดรายชื่อใหม่)$/ })
+			).toHaveCount(0);
+			api.release();
+			await expect(page.locator('main [aria-busy="true"]')).toHaveCount(0);
+			await expect(ready).toBeVisible();
+			expect(api.writes).toEqual([]);
+		});
+	}
+}
+test('an empty loaded template reference keeps its focused error retry after background failure', async ({
+	page
+}) => {
+	const api = await mockPreparation(page, {
+		emptyTemplates: true,
+		hold: templatesPath,
+		holdAt: 2,
+		fail: templatesPath,
+		failAt: 2
+	});
+	await page.goto(recipientRoute());
+	await expect(page.getByText('ผู้รับ คนแรก', { exact: true })).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: /กำลังโหลดแบบเกียรติบัตร/ })).toHaveCount(
+		0
+	);
+	await revalidatePage(page);
+	await expect.poll(() => api.count(templatesPath)).toBe(2);
+	await expect(page.getByRole('status').filter({ hasText: /กำลังโหลดแบบเกียรติบัตร/ })).toHaveCount(
+		0
+	);
+	api.release();
+	const retry = page.getByRole('button', { name: 'ลองแบบอีกครั้ง', exact: true });
+	await expect(retry).toBeVisible();
+	await expect(page.getByText('ผู้รับ คนแรก', { exact: true })).toBeVisible();
+	const campaignReads = api.count(campaignPath);
+	await retry.click();
+	await expect(retry).toHaveCount(0);
+	expect(api.count(templatesPath)).toBe(3);
+	expect(api.count(campaignPath)).toBe(campaignReads);
 	expect(api.writes).toEqual([]);
 });

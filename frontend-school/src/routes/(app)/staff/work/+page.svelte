@@ -197,7 +197,10 @@
 	{/snippet}
 
 	<section data-testid="work-counts" aria-busy={$workStore.loadingCounts}>
-		{#if $workStore.loadingCounts}<p role="status" class="text-sm text-muted-foreground">
+		{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
+				role="status"
+				class="text-sm text-muted-foreground"
+			>
 				กำลังโหลดจำนวนงาน...
 			</p>{/if}
 		{#if $workStore.countsError}<PageState
