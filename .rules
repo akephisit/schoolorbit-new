@@ -89,8 +89,13 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 
 ### Agent roles and coordination
 
-Use roles as task assignments, not eight mandatory processes. The primary agent is the Coordinator
-and may carry out any role inline. Open only roles needed for the current change.
+The primary agent is the Senior/Coordinator: it owns the technical direction, agreed contracts,
+task assignments, integration and final acceptance within the user's scope. For team work, assign
+implementation to the Frontend and Backend roles matching the affected owners, then use an
+independent Reviewer and QA/Verifier. The Senior resolves cross-owner decisions and returns defects
+to the responsible writer; it must not duplicate delegated implementation or treat a child report
+as final acceptance. Small one-owner work can stay inline. These are responsibilities, not eight
+mandatory processes; open only roles with useful work.
 
 Before assigning work, identify independently useful outcomes, their owners, prerequisite
 decisions and completion criteria. Delegate only ready tasks; a consumer may investigate in
@@ -98,19 +103,37 @@ parallel, but dependent implementation waits for the agreed contract or provider
 Use the existing task/plan state to record assignments, dependencies and blocked/completed
 status. Explain briefly which work stays inline and why when splitting would add overhead.
 
-| Role | Responsibility | Preferred reasoning when configurable |
-| --- | --- | --- |
-| Coordinator | Scope, dependency order, file ownership, integration, final evidence, PR and deployment | High |
-| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | Low; increase for architectural uncertainty |
-| Backend | Owned Rust/service/HTTP changes and focused coverage | High |
-| Frontend | Owned typed UI, loading and accessibility changes | Medium; high for auth, contracts or complex state |
-| Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | High |
-| Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | High |
-| Verifier | Run affected owned checks, report commands, candidate tree, environment and results | Low; diagnosis returns to the implementation owner |
-| Rules/Security Reviewer | Read-only review of rules, permissions, secrets, tenant boundaries and final diff | Medium; high for security, migration or deployment |
+| Role | Responsibility | Preferred model when available | Reasoning |
+| --- | --- | --- | --- |
+| Senior/Coordinator | Architecture, scope, shared contracts, assignment, integration, final evidence and authorized delivery | Current primary session model | High when configurable |
+| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium; high for auth, contracts or complex state |
+| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High |
+| Rules/Security Reviewer | Independent read-only review of correctness, rules, permissions, secrets, tenant boundaries and the complete integrated diff | `gpt-6-astra` | Medium; high for security, migration or deployment |
+| QA/Verifier | Run affected owned checks and reproduce failures; report commands, candidate tree, environment and results without editing source | `gpt-6-luna` | Low; diagnosis and fixes return to the implementation owner |
+| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6-luna` | Low; escalate architectural uncertainty to `gpt-6.1-sol`/medium |
+| Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | `gpt-6.1-sol` | High |
+| Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | `gpt-6.1-sol` | High |
+
+These are role defaults, not a claim that every host offers these models. For the Senior, recommend
+`gpt-6.1-sol` with high reasoning when the user can select the primary session configuration.
+A skill cannot change its own model; retain the current primary model and never spawn a second
+Coordinator merely to simulate changing it. Explicit user model choices override these defaults.
+
+Select profiles from the host's currently offered models and supported reasoning values. Pass the
+chosen model and reasoning through actual agent-spawn controls; mentioning a model in a prompt or
+`agents/openai.yaml` does not configure it. When overrides require fresh context, start the child
+without inherited history and supply the bounded assignment explicitly. Record the requested
+configuration and any host-confirmed configuration or fallback in task state; do not claim an
+unconfirmed setting was applied. If a profile is unavailable, use a suitable offered alternative or
+inherit the primary configuration and report the limitation once. Escalate reasoning or reassign
+to a more capable offered model when uncertainty, risk or failed diagnosis warrants it; update the
+assignment and revalidate affected evidence rather than repeatedly guessing at a lower setting.
 
 - Default parallel work to 2–4 active agents including the Coordinator, at most two implementation
-  writers, and the host's lower concurrency limit. A bounded one-owner change stays inline.
+  writers, and the host's lower concurrency limit. Use phases rather than opening the whole roster:
+  Senior + Frontend + Backend for independent implementation, then Senior + Reviewer + QA/Verifier
+  for the frozen candidate. Reuse a role's agent for follow-up within its configuration; changing
+  the role label alone does not change the model. A bounded one-owner change stays inline.
 - Prefer the least costly available model capable of the assigned work. Configure model/reasoning
   only through controls supported by the current host; otherwise inherit its configuration and
   report that limitation. Roles do not guarantee model availability, token savings or speed.

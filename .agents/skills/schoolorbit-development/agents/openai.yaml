@@ -1,6 +1,6 @@
 interface:
   display_name: "SchoolOrbit Development"
-  short_description: "Split independent project tasks among coordinated agents"
-  default_prompt: "Use $schoolorbit-development to complete this SchoolOrbit task. Split independent work among bounded subagents under the current repository rules, keep small or tightly coupled work inline, and preserve the requested scope."
+  short_description: "Senior-led Frontend, Backend, Review and QA team"
+  default_prompt: "Use $schoolorbit-development to complete this SchoolOrbit task as a Senior/Coordinator. Assign the needed Frontend, Backend, independent Reviewer and QA roles using the model and reasoning profiles in repository rules through supported host controls. Keep small or tightly coupled work inline and preserve the requested scope."
 policy:
   allow_implicit_invocation: true

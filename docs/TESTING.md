@@ -101,6 +101,12 @@ skill applies the project's standing preference for bounded delegation of indepe
 stays inline, as do tasks with an inline-only user preference or a host without subagent tools.
 Delegation keeps the user's requested scope; review-only work remains read-only.
 
+The primary session is the Senior/Coordinator. A full-stack task normally uses Frontend and
+Backend implementation roles, then independent Reviewer and QA/Verifier roles for the integrated
+candidate. Model/reasoning defaults and escalation belong to the coordination rules above; use
+the host's real spawn controls and report requested/confirmed settings or fallbacks. The skill
+cannot switch the primary session's model or enable unsupported model overrides.
+
 For a skill-instruction-only change, run
 `node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior
 also changes, select its checks under `.rules` section 11. Verify the skill appears in the
