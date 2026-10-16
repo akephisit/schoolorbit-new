@@ -17,12 +17,15 @@
 		DialogHeader,
 		DialogTitle
 	} from '#lib/components/ui/dialog/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
-	import { Plus, Search, Pencil, Trash2, Eye } from '@lucide/svelte';
+	import { Plus, Search, Pencil, Trash2, Eye, RefreshCw, GraduationCap } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	const canReadStudents = $derived(
@@ -54,6 +57,10 @@
 	let statusFilter = $state('active');
 	let currentPage = $state(1);
 	let hasNextPage = $state(false);
+	const hasAppliedFilters = $derived(Boolean(data.search) || data.status !== 'active');
+	const createHref = $derived(
+		`/staff/students/new?academicYearId=${encodeURIComponent(academicYearId)}`
+	);
 	$effect.pre(() => {
 		const key = listKey,
 			read = source;
@@ -137,11 +144,15 @@
 
 	function studentHref(studentId: string, suffix = ''): string {
 		const path = `/staff/students/${encodeURIComponent(studentId)}${suffix}`;
-		return academicYearId ? `${path}?academicYearId=${encodeURIComponent(academicYearId)}` : path;
+		const query = `academicYearId=${encodeURIComponent(academicYearId)}`;
+		const returnQuery = suffix
+			? ''
+			: `&returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`;
+		return `${path}?${query}${returnQuery}`;
 	}
 
 	function changePage(nextPage: number) {
-		if (!academicYearId || nextPage < 1 || deleting) return;
+		if (!academicYearId || nextPage < 1 || loading || deleting) return;
 		const url = new URL(page.url.href);
 		url.searchParams.set('page', String(nextPage));
 		void goto(resolve(`staff/students?${url.searchParams.toString()}`));
@@ -180,7 +191,8 @@
 	function handleSearch() {
 		if (!canReadStudents || deleting) return;
 		const url = new URL(page.url.href);
-		if (searchQuery) url.searchParams.set('search', searchQuery);
+		const search = searchQuery.trim();
+		if (search) url.searchParams.set('search', search);
 		else url.searchParams.delete('search');
 		url.searchParams.set('status', statusFilter);
 		url.searchParams.delete('page');
@@ -195,18 +207,35 @@
 	}
 </script>
 
-<PageShell title="จัดการนักเรียน" description="จัดการข้อมูลนักเรียนทั้งหมด">
+{#snippet studentName(student: StudentListItem)}
+	{student.title || ''}{student.first_name} {student.last_name}
+{/snippet}
+
+{#snippet studentStatus(student: StudentListItem)}
+	<Badge
+		variant="secondary"
+		class={student.status === 'active' ? 'bg-success/10 text-success' : ''}
+	>
+		{student.status === 'active'
+			? 'ใช้งาน'
+			: student.status === 'inactive'
+				? 'ไม่ใช้งาน'
+				: student.status}
+	</Badge>
+{/snippet}
+
+<PageShell title="รายชื่อนักเรียน" description="ค้นหาและจัดการข้อมูลนักเรียนในปีการศึกษาที่เลือก">
 	{#snippet actions()}
 		<Button
 			variant="outline"
 			onclick={reloadCurrentYear}
-			disabled={loading || deleting || !canReadStudents}>รีเฟรช</Button
+			disabled={loading || deleting || !canReadStudents}
 		>
+			<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
+			รีเฟรช
+		</Button>
 		{#if canCreateStudent}
-			<Button href="/staff/students/new" class="flex items-center gap-2">
-				<Plus class="w-4 h-4" />
-				เพิ่มนักเรียน
-			</Button>
+			<Button href={createHref}><Plus class="size-4" aria-hidden="true" />เพิ่มนักเรียน</Button>
 		{/if}
 	{/snippet}
 
@@ -214,58 +243,90 @@
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูรายชื่อนักเรียน"
-			description="บัญชีนี้เข้า module นักเรียนได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนในขอบเขตที่ระบบอนุญาต"
+			description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนในขอบเขตที่ระบบอนุญาต"
 		/>
 	{:else}
-		<!-- Search and Filter -->
-		<div class="rounded-xl border bg-card p-3 sm:p-4">
-			<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,16rem)_auto]">
-				<div class="relative">
-					<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						type="text"
-						bind:value={searchQuery}
-						onkeypress={(e) => e.key === 'Enter' && handleSearch()}
-						placeholder="ค้นหาชื่อ หรือรหัสนักเรียน..."
-						class="pl-9"
-					/>
+		<form
+			class="rounded-xl border bg-card p-3 sm:p-4"
+			onsubmit={(event) => {
+				event.preventDefault();
+				handleSearch();
+			}}
+			aria-label="ค้นหาและกรองนักเรียน"
+		>
+			<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
+				<div class="space-y-2">
+					<Label for="student-search">ค้นหานักเรียน</Label>
+					<div class="relative">
+						<Search
+							class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+							aria-hidden="true"
+						/>
+						<Input
+							id="student-search"
+							type="search"
+							bind:value={searchQuery}
+							placeholder="ค้นหาชื่อ หรือรหัสนักเรียน..."
+							class="pl-9"
+							disabled={deleting}
+						/>
+					</div>
 				</div>
-
-				<div>
-					<Select.Root type="single" bind:value={statusFilter} onValueChange={handleSearch}>
-						<Select.Trigger class="w-full">
-							{statusFilter === 'active'
-								? 'ใช้งาน (Active)'
-								: statusFilter === 'inactive'
-									? 'ไม่ใช้งาน (Inactive)'
-									: 'ทั้งหมด'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="active">ใช้งาน (Active)</Select.Item>
-							<Select.Item value="inactive">ไม่ใช้งาน (Inactive)</Select.Item>
-							<Select.Item value="all">ทั้งหมด</Select.Item>
-						</Select.Content>
-					</Select.Root>
+				<div class="space-y-2">
+					<span id="student-status-label" class="text-sm font-medium">สถานะนักเรียน</span>
+					<ToggleGroup.Root
+						type="single"
+						aria-labelledby="student-status-label"
+						disabled={deleting}
+						bind:value={
+							() => statusFilter,
+							(value) => {
+								if (value) {
+									statusFilter = value;
+									handleSearch();
+								}
+							}
+						}
+					>
+						<ToggleGroup.Item
+							value="active"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ใช้งาน</ToggleGroup.Item
+						>
+						<ToggleGroup.Item
+							value="inactive"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ไม่ใช้งาน</ToggleGroup.Item
+						>
+						<ToggleGroup.Item
+							value="all"
+							class="data-[state=on]:border-primary data-[state=on]:text-primary"
+							>ทั้งหมด</ToggleGroup.Item
+						>
+					</ToggleGroup.Root>
 				</div>
-
-				<div class="flex gap-2 md:justify-end">
-					<Button class="flex-1 md:flex-none" onclick={handleSearch}>ค้นหา</Button>
-					<Button class="flex-1 md:flex-none" onclick={handleReset} variant="outline">
-						ล้างตัวกรอง
-					</Button>
+				<div class="flex gap-2">
+					<Button type="submit" disabled={deleting}>ค้นหา</Button>
+					<Button onclick={handleReset} variant="outline" disabled={deleting}>ล้างตัวกรอง</Button>
 				</div>
 			</div>
-		</div>
+		</form>
 
-		<section data-testid="student-list" aria-busy={loading}>
-			{#if loadError && loaded}<PageState
+		<section
+			data-testid="student-list"
+			aria-busy={loading}
+			aria-label="ผลการค้นหานักเรียน"
+			class="space-y-3"
+		>
+			{#if loadError && loaded}
+				<PageState
+					variant="error"
 					title="อัปเดตรายชื่อนักเรียนไม่สำเร็จ"
 					description={loadError}
 					actionLabel="ลองอีกครั้ง"
 					onaction={reloadCurrentYear}
-				/>{/if}
-			{#if loading && loaded}<p role="status">กำลังอัปเดตรายชื่อนักเรียน...</p>{/if}
-			<!-- Student List -->
+				/>
+			{/if}
 			{#if loading && !loaded}
 				<div role="status" aria-label="กำลังโหลดรายชื่อนักเรียน">
 					<PageSkeleton variant="table" rows={6} columns={5} />
@@ -278,151 +339,143 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={reloadCurrentYear}
 				/>
-			{:else if students.length === 0}
-				<PageState
-					title="ไม่พบนักเรียน"
-					description={searchQuery
-						? 'ไม่พบนักเรียนที่ตรงกับเงื่อนไขที่ค้นหา'
-						: 'เริ่มต้นด้วยการเพิ่มนักเรียนคนแรก'}
-					actionLabel={!searchQuery && canCreateStudent ? 'เพิ่มนักเรียน' : undefined}
-					href={!searchQuery && canCreateStudent ? '/staff/students/new' : undefined}
-				/>
 			{:else}
-				<div class="bg-card border border-border rounded-lg overflow-hidden">
-					<!-- Table Header -->
-					<div class="bg-muted/50 px-6 py-3 border-b border-border">
-						<div class="grid grid-cols-12 gap-4 text-sm font-medium text-muted-foreground">
-							<div class="col-span-2">รหัสนักเรียน</div>
-							<div class="col-span-4">ชื่อ-นามสกุล</div>
-							<div class="col-span-2">ชั้น</div>
-							<div class="col-span-2">สถานะ</div>
-							<div class="col-span-2 text-right">จัดการ</div>
+				<div class="overflow-hidden rounded-xl border bg-card">
+					<div
+						class="flex flex-wrap items-center justify-between gap-2 border-b bg-primary/5 px-3 py-3 sm:px-4"
+					>
+						<div class="flex items-center gap-2">
+							<GraduationCap class="size-5 text-primary" aria-hidden="true" />
+							<h2 class="font-medium">รายชื่อนักเรียน</h2>
+							<Badge variant="secondary">{students.length} คนในหน้านี้</Badge>
 						</div>
+						<p class="text-xs text-muted-foreground" role="status" aria-live="polite">
+							{loading ? 'กำลังอัปเดตรายชื่อนักเรียน...' : `หน้า ${currentPage}`}
+						</p>
 					</div>
-
-					<!-- Table Body -->
-					<div class="divide-y divide-border">
-						{#each students as student (student.id)}
-							<div class="px-6 py-4 hover:bg-accent/50 transition-colors">
-								<div class="grid grid-cols-12 gap-4 items-center">
-									<!-- Student ID -->
-									<div class="col-span-2">
-										<p class="font-mono text-sm">{student.student_id || '-'}</p>
-									</div>
-
-									<!-- Name -->
-									<div class="col-span-4">
-										<p class="font-medium text-foreground">
-											{student.title || ''}{student.first_name}
-											{student.last_name}
-										</p>
-									</div>
-
-									<!-- Grade/Class -->
-									<div class="col-span-2">
-										{#if student.homeroom}
-											<span class="text-sm md:hidden">
-												{#if student.homeroom.includes('/') || student.homeroom.startsWith('อ.') || student.homeroom.startsWith('ป.') || student.homeroom.startsWith('ม.')}
-													{student.homeroom}
-												{:else}
-													{student.grade_level}/{student.homeroom}
-												{/if}
-											</span>
-											<span class="hidden md:inline text-sm"
-												>{formatFullClassRoom(student.homeroom, student.grade_level)}</span
-											>
-										{:else}
-											<span class="text-sm text-muted-foreground">-</span>
-										{/if}
-									</div>
-
-									<!-- Status -->
-									<div class="col-span-2">
-										{#if student.status === 'active'}
-											<span
-												class="inline-flex items-center text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full"
-											>
-												<span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
-												ใช้งาน
-											</span>
-										{:else}
-											<span
-												class="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full"
-											>
-												<span class="w-1.5 h-1.5 rounded-full bg-gray-500 mr-1.5"></span>
-												ไม่ใช้งาน
-											</span>
-										{/if}
-									</div>
-
-									<!-- Actions -->
-									<div class="col-span-2 flex justify-end gap-2">
-										<Button
-											href={studentHref(student.id)}
-											aria-label="ดูข้อมูลนักเรียน"
-											data-sveltekit-preload-data="tap"
-											variant="ghost"
-											size="sm"
-										>
-											<Eye class="w-4 h-4" />
-										</Button>
-										{#if canUpdateStudent}
-											<Button
-												href={studentHref(student.id, '/edit')}
-												aria-label="แก้ไขนักเรียน"
-												data-sveltekit-preload-data="tap"
-												variant="ghost"
-												size="sm"
-											>
-												<Pencil class="w-4 h-4" />
-											</Button>
-										{/if}
-										{#if canDeleteStudent}
-											<Button
-												onclick={() => openDeleteDialog(student)}
-												aria-label="ลบนักเรียน"
-												disabled={deleting}
-												variant="ghost"
-												size="sm"
-											>
-												<Trash2 class="h-4 w-4" />
-											</Button>
-										{/if}
-									</div>
-								</div>
-							</div>
-						{/each}
-					</div>
-
-					<!-- Pagination -->
-					{#if currentPage > 1 || hasNextPage}
-						<div class="bg-muted/30 px-6 py-4 border-t border-border">
-							<div class="flex items-center justify-between">
-								<p class="text-sm text-muted-foreground">
-									แสดง {students.length} รายการในหน้านี้
-								</p>
-								<div class="flex gap-2">
-									<Button
+					{#if students.length === 0}
+						<PageState
+							class="border-0 shadow-none"
+							title={currentPage > 1
+								? 'ไม่มีนักเรียนในหน้านี้'
+								: hasAppliedFilters
+									? 'ไม่พบนักเรียนที่ตรงกับตัวกรอง'
+									: 'ยังไม่มีนักเรียนที่ใช้งานในปีการศึกษานี้'}
+							description={currentPage > 1
+								? 'ย้อนกลับไปหน้าก่อนหน้าเพื่อดูรายชื่อนักเรียน'
+								: hasAppliedFilters
+									? 'ลองเปลี่ยนคำค้นหาหรือล้างตัวกรองเพื่อดูรายชื่ออีกครั้ง'
+									: 'เลือกสถานะทั้งหมดเพื่อตรวจสอบรายชื่อ หรือเพิ่มข้อมูลนักเรียน'}
+						>
+							{#snippet action()}
+								{#if currentPage > 1}<Button
+										variant="outline"
 										onclick={() => changePage(currentPage - 1)}
-										disabled={currentPage === 1}
-										variant="outline"
-										size="sm"
+										disabled={loading || deleting}>← ก่อนหน้า</Button
 									>
-										← ก่อนหน้า
-									</Button>
-									<span class="px-4 py-2 text-sm">
-										หน้า {currentPage}
-									</span>
-									<Button
-										onclick={() => changePage(currentPage + 1)}
-										disabled={!hasNextPage}
+								{:else if hasAppliedFilters}<Button
 										variant="outline"
-										size="sm"
+										onclick={handleReset}
+										disabled={deleting}>ล้างตัวกรอง</Button
 									>
-										ถัดไป →
-									</Button>
-								</div>
-							</div>
+								{:else if canCreateStudent}<Button href={createHref}
+										><Plus class="size-4" aria-hidden="true" />เพิ่มนักเรียน</Button
+									>{/if}
+							{/snippet}
+						</PageState>
+					{:else}
+						<Table.Root class="table-fixed md:table-auto" aria-label="รายชื่อนักเรียน">
+							<Table.Header
+								><Table.Row class="bg-muted/40">
+									<Table.Head class="hidden pl-4 md:table-cell">รหัสนักเรียน</Table.Head>
+									<Table.Head class="pl-3 md:pl-2">ชื่อ-นามสกุล</Table.Head>
+									<Table.Head class="hidden md:table-cell">ชั้น / ห้อง</Table.Head>
+									<Table.Head class="hidden md:table-cell">สถานะ</Table.Head>
+									<Table.Head class="w-28 pr-3 text-right md:w-auto md:pr-4">จัดการ</Table.Head>
+								</Table.Row></Table.Header
+							>
+							<Table.Body>
+								{#each students as student (student.id)}
+									<Table.Row>
+										<Table.Cell class="hidden pl-4 font-mono md:table-cell"
+											>{student.student_id || 'ยังไม่มีรหัส'}</Table.Cell
+										>
+										<Table.Cell class="space-y-1 py-3 pl-3 whitespace-normal md:pl-2">
+											<a
+												href={studentHref(student.id)}
+												data-sveltekit-preload-data="tap"
+												class="break-words font-medium text-foreground hover:text-primary hover:underline"
+												>{@render studentName(student)}</a
+											>
+											<div class="space-y-1 text-xs text-muted-foreground md:hidden">
+												<p class="break-words">
+													รหัส {student.student_id || 'ยังไม่มีรหัส'} · {student.homeroom
+														? formatFullClassRoom(student.homeroom, student.grade_level)
+														: student.grade_level || 'ยังไม่จัดห้อง'}
+												</p>
+												{@render studentStatus(student)}
+											</div>
+										</Table.Cell>
+										<Table.Cell class="hidden whitespace-normal md:table-cell"
+											>{student.homeroom
+												? formatFullClassRoom(student.homeroom, student.grade_level)
+												: student.grade_level || 'ยังไม่จัดห้อง'}</Table.Cell
+										>
+										<Table.Cell class="hidden md:table-cell"
+											>{@render studentStatus(student)}</Table.Cell
+										>
+										<Table.Cell class="pr-3 md:pr-4">
+											<div class="flex justify-end gap-1">
+												<Button
+													href={studentHref(student.id)}
+													aria-label="ดูข้อมูลนักเรียน"
+													data-sveltekit-preload-data="tap"
+													variant="ghost"
+													size="icon-sm"><Eye class="size-4" aria-hidden="true" /></Button
+												>
+												{#if canUpdateStudent}<Button
+														href={studentHref(student.id, '/edit')}
+														aria-label="แก้ไขนักเรียน"
+														data-sveltekit-preload-data="tap"
+														variant="ghost"
+														size="icon-sm"><Pencil class="size-4" aria-hidden="true" /></Button
+													>{/if}
+												{#if canDeleteStudent}<Button
+														onclick={() => openDeleteDialog(student)}
+														aria-label="ลบนักเรียน"
+														disabled={deleting}
+														variant="ghost"
+														size="icon-sm"
+														class="text-destructive hover:text-destructive"
+														><Trash2 class="size-4" aria-hidden="true" /></Button
+													>{/if}
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					{/if}
+					{#if students.length > 0}
+						<div
+							class="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-3 sm:px-4"
+						>
+							<p class="text-xs text-muted-foreground">แสดง {students.length} รายการในหน้านี้</p>
+							<nav aria-label="เปลี่ยนหน้ารายชื่อนักเรียน" class="flex items-center gap-2">
+								<Button
+									onclick={() => changePage(currentPage - 1)}
+									disabled={currentPage === 1 || loading || deleting}
+									variant="outline"
+									size="sm">← ก่อนหน้า</Button
+								>
+								<span class="text-sm tabular-nums">หน้า {currentPage}</span>
+								<Button
+									onclick={() => changePage(currentPage + 1)}
+									disabled={!hasNextPage || loading || deleting}
+									variant="outline"
+									size="sm">ถัดไป →</Button
+								>
+							</nav>
 						</div>
 					{/if}
 				</div>

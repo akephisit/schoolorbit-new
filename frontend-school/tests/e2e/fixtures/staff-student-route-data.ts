@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import type { Student } from '../../../src/lib/api/students.js';
+import type { Student, StudentListItem } from '../../../src/lib/api/students.js';
 import { mockStaffHome, id, year, nextYear } from './staff-home-route-data';
 export { year, nextYear };
 export const firstStudent = id(60),
@@ -16,6 +16,8 @@ export async function mockStaffStudents(
 		failAt?: number;
 		permissions?: string[];
 		fullPage?: boolean;
+		emptyPage?: number;
+		listItem?: Partial<StudentListItem>;
 		profile?: Partial<Student>;
 	} = {}
 ) {
@@ -117,7 +119,10 @@ export async function mockStaffStudents(
 			const pageNumber = Number(url.searchParams.get('page') ?? 1),
 				search = url.searchParams.get('search');
 			const items = Array.from(
-				{ length: options.fullPage && pageNumber === 1 ? 20 : 1 },
+				{
+					length:
+						options.emptyPage === pageNumber ? 0 : options.fullPage && pageNumber === 1 ? 20 : 1
+				},
 				(_, index) => ({
 					...snapshot,
 					id: id(60 + index),
@@ -129,7 +134,8 @@ export async function mockStaffStudents(
 								? 'นักเรียนหน้าสอง'
 								: index
 									? `นักเรียน ${index}`
-									: firstName
+									: firstName,
+					...options.listItem
 				})
 			);
 			return reply(route, { items, page: pageNumber, page_size: 20 });

@@ -658,7 +658,7 @@
 					void handleSubmit();
 				}}
 			>
-				<Card.Root class="py-0"
+				<Card.Root class="gap-0 py-0"
 					><Card.Content class="p-4 sm:p-5">
 						{#if currentStep === 1}
 							{@const imageOwner = staffId}

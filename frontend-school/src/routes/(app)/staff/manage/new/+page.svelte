@@ -507,7 +507,7 @@
 				ร่างไม่เก็บรหัสผ่าน เลขบัตรประชาชน และใบอนุญาตประกอบวิชาชีพ กรุณากรอกใหม่เมื่อเปิดร่าง
 			</p>
 			<!-- Form Content -->
-			<Card.Root class="py-0"
+			<Card.Root class="gap-0 py-0"
 				><Card.Content class="p-4 sm:p-5">
 					{#if currentStep === 1}
 						<!-- Step 1: Personal Information -->
