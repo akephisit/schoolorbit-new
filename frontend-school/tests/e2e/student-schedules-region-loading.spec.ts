@@ -56,7 +56,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(readyRegion(page, resource)).toBeVisible();
-		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 2);
 	});
 	test(`${resource}: page revalidation retains data and updates silently`, async ({ page }) => {
 		const api = await mockStudentSchedules(page, { hold: resource, holdAt: 2 });
@@ -70,7 +70,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 			'aria-busy',
 			'true'
 		);
-		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 2);
 		api.release();
 		await expect(page.getByRole('status', { name: 'กำลังอัปเดตข้อมูล', exact: true })).toHaveCount(
 			0

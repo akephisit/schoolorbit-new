@@ -45,6 +45,8 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 	const reads: string[] = [];
 	const writes: string[] = [];
 	const gradeYears: string[] = [];
+	const listSettlements: string[] = [];
+	const statusWrites: { path: string; body: unknown }[] = [];
 	let releaseList: (() => void) | null = null;
 	let releaseTracks: (() => void) | null = null;
 	let releaseYears: (() => void) | null = null;
@@ -120,12 +122,13 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 					failListOnce = false;
 					return reply(route, 'โหลดรอบล้มเหลว', 503);
 				}
-				return reply(
+				await reply(
 					route,
 					selectedYear === nextYearId
 						? [
 								{
 									...round,
+									id: nextRoundId,
 									academicYearId: nextYearId,
 									academicYearName: '2570',
 									name: 'รอบปีใหม่'
@@ -133,6 +136,8 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 							]
 						: [staleListResponse ? { ...round, name: 'ข้อมูลเก่าก่อนบันทึก' } : round]
 				);
+				listSettlements.push(selectedYear ?? '');
+				return;
 			}
 			if (path === `/api/admission/rounds/${roundId}` && method === 'GET')
 				return reply(route, {
@@ -145,8 +150,16 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 				if (holdVisibility) await waitVisibility;
 				return reply(route, { isVisible: true });
 			}
-			if (path === `/api/admission/rounds/${roundId}/status` && method === 'PUT')
+			if (
+				[
+					`/api/admission/rounds/${roundId}/status`,
+					`/api/admission/rounds/${nextRoundId}/status`
+				].includes(path) &&
+				method === 'PUT'
+			) {
+				statusWrites.push({ path, body: route.request().postDataJSON() });
 				return reply(route, {});
+			}
 			if (path === `/api/admission/rounds/${roundId}/tracks`) {
 				if (method === 'POST')
 					return reply(route, {
@@ -275,6 +288,8 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 		reads,
 		writes,
 		gradeYears,
+		listSettlements,
+		statusWrites,
 		holdList: () => (holdList = true),
 		holdTracks: () => (holdTracks = true),
 		holdYears: () => (holdYears = true),
@@ -319,27 +334,32 @@ test('failed round list offers an in-place retry without reloading the page', as
 	expect(state.reads.filter((path) => path === '/api/admission/rounds')).toHaveLength(2);
 });
 
-test('a list refresh keeps usable rounds and exposes a busy region', async ({ page }) => {
+test('browser reload shows a focused round-list skeleton before restoring rows', async ({
+	page
+}) => {
 	const state = await mock(page);
 	await page.goto(`/staff/academic/admission?academicYearId=${yearId}`, {
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
 	state.holdList();
-	await revalidatePage(page);
-	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
-		'aria-busy',
-		'true'
-	);
-	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
+	await page.reload();
+	await expect
+		.poll(() => state.reads.filter((path) => path === '/api/admission/rounds').length)
+		.toBe(2);
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByText(round.name, { exact: true })).toHaveCount(0);
 	state.releaseList();
 	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
 		'aria-busy',
 		'false'
 	);
+	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
 });
 
-test('an older list refresh cannot undo a successful status mutation', async ({ page }) => {
+test('an older year list cannot undo a successful current-year status mutation', async ({
+	page
+}) => {
 	const state = await mock(page, true);
 	await page.goto(`/staff/academic/admission?academicYearId=${yearId}`, {
 		waitUntil: 'domcontentloaded'
@@ -348,21 +368,31 @@ test('an older list refresh cannot undo a successful status mutation', async ({ 
 	state.useStaleListResponse();
 	state.holdList();
 	await revalidatePage(page);
-	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
-		'aria-busy',
-		'true'
-	);
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
 	await expect
 		.poll(() => state.reads.filter((path) => path === '/api/admission/rounds').length)
 		.toBe(2);
+	await page.getByRole('button', { name: 'เลือกปีการศึกษา', exact: true }).click();
+	await page.getByRole('option', { name: /2570/ }).click();
+	await expect(page.getByText('รอบปีใหม่', { exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'จัดการ', exact: true })).toHaveAttribute(
+		'href',
+		`/staff/academic/admission/${nextRoundId}`
+	);
 	await page.getByRole('button', { name: 'เปิดรับสมัคร' }).click();
 	await expect(page.getByRole('button', { name: 'ปิดรับสมัคร' })).toBeVisible();
+	expect(state.statusWrites).toEqual([
+		{ path: `/api/admission/rounds/${nextRoundId}/status`, body: { status: 'open' } }
+	]);
 	state.releaseList();
+	await expect.poll(() => state.listSettlements.filter((year) => year === yearId).length).toBe(2);
 	await expect(page.getByTestId('admission-round-list-region')).toHaveAttribute(
 		'aria-busy',
 		'false'
 	);
 	await expect(page.getByRole('button', { name: 'ปิดรับสมัคร' })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${nextYearId}`));
+	await expect(page.getByText('รอบปีใหม่', { exact: true })).toBeVisible();
 	await expect(page.getByText('ข้อมูลเก่าก่อนบันทึก', { exact: true })).toHaveCount(0);
 });
 

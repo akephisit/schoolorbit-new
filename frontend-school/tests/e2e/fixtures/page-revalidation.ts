@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-// Kit revalidates same-URL navigation without remounting components; each feature owns
-// whether the new route promise retains its current data and draft.
+// Kit revalidates same-URL navigation; each feature and layout owns whether its
+// route/context policy retains mounted data and drafts.
 // Exercise that browser behavior without adding a refresh control to the product.
 export async function revalidatePage(page: Page) {
 	await page.evaluate(() => {

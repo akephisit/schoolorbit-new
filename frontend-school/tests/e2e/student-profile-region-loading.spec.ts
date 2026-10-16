@@ -1,7 +1,25 @@
 import { revalidatePage } from './fixtures/page-revalidation';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { mockSelfProfile, studentRoute, year } from './fixtures/self-profile-route-data';
 test.use({ serviceWorkers: 'block' });
+function placement(page: Page, room: string) {
+	const region = page.getByTestId('student-profile-region');
+	return new URL(page.url()).pathname === '/student'
+		? region.getByRole('definition').filter({ hasText: new RegExp(`^${room}$`) })
+		: region.getByText(new RegExp(`^ม\\.1\\s*\\/\\s*${room}$`));
+}
+async function expectPlacement(page: Page, room: string) {
+	if (new URL(page.url()).pathname === '/student') {
+		await expect(
+			page
+				.getByTestId('student-profile-region')
+				.getByRole('definition')
+				.filter({ hasText: /^ม\.1$/ })
+		).toBeVisible();
+	}
+	await expect(placement(page, room)).toBeVisible();
+}
+
 for (const route of ['/student', '/student/profile']) {
 	test(`${route}: delayed primary has first skeleton`, async ({ page }) => {
 		const api = await mockSelfProfile(page, { hold: 'profile' });
@@ -13,7 +31,7 @@ for (const route of ['/student', '/student/profile']) {
 		await expect.poll(() => api.count('profile')).toBe(1);
 		expect(api.writes).toEqual([]);
 		api.release();
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
+		await expectPlacement(page, 'ห้องปีเดิม');
 	});
 	test(`${route}: missing year repairs URL without duplicate profile or identity GET`, async ({
 		page
@@ -21,7 +39,7 @@ for (const route of ['/student', '/student/profile']) {
 		const api = await mockSelfProfile(page);
 		await page.goto(route);
 		await expect(page).toHaveURL(new RegExp(`academicYearId=${year}`));
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
+		await expectPlacement(page, 'ห้องปีเดิม');
 		expect(api.count('context')).toBe(1);
 		expect(api.count('profile')).toBe(1);
 		expect(api.identityCount()).toBe(1);
@@ -30,17 +48,18 @@ for (const route of ['/student', '/student/profile']) {
 		const api = await mockSelfProfile(page, { fail: 'profile' });
 		await page.goto(studentRoute(route));
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
+		await expectPlacement(page, 'ห้องปีเดิม');
 		expect(api.count('profile')).toBe(2);
 		expect(api.count('context')).toBe(1);
 	});
 	test(`${route}: retained refresh failure keeps profile visible`, async ({ page }) => {
 		const api = await mockSelfProfile(page, { fail: 'profile', failAt: 2 });
 		await page.goto(studentRoute(route));
+		await expectPlacement(page, 'ห้องปีเดิม');
 		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
-		expect(api.count('context')).toBe(1);
+		await expectPlacement(page, 'ห้องปีเดิม');
+		expect(api.count('context')).toBe(2);
 	});
 	test(`${route}: late old year cannot replace new year and Back restores selection`, async ({
 		page
@@ -55,15 +74,15 @@ for (const route of ['/student', '/student/profile']) {
 		await page.goto(studentRoute(route));
 		await page.getByRole('button', { name: 'ปีการศึกษา', exact: true }).click();
 		await page.getByRole('option', { name: '2570', exact: true }).click();
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีถัดไป/)).toBeVisible();
+		await expectPlacement(page, 'ห้องปีถัดไป');
 		api.release();
 		await oldResponse;
 		await page.evaluate(
 			() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 		);
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toHaveCount(0);
+		await expect(placement(page, 'ห้องปีเดิม')).toHaveCount(0);
 		await page.goBack();
-		await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
+		await expectPlacement(page, 'ห้องปีเดิม');
 	});
 }
 test('context failure blocks dependent profile and retry restores it once', async ({ page }) => {
@@ -74,7 +93,7 @@ test('context failure blocks dependent profile and retry restores it once', asyn
 	).toHaveCount(0);
 	expect(api.count('profile')).toBe(0);
 	await page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true }).click();
-	await expect(page.getByText(/ม\.1\s*\/\s*ห้องปีเดิม/)).toBeVisible();
+	await expectPlacement(page, 'ห้องปีเดิม');
 	expect(api.count('context')).toBe(2);
 	expect(api.count('profile')).toBe(1);
 });
@@ -108,10 +127,27 @@ test('logout while scoped history is pending stops dependent profile GET', async
 		(response) => new URL(response.url()).pathname === '/api/me/academic-context/options'
 	);
 	await page.goto('/student');
-	await page.getByRole('banner').getByRole('button', { name: 'เโ', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'ออกจากระบบ', exact: true }).click();
-	await expect(page).toHaveURL(/\/login/);
-	api.release();
+	await expect.poll(() => api.count('context')).toBe(1);
+	try {
+		await page
+			.getByRole('banner')
+			.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })
+			.click();
+		const logout = page.waitForRequest(
+			(request) =>
+				request.method() === 'POST' && new URL(request.url()).pathname === '/api/auth/logout'
+		);
+		await page.getByRole('menuitem', { name: 'ออกจากระบบ', exact: true }).click();
+		await logout;
+		await expect(page).toHaveURL(new URL('/', page.url()).href);
+		await expect(
+			page.getByRole('banner').getByRole('link', { name: 'เข้าสู่ระบบ', exact: true })
+		).toBeVisible();
+		await expect(page.getByTestId('student-profile-region')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })).toHaveCount(0);
+	} finally {
+		api.release();
+	}
 	await pending;
 	await page.evaluate(
 		() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))

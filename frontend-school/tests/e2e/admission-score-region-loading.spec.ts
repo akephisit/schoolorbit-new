@@ -75,7 +75,7 @@ async function reply(route: Route, data: unknown, status = 200) {
 	});
 }
 
-async function mock(page: Page, canScore = true) {
+async function mock(page: Page, canScore = true, validContext = false) {
 	const reads: string[] = [];
 	const writes: string[] = [];
 	const bulkPayloads: unknown[] = [];
@@ -114,9 +114,20 @@ async function mock(page: Page, canScore = true) {
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
+					activeAcademicYearId: validContext ? yearId : null,
 					activeAcademicTermId: null,
-					years: [],
+					years: validContext
+						? [
+								{
+									id: yearId,
+									year: 2569,
+									name: '2569',
+									status: 'active',
+									startDate: '2026-05-01',
+									endDate: '2027-04-30'
+								}
+							]
+						: [],
 					terms: []
 				});
 			const activeRound = path.includes(secondRoundId) ? secondRoundId : roundId;
@@ -218,13 +229,14 @@ test('score failure retries only scores while the room view stays available', as
 test('same-round score refresh retains the usable table until the new result arrives', async ({
 	page
 }) => {
-	const state = await mock(page);
-	await page.goto(path, { waitUntil: 'domcontentloaded' });
+	const state = await mock(page, true, true);
+	await page.goto(`${path}?academicYearId=${yearId}`, { waitUntil: 'domcontentloaded' });
 	const cell = page.locator(`#score-${appId}-${subjectId}`);
 	await expect(cell).toHaveValue('10');
 	state.setScoreValue(22);
 	state.holdNextScores();
 	await revalidatePage(page);
+	await expect.poll(() => state.reads.filter((read) => read.includes('/scores')).length).toBe(2);
 	await expectSilentBackground(page, page.locator('[aria-busy]').filter({ has: cell }).last());
 	await expect(cell).toHaveValue('10');
 	state.releaseScores();

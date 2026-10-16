@@ -1,4 +1,3 @@
-import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
 
@@ -725,7 +724,7 @@ test('list creates a run only for the chosen source and future planning year', a
 	});
 });
 
-test('promotion run list keeps prior rows visible during a failed refresh', async ({ page }) => {
+test('promotion run list reload shows a fresh skeleton and focused retry', async ({ page }) => {
 	await mock(page, 'reader');
 	await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
 	await expect(page.getByText('เปิดรอบ')).toBeVisible();
@@ -743,8 +742,9 @@ test('promotion run list keeps prior rows visible during a failed refresh', asyn
 		}
 		return route.fallback();
 	});
-	await revalidatePage(page);
-	await expect(page.getByText('เปิดรอบ')).toBeVisible();
+	await page.reload();
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByText('เปิดรอบ')).toHaveCount(0);
 	release();
 	await expect(page.getByText('อ่านรอบชั่วคราวไม่สำเร็จ')).toBeVisible();
 	await page.getByRole('button', { name: 'ลองใหม่' }).click();
@@ -788,7 +788,7 @@ test('promotion run list ignores the old year after switching academic context',
 	await expect(page.getByText('เปิดรอบ')).toHaveCount(0);
 });
 
-test('manual refresh lets a manager recalculate with a new version after conflict', async ({
+test('focused conflict recovery lets a manager recalculate with a new version', async ({
 	page
 }) => {
 	const observed = await mock(page, 'manager', false, true);
@@ -796,7 +796,7 @@ test('manual refresh lets a manager recalculate with a new version after conflic
 	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('มีการแก้ไขรอบ');
-	await revalidatePage(page);
+	await page.getByRole('button', { name: 'โหลดข้อมูลล่าสุด', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true })).toBeEnabled();
 	await page.getByRole('button', { name: 'คำนวณข้อเสนอ', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();

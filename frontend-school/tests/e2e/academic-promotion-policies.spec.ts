@@ -226,7 +226,7 @@ test('policy browser reload shows a fresh skeleton and focused retry', async ({ 
 	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toHaveCount(0);
 	release();
 	await expect(page.getByText('อ่านเกณฑ์ชั่วคราวไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
 	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
 	expect(attempts).toBe(2);
 });

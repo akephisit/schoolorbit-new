@@ -67,7 +67,7 @@ test('month history and cross-month search reread events without catalog reloads
 	expect(api.count(tagsPath)).toBe(1);
 	expect(api.count(eventsPath)).toBe(4);
 });
-test('same-context failed refresh retains events and retries only them', async ({ page }) => {
+test('page revalidation retains events and focused retry rereads only events', async ({ page }) => {
 	const api = await mockCalendar(page, { fail: 'events', failAt: 2 });
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
@@ -75,8 +75,8 @@ test('same-context failed refresh retains events and retries only them', async (
 	await expect(page.getByTestId('calendar-events')).toContainText('region events ไม่พร้อม');
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
 	await page.getByTestId('calendar-events').getByRole('button', { name: 'ลองอีกครั้ง' }).click();
-	expect(api.count(categoriesPath)).toBe(1);
-	expect(api.count(tagsPath)).toBe(1);
+	expect(api.count(categoriesPath)).toBe(2);
+	expect(api.count(tagsPath)).toBe(2);
 });
 test('late month response cannot restore old month data', async ({ page }) => {
 	const api = await mockCalendar(page, { hold: 'events' });

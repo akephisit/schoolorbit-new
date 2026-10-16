@@ -149,7 +149,7 @@ for (const [route, label] of [
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('parent-profile-region')).toContainText(label);
 		expect(api.count('profile')).toBe(3);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(2);
 	});
 	test(`${route}: year change and Back repair no duplicate primary`, async ({ page }) => {
 		const api = await mockParent(page);
