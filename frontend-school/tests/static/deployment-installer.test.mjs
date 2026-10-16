@@ -1123,19 +1123,31 @@ test('explicit Admin Worker recreation holds the production lock and prepares be
 	const operations = parseYaml(await readRepo('.github/workflows/operations.yml'));
 	const job = operations.jobs['recreate-admin-frontend'];
 	assert.match(job.if, /refs\/heads\/main/);
-	assert.deepEqual(job.concurrency, { group: 'schoolorbit-production', 'cancel-in-progress': false });
+	assert.deepEqual(job.concurrency, {
+		group: 'schoolorbit-production',
+		'cancel-in-progress': false
+	});
 	assert.equal(job.uses, './.github/workflows/recreate-admin-frontend.yml');
-	const workflow = parseYaml(await readFile(path.join(repoRoot, '.github/workflows/recreate-admin-frontend.yml'), 'utf8'));
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/recreate-admin-frontend.yml'), 'utf8')
+	);
 	assert.deepEqual(Object.keys(workflow.on), ['workflow_call']);
 	const steps = workflow.jobs.recreate.steps;
 	const prepare = steps.findIndex((step) => step.run?.includes('pipeline-admin-recreate.mjs'));
-	const maintenance = steps.findIndex((step) => step.with?.script?.endsWith('maintenance.sh enter'));
-	const deletion = steps.findIndex((step) => step.run?.endsWith('pipeline-admin-worker.mjs delete'));
+	const maintenance = steps.findIndex((step) =>
+		step.with?.script?.endsWith('maintenance.sh enter')
+	);
+	const deletion = steps.findIndex((step) =>
+		step.run?.endsWith('pipeline-admin-worker.mjs delete')
+	);
 	assert.ok(prepare >= 0 && maintenance > prepare && deletion > maintenance);
 	assert.equal(steps[deletion].env.ADMIN_WORKER_RECREATE, 'true');
-	assert.doesNotMatch(JSON.stringify(workflow), /ADMIN_MIGRATION_DATABASE_URL|DATABASE_URL|--migrate-admin|force=true/);
+	assert.doesNotMatch(
+		JSON.stringify(workflow),
+		/ADMIN_MIGRATION_DATABASE_URL|DATABASE_URL|--migrate-admin|force=true/
+	);
 	const admin = await readRepo('.github/workflows/deploy-frontend-admin.yml');
-	assert.match(admin, /pattern:\$domain,custom_domain:true/);
+	assert.match(admin, /pattern:\$redirect_domain,custom_domain:true/);
 });
 
 test('runtime diagnostics expose container state without environment or application logs', async () => {
