@@ -1258,29 +1258,45 @@ only the newest link remains valid. Delivery failure preserves the pending
 account and reports a recoverable unavailable response. No real customer email
 is used by tests.
 
-The release checks `/app/create_admin --check-ready` before stopping the previous
-Admin backend or running automatic migrations. It refuses missing mail settings,
-an unprepared account schema or the absence of a verified operator. The initial
-cutover therefore needs a reviewed one-time preparation under the shared
-production lock and universal maintenance: run the release image's canonical
-`/app/backend-admin --migrate-admin`, then bootstrap and verify the operator as
-below, then retry the normal Pipeline. An accidental merge cannot silently reset
-accounts through the automatic deployment path. Keep maintenance active throughout
-preparation and recover by rolling forward on any failure.
+For the first release, configure repository **Actions secrets**
+`ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` for the intended primary
+operator. These are temporary owner-job inputs, separate from the VPS runtime
+mail settings. Never put a password in workflow inputs, command arguments, logs,
+the repository, frontend bindings or `/opt/stack/.env`.
 
-During that preparation, run `/app/create_admin --bootstrap` from the release image with the
-owner-only `ADMIN_MIGRATION_DATABASE_URL`, `ADMIN_BOOTSTRAP_EMAIL`,
-`ADMIN_BOOTSTRAP_PASSWORD` and `ADMIN_BOOTSTRAP_NAME` supplied through a protected
-one-shot environment, not command arguments. It never prints credentials and
-refuses an existing email, including a self-registered customer. Do not retain
-bootstrap secrets in ordinary runtime configuration. Bootstrap sends a Resend verification email. While the public site remains in
-maintenance, read that email in the operator mailbox and provide its fragment token
-through a protected one-shot `ADMIN_BOOTSTRAP_TOKEN` environment to
-`/app/create_admin --verify-email`. Never print or pass the token in command
-arguments. A failed delivery uses `--resend-verification` with
-`ADMIN_BOOTSTRAP_EMAIL`; this never changes the operator password. After the
-verified-operator readiness check passes, retry Pipeline and complete dedicated
+The normal Pipeline owns the entire cutover; no manual `podman pull`, container
+replacement or migration is required. Under the existing production lock, release
+preflight runs `/app/create_admin --check-deploy-inputs` against the prepared image
+before entering maintenance. This read-only check validates mail settings and,
+when no verified operator exists, the bootstrap credentials and intended identity.
+Missing or invalid inputs fail before stopping services or replacing accounts.
+It refuses an existing customer at the bootstrap email or a different pending
+operator. A missing account schema alone no longer blocks the first release.
+
+After maintenance begins, Admin stops the old backend, runs the canonical
+`/app/backend-admin --migrate-admin`, then `/app/create_admin --prepare-release`.
+The latter creates the unverified operator and sends its Resend verification
+email. Retry preserves the same account, name and password, and resends a fresh
+link without promoting customers or granting verification. A delivery failure
+stops release and leaves maintenance active; retry the normal Pipeline after
+repairing mail configuration. Post-migration failures recover by rolling forward.
+
+`--check-release-ready` requires a verified operator or the configured pending
+operator with an active verification link after successful delivery. Normal
+readiness, immutable frontend promotion and proxy/browser acceptance then run
+before maintenance opens. Once the portal is available, the primary operator
+opens the newest email link and explicitly confirms it on the website. Pending
+accounts cannot log in or use operator APIs. This avoids requiring a live
+verification page before the first deployment. After verification, remove both
+bootstrap Actions secrets; subsequent releases preserve the verified operator
+and skip bootstrap without requiring those secrets. Complete dedicated
 operator/customer acceptance before public handoff.
+
+The explicit `/app/create_admin --check-ready` remains a stricter diagnostic for
+a verified operator. Recovery-only `--bootstrap`, `--resend-verification` and
+`--verify-email` modes accept protected one-shot environment values, including
+`ADMIN_BOOTSTRAP_TOKEN` for token consumption. They are not ordinary deployment
+steps. Never print or pass tokens in command arguments.
 
 The frontend Worker serves `<base-domain>/*` and `admin.<base-domain>/*`; the old
 Admin host redirects to the apex before rendering, including during maintenance.

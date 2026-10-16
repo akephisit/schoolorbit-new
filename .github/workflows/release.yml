@@ -59,6 +59,33 @@ jobs:
             if .schemaVersion == 1 and .component == "backend-admin" and .sha == $sha and .inputHash == $hash and (.digest | test("^sha256:[0-9a-f]{64}$")) then .digest else error("Prepared image identity mismatch") end
           ' "$RUNNER_TEMP/prepared/backend-admin.json")
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+      - name: Upload read-only Admin account preflight
+        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: scripts/lib/pipeline-remote/admin-accounts.sh,scripts/lib/pipeline-remote/runtime-env.sh
+          target: /opt/stack/deployment
+      - name: Check first-operator inputs before entering maintenance
+        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
+          BACKEND_IMAGE_DIGEST: ${{ steps.manifest.outputs.digest }}
+          ADMIN_BOOTSTRAP_EMAIL: ${{ secrets.ADMIN_BOOTSTRAP_EMAIL }}
+          ADMIN_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,ADMIN_BOOTSTRAP_EMAIL,ADMIN_BOOTSTRAP_PASSWORD
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/admin-accounts.sh --check-deploy-inputs
   maintenance:
     needs: preflight
     if: needs.preflight.result == 'success' && needs.preflight.outputs.deploy != '[]'

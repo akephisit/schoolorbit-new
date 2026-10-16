@@ -1224,6 +1224,14 @@ For bilingual staff identity and multiple qualifications, use `./scripts/test_ba
 ## Admin customer account preservation
 
 Run `./scripts/test_backend_admin.sh` for the Admin migration and account cutover.
+The fixture also exercises first-release CLI preflight before schema changes,
+bootstrap-secret requirements, unchanged account/password/name on retries,
+customer-adoption and conflicting-operator refusal, pending-login denial,
+expired/active verification-link readiness, and subsequent releases without
+bootstrap secrets. It never sends real email. Run
+`node --test scripts/tests/admin-account-release.test.mjs` for the remote account
+helper's immutable-image selection, private environment transport and failure
+propagation; the deployment verification scope includes this test.
 The disposable PostgreSQL suite covers complete school/deployment-row preservation,
 unknown-FK rollback, repeated migrations, expired-but-accessible schools, scoped
 memberships, idempotent requests/concurrent approval, opaque session revocation,

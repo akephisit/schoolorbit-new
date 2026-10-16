@@ -18,11 +18,14 @@ Migration 010 replaces the legacy central accounts under the user's explicit
 authorization. It reconciles unchanged schools and deployment history in the same
 transaction before removing only legacy central accounts. Applied migrations are
 immutable. No tenant database, DNS record, encrypted credential or school user is
-deleted. New roles have no delete-school HTTP route in this release. Bootstrap a
-new operator with an explicit CLI and verify its email with the same single-use token service. Release preflight refuses
-an unprepared account schema or an unverified operator before automatic migrations;
-initial preparation runs the canonical migration and bootstrap commands under
-the production lock and maintenance.
+deleted. New roles have no delete-school HTTP route in this release. The normal
+Pipeline validates temporary operator Actions secrets before maintenance, then
+runs the canonical account migration and operator bootstrap under the production
+lock. Bootstrap creates an unverified account and sends a Resend link. Initial
+release may proceed with that pending operator and an active verification link;
+login still requires verification through the public page after deployment.
+Retries preserve the account/password and never promote a customer. Subsequent
+releases skip bootstrap once a verified operator exists.
 
 ## Authentication and delivery
 
@@ -43,7 +46,9 @@ must be disconnected operationally. Serve the apex and former Admin host through
 the same Worker; redirect the old host before rendering or maintenance. Update
 acceptance and installer origins. Domain and email settings come from environment.
 No production reset or promotion is executed from this workspace. Required
-Resend sender-domain verification and operator bootstrap are deployment prerequisites.
+Resend sender-domain verification, protected bootstrap Actions secrets and a
+fresh recovery point are first-release prerequisites. The user does not pull
+images or run production migrations manually.
 
 Schema 010 and the new account runtime must deploy together under maintenance.
 After account replacement, old Admin binaries are prohibited. Recovery rolls

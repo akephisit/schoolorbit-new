@@ -721,6 +721,12 @@ These reviewed references guide the matching page responsibility. Inspect the cu
 - Admin uses its own opaque, database-revocable sessions, exact apex Origin and CSRF checks.
   School uses independent opaque sessions under `SESSION_HMAC_KEY`; neither accepts legacy JWTs.
   Never import School authentication internals into Admin or restore pre-session binaries.
+- The initial Admin operator is prepared by the normal serialized Pipeline from temporary
+  `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` Actions secrets. Validate those inputs
+  before maintenance or migration, preserve existing identities/passwords on retry, and never
+  promote a customer. A pending operator with a live verification link permits initial release;
+  all login/session authorization still requires verified email. Remove bootstrap secrets after
+  verification; never store them in the server runtime environment or frontend.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
 - Treat permission/menu sync, tenant migrations, encryption keys, file storage, and data cutover as deployment concerns. Follow `docs/OPERATIONS.md`.
 - Legacy runtime compatibility is not a default requirement. Any temporary bridge must be limited to the approved rollout or rollback window and removed at its predefined cleanup gate; it must not become a permanent alias, fallback, dual path, or parallel business model.

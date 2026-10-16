@@ -14,5 +14,9 @@ Design: [approved scope](../specs/2026-10-15-admin-customer-portal-design.md).
    origins and deploy runtime configuration through existing owners.
 6. Run focused Rust and disposable DB tests, Admin lint/check/unit/build, browser
    workflows, deployment and documentation policy checks, diff/status review.
-7. Open a PR with actual evidence. Keep unverified deployment/prerequisite work
+7. Let the serialized Pipeline validate first-operator Actions secrets before
+   maintenance, migrate and bootstrap, send verification, and open the portal
+   before the operator confirms email. Preserve pending accounts on retries and
+   require verified email for all authentication; never promote a customer.
+8. Open a PR with actual evidence. Keep unverified deployment/prerequisite work
    visible and do not auto-merge an unverified production cutover.

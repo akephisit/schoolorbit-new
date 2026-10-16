@@ -29,6 +29,38 @@ fn readiness(database_url: &str) -> bool {
         .success()
 }
 
+fn release_command(database_url: &str, mode: &str, bootstrap: bool) -> bool {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_create_admin"));
+    command
+        .arg(mode)
+        .env("ADMIN_MIGRATION_DATABASE_URL", database_url)
+        .env("BASE_DOMAIN", "example.test")
+        .env("RESEND_API_KEY", "re_synthetic-test-key")
+        .env("RESEND_FROM", "noreply@example.test")
+        .env_remove("ADMIN_BOOTSTRAP_EMAIL")
+        .env_remove("ADMIN_BOOTSTRAP_PASSWORD")
+        .env_remove("ADMIN_BOOTSTRAP_NAME");
+    if bootstrap {
+        command
+            .env("ADMIN_BOOTSTRAP_EMAIL", "bootstrap@example.test")
+            .env("ADMIN_BOOTSTRAP_PASSWORD", "bootstrap-fixture-password");
+    }
+    let output = command.output().unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for credential in [
+        database_url,
+        "re_synthetic-test-key",
+        "bootstrap-fixture-password",
+    ] {
+        assert!(!text.contains(credential));
+    }
+    output.status.success()
+}
+
 #[tokio::test]
 async fn portal_preserves_schools_and_enforces_account_service_boundaries() {
     std::env::set_var("BASE_DOMAIN", "example.test");
@@ -49,6 +81,19 @@ async fn portal_preserves_schools_and_enforces_account_service_boundaries() {
         std::borrow::Cow::Owned(old.iter().filter(|m| m.version <= 9).cloned().collect());
     old.run(&pool).await.unwrap();
     assert!(!readiness(url.as_str()));
+    // First-release secrets are validated before migrations or maintenance.
+    assert!(!release_command(
+        url.as_str(),
+        "--check-deploy-inputs",
+        false
+    ));
+    assert!(release_command(url.as_str(), "--check-deploy-inputs", true));
+    let account_schema: bool =
+        sqlx::query_scalar("SELECT to_regclass('platform_accounts') IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!account_schema);
     let school = Uuid::now_v7();
     let other_school = Uuid::now_v7();
     for (id, subdomain) in [(school, "fixture"), (other_school, "other")] {
@@ -107,6 +152,110 @@ async fn portal_preserves_schools_and_enforces_account_service_boundaries() {
         .unwrap();
     assert!(!old_exists);
     assert!(!readiness(url.as_str()));
+    assert!(!release_command(
+        url.as_str(),
+        "--check-release-ready",
+        true
+    ));
+    let reserved = account(&pool, "reserved@example.test", "customer").await;
+    let reserved_input =
+        auth::OperatorBootstrap::new(&reserved.email, "fixture-password-123".into(), "Operator")
+            .unwrap();
+    assert!(auth::ensure_operator_bootstrap(&pool, reserved_input)
+        .await
+        .is_err());
+    let role: String = sqlx::query_scalar("SELECT role FROM platform_accounts WHERE id=$1")
+        .bind(reserved.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(role, "customer");
+    let bootstrap_input = || {
+        auth::OperatorBootstrap::new(
+            " Bootstrap@Example.Test ",
+            "bootstrap-fixture-password".into(),
+            "Operator",
+        )
+        .unwrap()
+    };
+    auth::ensure_operator_bootstrap(&pool, bootstrap_input())
+        .await
+        .unwrap();
+    let original: (String, String, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as("SELECT password_hash,name,verified_at FROM platform_accounts WHERE email='bootstrap@example.test'")
+        .fetch_one(&pool).await.unwrap();
+    assert!(original.2.is_none());
+    assert!(auth::login(
+        &pool,
+        Credentials {
+            email: "bootstrap@example.test".into(),
+            password: "bootstrap-fixture-password".into()
+        }
+    )
+    .await
+    .is_err());
+    // A retried workflow may not replace the password/name or mark the operator verified.
+    auth::ensure_operator_bootstrap(
+        &pool,
+        auth::OperatorBootstrap::new(
+            "bootstrap@example.test",
+            "different-fixture-password".into(),
+            "Changed name",
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let retried: (String, String, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as("SELECT password_hash,name,verified_at FROM platform_accounts WHERE email='bootstrap@example.test'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(original, retried);
+    let different = auth::OperatorBootstrap::new(
+        "different@example.test",
+        "fixture-password-123".into(),
+        "Other operator",
+    )
+    .unwrap();
+    assert!(auth::ensure_operator_bootstrap(&pool, different)
+        .await
+        .is_err());
+    assert!(release_command(url.as_str(), "--check-deploy-inputs", true));
+    assert!(!release_command(
+        url.as_str(),
+        "--check-release-ready",
+        true
+    ));
+    let bootstrap_token = auth::random_token().unwrap();
+    sqlx::query("INSERT INTO platform_email_tokens(token_hash,account_id,purpose,expires_at) SELECT $1,id,'verify',now()-interval '1 hour' FROM platform_accounts WHERE email='bootstrap@example.test'")
+        .bind(auth::digest(&bootstrap_token)).execute(&pool).await.unwrap();
+    assert!(!release_command(
+        url.as_str(),
+        "--check-release-ready",
+        true
+    ));
+    sqlx::query(
+        "UPDATE platform_email_tokens SET expires_at=now()+interval '1 hour' WHERE token_hash=$1",
+    )
+    .bind(auth::digest(&bootstrap_token))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(release_command(url.as_str(), "--check-release-ready", true));
+    assert!(!readiness(url.as_str()));
+    auth::consume_token(&pool, &bootstrap_token, None)
+        .await
+        .unwrap();
+    assert!(readiness(url.as_str()));
+    // Later releases need no bootstrap secrets and never resend/reset a verified operator.
+    assert!(release_command(
+        url.as_str(),
+        "--check-deploy-inputs",
+        false
+    ));
+    assert!(release_command(url.as_str(), "--prepare-release", false));
+    assert!(release_command(
+        url.as_str(),
+        "--check-release-ready",
+        false
+    ));
     let operator = account(&pool, "operator@example.test", "operator").await;
     assert!(readiness(url.as_str()));
     let customer = account(&pool, "owner@example.test", "customer").await;

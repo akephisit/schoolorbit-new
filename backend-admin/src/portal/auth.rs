@@ -320,6 +320,93 @@ pub async fn bootstrap_operator(
     Ok(())
 }
 
+/// Owner-job inputs only. Never derive Debug or serialize bootstrap credentials.
+pub struct OperatorBootstrap {
+    pub email: String,
+    pub password: String,
+    pub name: String,
+}
+impl OperatorBootstrap {
+    pub fn new(email: &str, password: String, name: &str) -> Result<Self, PortalError> {
+        let email = normalize_email(email)?;
+        validate_password(&password)?;
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 120 {
+            return Err(PortalError::invalid());
+        }
+        Ok(Self {
+            email,
+            password,
+            name: name.into(),
+        })
+    }
+}
+
+async fn account_schema_exists(pool: &PgPool) -> Result<bool, PortalError> {
+    Ok(
+        sqlx::query_scalar("SELECT to_regclass('platform_accounts') IS NOT NULL")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+pub async fn has_verified_operator(pool: &PgPool) -> Result<bool, PortalError> {
+    if !account_schema_exists(pool).await? {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM platform_accounts WHERE role='operator' AND verified_at IS NOT NULL)")
+        .fetch_one(pool).await?)
+}
+
+/// Read-only before migration: refuse account adoption or a changed bootstrap identity.
+pub async fn check_operator_bootstrap(
+    pool: &PgPool,
+    input: &OperatorBootstrap,
+) -> Result<bool, PortalError> {
+    if !account_schema_exists(pool).await? {
+        return Ok(false);
+    }
+    let other_operator: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM platform_accounts WHERE role='operator' AND email<>$1)",
+    )
+    .bind(&input.email)
+    .fetch_one(pool)
+    .await?;
+    if other_operator {
+        return Err(PortalError::forbidden());
+    }
+    let role: Option<String> =
+        sqlx::query_scalar("SELECT role FROM platform_accounts WHERE email=$1")
+            .bind(&input.email)
+            .fetch_optional(pool)
+            .await?;
+    match role.as_deref() {
+        None => Ok(false),
+        Some("operator") => Ok(true),
+        _ => Err(PortalError::forbidden()),
+    }
+}
+
+/// Retry preserves the original operator, password and verification state.
+pub async fn ensure_operator_bootstrap(
+    pool: &PgPool,
+    input: OperatorBootstrap,
+) -> Result<String, PortalError> {
+    if !check_operator_bootstrap(pool, &input).await? {
+        bootstrap_operator(pool, &input.email, input.password, &input.name).await?;
+    }
+    Ok(input.email)
+}
+
+/// Deployment readiness only; pending accounts still cannot authenticate.
+pub async fn pending_operator_ready(pool: &PgPool, email: &str) -> Result<bool, PortalError> {
+    if !account_schema_exists(pool).await? {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM platform_accounts a JOIN platform_email_tokens t ON t.account_id=a.id WHERE a.email=$1 AND a.role='operator' AND a.verified_at IS NULL AND t.purpose='verify' AND t.expires_at>now())")
+        .bind(email).fetch_one(pool).await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
