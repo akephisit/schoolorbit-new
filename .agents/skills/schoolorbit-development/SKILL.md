@@ -1,6 +1,6 @@
 ---
 name: schoolorbit-development
-description: Automatically use for ordinary SchoolOrbit implementation, bug fixes, refactoring, tests, code reviews, contracts, database, pipeline, development-rule or skill changes; explicit invocation is optional. Run a Senior-led team with Frontend, Backend, independent Review and QA roles and repository model/reasoning profiles. Keep small or tightly coupled tasks inline and honor inline-only requests. Do not turn general questions into implementation or use for unrelated chat.
+description: Automatically use for ordinary SchoolOrbit implementation, bug fixes, refactoring, tests, code reviews, contracts, database, pipeline, development-rule or skill changes; explicit invocation is optional. Run a Senior-led team with the needed writers and independent Review and QA under repository model/reasoning profiles. Route reports to the Senior, repair failures, track delivery and summarize the outcome. Apply only the repository's explicit inline exceptions. Do not turn general questions into implementation or use for unrelated chat.
 ---
 
 # SchoolOrbit development workflow
@@ -24,7 +24,8 @@ another Coordinator. Explanation-only requests do not start implementation or PR
 3. Consult `.rules` → `Agent roles and coordination`. The primary agent acts as Senior/Coordinator:
    settle the technical direction, contracts and acceptance criteria, then assign work by role.
    Automatic workflow activation applies the project's standing delegation preference;
-   choose parallel or inline work under those rules without requesting permission for each child.
+   choose implementation owners and independent final review/QA under those rules without
+   requesting permission for each child. A single writer does not waive independent acceptance.
    Preserve the user's scope, including read-only and inline-only requests.
 4. Select each needed role's model/reasoning profile from `.rules` and pass it through the host's
    actual agent-spawn controls. Use fresh bounded context when model overrides require it, and
@@ -36,8 +37,10 @@ another Coordinator. Explanation-only requests do not start implementation or PR
 ## Split and schedule work
 
 1. Identify independently useful outcomes and their completion criteria, then record each task's
-   owner, allowed paths, prerequisites and status in the existing plan/chat state. Keep a small
-   one-owner change inline; shared-file work or unresolved contracts require an ordered assignment.
+   owner, allowed paths, prerequisites and status in the existing plan/chat state. One owner may
+   implement inline; use separate Reviewer and QA agents for nontrivial changes under `.rules`.
+   Record the reason for an explicit inline exception. Shared-file work or unresolved contracts
+   require an ordered assignment.
 2. Choose the smallest useful role roster under `.rules`. For a full-stack task, the Senior agrees
    the wire contract and assigns Backend and Frontend writers to their respective owners. Each
    writer implements its layer and focused tests; the Senior resolves shared decisions and
@@ -52,9 +55,11 @@ another Coordinator. Explanation-only requests do not start implementation or PR
    prerequisite output. Keep spawning and reassignment with the Coordinator.
 5. Once every writer finishes and the Senior reconciles the changes, freeze the complete candidate
    and switch to the independent Reviewer and QA/Verifier phase. Keep the shared source unchanged.
-   The Reviewer checks correctness and rules; QA runs the selected checks. Return defects to the
-   owning writer, then repeat affected review/checks. The Senior accepts the result only after
-   reconciling both reports. Keep the role roster, actual settings and handoffs in task state.
+   The Reviewer checks correctness and rules; QA runs the selected checks. Both report to the
+   Senior, who assigns defects to the owning writer and repeats affected review/checks. The Senior
+   accepts the result only after reconciling both reports under
+   `.rules` → `Reports, failure recovery and completion`.
+   Keep the role roster, actual settings and handoffs in task state.
 
 ## Open a draft and save checkpoints
 
@@ -69,7 +74,8 @@ another Coordinator. Explanation-only requests do not start implementation or PR
    save a checkpoint or describe an untested checkpoint as verified.
 4. Keep the PR draft while work, independent review or required checks are incomplete. Mark it
    ready only after the final acceptance process below and the applicable checks pass; readiness,
-   merge and production actions remain bounded by the user's scope and `.rules`.
+   merge and production actions follow `.rules` → `Reports, failure recovery and completion`
+   within the user's delivery scope. A draft is a progress checkpoint, not a reason to stop work.
 
 ## Assign bounded tasks
 
@@ -89,6 +95,8 @@ Applicable .rules sections and canonical references to read:
 Focused verification and fixture ownership:
 Deliverable: owned changed paths, evidence, findings and remaining uncertainty;
 commits only for an assigned isolated worktree, candidate tree supplied by the Senior.
+Report to the Senior: outcome, actual checks/results, problems, known causes, fixes and remaining work.
+Your report is a handoff for the Senior's next action, not completion of the user's whole task.
 In a shared checkout, do not stage/commit, switch branches, stash/reset/clean or revert others' work.
 Acknowledge the Senior's checkpoint pause; resume only after the Senior confirms the new HEAD.
 No independent PR readiness, main changes or production operations.
@@ -107,7 +115,7 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    branch; integrate child commits only when isolated worktrees were necessary. The designated
    owner reconciles shared files and generated artifacts. A child test result covers only its
    tested inputs and environment.
-2. Freeze the integrated candidate. For parallel work, delegate its read-only
+2. Freeze the integrated candidate. For nontrivial changes, including single-writer work, delegate its read-only
    Rules/Security review and local verification concurrently when independent. Assign one heavy
    Cargo owner, reuse the compatible target sequentially, and use isolated database fixtures under
    `.rules`. No per-agent Rust target or dependency copy is needed for the shared-checkout team.
@@ -120,8 +128,11 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    API/permission contracts, tenant isolation, data preservation and operational invariants.
    Check the working agreement and justified exceptions under `Consistency decisions and final review`.
    Report actionable findings with file/line evidence, severity and required correction.
-5. Return failures to the assigned writer. After any source/base/environment change, apply the
-   evidence invalidation rules in `.rules`; repeat affected checks/review on the new candidate.
+5. Send failures and blocking findings to the Senior for diagnosis/fix assignment to the writer.
+   Follow the repair loop in `.rules` → `Reports, failure recovery and completion`; investigate
+   pre-existing failures rather than treating them as an automatic stopping condition. After any
+   source/base/environment change, apply the evidence invalidation rules in `.rules`; repeat
+   affected checks/review on the new candidate. Only a concrete blocker warrants a blocked handoff.
 
 ## Deliver and resume
 
@@ -129,16 +140,23 @@ Only the Coordinator performs the PR/integration and production workflow defined
 Create the draft early, keep progress in checkpoint commits, and record review and actual local
 checks in that same PR; leave incomplete work in draft. Follow
 [operations](../../../docs/OPERATIONS.md) for selected production changes and acceptance.
-For authorized integration, preserve branch history with the merge-commit method in `.rules`;
-check its repository settings and first-controller transition requirements before ready status.
-Track CI, integration and required acceptance to completion before claiming delivery.
+For ordinary implementation delivery, follow `.rules` → `Reports, failure recovery and completion`
+through eligible integration without asking again for already-authorized actions. Preserve branch
+history with the merge-commit method. The first-controller settings/transition procedure applies
+only when changing the merge strategy; it is not a recurring approval checkpoint for later PRs.
+Track CI, automatic integration and selected deployment/required acceptance to a verified terminal
+result; do not end with only a pending merge status. Investigate failures under the same repair loop.
 
 At a handoff or compaction, retain a short task-state checkpoint in chat/tool state:
 requested outcome, current user decisions, base/candidate tree, role/branch/path ownership,
 completed evidence, unresolved findings and the next dependent action. Re-read actual repository
 state when resuming. Do not create another Markdown status report or treat old evidence as current.
 
-Final reporting states what changed, which role did what, requested and confirmed model/reasoning
-settings or fallbacks, which checks ran, the PR/integration status and material limitations.
+The Senior produces the final user-facing summary required by
+`.rules` → `Reports, failure recovery and completion`:
+outcome, roles and actual model/reasoning settings or fallbacks, encountered
+problems with known causes and resolutions, actual check results, PR/merge and applicable
+deployment/acceptance status, and remaining work or limitations. A blocked handoff identifies the
+missing input and does not claim completion. Keep the summary in chat/PR, not a new tracked report.
 Describe model/host capabilities actually used; role instructions are not a security
 sandbox, and faster execution or lower cost requires measurement.
