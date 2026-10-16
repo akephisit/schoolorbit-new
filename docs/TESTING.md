@@ -100,12 +100,14 @@ pipeline or production latency measurements.
 ## Every Change
 
 The repository-owned [development skill](../.agents/skills/schoolorbit-development/SKILL.md)
-is discovered from `.agents/skills/` by supported Codex hosts. Invoke
-`$schoolorbit-development` for the coordinated workflow. Explicit or implicit selection of this
-skill applies the project's standing preference for bounded delegation of independent tasks under
-[the coordination rules](../.rules#agent-roles-and-coordination). Small or tightly coupled work
-stays inline, as do tasks with an inline-only user preference or a host without subagent tools.
-Delegation keeps the user's requested scope; review-only work remains read-only.
+is discovered from `.agents/skills/` by supported Codex hosts. Ordinary SchoolOrbit work requests
+automatically use it through `AGENTS.md` and [the activation policy](../.rules#automatic-workflow-activation);
+typing `$schoolorbit-development` is an optional shortcut, not a prerequisite. If a host does not
+surface the skill, the agent reads its local file and follows the workflow with available tools.
+Bounded delegation follows [the coordination rules](../.rules#agent-roles-and-coordination).
+Small or tightly coupled work stays inline, as do tasks with an inline-only user preference or
+a host without subagent tools. Questions do not authorize implementation or PR creation, and
+review-only work remains read-only. Child agents retain their assigned roles.
 
 The primary session is the Senior/Coordinator. A full-stack task normally uses Frontend and
 Backend implementation roles, then independent Reviewer and QA/Verifier roles for the integrated

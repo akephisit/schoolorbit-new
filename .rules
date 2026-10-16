@@ -35,6 +35,13 @@ This file is the single authoritative development standard for this repository. 
 
 ## 1. Required Analysis Workflow
 
+### Automatic workflow activation
+
+- Treat ordinary requests to implement, fix, refactor, test or review SchoolOrbit project work as activation of `.agents/skills/schoolorbit-development/SKILL.md`. Load and follow that workflow automatically; do not wait for the user to type `$schoolorbit-development`, select a skill, or repeat a delegation request. Thai and English task requests have the same behavior.
+- If the host does not expose the project skill in its selector, read the local `SKILL.md` directly and execute its workflow with the tools actually available. Do not require a plugin installation or claim that reading a file proves host-level skill discovery. Report a missing workflow file rather than silently substituting another project's instructions.
+- Activation starts work only within the user's request. An explanation or general question remains an answer, not a request to implement, create a branch or open a PR. The workflow is not a background monitor, and automatic activation adds no merge or deployment authority.
+- A delegated agent reads the rules and relevant workflow while retaining its assigned role, paths and permissions; it must not start another Senior/team merely because it loaded the workflow. Explicit inline-only, read-only, local-only and model preferences continue to apply.
+
 Before every change:
 
 1. Read this file, then use `docs/README.md` to locate only the relevant canonical document.
@@ -74,7 +81,7 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - For one coordinated feature team, use one feature branch and shared checkout in the repository root by default so existing dependencies and build caches remain available. Frontend and Backend may edit disjoint assigned files concurrently under the shared-checkout ownership rules below; parallel agents alone do not require separate branches or worktrees.
 - Use a separate worktree only when unrelated tasks need different branches, incompatible toolchain/dependency state needs isolation, or the host requires isolated execution. State the concrete reason before creating it; prefer serializing overlapping work over duplicating a Rust build environment merely to parallelize roles. Work size alone does not require a worktree.
 - Every worktree owns a distinct branch. Never check out or mutate another session's branch or remove a worktree until its owner is finished and its working tree is clean.
-- When `schoolorbit-development` is selected explicitly or implicitly for a SchoolOrbit task, this project's standing preference authorizes bounded subagent delegation under `Agent roles and coordination`; do not request separate permission for each assignment. Prefer parallel work when independent tasks justify coordination. Keep small or tightly coupled work inline, and honor the user's inline-only preference.
+- For SchoolOrbit development work under the automatic workflow above, this project's standing preference authorizes bounded subagent delegation under `Agent roles and coordination`; do not request separate permission for each assignment or require an explicit skill invocation. Prefer parallel work when independent tasks justify coordination. Keep small or tightly coupled work inline, and honor the user's inline-only preference.
 - Delegation preserves the user's requested outcome and authorization. A read-only review remains read-only; assigning agents does not authorize additional implementation, PR delivery, merge or production operations beyond that scope. Outside this project workflow, follow the user's delegation instructions.
 - Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; preserve progress with checkpoint commits on their feature branch under the draft workflow below.
 - Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.

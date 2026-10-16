@@ -1,6 +1,6 @@
 ---
 name: schoolorbit-development
-description: Run SchoolOrbit work as a role-based team led by a Senior/Coordinator, assigning Frontend, Backend, independent Review and QA roles with model and reasoning profiles from repository rules. Use for SchoolOrbit implementation, reviews, contracts, database, pipeline, development-rule or skill changes. Keep small or tightly coupled tasks inline and honor inline-only requests. Do not use for unrelated questions or general chat.
+description: Automatically use for ordinary SchoolOrbit implementation, bug fixes, refactoring, tests, code reviews, contracts, database, pipeline, development-rule or skill changes; explicit invocation is optional. Run a Senior-led team with Frontend, Backend, independent Review and QA roles and repository model/reasoning profiles. Keep small or tightly coupled tasks inline and honor inline-only requests. Do not turn general questions into implementation or use for unrelated chat.
 ---
 
 # SchoolOrbit development workflow
@@ -9,6 +9,9 @@ Read the repository-root [`.rules`](../../../.rules) first. It is the sole devel
 Use the [documentation index](../../../docs/README.md) to select relevant references.
 Read `.rules` from the assigned checkout after every resume or base update.
 This skill routes work; domain conventions and agent policy stay in `.rules`.
+Apply `.rules` → `Automatic workflow activation` for ordinary project work requests without a
+special command. A delegated agent keeps its assigned role; loading this file does not create
+another Coordinator. Explanation-only requests do not start implementation or PR delivery.
 
 ## Start and choose roles
 
@@ -20,7 +23,7 @@ This skill routes work; domain conventions and agent policy stay in `.rules`.
    Use the approved specification/plan process for architectural work.
 3. Consult `.rules` → `Agent roles and coordination`. The primary agent acts as Senior/Coordinator:
    settle the technical direction, contracts and acceptance criteria, then assign work by role.
-   Explicit or implicit skill selection applies the project's standing delegation preference;
+   Automatic workflow activation applies the project's standing delegation preference;
    choose parallel or inline work under those rules without requesting permission for each child.
    Preserve the user's scope, including read-only and inline-only requests.
 4. Select each needed role's model/reasoning profile from `.rules` and pass it through the host's

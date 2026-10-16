@@ -2,6 +2,8 @@
 
 Read [`.rules`](./.rules) before analysis or changes. It is the single authoritative development standard.
 
+For SchoolOrbit development requests, automatically follow the [project development workflow](./.agents/skills/schoolorbit-development/SKILL.md). Explicit skill invocation is optional; activation and scope are defined in `.rules`.
+
 Active references:
 
 - [Documentation index](./docs/README.md)
