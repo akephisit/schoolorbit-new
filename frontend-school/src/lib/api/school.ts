@@ -89,16 +89,24 @@ export async function getRequiredPublicSchoolInfo(
 	return result.info;
 }
 
-export async function getPublicSchoolFavicon(options: ApiRequestOptions = {}): Promise<Blob> {
+export type PublicSchoolIconSize = Schemas['PublicSchoolIconSize'];
+
+export async function getPublicSchoolFavicon(
+	options: ApiRequestOptions = {},
+	size: PublicSchoolIconSize = '256'
+): Promise<Blob> {
 	const requestFetch = options.requestFetch ?? globalThis.fetch;
 	const blob = requireApiData(
-		await apiClient.getExternalBlob(`${BACKEND_URL}/api/school/public/favicon`, {
-			...options,
-			requestFetch: (input, init) => requestFetch(input, { ...init, redirect: 'manual' })
-		}),
+		await apiClient.getExternalBlob(
+			`${BACKEND_URL}/api/school/public/favicon?${new URLSearchParams({ size })}`,
+			{
+				...options,
+				requestFetch: (input, init) => requestFetch(input, { ...init, redirect: 'manual' })
+			}
+		),
 		'ไม่สามารถอ่านไอคอนโรงเรียนได้'
 	);
-	if (blob.type !== 'image/png' || blob.size > 512 * 1024)
+	if (blob.type !== 'image/png' || blob.size > 2 * 1024 * 1024)
 		throw new ApiClientError('รูปแบบไอคอนโรงเรียนไม่ถูกต้อง', 502);
 	return blob;
 }

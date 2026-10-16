@@ -19998,6 +19998,11 @@ export interface components {
 			parentId: string | null;
 			unitType: string;
 		};
+		/**
+		 * @description Closed output sizes for public favicons and installed-app icons.
+		 * @enum {string}
+		 */
+		PublicSchoolIconSize: '192' | '256' | '512';
 		PublicSchoolInfoData: {
 			/** Format: uuid */
 			logoFileId: string | null;
@@ -50767,7 +50772,10 @@ export interface operations {
 	};
 	getPublicSchoolFavicon: {
 		parameters: {
-			query?: never;
+			query?: {
+				/** @description Square PNG size; defaults to 256 */
+				size?: components['schemas']['PublicSchoolIconSize'];
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;

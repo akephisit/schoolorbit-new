@@ -12,6 +12,7 @@ const legacyWorker = `self.addEventListener('install',e=>e.waitUntil(self.skipWa
 
 test.beforeAll(async () => {
 	const worker = await readFile('.svelte-kit/output/client/service-worker.js', 'utf8');
+	const icon = await readFile('static/schoolorbit-192.png');
 	const owner = ts.transpileModule(
 		await readFile('src/lib/pwa/service-worker-registration.ts', 'utf8'),
 		{ compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }
@@ -22,6 +23,9 @@ test.beforeAll(async () => {
 		if (url.pathname === '/service-worker.js') {
 			response.setHeader('Content-Type', 'text/javascript');
 			response.end(legacy ? legacyWorker : worker);
+		} else if (url.pathname === '/app-icon/192.png') {
+			response.setHeader('Content-Type', 'image/png');
+			response.end(icon);
 		} else if (url.pathname === '/_app/env.js') {
 			response.setHeader('Content-Type', 'text/javascript');
 			response.end('export const env = {};');
@@ -156,11 +160,17 @@ test('Chromium: actual built worker displays push notification with its navigati
 			(await (await navigator.serviceWorker.ready).getNotifications()).map((item) => ({
 				title: item.title,
 				body: item.body,
+				icon: item.icon,
 				link: item.data.link
 			}))
 		);
 		expect(notifications).toEqual([
-			{ title: 'แจ้งเตือนทดสอบ', body: 'ข้อความจากโรงเรียน', link: '/staff/academic/delivery' }
+			{
+				title: 'แจ้งเตือนทดสอบ',
+				body: 'ข้อความจากโรงเรียน',
+				link: '/staff/academic/delivery',
+				icon: `${origin}/app-icon/192.png`
+			}
 		]);
 	} finally {
 		await browser.close();

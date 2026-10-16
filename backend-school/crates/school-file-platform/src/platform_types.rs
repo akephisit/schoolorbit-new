@@ -5,6 +5,29 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 
+/// Closed output sizes for public favicons and installed-app icons.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+pub enum PublicSchoolIconSize {
+    #[serde(rename = "192")]
+    Icon192,
+    #[default]
+    #[serde(rename = "256")]
+    Favicon256,
+    #[serde(rename = "512")]
+    Icon512,
+}
+
+impl PublicSchoolIconSize {
+    pub const fn pixels(self) -> u32 {
+        match self {
+            Self::Icon192 => 192,
+            Self::Favicon256 => 256,
+            Self::Icon512 => 512,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
