@@ -68,7 +68,7 @@ test('metadata and structured data preserve names safely without publishing extr
 		site,
 		`${backend}/api/public/files/public-logo/content`
 	);
-	assert.equal(seo.title, `${name.trim()} — ข้อมูลและบริการสาธารณะ`);
+	assert.equal(seo.title, `${name.trim()} - SchoolOrbit`);
 	assert(seo.description.includes(name.trim()));
 	assert(seo.structuredData);
 	assert(!/[<>&\u2028\u2029]/.test(seo.structuredData));
@@ -80,12 +80,12 @@ test('metadata and structured data preserve names safely without publishing extr
 		logo: seo.image
 	});
 });
-test('missing branding uses truthful fallback metadata and omits unknown names and logos', () => {
+test('missing school branding uses the platform logo and never invents a school name', () => {
 	const site = getSchoolPublicIndexing(new URL('https://alpha.schoolorbit.app/'), backend);
 	assert.equal(buildSchoolHomeSeo(null, site, null).structuredData, null);
 	assert.equal(buildSchoolHomeSeo({ schoolName: '   ' }, site, null).siteName, 'เว็บไซต์โรงเรียน');
 	const seo = buildSchoolHomeSeo({ schoolName: 'โรงเรียนทดสอบ' }, site, null);
-	assert.equal(seo.image, null);
+	assert.equal(seo.image, 'https://alpha.schoolorbit.app/schoolorbit.png');
 	assert(seo.structuredData);
-	assert(!('logo' in JSON.parse(seo.structuredData)));
+	assert.equal(JSON.parse(seo.structuredData).logo, seo.image);
 });

@@ -520,6 +520,50 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         );
     }
     let app = build_app(state);
+    let private_file = Uuid::new_v4();
+    sqlx::query("INSERT INTO files (id, display_filename, purpose_code, visibility, lifecycle_status, retention_class, inspection_metadata, created_by) VALUES ($1, 'private-font.ttf', 'school_font', 'private', 'processing', 'temporary', '{\"kind\":\"font\"}'::jsonb, $2)")
+        .bind(private_file).bind(actor_id).execute(&a).await.unwrap();
+    let version = Uuid::new_v4();
+    let object_key = school_file_platform::purpose_registry::original_object_key(
+        Uuid::new_v4(),
+        school_file_platform::platform_types::FilePurpose::SchoolFont,
+        private_file,
+        1,
+        school_file_platform::platform_types::DetectedContent::Ttf,
+    )
+    .unwrap();
+    sqlx::query("INSERT INTO file_versions (id, file_id, version_number, provider_code, storage_class, storage_status, object_key, detected_mime_type, canonical_extension, byte_size, checksum, scan_status, scanner_result_code, scanned_at, created_by) VALUES ($1,$2,1,'r2','private','stored',$3,'font/ttf','ttf',1,repeat('a',64),'clean','clean',now(),$4)")
+        .bind(version).bind(private_file).bind(object_key.as_str()).bind(actor_id).execute(&a).await.unwrap();
+    sqlx::query(
+        "UPDATE files SET current_version_id = $1, lifecycle_status = 'ready' WHERE id = $2",
+    )
+    .bind(version)
+    .bind(private_file)
+    .execute(&a)
+    .await
+    .unwrap();
+    for tenant in ["school-a", "school-b"] {
+        for file_id in [private_file, Uuid::new_v4()] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/api/public/files/{file_id}/favicon"))
+                        .header("Origin", format!("https://{tenant}.schoolorbit.app"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+    }
+    let still_private: String = sqlx::query_scalar("SELECT visibility FROM files WHERE id = $1")
+        .bind(private_file)
+        .fetch_one(&a)
+        .await
+        .unwrap();
+    assert_eq!(still_private, "private");
     let unknown = app
         .clone()
         .oneshot(

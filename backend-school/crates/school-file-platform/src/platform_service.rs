@@ -329,6 +329,30 @@ impl FilePlatform {
         })
     }
 
+    /// Only ready public school crests can be rendered as crawler favicons.
+    pub async fn public_favicon(
+        &self,
+        repository: &dyn FileRepository,
+        file_id: Uuid,
+    ) -> Result<Bytes, FilePlatformError> {
+        let delivery = ready_delivery(repository, file_id).await?;
+        if delivery.file.visibility != FileVisibility::Public
+            || delivery.file.purpose != FilePurpose::SchoolLogo
+        {
+            return Err(FilePlatformError::VisibilityMismatch);
+        }
+        let object = delivery
+            .object
+            .ok_or(FilePlatformError::MetadataUnavailable)?;
+        let limit = purpose_definition(FilePurpose::SchoolLogo)?
+            .limits
+            .max_bytes;
+        let source = self.provider.get(&object, limit).await?;
+        tokio::task::spawn_blocking(move || crate::favicon::render_png(&source))
+            .await
+            .map_err(|_| FilePlatformError::InspectionRejected)?
+    }
+
     pub async fn metadata(
         &self,
         repository: &dyn FileRepository,
@@ -598,6 +622,7 @@ mod tests {
         puts: Mutex<Vec<StorageClass>>,
         bodies: Mutex<Vec<Bytes>>,
         deletes: Mutex<usize>,
+        gets: Mutex<usize>,
     }
 
     #[async_trait]
@@ -624,6 +649,7 @@ mod tests {
             _object: &StoredObject,
             _max_bytes: u64,
         ) -> Result<Bytes, StorageError> {
+            *self.gets.lock().unwrap() += 1;
             Ok(png())
         }
 
@@ -1126,6 +1152,95 @@ mod tests {
             platform.private_download(&repository, Uuid::new_v4()).await,
             Err(FilePlatformError::NotReady)
         );
+    }
+
+    #[tokio::test]
+    async fn public_favicon_reads_only_ready_public_school_crests_and_never_writes() {
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        let service = platform(ScanOutcome::Clean, provider.clone());
+        let id = Uuid::new_v4();
+        let original = StoredObject::new(
+            original_object_key(
+                Uuid::new_v4(),
+                FilePurpose::SchoolLogo,
+                id,
+                1,
+                crate::platform_types::DetectedContent::Png,
+            )
+            .unwrap(),
+            "image/png",
+        );
+        assert_eq!(
+            service.public_favicon(&repository, id).await,
+            Err(FilePlatformError::NotFound)
+        );
+        for (status, visibility, purpose) in [
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Private,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Private,
+                FilePurpose::ProfileImage,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Public,
+                FilePurpose::SchoolBanner,
+            ),
+            (
+                FileLifecycleStatus::Processing,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Quarantined,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Deleted,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+        ] {
+            *repository.delivery.lock().unwrap() = Some(DeliveryRecord {
+                file: PlatformFile {
+                    id,
+                    owner_user_id: None,
+                    purpose,
+                    visibility,
+                    lifecycle_status: status,
+                    current_version: Some(1),
+                    display_filename: "crest.png".into(),
+                    detected_mime_type: "image/png".into(),
+                    byte_size: png().len() as i64,
+                },
+                object: Some(original.clone()),
+            });
+            let result = service.public_favicon(&repository, id).await;
+            if status == FileLifecycleStatus::Ready
+                && visibility == FileVisibility::Public
+                && purpose == FilePurpose::SchoolLogo
+            {
+                let image = image::load_from_memory(&result.unwrap()).unwrap();
+                assert_eq!((image.width(), image.height()), (256, 256));
+            } else {
+                assert!(result.is_err());
+                assert_eq!(*provider.gets.lock().unwrap(), 0);
+            }
+        }
+        assert_eq!(*provider.gets.lock().unwrap(), 1);
+        assert!(provider.puts.lock().unwrap().is_empty());
+        assert_eq!(*provider.deletes.lock().unwrap(), 0);
     }
 
     #[tokio::test]
