@@ -715,6 +715,12 @@ These reviewed references guide the matching page responsibility. Inspect the cu
   and malformed-response failures stop release. Preserve existing Workers and continue
   to stage/promote the exact application version normally. This path never targets
   School Workers, tenant DNS or application databases.
+- Explicit Admin Worker recreation belongs to `Operations` on main under the shared
+  production lock. Prepare a frontend-admin-only Pipeline and require its successful
+  build gate before maintenance/deletion; reject queued School/backend changes. Delete
+  only the named Admin script without forcing dependent-resource removal, then let
+  the already-prepared normal Pipeline own recreation and acceptance after lock release.
+  Declare the Admin custom domain so Cloudflare restores its managed DNS as well.
 - School Rust formatting, workspace/architecture, API export and selected database consumers have one verification owner and reuse compiled targets. A database suite uses one disposable Docker server with a fresh owned database per invocation; never point fixtures at a shared tenant or production database.
 - Use the pinned local Rust toolchain without removing other developer toolchains. Offline exporter verification reuses the compiled contract binary under a clean runtime environment.
 - Cached Playwright browser files must match the installed Playwright version, runner OS, and architecture. Always verify a real browser launch and install missing host dependencies before running the existing frontend acceptance or E2E gates, including on cache hits.

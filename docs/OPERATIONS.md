@@ -324,6 +324,32 @@ mount checks precede acceptance. Admin uploads its credential-free code in one i
 promotes the exact ID from structured Wrangler output and verifies it. Node 24 and the application
 lockfile own Wrangler versions. Temporary secrets are mode `0600` and always removed.
 
+The Admin release supports first-time creation or recovery after deletion of
+`schoolorbit-frontend-admin`. Under the production lock and maintenance, it checks
+that exact Cloudflare service. Existing Workers are preserved. Only a recognized
+missing-service response permits a minimal 503 bootstrap; permission, transport
+and malformed-response failures stop release. The bootstrap has no application
+assets/bindings, custom routes, workers.dev or preview access. The prepared
+application then follows normal inactive-version upload with versioned secrets,
+exact-version promotion, route application and browser acceptance. No manual
+Worker creation or Git integration is required. The configured Admin custom domain
+is reapplied through Wrangler, including its Cloudflare-managed DNS record.
+Deleting the Admin Worker removes its previous deployment history and managed
+domains and makes the Admin frontend unavailable until release recreates it.
+This recovery path never targets a School Worker, tenant DNS record or database.
+
+To deliberately test deletion/recreation, dispatch **Operations** on `main` with
+operation `recreate-admin-frontend`. Under the shared production lock it rejects
+queued changes outside frontend-admin, starts a normal frontend-only Pipeline and
+waits for that run's selected build and gate. It then enters universal maintenance,
+deletes only the Admin script without forcing removal of dependent resources, and
+releases the lock so the prepared Pipeline can recreate it and finish ordinary
+acceptance. Do not delete the Worker manually outside the production lock. A stale
+main or failed build stops before deletion. After deletion, maintenance remains
+until the Pipeline succeeds; retry the current reviewed main frontend release to
+recover. The operation uses only Cloudflare/SSH credentials, never database owner
+credentials, and does not run account or tenant migrations.
+
 The final acceptance owner verifies both proxy readiness paths and authenticated School academic
 smoke, advances only selected image aliases, persists component baselines, and opens maintenance
 last. Any earlier failure leaves maintenance active. A normal-proxy readiness failure restores
@@ -1298,28 +1324,14 @@ a verified operator. Recovery-only `--bootstrap`, `--resend-verification` and
 `ADMIN_BOOTSTRAP_TOKEN` for token consumption. They are not ordinary deployment
 steps. Never print or pass tokens in command arguments.
 
-The frontend Worker serves `<base-domain>/*` and `admin.<base-domain>/*`; the old
-Admin host redirects to the apex before rendering, including during maintenance.
-Ensure both names have proxied Cloudflare DNS records before the release and
-review preexisting apex routes/custom domains for competing Workers. Keep
+The frontend Worker declares custom domains `<base-domain>` and `admin.<base-domain>`;
+the old Admin host redirects to the apex before rendering, including during
+maintenance. Cloudflare manages their DNS records. Review preexisting apex records,
+routes and custom domains for competing owners before the release. Keep
 Cloudflare Workers Builds disconnected so Pipeline is the sole deployment writer.
 The Worker has no internal migration secret; remove any obsolete
 `INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.
 Never alter tenant routes or delete school Workers/DNS during this change.
-
-The Admin release also supports first-time creation or recovery after deletion of
-`schoolorbit-frontend-admin`. Under the same production lock and maintenance, it
-checks that exact service through the Cloudflare API. An existing Worker is
-preserved. Only a recognized missing-service response permits a minimal bootstrap
-deployment; permission, transport and malformed-response failures stop release.
-The bootstrap has no application assets/bindings, custom routes, workers.dev or
-preview access and responds only with a non-cacheable 503. The prepared application
-then follows the usual inactive-version upload, exact-version promotion, route
-application and browser acceptance. No manual Worker creation or Git integration
-is required. Deleting the Admin Worker removes its previous deployment history
-and managed domains and makes the Admin frontend unavailable until this release
-recreates it; retain the required apex/proxied DNS setup. This recovery path never
-deletes or bootstraps a School Worker, tenant DNS record or database.
 
 Verified customers submit requests. Operators verify ownership, provision new
 schools through the existing pipeline, then approve the matching school and

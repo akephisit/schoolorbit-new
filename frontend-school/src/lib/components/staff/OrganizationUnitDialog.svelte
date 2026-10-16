@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { ChevronDown } from '@lucide/svelte';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -17,7 +20,10 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { toast } from 'svelte-sonner';
-	import { organizationAncestors } from '#lib/features/staff/organization-hierarchy.js';
+	import {
+		organizationAncestors,
+		organizationUnitLabel
+	} from '#lib/features/staff/organization-hierarchy.js';
 
 	let {
 		open = $bindable(false),
@@ -37,6 +43,23 @@
 
 	let loading = $state(false);
 	let formError = $state('');
+	let extrasOpen = $state(false);
+	const categories = [
+		{ value: 'general', label: 'ทั่วไป' },
+		{ value: 'academic', label: 'วิชาการ' },
+		{ value: 'personnel', label: 'บุคลากร' },
+		{ value: 'budget', label: 'งบประมาณ' },
+		{ value: 'administrative', label: 'บริหาร' },
+		{ value: 'student_affairs', label: 'กิจการนักเรียน' },
+		{ value: 'other', label: 'อื่น ๆ' }
+	];
+	const unitKinds = [
+		{ value: 'management_group', label: 'กลุ่มบริหาร' },
+		{ value: 'division', label: 'ฝ่าย/งาน' },
+		{ value: 'team', label: 'ทีม' },
+		{ value: 'committee', label: 'คณะกรรมการ' },
+		{ value: 'custom', label: 'หน่วยงานอื่น' }
+	];
 	let disposed = false,
 		ownerEpoch = 0;
 	const canSave = $derived(
@@ -66,6 +89,13 @@
 			ownerEpoch++;
 			loading = false;
 			formError = '';
+			extrasOpen = !!(
+				organizationUnitToEdit?.name_en ||
+				organizationUnitToEdit?.description ||
+				organizationUnitToEdit?.phone ||
+				organizationUnitToEdit?.email ||
+				organizationUnitToEdit?.location
+			);
 			if (unitId && organizationUnitToEdit) {
 				formData = {
 					name: organizationUnitToEdit.name,
@@ -144,138 +174,154 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-		<Dialog.Header>
+	<Dialog.Content class="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+		<Dialog.Header
+			class="shrink-0 border-b bg-gradient-to-br from-primary/5 via-card to-card px-6 py-5 pr-10"
+		>
 			<Dialog.Title>{organizationUnitToEdit ? 'แก้ไขหน่วยงาน' : 'สร้างหน่วยงานใหม่'}</Dialog.Title>
-			<Dialog.Description>ระบุชื่อและสังกัดของกลุ่มบริหารหรือฝ่าย/งาน</Dialog.Description>
+			<Dialog.Description
+				>ระบุชื่อ ประเภท และสังกัดของหน่วยงาน ข้อมูลเพิ่มเติมกรอกภายหลังได้</Dialog.Description
+			>
 		</Dialog.Header>
-
-		<form onsubmit={handleSubmit} class="space-y-4 py-4">
-			<fieldset disabled={loading} class="contents">
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="name">ชื่อหน่วยงาน (ไทย) *</Label>
-						<Input
-							id="name"
-							bind:value={formData.name}
-							placeholder="เช่น กลุ่มบริหารวิชาการ"
-							required
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="name_en">ชื่อหน่วยงาน (อังกฤษ)</Label>
-						<Input id="name_en" bind:value={formData.name_en} placeholder="e.g. Academic Affairs" />
-					</div>
-				</div>
-
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="unit-category">หมวดงาน</Label>
-						<Select.Root type="single" bind:value={formData.category} disabled={!!forcedCategory}>
-							<Select.Trigger id="unit-category">
-								{formData.category === 'general'
-									? 'ทั่วไป (General)'
-									: formData.category === 'academic'
-										? 'วิชาการ (Academic)'
-										: formData.category === 'personnel'
-											? 'บุคลากร (Personnel)'
-											: formData.category === 'budget'
-												? 'งบประมาณ (Budget)'
-												: formData.category}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="general">ทั่วไป (General)</Select.Item>
-								<Select.Item value="academic">วิชาการ (Academic)</Select.Item>
-								<Select.Item value="personnel">บุคลากร (Personnel)</Select.Item>
-								<Select.Item value="budget">งบประมาณ (Budget)</Select.Item>
-								<Select.Item value="other">อื่น ๆ (Other)</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-2">
-						<Label for="unit-kind">ประเภทหน่วยงาน</Label>
-						<Select.Root
-							type="single"
-							bind:value={formData.unit_type}
-							disabled={organizationUnitToEdit?.is_system}
-						>
-							<Select.Trigger id="unit-kind">
-								{formData.unit_type === 'management_group'
-									? 'กลุ่มบริหาร'
-									: formData.unit_type === 'division'
-										? 'ฝ่าย/งาน'
-										: formData.unit_type === 'subject_group'
-											? 'กลุ่มสาระ'
-											: formData.unit_type === 'team'
-												? 'ทีม'
-												: formData.unit_type}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="management_group">กลุ่มบริหาร</Select.Item>
-								<Select.Item value="division">ฝ่าย/งาน</Select.Item>
-								<Select.Item value="team">ทีม</Select.Item>
-								<Select.Item value="custom">กำหนดเอง</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
-
-				<div class="space-y-2">
-					<Label for="unit-parent">สังกัดภายใต้</Label>
-					<Select.Root
-						type="single"
-						bind:value={formData.parent_unit_id}
-						disabled={!!forcedParentId || !!organizationUnitToEdit?.is_system}
-					>
-						<Select.Trigger
-							id="unit-parent"
-							class="w-full min-w-0 whitespace-normal text-left data-[size=default]:h-auto"
-						>
-							<span class="min-w-0 break-words"
-								>{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)
-									?.name || 'ระดับโรงเรียน'}</span
-							>
-						</Select.Trigger>
-						<Select.Content class="max-h-[200px] w-(--bits-select-anchor-width) overflow-y-auto">
-							<Select.Item value="none">ระดับโรงเรียน</Select.Item>
-							{#each organizationUnits.filter((d: OrganizationUnit) => d.id !== organizationUnitToEdit?.id && d.is_active && d.unit_type !== 'subject_group') as dept (dept.id)}
-								<Select.Item value={dept.id}
-									>{[...organizationAncestors(dept, organizationUnits), dept]
-										.map((unit) => unit.name)
-										.join(' / ')}</Select.Item
+		<form onsubmit={handleSubmit} class="flex min-h-0 flex-1 flex-col">
+			<div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+				<fieldset disabled={loading} class="min-w-0 space-y-5">
+					<section class="space-y-4" aria-label="ข้อมูลหลักของหน่วยงาน">
+						<div class="space-y-2">
+							<Label for="name">ชื่อหน่วยงาน (ไทย) *</Label>
+							<Input
+								id="name"
+								bind:value={formData.name}
+								placeholder="เช่น กลุ่มบริหารวิชาการ หรืองานทะเบียน"
+								required
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label>ประเภทหน่วยงาน</Label>
+							{#if organizationUnitToEdit?.is_system}<p class="text-sm">
+									{organizationUnitLabel(organizationUnitToEdit)}
+								</p>
+							{:else}<ToggleGroup.Root
+									type="single"
+									aria-label="ประเภทหน่วยงาน"
+									class="flex-wrap justify-start"
+									bind:value={
+										() => formData.unit_type,
+										(value) => {
+											if (unitKinds.some((kind) => kind.value === value))
+												formData.unit_type = value;
+										}
+									}
 								>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="space-y-2">
-					<Label for="description">รายละเอียดเพิ่มเติม</Label>
-					<Textarea id="description" bind:value={formData.description} />
-				</div>
-
-				<div class="grid gap-4 sm:grid-cols-3 border-t pt-4">
-					<div class="space-y-2">
-						<Label for="phone">เบอร์โทร</Label>
-						<Input id="phone" bind:value={formData.phone} />
-					</div>
-					<div class="space-y-2">
-						<Label for="email">อีเมล</Label>
-						<Input id="email" bind:value={formData.email} />
-					</div>
-					<div class="space-y-2">
-						<Label for="location">สถานที่ตั้ง</Label>
-						<Input id="location" bind:value={formData.location} />
-					</div>
-				</div>
-
-				{#if formError}<p role="alert" class="text-sm text-destructive">{formError}</p>{/if}
-			</fieldset>
-			<Dialog.Footer>
+									{#each unitKinds as kind (kind.value)}<ToggleGroup.Item
+											value={kind.value}
+											disabled={loading}>{kind.label}</ToggleGroup.Item
+										>{/each}
+								</ToggleGroup.Root>{/if}
+						</div>
+						<div class="space-y-2">
+							<Label for="unit-parent">สังกัดภายใต้</Label>
+							<Select.Root
+								type="single"
+								bind:value={formData.parent_unit_id}
+								disabled={!!forcedParentId || !!organizationUnitToEdit?.is_system || loading}
+							>
+								<Select.Trigger
+									id="unit-parent"
+									class="w-full min-w-0 whitespace-normal text-left data-[size=default]:h-auto"
+								>
+									<span class="min-w-0 break-words"
+										>{organizationUnits.find(
+											(unit: OrganizationUnit) => unit.id === formData.parent_unit_id
+										)?.name || 'ระดับโรงเรียน'}</span
+									>
+								</Select.Trigger>
+								<Select.Content class="max-h-64 w-(--bits-select-anchor-width) overflow-y-auto">
+									<Select.Item value="none">ระดับโรงเรียน</Select.Item>
+									{#each organizationUnits.filter((unit: OrganizationUnit) => unit.id !== organizationUnitToEdit?.id && unit.is_active && unit.unit_type !== 'subject_group') as unit (unit.id)}
+										<Select.Item value={unit.id}
+											>{[...organizationAncestors(unit, organizationUnits), unit]
+												.map((item) => item.name)
+												.join(' / ')}</Select.Item
+										>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<p class="text-xs text-muted-foreground">
+								เลือกกลุ่มบริหารหรือหน่วยงานที่ดูแลส่วนนี้โดยตรง
+							</p>
+						</div>
+						<div class="space-y-2">
+							<Label for="unit-category">หมวดงาน</Label>
+							<Select.Root
+								type="single"
+								bind:value={formData.category}
+								disabled={!!forcedCategory || loading}
+							>
+								<Select.Trigger id="unit-category" class="w-full"
+									>{categories.find((category) => category.value === formData.category)?.label ??
+										'อื่น ๆ'}</Select.Trigger
+								>
+								<Select.Content
+									>{#each categories as category (category.value)}<Select.Item
+											value={category.value}>{category.label}</Select.Item
+										>{/each}</Select.Content
+								>
+							</Select.Root>
+						</div>
+					</section>
+					<Collapsible.Root bind:open={extrasOpen} class="rounded-xl border">
+						<Collapsible.Trigger
+							>{#snippet child({ props })}<Button
+									{...props}
+									type="button"
+									variant="ghost"
+									class="h-auto w-full justify-between whitespace-normal px-4 py-3 text-left"
+									disabled={loading}>ข้อมูลเพิ่มเติม <ChevronDown class="size-4" /></Button
+								>{/snippet}</Collapsible.Trigger
+						>
+						<Collapsible.Content class="space-y-4 border-t p-4">
+							<div class="space-y-2">
+								<Label for="name_en">ชื่อหน่วยงาน (อังกฤษ)</Label><Input
+									id="name_en"
+									bind:value={formData.name_en}
+									placeholder="เช่น Academic Affairs"
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for="description">รายละเอียดเพิ่มเติม</Label><Textarea
+									id="description"
+									bind:value={formData.description}
+								/>
+							</div>
+							<div class="grid gap-4 sm:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="phone">เบอร์โทร</Label><Input
+										id="phone"
+										type="tel"
+										bind:value={formData.phone}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="email">อีเมล</Label><Input id="email" bind:value={formData.email} />
+								</div>
+							</div>
+							<div class="space-y-2">
+								<Label for="location">สถานที่ตั้ง</Label><Input
+									id="location"
+									bind:value={formData.location}
+								/>
+							</div>
+						</Collapsible.Content>
+					</Collapsible.Root>
+				</fieldset>
+			</div>
+			{#if formError}<p role="alert" class="px-6 py-3 text-sm text-destructive">{formError}</p>{/if}
+			<Dialog.Footer class="shrink-0 border-t bg-background px-6 py-4">
 				<Button variant="outline" type="button" onclick={() => (open = false)}>ยกเลิก</Button>
-				<LoadingButton type="submit" {loading}>
-					{organizationUnitToEdit ? 'บันทึกการแก้ไข' : 'สร้างหน่วยงาน'}
-				</LoadingButton>
+				<LoadingButton type="submit" {loading} disabled={!canSave}
+					>{organizationUnitToEdit ? 'บันทึกการแก้ไข' : 'สร้างหน่วยงาน'}</LoadingButton
+				>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>

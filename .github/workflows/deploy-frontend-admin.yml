@@ -38,11 +38,10 @@ jobs:
           : "${BASE_DOMAIN:?BASE_DOMAIN repository variable is required}"
           : "${PUBLIC_API_URL:?BACKEND_ADMIN_URL repository variable is required}"
           jq \
-            --arg route "${BASE_DOMAIN}/*" \
-            --arg redirect_route "admin.${BASE_DOMAIN}/*" \
-            --arg zone "$BASE_DOMAIN" \
+            --arg domain "${BASE_DOMAIN}" \
+            --arg redirect_domain "admin.${BASE_DOMAIN}" \
             --arg admin_api "$PUBLIC_API_URL" \
-            'del(.build) + {routes:[{pattern:$route,zone_name:$zone},{pattern:$redirect_route,zone_name:$zone}],vars:{PUBLIC_API_URL:$admin_api}}' \
+            'del(.build) + {routes:[{pattern:$domain,custom_domain:true},{pattern:$redirect_domain,custom_domain:true}],vars:{PUBLIC_API_URL:$admin_api}}' \
             wrangler.json >wrangler.deploy.json
       - name: Read locked Wrangler version
         id: wrangler-version

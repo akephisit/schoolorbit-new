@@ -48,7 +48,7 @@ acceptance and installer origins. Domain and email settings come from environmen
 If the Admin Worker is absent, Actions creates an isolated, credential-free 503
 bootstrap with routes and preview hosts disabled before the normal version upload
 and exact promotion. Existing Workers and all School resources are preserved.
-No production reset or promotion is executed from this workspace. Required
+Production changes run through the serialized Actions flow. Required
 Resend sender-domain verification, protected bootstrap Actions secrets and a
 fresh recovery point are first-release prerequisites. The user does not pull
 images or run production migrations manually.

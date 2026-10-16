@@ -3,11 +3,68 @@ import {mkdtempSync, readFileSync, existsSync, rmSync} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import test from 'node:test';
-import {ADMIN_WORKER, adminWorkerExists, writeAdminBootstrap, prepareAdminWorker} from '../lib/pipeline-admin-worker.mjs';
+import {ADMIN_WORKER, adminWorkerExists, writeAdminBootstrap, prepareAdminWorker, removeAdminWorker} from '../lib/pipeline-admin-worker.mjs';
+import {requireFrontendOnly, preparedGate} from '../lib/pipeline-admin-recreate.mjs';
 
 const credentials = {accountId: 'a'.repeat(32), token: 'synthetic-token'};
 const reply = (status, body) => async () => new Response(JSON.stringify(body), {status});
+
+test('the deletion CLI refuses non-main, non-explicit and non-manual callers before any API request', () => {
+  for (const override of [{GITHUB_REF: 'refs/heads/feature'}, {GITHUB_EVENT_NAME: 'pull_request'}, {ADMIN_WORKER_RECREATE: 'false'}]) {
+    const result = spawnSync(process.execPath, [path.resolve(import.meta.dirname, '../lib/pipeline-admin-worker.mjs'), 'delete'], {
+      encoding: 'utf8', env: {...process.env, GITHUB_REF: 'refs/heads/main', GITHUB_EVENT_NAME: 'workflow_dispatch',
+        ADMIN_WORKER_RECREATE: 'true', CLOUDFLARE_ACCOUNT_ID: 'invalid-no-network', CLOUDFLARE_API_TOKEN: credentials.token, ...override}
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /requires the explicit main Operations action/);
+    assert.ok(!(result.stdout + result.stderr).includes(credentials.token));
+  }
+});
+
+test('explicit recreation deletes only the Admin script without forcing dependent resources and confirms absence', async () => {
+  const calls = [];
+  const results = [
+    [200, {success: true, result: {default_environment: {script: {tag: 'existing'}}}}],
+    [200, {success: true, result: null}],
+    [404, {success: false, errors: [{code: 10090}]}]
+  ];
+  assert.equal(await removeAdminWorker({...credentials, wait: async () => {}, fetchImpl: async (url, options) => {
+    calls.push({url, method: options.method || 'GET'});
+    const [status, body] = results.shift();
+    return new Response(JSON.stringify(body), {status});
+  }}), true);
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'DELETE', 'GET']);
+  assert.equal(calls[1].url, `https://api.cloudflare.com/client/v4/accounts/${credentials.accountId}/workers/scripts/${ADMIN_WORKER}`);
+  assert.ok(calls.every(call => !call.url.includes('force=') && !call.url.includes('schoolorbit-frontend-school')));
+});
+
+test('an already absent Worker needs no deletion; deletion refusals do not prepare bootstrap files', async () => {
+  assert.equal(await removeAdminWorker({...credentials, fetchImpl: reply(404, {success: false, errors: [{code: 10090}]})}), false);
+  for (const status of [403, 409, 500]) {
+    await assert.rejects(removeAdminWorker({...credentials, fetchImpl: async (url, options) => {
+      return options.method === 'DELETE' ? new Response(JSON.stringify({success: false}), {status}) :
+        new Response(JSON.stringify({success: true, result: {default_environment: {script: {tag: 'existing'}}}}));
+    }}), /deletion refused/);
+  }
+});
+
+test('recreation rejects queued School/backend releases and waits for the exact successful frontend build gate', () => {
+  requireFrontendOnly({deploy: ['frontend-admin']});
+  for (const deploy of [[], ['backend-admin'], ['frontend-admin', 'backend-admin'], ['frontend-admin', 'frontend-school']]) {
+    assert.throws(() => requireFrontendOnly({deploy}), /only frontend-admin/);
+  }
+  const owner = {name: 'prepare / Prepare frontend-admin', conclusion: 'success'};
+  const gate = {name: 'Pipeline gate', status: 'completed', conclusion: 'success'};
+  assert.equal(preparedGate([]), false);
+  assert.equal(preparedGate([owner, {...gate, status: 'in_progress'}]), false);
+  assert.equal(preparedGate([owner, gate]), true);
+  for (const jobs of [[owner, {...gate, conclusion: 'failure'}], [gate], [owner, gate, gate],
+    [owner, gate, {name: 'prepare / Prepare backend-school', conclusion: 'success'}]]) {
+    assert.throws(() => preparedGate(jobs));
+  }
+});
 
 test('release preparation writes a bootstrap only for a confirmed absent Admin Worker', async t => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'admin-worker-prepare-'));

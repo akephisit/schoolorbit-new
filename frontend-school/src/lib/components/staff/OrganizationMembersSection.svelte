@@ -432,7 +432,7 @@
 				<Badge variant="outline">{membersLoaded ? activeMemberCount : '—'} คน</Badge>
 				<Badge variant="secondary">{membersLoaded ? leaderCount : '—'} ผู้บริหาร/หัวหน้า</Badge>
 				{#if includeChildren}
-					<Badge variant="outline">{childUnits.length} หน่วยงานย่อย</Badge>
+					<Badge variant="outline">รวม {childUnits.length} หน่วยงานย่อย</Badge>
 				{/if}
 			</div>
 		</div>

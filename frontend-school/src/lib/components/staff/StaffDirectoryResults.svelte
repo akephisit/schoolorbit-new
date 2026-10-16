@@ -36,10 +36,10 @@
 {#snippet portrait(staff: StaffListItem, large = false)}
 	<div
 		class={large
-			? 'relative mx-auto flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary'
+			? 'relative mx-auto flex size-36 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary'
 			: 'relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary'}
 	>
-		<UserRound class={large ? 'size-10' : 'size-5'} aria-hidden="true" />
+		<UserRound class={large ? 'size-14' : 'size-5'} aria-hidden="true" />
 		{#if staff.profile_image_file_id}
 			<PrivateFileImage
 				fileId={staff.profile_image_file_id}
