@@ -12,6 +12,7 @@ node --test frontend-school/tests/static/deployment-installer.test.mjs scripts/t
     scripts/tests/backend-school-test-database.test.mjs \
     scripts/tests/runtime-env.test.mjs \
     scripts/tests/admin-account-release.test.mjs \
+    scripts/tests/admin-worker-bootstrap.test.mjs \
     scripts/tests/postgres-runtime.test.mjs \
     scripts/tests/migration-completion-gate.test.mjs
 node --test --test-concurrency=1 scripts/tests/r2-cors.test.mjs scripts/tests/prune-ghcr-versions.test.mjs scripts/tests/worker-release-candidates.test.mjs

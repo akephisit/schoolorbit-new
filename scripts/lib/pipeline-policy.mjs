@@ -15,6 +15,7 @@ const buildRecipes = {
 const releaseOwners = {
   '.github/workflows/deploy-backend-admin.yml': ['backend-admin'],
   '.github/workflows/deploy-frontend-admin.yml': ['frontend-admin'],
+  'scripts/lib/pipeline-admin-worker.mjs': ['frontend-admin'],
   '.github/workflows/deploy-school-release.yml': ['backend-school', 'frontend-school'],
   'scripts/lib/pipeline-remote/admin-deploy.sh': ['backend-admin'],
   'scripts/lib/pipeline-remote/school-deploy-backend.sh': ['backend-school'],

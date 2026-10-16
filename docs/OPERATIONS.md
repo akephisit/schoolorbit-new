@@ -1307,6 +1307,20 @@ The Worker has no internal migration secret; remove any obsolete
 `INTERNAL_API_SECRET` binding in the managed Worker configuration at cutover.
 Never alter tenant routes or delete school Workers/DNS during this change.
 
+The Admin release also supports first-time creation or recovery after deletion of
+`schoolorbit-frontend-admin`. Under the same production lock and maintenance, it
+checks that exact service through the Cloudflare API. An existing Worker is
+preserved. Only a recognized missing-service response permits a minimal bootstrap
+deployment; permission, transport and malformed-response failures stop release.
+The bootstrap has no application assets/bindings, custom routes, workers.dev or
+preview access and responds only with a non-cacheable 503. The prepared application
+then follows the usual inactive-version upload, exact-version promotion, route
+application and browser acceptance. No manual Worker creation or Git integration
+is required. Deleting the Admin Worker removes its previous deployment history
+and managed domains and makes the Admin frontend unavailable until this release
+recreates it; retain the required apex/proxied DNS setup. This recovery path never
+deletes or bootstraps a School Worker, tenant DNS record or database.
+
 Verified customers submit requests. Operators verify ownership, provision new
 schools through the existing pipeline, then approve the matching school and
 service period. Existing schools are assigned by verified customer email in the

@@ -1232,6 +1232,12 @@ bootstrap secrets. It never sends real email. Run
 `node --test scripts/tests/admin-account-release.test.mjs` for the remote account
 helper's immutable-image selection, private environment transport and failure
 propagation; the deployment verification scope includes this test.
+`node --test scripts/tests/admin-worker-bootstrap.test.mjs` covers exact Admin
+service lookup, recognized absence, existing-worker preservation, fail-closed
+permission/transport/response errors and the isolated 503 bootstrap configuration.
+Use the owning locked Wrangler `deploy --dry-run` against that generated bootstrap
+to verify packaging without publishing code. Actual Worker recreation and route
+acceptance require a reviewed production release and are separate from offline tests.
 The disposable PostgreSQL suite covers complete school/deployment-row preservation,
 unknown-FK rollback, repeated migrations, expired-but-accessible schools, scoped
 memberships, idempotent requests/concurrent approval, opaque session revocation,

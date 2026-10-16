@@ -45,6 +45,9 @@ The existing Pipeline remains the only production writer. Cloudflare Git Builds
 must be disconnected operationally. Serve the apex and former Admin host through
 the same Worker; redirect the old host before rendering or maintenance. Update
 acceptance and installer origins. Domain and email settings come from environment.
+If the Admin Worker is absent, Actions creates an isolated, credential-free 503
+bootstrap with routes and preview hosts disabled before the normal version upload
+and exact promotion. Existing Workers and all School resources are preserved.
 No production reset or promotion is executed from this workspace. Required
 Resend sender-domain verification, protected bootstrap Actions secrets and a
 fresh recovery point are first-release prerequisites. The user does not pull
