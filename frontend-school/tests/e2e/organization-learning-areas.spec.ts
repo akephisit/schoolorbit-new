@@ -271,7 +271,7 @@ test('a pending learning-area save blocks duplicate submission', async ({ page }
 	expect(state.writes).toHaveLength(1);
 });
 
-test('group search and status survive reload and switching structure tabs without extra primary reads', async ({
+test('group search and status survive reload, structure tabs and a unit detail return', async ({
 	page
 }) => {
 	const state = await fixture(page, { inactive: true });
@@ -291,8 +291,13 @@ test('group search and status survive reload and switching structure tabs withou
 	await expect(list.getByRole('radio', { name: 'ปิดใช้งาน', exact: true })).toBeChecked();
 	await page.getByRole('link', { name: 'กลุ่มบริหารและฝ่าย/งาน', exact: true }).click();
 	await expect(page.getByTestId('organization-catalog')).toBeVisible();
+	await page.getByRole('link', { name: 'เปิดรายละเอียด', exact: true }).click();
+	await expect(page.getByTestId('organization-unit')).toBeVisible();
+	await page.getByRole('link', { name: 'โครงสร้าง', exact: true }).click();
+	await expect(page.getByTestId('organization-catalog')).toBeVisible();
 	await page.getByRole('link', { name: 'กลุ่มสาระการเรียนรู้', exact: true }).click();
 	await expect(list.getByLabel('ค้นหากลุ่มสาระ')).toHaveValue('French');
+	await expect(list.getByRole('radio', { name: 'ปิดใช้งาน', exact: true })).toBeChecked();
 	expect(state.writes).toHaveLength(0);
 });
 

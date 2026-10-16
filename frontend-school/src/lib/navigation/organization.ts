@@ -1,5 +1,14 @@
 const path = '/staff/organization';
-const contextParameters = new Set(['unit', 'tab', 'group', 'section', 'q', 'type']);
+const contextParameters = new Set([
+	'unit',
+	'tab',
+	'group',
+	'section',
+	'q',
+	'type',
+	'group_q',
+	'group_status'
+]);
 
 export function organizationDetailHref(unitId: string, context: Pick<URL, 'search'>): string {
 	const parameters = new URLSearchParams();
