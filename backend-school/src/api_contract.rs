@@ -89,7 +89,9 @@ use school_file_platform::http_models::{
     FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
     PublicFileDeliveryResponse,
 };
-use school_file_platform::platform_types::{FileLifecycleStatus, FilePurpose};
+use school_file_platform::platform_types::{
+    FileLifecycleStatus, FilePurpose, PublicSchoolIconSize,
+};
 use school_fonts::models::{
     AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,
     SchoolFontListResponse, SchoolFontStyle, SchoolFontSummary, SchoolFontUploadInspection,
@@ -1948,6 +1950,7 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         ApiResponse<PublicSchoolStatistics>,
         ApiResponse<PublicSchoolOrganization>,
         FilePurpose,
+        PublicSchoolIconSize,
         FileLifecycleStatus,
         FileUploadMultipart,
         FileMetadata,

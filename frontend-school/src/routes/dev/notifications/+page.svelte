@@ -81,7 +81,7 @@
 
 			await reg.showNotification('🔔 Local Test', {
 				body: 'ถ้าเห็นข้อความนี้ แสดงว่ามือถือเครื่องนี้รับแจ้งเตือนได้ปกติครับ!',
-				icon: '/icon-192.png',
+				icon: '/app-icon/192.png',
 				// @ts-expect-error vibrate is not in TS NotificationOptions but is a valid web API property
 				vibrate: [200, 100, 200]
 			});

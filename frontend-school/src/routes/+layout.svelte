@@ -59,7 +59,7 @@
 			property="og:description"
 			content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
 		/>
-		<meta property="og:image" content={`${page.url.origin}/icon-192.png`} />
+		<meta property="og:image" content={`${page.url.origin}/app-icon/192.png`} />
 
 		<!-- Twitter / X Card -->
 		<meta name="twitter:card" content="summary" />
@@ -71,7 +71,7 @@
 			name="twitter:description"
 			content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
 		/>
-		<meta name="twitter:image" content={`${page.url.origin}/icon-192.png`} />
+		<meta name="twitter:image" content={`${page.url.origin}/app-icon/192.png`} />
 	{/if}
 </svelte:head>
 

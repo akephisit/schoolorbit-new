@@ -636,31 +636,47 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         .execute(&a)
         .await
         .unwrap();
-    for (tenant, expected) in [
-        ("school-a", StatusCode::OK),
-        ("school-b", StatusCode::NOT_FOUND),
-    ] {
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(format!("/api/school/public/favicon?fileId={private_file}"))
-                    .header("Origin", format!("https://{tenant}.schoolorbit.app"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), expected);
-        if expected == StatusCode::OK {
-            assert_eq!(response.headers()["content-type"], "image/png");
-            assert_eq!(response.headers()["vary"], "Origin, X-School-Subdomain");
-            let png = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
-            assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-            assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 256);
-            assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 256);
+    for size in [192_u32, 256, 512] {
+        for (tenant, expected) in [
+            ("school-a", StatusCode::OK),
+            ("school-b", StatusCode::NOT_FOUND),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/api/school/public/favicon?size={size}&fileId={private_file}"
+                        ))
+                        .header("Origin", format!("https://{tenant}.schoolorbit.app"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::OK {
+                assert_eq!(response.headers()["content-type"], "image/png");
+                assert_eq!(response.headers()["vary"], "Origin, X-School-Subdomain");
+                let png = to_bytes(response.into_body(), 512 * 1024).await.unwrap();
+                assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+                assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), size);
+                assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), size);
+            }
         }
     }
+    let unsupported = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/school/public/favicon?size=4096")
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
     let still_private: String = sqlx::query_scalar("SELECT visibility FROM files WHERE id = $1")
         .bind(private_file)
         .fetch_one(&a)

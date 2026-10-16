@@ -46610,6 +46610,15 @@
         ],
         "type": "object"
       },
+      "PublicSchoolIconSize": {
+        "description": "Closed output sizes for public favicons and installed-app icons.",
+        "enum": [
+          "192",
+          "256",
+          "512"
+        ],
+        "type": "string"
+      },
       "PublicSchoolInfoData": {
         "properties": {
           "logoFileId": {
@@ -96902,6 +96911,17 @@
     "/api/school/public/favicon": {
       "get": {
         "operationId": "getPublicSchoolFavicon",
+        "parameters": [
+          {
+            "description": "Square PNG size; defaults to 256",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PublicSchoolIconSize"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
