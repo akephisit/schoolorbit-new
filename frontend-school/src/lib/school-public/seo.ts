@@ -44,9 +44,9 @@ export function buildSchoolHomeSeo(
 	logoUrl: string | null
 ): SchoolHomeSeo {
 	const name = info?.schoolName?.trim() || null;
-	const image = info?.logoFileId ? logoUrl : null;
+	const image = logoUrl || new URL('/schoolorbit.png', site.homeUrl).href;
 	return {
-		title: `${name || 'เว็บไซต์โรงเรียน'} — ข้อมูลและบริการสาธารณะ`,
+		title: `${name || 'เว็บไซต์โรงเรียน'} - SchoolOrbit`,
 		description: name
 			? `ข้อมูลโรงเรียน${name} สถิตินักเรียน ครู ห้องเรียน โครงสร้างบริหาร และบริการสาธารณะของโรงเรียน`
 			: 'ข้อมูลโรงเรียน สถิตินักเรียน ครู ห้องเรียน โครงสร้างบริหาร และบริการสาธารณะ',

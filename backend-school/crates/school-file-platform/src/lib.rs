@@ -1,4 +1,5 @@
 mod catalog_images;
+mod favicon;
 mod file_hash;
 pub mod file_inspector;
 mod file_processor;

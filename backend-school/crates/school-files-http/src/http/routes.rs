@@ -9,6 +9,10 @@ use axum::{
 pub fn public_routes() -> Router<FileHttpState> {
     Router::new()
         .route(
+            "/public/files/{id}/favicon",
+            get(handlers::get_public_file_favicon),
+        )
+        .route(
             "/public/files/{id}/content",
             get(handlers::get_public_file_content),
         )

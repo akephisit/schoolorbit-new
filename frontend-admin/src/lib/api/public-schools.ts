@@ -24,7 +24,7 @@ export async function readPublicSchools(
 		credentials: 'omit',
 		cache: 'no-store',
 		redirect: 'manual',
-		signal: AbortSignal.timeout(3000)
+		signal: AbortSignal.timeout(8000)
 	});
 	if (!response.ok) throw new Error('School directory temporarily unavailable');
 	const envelope = z

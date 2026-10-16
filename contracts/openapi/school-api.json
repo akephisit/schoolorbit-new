@@ -96301,6 +96301,49 @@
         ]
       }
     },
+    "/api/public/files/{id}/favicon": {
+      "get": {
+        "operationId": "getPublicFileFavicon",
+        "parameters": [
+          {
+            "description": "Ready public school crest ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Square school crest PNG"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Public school crest not found"
+          }
+        },
+        "tags": [
+          "files"
+        ]
+      }
+    },
     "/api/roles": {
       "get": {
         "operationId": "listRoles",

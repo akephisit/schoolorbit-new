@@ -69,7 +69,8 @@
 				'@type': 'Organization',
 				'@id': data.publicSite.homeUrl + '#organization',
 				name: 'SchoolOrbit',
-				url: data.publicSite.homeUrl
+				url: data.publicSite.homeUrl,
+				logo: new URL('/schoolorbit.png', data.publicSite.homeUrl).href
 			},
 			{
 				'@type': 'WebSite',

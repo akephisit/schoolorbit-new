@@ -11,14 +11,23 @@ export const GET: RequestHandler = async ({ fetch, url }) => {
 	const options = { ...publicRequestFromOrigin(fetch, url.origin), signal: controller.signal };
 	try {
 		const info = await getRequiredPublicSchoolInfo(options);
-		if (!info.logoFileId) return new Response(null, { status: 404, headers });
+		if (!info.logoFileId)
+			return new Response(null, {
+				status: 307,
+				headers: { ...headers, location: '/schoolorbit.png' }
+			});
 		const delivery = await getPublicFileDelivery(info.logoFileId, options);
 		const target = new URL(delivery.url);
 		if (target.protocol !== 'https:') return new Response(null, { status: 503, headers });
 		return new Response(null, { status: 307, headers: { ...headers, location: target.href } });
 	} catch (error) {
+		if (error instanceof ApiClientError && error.status === 404)
+			return new Response(null, {
+				status: 307,
+				headers: { ...headers, location: '/schoolorbit.png' }
+			});
 		return new Response(null, {
-			status: error instanceof ApiClientError && error.status === 404 ? 404 : 503,
+			status: 503,
 			headers
 		});
 	} finally {

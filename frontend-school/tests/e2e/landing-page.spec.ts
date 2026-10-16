@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -142,6 +143,11 @@ test.beforeAll(async () => {
 				);
 				return;
 			}
+			if (endpoint.endsWith('/favicon')) {
+				res.setHeader('content-type', 'image/png');
+				res.end(readFileSync(new URL('../../static/schoolorbit.png', import.meta.url)));
+				return;
+			}
 			res.setHeader('content-type', 'image/svg+xml');
 			res.end(
 				'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="104" viewBox="0 0 80 104"><path fill="#2563eb" d="M40 3 75 23V60Q70 90 40 101 10 90 5 60V23Z"/></svg>'
@@ -259,7 +265,7 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 		await expect(
 			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 		).toBeVisible();
-		await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
+		await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
 		await expect(page.locator('head title')).toHaveCount(1);
 		await expect(page.locator('meta[name="description"]')).toHaveCount(1);
 		await expect(page.locator('meta[name="description"]')).toHaveAttribute(
@@ -281,7 +287,7 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 			'@type': 'School',
 			name: schoolName,
 			url: `${baseUrl}/`,
-			logo: `${baseUrl}/school-logo`
+			logo: `${baseUrl}/favicon.png`
 		});
 		expect(requests.filter((r) => r.path === '/api/school/public')).toHaveLength(1);
 	} finally {
@@ -298,7 +304,7 @@ test('fresh HTML metadata follows each school name and escapes hostile text safe
 	]) {
 		schoolName = name;
 		await page.goto(baseUrl);
-		await expect(page).toHaveTitle(`${name} — ข้อมูลและบริการสาธารณะ`);
+		await expect(page).toHaveTitle(`${name} - SchoolOrbit`);
 		await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
 		const schema = await page.locator('script[type="application/ld+json"]').textContent();
 		expect(JSON.parse(schema || 'null').name).toBe(name);
@@ -343,13 +349,50 @@ test('logo crawlers resolve only the current public crest without cookies or cal
 	]);
 	expect(requests.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
 	logoAvailable = false;
-	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(404);
+	const missing = await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 });
+	expect(missing.status()).toBe(307);
+	expect(missing.headers().location).toBe('/schoolorbit.png');
 	logoAvailable = true;
 	brokenLogo = true;
-	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(404);
+	expect(
+		(await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).headers().location
+	).toBe('/schoolorbit.png');
 	brokenLogo = false;
 	failedRegion = '/api/school/public';
 	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(503);
+});
+
+test('favicon reads only this school crest and uses the Admin brand when no crest is available', async ({
+	request
+}) => {
+	const icon = await request.get(`${baseUrl}/favicon.png?fileId=private-file`, {
+		headers: { Cookie: 'fixture-private-cookie=not-a-session' },
+		maxRedirects: 0
+	});
+	expect(icon.status()).toBe(200);
+	expect(icon.headers()['content-type']).toBe('image/png');
+	expect(await icon.body()).toEqual(
+		readFileSync(new URL('../../static/schoolorbit.png', import.meta.url))
+	);
+	expect(requests.map((r) => r.path)).toEqual([
+		'/api/school/public',
+		'/api/public/files/11111111-1111-4111-8111-111111111111/favicon'
+	]);
+	expect(requests.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
+	logoAvailable = false;
+	const fallback = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
+	expect(fallback.status()).toBe(307);
+	expect(fallback.headers().location).toBe('/schoolorbit.png');
+	logoAvailable = true;
+	brokenLogo = true;
+	expect(
+		(await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 })).headers().location
+	).toBe('/schoolorbit.png');
+	brokenLogo = false;
+	failedRegion = '/api/school/public';
+	const unavailable = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
+	expect(unavailable.status()).toBe(503);
+	expect(unavailable.headers()['cache-control']).toBe('no-store');
 });
 
 test('a slow identity read is bounded while sibling reads start concurrently and retries remain local', async ({
@@ -364,7 +407,7 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
-	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน — ข้อมูลและบริการสาธารณะ');
+	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน - SchoolOrbit');
 	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
 	releaseIdentity?.();
 	identityGate = undefined;
@@ -373,7 +416,7 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	await expect(
 		page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 	).toBeVisible();
-	await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
+	await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
 	expect(
 		requests
 			.filter((r) => isRegionRead(r.path))
@@ -511,8 +554,12 @@ for (const unavailable of ['not configured', 'broken']) {
 		brokenLogo = unavailable === 'broken';
 		await page.goto(baseUrl);
 		await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
-		await expect(page.getByTestId('school-brand').locator('img')).toHaveCount(0);
-		await expect(page.getByTestId('hero-school-crest').locator('img')).toHaveCount(0);
+		await expect(
+			page.getByTestId('school-brand').getByRole('img', { name: 'SchoolOrbit', exact: true })
+		).toHaveAttribute('src', '/schoolorbit.png');
+		await expect(
+			page.getByTestId('hero-school-crest').getByRole('img', { name: 'SchoolOrbit', exact: true })
+		).toBeVisible();
 	});
 }
 
