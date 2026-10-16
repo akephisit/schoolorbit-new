@@ -93,15 +93,27 @@ export async function retireAdminAlias({accountId, token, baseDomain, checkOnly 
   const root = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/domains`;
   const headers = {Authorization: `Bearer ${token}`};
   async function request(url, method = 'GET') {
+    let response;
+    let content;
     try {
-      const response = await fetchImpl(url, {method, headers, signal: AbortSignal.timeout(15000)});
-      if (method === 'DELETE' && response.status === 204) return null;
-      const body = await response.json();
-      if (!response.ok || body?.success !== true) throw new Error();
-      return body;
+      response = await fetchImpl(url, {method, headers, signal: AbortSignal.timeout(15000)});
+      content = await response.text();
     } catch {
       throw new Error(`Admin alias ${method} unavailable; maintenance must remain enabled`);
     }
+    // The detach endpoint can acknowledge with an empty HTTP 200 as well as 204.
+    // Neither acknowledgement proves retirement: find() must still confirm absence.
+    if (method === 'DELETE' && [200, 204].includes(response.status) && content.trim() === '') return null;
+    let body;
+    try {
+      body = JSON.parse(content);
+    } catch {
+      throw new Error(`Admin alias ${method} returned invalid JSON (HTTP ${response.status}); maintenance must remain enabled`);
+    }
+    if (!response.ok || body?.success !== true) {
+      throw new Error(`Admin alias ${method} refused (HTTP ${response.status}); maintenance must remain enabled`);
+    }
+    return body;
   }
   async function find() {
     const body = await request(`${root}?hostname=${encodeURIComponent(hostname)}`);
