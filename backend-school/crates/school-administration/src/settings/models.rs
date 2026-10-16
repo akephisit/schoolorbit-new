@@ -79,6 +79,8 @@ pub struct PublicSchoolStatistics {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PublicOrganizationMember {
+    /// Directory-only identity for combining current responsibilities without exposing user IDs.
+    pub person_key: String,
     pub name: String,
     pub position_code: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]

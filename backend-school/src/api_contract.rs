@@ -4816,8 +4816,14 @@ mod tests {
             ["properties"]
             .as_object()
             .expect("public member schema must exist");
-        assert_eq!(member_fields.len(), 4);
-        for field in ["name", "positionCode", "positionTitle", "avatarUrl"] {
+        assert_eq!(member_fields.len(), 5);
+        for field in [
+            "personKey",
+            "name",
+            "positionCode",
+            "positionTitle",
+            "avatarUrl",
+        ] {
             assert!(member_fields.contains_key(field));
         }
 

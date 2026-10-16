@@ -46553,6 +46553,10 @@
           "name": {
             "type": "string"
           },
+          "personKey": {
+            "description": "Directory-only identity for combining current responsibilities without exposing user IDs.",
+            "type": "string"
+          },
           "positionCode": {
             "type": "string"
           },
@@ -46564,6 +46568,7 @@
           }
         },
         "required": [
+          "personKey",
           "name",
           "positionCode",
           "positionTitle"

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	buildPublicOrganizationTree,
-	groupPublicOrganizationMembers
+	groupPublicOrganizationMembers,
+	publicExecutiveTeam,
+	publicPersonnelGroups
 } from '../../src/lib/school-public/organization.ts';
 const unit = (id: string, parentId: string | null) => ({
 	id,
@@ -42,6 +44,7 @@ test('cyclic legacy structures terminate and preserve each unit exactly once', (
 
 test('public member groups order every role and preserve all names and custom titles', () => {
 	const member = (name: string, positionCode: string, positionTitle: string | null = null) => ({
+		personKey: name,
 		name,
 		positionCode,
 		positionTitle
@@ -65,4 +68,146 @@ test('public member groups order every role and preserve all names and custom ti
 		['member-a', 'member-b']
 	);
 	assert.equal(groups.at(-1)?.members[0].positionTitle, 'ครูฝ่ายวิชาการ');
+});
+
+const member = (personKey: string, positionCode: string, name = personKey) => ({
+	personKey,
+	name,
+	positionCode,
+	positionTitle: null,
+	avatarUrl: null
+});
+const department = (
+	id: string,
+	unitType: string,
+	members: ReturnType<typeof member>[],
+	parentId: string | null = 'school'
+) => ({
+	...unit(id, parentId),
+	unitType,
+	members
+});
+
+test('executives use the highest available role, retain equal leaders, and omit ordinary members', () => {
+	const team = publicExecutiveTeam([
+		department('school', 'school', [member('director', 'director')], null),
+		department('academic', 'management_group', [
+			member('head', 'head'),
+			member('deputy', 'deputy_director'),
+			member('ordinary', 'member')
+		]),
+		department('general', 'management_group', [
+			member('head-a', 'head'),
+			member('head-b', 'head'),
+			member('assistant', 'deputy_head')
+		]),
+		department('budget', 'management_group', [member('coordinator', 'coordinator')]),
+		department('vacant', 'management_group', []),
+		department('math', 'subject_group', [member('subject-head', 'head')]),
+		department('subject-work', 'work', [member('not-an-executive', 'director')], 'math')
+	]);
+	assert.deepEqual(
+		team.directors.map((p) => p.member.personKey),
+		['director']
+	);
+	assert.deepEqual(
+		team.deputies.map((p) => p.member.personKey),
+		['deputy']
+	);
+	assert.deepEqual(
+		team.leaders.map((p) => p.member.personKey),
+		['head-a', 'head-b', 'coordinator']
+	);
+});
+
+test('one executive portrait retains all responsibilities and same-name people stay distinct', () => {
+	const team = publicExecutiveTeam([
+		department('school', 'school', [member('one', 'deputy_director', 'ชื่อซ้ำ')], null),
+		department('academic', 'management_group', [member('one', 'head', 'ชื่อซ้ำ')]),
+		department('general', 'management_group', [member('two', 'head', 'ชื่อซ้ำ')])
+	]);
+	assert.equal(team.deputies.length, 1);
+	assert.deepEqual(
+		team.deputies[0].responsibilities.map((r) => r.unitId),
+		['school', 'academic']
+	);
+	assert.deepEqual(
+		team.leaders.map((p) => p.member.personKey),
+		['two']
+	);
+});
+
+test('an empty roster has no invented executive tiers', () => {
+	assert.deepEqual(publicExecutiveTeam([]), { directors: [], deputies: [], leaders: [] });
+});
+
+test('directories keep every leaf member, vacant work, nested groups and subject branches separate', () => {
+	const units = [
+		department('school', 'school', [], null),
+		department('academic', 'management_group', [
+			member('deputy', 'deputy_director'),
+			member('head', 'head'),
+			member('staff', 'member')
+		]),
+		department(
+			'work',
+			'division',
+			[member('work-head', 'head'), member('work-staff', 'member')],
+			'academic'
+		),
+		department('leaf', 'work', [member('leaf-staff', 'member')], 'work'),
+		department('vacant', 'work', [], 'academic'),
+		department(
+			'math',
+			'subject_group',
+			[member('math-head', 'head'), member('math-teacher', 'member')],
+			'academic'
+		),
+		department('math-work', 'work', [member('math-staff', 'member')], 'math'),
+		department('nested', 'management_group', [member('nested-head', 'head')], 'work')
+	];
+	const groups = publicPersonnelGroups(units, 'management_group');
+	assert.deepEqual(
+		groups.map((g) => g.unit.id),
+		['academic', 'nested']
+	);
+	assert.deepEqual(
+		groups[0].members.map((p) => p.member.personKey),
+		['head', 'staff']
+	);
+	assert.deepEqual(
+		groups[0].children.map((g) => g.unit.id),
+		['work', 'vacant']
+	);
+	assert.deepEqual(
+		groups[0].children[0].members.map((p) => p.member.personKey),
+		['work-staff']
+	);
+	assert.equal(groups[0].children[0].children[0].leaders[0].member.personKey, 'leaf-staff');
+	const subjects = publicPersonnelGroups(units, 'subject_group');
+	assert.deepEqual(
+		subjects.map((g) => g.unit.id),
+		['math']
+	);
+	assert.equal(subjects[0].leaders[0].member.personKey, 'math-head');
+	assert.equal(subjects[0].members[0].member.personKey, 'math-teacher');
+	assert.equal(subjects[0].children[0].unit.id, 'math-work');
+});
+
+test('multiple roles in a group render once while preserving titles and same-name colleagues', () => {
+	const groups = publicPersonnelGroups(
+		[
+			department('academic', 'management_group', [
+				member('one', 'head', 'ชื่อซ้ำ'),
+				member('one', 'member', 'ชื่อซ้ำ'),
+				member('two', 'member', 'ชื่อซ้ำ')
+			])
+		],
+		'management_group'
+	);
+	assert.equal(groups[0].leaders.length, 1);
+	assert.deepEqual(
+		groups[0].members.map((p) => p.member.personKey),
+		['two']
+	);
 });

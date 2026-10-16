@@ -147,6 +147,7 @@ struct OrganizationRow {
     parent_id: Option<Uuid>,
     name: String,
     unit_type: String,
+    person_key: Option<String>,
     member_name: Option<String>,
     position_code: Option<String>,
     position_title: Option<String>,
@@ -167,8 +168,11 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
             });
             units.len() - 1
         });
-        if let Some((name, position_code)) = row.member_name.zip(row.position_code) {
+        if let Some(((name, position_code), person_key)) =
+            row.member_name.zip(row.position_code).zip(row.person_key)
+        {
             units[index].members.push(PublicOrganizationMember {
+                person_key,
                 name,
                 position_code,
                 position_title: row.position_title,
@@ -184,6 +188,7 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
 SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
+    CASE WHEN u.id IS NOT NULL THEN md5('school-public-directory:' || u.id::text) END AS person_key,
     CASE WHEN u.id IS NOT NULL THEN u.display_name END AS member_name,
     CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title,
     CASE WHEN profile.id IS NOT NULL THEN m.id END AS avatar_member_id
@@ -265,6 +270,7 @@ mod tests {
             parent_id: None,
             name: "โรงเรียนทดสอบ".into(),
             unit_type: "school".into(),
+            person_key: None,
             member_name: None,
             position_code: None,
             position_title: None,
@@ -274,5 +280,34 @@ mod tests {
         let serialized = serde_json::to_string(&result).unwrap();
         assert!(!serialized.contains("userId"));
         assert!(!serialized.contains("email"));
+    }
+
+    #[test]
+    fn organization_preserves_public_identity_for_same_name_members_and_multiple_roles() {
+        let id = Uuid::new_v4();
+        let row = |person_key: &str, position: &str| OrganizationRow {
+            id,
+            parent_id: None,
+            name: "กลุ่มบริหารทดสอบ".into(),
+            unit_type: "management_group".into(),
+            person_key: Some(person_key.into()),
+            member_name: Some("ชื่อเดียวกัน ทดสอบ".into()),
+            position_code: Some(position.into()),
+            position_title: Some("ตำแหน่งเฉพาะโรงเรียน".into()),
+            avatar_member_id: None,
+        };
+        let organization = organization_from_rows(vec![
+            row("public-one", "head"),
+            row("public-one", "member"),
+            row("public-two", "member"),
+        ]);
+        let members = &organization.units[0].members;
+        assert_eq!(members.len(), 3);
+        assert_eq!(members[0].person_key, members[1].person_key);
+        assert_ne!(members[0].person_key, members[2].person_key);
+        assert_eq!(
+            members[0].position_title.as_deref(),
+            Some("ตำแหน่งเฉพาะโรงเรียน")
+        );
     }
 }
