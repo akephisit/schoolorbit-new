@@ -1,5 +1,5 @@
 import { BACKEND_URL, publicRequestFromOrigin } from '#lib/api/client.js';
-import { getPublicSchoolStatistics, getPublicSchoolOrganization } from '#lib/api/school.js';
+import { getPublicSchoolStatistics } from '#lib/api/school.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { getSchoolPublicIndexing } from '#lib/school-public/seo.js';
 import { readPublicSchoolIdentity } from '#lib/server/public-school.js';
@@ -16,14 +16,9 @@ export const load: PageServerLoad = async ({ fetch, url, setHeaders }) => {
 		getPublicSchoolStatistics(options),
 		'โหลดสถิติโรงเรียนไม่สำเร็จ'
 	);
-	const organization = captureRouteLoad(
-		getPublicSchoolOrganization(options),
-		'โหลดคณะผู้บริหารไม่สำเร็จ'
-	);
 	return {
 		site: getSchoolPublicIndexing(url, BACKEND_URL),
 		identity: await identity,
-		statistics,
-		organization
+		statistics
 	};
 };

@@ -480,7 +480,7 @@ PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npx playwright te
 
 Against the production preview described below, run `admission-final-region-loading.spec.ts` and `admission-exam-room-region-loading.spec.ts` for student-ID import, template downloads, and room exports. These use disposable mocked data and do not mutate a tenant.
 
-The public school homepage and `/management-groups` and `/subject-groups` directories use disposable API fixtures for streamed loading, regional retries, empty states, mobile/desktop navigation and portrait layouts in both themes. Pure organization tests cover highest-role selection without deputies, tied leaders, same-name colleagues, combined responsibilities, vacant groups and leaf-work membership. Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, current members of every position and directory-only person keys across memberships. Run:
+The public school homepage and `/executives`, `/management-groups` and `/subject-groups` directories use disposable API fixtures for streamed loading, regional retries, empty states, standalone mobile/desktop navigation, larger portraits and centering of every member row in both themes. Pure organization tests cover highest-role selection without deputies, tied leaders, same-name colleagues, combined responsibilities, vacant groups and leaf-work membership. Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, current members of every position and directory-only person keys across memberships. Run:
 
 ```bash
 # Repository root

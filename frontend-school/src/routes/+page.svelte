@@ -8,15 +8,10 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { PageSkeleton } from '#lib/components/app-state/index.js';
-	import {
-		getRequiredPublicSchoolInfo,
-		getPublicSchoolStatistics,
-		getPublicSchoolOrganization
-	} from '#lib/api/school.js';
+	import { getRequiredPublicSchoolInfo, getPublicSchoolStatistics } from '#lib/api/school.js';
 	import PublicSchoolIdentity from '#lib/components/school-public/PublicSchoolIdentity.svelte';
 	import PublicSchoolRegion from '#lib/components/school-public/PublicSchoolRegion.svelte';
 	import PublicSchoolStatistics from '#lib/components/school-public/PublicSchoolStatistics.svelte';
-	import PublicExecutiveTeam from '#lib/components/school-public/PublicExecutiveTeam.svelte';
 	import {
 		ArrowDown,
 		ArrowUpRight,
@@ -119,31 +114,6 @@
 					<div class="mt-8"><PageSkeleton variant="table" rows={3} columns={5} /></div>{/snippet}
 				{#snippet children(statistics)}<PublicSchoolStatistics {statistics} />{/snippet}
 			</PublicSchoolRegion>
-		</section>
-		<section
-			id="organization"
-			aria-labelledby="organization-heading"
-			class="section-anchor public-enter border-y border-border bg-muted/30 py-12 sm:py-16"
-		>
-			<div>
-				<div class="mx-auto mb-6 max-w-6xl px-4 sm:px-6">
-					<p class="text-xs font-medium tracking-widest text-primary">โครงสร้างองค์กร</p>
-					<h2 id="organization-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
-						คณะผู้บริหาร
-					</h2>
-					<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
-						ผู้อำนวยการ รองผู้อำนวยการ และผู้รับผิดชอบสูงสุดของแต่ละกลุ่มบริหาร
-					</p>
-				</div>
-				<PublicSchoolRegion
-					source={data.organization}
-					label="คณะผู้บริหาร"
-					retry={(signal) => getPublicSchoolOrganization({ signal })}
-				>
-					{#snippet skeleton()}<PageSkeleton variant="cards" rows={3} />{/snippet}
-					{#snippet children(organization)}<PublicExecutiveTeam {organization} />{/snippet}
-				</PublicSchoolRegion>
-			</div>
 		</section>
 		<section
 			id="services"

@@ -79,7 +79,8 @@ const organizationFixture = {
 					positionCode: 'director',
 					positionTitle: null,
 					avatarUrl: '/api/school/public/organization-members/fixture/avatar'
-				}
+				},
+				{ name: 'รองผู้อำนวยการ ทดสอบ', positionCode: 'deputy_director', positionTitle: null }
 			]
 		},
 		{
@@ -92,7 +93,12 @@ const organizationFixture = {
 				{ name: 'รองหัวหน้า ทดสอบ', positionCode: 'deputy_head', positionTitle: null },
 				{ name: 'ผู้ประสานงาน ทดสอบ', positionCode: 'coordinator', positionTitle: null },
 				{ name: 'สมาชิก หนึ่ง', positionCode: 'member', positionTitle: 'ครูฝ่ายวิชาการ' },
-				{ name: 'สมาชิก สอง', positionCode: 'member', positionTitle: null }
+				{ name: 'สมาชิก สอง', positionCode: 'member', positionTitle: null },
+				...Array.from({ length: 3 }, (_, i) => ({
+					name: `สมาชิกวิชาการ ${i + 3}`,
+					positionCode: 'member',
+					positionTitle: null
+				}))
 			]
 		},
 		{
@@ -102,7 +108,12 @@ const organizationFixture = {
 			unitType: 'subject_group',
 			members: [
 				{ name: 'หัวหน้าสาระ ทดสอบ', positionCode: 'head', positionTitle: null },
-				{ name: 'ครูคณิตศาสตร์ ทดสอบ', positionCode: 'member', positionTitle: 'ครู' }
+				{ name: 'ครูคณิตศาสตร์ ทดสอบ', positionCode: 'member', positionTitle: 'ครู' },
+				...Array.from({ length: 6 }, (_, i) => ({
+					name: `ครูคณิตศาสตร์ ${i + 2}`,
+					positionCode: 'member',
+					positionTitle: 'ครู'
+				}))
 			]
 		},
 		{
@@ -281,8 +292,7 @@ test('anonymous visitors see real school regions and existing services', async (
 	).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
-	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
-	await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
 	await page.getByRole('link', { name: 'สำรวจบริการ' }).click();
 	await expect(page).toHaveURL(/#services$/);
 	for (const [label, href] of [
@@ -293,7 +303,7 @@ test('anonymous visitors see real school regions and existing services', async (
 		await expect(page.getByRole('link', { name: new RegExp(label) })).toHaveAttribute('href', href);
 	}
 	const reads = requests.filter((r) => isRegionRead(r.path));
-	expect(reads).toHaveLength(3);
+	expect(reads).toHaveLength(2);
 	expect(reads.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
 	expect(requests.some((r) => r.path === '/api/auth/me')).toBe(false);
 	await page.getByRole('link', { name: 'เข้าสู่ระบบ', exact: true }).click();
@@ -464,7 +474,7 @@ test('a four-second identity read still provides the school title in the first H
 		await expect(
 			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 		).toBeVisible();
-		expect(requests.filter((r) => isRegionRead(r.path))).toHaveLength(3);
+		expect(requests.filter((r) => isRegionRead(r.path))).toHaveLength(2);
 	} finally {
 		clearTimeout(release);
 		await context.close();
@@ -477,13 +487,13 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	identityGate = new Promise<void>((done) => (releaseIdentity = done));
 	const started = Date.now();
 	const navigation = page.goto(baseUrl);
-	await expect.poll(() => requests.filter((r) => isRegionRead(r.path)).length).toBe(3);
+	await expect.poll(() => requests.filter((r) => isRegionRead(r.path)).length).toBe(2);
 	await navigation;
 	expect(Date.now() - started).toBeGreaterThanOrEqual(7_500);
 	expect(Date.now() - started).toBeLessThan(11_000);
 	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
-	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
 	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน - SchoolOrbit');
 	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
 	releaseIdentity?.();
@@ -540,15 +550,13 @@ test('grade disclosures preserve all rooms, grade and stage subtotals', async ({
 		]);
 });
 
-test('a failed statistics read can retry without refetching identity or organization', async ({
-	page
-}) => {
+test('a failed statistics read can retry without refetching identity', async ({ page }) => {
 	failStatistics = true;
 	await page.goto(baseUrl);
 	await expect(
 		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 	).toBeVisible();
-	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
 	await expect(page.getByText('โหลดสถิติโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
 	const before = requests.filter((r) => isRegionRead(r.path)).map((r) => r.path);
 	failStatistics = false;
@@ -563,10 +571,7 @@ test('a failed statistics read can retry without refetching identity or organiza
 	});
 });
 
-for (const [endpoint, label] of [
-	['/api/school/public', 'ข้อมูลโรงเรียน'],
-	['/api/school/public/organization', 'คณะผู้บริหาร']
-]) {
+for (const [endpoint, label] of [['/api/school/public', 'ข้อมูลโรงเรียน']]) {
 	test(`failed ${label} can recover independently`, async ({ page }) => {
 		failedRegion = endpoint;
 		await page.goto(baseUrl);
@@ -578,7 +583,7 @@ for (const [endpoint, label] of [
 		await expect(
 			page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 		).toBeVisible();
-		await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
 		await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
 		expect(
 			requests
@@ -604,7 +609,7 @@ test('all current positions are grouped and retain custom position titles', asyn
 		page
 			.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
 			.getByTestId('public-person')
-	).toHaveCount(4);
+	).toHaveCount(7);
 	await expect(page.getByText('ครูฝ่ายวิชาการ', { exact: true })).toBeVisible();
 });
 
@@ -677,18 +682,17 @@ test('slow statistics do not block successful sibling regions', async ({ page })
 		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 	).toBeVisible();
 	await expect(page.getByRole('status', { name: 'กำลังโหลดสถิติโรงเรียน' })).toBeVisible();
-	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
 	releaseStatistics?.();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 });
 
-test('missing academic context and organization show honest empty states', async ({ page }) => {
+test('missing academic context shows an honest empty state', async ({ page }) => {
 	empty = true;
 	await page.goto(baseUrl);
 	await expect(
 		page.getByRole('heading', { name: 'ยังไม่มีปีการศึกษาที่เปิดใช้งาน' })
 	).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'ยังไม่มีข้อมูลคณะผู้บริหาร' })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('—');
 	await page.screenshot({
 		path: '/tmp/schoolorbit-public-empty-desktop.png',
@@ -697,15 +701,43 @@ test('missing academic context and organization show honest empty states', async
 	});
 });
 
-for (const width of [375, 1280]) {
+for (const width of [320, 375, 768, 1280]) {
 	test(`public personnel navigation and portraits work at ${width}px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto(baseUrl);
 		await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
 		await expect(page.getByTestId('school-statistics')).toContainText('124');
-		await expect(page.getByRole('heading', { name: 'คณะผู้บริหาร', exact: true })).toBeVisible();
+		await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
+		if (width < 1024) await page.getByRole('button', { name: 'เปิดเมนูโรงเรียน' }).click();
+		await page
+			.getByRole('navigation', { name: 'เมนูโรงเรียน' })
+			.getByRole('link', { name: 'คณะผู้บริหาร', exact: true })
+			.click();
+		await expect(page).toHaveURL(/\/executives$/);
+		await expect(
+			page.getByRole('heading', { name: 'คณะผู้บริหาร', exact: true, level: 1 })
+		).toBeVisible();
+		if (width < 1024) await page.getByRole('button', { name: 'เปิดเมนูโรงเรียน' }).click();
+		await expect(page.getByRole('link', { name: 'คณะผู้บริหาร', exact: true })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		if (width < 1024) await page.getByRole('button', { name: 'ปิดเมนูโรงเรียน' }).click();
+		await expect(page.getByRole('link', { name: 'กลับหน้าหลัก' })).toHaveCount(0);
 		const team = page.getByTestId('public-executive-team');
-		await expect(team.getByTestId('public-person')).toHaveCount(2);
+		await expect(team.getByTestId('public-person')).toHaveCount(3);
+		await expect(team.getByRole('heading')).toHaveCount(0);
+		await expect(team.getByText('รองผู้อำนวยการ ทดสอบ', { exact: true })).toBeVisible();
+		const photo = page.getByRole('img', { name: 'รูป ผู้บริหาร ทดสอบ' });
+		const photoSize = await photo.evaluate((node) => ({
+			width: node.getBoundingClientRect().width,
+			height: node.getBoundingClientRect().height,
+			rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
+		}));
+		expect(photoSize.width).toBeGreaterThanOrEqual(
+			photoSize.rem * (width < 375 ? 7 : width < 640 ? 8 : width < 1024 ? 9 : 10) - 1
+		);
+		expect(Math.abs(photoSize.width - photoSize.height)).toBeLessThan(1);
 		await expect(team.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
 		await expect(team.getByText('สมาชิก หนึ่ง', { exact: true })).toHaveCount(0);
 		await expect(team.getByText('กลุ่มสาระคณิตศาสตร์', { exact: true })).toHaveCount(0);
@@ -766,6 +798,27 @@ for (const width of [375, 1280]) {
 		for (const route of ['management-groups', 'subject-groups']) {
 			await page.goto(`${baseUrl}/${route}`);
 			await expect(page.getByTestId('public-personnel-directory')).toBeVisible();
+			await expect(page.getByRole('link', { name: 'กลับหน้าหลัก' })).toHaveCount(0);
+			const memberLists = page.getByRole('list', { name: /^สมาชิก / });
+			for (const list of await memberLists.all()) {
+				const geometry = await list.evaluate((node) => {
+					const bounds = node.getBoundingClientRect();
+					const rows = new Map<number, { left: number; right: number }[]>();
+					for (const item of node.children) {
+						const rect = item.getBoundingClientRect();
+						const top = Math.round(rect.top);
+						const row = rows.get(top) ?? [];
+						row.push({ left: rect.left, right: rect.right });
+						rows.set(top, row);
+					}
+					return { center: (bounds.left + bounds.right) / 2, rows: [...rows.values()] };
+				});
+				for (const row of geometry.rows) {
+					expect(
+						Math.abs((row[0].left + row[row.length - 1].right) / 2 - geometry.center)
+					).toBeLessThan(1);
+				}
+			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);
@@ -791,20 +844,27 @@ for (const width of [375, 1280]) {
 	});
 }
 
-for (const route of ['management-groups', 'subject-groups']) {
+for (const route of ['executives', 'management-groups', 'subject-groups']) {
+	const rosterTestId =
+		route === 'executives' ? 'public-executive-team' : 'public-personnel-directory';
 	test(`${route} streams its roster without blocking the page heading`, async ({ page }) => {
 		organizationGate = new Promise<void>((done) => (releaseOrganization = done));
 		await page.goto(`${baseUrl}/${route}`, { waitUntil: 'commit' });
 		await expect(
 			page.getByRole('heading', {
 				level: 1,
-				name: route === 'management-groups' ? 'กลุ่มบริหาร' : 'กลุ่มสาระ',
+				name:
+					route === 'executives'
+						? 'คณะผู้บริหาร'
+						: route === 'management-groups'
+							? 'กลุ่มบริหาร'
+							: 'กลุ่มสาระ',
 				exact: true
 			})
 		).toBeVisible();
 		await expect(page.getByRole('status', { name: 'กำลังโหลดรายชื่อบุคลากร' })).toBeVisible();
 		releaseOrganization?.();
-		await expect(page.getByTestId('public-personnel-directory')).toBeVisible();
+		await expect(page.getByTestId(rosterTestId)).toBeVisible();
 	});
 	test(`${route} reads only identity and organization and retries its own region`, async ({
 		page
@@ -821,7 +881,7 @@ for (const route of ['management-groups', 'subject-groups']) {
 		const before = requests.filter((r) => isRegionRead(r.path)).length;
 		failedRegion = undefined;
 		await page.getByRole('button', { name: 'ลองใหม่: รายชื่อบุคลากร' }).click();
-		await expect(page.getByTestId('public-personnel-directory')).toBeVisible();
+		await expect(page.getByTestId(rosterTestId)).toBeVisible();
 		expect(
 			requests
 				.filter((r) => isRegionRead(r.path))
@@ -829,7 +889,7 @@ for (const route of ['management-groups', 'subject-groups']) {
 				.map((r) => r.path)
 		).toEqual(['/api/school/public/organization']);
 		await page.reload();
-		await expect(page.getByTestId('public-personnel-directory')).toBeVisible();
+		await expect(page.getByTestId(rosterTestId)).toBeVisible();
 		expect(requests.every((r) => !r.cookie)).toBe(true);
 	});
 	test(`${route} has an honest empty state`, async ({ page }) => {
@@ -838,8 +898,35 @@ for (const route of ['management-groups', 'subject-groups']) {
 		await expect(
 			page.getByRole('heading', {
 				name:
-					route === 'management-groups' ? 'ยังไม่มีข้อมูลกลุ่มบริหาร' : 'ยังไม่มีข้อมูลกลุ่มสาระ'
+					route === 'executives'
+						? 'ยังไม่มีข้อมูลคณะผู้บริหาร'
+						: route === 'management-groups'
+							? 'ยังไม่มีข้อมูลกลุ่มบริหาร'
+							: 'ยังไม่มีข้อมูลกลุ่มสาระ'
 			})
 		).toBeVisible();
 	});
 }
+
+test('personnel identity retry updates the shared brand while its roster stays visible', async ({
+	page
+}) => {
+	failedRegion = '/api/school/public';
+	await page.goto(`${baseUrl}/executives`);
+	await expect(page.getByRole('alert')).toContainText('โหลดข้อมูลโรงเรียนไม่สำเร็จ');
+	await expect(page.getByTestId('public-executive-team').getByTestId('public-person')).toHaveCount(
+		3
+	);
+	const before = requests.filter((r) => isRegionRead(r.path)).length;
+	failedRegion = undefined;
+	await page.getByRole('button', { name: 'ลองใหม่: ข้อมูลโรงเรียน' }).click();
+	await expect(page.getByTestId('school-brand')).toContainText(schoolName);
+	await expect(page).toHaveTitle(`คณะผู้บริหาร — ${schoolName}`);
+	expect(
+		requests
+			.filter((r) => isRegionRead(r.path))
+			.slice(before)
+			.map((r) => r.path)
+	).toEqual(['/api/school/public']);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+});
