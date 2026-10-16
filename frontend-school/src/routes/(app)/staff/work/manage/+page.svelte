@@ -37,7 +37,6 @@
 		LoaderCircle,
 		LockKeyhole,
 		Plus,
-		RefreshCw,
 		Send,
 		TimerReset
 	} from '@lucide/svelte';
@@ -515,17 +514,6 @@
 	title="จัดการรอบงาน"
 	description="เปิด/ปิดรอบงานของหน่วยงาน และมอบหมายงานให้ครูหรือสมาชิกในหน่วยงาน"
 >
-	{#snippet actions()}
-		<Button variant="outline" onclick={loadWindows} disabled={loading}>
-			{#if loading}
-				<LoaderCircle class="h-4 w-4 animate-spin" />
-			{:else}
-				<RefreshCw class="h-4 w-4" />
-			{/if}
-			รีเฟรช
-		</Button>
-	{/snippet}
-
 	<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
 		<div class="space-y-4">
 			<section
@@ -539,9 +527,6 @@
 				</div>
 
 				<div class="mt-4 grid gap-3">
-					{#if loading && windowsLoaded}<p role="status" class="text-sm text-muted-foreground">
-							กำลังอัปเดตรอบงาน...
-						</p>{/if}
 					{#if windowsError}<PageState
 							variant="error"
 							title="โหลดรอบงานไม่สำเร็จ"

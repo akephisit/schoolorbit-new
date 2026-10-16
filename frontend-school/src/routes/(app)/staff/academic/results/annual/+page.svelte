@@ -5,7 +5,7 @@
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { RefreshCw, ArrowUpRight } from '@lucide/svelte';
+	import { ArrowUpRight } from '@lucide/svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { aggregateCapabilities } from '#lib/academic/results/aggregate-access.js';
 	import {
@@ -26,12 +26,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -180,9 +175,6 @@
 		}
 		await Promise.all([loadPreview(id), loadHistory(id)]);
 	}
-	async function refresh() {
-		await Promise.all([loadRoster(), selected ? inspect() : Promise.resolve()]);
-	}
 	function openLock() {
 		if (!capabilities.lock || !preview?.canLock || detailLoading || locking) return;
 		holdReason = '';
@@ -316,11 +308,6 @@
 	backHref={resultLink}
 	backLabel="ผลรายวิชา"
 >
-	{#snippet actions()}
-		<Button variant="outline" disabled={loading || locking} onclick={() => void refresh()}
-			><RefreshCw class="size-4" />ตรวจข้อมูลล่าสุด</Button
-		>
-	{/snippet}
 	{#if !capabilities.read}
 		<PageState
 			variant="permission"
@@ -349,10 +336,6 @@
 					aria-busy={loading}
 				>
 					<div class="space-y-3 border-b p-3 sm:p-4">
-						{#if loading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตรายชื่อนักเรียน..."
-							/>{/if}
 						{#if error}<div role="alert" class="flex items-center gap-2 text-sm text-destructive">
 								<span>{error}</span><Button
 									size="sm"
@@ -436,10 +419,6 @@
 							class="overflow-hidden rounded-xl border bg-card"
 							aria-busy={previewLoading}
 						>
-							{#if previewLoading}<RegionUpdatingState
-									class="static m-3"
-									label="กำลังคำนวณผลรายปีล่าสุด..."
-								/>{/if}
 							{#if previewError}<div
 									role="alert"
 									class="m-3 flex items-center gap-2 text-sm text-destructive"
@@ -584,10 +563,7 @@
 							aria-busy={historyLoading}
 						>
 							<h2 class="border-b px-4 py-3 text-sm font-semibold">ประวัติการยืนยันผลรายปี</h2>
-							{#if historyLoading}<RegionUpdatingState
-									class="static m-3"
-									label="กำลังอัปเดตประวัติผลรายปี..."
-								/>{/if}
+
 							{#if historyError}<div
 									role="alert"
 									class="m-3 flex items-center gap-2 text-sm text-destructive"

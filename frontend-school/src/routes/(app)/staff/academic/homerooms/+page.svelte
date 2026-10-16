@@ -19,7 +19,7 @@
 	} from '#lib/api/academic-core.js';
 	import HomeroomEditor from '#lib/components/academic-core/HomeroomEditor.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -134,7 +134,6 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={retryWorkspace}
 		/>{:else}<div class="relative" aria-busy={loading} data-testid="homerooms-ready">
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตห้องประจำชั้น" />{/if}
 			<HomeroomEditor
 				{homerooms}
 				{gradeLevelOptions}

@@ -182,17 +182,7 @@
 	title="จัดการความยินยอม"
 	description="จัดการความยินยอมการเก็บและใช้ข้อมูลส่วนบุคคลของคุณ ตาม พ.ร.บ. คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562"
 >
-	<Button variant="outline" disabled={loading || withdrawing !== null} onclick={loadConsentStatus}
-		>โหลดข้อมูลใหม่</Button
-	>
 	<div data-testid="consent-region" aria-busy={loading}>
-		{#if loading && status}<p
-				role="status"
-				aria-label="กำลังอัปเดตความยินยอม"
-				class="text-muted-foreground text-sm"
-			>
-				กำลังอัปเดตความยินยอม…
-			</p>{/if}
 		{#if loading && !status}
 			<div role="status" aria-label="กำลังโหลดความยินยอม"><PageSkeleton variant="detail" /></div>
 		{:else if error && !status}

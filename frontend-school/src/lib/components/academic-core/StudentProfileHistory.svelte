@@ -3,7 +3,7 @@
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { loadStudentProfileHistory } from '#lib/academic-core/student-profile-history.js';
-	import { PageState, PageSkeleton, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import {
@@ -97,7 +97,6 @@
 					onaction={retry}
 				/>
 			{:else if history?.studentYear}
-				{#if loading}<RegionUpdatingState label="กำลังอัปเดตประวัติการจัดห้อง" />{/if}
 				{#if error}<PageState
 						variant="error"
 						title="อัปเดตประวัติการจัดห้องไม่สำเร็จ"

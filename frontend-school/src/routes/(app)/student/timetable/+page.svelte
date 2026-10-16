@@ -15,7 +15,7 @@
 		type AcademicContextOptionsResponse
 	} from '#lib/api/academic-context.js';
 	import { getMyTimetable, type TimetableBlock } from '#lib/api/timetable.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -197,12 +197,6 @@
 </script>
 
 <PageShell title="ตารางเรียน" description="ดูตารางเรียนย้อนหลังหรือภาคเรียนปัจจุบันของฉัน">
-	{#snippet actions()}<Button
-			variant="outline"
-			disabled={loading || contextLoading || !selectedTermId}
-			onclick={loadPrimary}>โหลดข้อมูลใหม่</Button
-		>{/snippet}
-
 	<div class="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2">
 		<div class="min-w-0 space-y-2">
 			<Label for="student-year">ปีการศึกษา</Label>
@@ -260,11 +254,6 @@
 		/>
 	{/if}
 	<div data-testid="student-timetable-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}
-			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
-				กำลังอัปเดตข้อมูล…
-			</p>
-		{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดตารางเรียน">
 				<PageSkeleton variant="table" rows={6} columns={4} />

@@ -11,7 +11,6 @@
 		ExternalLink,
 		FileCheck2,
 		LoaderCircle,
-		RefreshCw,
 		ShieldCheck,
 		ShieldX
 	} from '@lucide/svelte';
@@ -153,7 +152,6 @@
 <PageShell {title} {description}>
 	{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์ดูเกียรติบัตรของตนเอง" />
 	{:else}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตคลังเกียรติบัตร</p>{/if}
 		{#if loadError}<PageState
 				variant="error"
 				title={loadError}
@@ -184,9 +182,6 @@
 					<strong>{certificates.length} ใบ</strong>
 				</div>
 				<p>ใช้ได้ {issuedCount} · เพิกถอน {revokedCount}</p>
-				<Button variant="ghost" size="sm" onclick={loadCertificates}>
-					<RefreshCw class="size-4" aria-hidden="true" /> โหลดใหม่
-				</Button>
 			</div>
 
 			<div class="certificate-grid" data-testid="my-certificate-list">

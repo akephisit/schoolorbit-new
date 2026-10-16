@@ -15,13 +15,13 @@
 	import { listFeatures, toggleFeature, type FeatureToggle } from '#lib/api/feature-toggles.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Card } from '#lib/components/ui/card/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { LoaderCircle, Power } from '@lucide/svelte';
+	import { Power } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let features = $state<FeatureToggle[]>([]);
@@ -130,19 +130,7 @@
 </script>
 
 <PageShell title="จัดการระบบงาน" description="เปิด/ปิดการทำงานของระบบย่อยต่างๆ">
-	{#snippet actions()}
-		{#if canReadFeatures}
-			<Button onclick={loadFeatures} variant="outline" disabled={loading}>
-				{#if loading}
-					<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-				{/if}
-				รีเฟรช
-			</Button>
-		{/if}
-	{/snippet}
-
 	<section data-testid="settings-features" aria-busy={loading}>
-		{#if loading && loaded}<p role="status">กำลังอัปเดตระบบงาน</p>{/if}
 		{#if loadError}<PageState
 				variant="error"
 				title="โหลดระบบงานไม่สำเร็จ"

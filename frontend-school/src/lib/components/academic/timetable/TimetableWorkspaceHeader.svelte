@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { TimetableVersion } from '#lib/api/timetable.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { CalendarRange, Check, CloudCog, LoaderCircle, RefreshCw } from '@lucide/svelte';
+	import { CalendarRange, Check, CloudCog, LoaderCircle } from '@lucide/svelte';
 
 	import type { TimetablePageView } from '#lib/academic/timetable/board-state.js';
 	import TimetableViewSelector from './TimetableViewSelector.svelte';
@@ -12,7 +12,6 @@
 		view,
 		isSaving = false,
 		editing = false,
-		isRefreshing = false,
 		controls,
 		onViewChange
 	}: {
@@ -20,7 +19,6 @@
 		view: TimetablePageView;
 		isSaving?: boolean;
 		editing?: boolean;
-		isRefreshing?: boolean;
 		controls: Snippet;
 		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
@@ -62,8 +60,6 @@
 				<span class="inline-flex items-center gap-1.5" aria-live="polite">
 					{#if isSaving}
 						<LoaderCircle class="size-4 animate-spin" /> กำลังบันทึก
-					{:else if isRefreshing}
-						<RefreshCw class="size-4 animate-spin" /> กำลังโหลดข้อมูลล่าสุด
 					{:else if version.status === 'draft'}
 						<Check class="size-4 text-emerald-600" /> {editing ? 'บันทึกอัตโนมัติแล้ว' : 'โหมดดู'}
 					{:else}

@@ -274,9 +274,6 @@
 	</div>
 
 	<section data-testid="work-items" aria-busy={itemsLoading}>
-		{#if itemsLoading && itemsLoaded}<p role="status" class="text-sm text-muted-foreground">
-				กำลังอัปเดตรายการงาน...
-			</p>{/if}
 		{#if itemsError}
 			<PageState
 				variant="error"

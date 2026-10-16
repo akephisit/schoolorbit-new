@@ -4,7 +4,7 @@
 	import { toast } from 'svelte-sonner';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import {
 		Card,
 		CardContent,
@@ -58,11 +58,10 @@
 		return 'ยังไม่ได้อนุญาตการแจ้งเตือนบนอุปกรณ์นี้';
 	}
 
-	async function refreshStatus(showToast = false) {
+	async function refreshStatus() {
 		loadingStatus = true;
 		try {
 			status = await notificationStore.getPushStatus();
-			if (showToast) toast.success('อัปเดตสถานะการแจ้งเตือนแล้ว');
 		} catch (error) {
 			console.error('Failed to refresh push notification status', error);
 			toast.error('ไม่สามารถอ่านสถานะการแจ้งเตือนได้');
@@ -153,15 +152,6 @@
 				<BellRing class="h-4 w-4" />
 				เปิด/ซิงก์การแจ้งเตือน
 			</LoadingButton>
-			<Button
-				variant="outline"
-				onclick={() => refreshStatus(true)}
-				disabled={loadingStatus || enabling}
-				class="gap-2"
-			>
-				<RefreshCw class={loadingStatus ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-				รีเฟรชสถานะ
-			</Button>
 		</div>
 	</CardContent>
 </Card>

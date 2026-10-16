@@ -318,7 +318,7 @@
 		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดแบบเกียรติบัตร">
 				<PageSkeleton variant="cards" />
 			</div>{/if}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตแบบเกียรติบัตร</p>{/if}
+
 		{#if error}
 			<PageState
 				variant="error"

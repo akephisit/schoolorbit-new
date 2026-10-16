@@ -179,7 +179,6 @@
 	backHref="/staff"
 >
 	<section data-testid="settings-school" aria-busy={loading}>
-		{#if loading && loaded}<p role="status">กำลังอัปเดตการตั้งค่า</p>{/if}
 		{#if loadError}<PageState
 				variant="error"
 				title="โหลดการตั้งค่าไม่สำเร็จ"

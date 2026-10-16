@@ -5,7 +5,7 @@
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { RefreshCw, Settings2 } from '@lucide/svelte';
+	import { Settings2 } from '@lucide/svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { aggregateCapabilities } from '#lib/academic/results/aggregate-access.js';
 	import {
@@ -31,12 +31,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -441,11 +436,6 @@
 	backLabel="ผลรายวิชา"
 >
 	{#snippet actions()}
-		<Button
-			variant="outline"
-			disabled={loading || locking || savingPolicy}
-			onclick={() => void loadRoster()}><RefreshCw class="size-4" />ตรวจรายชื่อล่าสุด</Button
-		>
 		{#if capabilities.policy}<Button
 				variant="outline"
 				onclick={() => {
@@ -521,10 +511,6 @@
 					aria-busy={loading}
 				>
 					<div class="border-b p-4 text-sm">
-						{#if loading}<RegionUpdatingState
-								class="static mb-2"
-								label="กำลังอัปเดตรายชื่อนักเรียน..."
-							/>{/if}
 						{#if error}<div role="alert" class="mb-2 flex items-center gap-2 text-destructive">
 								<span>{error}</span><Button
 									size="sm"
@@ -604,10 +590,6 @@
 							onaction={() => void loadPreview(selected)}
 						/>
 					{:else if preview}
-						{#if previewLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังคำนวณผลสรุปล่าสุด..."
-							/>{/if}
 						{#if previewError}<div
 								role="alert"
 								class="flex items-center gap-2 text-sm text-destructive"
@@ -690,10 +672,7 @@
 						/>
 					{:else if historyLoaded}<div class="space-y-3 border-t pt-4" aria-busy={historyLoading}>
 							<h3 class="text-sm font-semibold">ประวัติผลสรุปที่ล็อกแล้ว</h3>
-							{#if historyLoading}<RegionUpdatingState
-									class="static"
-									label="กำลังอัปเดตประวัติผลสรุป..."
-								/>{/if}
+
 							{#if historyError}<div
 									role="alert"
 									class="flex items-center gap-2 text-sm text-destructive"

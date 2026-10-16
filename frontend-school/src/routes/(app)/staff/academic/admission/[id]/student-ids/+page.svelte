@@ -14,7 +14,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -496,12 +496,8 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadRound}
 			/>
-		{:else if roundLoading}
-			<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />
 		{/if}
-		{#if entriesLoading && entriesLoaded}
-			<RegionUpdatingState class="static" label="กำลังอัปเดตรายชื่อ..." />
-		{/if}
+
 		{#if entriesError && entriesLoaded}
 			<p role="alert" class="text-sm text-destructive">
 				{entriesError}

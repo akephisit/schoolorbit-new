@@ -24,7 +24,7 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -49,8 +49,7 @@
 		Pencil,
 		RotateCcw,
 		Save,
-		Copy,
-		RefreshCw
+		Copy
 	} from '@lucide/svelte';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -719,15 +718,6 @@
 				</Button>
 			{/if}
 		{/if}
-		<Button
-			variant="outline"
-			size="icon"
-			onclick={loadApp}
-			disabled={loading || !canReadAdmission}
-			aria-label="โหลดรายละเอียดใบสมัครใหม่"
-		>
-			<RefreshCw class="size-4" />
-		</Button>
 	{/snippet}
 
 	{#if !canReadAdmission}
@@ -748,7 +738,6 @@
 		/>
 	{:else if application}
 		<div aria-busy={loading}>
-			{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตใบสมัคร..." />{/if}
 			{#if error}<p role="alert" class="text-sm text-destructive">
 					{error}
 					<Button variant="outline" size="sm" onclick={loadApp}>ลองใหม่</Button>

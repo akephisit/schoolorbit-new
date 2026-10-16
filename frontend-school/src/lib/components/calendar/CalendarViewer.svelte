@@ -174,7 +174,6 @@
 				><ChevronRight class="size-4" /></Button
 			>
 		</div>
-		<Button variant="ghost" onclick={reload} disabled={loading}>รีเฟรช</Button>
 	</div>
 	{#if !allowed}<PageState variant="permission" title="ไม่มีสิทธิ์ดูปฏิทินนี้" />{:else}
 		<section
@@ -191,13 +190,6 @@
 			{#if loading && !loaded}<div role="status" aria-label={`กำลังโหลด${title}`}>
 					<PageSkeleton variant="detail" />
 				</div>{:else if loaded}
-				{#if loading}<p
-						role="status"
-						aria-label="กำลังอัปเดตข้อมูล"
-						class="text-sm text-muted-foreground"
-					>
-						กำลังอัปเดตกิจกรรม...
-					</p>{/if}
 				<div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
 					<CalendarMonthGrid
 						monthDate={month}

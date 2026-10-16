@@ -47,12 +47,7 @@
 	import ExamSourceSyncPanel from '#lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
 	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -71,7 +66,7 @@
 		type ExamScheduleExportSheet
 	} from '#lib/utils/exam-schedule-export.js';
 	import { addMinutes } from '#lib/utils/examScheduleTime.js';
-	import { Download, RefreshCw, Send } from '@lucide/svelte';
+	import { Download, Send } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 
@@ -1329,16 +1324,6 @@
 				<LoadingButton
 					variant="outline"
 					size="sm"
-					loading={refreshing}
-					loadingLabel="กำลังโหลด..."
-					onclick={() => refreshWorkspace(true)}
-				>
-					<RefreshCw class="h-4 w-4" />
-					รีเฟรช
-				</LoadingButton>
-				<LoadingButton
-					variant="outline"
-					size="sm"
 					loading={exportingExamSchedule}
 					loadingLabel="กำลังส่งออก..."
 					onclick={handleExportExamSchedule}
@@ -1409,7 +1394,6 @@
 			aria-busy={refreshing}
 			data-testid="exam-detail-ready"
 		>
-			{#if refreshing}<RegionUpdatingState label="กำลังอัปเดตรอบตารางสอบ..." />{/if}
 			{#if error}
 				<div
 					role="alert"
@@ -1464,7 +1448,6 @@
 							aria-busy={gradeLevelsLoading}
 							data-testid="exam-grade-levels-ready"
 						>
-							{#if gradeLevelsLoading}<RegionUpdatingState label="กำลังอัปเดตระดับชั้น..." />{/if}
 							{#if gradeLevelsError}<div
 									role="alert"
 									class="mb-3 flex items-center gap-3 text-sm text-destructive"
@@ -1524,7 +1507,6 @@
 
 				<Tabs.Content value="invigilators" class="min-h-0 flex-1">
 					<div class="relative" aria-busy={staffLoading}>
-						{#if staffLoading}<RegionUpdatingState label="กำลังโหลดรายชื่อครู..." />{/if}
 						{#if staffLoadError}
 							<div
 								role="alert"

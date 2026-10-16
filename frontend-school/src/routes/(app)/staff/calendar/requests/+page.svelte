@@ -184,7 +184,6 @@
 					>{/each}</Select.Content
 			>
 		</Select.Root>
-		<Button variant="ghost" onclick={reload} disabled={loading}>รีเฟรช</Button>
 	</div>
 	{#if data.query.review && manager}<p class="text-sm text-muted-foreground">
 			เรียงตามเวลาส่งคำร้อง: ขอก่อนอยู่บน ขอทีหลังอยู่ล่าง
@@ -201,9 +200,6 @@
 				/>{/if}
 			{#if loading && !loaded}<PageSkeleton variant="cards" />
 			{:else if loaded}
-				{#if loading}<p role="status" class="text-sm text-muted-foreground">
-						กำลังอัปเดตคำร้อง...
-					</p>{/if}
 				{#if records.length === 0}<PageState
 						title="ยังไม่มีคำร้องในรายการนี้"
 						description="คำร้องที่ส่งจะปรากฏที่นี่ พร้อมสถานะการพิจารณา"

@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { addMonths } from 'date-fns';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -358,7 +358,6 @@
 				aria-busy={loading}
 				class="relative grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]"
 			>
-				{#if loading}<RegionUpdatingState label="กำลังโหลดกิจกรรม" />{/if}
 				{#if error}<div
 						role="alert"
 						class="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-card p-2 text-sm text-destructive"

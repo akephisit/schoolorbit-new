@@ -11,11 +11,7 @@
 		type RosterPreview
 	} from '#lib/api/learning-delivery.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import {
-		LoadingButton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -324,9 +320,6 @@
 		aria-busy={loading}
 		data-testid={hasHistory ? 'delivery-memberships-ready' : undefined}
 	>
-		{#if loading && hasHistory}<RegionUpdatingState
-				label="กำลังอัปเดตประวัติสมาชิกกลุ่มเรียน"
-			/>{/if}
 		<p
 			class="mb-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs leading-relaxed text-blue-800"
 		>

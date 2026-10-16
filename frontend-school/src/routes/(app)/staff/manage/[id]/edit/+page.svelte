@@ -604,11 +604,7 @@
 			{profileHref}
 			current="แก้ไข"
 		/>{/snippet}
-	{#snippet actions()}<Button
-			variant="outline"
-			onclick={loadStaffProfile}
-			disabled={loadingProfile || saving || !canReadStaff}>รีเฟรชข้อมูล</Button
-		>{/snippet}
+
 	<div data-testid="staff-edit-profile" aria-busy={loadingProfile} class="space-y-6">
 		{#if errors.load && staff && canReadStaff}<PageState
 				title="อัปเดตข้อมูลบุคลากรไม่สำเร็จ"
@@ -616,9 +612,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadStaffProfile}
 			/>{/if}
-		{#if loadingProfile && staff && canReadStaff}<p role="status">
-				กำลังอัปเดตข้อมูลบุคลากร...
-			</p>{/if}
+
 		{#if !canReadStaff}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลบุคลากร" />
 		{:else if loadingProfile && !staff}
 			<div role="status" aria-label="กำลังโหลดข้อมูลบุคลากร">

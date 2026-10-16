@@ -455,7 +455,6 @@
 			<!-- Buildings Tab -->
 			<Tabs.Content value="buildings" class="space-y-4 pt-4">
 				<section data-testid="facility-buildings" aria-busy={loading}>
-					{#if loading && buildingsLoaded}<p role="status">กำลังอัปเดตอาคาร</p>{/if}
 					{#if buildingsError}<PageState
 							variant="error"
 							title="โหลดอาคารไม่สำเร็จ"
@@ -569,7 +568,7 @@
 								onaction={loadBuildings}
 							/>{/if}
 					</div>
-					{#if roomsLoading && roomsLoaded}<p role="status">กำลังอัปเดตห้อง</p>{/if}
+
 					{#if roomsError}<PageState
 							variant="error"
 							title="โหลดห้องไม่สำเร็จ"

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { CalendarClock, RefreshCw, ArrowUpRight } from '@lucide/svelte';
+	import { CalendarClock, ArrowUpRight } from '@lucide/svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
@@ -126,17 +126,6 @@
 				</p>
 			</div>
 		</div>
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={loading || denied}
-			onclick={() => load()}
-			aria-label="รีเฟรชกำหนดเวลาวิทยฐานะ"
-			><RefreshCw
-				class={loading ? 'size-4 motion-safe:animate-spin' : 'size-4'}
-				aria-hidden="true"
-			/>รีเฟรช</Button
-		>
 	</div>
 	<p class="text-xs leading-relaxed text-muted-foreground">
 		ครบระยะเวลาแล้ว ยังต้องตรวจคุณสมบัติและหลักฐานก่อนยื่น กรณีลดระยะเวลา พื้นที่พิเศษ
@@ -168,11 +157,7 @@
 		</div>
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<h3 class="text-sm font-semibold">{RANK_MILESTONE_LABELS[bucket]}</h3>
-			<span class="text-xs text-muted-foreground"
-				>{#if loading}<span role="status">กำลังอัปเดต…</span>{:else}{data.total.toLocaleString(
-						'th-TH'
-					)} คน{/if}</span
-			>
+			<span class="text-xs text-muted-foreground">{data.total.toLocaleString('th-TH')} คน</span>
 		</div>
 		{#if data.bucket === bucket && data.page === page}
 			<ol class="divide-y">

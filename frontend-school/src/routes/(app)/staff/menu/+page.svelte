@@ -625,12 +625,9 @@
 	state: { loading: boolean; loaded: boolean; error: string },
 	retry: () => Promise<void>
 )}
-	{#if state.loading}{#if state.loaded}<p role="status">กำลังอัปเดต{label}</p>{:else}<div
-				role="status"
-				aria-label={`กำลังโหลด${label}`}
-			>
-				<PageSkeleton variant="cards" rows={2} />
-			</div>{/if}{/if}
+	{#if state.loading && !state.loaded}<div role="status" aria-label={`กำลังโหลด${label}`}>
+			<PageSkeleton variant="cards" rows={2} />
+		</div>{/if}
 	{#if state.error}<PageState
 			variant="error"
 			title={`โหลด${label}ไม่สำเร็จ`}

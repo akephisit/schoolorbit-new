@@ -32,7 +32,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { Plus, Trash2, RefreshCw } from '@lucide/svelte';
+	import { Plus, Trash2 } from '@lucide/svelte';
 	let { data }: PageProps = $props();
 	const readScope = $derived(
 		studentRegisterReadScope({
@@ -280,12 +280,6 @@
 	backHref={data.detailHref}
 	backPreload={false}
 >
-	{#snippet actions()}<Button
-			variant="outline"
-			onclick={reloadProfile}
-			disabled={loading || saving || parentBusy || !canReadStudent}
-			><RefreshCw aria-hidden="true" />รีเฟรช</Button
-		>{/snippet}
 	<section data-testid="student-profile" aria-busy={loading}>
 		{#if !canReadStudent}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน" />
 		{:else if !canUpdateStudent}<PageState
@@ -313,7 +307,7 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={reloadProfile}
 				/>{/if}
-			{#if loading}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
+
 			<StudentRegisterForm
 				mode="edit"
 				bind:value={draft}

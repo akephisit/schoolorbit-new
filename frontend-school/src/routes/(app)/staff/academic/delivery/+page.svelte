@@ -38,7 +38,7 @@
 	} from '#lib/api/learning-delivery.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -49,7 +49,7 @@
 	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
 	import DeliveryVersionOverviewTable from '#lib/components/learning-delivery/DeliveryVersionOverviewTable.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { RefreshCw } from '@lucide/svelte';
+
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -515,7 +515,6 @@
 			const current = await getAcademicTermChangeSet(selected.id);
 			if (activeChangeSet?.id === selected.id && current.rowVersion !== selected.rowVersion) {
 				await updateChangeSet(current);
-				toast.info('ร่างเปิดสอนเปลี่ยนแล้ว โหลดข้อมูลล่าสุดให้แล้ว');
 			}
 		} catch (error) {
 			if (activeChangeSet?.id !== selected.id) return;
@@ -635,18 +634,6 @@
 	description="จัดรายวิชา กลุ่มเรียน ครู และจำนวนคาบ แล้วเผยแพร่รุ่นเปิดสอนเพื่อนำไปจัดตาราง"
 >
 	{#snippet actions()}
-		{#if academicTermId}<Button
-				variant="outline"
-				disabled={homeroomLoading || changeSetSummaryLoading || deliveryVersionsLoading}
-				onclick={() =>
-					Promise.all([
-						refreshDeliveryVersions(),
-						refreshDeliveryRegions(),
-						loadChangeSetSummaries()
-					])}
-			>
-				<RefreshCw class="size-4" />โหลดล่าสุด
-			</Button>{/if}
 		{#if canManage && academicTermId}
 			{#key academicTermId}
 				<OfferingCreateDialog
@@ -757,9 +744,6 @@
 						onaction={loadChangeSetSummaries}
 					/>
 				{:else}
-					{#if (changeSetSummaryLoading || changeSetLoading) && activeChangeSet}
-						<RegionUpdatingState label="กำลังอัปเดตชุดการเปลี่ยนแปลงกลางภาค" />
-					{/if}
 					{#if changeSetLoading && !activeChangeSet}
 						<PageSkeleton variant="detail" />
 					{:else if changeSetError && !activeChangeSet}
@@ -809,9 +793,6 @@
 						aria-busy={homeroomLoading}
 						data-testid={workspace ? 'delivery-homerooms-ready' : undefined}
 					>
-						{#if homeroomLoading && workspace}
-							<RegionUpdatingState label="กำลังอัปเดตภาพรวมรายห้อง" />
-						{/if}
 						{#if homeroomLoading && !workspace}
 							<PageSkeleton variant="cards" rows={4} />
 						{:else if homeroomError && !workspace}
@@ -839,9 +820,6 @@
 						aria-busy={overviewLoading}
 						data-testid={overview ? 'delivery-offerings-ready' : undefined}
 					>
-						{#if overviewLoading && overview}
-							<RegionUpdatingState label="กำลังอัปเดตรายการเปิดสอน" />
-						{/if}
 						{#if overviewLoading && !overview}
 							<PageSkeleton variant="table" rows={6} />
 						{:else if errorMessage && !overview}

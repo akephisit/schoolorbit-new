@@ -10,7 +10,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -572,10 +572,6 @@
 		/>
 	{:else if round}
 		<div class="space-y-6">
-			{#if roundLoading}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตรอบรับสมัคร..."
-				/>{/if}
 			{#if roundError}
 				<p role="alert" class="text-sm text-destructive">
 					{roundError}
@@ -634,10 +630,6 @@
 							onaction={loadApplications}
 						/>
 					{:else if applicationsLoaded}
-						{#if applicationsLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตข้อมูลรายงาน..."
-							/>{/if}
 						{#if applicationsError}
 							<p role="alert" class="text-sm text-destructive">
 								{applicationsError}

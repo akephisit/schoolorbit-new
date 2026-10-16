@@ -41,7 +41,7 @@
 	import LearnerEvaluationSummary from '#lib/components/academic/results/LearnerEvaluationSummary.svelte';
 	import ResultPreparationTable from '#lib/components/academic/results/ResultPreparationTable.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -669,10 +669,7 @@
 					<Card.Header class="px-4">
 						<Card.Title class="text-base">เลือกงานที่ต้องการเตรียม</Card.Title>
 						<Card.Description>วิชาและกิจกรรมที่บัญชีนี้รับผิดชอบจะแสดงก่อน</Card.Description>
-						{#if readinessUpdating}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตความพร้อม..."
-							/>{/if}
+
 						{#if readinessError}<div
 								role="alert"
 								class="flex items-center gap-2 text-sm text-destructive"
@@ -784,10 +781,6 @@
 									onaction={() => void loadPolicy()}
 								/>
 							{:else}
-								{#if policyLoading}<RegionUpdatingState
-										class="static"
-										label="กำลังอัปเดตเกณฑ์ตัดผล..."
-									/>{/if}
 								{#if policyError}<div
 										role="alert"
 										class="mb-2 flex items-center gap-2 text-sm text-destructive"

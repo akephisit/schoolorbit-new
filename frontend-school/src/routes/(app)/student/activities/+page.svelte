@@ -23,7 +23,7 @@
 		type StudentActivityOffering,
 		type StudentActivityRegistrationResult
 	} from '#lib/api/student-activities.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -279,12 +279,6 @@
 </script>
 
 <PageShell title={data.title} description="เลือกกลุ่มกิจกรรมของฉันตามปีการศึกษาและภาคเรียน">
-	<Button
-		variant="outline"
-		disabled={loading || contextLoading || actionGroupId !== ''}
-		onclick={loadPrimary}>โหลดข้อมูลใหม่</Button
-	>
-
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
 		<div class="min-w-52 space-y-2">
 			<Label for="student-activity-year">ปีการศึกษา</Label>
@@ -342,11 +336,6 @@
 		/>
 	{/if}
 	<div data-testid="student-activities-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}
-			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
-				กำลังอัปเดตข้อมูล…
-			</p>
-		{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดลงทะเบียนกิจกรรม">
 				<PageSkeleton variant="cards" rows={3} />

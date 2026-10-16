@@ -235,11 +235,6 @@
 		{/if}
 	{/snippet}
 
-	{#if student}<Button
-			variant="outline"
-			disabled={loading || contextLoading || saving}
-			onclick={loadProfile}>โหลดข้อมูลใหม่</Button
-		>{/if}
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="student-profile-year">ปีการศึกษา</Label>

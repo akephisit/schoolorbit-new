@@ -21,7 +21,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -29,7 +29,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
-	import { Save, Loader2, DoorOpen, UserX, RefreshCw } from '@lucide/svelte';
+	import { Save, Loader2, DoorOpen, UserX } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let { data }: PageProps = $props();
@@ -502,8 +502,6 @@
 			/>
 		{:else if roundLoading && !roundLoaded}
 			<PageSkeleton variant="cards" rows={1} />
-		{:else if roundLoading}
-			<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />
 		{/if}
 		<!-- View mode + Track selector -->
 		<Card.Root class="gap-0 py-0" aria-busy={tracksLoading || rosterLoading}>
@@ -548,19 +546,9 @@
 								</Button>
 							{/each}
 						</div>
-						<Button
-							size="icon"
-							variant="outline"
-							onclick={loadTracks}
-							disabled={tracksLoading}
-							aria-label="โหลดสายการเรียนใหม่"><RefreshCw class="h-4 w-4" /></Button
-						>
-						{#if tracksLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตสายการเรียน..."
-							/>{/if}
+
 						{#if tracksError}<span role="alert" class="text-sm text-destructive">{tracksError}</span
-							>{/if}
+							><Button size="sm" variant="outline" onclick={loadTracks}>ลองใหม่</Button>{/if}
 					{/if}
 				{:else}
 					{#if rosterLoading && !rosterLoaded}
@@ -577,61 +565,36 @@
 							>{/if}
 					{/if}
 				{/if}
-				{#if viewMode === 'room'}
-					<Button
-						size="icon"
-						variant="outline"
-						onclick={loadRoomRoster}
-						disabled={rosterLoading}
-						aria-label="โหลดรายชื่อห้องสอบใหม่"><RefreshCw class="h-4 w-4" /></Button
-					>
-				{/if}
 			</Card.Content>
 		</Card.Root>
-		<div class="flex flex-wrap items-center gap-2" aria-busy={subjectsLoading || scoresLoading}>
-			<Button
-				size="icon"
-				variant="outline"
-				onclick={loadSubjects}
-				disabled={subjectsLoading}
-				aria-label="โหลดวิชาสอบใหม่"><RefreshCw class="h-4 w-4" /></Button
-			>
-			<Button
-				size="icon"
-				variant="outline"
-				onclick={loadScores}
-				disabled={scoresLoading}
-				aria-label="โหลดคะแนนใหม่"><RefreshCw class="h-4 w-4" /></Button
-			>
-			{#if viewMode === 'track' && appsLoaded}
-				<Button
-					size="icon"
-					variant="outline"
-					onclick={() => loadApps(true)}
-					disabled={appsLoading}
-					aria-label="โหลดผู้สมัครในสายใหม่"><RefreshCw class="h-4 w-4" /></Button
-				>
-			{/if}
-			{#if subjectsLoading && subjectsLoaded}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตวิชาสอบ..."
-				/>{/if}
-			{#if scoresLoading && scoresLoaded}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตคะแนน..."
-				/>{/if}
-			{#if rosterLoading && rosterLoaded && viewMode === 'room'}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตรายชื่อห้องสอบ..."
-				/>{/if}
-			{#if appsLoading && appsLoaded && viewMode === 'track'}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตผู้สมัคร..."
-				/>{/if}
-			{#each [subjectsError, scoresError, viewMode === 'room' ? rosterError : appsError].filter(Boolean) as regionError, index (index)}
-				<span role="alert" class="text-sm text-destructive">{regionError}</span>
-			{/each}
-		</div>
+		{#if (subjectsError && subjectsLoaded) || (scoresError && scoresLoaded) || (viewMode === 'room' && rosterError && rosterLoaded) || (viewMode === 'track' && appsError && appsLoaded)}
+			<div class="flex flex-wrap items-center gap-2">
+				{#if subjectsError && subjectsLoaded}<p role="alert" class="text-sm text-destructive">
+						{subjectsError}<Button size="sm" variant="outline" onclick={loadSubjects}
+							>ลองใหม่</Button
+						>
+					</p>{/if}
+				{#if scoresError && scoresLoaded}<p role="alert" class="text-sm text-destructive">
+						{scoresError}<Button size="sm" variant="outline" onclick={loadScores}>ลองใหม่</Button>
+					</p>{/if}
+				{#if viewMode === 'room' && rosterError && rosterLoaded}<p
+						role="alert"
+						class="text-sm text-destructive"
+					>
+						{rosterError}<Button size="sm" variant="outline" onclick={loadRoomRoster}
+							>ลองใหม่</Button
+						>
+					</p>{/if}
+				{#if viewMode === 'track' && appsError && appsLoaded}<p
+						role="alert"
+						class="text-sm text-destructive"
+					>
+						{appsError}<Button size="sm" variant="outline" onclick={() => loadApps(true)}
+							>ลองใหม่</Button
+						>
+					</p>{/if}
+			</div>
+		{/if}
 
 		{#if (subjectsLoading && !subjectsLoaded) || (scoresLoading && !scoresLoaded) || (viewMode === 'room' && rosterLoading && !rosterLoaded) || (viewMode === 'track' && ((tracksLoading && !tracksLoaded) || (appsLoading && !appsLoaded)))}
 			<PageSkeleton variant="table" rows={6} columns={6} />
@@ -682,7 +645,12 @@
 				description="ต้องยืนยันใบสมัครก่อนกรอกคะแนน"
 			/>
 		{:else}
-			<Card.Root class="overflow-x-auto">
+			<Card.Root
+				class="overflow-x-auto"
+				aria-busy={subjectsLoading ||
+					scoresLoading ||
+					(viewMode === 'room' ? rosterLoading : appsLoading)}
+			>
 				<Table.Root>
 					<Table.Header>
 						<Table.Row>

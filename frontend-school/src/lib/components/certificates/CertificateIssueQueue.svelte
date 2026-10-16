@@ -12,7 +12,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
+	import { AlertTriangle, ArrowRight, ShieldCheck } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -140,12 +140,6 @@
 		</div>
 	{/snippet}
 
-	{#snippet actions()}
-		<Button variant="outline" disabled={loading || !canIssue} onclick={loadQueue}>
-			<RefreshCw class={`size-4 ${loading ? 'animate-spin' : ''}`} /> โหลดใหม่
-		</Button>
-	{/snippet}
-
 	{#if !canIssue}
 		<PageState
 			variant="permission"
@@ -178,7 +172,6 @@
 			</label>
 		</section>
 
-		{#if loading && loaded}<p role="status">กำลังอัปเดตคิวคำขอ</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"

@@ -2,15 +2,10 @@
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { resolve } from '$app/paths';
-	import { RefreshCw, ArrowRight } from '@lucide/svelte';
+	import { ArrowRight } from '@lucide/svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import PromotionImpactsDialog from './PromotionImpactsDialog.svelte';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -381,12 +376,6 @@
 >
 	{#snippet actions()}
 		<Button variant="outline" href={resolve('staff/academic/promotion')}>กลับรายการรอบ</Button>
-		<Button
-			variant="outline"
-			aria-label="โหลดข้อมูลรอบใหม่"
-			disabled={loading || !!busy || saving || !!selected}
-			onclick={reloadForReview}><RefreshCw class="size-4" /></Button
-		>
 	{/snippet}
 	{#if !read}<PageState variant="permission" title="ไม่มีสิทธิ์ดูรอบเลื่อนชั้น" />
 	{:else}
@@ -399,15 +388,18 @@
 					>ลองใหม่</Button
 				>
 			</div>{/if}
-		{#if loading && workspace}<RegionUpdatingState
-				class="static"
-				label="กำลังอัปเดตข้อมูลรอบ..."
-			/>{/if}
+
 		{#if error && workspace}<div
 				role="alert"
 				class="whitespace-pre-line rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
 			>
 				{error}
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={loading || !!busy || saving || !!selected}
+					onclick={reloadForReview}>โหลดข้อมูลล่าสุด</Button
+				>
 			</div>{/if}
 		{#if loading && !workspace}<PageSkeleton variant="table" rows={5} columns={5} />
 		{:else if error && !workspace}<PageState
@@ -486,7 +478,7 @@
 					}}
 				/><span class="text-sm text-muted-foreground">{filtered.length} คน</span>
 			</div>
-			<div class="overflow-x-auto rounded-xl border bg-card">
+			<div class="overflow-x-auto rounded-xl border bg-card" aria-busy={loading}>
 				<Table.Root class="min-w-[850px]">
 					<Table.Header
 						><Table.Row

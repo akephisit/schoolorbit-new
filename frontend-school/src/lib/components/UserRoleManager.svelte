@@ -302,7 +302,7 @@
 						actionLabel="ลองอีกครั้ง"
 						onaction={loadUserRoles}
 					/>{/if}
-				{#if loading && rolesLoaded && canRead}<p role="status">กำลังอัปเดตบทบาท...</p>{/if}
+
 				{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์อ่านบทบาทที่ได้รับ" />
 				{:else if loading && !rolesLoaded}<div role="status" aria-label="กำลังโหลดบทบาทที่ได้รับ">
 						<PageSkeleton variant="cards" rows={2} />
@@ -388,9 +388,7 @@
 						actionLabel="ลองอีกครั้ง"
 						onaction={loadPermissions}
 					/>{/if}
-				{#if effectivePermissionsLoading && permissionsLoaded && canRead}<p role="status">
-						กำลังอัปเดตสิทธิ์...
-					</p>{/if}
+
 				{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์อ่านสิทธิ์ที่มีผล" />
 				{:else if effectivePermissionsLoading && !permissionsLoaded}<div
 						role="status"

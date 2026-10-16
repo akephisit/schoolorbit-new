@@ -25,12 +25,7 @@
 	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
 	import { deleteFile, uploadFile } from '#lib/api/files.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import QuestionContent from '#lib/components/question-bank/QuestionContent.svelte';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
@@ -65,7 +60,6 @@
 		Image as ImageIcon,
 		Loader2,
 		Plus,
-		RefreshCw,
 		Save,
 		Search,
 		Sigma,
@@ -937,18 +931,7 @@
 				{/if}
 				ส่งออก Word{selectedQuestionCount ? ` (${selectedQuestionCount})` : ''}
 			</Button>
-			<Button
-				variant="outline"
-				onclick={() => loadQuestions(currentPage)}
-				disabled={loadingQuestions}
-			>
-				{#if loadingQuestions}
-					<Loader2 class="h-4 w-4 animate-spin" />
-				{:else}
-					<RefreshCw class="h-4 w-4" />
-				{/if}
-				รีเฟรช
-			</Button>
+
 			{#if canCreateQuestion}
 				<Button onclick={startCreate}>
 					<Plus class="h-4 w-4" />
@@ -1024,7 +1007,6 @@
 							</div>
 						{:else}
 							<div class="relative" aria-busy={optionsLoading}>
-								{#if optionsLoading}<RegionUpdatingState label="กำลังอัปเดตรายวิชา" />{/if}
 								<Select.Root type="single" bind:value={selectedSubjectId}>
 									<Select.Trigger class="mt-1 w-full">
 										{subjects.find((subject) => subject.id === selectedSubjectId)
@@ -1129,7 +1111,6 @@
 				/>
 			{:else}
 				<div class="relative" aria-busy={loadingQuestions}>
-					{#if loadingQuestions}<RegionUpdatingState label="กำลังอัปเดตรายการข้อสอบ" />{/if}
 					{#if questionsError}
 						<div
 							class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"

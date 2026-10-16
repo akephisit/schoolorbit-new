@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CalendarDays, Users, RefreshCw, Search, Check } from '@lucide/svelte';
+	import { CalendarDays, Users, Search, Check } from '@lucide/svelte';
 	import {
 		Card,
 		CardContent,
@@ -351,13 +351,6 @@
 				disabled={busy}
 			/>
 		</div>
-		<LoadingButton
-			type="button"
-			loading={pendingAction === 'workspace'}
-			variant="outline"
-			onclick={refresh}
-			disabled={busy}><RefreshCw class="size-4" />โหลดผลล่าสุด</LoadingButton
-		>
 	</div>
 </section>
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

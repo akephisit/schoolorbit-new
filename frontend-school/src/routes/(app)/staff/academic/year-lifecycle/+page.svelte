@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { RefreshCw, ArrowUpRight } from '@lucide/svelte';
+	import { ArrowUpRight } from '@lucide/svelte';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
@@ -20,12 +20,7 @@
 	import YearReopeningDialog from '#lib/components/academic/lifecycle/YearReopeningDialog.svelte';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -209,13 +204,6 @@
 	title="ปิดปีการศึกษา"
 	description="ตรวจผลรายปีและภาคเรียนก่อนปิดปี โดยไม่เลื่อนชั้นหรือเปิดปีถัดไปอัตโนมัติ"
 >
-	{#snippet actions()}
-		<Button
-			variant="outline"
-			disabled={busy || loading || !yearId || !canRead}
-			onclick={() => void loadWorkspace()}><RefreshCw class="size-4" />ตรวจข้อมูลล่าสุด</Button
-		>
-	{/snippet}
 	{#if !canRead}
 		<PageState variant="permission" title="ไม่มีสิทธิ์ดูความพร้อมระดับโรงเรียน" />
 	{:else if !yearId}
@@ -235,11 +223,7 @@
 			onaction={() => void loadWorkspace()}
 		/>
 	{:else if workspace}
-		{#if loading}<RegionUpdatingState
-				class="static"
-				label="กำลังอัปเดตความพร้อมปีการศึกษา..."
-			/>{/if}
-		<section class="rounded-xl border bg-card p-4" aria-label="สถานะปีการศึกษา">
+		<section class="rounded-xl border bg-card p-4" aria-label="สถานะปีการศึกษา" aria-busy={loading}>
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 class="text-lg font-semibold">{workspace.context.name}</h2>
@@ -261,6 +245,7 @@
 				<section
 					class="overflow-hidden rounded-xl border bg-card"
 					aria-labelledby="year-terms-heading"
+					aria-busy={loading}
 				>
 					<div class="border-b p-4">
 						<h2 id="year-terms-heading" class="font-semibold">ภาคเรียนของปีนี้</h2>
@@ -302,6 +287,7 @@
 				<section
 					class="overflow-hidden rounded-xl border bg-card"
 					aria-labelledby="annual-readiness-heading"
+					aria-busy={loading}
 				>
 					<div class="flex flex-wrap items-center justify-between gap-3 border-b p-4">
 						<div>

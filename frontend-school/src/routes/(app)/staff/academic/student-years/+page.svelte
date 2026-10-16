@@ -22,7 +22,7 @@
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import StudentYearPlacementEditor from '#lib/components/academic-core/StudentYearPlacementEditor.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -313,7 +313,6 @@
 		/>
 	{:else}
 		<div class="relative space-y-4" aria-busy={loading} data-testid="student-years-ready">
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตนักเรียนประจำปี" />{/if}
 			<div
 				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4"
 			>

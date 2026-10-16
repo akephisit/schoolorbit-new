@@ -262,16 +262,6 @@
 			</Button>
 		</CardHeader>
 		<CardContent aria-busy={isLoading}>
-			<Button variant="outline" disabled={isLoading || actionBusy} onclick={loadSessions}
-				>โหลดข้อมูลใหม่</Button
-			>
-			{#if isLoading && sessionsLoaded}<p
-					role="status"
-					aria-label="กำลังอัปเดตรายการอุปกรณ์"
-					class="text-muted-foreground text-sm"
-				>
-					กำลังอัปเดตรายการอุปกรณ์…
-				</p>{/if}
 			{#if loadError}
 				<PageState
 					variant="error"

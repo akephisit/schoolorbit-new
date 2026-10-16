@@ -413,7 +413,6 @@
 	{:else if loading && !request}
 		<div role="status" aria-label="กำลังโหลดรายละเอียดคำขอ"><PageSkeleton variant="detail" /></div>
 	{:else}
-		{#if loading && request}<p role="status">กำลังอัปเดตรายละเอียดคำขอ</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"

@@ -216,7 +216,6 @@
 			description="หน้านี้ใช้สิทธิ์อ่านในขอบเขตหน่วยงานหรือทั้งโรงเรียน"
 		/>
 	{:else}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตประวัติคำขอ</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"

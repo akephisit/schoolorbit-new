@@ -5,10 +5,10 @@
 		ExamInvigilatorStaffOption,
 		ExamInvigilatorWorkspace
 	} from '#lib/api/examSchedule.js';
-	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
-	import { RefreshCw } from '@lucide/svelte';
+
 	import { SvelteMap } from 'svelte/reactivity';
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';
 	import InvigilatorStaffList from './InvigilatorStaffList.svelte';
@@ -233,7 +233,10 @@
 		/>
 	</section>
 {:else}
-	<section class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-muted/20">
+	<section
+		class="flex h-full min-h-0 flex-col overflow-hidden rounded-md border bg-muted/20"
+		aria-busy={loading}
+	>
 		<div
 			class="flex flex-col gap-3 border-b bg-background px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
 		>
@@ -250,18 +253,6 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				{#if onRetry}
-					<LoadingButton
-						variant="outline"
-						size="sm"
-						{loading}
-						loadingLabel="กำลังโหลด..."
-						onclick={onRetry}
-					>
-						<RefreshCw class="h-4 w-4" />
-						รีเฟรช
-					</LoadingButton>
-				{/if}
 			</div>
 		</div>
 

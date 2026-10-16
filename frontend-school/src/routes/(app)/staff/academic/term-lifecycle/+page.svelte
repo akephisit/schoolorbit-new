@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { ArrowUpRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
+	import { ArrowUpRight, ShieldCheck } from '@lucide/svelte';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
@@ -21,12 +21,7 @@
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import OpeningPolicyDialog from '#lib/components/academic/lifecycle/OpeningPolicyDialog.svelte';
 	import TermActivationDialog from '#lib/components/academic/lifecycle/TermActivationDialog.svelte';
 	import TermPreparationDialog from '#lib/components/academic/lifecycle/TermPreparationDialog.svelte';
@@ -216,11 +211,6 @@
 				await loadWorkspace();
 			}}
 		/>
-		<Button
-			variant="outline"
-			disabled={busy || loading || !yearId || !termId}
-			onclick={() => void loadWorkspace()}><RefreshCw class="size-4" />ตรวจข้อมูลล่าสุด</Button
-		>
 	{/snippet}
 	{#if !canRead}
 		<PageState variant="permission" title="ไม่มีสิทธิ์ดูความพร้อมระดับโรงเรียน" />
@@ -241,8 +231,11 @@
 			onaction={() => void loadWorkspace()}
 		/>
 	{:else if workspace}
-		{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตความพร้อมภาคเรียน..." />{/if}
-		<section class="rounded-xl border bg-card p-4 sm:p-5" aria-label="สถานะภาคเรียน">
+		<section
+			class="rounded-xl border bg-card p-4 sm:p-5"
+			aria-label="สถานะภาคเรียน"
+			aria-busy={loading}
+		>
 			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<p class="text-sm text-muted-foreground">{workspace.context.yearName}</p>
@@ -271,7 +264,11 @@
 				<Button size="sm" variant="outline" onclick={() => void loadWorkspace()}>ลองใหม่</Button>
 			</p>{/if}
 		<div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-			<section class="overflow-hidden rounded-xl border bg-card" aria-labelledby="readiness-title">
+			<section
+				class="overflow-hidden rounded-xl border bg-card"
+				aria-labelledby="readiness-title"
+				aria-busy={loading}
+			>
 				<div class="border-b p-4">
 					<h2 id="readiness-title" class="font-semibold">ความพร้อมก่อนปิดภาคเรียน</h2>
 					<p class="mt-1 text-sm text-muted-foreground">

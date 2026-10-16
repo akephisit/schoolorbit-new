@@ -90,8 +90,6 @@
 
 <PageShell title="จัดการบทบาท" description="กำหนดบทบาทและสิทธิ์การเข้าถึงของผู้ใช้งาน">
 	{#snippet actions()}
-		<Button variant="outline" onclick={loadRoles} disabled={loading || !canReadRoles}>รีเฟรช</Button
-		>
 		{#if canCreateRoles}
 			<Button onclick={() => goto(resolve('staff/roles/new'))} class="gap-2">
 				<Plus class="h-4 w-4" />
@@ -107,7 +105,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadRoles}
 			/>{/if}
-		{#if loading && rolesLoaded}<p role="status">กำลังอัปเดตบทบาท...</p>{/if}
+
 		{#if !canReadRoles}
 			<PageState
 				variant="permission"

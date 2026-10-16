@@ -250,9 +250,7 @@
 					actionLabel="ลองใหม่"
 					onaction={appMenu.retry}
 				/>{/if}
-			{#if menuLoading && appMenu.loaded}<p role="status" class="text-xs text-muted-foreground">
-					กำลังอัปเดตเมนู...
-				</p>{/if}
+
 			{#if menuLoading && !appMenu.loaded}
 				<!-- Loading skeleton -->
 				<span role="status" class="sr-only">กำลังโหลดเมนู</span>

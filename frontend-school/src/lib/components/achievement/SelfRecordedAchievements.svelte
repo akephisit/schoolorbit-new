@@ -414,7 +414,7 @@
 						actionLabel="ลองโหลดผลงานอีกครั้ง"
 						onaction={loadData}
 					/>{/if}
-				{#if loading && loaded}<p role="status">กำลังอัปเดตผลงาน</p>{/if}
+
 				<!-- Table -->
 				<div class="rounded-md border">
 					<Table>

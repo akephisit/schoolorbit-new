@@ -19,7 +19,7 @@
 	import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 	import AcademicYearTermEditor from '#lib/components/academic-core/AcademicYearTermEditor.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -219,7 +219,6 @@
 			aria-busy={loading}
 			data-testid="academic-setup-ready"
 		>
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตโครงสร้างปีการศึกษา" />{/if}
 			<AcademicYearTermEditor
 				{years}
 				{termsByYear}

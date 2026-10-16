@@ -23,7 +23,7 @@
 		type SaveAssessmentPhaseRequest
 	} from '#lib/api/academicAssessments.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -50,7 +50,6 @@
 		CloudAlert,
 		CloudCheck,
 		Loader2,
-		RefreshCw,
 		Search,
 		ShieldCheck,
 		Sparkles,
@@ -667,20 +666,6 @@
 									ส่วนการเปิดกรอกคะแนนจัดการจากหน้ากรอกคะแนน
 								</p>
 							</div>
-							<div class="flex flex-wrap items-center gap-2">
-								{#if controlsLoading}<RegionUpdatingState
-										class="static"
-										label="กำลังอัปเดตช่วงการทำงานของครู..."
-									/>{/if}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={loadControls}
-									disabled={controlsLoading || Boolean(controlBusyId)}
-								>
-									<RefreshCw class="size-4" /> รีเฟรชช่วงการทำงาน
-								</Button>
-							</div>
 						</div>
 						<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
 							{#each phaseControls as control (control.id)}
@@ -719,15 +704,6 @@
 				/>
 			{:else}
 				<div class="relative" aria-busy={plansLoading}>
-					<div class="mb-3 flex flex-wrap items-center justify-end gap-2">
-						{#if plansLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตโครงสร้างคะแนน..."
-							/>{/if}
-						<Button variant="outline" size="sm" onclick={loadPlans} disabled={plansLoading}>
-							<RefreshCw class="size-4" /> รีเฟรชรายวิชา
-						</Button>
-					</div>
 					{#if plansError}
 						<div
 							role="alert"

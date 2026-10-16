@@ -11,7 +11,7 @@
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -39,7 +39,6 @@
 		ExternalLink,
 		MapPin,
 		Printer,
-		RefreshCw,
 		Search
 	} from '@lucide/svelte';
 	import type { PageProps } from './$types';
@@ -334,9 +333,6 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" disabled={loading || !academicTermId} onclick={() => loadOverview()}
-				><RefreshCw class={loading ? 'animate-spin' : ''} /> รีเฟรช</Button
-			>
 			{#if canOpenPlanner}<Button
 					variant="outline"
 					href={academicContextualMenuPath(
@@ -381,7 +377,6 @@
 		/>
 	{:else}
 		<div class="relative space-y-4" aria-busy={loading} data-testid="daily-teaching-ready">
-			{#if loading}<RegionUpdatingState />{/if}
 			{#if errorMessage}
 				<div
 					role="alert"
@@ -411,7 +406,6 @@
 							{overview.periods.length} คาบ · {overview.summary.displayedTeacherCount} ครู
 						</p>
 					</div>
-					{#if loading}<Badge variant="secondary">กำลังอัปเดต</Badge>{/if}
 				</div>
 				{#if filteredTeachers.length === 0}
 					<PageState

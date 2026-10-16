@@ -3,15 +3,10 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Plus, RefreshCw, ArrowRight } from '@lucide/svelte';
+	import { Plus, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -203,12 +198,7 @@
 		<Button variant="outline" href={resolve('staff/academic/promotion/policies')}
 			>เกณฑ์การเลื่อนชั้น</Button
 		>
-		<Button
-			variant="outline"
-			onclick={() => loadRuns()}
-			disabled={loading || !year || saving}
-			aria-label="โหลดรอบใหม่"><RefreshCw class="size-4" /></Button
-		>
+
 		{#if canCreate}<Button onclick={openCreate} disabled={!sourceEligible || saving}
 				><Plus class="size-4" />สร้างรอบเลื่อนชั้น</Button
 			>{/if}
@@ -216,7 +206,6 @@
 	{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์ดูรอบเลื่อนชั้น" />
 	{:else if !year}<PageState variant="empty" title="เลือกปีการศึกษาต้นทางที่แถบด้านบน" />
 	{:else}
-		{#if loading && loaded}<RegionUpdatingState class="static" label="กำลังอัปเดตรอบ..." />{/if}
 		{#if error && loaded}<p role="alert" class="text-sm text-destructive">
 				{error}
 				<Button variant="outline" size="sm" onclick={() => void loadRuns()}>ลองใหม่</Button>
@@ -244,7 +233,7 @@
 				description="เริ่มจากเกณฑ์ที่ฝ่ายวิชาการยืนยัน แล้วสร้างรอบเพื่อคำนวณข้อเสนอ ผลจะยังไม่ถูกนำไปใช้จนกว่าจะอนุมัติและดำเนินการ"
 			/>
 		{:else}
-			<div class="overflow-x-auto rounded-xl border bg-card">
+			<div class="overflow-x-auto rounded-xl border bg-card" aria-busy={loading}>
 				<Table.Root class="min-w-[620px]">
 					<Table.Header
 						><Table.Row

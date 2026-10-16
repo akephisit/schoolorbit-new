@@ -16,7 +16,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { Plus, Pencil, RefreshCw, CalendarDays, History, LoaderCircle } from '@lucide/svelte';
+	import { Plus, Pencil, CalendarDays, History } from '@lucide/svelte';
 	import StaffRankMilestoneCard from './StaffRankMilestoneCard.svelte';
 	import StaffCareerEntryDialog from './StaffCareerEntryDialog.svelte';
 	let {
@@ -159,13 +159,6 @@
 						selected = null;
 						dialogOpen = true;
 					}}><Plus class="size-4" />เพิ่มประวัติย้อนหลัง</Button
-				>{/if}{#if data}<Button
-					size="sm"
-					variant="outline"
-					disabled={loading}
-					onclick={() => load()}
-					aria-label="รีเฟรชประวัติ"
-					><RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} />รีเฟรช</Button
 				>{/if}
 		</div>
 	</div>
@@ -209,9 +202,7 @@
 							</p>{/if}
 					</div>{/each}
 			</div>
-			{#if loading}<p role="status" class="flex items-center gap-2 text-sm text-muted-foreground">
-					<LoaderCircle class="size-4 animate-spin" />กำลังอัปเดตประวัติ...
-				</p>{/if}
+
 			{#if data.items.length === 0}<PageState
 					title="ยังไม่มีประวัติ"
 					description="ข้อมูลย้อนหลังและวันที่ตามคำสั่งจะแสดงที่นี่เมื่อมีการบันทึก"

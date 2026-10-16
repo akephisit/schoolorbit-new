@@ -7,11 +7,10 @@
 	} from '#lib/api/examSchedule.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import StaffExamScheduleDashboard from '#lib/components/academic/exam-schedule/StaffExamScheduleDashboard.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { RefreshCw } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 	const academicTermId = $derived(data.academicTermId);
@@ -82,16 +81,6 @@
 </script>
 
 <PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบที่ประกาศแล้ว">
-	{#snippet actions()}
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={loading || !academicTermId}
-			onclick={loadSchedules}
-		>
-			<RefreshCw class="size-4" /> รีเฟรช
-		</Button>
-	{/snippet}
 	{#if !academicTermId}
 		<PageState
 			title="เลือกภาคเรียนก่อน"
@@ -109,7 +98,6 @@
 		/>
 	{:else}
 		<div class="relative space-y-4" aria-busy={loading} data-testid="staff-exams-ready">
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตตารางสอบ..." />{/if}
 			{#if error}
 				<div
 					role="alert"
