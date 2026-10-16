@@ -53,10 +53,90 @@ test('Admin configuration uses only the exact apex zone route and retires the fo
 		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
 	);
 	assert.ok(
-		release.jobs.preflight.steps.some((item) =>
+		release.jobs['private-preflight'].steps.some((item) =>
 			item.run?.endsWith('pipeline-admin-worker.mjs check-alias')
 		)
 	);
+});
+
+test('reconciled hashes leave a secret-free job and missing transport blocks maintenance', async () => {
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	const publicJob = release.jobs.preflight;
+	const privateJob = release.jobs['private-preflight'];
+	assert.deepEqual(publicJob.outputs, {
+		plan: '${{ steps.reconcile.outputs.plan }}',
+		deploy: '${{ steps.reconcile.outputs.deploy }}'
+	});
+	assert.doesNotMatch(
+		JSON.stringify(publicJob),
+		/secrets\.|appleboy\/|CLOUDFLARE_API_TOKEN|ADMIN_BOOTSTRAP/
+	);
+	assert.equal(publicJob.steps.at(-1).run, 'node scripts/release_preflight.mjs');
+	assert.equal(privateJob.outputs, undefined);
+	assert.equal(privateJob.needs, 'preflight');
+	assert.deepEqual(release.jobs.maintenance.needs, ['preflight', 'private-preflight']);
+	assert.match(release.jobs.maintenance.if, /needs.private-preflight.result == 'success'/);
+	const validation = privateJob.steps[2];
+	assert.equal(validation.name, 'Validate reconciled plan transport before private checks');
+	assert.equal(validation.env.PLAN, '${{ needs.preflight.outputs.plan }}');
+	const plan = {
+		schemaVersion: 1,
+		sha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
+		tree: execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
+			cwd: repoRoot,
+			encoding: 'utf8'
+		}).trim(),
+		deploy: ['backend-admin'],
+		hashes: { 'backend-admin': '22'.repeat(32) }
+	};
+	for (const candidate of [
+		plan,
+		'',
+		null,
+		{ ...plan, schemaVersion: 2 },
+		{ ...plan, sha: '0'.repeat(40) },
+		{ ...plan, tree: '0'.repeat(40) },
+		{ ...plan, deploy: [] },
+		{ ...plan, deploy: ['backend-admin', 'backend-admin'] },
+		{ ...plan, deploy: ['unknown'] },
+		{ ...plan, hashes: {} },
+		{ ...plan, hashes: { 'backend-admin': '***' } }
+	]) {
+		const result = spawnSync('bash', ['-c', validation.run], {
+			cwd: repoRoot,
+			encoding: 'utf8',
+			env: {
+				...process.env,
+				PLAN: candidate === '' ? '' : JSON.stringify(candidate),
+				DEPLOY: JSON.stringify(plan.deploy),
+				GITHUB_SHA: plan.sha
+			}
+		});
+		assert.equal(result.status === 0, candidate === plan, result.stderr);
+	}
+	const mismatched = spawnSync('bash', ['-c', validation.run], {
+		cwd: repoRoot,
+		encoding: 'utf8',
+		env: {
+			...process.env,
+			PLAN: JSON.stringify(plan),
+			DEPLOY: '["frontend-admin"]',
+			GITHUB_SHA: plan.sha
+		}
+	});
+	assert.notEqual(mismatched.status, 0);
+	for (const result of ['failure', 'skipped', 'cancelled']) {
+		const enabled = Function(
+			'needs',
+			`return (${release.jobs.maintenance.if.replace(/needs\.([a-z-]+)/g, 'needs["$1"]')})`
+		)({
+			preflight: { result: 'success', outputs: { deploy: '["backend-admin"]' } },
+			'private-preflight': { result }
+		});
+		assert.equal(enabled, false, result);
+	}
 });
 
 test('Admin deploy resolves its image artifact locally instead of crossing a secret-bearing job output', async () => {
@@ -94,7 +174,7 @@ test('both Admin image consumers reject stale or malformed artifact identities b
 		digest: 'sha256:' + '22'.repeat(32)
 	};
 	for (const [file, job] of [
-		['release.yml', 'preflight'],
+		['release.yml', 'private-preflight'],
 		['deploy-backend-admin.yml', 'deploy']
 	]) {
 		const workflow = parseYaml(
@@ -552,10 +632,14 @@ test('independent Workers run in parallel after Admin backend, but any failure b
 	};
 	for (const admin of ['success', 'skipped', 'failure', 'cancelled']) {
 		const needs = Object.fromEntries(
-			['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
-				id,
-				{ result: 'success' }
-			])
+			[
+				'preflight',
+				'private-preflight',
+				'maintenance',
+				'admin-backend',
+				'admin-frontend',
+				'school'
+			].map((id) => [id, { result: 'success' }])
 		);
 		needs['admin-backend'].result = admin;
 		assert.equal(
@@ -569,10 +653,14 @@ test('independent Workers run in parallel after Admin backend, but any failure b
 	}
 	for (const failed of ['maintenance', 'admin-backend', 'admin-frontend', 'school']) {
 		const needs = Object.fromEntries(
-			['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
-				id,
-				{ result: 'success' }
-			])
+			[
+				'preflight',
+				'private-preflight',
+				'maintenance',
+				'admin-backend',
+				'admin-frontend',
+				'school'
+			].map((id) => [id, { result: 'success' }])
 		);
 		needs[failed].result = 'failure';
 		assert.equal(evaluate('accept', needs, ['frontend-admin', 'backend-school']), false, failed);
@@ -618,10 +706,14 @@ test('an empty reconciled scope skips maintenance and every production branch', 
 		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
 	);
 	const needs = Object.fromEntries(
-		['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
-			id,
-			{ result: 'skipped' }
-		])
+		[
+			'preflight',
+			'private-preflight',
+			'maintenance',
+			'admin-backend',
+			'admin-frontend',
+			'school'
+		].map((id) => [id, { result: 'skipped' }])
 	);
 	needs.preflight = {
 		result: 'success',

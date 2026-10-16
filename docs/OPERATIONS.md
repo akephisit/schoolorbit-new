@@ -254,7 +254,7 @@ The callable [prepare.yml](../.github/workflows/prepare.yml) and [release.yml](.
 are callable component implementations, with no separate push or manual writers.
 
 The flow is `plan → selected artifact preparation → Pipeline gate → production lock
-→ recheck main/baselines → universal maintenance → selected deployment → readiness/acceptance
+→ recheck main/baselines → read-only private preflight → universal maintenance → selected deployment → readiness/acceptance
 → publish accepted baselines → open maintenance`. PRs only plan affected scopes and require an up-to-date main base. Main builds selected immutable
 images and frontend bundles. Test suites execute on developer machines before a ready PR, as described
 in [Testing](./TESTING.md); GitHub neither runs those suites nor imports local test results.
@@ -278,6 +278,10 @@ Preflight recomputes scope under the production lock. If an earlier release acce
 while this run was preparing, remove those redundant components before entering maintenance.
 Explicit manual scope is retained. Changed hashes or newly required unprepared components fail
 preflight; an empty reconciled scope performs no deployment and does not enter maintenance.
+The reconciliation job emits the public plan without deployment secrets. A separate private
+preflight validates that transported plan, then checks Cloudflare ownership and operator inputs
+without forwarding identity outputs. Missing or malformed plan transport blocks maintenance;
+this separation prevents GitHub's secret-output filtering from dropping release hashes.
 Admin frontend and School execute concurrently after the selected Admin backend is ready. School
 still stages tenant Workers before backend replacement and promotes them only after backend readiness;
 global acceptance waits for both branches and leaves maintenance enabled on either failure.
