@@ -46,10 +46,10 @@ for (const listed of prs) {
     continue;
   }
   if (api(`/repos/${repo}/git/ref/heads/main`).object.sha !== main) break;
-  api(`/repos/${repo}/pulls/${pr.number}/merge`, 'PUT', { sha: pr.head.sha, merge_method: 'squash' });
+  api(`/repos/${repo}/pulls/${pr.number}/merge`, 'PUT', { sha: pr.head.sha, merge_method: 'merge' });
   // A GITHUB_TOKEN merge suppresses push workflows; dispatch the production pipeline
   // explicitly. It resolves accumulated changes against accepted baselines.
   api(`/repos/${repo}/actions/workflows/pipeline.yml/dispatches`, 'POST', { ref: 'main', inputs: { scope: 'auto', automatic: 'true' } });
-  console.log(`Squash-merged PR #${pr.number} after the latest-main Pipeline gate.`);
+  console.log(`Merged PR #${pr.number} with a merge commit after the latest-main Pipeline gate.`);
   break;
 }

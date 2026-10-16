@@ -18,6 +18,12 @@ Do not replace a failed check by disabling it or by running a narrower command t
 From the repository root, refresh `origin/main`, update your feature branch if needed, and select
 checks using [the verification scope policy](../.rules#11-verification-matrix) before opening or
 updating a ready PR. The commands below are recipes for the affected owners and workflows.
+Open a draft after the first meaningful commit and use checkpoint commits to preserve progress
+under [the Git workflow](../.rules#git-branches-worktrees-and-integration). Drafts may contain
+incomplete or unverified work with accurate status; saving a checkpoint does not require rerunning
+the full matrix. Before ready status, complete the applicable checks and independent review.
+In a shared checkout, the Senior pauses all writers/tools before staging a checkpoint and resumes
+them after the push; the final review/QA candidate remains frozen until both reports finish.
 `./scripts/pipeline verify --scope documentation` selects the documentation suite; a comma-separated
 list such as `contracts,frontend-school` selects whole owner suites. Use the focused package,
 service/filter and browser commands below for bounded work. `--scope auto` conservatively selects
@@ -49,6 +55,11 @@ Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, proven
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
 browser verification after integration. Caches never replace a required test result.
+For a bounded change to the team merge controller, run `node --test scripts/tests/pipeline-github.test.mjs`
+and the documentation-policy suite. Its fake GitHub API verifies that the eligible PR is merged
+with `merge_method: merge` and the exact gated head, dispatches the main Pipeline, and rejects stale
+or behind branches without mutating their source. Repository method/protection settings and the
+first-controller transition require the separate checks in [operations](./OPERATIONS.md).
 
 For backend network changes, run `bats scripts/tests/installer/network_remote.bats`
 and `node --test scripts/tests/pipeline-network.test.mjs` with the local Docker engine.
@@ -94,10 +105,27 @@ pipeline or production latency measurements.
 ## Every Change
 
 The repository-owned [development skill](../.agents/skills/schoolorbit-development/SKILL.md)
-is discovered from `.agents/skills/` by supported Codex hosts. Invoke
-`$schoolorbit-development` for the approved coordinated workflow. Role ownership, concurrency,
-reasoning preferences and delegation authorization are defined in `.rules`; implicit discovery
-does not itself authorize subagents. The same workflow can run inline when the host lacks them.
+is discovered from `.agents/skills/` by supported Codex hosts. Ordinary SchoolOrbit work requests
+automatically use it through `AGENTS.md` and [the activation policy](../.rules#automatic-workflow-activation);
+typing `$schoolorbit-development` is an optional shortcut, not a prerequisite. If a host does not
+surface the skill, the agent reads its local file and follows the workflow with available tools.
+Bounded delegation follows [the coordination rules](../.rules#agent-roles-and-coordination).
+Small or tightly coupled work stays inline, as do tasks with an inline-only user preference or
+a host without subagent tools. Questions do not authorize implementation or PR creation, and
+review-only work remains read-only. Child agents retain their assigned roles.
+
+The primary session is the Senior/Coordinator. A full-stack task normally uses Frontend and
+Backend implementation roles, then independent Reviewer and QA/Verifier roles for the integrated
+candidate. Model/reasoning defaults and escalation belong to the coordination rules above; use
+the host's real spawn controls and report requested/confirmed settings or fallbacks. The skill
+cannot switch the primary session's model or enable unsupported model overrides.
+
+One coordinated feature team normally shares one feature branch/checkout with non-overlapping
+file ownership. The Senior alone manages its Git state and serializes shared generators and
+dependency changes. Reuse the existing compatible Rust target with one Cargo owner at a time;
+additional worktrees or per-agent targets are not prerequisites for parallel Frontend/Backend work.
+Freeze all writers before final Reviewer/QA checks. Isolation exceptions and resource limits belong
+to the coordination rules above.
 
 For a skill-instruction-only change, run
 `node --test frontend-school/tests/static/documentation-policy.test.mjs`. If executable behavior

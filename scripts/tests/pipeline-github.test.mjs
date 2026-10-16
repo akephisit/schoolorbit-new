@@ -66,7 +66,11 @@ for(const stale of [false,true])test(`merge controller serializes two ready PRs 
  const merges=f.calls().filter(x=>x.route.endsWith('/merge'));assert.equal(merges.length,stale?0:1);
  const inputs=f.calls().filter(x=>x.input).map(x=>JSON.parse(x.input));
  if(stale) assert.equal(inputs.length,0);
- else assert.ok(inputs.some(x=>x.inputs?.automatic==='true'));
+ else {
+  assert.deepEqual(JSON.parse(merges[0].input),{sha:head,merge_method:'merge'});
+  assert.ok(merges[0].args.includes('PUT'));
+  assert.ok(inputs.some(x=>x.inputs?.automatic==='true'));
+ }
  assert.ok(f.calls().every(x=>!x.route.endsWith('/update-branch')));
 });
 for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-disabled','unprepared-component','changed-inputs'])test(`release preflight ${mode} validates before any production mutation`,t=>{
