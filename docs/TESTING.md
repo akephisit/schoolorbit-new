@@ -18,6 +18,12 @@ Do not replace a failed check by disabling it or by running a narrower command t
 From the repository root, refresh `origin/main`, update your feature branch if needed, and select
 checks using [the verification scope policy](../.rules#11-verification-matrix) before opening or
 updating a ready PR. The commands below are recipes for the affected owners and workflows.
+Open a draft after the first meaningful commit and use checkpoint commits to preserve progress
+under [the Git workflow](../.rules#git-branches-worktrees-and-integration). Drafts may contain
+incomplete or unverified work with accurate status; saving a checkpoint does not require rerunning
+the full matrix. Before ready status, complete the applicable checks and independent review.
+In a shared checkout, the Senior pauses all writers/tools before staging a checkpoint and resumes
+them after the push; the final review/QA candidate remains frozen until both reports finish.
 `./scripts/pipeline verify --scope documentation` selects the documentation suite; a comma-separated
 list such as `contracts,frontend-school` selects whole owner suites. Use the focused package,
 service/filter and browser commands below for bounded work. `--scope auto` conservatively selects

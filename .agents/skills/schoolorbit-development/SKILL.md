@@ -53,6 +53,21 @@ This skill routes work; domain conventions and agent policy stay in `.rules`.
    owning writer, then repeat affected review/checks. The Senior accepts the result only after
    reconciling both reports. Keep the role roster, actual settings and handoffs in task state.
 
+## Open a draft and save checkpoints
+
+1. Follow `.rules` → `Git branches, worktrees, and integration`: after the first meaningful commit,
+   push and open/attach a draft PR within the user's delivery scope. Reuse that PR for the feature;
+   do not wait for final implementation or all checks to finish. Honor local-only/no-push requests.
+2. At a useful milestone or handoff, the Senior pauses all writers and source-mutating tools and
+   waits for acknowledgement. Inspect and stage only the agreed checkpoint paths, preserve other
+   unfinished work, review the staged diff and run `git diff --cached --check`, then commit/push.
+3. Record the checkpoint HEAD, remaining work and actual check status in task/PR state, notify
+   agents of the new HEAD, and resume their assignments. Do not repeat the full matrix solely to
+   save a checkpoint or describe an untested checkpoint as verified.
+4. Keep the PR draft while work, independent review or required checks are incomplete. Mark it
+   ready only after the final acceptance process below and the applicable checks pass; readiness,
+   merge and production actions remain bounded by the user's scope and `.rules`.
+
 ## Assign bounded tasks
 
 For every child, provide this assignment in the tool message:
@@ -72,6 +87,7 @@ Focused verification and fixture ownership:
 Deliverable: owned changed paths, evidence, findings and remaining uncertainty;
 commits only for an assigned isolated worktree, candidate tree supplied by the Senior.
 In a shared checkout, do not stage/commit, switch branches, stash/reset/clean or revert others' work.
+Acknowledge the Senior's checkpoint pause; resume only after the Senior confirms the new HEAD.
 No independent PR readiness, main changes or production operations.
 ```
 
@@ -107,7 +123,8 @@ Coordinator and obtain a revised assignment. Independent work can continue.
 ## Deliver and resume
 
 Only the Coordinator performs the PR/integration and production workflow defined in `.rules`.
-Record review and actual local checks in the PR; leave incomplete work in draft. Follow
+Create the draft early, keep progress in checkpoint commits, and record review and actual local
+checks in that same PR; leave incomplete work in draft. Follow
 [operations](../../../docs/OPERATIONS.md) for selected production changes and acceptance.
 Track CI, integration and required acceptance to completion before claiming delivery.
 
