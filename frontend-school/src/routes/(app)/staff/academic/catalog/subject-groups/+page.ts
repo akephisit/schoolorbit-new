@@ -5,12 +5,7 @@ import type { PageLoad } from './$types';
 
 export const _meta = {
 	academicContext: 'none',
-	menu: {
-		title: 'กลุ่มสาระการเรียนรู้',
-		icon: 'Layers3',
-		group: 'academic_curriculum',
-		workspace: 'academic',
-		order: 10,
+	access: {
 		user_type: 'staff',
 		permission: [
 			PERMISSIONS.ACADEMIC_CATALOG_READ_SCHOOL,

@@ -17,6 +17,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { toast } from 'svelte-sonner';
+	import { organizationAncestors } from '#lib/features/staff/organization-hierarchy.js';
 
 	let {
 		open = $bindable(false),
@@ -119,7 +120,11 @@
 				phone: formData.phone,
 				email: formData.email,
 				location: formData.location,
-				parent_unit_id: formData.parent_unit_id === 'none' ? undefined : formData.parent_unit_id
+				parent_unit_id: organizationUnitToEdit?.is_system
+					? undefined
+					: formData.parent_unit_id === 'none'
+						? organizationUnits.find((unit: OrganizationUnit) => unit.unit_type === 'school')?.id
+						: formData.parent_unit_id
 			};
 			const response = target
 				? await updateOrganizationUnit(target, payload)
@@ -220,16 +225,25 @@
 					<Select.Root
 						type="single"
 						bind:value={formData.parent_unit_id}
-						disabled={!!forcedParentId}
+						disabled={!!forcedParentId || !!organizationUnitToEdit?.is_system}
 					>
-						<Select.Trigger id="unit-parent">
-							{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)
-								?.name || 'ระดับโรงเรียน'}
+						<Select.Trigger
+							id="unit-parent"
+							class="w-full min-w-0 whitespace-normal text-left data-[size=default]:h-auto"
+						>
+							<span class="min-w-0 break-words"
+								>{organizationUnits.find((d: OrganizationUnit) => d.id === formData.parent_unit_id)
+									?.name || 'ระดับโรงเรียน'}</span
+							>
 						</Select.Trigger>
-						<Select.Content class="max-h-[200px] overflow-y-auto">
+						<Select.Content class="max-h-[200px] w-(--bits-select-anchor-width) overflow-y-auto">
 							<Select.Item value="none">ระดับโรงเรียน</Select.Item>
 							{#each organizationUnits.filter((d: OrganizationUnit) => d.id !== organizationUnitToEdit?.id && d.is_active && d.unit_type !== 'subject_group') as dept (dept.id)}
-								<Select.Item value={dept.id}>{dept.name} ({dept.code})</Select.Item>
+								<Select.Item value={dept.id}
+									>{[...organizationAncestors(dept, organizationUnits), dept]
+										.map((unit) => unit.name)
+										.join(' / ')}</Select.Item
+								>
 							{/each}
 						</Select.Content>
 					</Select.Root>

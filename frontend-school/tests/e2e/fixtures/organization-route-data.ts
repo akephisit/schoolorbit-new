@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { mockStaffHome, id, firstStaff, secondStaff } from './staff-home-route-data';
+import type { OrganizationUnit } from '../../../src/lib/api/staff.js';
 export const firstUnit = id(90),
 	secondUnit = id(91);
 export const unitPath = (unit = firstUnit) => `/staff/organization/${unit}`;
@@ -10,9 +11,31 @@ export async function mockOrganization(
 		fail?: string;
 		failAt?: number;
 		permissions?: string[];
+		units?: OrganizationUnit[];
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
+		menuGroups: [
+			{
+				code: 'personnel',
+				name: 'งานบุคลากร',
+				icon: 'Users',
+				workspaceCode: 'personnel',
+				workspaceName: 'งานบุคลากร',
+				workspaceIcon: 'Users',
+				workspaceOrder: 2,
+				displayOrder: 1,
+				items: [
+					{
+						id: id(95),
+						name: 'โครงสร้างโรงเรียน',
+						path: '/staff/organization',
+						icon: 'Building2',
+						code: 'staff-organization'
+					}
+				]
+			}
+		],
 		permissions: options.permissions ?? [
 			'roles.read.all',
 			'roles.create.all',
@@ -23,25 +46,27 @@ export async function mockOrganization(
 			'staff_profile.read.school'
 		]
 	});
-	let units = [firstUnit, secondUnit].map((unitId, index) => ({
-		id: unitId,
-		code: index ? 'SECOND' : 'SCHOOL',
-		name: index ? 'หน่วยงานสอง' : 'หน่วยงานแรก',
-		name_en: null,
-		parent_unit_id: index ? firstUnit : null,
-		category: 'administrative',
-		unit_type: index ? 'division' : 'school',
-		is_active: true,
-		is_system: !index,
-		display_order: index,
-		description: null,
-		phone: null,
-		email: null,
-		location: null,
-		subject_group_id: null,
-		created_at: '2026-09-01T00:00:00Z',
-		updated_at: '2026-09-01T00:00:00Z'
-	}));
+	let units: OrganizationUnit[] =
+		options.units ??
+		[firstUnit, secondUnit].map((unitId, index) => ({
+			id: unitId,
+			code: index ? 'SECOND' : 'SCHOOL',
+			name: index ? 'หน่วยงานสอง' : 'หน่วยงานแรก',
+			name_en: null,
+			parent_unit_id: index ? firstUnit : null,
+			category: 'administrative',
+			unit_type: index ? 'division' : 'school',
+			is_active: true,
+			is_system: !index,
+			display_order: index,
+			description: null,
+			phone: null,
+			email: null,
+			location: null,
+			subject_group_id: null,
+			created_at: '2026-09-01T00:00:00Z',
+			updated_at: '2026-09-01T00:00:00Z'
+		}));
 	let members = [firstUnit, secondUnit].map((unitId, index) => ({
 		organization_unit_id: unitId,
 		organization_unit_name: index ? 'หน่วยงานสอง' : 'หน่วยงานแรก',
@@ -107,7 +132,7 @@ export async function mockOrganization(
 				reads.push(url);
 				counts.set(path, (counts.get(path) ?? 0) + 1);
 			} else writes.push({ method, path });
-			const selected = path.includes(secondUnit) ? secondUnit : firstUnit;
+			const selected = path.match(/\/units\/([^/]+)/)?.[1] ?? firstUnit;
 			const unitSnapshot = units.find((unit) => unit.id === selected);
 			const memberSnapshot = members.filter(
 				(member) =>

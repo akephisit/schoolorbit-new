@@ -1,12 +1,22 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { requireApiData } from '#lib/api/client.js';
-	import { resolve } from '$app/paths';
+	import { organizationDetailHref } from '#lib/navigation/organization.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import OrganizationHierarchy from '#lib/components/staff/OrganizationHierarchy.svelte';
+	import {
+		organizationHierarchy,
+		organizationAncestors,
+		organizationUnitLabel as unitTypeLabel,
+		type UnitTypeFilter
+	} from '#lib/features/staff/organization-hierarchy.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import LearningAreaWorkspace from '#lib/components/staff/LearningAreaWorkspace.svelte';
 	import {
 		deleteOrganizationUnit,
@@ -30,26 +40,22 @@
 		DialogTitle
 	} from '#lib/components/ui/dialog/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import {
 		ArrowRight,
 		Building2,
-		Briefcase,
 		KeyRound,
-		Network,
+		ChevronRight,
+		ArrowLeft,
 		Pencil,
 		Plus,
 		Power,
 		RotateCcw,
 		Search,
-		School,
 		Users
 	} from '@lucide/svelte';
 	import OrganizationUnitDialog from '#lib/components/staff/OrganizationUnitDialog.svelte';
 	import OrganizationPermissionDialog from '#lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { toast } from 'svelte-sonner';
-
-	type UnitTypeFilter = 'all' | 'management_group' | 'division' | 'other';
 
 	const unitTypeFilters: { value: UnitTypeFilter; label: string }[] = [
 		{ value: 'all', label: 'ทั้งหมด' },
@@ -61,9 +67,16 @@
 	let departments: OrganizationUnit[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
-	let searchQuery = $state('');
-	let activeUnitTypeFilter = $state<UnitTypeFilter>('all');
 	const currentUrl = $derived(page.shallow?.url ?? page.url);
+	const searchQuery = $derived(currentUrl.searchParams.get('q') ?? '');
+	const activeUnitTypeFilter = $derived(
+		unitTypeFilters.find((filter) => filter.value === currentUrl.searchParams.get('type'))?.value ??
+			'all'
+	);
+	let detailHeading: HTMLHeadingElement | undefined = $state();
+	let hierarchyHeading: HTMLHeadingElement | undefined = $state();
+	let workspaceToolbar: HTMLDivElement | undefined = $state();
+	let createParentId: string | undefined = $state();
 	const selectedUnitId = $derived(currentUrl.searchParams.get('unit'));
 	const canReadGroups = $derived(
 		$can.hasAny(
@@ -72,9 +85,6 @@
 			PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL
 		)
 	);
-
-	let draggedDeptId: string | null = $state(null);
-	let dragOverDeptId: string | null = $state(null);
 
 	let showDialog = $state(false);
 	let editingDepartment: OrganizationUnit | null = $state(null);
@@ -116,41 +126,12 @@
 		active: departments.filter((unit) => unit.is_active).length
 	}));
 
-	let visibleUnits = $derived.by(() => {
-		const query = searchQuery.trim().toLowerCase();
-
-		return departments
-			.filter((unit) => {
-				const matchesSearch =
-					!query ||
-					unit.name.toLowerCase().includes(query) ||
-					unit.code.toLowerCase().includes(query) ||
-					(unit.name_en?.toLowerCase().includes(query) ?? false);
-
-				if (!matchesSearch) return false;
-				if (activeUnitTypeFilter === 'all') return true;
-				if (activeUnitTypeFilter === 'other') {
-					return !['management_group', 'subject_group', 'division', 'school'].includes(
-						unit.unit_type ?? ''
-					);
-				}
-
-				return unit.unit_type === activeUnitTypeFilter;
-			})
-			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-	});
-
-	let visibleTreeRoots = $derived.by(() => {
-		const visibleIds = new Set(visibleUnits.map((unit) => unit.id));
-		return visibleUnits.filter(
-			(unit) => !unit.parent_unit_id || !visibleIds.has(unit.parent_unit_id)
-		);
-	});
-
+	const visibleTreeRoots = $derived(
+		organizationHierarchy(departments, searchQuery, activeUnitTypeFilter)
+	);
 	let selectedUnit = $derived.by(() => {
 		return (
 			departments.find((unit) => unit.id === selectedUnitId) ??
-			visibleUnits[0] ??
 			departments.find((unit) => isSchoolRoot(unit)) ??
 			null
 		);
@@ -160,13 +141,14 @@
 		selectedUnit ? getChildren(selectedUnit.id, departments) : []
 	);
 
-	let selectedUnitParent = $derived.by(() =>
-		selectedUnit?.parent_unit_id
-			? departments.find((unit) => unit.id === selectedUnit?.parent_unit_id)
-			: null
+	const selectedUnitAncestors = $derived(
+		selectedUnit ? organizationAncestors(selectedUnit, departments) : []
+	);
+	const selectedManagementGroup = $derived(
+		selectedUnitAncestors.findLast((unit) => unit.unit_type === 'management_group')
 	);
 
-	function getChildren(parentId: string, source = visibleUnits): OrganizationUnit[] {
+	function getChildren(parentId: string, source = departments): OrganizationUnit[] {
 		return source
 			.filter((unit) => unit.parent_unit_id === parentId)
 			.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
@@ -174,16 +156,6 @@
 
 	function isSchoolRoot(unit: OrganizationUnit): boolean {
 		return unit.code === 'SCHOOL' || unit.unit_type === 'school';
-	}
-
-	function unitTypeLabel(unit: OrganizationUnit): string {
-		if (isSchoolRoot(unit)) return 'โรงเรียน';
-		if (unit.unit_type === 'management_group') return 'กลุ่มบริหาร';
-		if (unit.unit_type === 'subject_group') return 'กลุ่มสาระ';
-		if (unit.unit_type === 'division') return 'ฝ่าย/งาน';
-		if (unit.unit_type === 'committee') return 'คณะกรรมการ';
-		if (unit.unit_type === 'team') return 'ทีม';
-		return 'หน่วยงาน';
 	}
 
 	function categoryLabel(unit: OrganizationUnit): string {
@@ -202,15 +174,6 @@
 		if (positionCode === 'deputy_head') return 'รองหัวหน้า';
 		if (positionCode === 'coordinator') return 'ผู้ประสานงาน';
 		return 'สมาชิก';
-	}
-
-	function isDescendantOf(unitId: string, possibleAncestorId: string): boolean {
-		let current = departments.find((unit) => unit.id === unitId);
-		while (current?.parent_unit_id) {
-			if (current.parent_unit_id === possibleAncestorId) return true;
-			current = departments.find((unit) => unit.id === current?.parent_unit_id);
-		}
-		return false;
 	}
 
 	function applyUnits(result: Awaited<typeof data.units>, revision: number) {
@@ -260,9 +223,10 @@
 		} else selectedMembersError = result.error;
 	}
 
-	function handleCreate() {
+	function handleCreate(parent?: OrganizationUnit) {
 		if (!canCreateOrganizationUnit) return;
 		editingDepartment = null;
+		createParentId = parent?.id;
 		showDialog = true;
 	}
 
@@ -278,10 +242,35 @@
 		return url.pathname + url.search;
 	}
 
-	function handleSelectUnit(unitId: string) {
+	async function handleSelectUnit(unitId: string) {
 		const url = new URL(currentUrl.href);
 		url.searchParams.set('unit', unitId);
-		void goto(url.pathname + url.search, { shallow: true });
+		await goto(url.pathname + url.search, { shallow: true, reset: false });
+		await tick();
+		if (window.matchMedia('(max-width: 1023px)').matches) {
+			detailHeading?.focus({ preventScroll: true });
+			workspaceToolbar?.scrollIntoView({ block: 'start' });
+		}
+	}
+	async function showHierarchy() {
+		const url = new URL(currentUrl.href);
+		url.searchParams.delete('unit');
+		await goto(url.pathname + url.search, { shallow: true, reset: false });
+		await tick();
+		hierarchyHeading?.focus({ preventScroll: true });
+		hierarchyHeading?.scrollIntoView({ block: 'start' });
+	}
+	function filterHierarchy(query: string, type: UnitTypeFilter) {
+		const url = new URL(currentUrl.href);
+		if (query) url.searchParams.set('q', query);
+		else url.searchParams.delete('q');
+		if (type !== 'all') url.searchParams.set('type', type);
+		else url.searchParams.delete('type');
+		void goto(url.pathname + url.search, {
+			shallow: true,
+			replace: true,
+			reset: false
+		});
 	}
 
 	function handlePermission(unit: OrganizationUnit) {
@@ -348,83 +337,6 @@
 			if (disposed) return;
 			console.error('Failed to reactivate organization unit:', cause);
 			toast.error(cause instanceof Error ? cause.message : 'ไม่สามารถเปิดใช้งานหน่วยงานได้');
-		} finally {
-			if (!disposed) statusMutationPending = false;
-		}
-	}
-
-	function handleDragStart(event: DragEvent, unitId: string) {
-		event.stopPropagation();
-		if (!canUpdateOrganizationUnit) return;
-		if (!event.dataTransfer) return;
-		draggedDeptId = unitId;
-		event.dataTransfer.effectAllowed = 'move';
-		event.dataTransfer.setData('text/plain', unitId);
-	}
-
-	function handleDragEnd() {
-		draggedDeptId = null;
-		dragOverDeptId = null;
-	}
-
-	function handleDragOver(event: DragEvent, unitId: string) {
-		if (!canUpdateOrganizationUnit) return;
-		event.preventDefault();
-		event.stopPropagation();
-		if (draggedDeptId === unitId) return;
-		dragOverDeptId = unitId;
-	}
-
-	async function handleDrop(event: DragEvent, targetParentId: string | null) {
-		event.preventDefault();
-		event.stopPropagation();
-		dragOverDeptId = null;
-		if (!canUpdateOrganizationUnit) return;
-		const sourceDeptId = event.dataTransfer?.getData('text/plain');
-
-		if (!sourceDeptId || sourceDeptId === targetParentId) return;
-
-		const sourceDept = departments.find((unit) => unit.id === sourceDeptId);
-		if (!sourceDept) return;
-
-		if (isSchoolRoot(sourceDept)) {
-			toast.error('ไม่สามารถย้ายหน่วยรากของโรงเรียนได้');
-			return;
-		}
-
-		if (targetParentId && isDescendantOf(targetParentId, sourceDept.id)) {
-			toast.error('ไม่สามารถย้ายหน่วยงานไปอยู่ใต้หน่วยงานย่อยของตัวเองได้');
-			return;
-		}
-
-		if (statusMutationPending) return;
-		unitsRequest.abort();
-		loading = false;
-		statusMutationPending = true;
-		const loadingToast = toast.loading('กำลังย้ายหน่วยงาน...');
-		try {
-			const result = await updateOrganizationUnit(sourceDeptId, {
-				parent_unit_id: targetParentId ?? undefined
-			});
-
-			if (disposed) {
-				toast.dismiss(loadingToast);
-				return;
-			}
-			if (result.success) {
-				toast.success('ย้ายหน่วยงานสำเร็จ', { id: loadingToast });
-				await loadDepartments();
-			} else {
-				toast.error('ย้ายหน่วยงานไม่สำเร็จ: ' + result.error, { id: loadingToast });
-			}
-		} catch (err: unknown) {
-			if (disposed) {
-				toast.dismiss(loadingToast);
-				return;
-			}
-			toast.error('เกิดข้อผิดพลาด: ' + (err instanceof Error ? err.message : String(err)), {
-				id: loadingToast
-			});
 		} finally {
 			if (!disposed) statusMutationPending = false;
 		}
@@ -519,26 +431,11 @@
 	});
 </script>
 
-<MobileDragDropPolyfill />
-
 <PageShell
 	title="โครงสร้างโรงเรียน"
-	description="จัดการสายบริหารและกลุ่มสาระ พร้อมหัวหน้า สมาชิก และสิทธิ์"
+	description="ดูกลุ่มบริหาร ฝ่าย/งาน และกลุ่มสาระการเรียนรู้"
+	contentClass="space-y-4"
 >
-	{#snippet actions()}
-		{#if activeSection === 'administration'}
-			<Button variant="outline" onclick={loadDepartments} disabled={loading || !canReadOrganization}
-				>รีเฟรชโครงสร้าง</Button
-			>
-			{#if canCreateOrganizationUnit}
-				<Button onclick={handleCreate} class="gap-2 self-start">
-					<Plus class="h-4 w-4" />
-					เพิ่มหน่วยงาน
-				</Button>
-			{/if}
-		{/if}
-	{/snippet}
-
 	<nav aria-label="ประเภทโครงสร้าง" class="flex flex-wrap gap-2">
 		{#if canReadOrganization}<Button
 				variant={activeSection === 'administration' ? 'default' : 'outline'}
@@ -553,92 +450,44 @@
 				>กลุ่มสาระการเรียนรู้</Button
 			>{/if}
 	</nav>
-
 	{#if activeSection === 'subject-groups'}
 		<LearningAreaWorkspace source={data.groups} />
 	{:else if !canReadOrganization}
-		<PageState title="เลือกกลุ่มสาระการเรียนรู้" description="บัญชีนี้เข้าถึงทะเบียนกลุ่มสาระได้" />
+		<PageState variant="permission" title="ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน" />
 	{:else}
-		<section data-testid="organization-catalog" aria-busy={loading}>
-			{#if loading && unitsLoaded}<p role="status">กำลังอัปเดตโครงสร้าง...</p>{/if}
+		<section data-testid="organization-catalog" aria-busy={loading} class="space-y-4">
+			<div
+				bind:this={workspaceToolbar}
+				class="flex scroll-mt-20 flex-wrap items-start justify-between gap-3"
+				data-testid="organization-toolbar"
+			>
+				<div class={selectedUnitId ? 'hidden lg:block' : ''}>
+					<h2
+						bind:this={hierarchyHeading}
+						tabindex="-1"
+						class="scroll-mt-20 font-semibold outline-none"
+					>
+						เลือกหน่วยงาน
+					</h2>
+					{#if unitsLoaded}<p class="mt-1 text-sm text-muted-foreground">
+							{organizationStats.managementGroups} กลุ่มบริหาร · {organizationStats.divisions} ฝ่าย/งาน
+						</p>{/if}
+				</div>
+				{#if selectedUnitId}<Button variant="outline" onclick={showHierarchy} class="lg:hidden"
+						><ArrowLeft class="size-4" />กลับไปเลือกหน่วยงาน</Button
+					>{/if}
+				{#if canCreateOrganizationUnit}<Button onclick={() => handleCreate()}
+						><Plus class="size-4" />เพิ่มหน่วยงาน</Button
+					>{/if}
+			</div>
 			{#if error && unitsLoaded}<PageState
+					variant="error"
 					title="อัปเดตโครงสร้างไม่สำเร็จ"
 					description={error}
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadDepartments}
 				/>{/if}
-			<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-				<div class="rounded-lg border bg-card p-4">
-					<div class="flex items-center justify-between">
-						<p class="text-sm text-muted-foreground">หน่วยงานทั้งหมด</p>
-						<Network class="h-4 w-4 text-muted-foreground" />
-					</div>
-					<p class="mt-2 text-2xl font-semibold">{unitsLoaded ? organizationStats.total : '—'}</p>
-				</div>
-				<div class="rounded-lg border bg-card p-4">
-					<div class="flex items-center justify-between">
-						<p class="text-sm text-muted-foreground">กลุ่มบริหาร</p>
-						<Briefcase class="h-4 w-4 text-muted-foreground" />
-					</div>
-					<p class="mt-2 text-2xl font-semibold">
-						{unitsLoaded ? organizationStats.managementGroups : '—'}
-					</p>
-				</div>
-				<div class="rounded-lg border bg-card p-4">
-					<div class="flex items-center justify-between">
-						<p class="text-sm text-muted-foreground">ฝ่าย/งาน</p>
-						<Building2 class="h-4 w-4 text-muted-foreground" />
-					</div>
-					<p class="mt-2 text-2xl font-semibold">
-						{unitsLoaded ? organizationStats.divisions : '—'}
-					</p>
-				</div>
-				<div class="rounded-lg border bg-card p-4">
-					<div class="flex items-center justify-between">
-						<p class="text-sm text-muted-foreground">ใช้งานอยู่</p>
-						<School class="h-4 w-4 text-muted-foreground" />
-					</div>
-					<p class="mt-2 text-2xl font-semibold">{unitsLoaded ? organizationStats.active : '—'}</p>
-				</div>
-			</div>
-
-			<div class="rounded-xl border bg-card p-3 sm:p-4">
-				<div class="flex flex-col gap-3 xl:flex-row xl:items-center">
-					<div class="relative flex-1">
-						<Search
-							class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-						/>
-						<Input
-							type="text"
-							bind:value={searchQuery}
-							placeholder="ค้นหาหน่วยงาน รหัส หรือชื่อภาษาอังกฤษ"
-							class="pl-10"
-						/>
-					</div>
-					<div class="flex gap-2 overflow-x-auto">
-						{#each unitTypeFilters as filter (filter.value)}
-							<button
-								type="button"
-								class="shrink-0 rounded-md border px-3 py-2 text-sm transition-colors {activeUnitTypeFilter ===
-								filter.value
-									? 'border-primary bg-primary text-primary-foreground'
-									: 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'}"
-								onclick={() => (activeUnitTypeFilter = filter.value)}
-							>
-								{filter.label}
-							</button>
-						{/each}
-					</div>
-				</div>
-			</div>
-
-			{#if !canReadOrganization}
-				<PageState
-					variant="permission"
-					title="ไม่มีสิทธิ์ดูโครงสร้างโรงเรียน"
-					description="บัญชีนี้เข้า module บทบาทได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลโครงสร้างโรงเรียน"
-				/>
-			{:else if loading && !unitsLoaded}
+			{#if loading && !unitsLoaded}
 				<div role="status" aria-label="กำลังโหลดโครงสร้าง"><PageSkeleton variant="detail" /></div>
 			{:else if error && !unitsLoaded}
 				<PageState
@@ -648,171 +497,231 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadDepartments}
 				/>
+			{:else if departments.length === 0}
+				<PageState
+					title="ยังไม่มีหน่วยงาน"
+					description="เพิ่มกลุ่มบริหารหรือฝ่าย/งานเพื่อเริ่มจัดโครงสร้างโรงเรียน"
+				/>
 			{:else}
-				<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-					<section class="min-h-[520px] rounded-lg border bg-card">
-						<div class="flex items-center justify-between border-b px-4 py-3">
-							<div>
-								<h2 class="text-sm font-semibold">แผนที่องค์กร</h2>
-								<p class="text-xs text-muted-foreground">
-									{visibleUnits.length} หน่วยงานที่ตรงเงื่อนไข
-								</p>
-							</div>
-							{#if draggedDeptId && canUpdateOrganizationUnit}
-								<div
-									class="rounded-md border border-dashed px-3 py-1.5 text-xs text-muted-foreground"
-									ondragover={(event) => {
-										event.preventDefault();
-										dragOverDeptId = 'root';
-									}}
-									ondrop={(event) => handleDrop(event, null)}
-									role="button"
-									tabindex="0"
-								>
-									ย้ายขึ้นระดับบน
+				<div class="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+					<div
+						class={`min-w-0 space-y-4 ${selectedUnitId ? 'hidden lg:block' : ''}`}
+						data-testid="organization-hierarchy"
+					>
+						<div class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
+							<div class="space-y-2">
+								<Label for="organization-search">ค้นหากลุ่มบริหารหรือฝ่าย/งาน</Label>
+								<div class="relative">
+									<Search
+										class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+									/><Input
+										id="organization-search"
+										value={searchQuery}
+										oninput={(event) =>
+											filterHierarchy(event.currentTarget.value, activeUnitTypeFilter)}
+										placeholder="ชื่อหน่วยงานหรือชื่อภาษาอังกฤษ"
+										class="pl-10"
+									/>
 								</div>
-							{/if}
+							</div>
+							<ToggleGroup.Root
+								type="single"
+								bind:value={
+									() => activeUnitTypeFilter,
+									(value) => {
+										const filter = unitTypeFilters.find((item) => item.value === value);
+										if (filter) filterHierarchy(searchQuery, filter.value);
+									}
+								}
+								aria-label="ประเภทหน่วยงาน"
+								class="flex-wrap justify-start"
+							>
+								{#each unitTypeFilters as filter (filter.value)}<ToggleGroup.Item
+										value={filter.value}>{filter.label}</ToggleGroup.Item
+									>{/each}
+							</ToggleGroup.Root>
 						</div>
-
 						{#if visibleTreeRoots.length === 0}
 							<PageState
 								title="ไม่พบหน่วยงานที่ตรงเงื่อนไข"
-								description="ลองปรับคำค้นหาหรือตัวกรองหมวดงาน"
-								class="border-0 shadow-none"
+								description="ลองปรับคำค้นหาหรือเลือกประเภททั้งหมด"
 							/>
 						{:else}
-							<div class="space-y-1 p-3">
-								{#snippet unitTreeNode(unit: OrganizationUnit, depth: number)}
-									{@const children = getChildren(unit.id)}
-									<div style={`padding-left: ${Math.min(depth, 5) * 14}px`}>
-										<button
-											type="button"
-											class="group flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors {selectedUnit?.id ===
-											unit.id
-												? 'border-primary bg-primary/10'
-												: 'border-transparent hover:border-border hover:bg-muted/40'} {dragOverDeptId ===
-											unit.id
-												? 'ring-2 ring-primary'
-												: ''}"
-											draggable={canUpdateOrganizationUnit && !isSchoolRoot(unit)}
-											ondragstart={(event) => handleDragStart(event, unit.id)}
-											ondragend={handleDragEnd}
-											ondragover={(event) => handleDragOver(event, unit.id)}
-											ondrop={(event) => handleDrop(event, unit.id)}
-											onclick={() => handleSelectUnit(unit.id)}
-										>
-											<span
-												class="h-9 w-1 shrink-0 rounded-full {unit.is_active
-													? 'bg-emerald-500'
-													: 'bg-muted-foreground/30'}"
-											></span>
-											<span class="min-w-0 flex-1">
-												<span class="flex min-w-0 items-center gap-2">
-													<span class="truncate text-sm font-medium">{unit.name}</span>
-													<Badge variant="secondary" class="shrink-0 text-[10px]">
-														{unitTypeLabel(unit)}
-													</Badge>
-													{#if unit.is_system}
-														<Badge variant="outline" class="shrink-0 text-[10px]">ระบบ</Badge>
-													{/if}
-												</span>
-												<span class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-													<span class="font-mono">{unit.code}</span>
-													{#if children.length > 0}
-														<span>{children.length} หน่วยงานย่อย</span>
-													{/if}
-												</span>
-											</span>
-											<ArrowRight
-												class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-											/>
-										</button>
-									</div>
-
-									{#if children.length > 0}
-										<div class="mt-1 space-y-1">
-											{#each children as child (child.id)}
-												{@render unitTreeNode(child, depth + 1)}
-											{/each}
-										</div>
-									{/if}
-								{/snippet}
-
-								{#each visibleTreeRoots as root (root.id)}
-									{@render unitTreeNode(root, 0)}
-								{/each}
-							</div>
+							<OrganizationHierarchy
+								roots={visibleTreeRoots}
+								selectedId={selectedUnit?.id}
+								onSelect={handleSelectUnit}
+							/>
 						{/if}
-					</section>
-
-					<aside class="rounded-lg border bg-card">
-						{#if selectedUnit}
-							<div class="border-b p-5">
-								<div class="flex items-start justify-between gap-4">
-									<div class="min-w-0">
-										<div class="flex flex-wrap items-center gap-2">
-											<Badge variant="outline">{selectedUnit.code}</Badge>
-											<Badge variant="secondary">{unitTypeLabel(selectedUnit)}</Badge>
-											<Badge variant={selectedUnit.is_active ? 'default' : 'outline'}>
-												{selectedUnit.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-											</Badge>
-											{#if selectedUnit.is_system}
-												<Badge variant="outline">หน่วยงานระบบ</Badge>
-											{/if}
+					</div>
+					{#if selectedUnit}
+						<div
+							class={`min-w-0 scroll-mt-20 space-y-4 ${selectedUnitId ? '' : 'hidden lg:block'}`}
+							data-testid="organization-selected-detail"
+						>
+							<Card.Root class="gap-0 overflow-hidden py-0">
+								<div
+									class="space-y-4 border-b border-primary/10 bg-gradient-to-br from-primary/5 via-card to-card p-4 sm:p-5"
+								>
+									<nav
+										aria-label="สายสังกัด"
+										class="flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-muted-foreground"
+									>
+										{#each selectedUnitAncestors as ancestor (ancestor.id)}<Button
+												variant="link"
+												size="sm"
+												class="h-auto max-w-full whitespace-normal p-0 text-left"
+												onclick={() => handleSelectUnit(ancestor.id)}>{ancestor.name}</Button
+											><ChevronRight class="size-3 shrink-0" />{/each}
+										<span class="break-words">{selectedUnit.name}</span>
+									</nav>
+									<div class="space-y-2">
+										<div class="flex flex-wrap gap-2">
+											<Badge variant="secondary">{unitTypeLabel(selectedUnit)}</Badge><Badge
+												variant="outline"
+												class={selectedUnit.is_active
+													? 'border-success/20 bg-success/10 text-success'
+													: ''}>{selectedUnit.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}</Badge
+											>
 										</div>
-										<h2 class="mt-3 text-xl font-semibold leading-tight">{selectedUnit.name}</h2>
-										{#if selectedUnit.name_en}
-											<p class="mt-1 text-sm text-muted-foreground">{selectedUnit.name_en}</p>
-										{/if}
-									</div>
-								</div>
-								<p class="mt-4 text-sm text-muted-foreground">
-									{selectedUnit.description || 'ยังไม่มีรายละเอียด'}
-								</p>
-							</div>
-
-							<div class="space-y-5 p-5">
-								<div class="grid grid-cols-2 gap-3">
-									<div class="rounded-md border bg-muted/20 p-3">
-										<p class="text-xs text-muted-foreground">หมวดงาน</p>
-										<p class="mt-1 text-sm font-medium">{categoryLabel(selectedUnit)}</p>
-									</div>
-									<div class="rounded-md border bg-muted/20 p-3">
-										<p class="text-xs text-muted-foreground">หน่วยงานย่อย</p>
-										<p class="mt-1 text-sm font-medium">{selectedUnitChildren.length}</p>
-									</div>
-								</div>
-
-								<div class="space-y-2 text-sm">
-									<div class="flex items-center justify-between gap-3">
-										<span class="text-muted-foreground">อยู่ภายใต้</span>
-										<span class="truncate font-medium"
-											>{selectedUnitParent?.name ?? 'ระดับบนสุด'}</span
+										<h2
+											bind:this={detailHeading}
+											tabindex="-1"
+											class="scroll-mt-4 break-words text-xl font-semibold outline-none"
 										>
+											{selectedUnit.name}
+										</h2>
+										{#if selectedUnit.name_en}<p class="break-words text-sm text-muted-foreground">
+												{selectedUnit.name_en}
+											</p>{/if}
 									</div>
-									<div class="flex items-center justify-between gap-3">
-										<span class="text-muted-foreground">สถานที่</span>
-										<span class="truncate font-medium">{selectedUnit.location || '-'}</span>
-									</div>
-									<div class="flex items-center justify-between gap-3">
-										<span class="text-muted-foreground">ติดต่อ</span>
-										<span class="truncate font-medium"
-											>{selectedUnit.phone || selectedUnit.email || '-'}</span
+									<div class="flex flex-wrap gap-2">
+										<Button
+											size="sm"
+											href={organizationDetailHref(selectedUnit.id, currentUrl)}
+											data-sveltekit-preload-data="tap"
+											><ArrowRight class="size-4" />เปิดรายละเอียด</Button
 										>
+										{#if canUpdateOrganizationUnit}<Button
+												size="sm"
+												variant="outline"
+												onclick={() => handleEdit(selectedUnit)}
+												><Pencil class="size-4" />แก้ไข</Button
+											>{/if}
+										{#if canReadOrganizationPermissions}<Button
+												size="sm"
+												variant="outline"
+												onclick={() => handlePermission(selectedUnit)}
+												><KeyRound class="size-4" />{canUpdateOrganizationPermissions
+													? 'สิทธิ์'
+													: 'ดูสิทธิ์'}</Button
+											>{/if}
+										{#if canAssignOrganizationMembers}<Button
+												size="sm"
+												variant="outline"
+												href={organizationDetailHref(selectedUnit.id, currentUrl)}
+												data-sveltekit-preload-data="tap"><Users class="size-4" />สมาชิก</Button
+											>{/if}
 									</div>
 								</div>
-
-								<div class="space-y-3">
-									<div class="flex items-center justify-between">
-										<h3 class="flex items-center gap-2 text-sm font-semibold">
-											<Users class="h-4 w-4" />
-											สมาชิก
+								<Card.Content class="space-y-4 py-4 sm:py-5">
+									<dl class="grid gap-4 text-sm sm:grid-cols-2">
+										<div>
+											<dt class="text-muted-foreground">
+												{selectedManagementGroup ? 'สังกัดกลุ่มบริหาร' : 'อยู่ภายใต้'}
+											</dt>
+											<dd class="mt-1 break-words font-medium">
+												{selectedManagementGroup?.name ??
+													selectedUnitAncestors.at(-1)?.name ??
+													(isSchoolRoot(selectedUnit) ? 'ระดับโรงเรียน' : 'ไม่พบหน่วยงานต้นสังกัด')}
+											</dd>
+										</div>
+										<div>
+											<dt class="text-muted-foreground">หมวดงาน</dt>
+											<dd class="mt-1">{categoryLabel(selectedUnit)}</dd>
+										</div>
+										{#if selectedUnit.location}<div>
+												<dt class="text-muted-foreground">สถานที่</dt>
+												<dd class="mt-1 break-words">{selectedUnit.location}</dd>
+											</div>{/if}
+										{#if selectedUnit.phone || selectedUnit.email}<div>
+												<dt class="text-muted-foreground">ติดต่อ</dt>
+												<dd class="mt-1 break-words">
+													{[selectedUnit.phone, selectedUnit.email].filter(Boolean).join(' · ')}
+												</dd>
+											</div>{/if}
+									</dl>
+									{#if selectedUnit.description}<p
+											class="whitespace-pre-line break-words text-sm text-muted-foreground"
+										>
+											{selectedUnit.description}
+										</p>{/if}
+									{#if selectedUnit.is_active && canDeleteOrganizationUnit && !selectedUnit.is_system}<Button
+											size="sm"
+											variant="ghost"
+											class="text-destructive"
+											onclick={() => (showDeactivateDialog = true)}
+											disabled={statusMutationPending}><Power class="size-4" />ปิดใช้งาน</Button
+										>
+									{:else if !selectedUnit.is_active && canUpdateOrganizationUnit}<Button
+											size="sm"
+											variant="outline"
+											onclick={handleReactivateOrganizationUnit}
+											disabled={statusMutationPending}
+											><RotateCcw class="size-4" />{statusMutationPending
+												? 'กำลังเปิดใช้งาน...'
+												: 'เปิดใช้งาน'}</Button
+										>{/if}
+								</Card.Content>
+							</Card.Root>
+							{#if selectedUnitChildren.length || canCreateOrganizationUnit}
+								<Card.Root class="gap-0 py-0">
+									<div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+										<h3 class="font-semibold">
+											{selectedUnit.unit_type === 'management_group'
+												? 'ฝ่าย/งานในกลุ่มนี้'
+												: 'หน่วยงานภายใต้'}
+											<span class="font-normal text-muted-foreground"
+												>({selectedUnitChildren.length})</span
+											>
 										</h3>
-										<span class="text-xs text-muted-foreground"
-											>{membersLoaded ? selectedMembers.length : '—'} คน</span
-										>
+										{#if canCreateOrganizationUnit}<Button
+												variant="outline"
+												size="sm"
+												onclick={() => handleCreate(selectedUnit)}
+												><Plus class="size-4" />เพิ่มฝ่าย/งาน</Button
+											>{/if}
 									</div>
-
+									<Card.Content class="py-3">
+										{#if selectedUnitChildren.length}<ul class="divide-y">
+												{#each selectedUnitChildren as child (child.id)}<li>
+														<Button
+															variant="ghost"
+															class="h-auto w-full justify-start whitespace-normal py-2 text-left"
+															onclick={() => handleSelectUnit(child.id)}
+															><Building2 class="size-4 text-muted-foreground" /><span
+																class="min-w-0 flex-1 break-words">{child.name}</span
+															>{#if !child.is_active}<Badge variant="outline">ปิดใช้งาน</Badge
+																>{/if}<ChevronRight class="size-4" /></Button
+														>
+													</li>{/each}
+											</ul>
+										{:else}<p class="text-sm text-muted-foreground">
+												ยังไม่มีฝ่าย/งานภายใต้หน่วยงานนี้
+											</p>{/if}
+									</Card.Content>
+								</Card.Root>
+							{/if}
+							<Card.Root class="gap-0 py-0">
+								<div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+									<h3 class="flex items-center gap-2 font-semibold">
+										<Users class="size-4" />หัวหน้าและสมาชิก
+									</h3>
+									<span class="text-sm text-muted-foreground"
+										>{membersLoaded ? selectedMembers.length : '—'} คน</span
+									>
+								</div>
+								<Card.Content class="py-4">
 									<section
 										data-testid="organization-selected-members"
 										aria-busy={selectedMembersLoading}
@@ -851,7 +760,7 @@
 												{#each selectedMembers.slice(0, 5) as member (member.user_id + '-' + member.organization_unit_id)}
 													<div class="flex items-center justify-between gap-3 px-3 py-2">
 														<div class="min-w-0">
-															<p class="truncate text-sm font-medium">{member.name}</p>
+															<p class="break-words text-sm font-medium">{member.name}</p>
 															<p class="text-xs text-muted-foreground">
 																{member.position_title || positionLabel(member.position_code)}
 															</p>
@@ -869,101 +778,26 @@
 											{/if}
 										{/if}
 									</section>
-								</div>
-
-								<div class="grid gap-2">
-									<Button
-										href={resolve(`staff/organization/${selectedUnit.id}`)}
-										data-sveltekit-preload-data="tap"
-										class="gap-2"
-									>
-										<ArrowRight class="h-4 w-4" />
-										เปิดรายละเอียด
-									</Button>
-									{#if selectedUnit.is_active && canDeleteOrganizationUnit && !selectedUnit.is_system}
-										<Button
-											variant="destructive"
-											onclick={() => (showDeactivateDialog = true)}
-											disabled={statusMutationPending}
-											class="gap-2"
-										>
-											<Power class="h-4 w-4" />
-											ปิดใช้งาน
-										</Button>
-									{:else if !selectedUnit.is_active && canUpdateOrganizationUnit}
-										<Button
-											variant="outline"
-											onclick={handleReactivateOrganizationUnit}
-											disabled={statusMutationPending}
-											class="gap-2"
-										>
-											<RotateCcw class="h-4 w-4" />
-											{statusMutationPending ? 'กำลังเปิดใช้งาน...' : 'เปิดใช้งาน'}
-										</Button>
-									{/if}
-									{#if canUpdateOrganizationUnit || canReadOrganizationPermissions || canAssignOrganizationMembers}
-										<div class="grid grid-cols-2 gap-2">
-											{#if canUpdateOrganizationUnit}
-												<Button
-													variant="outline"
-													onclick={() => handleEdit(selectedUnit)}
-													class="gap-2"
-												>
-													<Pencil class="h-4 w-4" />
-													แก้ไข
-												</Button>
-											{/if}
-											{#if canReadOrganizationPermissions}
-												<Button
-													variant="outline"
-													onclick={() => handlePermission(selectedUnit)}
-													class="gap-2"
-												>
-													<KeyRound class="h-4 w-4" />
-													{canUpdateOrganizationPermissions ? 'สิทธิ์' : 'ดูสิทธิ์'}
-												</Button>
-											{/if}
-											{#if canAssignOrganizationMembers}
-												<Button
-													variant="outline"
-													href={resolve(`staff/organization/${selectedUnit.id}`)}
-													data-sveltekit-preload-data="tap"
-													class="gap-2"
-												>
-													<Users class="h-4 w-4" />
-													สมาชิก
-												</Button>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							</div>
-						{:else}
-							<div class="p-12 text-center text-sm text-muted-foreground">
-								เลือกหน่วยงานเพื่อดูรายละเอียด
-							</div>
-						{/if}
-					</aside>
+								</Card.Content>
+							</Card.Root>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</section>
-		{#if showDialog && (canCreateOrganizationUnit || canUpdateOrganizationUnit)}
-			<OrganizationUnitDialog
+		{#if showDialog && (canCreateOrganizationUnit || canUpdateOrganizationUnit)}<OrganizationUnitDialog
 				bind:open={showDialog}
 				organizationUnitToEdit={editingDepartment}
 				organizationUnits={departments}
 				onSuccess={loadDepartments}
 				forcedCategory="general"
-			/>
-		{/if}
-
-		{#if showPermissionDialog && canReadOrganizationPermissions}
-			<OrganizationPermissionDialog
+				forcedParentId={editingDepartment ? undefined : createParentId}
+			/>{/if}
+		{#if showPermissionDialog && canReadOrganizationPermissions}<OrganizationPermissionDialog
 				bind:open={showPermissionDialog}
 				organizationUnit={permissionDepartment}
 				readOnly={!canUpdateOrganizationPermissions}
-			/>
-		{/if}
+			/>{/if}
 	{/if}
 </PageShell>
 
