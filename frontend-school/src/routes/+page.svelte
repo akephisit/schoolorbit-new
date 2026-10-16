@@ -1,23 +1,22 @@
 <script lang="ts">
 	import type { PublicSchoolInfo } from '#lib/api/school.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
-	import PublicSchoolBrand from '#lib/components/school-public/PublicSchoolBrand.svelte';
+	import PublicSchoolHeader from '#lib/components/school-public/PublicSchoolHeader.svelte';
 	import PublicSchoolSeo from '#lib/components/school-public/PublicSchoolSeo.svelte';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton } from '#lib/components/app-state/index.js';
 	import {
 		getRequiredPublicSchoolInfo,
 		getPublicSchoolStatistics,
 		getPublicSchoolOrganization
 	} from '#lib/api/school.js';
-	import { buildPublicOrganizationTree } from '#lib/school-public/organization.js';
 	import PublicSchoolIdentity from '#lib/components/school-public/PublicSchoolIdentity.svelte';
 	import PublicSchoolRegion from '#lib/components/school-public/PublicSchoolRegion.svelte';
 	import PublicSchoolStatistics from '#lib/components/school-public/PublicSchoolStatistics.svelte';
-	import PublicOrganizationTree from '#lib/components/school-public/PublicOrganizationTree.svelte';
+	import PublicExecutiveTeam from '#lib/components/school-public/PublicExecutiveTeam.svelte';
 	import {
 		ArrowDown,
 		ArrowUpRight,
@@ -59,24 +58,7 @@
 	<a href="#main-content" class="skip-link rounded-lg bg-card px-4 py-3 text-primary shadow-lg"
 		>ข้ามไปเนื้อหาหลัก</a
 	>
-	<header
-		class="public-header sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-xl"
-	>
-		<div
-			class="relative mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6"
-		>
-			<a
-				href={resolve('/')}
-				class="flex min-w-0 flex-1 items-center gap-2.5 font-medium"
-				data-testid="school-brand"
-			>
-				<PublicSchoolBrand operation={identityOperation} />
-			</a>
-			<div class="shrink-0">
-				<Button href="/login">เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" /></Button>
-			</div>
-		</div>
-	</header>
+	<PublicSchoolHeader operation={identityOperation} />
 	<main id="main-content" tabindex="-1">
 		<section
 			class="public-hero relative isolate overflow-hidden border-b border-border bg-gradient-to-br from-primary/5 via-background to-accent px-4 py-14 sm:px-6 sm:py-20"
@@ -147,24 +129,19 @@
 				<div class="mx-auto mb-6 max-w-6xl px-4 sm:px-6">
 					<p class="text-xs font-medium tracking-widest text-primary">โครงสร้างองค์กร</p>
 					<h2 id="organization-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
-						แผนผังการบริหาร
+						คณะผู้บริหาร
 					</h2>
 					<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
-						หน่วยงานและบุคลากรปัจจุบันทุกตำแหน่ง · กดชื่อหน่วยงานเพื่อกางหรือย่อข้อมูล
+						ผู้อำนวยการ รองผู้อำนวยการ และผู้รับผิดชอบสูงสุดของแต่ละกลุ่มบริหาร
 					</p>
 				</div>
 				<PublicSchoolRegion
 					source={data.organization}
-					label="โครงสร้างบริหาร"
+					label="คณะผู้บริหาร"
 					retry={(signal) => getPublicSchoolOrganization({ signal })}
 				>
 					{#snippet skeleton()}<PageSkeleton variant="cards" rows={3} />{/snippet}
-					{#snippet children(organization)}{#if organization.units.length}<PublicOrganizationTree
-								nodes={buildPublicOrganizationTree(organization.units)}
-							/>{:else}<PageState
-								title="ยังไม่มีข้อมูลโครงสร้างบริหาร"
-								description="ข้อมูลจะแสดงเมื่อโรงเรียนตั้งค่าโครงสร้างองค์กร"
-							/>{/if}{/snippet}
+					{#snippet children(organization)}<PublicExecutiveTeam {organization} />{/snippet}
 				</PublicSchoolRegion>
 			</div>
 		</section>
@@ -216,9 +193,6 @@
 	.school-public :global(summary:focus-visible) {
 		outline: 2px solid var(--ring);
 		outline-offset: 4px;
-	}
-	.public-header {
-		box-shadow: 0 4px 24px color-mix(in oklab, var(--primary) 5%, transparent);
 	}
 	.public-hero::before,
 	.public-hero::after {

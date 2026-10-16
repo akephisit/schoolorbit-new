@@ -19984,6 +19984,8 @@ export interface components {
 		PublicOrganizationMember: {
 			avatarUrl?: string | null;
 			name: string;
+			/** @description Directory-only identity for combining current responsibilities without exposing user IDs. */
+			personKey: string;
 			positionCode: string;
 			positionTitle: string | null;
 		};

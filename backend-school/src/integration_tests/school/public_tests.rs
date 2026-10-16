@@ -267,6 +267,7 @@ async fn public_organization_only_exposes_active_units_and_current_members() {
     let root = Uuid::new_v4();
     let child = Uuid::new_v4();
     let inactive = Uuid::new_v4();
+    let mut public_staff_ids = Vec::new();
     sqlx::query("INSERT INTO organization_units(id,code,name,unit_type,parent_unit_id,is_active) VALUES($1,'PUBLICROOT','โรงเรียนทดสอบ','school',NULL,true),($2,'PUBLICCHILD','ฝ่ายทดสอบ','division',$1,true),($3,'PUBLICINACTIVE','หน่วยงานปิด','division',$1,false)").bind(root).bind(child).bind(inactive).execute(&pool).await.unwrap();
     for (index, (position, start, end, status)) in [
         ("director", -1, None, "active"),
@@ -283,6 +284,7 @@ async fn public_organization_only_exposes_active_units_and_current_members() {
     .enumerate()
     {
         let id = user(&pool, &format!("leader-{index}"), "staff", None, status).await;
+        public_staff_ids.push(id);
         sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at,ended_at) VALUES($1,$2,$3,CURRENT_DATE+$4,CASE WHEN $5::int IS NULL THEN NULL ELSE CURRENT_DATE+$5 END)").bind(id).bind(child).bind(position).bind(start).bind(end).execute(&pool).await.unwrap();
     }
     let org = get_organization(&pool).await.unwrap();
@@ -297,6 +299,26 @@ async fn public_organization_only_exposes_active_units_and_current_members() {
     let unit = org.units.iter().find(|u| u.id == child).unwrap();
     assert_eq!(unit.parent_id, Some(root));
     assert_eq!(unit.members.len(), 6);
+    assert_eq!(
+        unit.members
+            .iter()
+            .map(|member| &member.person_key)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        6
+    );
+    // The same staff member keeps one public identity across units and positions.
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'head',CURRENT_DATE-1)")
+        .bind(public_staff_ids[0]).bind(root).execute(&pool).await.unwrap();
+    let refreshed = get_organization(&pool).await.unwrap();
+    let root_member = &refreshed
+        .units
+        .iter()
+        .find(|unit| unit.id == root)
+        .unwrap()
+        .members[0];
+    assert_eq!(root_member.person_key, unit.members[0].person_key);
+    assert_ne!(root_member.person_key, public_staff_ids[0].to_string());
     assert_eq!(
         unit.members
             .iter()
