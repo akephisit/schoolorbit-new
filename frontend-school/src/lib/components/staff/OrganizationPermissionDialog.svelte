@@ -2,10 +2,16 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { filterOrganizationPermissions } from '#lib/features/staff/organization-permission-search.js';
 	import { permissionAPI, type PermissionsByModule } from '#lib/api/roles.js';
 	import {
 		permissionActionLabel,
+		permissionModuleLabel,
 		permissionScopeMeta,
 		permissionScopeToneClass
 	} from '#lib/permissions/registry.js';
@@ -50,7 +56,8 @@
 		onSuccess,
 		readOnly = false
 	} = $props<{
-		organizationUnit: Pick<OrganizationUnit, 'id'> | null;
+		organizationUnit:
+			(Pick<OrganizationUnit, 'id'> & Partial<Pick<OrganizationUnit, 'name'>>) | null;
 		open: boolean;
 		onSuccess?: () => void;
 		readOnly?: boolean;
@@ -73,8 +80,24 @@
 	let disposed = false,
 		ownerEpoch = 0;
 	let saving = $state(false);
+	let saveError = $state('');
+	let search = $state('');
+	let mobilePosition = $state<PermissionPositionValue>('head');
+	const visiblePermissionModules = $derived(
+		filterOrganizationPermissions(permissionModules, search)
+	);
+	const visiblePermissionCount = $derived(
+		Object.values(visiblePermissionModules).reduce(
+			(sum, permissions) => sum + permissions.length,
+			0
+		)
+	);
 
-	let moduleKeys = $derived(Object.keys(permissionModules).sort());
+	let moduleKeys = $derived(
+		Object.keys(visiblePermissionModules).sort((a, b) =>
+			permissionModuleLabel(a).localeCompare(permissionModuleLabel(b), 'th')
+		)
+	);
 	let totalPermissionCount = $derived(
 		Object.values(permissionModules).reduce((total, permissions) => total + permissions.length, 0)
 	);
@@ -110,25 +133,17 @@
 	}
 
 	function toggleGrant(permissionId: string, position: PermissionPositionValue, checked: boolean) {
-		if (readOnly) return;
+		if (!canSave || saving || loading || !grantsLoaded || !catalogLoaded) return;
 		const key = grantKey(permissionId, position);
 		if (checked) selectedGrantKeys.add(key);
 		else selectedGrantKeys.delete(key);
-	}
-
-	function positionGrantCount(position: PermissionPositionValue) {
-		let count = 0;
-		for (const key of selectedGrantKeys) {
-			if (key.endsWith(`::${position}`)) count += 1;
-		}
-		return count;
 	}
 
 	function isModulePositionSelected(
 		moduleName: string,
 		position: PermissionPositionValue
 	): boolean {
-		const permissions = permissionModules[moduleName];
+		const permissions = visiblePermissionModules[moduleName];
 		if (!permissions || permissions.length === 0) return false;
 		return permissions.every((permission) => hasGrant(permission.id, position));
 	}
@@ -137,7 +152,7 @@
 		moduleName: string,
 		position: PermissionPositionValue
 	): boolean {
-		const permissions = permissionModules[moduleName];
+		const permissions = visiblePermissionModules[moduleName];
 		if (!permissions || permissions.length === 0) return false;
 		const selectedCount = permissions.filter((permission) =>
 			hasGrant(permission.id, position)
@@ -150,8 +165,8 @@
 		position: PermissionPositionValue,
 		checked: boolean
 	) {
-		if (readOnly) return;
-		const permissions = permissionModules[moduleName];
+		if (!canSave || saving || loading || !grantsLoaded || !catalogLoaded) return;
+		const permissions = visiblePermissionModules[moduleName];
 		if (!permissions) return;
 
 		for (const permission of permissions) {
@@ -215,6 +230,7 @@
 		const current = () => !disposed && epoch === ownerEpoch && organizationUnit?.id === owner;
 		grantsRequest.abort();
 		saving = true;
+		saveError = '';
 		try {
 			const res = await updateOrganizationPermissions(
 				owner,
@@ -226,7 +242,7 @@
 			open = false;
 			onSuccess?.();
 		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'บันทึกสิทธิ์ไม่สำเร็จ');
+			if (current()) saveError = error instanceof Error ? error.message : 'บันทึกสิทธิ์ไม่สำเร็จ';
 		} finally {
 			if (current()) saving = false;
 		}
@@ -238,6 +254,9 @@
 			readCatalog = canReadCatalog;
 		untrack(() => {
 			ownerEpoch++;
+			search = '';
+			saveError = '';
+			mobilePosition = 'head';
 			saving = false;
 			permissionModules = {};
 			selectedGrantKeys.clear();
@@ -266,8 +285,10 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="flex max-h-[88vh] flex-col p-0 sm:max-w-[1180px]">
-		<Dialog.Header class="border-b px-6 py-5">
+	<Dialog.Content class="flex max-h-[90dvh] min-h-0 flex-col gap-0 p-0 sm:max-w-[1180px]">
+		<Dialog.Header
+			class="border-b bg-gradient-to-br from-primary/5 via-card to-card px-4 py-4 pr-10 sm:px-6"
+		>
 			<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 				<div class="space-y-2">
 					<Dialog.Title class="flex items-center gap-2 text-xl">
@@ -275,34 +296,48 @@
 						สิทธิ์ตามตำแหน่ง
 					</Dialog.Title>
 					<Dialog.Description>
-						<span class="font-medium text-foreground">{organizationUnit?.name}</span>
+						<span class="break-words font-medium text-foreground">{organizationUnit?.name}</span>
 					</Dialog.Description>
-				</div>
-
-				<div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-					<div class="rounded-md border bg-muted/30 px-3 py-2">
-						<p class="text-xs text-muted-foreground">สิทธิ์ทั้งหมด</p>
-						<p class="font-semibold">{catalogLoaded ? totalPermissionCount : '—'}</p>
-					</div>
-					<div class="rounded-md border bg-muted/30 px-3 py-2">
-						<p class="text-xs text-muted-foreground">รายการที่เลือก</p>
-						<p class="font-semibold">{grantsLoaded ? selectedGrantKeys.size : '—'}</p>
-					</div>
-					<div class="rounded-md border bg-muted/30 px-3 py-2">
-						<p class="text-xs text-muted-foreground">ทุกตำแหน่ง</p>
-						<p class="font-semibold">{grantsLoaded ? positionGrantCount('all') : '—'}</p>
-					</div>
-					<div class="rounded-md border bg-muted/30 px-3 py-2">
-						<p class="text-xs text-muted-foreground">เฉพาะตำแหน่ง</p>
-						<p class="font-semibold">
-							{grantsLoaded ? selectedGrantKeys.size - positionGrantCount('all') : '—'}
-						</p>
-					</div>
 				</div>
 			</div>
 		</Dialog.Header>
 
-		<div class="flex-1 overflow-y-auto px-6 py-5">
+		<div class="space-y-3 border-b px-4 py-4 sm:px-6">
+			<p class="text-sm text-muted-foreground">
+				เลือกสิทธิ์ให้แต่ละตำแหน่งในหน่วยงานนี้ · “ทุกตำแหน่ง” ใช้กับสมาชิกทุกคน
+			</p>
+			<div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+				<div class="space-y-2">
+					<Label for="organization-permission-search">ค้นหาสิทธิ์</Label>
+					<Input
+						id="organization-permission-search"
+						bind:value={search}
+						placeholder="ชื่อสิทธิ์ หมวดงาน หรือขอบเขต เช่น บุคลากร ทั้งโรงเรียน"
+						disabled={!catalogLoaded}
+					/>
+				</div>
+				<div class="space-y-2 md:hidden">
+					<Label for="organization-permission-position">ตำแหน่งที่ต้องการกำหนด</Label>
+					<Select.Root type="single" bind:value={mobilePosition}>
+						<Select.Trigger id="organization-permission-position" class="w-full"
+							>{permissionPositionColumns.find((column) => column.value === mobilePosition)
+								?.label}</Select.Trigger
+						>
+						<Select.Content
+							>{#each permissionPositionColumns as column (column.value)}<Select.Item
+									value={column.value}>{column.label}</Select.Item
+								>{/each}</Select.Content
+						>
+					</Select.Root>
+				</div>
+				<p class="text-sm text-muted-foreground" aria-live="polite">
+					{catalogLoaded
+						? `${visiblePermissionCount} จาก ${totalPermissionCount} สิทธิ์`
+						: 'กำลังโหลดรายการสิทธิ์'}
+				</p>
+			</div>
+		</div>
+		<div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
 			<section data-testid="organization-grants" aria-busy={grantsLoading}>
 				{#if !canReadGrants}<PageState variant="permission" title="ไม่มีสิทธิ์อ่านสิทธิ์หน่วยงาน" />
 				{:else if grantsLoading && !grantsLoaded}<div
@@ -311,7 +346,7 @@
 					>
 						<PageSkeleton variant="cards" rows={1} />
 					</div>
-				{:else if grantsLoaded}<p>สิทธิ์ที่บันทึกไว้ {selectedGrantKeys.size} รายการ</p>{/if}
+				{/if}
 				{#if grantsError}<PageState
 						variant="error"
 						title="โหลดสิทธิ์หน่วยงานไม่สำเร็จ"
@@ -342,64 +377,73 @@
 				<div class="flex items-center justify-center py-20">
 					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 				</div>
-			{:else if moduleKeys.length === 0}
+			{:else if totalPermissionCount === 0}
 				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					ไม่พบข้อมูลสิทธิ์ในระบบ
 				</div>
 			{:else}
 				<div class="space-y-5">
-					<div class="flex flex-wrap gap-2">
-						{#each permissionPositionColumns as column (column.value)}
-							<div class="rounded-md border bg-background px-3 py-2 text-sm">
-								<span class="text-muted-foreground">{column.shortLabel}</span>
-								<span class="ml-2 font-semibold">{positionGrantCount(column.value)}</span>
-							</div>
-						{/each}
-					</div>
+					{#if moduleKeys.length === 0}<PageState
+							title="ไม่พบสิทธิ์ที่ตรงคำค้น"
+							description="ลองค้นหาด้วยชื่อหมวดงานหรือชื่อสิทธิ์อื่น สิทธิ์ที่เลือกไว้ยังคงอยู่"
+							actionLabel="ล้างคำค้น"
+							onaction={() => (search = '')}
+						/>{/if}
 
 					{#each moduleKeys as module (module)}
 						<section class="overflow-hidden rounded-lg border bg-card">
 							<div class="flex items-center gap-2 border-b bg-muted/20 px-4 py-3">
 								<Layers class="h-4 w-4 text-primary" />
-								<h3 class="font-semibold capitalize">{module}</h3>
+								<h3 class="font-semibold">{permissionModuleLabel(module)}</h3>
 								<span class="text-sm text-muted-foreground">
-									{permissionModules[module]?.length ?? 0} สิทธิ์
+									{visiblePermissionModules[module]?.length ?? 0} สิทธิ์
 								</span>
 							</div>
 
-							<div class="overflow-x-auto">
-								<table class="w-full min-w-[1032px] table-fixed text-sm">
+							<div class="min-w-0">
+								<Table.Root class="w-full table-fixed text-sm md:min-w-[1032px]">
 									<colgroup>
-										<col class="w-[360px]" />
+										<col class="md:w-[360px]" />
 										{#each permissionPositionColumns as column (column.value)}
-											<col class="w-[96px]" />
+											<col
+												class={column.value === mobilePosition
+													? 'w-20 md:w-[96px]'
+													: 'hidden w-[96px] md:table-column'}
+											/>
 										{/each}
 									</colgroup>
-									<thead>
-										<tr class="border-b bg-muted/10">
-											<th class="px-4 py-3 text-left font-medium">Permission</th>
+									<Table.Header>
+										<Table.Row class="border-b bg-muted/10">
+											<Table.Head class="whitespace-normal px-4 py-3 text-left font-medium"
+												>สิทธิ์และขอบเขต<span
+													class="mt-1 block text-xs font-normal text-muted-foreground"
+													>ช่องหัวตารางเลือกเฉพาะสิทธิ์ที่แสดง</span
+												></Table.Head
+											>
 											{#each permissionPositionColumns as column (column.value)}
-												<th class="px-2 py-3 font-medium">
+												<Table.Head
+													class={`px-2 py-3 font-medium ${column.value === mobilePosition ? '' : 'hidden md:table-cell'}`}
+												>
 													<div class="flex flex-col items-center gap-1">
 														<span>{column.shortLabel}</span>
 														<Checkbox
-															aria-label={`${module} ${column.label}`}
+															aria-label={`เลือกสิทธิ์ที่แสดงในหมวด${permissionModuleLabel(module)} · ${column.label}`}
 															checked={isModulePositionSelected(module, column.value)}
 															indeterminate={isModulePositionIndeterminate(module, column.value)}
 															onCheckedChange={(checked) =>
 																toggleModulePosition(module, column.value, !!checked)}
-															disabled={!canSave || !grantsLoaded || loading}
+															disabled={!canSave || !grantsLoaded || loading || saving}
 														/>
 													</div>
-												</th>
+												</Table.Head>
 											{/each}
-										</tr>
-									</thead>
-									<tbody>
-										{#each permissionModules[module] as permission (permission.id)}
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#each visiblePermissionModules[module] as permission (permission.id)}
 											{@const scopeMeta = permissionScopeMeta(permission.scope)}
-											<tr class="border-b last:border-b-0 hover:bg-muted/20">
-												<td class="px-4 py-3 align-top">
+											<Table.Row class="border-b last:border-b-0 hover:bg-muted/20">
+												<Table.Cell class="whitespace-normal px-4 py-3 align-top">
 													<div class="space-y-1">
 														<div class="flex flex-wrap items-center gap-2">
 															<p class="text-sm font-medium text-foreground">
@@ -415,36 +459,35 @@
 																{scopeMeta.label}
 															</Badge>
 														</div>
-														<p class="break-all font-mono text-xs font-medium text-foreground">
-															{permission.code}
-														</p>
 														{#if permission.description}
-															<p class="line-clamp-2 text-xs text-muted-foreground">
+															<p class="text-xs text-muted-foreground">
 																{permission.description}
 															</p>
 														{/if}
-														<p class="line-clamp-2 text-xs text-muted-foreground">
+														<p class="text-xs text-muted-foreground">
 															{scopeMeta.description}
 														</p>
 													</div>
-												</td>
+												</Table.Cell>
 												{#each permissionPositionColumns as column (column.value)}
-													<td class="px-2 py-3 align-top">
+													<Table.Cell
+														class={`px-2 py-3 align-top ${column.value === mobilePosition ? '' : 'hidden md:table-cell'}`}
+													>
 														<div class="flex justify-center">
 															<Checkbox
-																aria-label={`${permission.code} ${column.label}`}
+																aria-label={`${permission.name} · ${scopeMeta.label} · ${column.label}`}
 																checked={hasGrant(permission.id, column.value)}
 																onCheckedChange={(checked) =>
 																	toggleGrant(permission.id, column.value, !!checked)}
-																disabled={!canSave || !grantsLoaded || loading}
+																disabled={!canSave || !grantsLoaded || loading || saving}
 															/>
 														</div>
-													</td>
+													</Table.Cell>
 												{/each}
-											</tr>
+											</Table.Row>
 										{/each}
-									</tbody>
-								</table>
+									</Table.Body>
+								</Table.Root>
 							</div>
 						</section>
 					{/each}
@@ -452,11 +495,18 @@
 			{/if}
 		</div>
 
-		<Dialog.Footer class="border-t px-6 py-4">
+		{#if saveError}<p role="alert" class="px-4 py-3 text-sm text-destructive sm:px-6">
+				{saveError}
+			</p>{/if}
+		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
 			<div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<div class="flex items-center gap-2 text-xs text-muted-foreground">
 					<UsersRound class="h-4 w-4" />
-					<span>บันทึกตามตำแหน่งในหน่วยงาน</span>
+					<span
+						>{grantsLoaded
+							? `เลือกไว้ ${selectedGrantKeys.size} รายการ · รวมรายการที่ซ่อนจากการค้นหา`
+							: 'กำลังโหลดสิทธิ์ที่บันทึกไว้'}</span
+					>
 				</div>
 				<div class="flex justify-end gap-2">
 					<Button variant="outline" onclick={() => (open = false)}>

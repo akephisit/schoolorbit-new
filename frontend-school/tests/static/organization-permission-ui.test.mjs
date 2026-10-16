@@ -43,8 +43,8 @@ test('organization permission matrix keeps header and row checkboxes aligned', a
 
 	assert.match(source, /table-fixed/);
 	assert.match(source, /<colgroup>/);
-	assert.match(source, /<col class="w-\[360px\]"/);
-	assert.match(source, /<col class="w-\[96px\]"/);
+	assert.match(source, /<col class="md:w-\[360px\]"/);
+	assert.match(source, /w-\[96px\]/);
 	assert.match(source, /flex justify-center/);
 });
 
