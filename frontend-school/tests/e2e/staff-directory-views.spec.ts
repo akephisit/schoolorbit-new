@@ -124,7 +124,7 @@ test('view switch preserves filters, paging and return navigation without loadin
 test('directory views wrap names and keep read-only actions in mobile and desktop themes', async ({
 	browser
 }, testInfo) => {
-	for (const width of [390, 1440]) {
+	for (const width of [390, 1440, 1543]) {
 		for (const theme of ['light', 'dark']) {
 			const context = await browser.newContext({
 				baseURL: testInfo.project.use.baseURL,
@@ -165,6 +165,19 @@ test('directory views wrap names and keep read-only actions in mobile and deskto
 				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 					true
 				);
+				if (view === 'cards') {
+					const portrait = page.getByRole('img', {
+						name: `รูป ${people[0].display_name}`,
+						exact: true
+					});
+					await expect(portrait).toBeVisible();
+					const box = await portrait.boundingBox();
+					const rootFont = await page.evaluate(() =>
+						Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+					);
+					expect(box?.width).toBeCloseTo(9 * rootFont, 1);
+					expect(box?.height).toBeCloseTo(9 * rootFont, 1);
+				}
 				await page.getByTestId('staff-directory').screenshot({
 					path: testInfo.outputPath(`directory-${view}-${width}-${theme}.png`),
 					animations: 'disabled'

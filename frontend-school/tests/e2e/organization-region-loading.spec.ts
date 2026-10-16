@@ -102,7 +102,12 @@ test('late unit and members cannot replace the next route', async ({ page }) => 
 	await expect(page.getByTestId('organization-unit')).toContainText('หน่วยงานสอง');
 	await expect(page.getByTestId('organization-members')).toContainText('สมาชิกสอง');
 	api.release();
-	await expect(page.getByTestId('organization-unit')).not.toContainText('หน่วยงานแรก');
+	await expect(
+		page.getByTestId('organization-unit').getByRole('heading', { name: 'หน่วยงานแรก', exact: true })
+	).toHaveCount(0);
+	await expect(
+		page.getByTestId('organization-unit').getByRole('heading', { name: 'หน่วยงานสอง', exact: true })
+	).toBeVisible();
 });
 test('reader has no unopened action reads or delegation tab', async ({ page }) => {
 	const api = await mockOrganization(page, { permissions: ['roles.read.all'] });
@@ -139,7 +144,7 @@ for (const kind of ['catalog', 'grants'] as const)
 		await expect(region).toContainText(`region ${kind} ไม่พร้อม`);
 		await region.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 		await expect(
-			page.getByRole('checkbox', { name: 'staff_profile.read.own หัวหน้า', exact: true })
+			page.getByRole('checkbox', { name: 'ดูโปรไฟล์ตนเอง · เฉพาะตนเอง · หัวหน้า', exact: true })
 		).toBeChecked();
 		expect(api.count('/api/permissions/modules')).toBe(kind === 'catalog' ? 2 : 1);
 		expect(api.count(endpoint('permissions'))).toBe(kind === 'grants' ? 2 : 1);
@@ -153,9 +158,7 @@ test('missing settings read never requests permission labels or enables saving',
 		.getByTestId('organization-unit')
 		.getByRole('button', { name: 'สิทธิ์ตามตำแหน่ง', exact: true })
 		.click();
-	await expect(page.getByTestId('organization-grants')).toContainText(
-		'สิทธิ์ที่บันทึกไว้ 1 รายการ'
-	);
+	await expect(page.getByRole('dialog')).toContainText('เลือกไว้ 1 รายการ');
 	await expect(page.getByTestId('organization-permission-catalog')).toContainText(
 		'ไม่มีสิทธิ์อ่านรายการสิทธิ์'
 	);
@@ -212,14 +215,12 @@ for (const kind of ['catalog', 'grants'] as const)
 				.getByRole('status')
 		).toBeVisible();
 		if (kind === 'catalog')
-			await expect(page.getByTestId('organization-grants')).toContainText(
-				'สิทธิ์ที่บันทึกไว้ 1 รายการ'
-			);
+			await expect(page.getByRole('dialog')).toContainText('เลือกไว้ 1 รายการ');
 		expect(api.count('/api/permissions/modules')).toBe(1);
 		expect(api.count(endpoint('permissions'))).toBe(1);
 		api.release();
 		await expect(
-			page.getByRole('checkbox', { name: 'staff_profile.read.own หัวหน้า', exact: true })
+			page.getByRole('checkbox', { name: 'ดูโปรไฟล์ตนเอง · เฉพาะตนเอง · หัวหน้า', exact: true })
 		).toBeChecked();
 	});
 test('unit empty mutation refreshes only unit and structure', async ({ page }) => {
@@ -245,7 +246,7 @@ test('permission mutation refreshes no unrelated primary regions', async ({ page
 		.click();
 	const dialog = page.getByRole('dialog');
 	await expect(
-		dialog.getByRole('checkbox', { name: 'staff_profile.read.own หัวหน้า', exact: true })
+		dialog.getByRole('checkbox', { name: 'ดูโปรไฟล์ตนเอง · เฉพาะตนเอง · หัวหน้า', exact: true })
 	).toBeChecked();
 	await dialog.getByRole('button', { name: 'บันทึกสิทธิ์', exact: true }).click();
 	await expect(dialog).not.toBeVisible();

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { organizationAncestors } from '#lib/features/staff/organization-hierarchy.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -26,7 +28,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -137,7 +139,12 @@
 
 	let contextPanel = $derived.by(() => ({
 		parentName:
-			parentUnit?.name ?? (department?.unit_type === 'school' ? 'ระดับโรงเรียน' : 'ไม่มีข้อมูล'),
+			parentUnit?.name ??
+			(!structureLoaded
+				? '—'
+				: department?.unit_type === 'school'
+					? 'ระดับโรงเรียน'
+					: 'ไม่มีข้อมูล'),
 		childCount: structureLoaded ? childDepts.length : '—',
 		memberCount: membersLoaded ? deptMembers.length : '—'
 	}));
@@ -145,12 +152,12 @@
 	let detailStats = $derived.by(() => {
 		const stats = [
 			{
-				label: 'สมาชิก',
+				label: 'สมาชิกในหน่วยงาน',
 				value: membersLoaded ? String(deptMembers.length) : '—',
 				helper: 'คนในหน่วยงานนี้'
 			},
 			{
-				label: 'งานหลัก',
+				label: 'หัวหน้า/ผู้รับผิดชอบ',
 				value: membersLoaded ? String(primaryMembers.length) : '—',
 				helper: 'หัวหน้าและผู้รับผิดชอบ'
 			},
@@ -160,14 +167,6 @@
 				helper: 'ใต้โครงสร้างนี้'
 			}
 		];
-
-		if (canManageDelegations) {
-			stats.push({
-				label: 'มอบหมายสิทธิ์',
-				value: delegationsLoaded ? String(delegations.length) : '—',
-				helper: 'รายการที่ใช้งาน'
-			});
-		}
 
 		return stats;
 	});
@@ -189,6 +188,7 @@
 		return 'หน่วยงาน';
 	});
 
+	const ancestors = $derived(department ? organizationAncestors(department, allDepartments) : []);
 	let categoryText = $derived.by(() => {
 		if (!department) return '-';
 		if (department.category === 'academic') return 'วิชาการ';
@@ -532,32 +532,29 @@
 
 <PageShell
 	title="รายละเอียดหน่วยงาน"
-	description={department?.name ?? 'ข้อมูลหน่วยงานในโครงสร้างโรงเรียน'}
+	description="ดูสมาชิก หน่วยงานย่อย และกำหนดสิทธิ์ตามตำแหน่ง"
+	contentClass="space-y-4"
 	backHref={organizationReturnHref(page.url)}
 	backLabel="โครงสร้าง"
 	backPreload="tap"
 >
-	{#snippet actions()}
-		<Button variant="outline" onclick={loadUnit} disabled={loading || !canReadOrganization}
-			>รีเฟรชหน่วยงาน</Button
-		>
-		<Button
-			variant="outline"
-			onclick={loadStructure}
-			disabled={structureLoading || !canReadOrganization}>รีเฟรชโครงสร้าง</Button
-		>
-		<Button
-			variant="outline"
-			onclick={loadMembers}
-			disabled={membersLoading || !canReadOrganization}>รีเฟรชสมาชิก</Button
-		>
-	{/snippet}
 	{#if !canReadOrganization}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลหน่วยงาน" />
 	{:else}
+		<nav aria-label="ข้อมูลหน่วยงาน" class="flex flex-wrap gap-2">
+			{#each detailTabs as tab (tab.id)}<Button
+					variant={activeTab === tab.id ? 'default' : 'outline'}
+					onclick={() => (activeTab = tab.id)}
+					aria-current={activeTab === tab.id ? 'page' : undefined}
+				>
+					{tab.label}
+				</Button>{/each}
+		</nav>
 		<div class="space-y-5">
-			<section class="rounded-lg border bg-card p-5">
-				<div data-testid="organization-unit" aria-busy={loading}>
-					{#if loading && department}<p role="status">กำลังอัปเดตหน่วยงาน...</p>{/if}
+			<Card.Root
+				class="relative gap-0 border-primary/10 bg-gradient-to-br from-primary/5 via-card to-card p-4 sm:p-5"
+			>
+				<div data-testid="organization-unit" aria-busy={loading} class="relative">
+					{#if loading && department}<RegionUpdatingState label="กำลังอัปเดตหน่วยงาน" />{/if}
 					{#if error}<PageState
 							variant="error"
 							title="โหลดหน่วยงานไม่สำเร็จ"
@@ -571,13 +568,25 @@
 					{:else if department}
 						<div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
 							<div class="min-w-0 space-y-4">
-								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant="secondary">{categoryText}</Badge>
-									<Badge
-										variant={department.unit_type === 'management_group' ? 'default' : 'outline'}
+								{#if ancestors.length}<nav
+										aria-label="สังกัดหน่วยงาน"
+										class="flex flex-wrap gap-1 text-sm text-muted-foreground"
 									>
-										{unitTypeText}
-									</Badge>
+										{#each ancestors as ancestor (ancestor.id)}<a
+												href={resolve(`staff/organization/${ancestor.id}`)}
+												class="break-words text-primary hover:underline"
+												data-sveltekit-preload-data="tap">{ancestor.name}</a
+											><span aria-hidden="true">/</span>{/each}<span class="break-words"
+											>{department.name}</span
+										>
+									</nav>{/if}
+								<div class="flex flex-wrap items-center gap-2">
+									<Badge variant="secondary">{unitTypeText}</Badge><Badge
+										variant="outline"
+										class={department.is_active
+											? 'border-success/20 bg-success/10 text-success'
+											: ''}>{department.is_active ? 'ใช้งาน' : 'ปิดใช้งาน'}</Badge
+									>
 								</div>
 
 								<div class="flex items-start gap-3">
@@ -591,11 +600,13 @@
 										{/if}
 									</div>
 									<div class="min-w-0">
-										<h1 class="break-words text-2xl font-bold text-foreground">
+										<h2 class="break-words text-xl font-semibold text-foreground">
 											{department?.name ?? 'หน่วยงานนี้'}
-										</h1>
+										</h2>
 										{#if department.name_en}
-											<p class="mt-1 text-sm text-muted-foreground">{department.name_en}</p>
+											<p class="mt-1 break-words text-sm text-muted-foreground">
+												{department.name_en}
+											</p>
 										{/if}
 										<p class="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
 											{department.description || 'ยังไม่มีรายละเอียดหน่วยงาน'}
@@ -639,43 +650,23 @@
 						</div>
 					{/if}
 				</div>
-				<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+				<div class="mt-4 grid grid-cols-3 gap-2">
 					{#each detailStats as stat (stat.label)}
-						<div class="rounded-lg border bg-muted/20 p-4">
+						<div class="rounded-lg border bg-muted/20 p-3">
 							<p class="text-xs font-medium text-muted-foreground">{stat.label}</p>
 							<div class="mt-2 flex items-end justify-between gap-3">
-								<p class="text-2xl font-semibold leading-none">{stat.value}</p>
-								<p class="text-right text-xs text-muted-foreground">{stat.helper}</p>
+								<p class="text-xl font-semibold leading-none">{stat.value}</p>
+								<p class="hidden text-right text-xs text-muted-foreground sm:block">
+									{stat.helper}
+								</p>
 							</div>
 						</div>
 					{/each}
 				</div>
-			</section>
+			</Card.Root>
 
-			<div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+			<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
 				<div class="min-w-0 space-y-4">
-					<div class="flex gap-2 overflow-x-auto rounded-lg border bg-card p-1">
-						{#each detailTabs as tab (tab.id)}
-							<button
-								type="button"
-								class="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors {activeTab ===
-								tab.id
-									? 'bg-primary text-primary-foreground'
-									: 'text-muted-foreground hover:bg-muted hover:text-foreground'}"
-								onclick={() => (activeTab = tab.id)}
-							>
-								<span>{tab.label}</span>
-								{#if tab.count !== undefined}
-									<span
-										class="rounded-full px-1.5 text-xs {activeTab === tab.id
-											? 'bg-primary-foreground/20'
-											: 'bg-muted'}">{tab.count}</span
-									>
-								{/if}
-							</button>
-						{/each}
-					</div>
-
 					{#if activeTab === 'members'}
 						{#key deptId}<OrganizationMembersSection
 								members={allMembers}
@@ -689,7 +680,7 @@
 								onChanged={loadMembers}
 							/>{/key}
 					{:else if activeTab === 'permissions'}
-						<section class="space-y-4 rounded-lg border bg-card p-5">
+						<Card.Root class="relative space-y-4 gap-0 p-4 sm:p-5">
 							<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 								<div class="space-y-1">
 									<h2 class="flex items-center gap-2 text-lg font-semibold">
@@ -710,7 +701,7 @@
 							<div class="grid gap-3 sm:grid-cols-3">
 								<div class="rounded-lg border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">หน่วยงาน</p>
-									<p class="mt-1 truncate text-sm font-medium">
+									<p class="mt-1 break-words text-sm font-medium">
 										{department?.name ?? 'หน่วยงานนี้'}
 									</p>
 								</div>
@@ -723,9 +714,9 @@
 									<p class="mt-1 text-sm font-medium">{leaderCount} รายการ</p>
 								</div>
 							</div>
-						</section>
+						</Card.Root>
 					{:else if activeTab === 'children'}
-						<section class="space-y-4 rounded-lg border bg-card p-5">
+						<Card.Root class="relative space-y-4 gap-0 p-4 sm:p-5">
 							<div class="flex items-center justify-between gap-3">
 								<div class="space-y-1">
 									<h2 class="flex items-center gap-2 text-lg font-semibold">
@@ -750,9 +741,9 @@
 									actionLabel="ลองอีกครั้ง"
 									onaction={loadStructure}
 								/>{/if}
-							{#if structureLoading && structureLoaded}<p role="status">
-									กำลังอัปเดตโครงสร้าง...
-								</p>{/if}
+							{#if structureLoading && structureLoaded}<RegionUpdatingState
+									label="กำลังอัปเดตโครงสร้าง"
+								/>{/if}
 							{#if structureLoading && !structureLoaded}<div
 									role="status"
 									aria-label="กำลังโหลดโครงสร้าง"
@@ -781,16 +772,16 @@
 											class="flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
 										>
 											<div class="min-w-0">
-												<p class="truncate text-sm font-medium">{child.name}</p>
+												<p class="break-words text-sm font-medium">{child.name}</p>
 											</div>
 											<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 										</a>
 									{/each}
 								</div>
 							{/if}
-						</section>
+						</Card.Root>
 					{:else if activeTab === 'delegations' && canManageDelegations}
-						<section class="space-y-4 rounded-lg border bg-card p-5">
+						<Card.Root class="relative space-y-4 gap-0 p-4 sm:p-5">
 							<div class="flex items-center justify-between gap-3">
 								<div class="space-y-1">
 									<h2 class="flex items-center gap-2 text-lg font-semibold">
@@ -819,9 +810,9 @@
 									actionLabel="ลองอีกครั้ง"
 									onaction={loadDelegations}
 								/>{/if}
-							{#if delegationsLoading && delegationsLoaded}<p role="status">
-									กำลังอัปเดตการมอบหมาย...
-								</p>{/if}
+							{#if delegationsLoading && delegationsLoaded}<RegionUpdatingState
+									label="กำลังอัปเดตการมอบหมาย"
+								/>{/if}
 							{#if delegationsLoading && !delegationsLoaded}<div
 									role="status"
 									aria-label="กำลังโหลดการมอบหมาย"
@@ -846,7 +837,7 @@
 									{#each delegations as delegation (delegation.id)}
 										<div class="flex items-start justify-between gap-4 px-4 py-3">
 											<div class="min-w-0 space-y-0.5">
-												<p class="truncate text-sm font-medium">{delegation.to_user_name}</p>
+												<p class="break-words text-sm font-medium">{delegation.to_user_name}</p>
 												<p class="text-xs text-muted-foreground">
 													{delegation.permission_name}
 													<span class="font-mono">({delegation.permission_code})</span>
@@ -873,12 +864,12 @@
 									{/each}
 								</div>
 							{/if}
-						</section>
+						</Card.Root>
 					{/if}
 				</div>
 
 				<aside class="space-y-4">
-					<section class="rounded-lg border bg-card p-5">
+					<Card.Root class="relative gap-0 p-4 sm:p-5">
 						<div class="flex items-center gap-2">
 							<Info class="h-5 w-5 text-primary" />
 							<h2 class="font-semibold">ข้อมูลหน่วยงาน</h2>
@@ -886,7 +877,8 @@
 						<div class="mt-4 space-y-3 text-sm">
 							<div class="rounded-lg border bg-muted/20 p-3">
 								<p class="text-xs text-muted-foreground">สังกัดภายใต้</p>
-								<p class="mt-1 font-medium">{contextPanel.parentName}</p>
+								<p class="mt-1 break-words font-medium">{contextPanel.parentName}</p>
+								<p class="mt-2 text-xs text-muted-foreground">หมวดงาน · {categoryText}</p>
 							</div>
 							{#each contactItems as item (item.key)}
 								<div class="flex items-start gap-3 rounded-lg border px-3 py-2">
@@ -904,15 +896,15 @@
 								</div>
 							{/each}
 						</div>
-					</section>
+					</Card.Root>
 
-					<section class="rounded-lg border bg-card p-5">
+					<Card.Root class="relative gap-0 p-4 sm:p-5">
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-2">
 								<Users class="h-5 w-5 text-primary" />
 								<h2 class="font-semibold">งานหลักของหน่วยงาน</h2>
 							</div>
-							<Badge variant="outline">{contextPanel.memberCount} คน</Badge>
+							<Badge variant="outline">{membersLoaded ? primaryMembers.length : '—'} คน</Badge>
 						</div>
 
 						{#if membersLoading && !membersLoaded}<div role="status" aria-label="กำลังโหลดงานหลัก">
@@ -937,7 +929,7 @@
 									<div class="space-y-1 px-3 py-3">
 										<div class="flex items-start justify-between gap-3">
 											<div class="min-w-0">
-												<p class="truncate text-sm font-medium">{member.name}</p>
+												<p class="break-words text-sm font-medium">{member.name}</p>
 												<p class="text-xs text-muted-foreground">
 													{positionLabel(member.position_code, member.position_title)}
 												</p>
@@ -946,7 +938,7 @@
 												<Badge variant="outline" class="shrink-0 text-[10px]">หลัก</Badge>
 											{/if}
 										</div>
-										<p class="line-clamp-2 text-xs text-muted-foreground">
+										<p class="break-words text-xs text-muted-foreground">
 											{memberWorkText(member)}
 										</p>
 									</div>
@@ -958,12 +950,12 @@
 								</p>
 							{/if}
 						{/if}
-					</section>
+					</Card.Root>
 
-					<section
+					<Card.Root
 						data-testid="organization-structure"
 						aria-busy={structureLoading}
-						class="rounded-lg border bg-card p-5"
+						class="relative gap-0 p-4 sm:p-5"
 					>
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-2">
@@ -979,9 +971,9 @@
 								actionLabel="ลองอีกครั้ง"
 								onaction={loadStructure}
 							/>{/if}
-						{#if structureLoading && structureLoaded}<p role="status">
-								กำลังอัปเดตโครงสร้าง...
-							</p>{/if}
+						{#if structureLoading && structureLoaded}<RegionUpdatingState
+								label="กำลังอัปเดตโครงสร้าง"
+							/>{/if}
 						{#if structureLoading && !structureLoaded}<div
 								role="status"
 								aria-label="กำลังโหลดโครงสร้าง"
@@ -1006,7 +998,7 @@
 										class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/30"
 									>
 										<div class="min-w-0">
-											<p class="truncate font-medium">{child.name}</p>
+											<p class="break-words font-medium">{child.name}</p>
 										</div>
 										<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 									</a>
@@ -1018,7 +1010,7 @@
 								</p>
 							{/if}
 						{/if}
-					</section>
+					</Card.Root>
 				</aside>
 			</div>
 		</div>
