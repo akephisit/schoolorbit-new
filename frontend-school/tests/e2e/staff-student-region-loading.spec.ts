@@ -137,7 +137,7 @@ test('read-only editor loads one profile and no optional editor catalog', async 
 	await expect.poll(() => api.reads.length).toBe(1);
 	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('link', { name: 'ดูข้อมูลนักเรียน', exact: true })).toHaveAttribute(
+	await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
 		'href',
 		studentPath(firstStudent)
 	);

@@ -134,7 +134,10 @@ test('failed refresh and failed save preserve the edit draft', async ({ page }) 
 	await expect(page.getByText('region นักเรียนไม่พร้อม', { exact: true })).toBeVisible();
 	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue('ชื่อร่าง');
 	await page.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true }).click();
-	await expect(page.getByRole('alert')).toContainText('บันทึกตัวอย่างไม่สำเร็จ');
+	await expect(
+		page.getByRole('alert').filter({ hasText: 'บันทึกตัวอย่างไม่สำเร็จ' })
+	).toBeVisible();
+	await expect(page.getByText('region นักเรียนไม่พร้อม', { exact: true })).toBeVisible();
 	await expect(page.getByRole('textbox', { name: 'ชื่อ', exact: true })).toHaveValue('ชื่อร่าง');
 });
 
