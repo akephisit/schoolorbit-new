@@ -82,11 +82,11 @@ test('generated people mutation contract owns all migrated operations and DTOs',
 	);
 	assert.match(
 		studentsApi,
-		/updateStudent[\s\S]*apiClient\.put<EmptyData>\(`\/api\/students\/\$\{id\}`/
+		/updateStudent[\s\S]*apiClient\.put<EmptyData>\(`\/api\/students\/\$\{encodeURIComponent\(id\)\}`/
 	);
 	assert.match(
 		studentsApi,
-		/deleteStudent[\s\S]*apiClient\.delete<EmptyData>\(`\/api\/students\/\$\{id\}`/
+		/deleteStudent[\s\S]*apiClient\.delete<EmptyData>\(`\/api\/students\/\$\{encodeURIComponent\(id\)\}`/
 	);
 	assert.match(
 		studentsApi,

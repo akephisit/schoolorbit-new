@@ -66,8 +66,9 @@
 			if (!current()) return;
 			draft = studentRegisterDraft();
 			await goto(
-				resolve(
-					withStudentRegisterContext(`/staff/students/${encodeURIComponent(result.id)}`, context)
+				withStudentRegisterContext(
+					resolve('/(app)/staff/students/[id]', { id: result.id }),
+					context
 				)
 			);
 		} catch (error) {

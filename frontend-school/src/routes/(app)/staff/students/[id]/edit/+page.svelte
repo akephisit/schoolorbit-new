@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { withStudentRegisterContext } from '#lib/navigation/student-register.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import {
 		getStudent,
@@ -86,6 +87,8 @@
 				revision++;
 				request.abort();
 				student = null;
+				loading = true;
+				loadError = '';
 				draft = studentRegisterDraft();
 				draftInitialized = false;
 				errors = {};
@@ -199,13 +202,16 @@
 			return;
 		}
 		const current = mutation(),
-			destination = data.detailHref;
+			destination = withStudentRegisterContext(
+				resolve('/(app)/staff/students/[id]', { id: data.studentId }),
+				data.context
+			);
 		saving = true;
 		formError = '';
 		try {
 			await updateStudent(data.studentId, updateStudentRegisterInput(draft));
 			if (current())
-				await goto(resolve(destination), {
+				await goto(destination, {
 					invalidate: [`school:student-register-profile:${data.studentId}`]
 				});
 		} catch (error) {
@@ -331,7 +337,7 @@
 							</div></Card.Header
 						>
 						<Card.Content class="space-y-3"
-							>{#each student.parents as parent (parent.id)}<div
+							>{#each student?.parents ?? [] as parent (parent.id)}<div
 									class="flex items-start justify-between gap-3 rounded-lg border p-4"
 								>
 									<div class="min-w-0 space-y-1">

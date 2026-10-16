@@ -112,6 +112,8 @@
 				studentsRequest.abort();
 				students = [];
 				loaded = false;
+				loading = true;
+				loadError = '';
 				showDeleteDialog = false;
 				studentToDelete = null;
 			}

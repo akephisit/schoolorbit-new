@@ -8,7 +8,9 @@ export interface StudentRegisterContext {
 	source: 'registry' | 'student-years' | 'homeroom';
 }
 
-export function studentRegistryHref(url: URL): string {
+type StudentRegisterUrl = { searchParams: Pick<URLSearchParams, 'get'> };
+
+export function studentRegistryHref(url: StudentRegisterUrl): string {
 	const query = new URLSearchParams();
 	for (const key of registryParameters) {
 		const value = url.searchParams.get(key);
@@ -18,7 +20,7 @@ export function studentRegistryHref(url: URL): string {
 }
 
 /** A year alone never changes a permanent profile into an annual view. */
-export function studentRegisterContext(url: URL): StudentRegisterContext {
+export function studentRegisterContext(url: StudentRegisterUrl): StudentRegisterContext {
 	const fallback: StudentRegisterContext = {
 		returnTo: registryPath,
 		academicYearId: null,

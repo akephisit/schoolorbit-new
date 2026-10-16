@@ -828,19 +828,35 @@ test('staff manage pilot uses shadcn-svelte surfaces and permission gates', asyn
 			'utf8'
 		)
 	);
+	const results = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/lib/components/staff/StaffDirectoryResults.svelte'),
+			'utf8'
+		)
+	);
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 	for (const requiredImport of [
 		'#lib/components/ui/button/index.js',
 		'#lib/components/ui/input/index.js',
 		'#lib/components/ui/dialog/index.js',
-		'#lib/components/ui/table/index.js',
 		'#lib/components/ui/card/index.js',
-		'#lib/components/ui/badge/index.js',
 		'#lib/components/app-state/index.js'
 	]) {
 		assert.match(source, new RegExp(escapeRegex(requiredImport)));
 	}
+	assert.match(
+		source,
+		/import StaffDirectoryResults from '#lib\/components\/staff\/StaffDirectoryResults\.svelte'/
+	);
+	assert.match(source, /<StaffDirectoryResults\b/);
+	for (const requiredImport of [
+		'#lib/components/ui/table/index.js',
+		'#lib/components/ui/badge/index.js'
+	])
+		assert.match(results, new RegExp(escapeRegex(requiredImport)));
+	assert.match(results, /<Table\.Root\b/);
+	assert.match(results, /<Badge\b/);
 
 	for (const requiredPermission of [
 		'PERMISSIONS.STAFF_PROFILE_READ_OWN',

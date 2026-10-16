@@ -409,6 +409,13 @@ async fn administrative_status_edits_preserve_accounts_annual_history_and_omitte
     let pool = academic_fixture("student_register_update").await;
     let student = Uuid::from_u128(0x50000000000000000000000000000001);
     let registrar = insert_user(&pool, "Registrar", "staff", "active").await;
+    // The academic cutover fixture deliberately has no permanent registration row.
+    // This success path needs one; missing-row conflicts are covered independently.
+    sqlx::query("INSERT INTO student_info(user_id,student_id) VALUES($1,'REG-EDIT')")
+        .bind(student)
+        .execute(&pool)
+        .await
+        .unwrap();
     let before: String = sqlx::query_scalar("SELECT jsonb_build_object('years',(SELECT jsonb_agg(to_jsonb(y) ORDER BY id) FROM student_academic_years y WHERE student_id=$1),'placements',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.id) FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id WHERE y.student_id=$1),'memberships',(SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM learning_group_students m WHERE m.student_id=$1))::text")
         .bind(student).fetch_one(&pool).await.unwrap();
     let mut input: UpdateStudentRequest = serde_json::from_value(json!({

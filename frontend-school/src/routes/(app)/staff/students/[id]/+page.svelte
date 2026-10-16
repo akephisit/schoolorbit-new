@@ -91,6 +91,8 @@
 			if (previousIdentity && previousIdentity !== identity) {
 				studentRequest.abort();
 				student = null;
+				loading = true;
+				error = '';
 			}
 			previousIdentity = identity;
 		});
