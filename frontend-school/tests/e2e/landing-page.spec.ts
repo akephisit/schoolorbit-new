@@ -145,6 +145,8 @@ const organization = {
 test.describe.configure({ mode: 'serial', timeout: 60000 });
 test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
+	// Compile the self-hosted Vite routes during fixture setup, outside user-interaction timing.
+	test.setTimeout(120_000);
 	apiServer = createHttpServer(async (req, res) => {
 		const endpoint = new URL(req.url ?? '/', 'http://localhost').pathname;
 		requests.push({ path: endpoint, cookie: req.headers.cookie, origin: req.headers.origin });
@@ -230,6 +232,11 @@ test.beforeAll(async () => {
 	const address = devServer.httpServer?.address();
 	if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
 	baseUrl = `http://127.0.0.1:${address.port}`;
+	for (const route of ['/', '/login']) {
+		const response = await fetch(`${baseUrl}${route}`);
+		if (!response.ok) throw new Error(`Public fixture route ${route} failed to start`);
+		await response.text();
+	}
 });
 test.beforeEach(() => {
 	requests.length = 0;
