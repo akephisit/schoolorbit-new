@@ -14,7 +14,7 @@
 		source: RouteLoadResult<T> | Promise<RouteLoadResult<T>>;
 		retry: (signal: AbortSignal) => Promise<T>;
 		label: string;
-		children: Snippet<[T]>;
+		children?: Snippet<[T]>;
 		skeleton: Snippet;
 		retryResult?: Promise<RouteLoadResult<T>> | null;
 	} = $props();
@@ -42,7 +42,7 @@
 	</div>
 {:then result}
 	{#if result.ok}
-		{@render children(result.data)}
+		{@render children?.(result.data)}
 	{:else}
 		<PageState
 			variant="error"

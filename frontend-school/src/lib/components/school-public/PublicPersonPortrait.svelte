@@ -13,7 +13,7 @@
 		src={person.member.avatarUrl ? `${BACKEND_URL}${person.member.avatarUrl}` : null}
 		alt={`รูป ${person.member.name}`}
 		size="xl"
-		class="mb-3 size-24 ring-4 ring-background sm:size-28"
+		class="mb-3 aspect-square h-auto w-32 max-w-full shrink-0 ring-4 ring-primary/5 sm:w-36 lg:w-40"
 	/>
 	<p class="w-full text-sm leading-relaxed font-medium break-words sm:text-base">
 		{person.member.name}

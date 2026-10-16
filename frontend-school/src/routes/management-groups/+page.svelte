@@ -4,4 +4,4 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PublicPersonnelPage {data} unitType="management_group" />
+<PublicPersonnelPage {data} view="management_group" />

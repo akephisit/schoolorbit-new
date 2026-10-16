@@ -10,11 +10,11 @@
 		current = 'home'
 	}: {
 		operation: RouteLoadResult<PublicSchoolInfo> | Promise<RouteLoadResult<PublicSchoolInfo>>;
-		current?: 'home' | 'management' | 'subjects';
+		current?: 'home' | 'executives' | 'management' | 'subjects';
 	} = $props();
 	let menuOpen = $state(false);
 	const links = $derived([
-		{ label: 'คณะผู้บริหาร', href: '/#organization', active: false },
+		{ label: 'คณะผู้บริหาร', href: resolve('/executives'), active: current === 'executives' },
 		{ label: 'กลุ่มบริหาร', href: resolve('/management-groups'), active: current === 'management' },
 		{ label: 'กลุ่มสาระ', href: resolve('/subject-groups'), active: current === 'subjects' }
 	]);
