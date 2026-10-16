@@ -16,6 +16,7 @@ let baseUrl: string;
 let authenticated = false;
 let unavailable = false;
 let invalid = false;
+let redirected = false;
 const requests: { path: string; cookie?: string }[] = [];
 const schoolName = 'โรงเรียนทดสอบ </script><script>alert(1)</script>';
 
@@ -39,6 +40,10 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (url.pathname === '/api/v1/public/schools') {
+			if (redirected) {
+				res.writeHead(302, { location: '/redirected-directory' }).end();
+				return;
+			}
 			if (unavailable) {
 				res.writeHead(503).end('{}');
 				return;
@@ -100,6 +105,7 @@ test.beforeEach(() => {
 	authenticated = false;
 	unavailable = false;
 	invalid = false;
+	redirected = false;
 	requests.length = 0;
 });
 test.afterAll(async () => {
@@ -191,12 +197,13 @@ test('first HTML exposes safe unique metadata and school links without JavaScrip
 	await context.close();
 });
 
-test('unavailable or invalid public data returns an uncached retryable 503 while the homepage stays healthy', async ({
+test('unavailable, invalid or redirected public data returns an uncached retryable 503 while the homepage stays healthy', async ({
 	request
 }) => {
-	for (const mode of ['unavailable', 'invalid']) {
+	for (const mode of ['unavailable', 'invalid', 'redirected']) {
 		unavailable = mode === 'unavailable';
 		invalid = mode === 'invalid';
+		redirected = mode === 'redirected';
 		const response = await request.get(baseUrl + '/schools');
 		expect(response.status()).toBe(503);
 		expect(response.headers()['retry-after']).toBe('60');
@@ -204,6 +211,7 @@ test('unavailable or invalid public data returns an uncached retryable 503 while
 		expect(response.headers()['x-robots-tag']).toBe('noindex');
 		expect((await request.get(baseUrl)).status()).toBe(200);
 	}
+	expect(requests.some((item) => item.path === '/redirected-directory')).toBe(false);
 	const before = requests.filter((item) => item.path.startsWith('/api/v1/public/schools')).length;
 	expect((await request.get(baseUrl + '/schools?after=bad.host')).status()).toBe(400);
 	expect(requests.filter((item) => item.path.startsWith('/api/v1/public/schools')).length).toBe(

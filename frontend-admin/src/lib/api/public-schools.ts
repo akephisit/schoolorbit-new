@@ -23,7 +23,7 @@ export async function readPublicSchools(
 	const response = await fetcher(url, {
 		credentials: 'omit',
 		cache: 'no-store',
-		redirect: 'error',
+		redirect: 'manual',
 		signal: AbortSignal.timeout(3000)
 	});
 	if (!response.ok) throw new Error('School directory temporarily unavailable');
