@@ -29,13 +29,15 @@ use crate::http::state::FileHttpState;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_context;
 
-use school_file_platform::consumer_service::{map_platform_error, request_deletions};
+use school_file_platform::consumer_service::{
+    map_platform_error, map_public_platform_error, request_deletions,
+};
+#[cfg(feature = "api-docs")]
+use school_file_platform::http_models::FileUploadMultipart;
 use school_file_platform::http_models::{
     FileAccessQuery, FileDeleteResult, FileDownloadGrantResponse, FileMetadata,
     PublicFileDeliveryResponse,
 };
-#[cfg(feature = "api-docs")]
-use school_file_platform::http_models::{FileUploadMultipart, PublicFileFaviconPng};
 
 const MAX_CONTROL_FIELD_BYTES: usize = 128;
 
@@ -480,41 +482,6 @@ pub async fn get_public_file_delivery(
     Ok(Json(ApiResponse::ok(PublicFileDeliveryResponse::from(delivery))).into_response())
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/public/files/{id}/favicon",
-    operation_id = "getPublicFileFavicon",
-    tag = "files",
-    params(("id" = Uuid, Path, description = "Ready public school crest ID")),
-    responses(
-        (status = 200, description = "Square school crest PNG", content_type = "image/png", body = inline(PublicFileFaviconPng)),
-        (status = 404, description = "Public school crest not found", body = ApiErrorResponse)
-    )
-))]
-pub async fn get_public_file_favicon(
-    State(state): State<FileHttpState>,
-    headers: HeaderMap,
-    Path(file_id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let tenant = tenant_context(&state.auth_runtime, &headers).await?;
-    let repository = SqlFileRepository::new(tenant.pool);
-    let png = state
-        .file_platform
-        .public_favicon(&repository, file_id)
-        .await
-        .map_err(map_public_platform_error)?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "image/png"),
-            (header::CACHE_CONTROL, "public, max-age=300"),
-            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-            (header::VARY, "Origin, X-School-Subdomain"),
-        ],
-        png,
-    )
-        .into_response())
-}
-
 async fn read_control_field(mut field: Field<'_>) -> Result<String, AppError> {
     let mut bytes = BytesMut::new();
     while let Some(chunk) = field.chunk().await.map_err(|_| invalid_multipart())? {
@@ -540,15 +507,6 @@ async fn read_file_field(mut field: Field<'_>, max_bytes: u64) -> Result<Bytes, 
         return Err(AppError::BadRequest("ไฟล์ต้องไม่ว่าง".to_string()));
     }
     Ok(bytes.freeze())
-}
-
-fn map_public_platform_error(error: FilePlatformError) -> AppError {
-    match error {
-        FilePlatformError::NotFound
-        | FilePlatformError::NotReady
-        | FilePlatformError::VisibilityMismatch => AppError::NotFound("ไม่พบไฟล์".to_string()),
-        other => map_platform_error(other).into(),
-    }
 }
 
 fn invalid_multipart() -> AppError {

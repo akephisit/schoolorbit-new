@@ -14,7 +14,7 @@ export async function readPublicSchoolIdentity(options: ApiRequestOptions) {
 				timeout = setTimeout(() => {
 					controller.abort();
 					reject(new Error('โหลดข้อมูลโรงเรียนไม่สำเร็จ กรุณาลองใหม่'));
-				}, 3_000);
+				}, 8_000);
 			})
 		]);
 	} finally {

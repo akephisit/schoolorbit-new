@@ -1,6 +1,5 @@
 import { ApiClientError, publicRequestFromOrigin } from '#lib/api/client.js';
-import { getPublicFileFavicon } from '#lib/api/files.js';
-import { getRequiredPublicSchoolInfo } from '#lib/api/school.js';
+import { getPublicSchoolFavicon } from '#lib/api/school.js';
 import type { RequestHandler } from './$types';
 
 /** A stable per-host favicon resolves only the current school's public crest. */
@@ -15,9 +14,7 @@ export const GET: RequestHandler = async ({ fetch, url }) => {
 			headers: { location: '/schoolorbit.png', 'cache-control': 'public, max-age=300' }
 		});
 	try {
-		const info = await getRequiredPublicSchoolInfo(options);
-		if (!info.logoFileId) return fallback();
-		const png = await getPublicFileFavicon(info.logoFileId, options);
+		const png = await getPublicSchoolFavicon(options);
 		return new Response(png, {
 			headers: {
 				'content-type': 'image/png',
