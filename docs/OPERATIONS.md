@@ -1347,7 +1347,8 @@ only that tenant's current crest without looking up the school name. The File Pl
 a 256-pixel square PNG, retaining the whole portrait/landscape image. The original
 file is never modified. Missing/deleted crests fall back to the platform icon;
 unavailable services return uncached 503 with Retry-After. Successful icons may be
-cached for five minutes. School titles use `ชื่อโรงเรียน - SchoolOrbit`, with
+cached for five minutes. The favicon resolver allows up to fifteen seconds for
+a cold PNG response; this anonymous image request does not block homepage HTML. School titles use `ชื่อโรงเรียน - SchoolOrbit`, with
 matching Open Graph titles and School logo metadata. Google chooses its final
 search appearance after recrawling; deploying does not force immediate updates.
 Public school identity and the central directory allow up to eight seconds for an anonymous API read before

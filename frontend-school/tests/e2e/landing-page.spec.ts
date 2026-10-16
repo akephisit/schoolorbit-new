@@ -14,6 +14,7 @@ let failedRegion: string | undefined;
 let empty = false;
 let logoAvailable = true;
 let brokenLogo = false;
+let faviconDelayMs = 0;
 let schoolName = 'โรงเรียนสาธิตทดสอบ';
 let identityGate: Promise<void> | undefined;
 let releaseIdentity: (() => void) | undefined;
@@ -158,6 +159,7 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (endpoint === '/api/school/public/favicon') {
+			if (faviconDelayMs) await new Promise((resolve) => setTimeout(resolve, faviconDelayMs));
 			if (failedRegion === endpoint) {
 				res.writeHead(503).end(JSON.stringify({ success: false, error: 'Fixture read failure' }));
 			} else if (!logoAvailable || brokenLogo) {
@@ -251,6 +253,7 @@ test.beforeEach(() => {
 	empty = false;
 	logoAvailable = true;
 	brokenLogo = false;
+	faviconDelayMs = 0;
 	schoolName = 'โรงเรียนสาธิตทดสอบ';
 	identityGate = undefined;
 	releaseIdentity = undefined;
@@ -433,6 +436,19 @@ test('favicon reads only this school crest and uses the Admin brand when no cres
 	const unavailable = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
 	expect(unavailable.status()).toBe(503);
 	expect(unavailable.headers()['cache-control']).toBe('no-store');
+});
+
+test('a cold favicon response can take ten seconds without becoming a false outage', async ({
+	request
+}) => {
+	faviconDelayMs = 10_000;
+	const response = await request.get(`${baseUrl}/favicon.png`, { maxRedirects: 0 });
+	expect(response.status()).toBe(200);
+	expect(response.headers()['content-type']).toBe('image/png');
+	expect(await response.body()).toEqual(
+		readFileSync(new URL('../../static/schoolorbit.png', import.meta.url))
+	);
+	expect(requests.map((r) => r.path)).toEqual(['/api/school/public/favicon']);
 });
 
 test('a four-second identity read still provides the school title in the first HTML', async ({

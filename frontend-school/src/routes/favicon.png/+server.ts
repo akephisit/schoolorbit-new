@@ -6,7 +6,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ fetch, url }) => {
 	const options = {
 		...publicRequestFromOrigin(fetch, url.origin),
-		signal: AbortSignal.timeout(8000)
+		signal: AbortSignal.timeout(15_000)
 	};
 	const fallback = () =>
 		new Response(null, {
