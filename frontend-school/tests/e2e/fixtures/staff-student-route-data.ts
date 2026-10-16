@@ -1,12 +1,15 @@
 import type { Page, Route } from '@playwright/test';
-import type { Student, StudentListItem } from '../../../src/lib/api/students.js';
+import type { StudentRegister, StudentListItem } from '../../../src/lib/api/students.js';
 import { mockStaffHome, id, year, nextYear } from './staff-home-route-data';
 export { year, nextYear };
 export const firstStudent = id(60),
 	secondStudent = id(61);
-export const listPath = (selectedYear = year) => `/staff/students?academicYearId=${selectedYear}`;
-export const studentPath = (studentId = firstStudent, suffix = '', selectedYear = year) =>
-	`/staff/students/${studentId}${suffix}?academicYearId=${selectedYear}`;
+export const listPath = () => '/staff/students';
+export const studentPath = (studentId = firstStudent, suffix = '', selectedYear?: string) => {
+	const path = `/staff/students/${studentId}${suffix}`;
+	if (!selectedYear) return path;
+	return `${path}?${new URLSearchParams({ academicYearId: selectedYear, returnTo: `/staff/academic/student-years?academicYearId=${selectedYear}` })}`;
+};
 export async function mockStaffStudents(
 	page: Page,
 	options: {
@@ -14,11 +17,12 @@ export async function mockStaffStudents(
 		holdAt?: number;
 		fail?: 'list' | 'profile';
 		failAt?: number;
+		failMutation?: boolean;
 		permissions?: string[];
 		fullPage?: boolean;
 		emptyPage?: number;
 		listItem?: Partial<StudentListItem>;
-		profile?: Partial<Student>;
+		profile?: Partial<StudentRegister>;
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -32,6 +36,7 @@ export async function mockStaffStudents(
 	const reads: URL[] = [],
 		writes: { method: string; path: string }[] = [];
 	const counts = new Map<string, number>();
+	const payloads: { method: string; path: string; data: Record<string, unknown> | null }[] = [];
 	let release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
 	let firstName = 'นักเรียนแรก',
@@ -62,7 +67,14 @@ export async function mockStaffStudents(
 			if (method === 'GET') {
 				reads.push(url);
 				counts.set(path, (counts.get(path) ?? 0) + 1);
-			} else writes.push({ method, path });
+			} else {
+				writes.push({ method, path });
+				payloads.push({
+					method,
+					path,
+					data: route.request().postData() ? route.request().postDataJSON() : null
+				});
+			}
 			const selectedYear = url.searchParams.get('academicYearId');
 			const name = path.includes(secondStudent) ? 'นักเรียนที่สอง' : firstName;
 			const snapshot = {
@@ -82,23 +94,30 @@ export async function mockStaffStudents(
 				nickname: null,
 				national_id: null,
 				profile_image_file_id: null,
-				status: 'active',
+				account_status: 'active',
+				registration_status: 'studying',
+				registration_status_updated_at: null,
+				registration_status_updated_by: null,
+				enrollment_date: '2023-05-16',
 				student_id: 'TEST-01',
-				student_number: 1,
-				grade_level: 'ม.1',
-				homeroom: selectedYear === nextYear ? 'ห้องปีถัดไป' : 'ห้องปีเดิม',
+				student_number: selectedYear ? 1 : null,
+				grade_level: selectedYear ? 'ม.1' : null,
+				homeroom: selectedYear ? (selectedYear === nextYear ? 'ห้องปีถัดไป' : 'ห้องปีเดิม') : null,
 				parents: [...parents]
 			};
 			if (
 				options.hold === kind &&
 				(!options.holdAt || counts.get(path) === options.holdAt) &&
 				(kind === 'mutation' ||
-					(selectedYear === year && (kind === 'list' || path.includes(firstStudent))))
+					(kind === 'list' ? !url.searchParams.has('search') : path.includes(firstStudent)))
 			)
 				await held;
 			if (options.fail === kind && counts.get(path) === (options.failAt ?? 1))
 				return reply(route, 'region นักเรียนไม่พร้อม', 503);
 			if (method !== 'GET') {
+				if (options.failMutation) return reply(route, 'บันทึกตัวอย่างไม่สำเร็จ', 409);
+				if (method === 'POST' && path === '/api/students')
+					return reply(route, { id: firstStudent, username: 'synthetic-student' });
 				if (path.endsWith('/parents')) {
 					const payload = route.request().postDataJSON();
 					parents.push({
@@ -141,5 +160,11 @@ export async function mockStaffStudents(
 			return reply(route, { items, page: pageNumber, page_size: 20 });
 		}
 	);
-	return { release, reads, writes, count: (path: string) => counts.get(path) ?? base.count(path) };
+	return {
+		release,
+		reads,
+		writes,
+		payloads,
+		count: (path: string) => counts.get(path) ?? base.count(path)
+	};
 }

@@ -13,13 +13,14 @@ async fn update_missing_student_returns_not_found() {
     let result = services::update_student(
         &pool,
         Uuid::new_v4(),
+        Uuid::new_v4(),
         UpdateStudentRequest {
             email: None,
             first_name: Some("Missing".to_string()),
             last_name: None,
             phone: None,
             address: None,
-            student_number: None,
+            ..Default::default()
         },
     )
     .await;
@@ -48,7 +49,7 @@ async fn add_parent_to_missing_student_returns_not_found_without_creating_parent
     let pool = create_test_pool().await;
     run_test_migrations(&pool).await;
 
-    let phone = format!("09{}", &Uuid::new_v4().simple().to_string()[..8]);
+    let phone = format!("09{:08}", Uuid::new_v4().as_u128() % 100_000_000);
     let result = services::add_parent_to_student(
         &pool,
         Uuid::new_v4(),
@@ -86,7 +87,7 @@ fn parent_payload() -> CreateParentRequest {
         title: None,
         first_name: "Parent".into(),
         last_name: "Fixture".into(),
-        phone: format!("09{}", &Uuid::new_v4().simple().to_string()[..8]),
+        phone: format!("09{:08}", Uuid::new_v4().as_u128() % 100_000_000),
         relationship: "parent".into(),
         national_id: None,
         email: None,

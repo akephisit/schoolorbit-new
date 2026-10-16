@@ -118,7 +118,7 @@ for (const width of [375, 1440]) {
 			'student-summary',
 			'student-basic',
 			'student-contact',
-			'student-academic',
+			'student-parents',
 			'student-health'
 		];
 		const boxes = await Promise.all(ids.map((name) => rect(page.getByTestId(name))));
@@ -138,10 +138,8 @@ for (const width of [375, 1440]) {
 				expect(Math.max(horizontalGap, verticalGap)).toBeGreaterThanOrEqual(minimumGap);
 			}
 		}
-		const history = await rect(page.getByTestId('student-placement-history'));
-		expect(history.y - Math.max(...boxes.map((box) => box.y + box.height))).toBeGreaterThanOrEqual(
-			minimumGap
-		);
+		await expect(page.getByTestId('student-placement-history')).toHaveCount(0);
+		await expect(page.getByTestId('student-academic')).toHaveCount(0);
 		await noPageOverflow(page);
 		await captureThemes(page, testInfo, `student-${width}`);
 	});

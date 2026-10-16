@@ -24,7 +24,14 @@ async function importApiWrapper(relativePath) {
 	globalThis.__schoolOrbitApiResponseData = [];
 	const clientModule = `
 		export class ApiClientError extends Error {}
+		function mutation(method, endpoint, data) {
+			globalThis.__schoolOrbitApiCalls.push(data === undefined ? { method, endpoint } : { method, endpoint, data });
+			return Promise.resolve({ success: true, data: globalThis.__schoolOrbitApiResponseData, status: 200 });
+		}
 		export const apiClient = {
+			put(endpoint, data) { return mutation('put', endpoint, data); },
+			post(endpoint, data) { return mutation('post', endpoint, data); },
+			delete(endpoint) { return mutation('delete', endpoint); },
 			get(endpoint, options) {
 				globalThis.__schoolOrbitApiCalls.push({ method: 'get', endpoint, options });
 				return Promise.resolve({
@@ -179,7 +186,9 @@ test('generated API exposes repaired academic query operations', async () => {
 
 	const listStudents = generated.match(/\n\tlistStudents: \{[\s\S]*?\n\t\};/)?.[0];
 	assert.ok(listStudents, 'listStudents operation block must exist');
-	assert.match(listStudents, /academicYearId:\s*string/);
+	assert.doesNotMatch(listStudents, /academicYearId|\bstatus\??:/);
+	assert.match(listStudents, /registrationStatus\?:/);
+	assert.match(listStudents, /accountStatus\?:\s*string/);
 	assert.match(listStudents, /pageSize\?:\s*number/);
 	assert.doesNotMatch(listStudents, /academic_year_id|page_size/);
 
@@ -201,6 +210,9 @@ test('generated API exposes repaired academic query operations', async () => {
 			assert.doesNotMatch(operation, /academicYearId|academicTermId/);
 			assert.match(operation, /from\?:\s*string/);
 			assert.match(operation, /to\?:\s*string/);
+		} else if (operationId === 'getStudent') {
+			assert.match(operation, /academicYearId\?:\s*string/);
+			assert.doesNotMatch(operation, /academicYearId:\s*string/);
 		} else assert.match(operation, /academicYearId:\s*string/);
 		assert.doesNotMatch(operation, /academic_year_id|category_id|tag_id/);
 	}
@@ -340,14 +352,14 @@ test('calendar wrappers send generated query objects through the central transpo
 	});
 });
 
-test('staff student wrappers send generated academic-year queries', async () => {
+test('staff student wrappers keep permanent filters and optional annual profile context', async () => {
 	const students = await importApiWrapper('src/lib/api/students.ts');
 	const query = {
-		academicYearId: 'year-1',
 		page: 2,
 		pageSize: 20,
 		search: 'สมชาย',
-		status: 'active'
+		registrationStatus: 'graduated',
+		accountStatus: 'inactive'
 	};
 	globalThis.__schoolOrbitApiResponseData = { items: [], page: 2, page_size: 20 };
 	assert.deepEqual(await students.listStudents(query), {
@@ -362,6 +374,12 @@ test('staff student wrappers send generated academic-year queries', async () => 
 	});
 
 	globalThis.__schoolOrbitApiResponseData = {};
+	await students.getStudent('student/1');
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
+		method: 'get',
+		endpoint: '/api/students/student%2F1',
+		options: { query: { academicYearId: undefined } }
+	});
 	await students.getStudent('student/1', 'year-1');
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
 		method: 'get',
@@ -380,6 +398,30 @@ test('student own-profile wrapper sends the authorized academic year', async () 
 		endpoint: '/api/student/profile',
 		options: { query: { academicYearId: 'year-1' } }
 	});
+});
+
+test('student mutations encode each identity as one URL path segment', async () => {
+	const students = await importApiWrapper('src/lib/api/students.ts');
+	const studentId = 'student/1?# ไทย';
+	const parentId = 'parent/2?#';
+	const base = `/api/students/${encodeURIComponent(studentId)}`;
+	const update = { first_name: 'ทดสอบ' };
+	const parent = {
+		first_name: 'ผู้ปกครอง',
+		last_name: 'ทดสอบ',
+		phone: '0000000000',
+		relationship: 'ผู้ปกครอง'
+	};
+	await students.updateStudent(studentId, update);
+	await students.deleteStudent(studentId);
+	await students.addParentToStudent(studentId, parent);
+	await students.removeParentFromStudent(studentId, parentId);
+	assert.deepEqual(globalThis.__schoolOrbitApiCalls, [
+		{ method: 'put', endpoint: base, data: update },
+		{ method: 'delete', endpoint: base },
+		{ method: 'post', endpoint: `${base}/parents`, data: parent },
+		{ method: 'delete', endpoint: `${base}/parents/${encodeURIComponent(parentId)}` }
+	]);
 });
 
 test('parent wrappers send generated linked-year and term queries', async () => {

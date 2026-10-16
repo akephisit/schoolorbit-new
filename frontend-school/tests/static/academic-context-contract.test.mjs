@@ -556,7 +556,7 @@ test('desktop academic context triggers stay compact while dropdowns retain stat
 test('existing staff academic consumers declare their exact context requirement', async () => {
 	const routes = [
 		['staff', 'year_required'],
-		['staff/students', 'year_required'],
+		['staff/students', 'none'],
 		['staff/academic/assessments', 'term_required'],
 		['staff/academic/timetable', 'term_required'],
 		['staff/academic/periods', 'year_required'],
@@ -578,18 +578,20 @@ test('existing staff academic consumers declare their exact context requirement'
 	}
 });
 
-test('staff student views consume the selected academic year without legacy paging fields', async () => {
+test('permanent staff register is independent of academic year while detail context stays explicit', async () => {
+	const listLoader = await readProjectFile('src/routes/(app)/staff/students/+page.ts');
+	const detailLoader = await readProjectFile('src/routes/(app)/staff/students/[id]/+page.ts');
+	const editLoader = await readProjectFile('src/routes/(app)/staff/students/[id]/edit/+page.ts');
 	const listPage = await readProjectFile('src/routes/(app)/staff/students/+page.svelte');
-	const detailPage = await readProjectFile('src/routes/(app)/staff/students/[id]/+page.svelte');
-	const editPage = await readProjectFile('src/routes/(app)/staff/students/[id]/edit/+page.svelte');
-
-	for (const source of [listPage, detailPage, editPage]) {
-		assert.match(source, /data.academicYearId/);
-		assert.match(source, /academicYearId/);
-	}
-	assert.doesNotMatch(listPage, /(?<!\.)\bpage_size\s*:|total_pages|class_room/);
+	assert.doesNotMatch(listLoader, /academicYearId|requestedStatus/);
+	assert.match(listLoader, /registrationStatus/);
+	assert.match(listLoader, /accountStatus/);
+	assert.doesNotMatch(listPage, /student\.homeroom|student\.grade_level/);
 	assert.match(listPage, /result\.data\.page_size/);
-	assert.match(listPage, /homeroom/);
+	for (const loader of [detailLoader, editLoader]) {
+		assert.match(loader, /studentRegisterContext\(url\)/);
+		assert.match(loader, /academicContext:\s*'none'/);
+	}
 });
 
 test('student dashboard and profile select only authorized academic years', async () => {

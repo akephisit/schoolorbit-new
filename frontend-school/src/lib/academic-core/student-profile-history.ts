@@ -16,18 +16,3 @@ export async function loadStudentProfileHistory(
 	const placements = studentYear ? await listHomeroomPlacements(studentYear.id, options) : [];
 	return { studentYear, homerooms, placements };
 }
-
-export function studentProfileReturnTo(value: string | null, academicYearId: string): string {
-	const fallback = `/staff/students?academicYearId=${encodeURIComponent(academicYearId)}`;
-	if (!value || !value.startsWith('/') || value.startsWith('//')) return fallback;
-	const url = new URL(value, 'https://school.example');
-	if (
-		url.origin !== 'https://school.example' ||
-		!/^\/staff\/(?:students|academic\/student-years|academic\/homerooms\/[\w-]+\/students)$/u.test(
-			url.pathname
-		)
-	)
-		return fallback;
-	if (url.searchParams.get('academicYearId') !== academicYearId) return fallback;
-	return url.pathname + url.search;
-}

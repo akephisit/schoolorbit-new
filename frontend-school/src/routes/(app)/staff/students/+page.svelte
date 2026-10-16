@@ -10,23 +10,47 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import {
-		Dialog,
-		DialogContent,
-		DialogDescription,
-		DialogFooter,
-		DialogHeader,
-		DialogTitle
-	} from '#lib/components/ui/dialog/index.js';
+		AlertDialog as Dialog,
+		AlertDialogCancel as DialogCancel,
+		AlertDialogContent as DialogContent,
+		AlertDialogDescription as DialogDescription,
+		AlertDialogFooter as DialogFooter,
+		AlertDialogHeader as DialogHeader,
+		AlertDialogTitle as DialogTitle
+	} from '#lib/components/ui/alert-dialog/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import {
+		REGISTRATION_STATUS_LABELS,
+		studentRegisterReadScope,
+		STUDENT_ACCOUNT_STATUS_LABELS,
+		accountStatusLabel
+	} from '#lib/forms/student-register.js';
+	import {
+		studentRegistryHref,
+		withStudentRegisterContext
+	} from '#lib/navigation/student-register.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { Plus, Search, Pencil, Trash2, Eye, RefreshCw, GraduationCap } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
+
+	const readScope = $derived(
+		studentRegisterReadScope({
+			school: $can.has(PERMISSIONS.STUDENT_READ_SCHOOL),
+			assigned: $can.has(PERMISSIONS.STUDENT_READ_ASSIGNED),
+			own: $can.has(PERMISSIONS.STUDENT_READ_OWN),
+			piiSchool: $can.has(PERMISSIONS.STUDENT_PII_READ_SCHOOL),
+			piiAssigned: $can.has(PERMISSIONS.STUDENT_PII_READ_ASSIGNED),
+			piiOwn: $can.has(PERMISSIONS.STUDENT_PII_READ_OWN)
+		})
+	);
 
 	const canReadStudents = $derived(
 		$can.hasAny(
@@ -39,7 +63,6 @@
 	const canUpdateStudent = $derived($can.has(PERMISSIONS.STUDENT_UPDATE_ALL));
 	const canDeleteStudent = $derived($can.has(PERMISSIONS.STUDENT_DELETE_ALL));
 	let { data }: PageProps = $props();
-	const academicYearId = $derived(data.academicYearId);
 	const listKey = $derived(data.listKey);
 	const source = $derived(data.students);
 	const studentsRequest = new LatestRequest();
@@ -53,14 +76,50 @@
 	let deleting = $state(false);
 	let showDeleteDialog = $state(false);
 	let studentToDelete = $state<StudentListItem | null>(null);
+	let mutationError = $state('');
 	let searchQuery = $state('');
-	let statusFilter = $state('active');
+	let statusFilter = $state('all');
+	let accountFilter = $state('all');
 	let currentPage = $state(1);
 	let hasNextPage = $state(false);
-	const hasAppliedFilters = $derived(Boolean(data.search) || data.status !== 'active');
-	const createHref = $derived(
-		`/staff/students/new?academicYearId=${encodeURIComponent(academicYearId)}`
+	const hasAppliedFilters = $derived(
+		Boolean(data.search) || data.registrationStatus !== 'all' || data.accountStatus !== 'all'
 	);
+	const returnTo = $derived(studentRegistryHref(page.url));
+	const createHref = $derived(
+		withStudentRegisterContext('/staff/students/new', {
+			returnTo,
+			academicYearId: null,
+			source: 'registry'
+		})
+	);
+	$effect.pre(() => {
+		if (!canDeleteStudent)
+			untrack(() => {
+				mutationEpoch++;
+				showDeleteDialog = false;
+				studentToDelete = null;
+				deleting = false;
+				mutationError = '';
+			});
+	});
+	let previousIdentity = '';
+	$effect.pre(() => {
+		const identity = `${$authStore.user?.id ?? ''}:${readScope}`;
+		untrack(() => {
+			if (previousIdentity && previousIdentity !== identity) {
+				mutationEpoch++;
+				studentsRequest.abort();
+				students = [];
+				loaded = false;
+				loading = true;
+				loadError = '';
+				showDeleteDialog = false;
+				studentToDelete = null;
+			}
+			previousIdentity = identity;
+		});
+	});
 	$effect.pre(() => {
 		const key = listKey,
 			read = source;
@@ -75,12 +134,18 @@
 				studentToDelete = null;
 			}
 			searchQuery = data.search;
-			statusFilter = data.status;
+			statusFilter = data.registrationStatus;
+			accountFilter = data.accountStatus;
 			currentPage = data.page;
 			const ticket = studentsRequest.begin();
 			loading = true;
 			loadError = '';
-			void read.then((result) => applyStudents(result, ticket.revision));
+			const session = authStore.sessionEpoch,
+				scope = readScope;
+			void read.then((result) => {
+				if (session === authStore.sessionEpoch && scope === readScope && canReadStudents)
+					applyStudents(result, ticket.revision);
+			});
 		});
 		return () => studentsRequest.abort();
 	});
@@ -100,38 +165,8 @@
 		} else loadError = result.error;
 	}
 
-	function formatFullClassRoom(name: string, gradeLevel?: string | null) {
-		if (!name) return '-';
-
-		// If name has prefix/format
-		if (
-			name.startsWith('อ.') ||
-			name.startsWith('ป.') ||
-			name.startsWith('ม.') ||
-			name.includes('/')
-		) {
-			if (name.startsWith('อ.')) return name.replace('อ.', 'อนุบาลปีที่ ');
-			if (name.startsWith('ป.')) return name.replace('ป.', 'ประถมศึกษาปีที่ ');
-			if (name.startsWith('ม.')) return name.replace('ม.', 'มัธยมศึกษาปีที่ ');
-			return name;
-		}
-
-		// If just number/code, prepend grade
-		if (gradeLevel) {
-			let fullGrade = gradeLevel;
-			if (gradeLevel.startsWith('อ.')) fullGrade = gradeLevel.replace('อ.', 'อนุบาลปีที่ ');
-			else if (gradeLevel.startsWith('ป.'))
-				fullGrade = gradeLevel.replace('ป.', 'ประถมศึกษาปีที่ ');
-			else if (gradeLevel.startsWith('ม.'))
-				fullGrade = gradeLevel.replace('ม.', 'มัธยมศึกษาปีที่ ');
-			return `${fullGrade}/${name}`;
-		}
-
-		return name;
-	}
-
-	async function reloadCurrentYear() {
-		if (!academicYearId || !canReadStudents) return;
+	async function reloadRegistry() {
+		if (!canReadStudents) return;
 		const ticket = studentsRequest.begin();
 		loading = true;
 		loadError = '';
@@ -143,66 +178,85 @@
 	}
 
 	function studentHref(studentId: string, suffix = ''): string {
-		const path = `/staff/students/${encodeURIComponent(studentId)}${suffix}`;
-		const query = `academicYearId=${encodeURIComponent(academicYearId)}`;
-		const returnQuery = suffix
-			? ''
-			: `&returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`;
-		return `${path}?${query}${returnQuery}`;
+		return withStudentRegisterContext(`/staff/students/${encodeURIComponent(studentId)}${suffix}`, {
+			returnTo,
+			academicYearId: null,
+			source: 'registry'
+		});
 	}
 
 	function changePage(nextPage: number) {
-		if (!academicYearId || nextPage < 1 || loading || deleting) return;
-		const url = new URL(page.url.href);
+		if (nextPage < 1 || loading || deleting) return;
+		const url = new URL(studentRegistryHref(page.url), page.url.origin);
 		url.searchParams.set('page', String(nextPage));
 		void goto(resolve(`staff/students?${url.searchParams.toString()}`));
 	}
 
 	function openDeleteDialog(student: StudentListItem) {
-		if (!canDeleteStudent || deleting) return;
+		if (!canDeleteStudent || deleting || student.account_status === 'inactive') return;
 		studentToDelete = student;
+		mutationError = '';
 		showDeleteDialog = true;
 	}
 
 	async function confirmDelete() {
-		if (!canDeleteStudent || !studentToDelete || deleting) return;
+		if (
+			!canDeleteStudent ||
+			!studentToDelete ||
+			deleting ||
+			studentToDelete.account_status === 'inactive'
+		)
+			return;
 		const id = studentToDelete.id,
+			session = authStore.sessionEpoch,
+			scope = readScope,
 			key = listKey,
 			epoch = ++mutationEpoch;
-		const current = () => !disposed && epoch === mutationEpoch && key === listKey;
+		const current = () =>
+			!disposed &&
+			session === authStore.sessionEpoch &&
+			scope === readScope &&
+			epoch === mutationEpoch &&
+			key === listKey &&
+			canDeleteStudent;
 		studentsRequest.abort();
 		loading = false;
 		deleting = true;
+		mutationError = '';
 		try {
 			await deleteStudent(id);
 			if (!current()) return;
-			toast.success('ลบนักเรียนสำเร็จ');
+			toast.success('ปิดบัญชีนักเรียนสำเร็จ');
 			if (studentToDelete?.id === id) {
 				showDeleteDialog = false;
 				studentToDelete = null;
 			}
-			await reloadCurrentYear();
+			await reloadRegistry();
 		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
+			if (current()) mutationError = error instanceof Error ? error.message : 'ปิดบัญชีไม่สำเร็จ';
 		} finally {
 			if (current()) deleting = false;
 		}
 	}
 	function handleSearch() {
 		if (!canReadStudents || deleting) return;
-		const url = new URL(page.url.href);
+		const url = new URL(studentRegistryHref(page.url), page.url.origin);
 		const search = searchQuery.trim();
 		if (search) url.searchParams.set('search', search);
 		else url.searchParams.delete('search');
-		url.searchParams.set('status', statusFilter);
+		if (statusFilter === 'all') url.searchParams.delete('registrationStatus');
+		else url.searchParams.set('registrationStatus', statusFilter);
+		if (accountFilter === 'all') url.searchParams.delete('accountStatus');
+		else url.searchParams.set('accountStatus', accountFilter);
 		url.searchParams.delete('page');
 
-		if (url.href === page.url.href) void reloadCurrentYear();
+		if (url.href === page.url.href) void reloadRegistry();
 		else void goto(resolve(`staff/students?${url.searchParams.toString()}`));
 	}
 	function handleReset() {
 		searchQuery = '';
-		statusFilter = 'active';
+		statusFilter = 'all';
+		accountFilter = 'all';
 		handleSearch();
 	}
 </script>
@@ -212,23 +266,17 @@
 {/snippet}
 
 {#snippet studentStatus(student: StudentListItem)}
-	<Badge
-		variant="secondary"
-		class={student.status === 'active' ? 'bg-success/10 text-success' : ''}
-	>
-		{student.status === 'active'
-			? 'ใช้งาน'
-			: student.status === 'inactive'
-				? 'ไม่ใช้งาน'
-				: student.status}
-	</Badge>
+	<Badge variant="secondary">{REGISTRATION_STATUS_LABELS[student.registration_status]}</Badge>
 {/snippet}
 
-<PageShell title="รายชื่อนักเรียน" description="ค้นหาและจัดการข้อมูลนักเรียนในปีการศึกษาที่เลือก">
+<PageShell
+	title="ทะเบียนนักเรียน"
+	description="ทะเบียนกลางของนักเรียนทุกสถานะ การจัดชั้นและห้องอยู่ในทะเบียนรายปี"
+>
 	{#snippet actions()}
 		<Button
 			variant="outline"
-			onclick={reloadCurrentYear}
+			onclick={reloadRegistry}
 			disabled={loading || deleting || !canReadStudents}
 		>
 			<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
@@ -254,7 +302,7 @@
 			}}
 			aria-label="ค้นหาและกรองนักเรียน"
 		>
-			<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
+			<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_10rem_auto] lg:items-end">
 				<div class="space-y-2">
 					<Label for="student-search">ค้นหานักเรียน</Label>
 					<div class="relative">
@@ -273,37 +321,58 @@
 					</div>
 				</div>
 				<div class="space-y-2">
-					<span id="student-status-label" class="text-sm font-medium">สถานะนักเรียน</span>
-					<ToggleGroup.Root
+					<Label for="student-status-filter">สถานะทะเบียน</Label>
+					<Select.Root
 						type="single"
-						aria-labelledby="student-status-label"
-						disabled={deleting}
-						bind:value={
-							() => statusFilter,
-							(value) => {
-								if (value) {
-									statusFilter = value;
-									handleSearch();
-								}
+						value={statusFilter}
+						onValueChange={(status) => {
+							if (status && status !== statusFilter) {
+								statusFilter = status;
+								handleSearch();
 							}
-						}
+						}}
+						disabled={deleting}
 					>
-						<ToggleGroup.Item
-							value="active"
-							class="data-[state=on]:border-primary data-[state=on]:text-primary"
-							>ใช้งาน</ToggleGroup.Item
+						<Select.Trigger id="student-status-filter" class="w-full"
+							>{statusFilter === 'all'
+								? 'ทั้งหมด'
+								: REGISTRATION_STATUS_LABELS[
+										statusFilter as keyof typeof REGISTRATION_STATUS_LABELS
+									]}</Select.Trigger
 						>
-						<ToggleGroup.Item
-							value="inactive"
-							class="data-[state=on]:border-primary data-[state=on]:text-primary"
-							>ไม่ใช้งาน</ToggleGroup.Item
+						<Select.Content
+							><Select.Item value="all">ทั้งหมด</Select.Item
+							>{#each Object.entries(REGISTRATION_STATUS_LABELS) as [code, label] (code)}<Select.Item
+									value={code}>{label}</Select.Item
+								>{/each}</Select.Content
 						>
-						<ToggleGroup.Item
-							value="all"
-							class="data-[state=on]:border-primary data-[state=on]:text-primary"
-							>ทั้งหมด</ToggleGroup.Item
+					</Select.Root>
+				</div>
+				<div class="space-y-2">
+					<Label for="student-account-filter">สถานะบัญชี</Label>
+					<Select.Root
+						type="single"
+						value={accountFilter}
+						onValueChange={(status) => {
+							if (status && status !== accountFilter) {
+								accountFilter = status;
+								handleSearch();
+							}
+						}}
+						disabled={deleting}
+					>
+						<Select.Trigger id="student-account-filter" class="w-full"
+							>{accountFilter === 'all'
+								? 'ทั้งหมด'
+								: accountStatusLabel(accountFilter)}</Select.Trigger
 						>
-					</ToggleGroup.Root>
+						<Select.Content
+							><Select.Item value="all">ทั้งหมด</Select.Item
+							>{#each Object.entries(STUDENT_ACCOUNT_STATUS_LABELS) as [code, label] (code)}<Select.Item
+									value={code}>{label}</Select.Item
+								>{/each}</Select.Content
+						>
+					</Select.Root>
 				</div>
 				<div class="flex gap-2">
 					<Button type="submit" disabled={deleting}>ค้นหา</Button>
@@ -324,7 +393,7 @@
 					title="อัปเดตรายชื่อนักเรียนไม่สำเร็จ"
 					description={loadError}
 					actionLabel="ลองอีกครั้ง"
-					onaction={reloadCurrentYear}
+					onaction={reloadRegistry}
 				/>
 			{/if}
 			{#if loading && !loaded}
@@ -337,7 +406,7 @@
 					title="โหลดรายชื่อนักเรียนไม่สำเร็จ"
 					description={loadError}
 					actionLabel="ลองอีกครั้ง"
-					onaction={reloadCurrentYear}
+					onaction={reloadRegistry}
 				/>
 			{:else}
 				<div class="overflow-hidden rounded-xl border bg-card">
@@ -360,12 +429,12 @@
 								? 'ไม่มีนักเรียนในหน้านี้'
 								: hasAppliedFilters
 									? 'ไม่พบนักเรียนที่ตรงกับตัวกรอง'
-									: 'ยังไม่มีนักเรียนที่ใช้งานในปีการศึกษานี้'}
+									: 'ยังไม่มีข้อมูลในทะเบียนนักเรียน'}
 							description={currentPage > 1
 								? 'ย้อนกลับไปหน้าก่อนหน้าเพื่อดูรายชื่อนักเรียน'
 								: hasAppliedFilters
 									? 'ลองเปลี่ยนคำค้นหาหรือล้างตัวกรองเพื่อดูรายชื่ออีกครั้ง'
-									: 'เลือกสถานะทั้งหมดเพื่อตรวจสอบรายชื่อ หรือเพิ่มข้อมูลนักเรียน'}
+									: 'เพิ่มข้อมูลนักเรียนเพื่อเริ่มทะเบียนกลาง'}
 						>
 							{#snippet action()}
 								{#if currentPage > 1}<Button
@@ -389,8 +458,8 @@
 								><Table.Row class="bg-muted/40">
 									<Table.Head class="hidden pl-4 md:table-cell">รหัสนักเรียน</Table.Head>
 									<Table.Head class="pl-3 md:pl-2">ชื่อ-นามสกุล</Table.Head>
-									<Table.Head class="hidden md:table-cell">ชั้น / ห้อง</Table.Head>
-									<Table.Head class="hidden md:table-cell">สถานะ</Table.Head>
+									<Table.Head class="hidden md:table-cell">วันที่เข้าเรียน</Table.Head>
+									<Table.Head class="hidden md:table-cell">สถานะทะเบียน / บัญชี</Table.Head>
 									<Table.Head class="w-28 pr-3 text-right md:w-auto md:pr-4">จัดการ</Table.Head>
 								</Table.Row></Table.Header
 							>
@@ -409,20 +478,26 @@
 											>
 											<div class="space-y-1 text-xs text-muted-foreground md:hidden">
 												<p class="break-words">
-													รหัส {student.student_id || 'ยังไม่มีรหัส'} · {student.homeroom
-														? formatFullClassRoom(student.homeroom, student.grade_level)
-														: student.grade_level || 'ยังไม่จัดห้อง'}
+													รหัส {student.student_id || 'ยังไม่มีรหัส'} · เข้าเรียน {student.enrollment_date
+														? formatCalendarDate(student.enrollment_date)
+														: '—'}
 												</p>
 												{@render studentStatus(student)}
+												<span>บัญชี: {accountStatusLabel(student.account_status)}</span>
 											</div>
 										</Table.Cell>
 										<Table.Cell class="hidden whitespace-normal md:table-cell"
-											>{student.homeroom
-												? formatFullClassRoom(student.homeroom, student.grade_level)
-												: student.grade_level || 'ยังไม่จัดห้อง'}</Table.Cell
+											>{student.enrollment_date
+												? formatCalendarDate(student.enrollment_date)
+												: '—'}</Table.Cell
 										>
 										<Table.Cell class="hidden md:table-cell"
-											>{@render studentStatus(student)}</Table.Cell
+											><div class="space-y-1">
+												{@render studentStatus(student)}
+												<p class="text-xs text-muted-foreground">
+													บัญชี: {accountStatusLabel(student.account_status)}
+												</p>
+											</div></Table.Cell
 										>
 										<Table.Cell class="pr-3 md:pr-4">
 											<div class="flex justify-end gap-1">
@@ -440,9 +515,9 @@
 														variant="ghost"
 														size="icon-sm"><Pencil class="size-4" aria-hidden="true" /></Button
 													>{/if}
-												{#if canDeleteStudent}<Button
+												{#if canDeleteStudent && student.account_status !== 'inactive'}<Button
 														onclick={() => openDeleteDialog(student)}
-														aria-label="ลบนักเรียน"
+														aria-label="ปิดบัญชีนักเรียน"
 														disabled={deleting}
 														variant="ghost"
 														size="icon-sm"
@@ -489,24 +564,24 @@
 	<Dialog bind:open={showDeleteDialog}>
 		<DialogContent>
 			<DialogHeader>
-				<DialogTitle>ยืนยันการลบนักเรียน</DialogTitle>
+				<DialogTitle>ยืนยันปิดบัญชีนักเรียน</DialogTitle>
 				<DialogDescription>
-					คุณแน่ใจหรือไม่ว่าต้องการลบนักเรียน
+					คุณแน่ใจหรือไม่ว่าต้องการปิดบัญชีนักเรียน
 					{#if studentToDelete}
 						<strong>
 							{studentToDelete.title || ''}{studentToDelete.first_name}
 							{studentToDelete.last_name}
 						</strong>
-					{/if}? การกระทำนี้จะทำให้นักเรียนถูกปิดการใช้งาน
+					{/if}? บัญชีจะเข้าสู่ระบบไม่ได้และการเข้าร่วมปีการศึกษาที่ยังแก้ไขได้จะสิ้นสุด
+					ข้อมูลและสถานะทะเบียนกลางยังคงอยู่
 				</DialogDescription>
 			</DialogHeader>
+			{#if mutationError}<p role="alert" class="text-sm text-destructive">{mutationError}</p>{/if}
 			<DialogFooter>
-				<Button variant="outline" onclick={() => (showDeleteDialog = false)} disabled={deleting}>
-					ยกเลิก
-				</Button>
+				<DialogCancel disabled={deleting}>ยกเลิก</DialogCancel>
 				<Button variant="destructive" onclick={confirmDelete} disabled={deleting} class="gap-2">
 					<Trash2 class="h-4 w-4" />
-					{deleting ? 'กำลังลบ...' : 'ลบนักเรียน'}
+					{deleting ? 'กำลังปิดบัญชี...' : 'ปิดบัญชี'}
 				</Button>
 			</DialogFooter>
 		</DialogContent>

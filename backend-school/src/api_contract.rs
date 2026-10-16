@@ -153,7 +153,8 @@ use school_staff::services::staff_service::{
 };
 use school_students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
-    StudentListItem, StudentListResponse, StudentProfile, UpdateOwnProfileRequest,
+    StudentListItem, StudentListResponse, StudentProfile, StudentRegisterInfo,
+    StudentRegisterProfile, StudentRegistrationStatus, UpdateOwnProfileRequest,
     UpdateStudentRequest,
 };
 use school_students::parents::models::{ChildDto, ParentProfile};
@@ -1095,6 +1096,9 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         ParentDto,
         StudentDbRow,
         StudentProfile,
+        StudentRegisterInfo,
+        StudentRegisterProfile,
+        StudentRegistrationStatus,
         StudentListItem,
         StudentListResponse,
         UpdateOwnProfileRequest,
@@ -1111,6 +1115,7 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         ChildDto,
         ParentProfile,
         ApiResponse<StudentProfile>,
+        ApiResponse<StudentRegisterProfile>,
         ApiResponse<StudentListResponse>,
         ApiResponse<ParentProfile>,
         AcademicYearStatus,
@@ -2376,6 +2381,7 @@ mod tests {
         assert_eq!(
             required(schema),
             vec![
+                "displayName",
                 "firstName",
                 "id",
                 "lastName",
@@ -2419,6 +2425,7 @@ mod tests {
         assert_eq!(
             required(current_user),
             vec![
+                "displayName",
                 "firstName",
                 "id",
                 "lastName",
@@ -2794,6 +2801,76 @@ mod tests {
         assert!(schemas["UpdateOwnProfileRequest"]["properties"]
             .get("password")
             .is_none());
+
+        assert!(create_request["properties"].get("student_number").is_none());
+        assert!(schemas["UpdateStudentRequest"]["properties"]
+            .get("student_number")
+            .is_none());
+        assert!(schemas["UpdateStudentRequest"]["properties"]
+            .get("student_id")
+            .is_none());
+        let update = &schemas["UpdateStudentRequest"];
+        // OpenAPI omits `required` when every property is optional.
+        if update.get("required").is_some() {
+            assert!(required(update).is_empty());
+        }
+        for field in [
+            "email",
+            "phone",
+            "address",
+            "title",
+            "date_of_birth",
+            "gender",
+            "enrollment_date",
+        ] {
+            assert!(contains_null(&update["properties"][field]));
+        }
+        assert_eq!(
+            schemas["StudentRegistrationStatus"]["enum"],
+            serde_json::json!([
+                "unrecorded",
+                "pending",
+                "studying",
+                "transferred_out",
+                "withdrawn",
+                "graduated"
+            ])
+        );
+        let list = &schemas["StudentListItem"];
+        for field in [
+            "registration_status",
+            "account_status",
+            "enrollment_date",
+            "username",
+        ] {
+            assert!(required(list).contains(&field));
+        }
+        for field in ["status", "grade_level", "homeroom", "date_of_birth"] {
+            assert!(list["properties"].get(field).is_none());
+        }
+        assert!(contains_null(&list["properties"]["username"]));
+        let profile = &schemas["StudentRegisterInfo"];
+        assert!(required(profile).contains(&"registration_status"));
+        assert!(required(profile).contains(&"account_status"));
+        assert!(required(profile).contains(&"username"));
+        assert!(contains_null(&profile["properties"]["username"]));
+        assert!(profile["properties"].get("status").is_none());
+        for field in [
+            "registration_status_updated_at",
+            "registration_status_updated_by",
+            "enrollment_date",
+            "grade_level",
+            "homeroom",
+            "student_number",
+        ] {
+            assert!(required(profile).contains(&field));
+            assert!(contains_null(&profile["properties"][field]));
+        }
+        assert_eq!(
+            document["paths"]["/api/students/{id}"]["get"]["responses"]["200"]["content"]
+                ["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StudentRegisterProfile"
+        );
 
         let create = &document["paths"]["/api/students"]["post"];
         assert_eq!(
@@ -3655,16 +3732,19 @@ mod tests {
         assert_eq!(
             query_contract(&document, "/api/students", "get"),
             BTreeSet::from([
-                ("academicYearId".to_string(), true),
+                ("accountStatus".to_string(), false),
+                ("registrationStatus".to_string(), false),
                 ("page".to_string(), false),
                 ("pageSize".to_string(), false),
                 ("search".to_string(), false),
-                ("status".to_string(), false),
             ])
+        );
+        assert_eq!(
+            query_contract(&document, "/api/students/{id}", "get"),
+            BTreeSet::from([("academicYearId".to_string(), false)])
         );
 
         for path in [
-            "/api/students/{id}",
             "/api/student/profile",
             "/api/parent/profile",
             "/api/parent/students/{student_id}",

@@ -450,15 +450,41 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn admin_auth_dependencies_follow_the_reviewed_policy() {
     let admin_manifest = read_source(repo_root().join("backend-admin/Cargo.toml"));
-    assert!(admin_manifest.contains(
-        "jsonwebtoken = { version = \"11.1.0\", default-features = false, features = [\"rust_crypto\"] }"
-    ));
+    assert!(!admin_manifest.contains("jsonwebtoken"));
     assert!(admin_manifest.contains(
         "bcrypt = { version = \"0.19.3\", default-features = false, features = [\"std\", \"zeroize\"] }"
     ));
-    let jwt_source = read_source(repo_root().join("backend-admin/src/auth/jwt.rs"));
-    assert!(!jwt_source.contains(".expect("));
-    assert!(!jwt_source.contains("insecure_decode"));
+    assert!(!repo_root().join("backend-admin/src/auth/jwt.rs").exists());
+    let auth = read_source(repo_root().join("backend-admin/src/portal/auth.rs"));
+    let function_source = |marker: &str| {
+        let structural = extract_braced_block(&auth, marker, false);
+        let start = lexical_mask(&auth, false)
+            .structural
+            .find(marker)
+            .expect("Admin authentication function must exist");
+        &auth[start..start + structural.len()]
+    };
+    let token = function_source("pub fn random_token(");
+    assert!(token.contains("[0u8; 32]") && token.contains(".try_fill_bytes("));
+    assert!(token.contains("Ok(hex::encode(bytes))"));
+    let token_validation = function_source("pub fn valid_token(");
+    assert!(token_validation.contains("token.len() == 64"));
+    assert!(token_validation.contains("b.is_ascii_hexdigit()"));
+    let login = function_source("pub async fn login(");
+    assert!(login.contains("INSERT INTO platform_sessions(token_hash,account_id,expires_at)"));
+    assert!(login.contains(".bind(digest(&token))"));
+    let authenticate = function_source("pub async fn authenticate(");
+    assert!(authenticate.contains("if !valid_token(token)"));
+    assert!(authenticate.contains("return Err(PortalError::unauthorized())"));
+    assert!(authenticate.contains("JOIN platform_sessions s ON s.account_id=a.id"));
+    assert!(authenticate.contains("s.token_hash=$1 AND s.expires_at>now()"));
+    assert!(authenticate.contains("a.verified_at IS NOT NULL"));
+    assert!(authenticate.contains(".bind(digest(token))"));
+    assert!(authenticate.contains(".ok_or_else(PortalError::unauthorized)"));
+    let logout = function_source("pub async fn logout(");
+    assert!(logout.contains("DELETE FROM platform_sessions WHERE token_hash=$1"));
+    assert!(logout.contains(".bind(digest(token))"));
+    assert!(!auth.contains("insecure_decode"));
     assert!(!read_source(manifest_dir().join("Cargo.toml")).contains("jsonwebtoken"));
 }
 
@@ -7074,7 +7100,9 @@ fn school_session_runtime_is_deployment_owned() {
         let admin = &compose[admin_start..school_start];
         let school = &compose[school_start..school_end];
 
-        assert!(admin.contains("${JWT_SECRET"));
+        assert!(admin.contains("DATABASE_URL"));
+        assert!(admin.contains("${BASE_DOMAIN"));
+        assert!(!admin.contains("JWT_SECRET"));
         assert!(!admin.contains("${SCHOOL_ROLLBACK_JWT_SECRET"));
         assert!(!school.contains("JWT_SECRET"));
         assert!(!school.contains("${JWT_SECRET"));
@@ -7929,7 +7957,7 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
         if file_name == "crates/school-file-platform/src/file_inspector.rs" {
             continue;
         }
-        let source = strip_comments(&read_source(&file));
+        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
         assert!(
             !source.contains("image::load_from_memory") && !source.contains("ImageReader"),
             "{file_name} bypasses the validated image decoder boundary"

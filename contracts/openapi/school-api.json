@@ -14788,6 +14788,42 @@
         ],
         "type": "object"
       },
+      "ApiResponse_StudentRegisterProfile": {
+        "properties": {
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudentRegisterInfo"
+              },
+              {
+                "properties": {
+                  "parents": {
+                    "items": {
+                      "$ref": "#/components/schemas/ParentDto"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "parents"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_StudyProgram": {
         "properties": {
           "data": {
@@ -34070,6 +34106,7 @@
         "type": "object"
       },
       "CreateParentRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "type": [
@@ -34558,7 +34595,14 @@
         "type": "object"
       },
       "CreateStudentRequest": {
+        "additionalProperties": false,
         "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "date_of_birth": {
             "type": [
               "string",
@@ -34566,6 +34610,12 @@
             ]
           },
           "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enrollment_date": {
             "type": [
               "string",
               "null"
@@ -34601,15 +34651,24 @@
           "password": {
             "type": "string"
           },
-          "student_id": {
-            "type": "string"
-          },
-          "student_number": {
-            "format": "int32",
+          "phone": {
             "type": [
-              "integer",
+              "string",
               "null"
             ]
+          },
+          "registration_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StudentRegistrationStatus"
+              }
+            ]
+          },
+          "student_id": {
+            "type": "string"
           },
           "title": {
             "type": [
@@ -52047,20 +52106,18 @@
       },
       "StudentListItem": {
         "properties": {
-          "first_name": {
+          "account_status": {
             "type": "string"
           },
-          "grade_level": {
+          "enrollment_date": {
+            "format": "date",
             "type": [
               "string",
               "null"
             ]
           },
-          "homeroom": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "first_name": {
+            "type": "string"
           },
           "id": {
             "format": "uuid",
@@ -52069,8 +52126,8 @@
           "last_name": {
             "type": "string"
           },
-          "status": {
-            "type": "string"
+          "registration_status": {
+            "$ref": "#/components/schemas/StudentRegistrationStatus"
           },
           "student_id": {
             "type": [
@@ -52085,15 +52142,22 @@
             ]
           },
           "username": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "id",
           "username",
+          "title",
           "first_name",
           "last_name",
-          "status"
+          "student_id",
+          "registration_status",
+          "account_status",
+          "enrollment_date"
         ],
         "type": "object"
       },
@@ -52167,6 +52231,214 @@
             "type": "object"
           }
         ]
+      },
+      "StudentRegisterInfo": {
+        "description": "Staff projection deliberately names account status separately from registration.\nAnnual placement fields are null unless the caller supplies an academic year.",
+        "properties": {
+          "account_status": {
+            "type": "string"
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "allergies": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blood_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_of_birth": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enrollment_date": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "grade_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "medical_conditions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "national_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile_image_file_id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registration_status": {
+            "$ref": "#/components/schemas/StudentRegistrationStatus"
+          },
+          "registration_status_updated_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registration_status_updated_by": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "student_number": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "national_id",
+          "email",
+          "first_name",
+          "last_name",
+          "title",
+          "nickname",
+          "phone",
+          "date_of_birth",
+          "gender",
+          "address",
+          "profile_image_file_id",
+          "student_id",
+          "blood_type",
+          "allergies",
+          "medical_conditions",
+          "account_status",
+          "enrollment_date",
+          "registration_status",
+          "registration_status_updated_at",
+          "registration_status_updated_by",
+          "grade_level",
+          "homeroom",
+          "student_number"
+        ],
+        "type": "object"
+      },
+      "StudentRegisterProfile": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StudentRegisterInfo"
+          },
+          {
+            "properties": {
+              "parents": {
+                "items": {
+                  "$ref": "#/components/schemas/ParentDto"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "parents"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "StudentRegistrationStatus": {
+        "description": "Administrative registration assertion, independent of login and annual enrollment.",
+        "enum": [
+          "unrecorded",
+          "pending",
+          "studying",
+          "transferred_out",
+          "withdrawn",
+          "graduated"
+        ],
+        "type": "string"
       },
       "StudentYearCandidate": {
         "properties": {
@@ -59411,8 +59683,15 @@
         "type": "object"
       },
       "UpdateStudentRequest": {
+        "additionalProperties": false,
         "properties": {
           "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date_of_birth": {
             "type": [
               "string",
               "null"
@@ -59424,7 +59703,19 @@
               "null"
             ]
           },
+          "enrollment_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "first_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gender": {
             "type": [
               "string",
               "null"
@@ -59442,10 +59733,19 @@
               "null"
             ]
           },
-          "student_number": {
-            "format": "int32",
+          "registration_status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StudentRegistrationStatus"
+              }
+            ]
+          },
+          "title": {
             "type": [
-              "integer",
+              "string",
               "null"
             ]
           }
@@ -98268,15 +98568,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -98303,7 +98594,15 @@
           },
           {
             "in": "query",
-            "name": "status",
+            "name": "registrationStatus",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/StudentRegistrationStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountStatus",
             "required": false,
             "schema": {
               "type": "string"
@@ -98319,7 +98618,17 @@
                 }
               }
             },
-            "description": "Students in the selected academic year"
+            "description": "Permanent student register in the authorized scope"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid register filters or pagination"
           },
           "401": {
             "content": {
@@ -98495,7 +98804,7 @@
           {
             "in": "query",
             "name": "academicYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
               "type": "string"
@@ -98507,11 +98816,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_StudentProfile"
+                  "$ref": "#/components/schemas/ApiResponse_StudentRegisterProfile"
                 }
               }
             },
-            "description": "Student profile in the selected academic year"
+            "description": "Permanent student profile with optional annual context"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid student profile context"
           },
           "401": {
             "content": {
@@ -98584,6 +98903,16 @@
             },
             "description": "Student updated"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or duplicate student profile data"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -98613,6 +98942,16 @@
               }
             },
             "description": "Student not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permanent student record requires reconciliation"
           }
         },
         "summary": "PUT /api/students/:id - แก้ไขข้อมูลนักเรียน",
@@ -98656,6 +98995,16 @@
               }
             },
             "description": "Parent linked to student"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or duplicate guardian data"
           },
           "401": {
             "content": {

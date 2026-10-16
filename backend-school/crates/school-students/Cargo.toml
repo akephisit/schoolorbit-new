@@ -36,6 +36,7 @@ utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 school-test-db = { workspace = true }
 tokio = { workspace = true }
 school-crypto = { workspace = true, features = ["test-support"] }

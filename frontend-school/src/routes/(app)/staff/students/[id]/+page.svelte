@@ -18,26 +18,54 @@
 	import { can } from '#lib/stores/permissions.js';
 	import StudentProfileHistory from '#lib/components/academic-core/StudentProfileHistory.svelte';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
-	import { Edit, GraduationCap, HeartPulse, RefreshCw, UserRound } from '@lucide/svelte';
-	import { getStudent, type Student } from '#lib/api/students.js';
+	import { Edit, HeartPulse, RefreshCw, UserRound } from '@lucide/svelte';
+	import { getStudent, type StudentRegister } from '#lib/api/students.js';
+	import {
+		REGISTRATION_STATUS_LABELS,
+		studentRegisterReadScope,
+		accountStatusLabel
+	} from '#lib/forms/student-register.js';
+	import { withStudentRegisterContext } from '#lib/navigation/student-register.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
 
 	let { data }: PageProps = $props();
+	const academicContext = getAcademicContextStore();
+	const annualWorkspaceHref = $derived(
+		academicContextualMenuPath(
+			'/staff/academic/student-years',
+			$academicContext.selected,
+			$academicContext.options
+		)
+	);
 	const studentId = $derived(data.studentId);
 	const profileKey = $derived(data.profileKey);
 	const source = $derived(data.student);
 	const studentRequest = new LatestRequest();
 	let activeKey = '';
-	let student = $state.raw<Student | null>(null);
+	let student = $state.raw<StudentRegister | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	const academicYearId = $derived(data.academicYearId);
-	const academicYearQuery = $derived(
-		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
-	);
 	const listHref = $derived(data.returnTo);
 	const editHref = $derived(
-		`/staff/students/${encodeURIComponent(studentId)}/edit${academicYearQuery}`
+		withStudentRegisterContext(
+			`/staff/students/${encodeURIComponent(studentId)}/edit`,
+			data.context
+		)
+	);
+
+	const readScope = $derived(
+		studentRegisterReadScope({
+			school: $can.has(PERMISSIONS.STUDENT_READ_SCHOOL),
+			assigned: $can.has(PERMISSIONS.STUDENT_READ_ASSIGNED),
+			own: $can.has(PERMISSIONS.STUDENT_READ_OWN),
+			piiSchool: $can.has(PERMISSIONS.STUDENT_PII_READ_SCHOOL),
+			piiAssigned: $can.has(PERMISSIONS.STUDENT_PII_READ_ASSIGNED),
+			piiOwn: $can.has(PERMISSIONS.STUDENT_PII_READ_OWN)
+		})
 	);
 
 	const canReadStudent = $derived(
@@ -56,6 +84,19 @@
 		)
 	);
 
+	let previousIdentity = '';
+	$effect.pre(() => {
+		const identity = `${$authStore.user?.id ?? ''}:${readScope}`;
+		untrack(() => {
+			if (previousIdentity && previousIdentity !== identity) {
+				studentRequest.abort();
+				student = null;
+				loading = true;
+				error = '';
+			}
+			previousIdentity = identity;
+		});
+	});
 	$effect.pre(() => {
 		const key = profileKey,
 			read = source;
@@ -67,7 +108,12 @@
 			const ticket = studentRequest.begin();
 			loading = true;
 			error = '';
-			void read.then((result) => applyStudent(result, ticket.revision));
+			const session = authStore.sessionEpoch,
+				scope = readScope;
+			void read.then((result) => {
+				if (session === authStore.sessionEpoch && scope === readScope && canReadStudent)
+					applyStudent(result, ticket.revision);
+			});
 		});
 		return () => studentRequest.abort();
 	});
@@ -79,16 +125,19 @@
 			student = result.data;
 		} else error = result.error;
 	}
-	async function reloadCurrentYear() {
-		if (!academicYearId || !canReadStudent) return;
+	async function reloadProfile() {
+		if (!canReadStudent) return;
 		const ticket = studentRequest.begin();
+		const session = authStore.sessionEpoch,
+			scope = readScope;
 		loading = true;
 		error = '';
 		const result = await captureRouteLoad(
 			getStudent(studentId, academicYearId, { signal: ticket.signal }),
 			'โหลดข้อมูลนักเรียนไม่สำเร็จ'
 		);
-		applyStudent(result, ticket.revision);
+		if (session === authStore.sessionEpoch && scope === readScope && canReadStudent)
+			applyStudent(result, ticket.revision);
 	}
 </script>
 
@@ -101,7 +150,7 @@
 	backPreload={false}
 >
 	{#snippet actions()}
-		<Button variant="outline" onclick={reloadCurrentYear} disabled={loading || !canReadStudent}>
+		<Button variant="outline" onclick={reloadProfile} disabled={loading || !canReadStudent}>
 			<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
 			รีเฟรช
 		</Button>
@@ -119,7 +168,7 @@
 				title="อัปเดตข้อมูลนักเรียนไม่สำเร็จ"
 				description={error}
 				actionLabel="ลองอีกครั้ง"
-				onaction={reloadCurrentYear}
+				onaction={reloadProfile}
 			/>{/if}
 		{#if loading && student && canReadStudent}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
 		{#if !canReadStudent}
@@ -138,7 +187,7 @@
 				title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
 				description={error}
 				actionLabel="ลองอีกครั้ง"
-				onaction={reloadCurrentYear}
+				onaction={reloadProfile}
 			/>
 		{:else if student}
 			<Card class="overflow-hidden" data-testid="student-summary">
@@ -161,9 +210,9 @@
 						{/if}
 						<div class="min-w-0 flex-1 space-y-3">
 							<div class="flex flex-wrap items-center gap-2">
-								<p class="text-sm text-muted-foreground">ข้อมูลนักเรียน</p>
-								<Badge variant={student.status === 'active' ? 'default' : 'secondary'}>
-									{student.status === 'active' ? 'ใช้งาน' : 'ไม่ใช้งาน'}
+								<p class="text-sm text-muted-foreground">สถานะทะเบียน</p>
+								<Badge variant="secondary">
+									{REGISTRATION_STATUS_LABELS[student.registration_status]}
 								</Badge>
 							</div>
 							<p class="break-words text-xl font-semibold sm:text-2xl">
@@ -176,21 +225,32 @@
 								>
 							</p>
 						</div>
-						<div class="flex min-w-0 items-center gap-3 rounded-xl bg-muted/50 p-4 sm:max-w-xs">
-							<GraduationCap class="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
-							<div class="min-w-0">
-								<p class="break-words text-sm font-medium">
-									{student.grade_level || 'ยังไม่ระบุระดับชั้น'}
-								</p>
-								<p class="break-words text-sm text-muted-foreground">
-									{student.homeroom || 'ยังไม่ระบุห้อง'}
-								</p>
+						<dl class="grid min-w-0 gap-3 text-sm sm:grid-cols-2">
+							<div>
+								<dt class="text-muted-foreground">วันที่เข้าเรียน</dt>
+								<dd>
+									{student.enrollment_date ? formatCalendarDate(student.enrollment_date) : '—'}
+								</dd>
 							</div>
-						</div>
+							<div>
+								<dt class="text-muted-foreground">สถานะบัญชี</dt>
+								<dd>{accountStatusLabel(student.account_status)}</dd>
+							</div>
+							<div class="min-w-0 sm:col-span-2">
+								<dt class="text-muted-foreground">ชื่อบัญชี</dt>
+								<dd class="break-words">{student.username || 'ยังไม่ระบุชื่อบัญชี'}</dd>
+							</div>
+						</dl>
 					</div>
 				</CardContent>
 			</Card>
 
+			<p class="text-sm text-muted-foreground">
+				สถานะทะเบียนเป็นข้อมูลทะเบียนกลาง การเข้าร่วมปีการศึกษาและการจบปีดำเนินการในทะเบียนรายปี{#if $can.has(PERMISSIONS.STUDENT_ACADEMIC_YEAR_READ_SCHOOL)}
+					· <a class="text-primary underline underline-offset-4" href={annualWorkspaceHref}
+						>เปิดทะเบียนรายปี</a
+					>{/if}
+			</p>
 			<div class="grid items-start gap-6 xl:grid-cols-2">
 				<div class="min-w-0 space-y-6">
 					<Card data-testid="student-basic">
@@ -199,7 +259,7 @@
 							<CardDescription>ข้อมูลส่วนตัวและการระบุตัวตน</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<dl class="grid gap-6 sm:grid-cols-2">
+							<dl class="grid gap-4 sm:grid-cols-2">
 								<div class="min-w-0 space-y-1.5 sm:col-span-2">
 									<dt class="text-sm text-muted-foreground">ชื่อ-นามสกุล</dt>
 									<dd class="break-words font-medium">
@@ -210,7 +270,13 @@
 								<div class="space-y-1.5">
 									<dt class="text-sm text-muted-foreground">เพศ</dt>
 									<dd>
-										{student.gender === 'male' ? 'ชาย' : student.gender === 'female' ? 'หญิง' : '—'}
+										{student.gender === 'male'
+											? 'ชาย'
+											: student.gender === 'female'
+												? 'หญิง'
+												: student.gender === 'other'
+													? 'อื่น ๆ'
+													: '—'}
 									</dd>
 								</div>
 								<div class="space-y-1.5">
@@ -235,7 +301,7 @@
 							<CardDescription>ช่องทางติดต่อและที่อยู่ของนักเรียน</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<dl class="grid gap-6 sm:grid-cols-2">
+							<dl class="grid gap-4 sm:grid-cols-2">
 								<div class="min-w-0 space-y-1.5 sm:col-span-2">
 									<dt class="text-sm text-muted-foreground">อีเมล</dt>
 									<dd class="break-words">{student.email || '—'}</dd>
@@ -254,29 +320,57 @@
 				</div>
 
 				<div class="min-w-0 space-y-6">
-					<Card data-testid="student-academic">
-						<CardHeader>
-							<CardTitle><h2>ข้อมูลการเรียน</h2></CardTitle>
-							<CardDescription>ระดับชั้นและห้องในปีการศึกษาที่เลือก</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<dl class="grid gap-6 sm:grid-cols-3">
-								<div class="min-w-0 space-y-1.5">
-									<dt class="text-sm text-muted-foreground">ระดับชั้น</dt>
-									<dd class="break-words font-medium">{student.grade_level || '—'}</dd>
-								</div>
-								<div class="min-w-0 space-y-1.5">
-									<dt class="text-sm text-muted-foreground">ห้อง</dt>
-									<dd class="break-words font-medium">{student.homeroom || '—'}</dd>
-								</div>
-								<div class="space-y-1.5">
-									<dt class="text-sm text-muted-foreground">เลขที่</dt>
-									<dd class="font-medium">{student.student_number ?? '—'}</dd>
-								</div>
-							</dl>
-						</CardContent>
-					</Card>
+					{#if academicYearId}<Card data-testid="student-academic">
+							<CardHeader>
+								<CardTitle><h2>บริบทจากทะเบียนรายปี</h2></CardTitle>
+								<CardDescription
+									>ระดับชั้นและห้องจากหน้าทะเบียนรายปีหรือห้องที่เปิดมา</CardDescription
+								>
+							</CardHeader>
+							<CardContent>
+								<dl class="grid gap-4 sm:grid-cols-3">
+									<div class="min-w-0 space-y-1.5">
+										<dt class="text-sm text-muted-foreground">ระดับชั้น</dt>
+										<dd class="break-words font-medium">{student.grade_level || '—'}</dd>
+									</div>
+									<div class="min-w-0 space-y-1.5">
+										<dt class="text-sm text-muted-foreground">ห้อง</dt>
+										<dd class="break-words font-medium">{student.homeroom || '—'}</dd>
+									</div>
+									<div class="space-y-1.5">
+										<dt class="text-sm text-muted-foreground">เลขที่</dt>
+										<dd class="font-medium">{student.student_number ?? '—'}</dd>
+									</div>
+								</dl>
+							</CardContent>
+						</Card>{/if}
 
+					<Card data-testid="student-parents"
+						><CardHeader><CardTitle><h2>ผู้ปกครอง</h2></CardTitle></CardHeader><CardContent
+							class="space-y-4"
+						>
+							{#each student.parents as parent (parent.id)}<dl
+									class="space-y-1 border-b pb-3 last:border-0 last:pb-0"
+								>
+									<div>
+										<dt class="sr-only">ชื่อผู้ปกครอง</dt>
+										<dd class="break-words font-medium">{parent.first_name} {parent.last_name}</dd>
+									</div>
+									<div>
+										<dt class="sr-only">ความสัมพันธ์</dt>
+										<dd class="text-sm text-muted-foreground">
+											{parent.relationship}{parent.is_primary ? ' · ผู้ปกครองหลัก' : ''}
+										</dd>
+									</div>
+									{#if parent.phone}<div>
+											<dt class="sr-only">เบอร์โทรศัพท์</dt>
+											<dd class="break-words text-sm">{parent.phone}</dd>
+										</div>{/if}
+								</dl>{:else}<p class="text-sm text-muted-foreground">
+									ยังไม่มีข้อมูลผู้ปกครอง
+								</p>{/each}
+						</CardContent></Card
+					>
 					{#if student.blood_type || student.allergies || student.medical_conditions}
 						<Card data-testid="student-health">
 							<CardHeader>
@@ -291,7 +385,7 @@
 								<CardDescription>ข้อมูลประกอบการดูแลนักเรียน</CardDescription>
 							</CardHeader>
 							<CardContent>
-								<dl class="space-y-6">
+								<dl class="space-y-4">
 									{#if student.blood_type}
 										<div class="space-y-1.5">
 											<dt class="text-sm text-muted-foreground">หมู่เลือด</dt>
@@ -325,7 +419,7 @@
 			/>
 		{/if}
 	</section>
-	{#if canReadStudent}<StudentProfileHistory
+	{#if canReadStudent && academicYearId}<StudentProfileHistory
 			source={data.history}
 			{profileKey}
 			{studentId}

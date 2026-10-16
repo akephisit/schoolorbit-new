@@ -1,5 +1,8 @@
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{
+        rejection::{JsonRejection, QueryRejection},
+        Extension, Path, Query, State,
+    },
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -8,35 +11,20 @@ use uuid::Uuid;
 
 use crate::access_policy as student_access_policy;
 use crate::http::state::StudentHttpState;
-#[cfg(feature = "api-docs")]
-use crate::models::StudentProfile;
 use crate::models::{
-    CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, UpdateOwnProfileRequest,
-    UpdateStudentRequest,
+    CreateStudentRequest, ListStudentsQuery, StudentAcademicYearQuery, StudentRegisterQuery,
+    UpdateOwnProfileRequest, UpdateStudentRequest,
 };
-use crate::services::{self as student_service, StudentListAccess};
+#[cfg(feature = "api-docs")]
+use crate::models::{StudentProfile, StudentRegisterProfile};
+use crate::services as student_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
-use school_authorization::resource_access_policy::UserResourceListAccess;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 use school_permissions::registry::codes;
-
-fn student_list_access(access: UserResourceListAccess) -> StudentListAccess {
-    match access {
-        UserResourceListAccess::Own(user_id) => StudentListAccess::Own(user_id),
-        UserResourceListAccess::Assigned(user_id) => StudentListAccess::Assigned(user_id),
-        UserResourceListAccess::OrganizationUnit(user_id) => {
-            StudentListAccess::OrganizationUnit(user_id)
-        }
-        UserResourceListAccess::OrganizationTree(user_id) => {
-            StudentListAccess::OrganizationTree(user_id)
-        }
-        UserResourceListAccess::School => StudentListAccess::School,
-    }
-}
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -106,7 +94,8 @@ pub async fn update_own_profile(
     tag = "student",
     params(ListStudentsQuery),
     responses(
-        (status = 200, description = "Students in the selected academic year", body = ApiResponse<crate::models::StudentListResponse>),
+        (status = 200, description = "Permanent student register in the authorized scope", body = ApiResponse<crate::models::StudentListResponse>),
+        (status = 400, description = "Invalid register filters or pagination", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student list access denied", body = ApiErrorResponse)
     )
@@ -114,15 +103,16 @@ pub async fn update_own_profile(
 pub async fn list_students(
     State(state): State<StudentHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(filter): Query<ListStudentsQuery>,
+    query: Result<Query<ListStudentsQuery>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let access = student_access_policy::resolve_student_list_access(&actor)?;
+    let Query(filter) =
+        query.map_err(|_| AppError::BadRequest("ตัวกรองทะเบียนนักเรียนไม่ถูกต้อง".into()))?;
 
-    let students =
-        student_service::list_students(&pool, filter, student_list_access(access)).await?;
+    let students = student_service::list_students(&pool, filter, access).await?;
 
     Ok((StatusCode::OK, Json(ApiResponse::ok(students))))
 }
@@ -145,14 +135,15 @@ pub async fn list_students(
 pub async fn create_student(
     State(state): State<StudentHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<CreateStudentRequest>,
+    payload: Result<Json<CreateStudentRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_CREATE_ALL)?;
+    let Json(payload) = payload.map_err(|_| AppError::BadRequest("ข้อมูลนักเรียนไม่ถูกต้อง".into()))?;
 
-    let created = student_service::create_student(&pool, payload).await?;
+    let created = student_service::create_student(&pool, actor.user_id, payload).await?;
     for parent_id in &created.parent_ids {
         state
             .auth_runtime
@@ -179,10 +170,11 @@ pub async fn create_student(
     tag = "student",
     params(
         ("id" = Uuid, Path, description = "Student user ID"),
-        StudentAcademicYearQuery
+        StudentRegisterQuery
     ),
     responses(
-        (status = 200, description = "Student profile in the selected academic year", body = ApiResponse<StudentProfile>),
+        (status = 200, description = "Permanent student profile with optional annual context", body = ApiResponse<StudentRegisterProfile>),
+        (status = 400, description = "Invalid student profile context", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student profile access denied", body = ApiErrorResponse),
         (status = 404, description = "Student profile not found", body = ApiErrorResponse)
@@ -192,13 +184,14 @@ pub async fn get_student(
     State(state): State<StudentHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
-    Query(query): Query<StudentAcademicYearQuery>,
+    query: Result<Query<StudentRegisterQuery>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     let include_pii =
         student_access_policy::authorize_student_profile_read(&pool, &actor, student_id).await?;
+    let Query(query) = query.map_err(|_| AppError::BadRequest("บริบทข้อมูลนักเรียนไม่ถูกต้อง".into()))?;
 
     let student =
         student_service::get_student(&pool, student_id, query.academic_year_id, include_pii)
@@ -217,6 +210,8 @@ pub async fn get_student(
     request_body = UpdateStudentRequest,
     responses(
         (status = 200, description = "Student updated", body = ApiResponse<school_http::EmptyData>),
+        (status = 400, description = "Invalid or duplicate student profile data", body = ApiErrorResponse),
+        (status = 409, description = "Permanent student record requires reconciliation", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse)
@@ -226,14 +221,15 @@ pub async fn update_student(
     State(state): State<StudentHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(student_id): Path<Uuid>,
-    Json(payload): Json<UpdateStudentRequest>,
+    payload: Result<Json<UpdateStudentRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
+    let Json(payload) = payload.map_err(|_| AppError::BadRequest("ข้อมูลนักเรียนไม่ถูกต้อง".into()))?;
 
-    student_service::update_student(&pool, student_id, payload).await?;
+    student_service::update_student(&pool, student_id, actor.user_id, payload).await?;
 
     Ok((
         StatusCode::OK,

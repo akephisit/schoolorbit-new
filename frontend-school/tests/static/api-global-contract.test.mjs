@@ -828,19 +828,35 @@ test('staff manage pilot uses shadcn-svelte surfaces and permission gates', asyn
 			'utf8'
 		)
 	);
+	const results = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/lib/components/staff/StaffDirectoryResults.svelte'),
+			'utf8'
+		)
+	);
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 	for (const requiredImport of [
 		'#lib/components/ui/button/index.js',
 		'#lib/components/ui/input/index.js',
 		'#lib/components/ui/dialog/index.js',
-		'#lib/components/ui/table/index.js',
 		'#lib/components/ui/card/index.js',
-		'#lib/components/ui/badge/index.js',
 		'#lib/components/app-state/index.js'
 	]) {
 		assert.match(source, new RegExp(escapeRegex(requiredImport)));
 	}
+	assert.match(
+		source,
+		/import StaffDirectoryResults from '#lib\/components\/staff\/StaffDirectoryResults\.svelte'/
+	);
+	assert.match(source, /<StaffDirectoryResults\b/);
+	for (const requiredImport of [
+		'#lib/components/ui/table/index.js',
+		'#lib/components/ui/badge/index.js'
+	])
+		assert.match(results, new RegExp(escapeRegex(requiredImport)));
+	assert.match(results, /<Table\.Root\b/);
+	assert.match(results, /<Badge\b/);
 
 	for (const requiredPermission of [
 		'PERMISSIONS.STAFF_PROFILE_READ_OWN',
@@ -1257,16 +1273,15 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',
 				'PERMISSIONS.STUDENT_UPDATE_ALL',
-				'PERMISSIONS.STUDENT_DELETE_ALL',
 				'PERMISSIONS.STUDENT_PII_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_PII_READ_ASSIGNED'
 			],
-			identifiers: ['canReadStudent', 'canUpdateStudent', 'canDeleteStudent', 'canReadStudentPii']
+			identifiers: ['canReadStudent', 'canUpdateStudent', 'canReadStudentPii']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/new/+page.svelte',
 			imports: ['#lib/components/app-state/index.js'],
-			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL', 'PERMISSIONS.STUDENT_PII_READ_SCHOOL'],
+			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL'],
 			identifiers: ['canCreateStudent', 'canHandleStudentPii']
 		}
 	];
