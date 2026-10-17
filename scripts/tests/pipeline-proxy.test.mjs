@@ -7,7 +7,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
-test('real Nginx preserves maintenance and authorization, then reuses School upstream sockets with isolated request headers', async (t) => {
+test('real Nginx preserves maintenance, authorization, socket reuse and privacy-safe School request timings', async (t) => {
  const temp=mkdtempSync(path.join(os.tmpdir(),'pipeline-proxy-'));
  const suffix=`${process.pid}-${Math.random().toString(16).slice(2,10)}`;
  const network=`pipeline-proxy-${suffix}`,backend=`pipeline-upstream-${suffix}`,proxy=`pipeline-proxy-${suffix}`;
@@ -28,9 +28,9 @@ test('real Nginx preserves maintenance and authorization, then reuses School ups
    default_type application/json;
    add_header Set-Cookie "fixture_session=response-$http_x_school_subdomain; Path=/; Secure; HttpOnly";
    add_header X-CSRF-Token "response-$http_x_csrf_token";
-   return 200 '{"socket":"$connection","requestNumber":$connection_requests,"method":"$request_method","uri":"$request_uri","protocol":"$server_protocol","connectionHeader":"$http_connection","host":"$http_host","origin":"$http_origin","tenant":"$http_x_school_subdomain","cookie":"$http_cookie","csrf":"$http_x_csrf_token","authorization":"$http_authorization","realIp":"$http_x_real_ip","forwardedFor":"$http_x_forwarded_for","forwardedProto":"$http_x_forwarded_proto"}';
+   return 200 '{"socket":"$connection","requestNumber":$connection_requests,"method":"$request_method","uri":"$request_uri","protocol":"$server_protocol","connectionHeader":"$http_connection","host":"$http_host","origin":"$http_origin","tenant":"$http_x_school_subdomain","cookie":"$http_cookie","csrf":"$http_x_csrf_token","authorization":"$http_authorization","realIp":"$http_x_real_ip","forwardedFor":"$http_x_forwarded_for","forwardedProto":"$http_x_forwarded_proto","diagnosticId":"$http_x_schoolorbit_diagnostic_id"}';
   }
-  location / { if ($request_method = OPTIONS) { return 405; } default_type application/json; return 401 '{"error":"unauthorized"}'; }
+  location / { if ($request_method = OPTIONS) { return 405; } add_header X-Fixture-Diagnostic-Id $http_x_schoolorbit_diagnostic_id always; default_type application/json; return 401 '{"error":"unauthorized"}'; }
  }`);
  docker('cp',upstream,`${backend}:/etc/nginx/conf.d/default.conf`);docker('start',backend);
  const conf=path.join(temp,'conf'),ssl=path.join(temp,'ssl');mkdirSync(conf);mkdirSync(ssl);
@@ -140,4 +140,53 @@ test('real Nginx preserves maintenance and authorization, then reuses School ups
  const denied=await ordinary('/api/private');
  assert.equal(denied.status,401);assert.deepEqual(denied.body,{error:'unauthorized'});
  assert.match(request('school','/api/private',['-X','OPTIONS','-H','Origin: https://alpha.example.test','-i']),/Access-Control-Allow-Origin: https:\/\/alpha.example.test[\s\S]*\n204$/i);
+ const rendered=readFileSync(path.join(conf,'school.conf'),'utf8');
+ assert.equal((rendered.match(/proxy_set_header X-SchoolOrbit-Diagnostic-Id \$school_diagnostic_id;/g)||[]).length,(rendered.match(/proxy_pass /g)||[]).length);
+ const timingFormat=rendered.match(/log_format school_request_timing[\s\S]*?;/)[0];
+ assert.match(timingFormat,/escape=json/);
+ assert.doesNotMatch(timingFormat,/\$(?:uri|request_uri|args|query_string|remote_addr|http_|request_body|request_method)/);
+ assert.match(request('school','/private-path-secret?private-query-secret',['-X','PRIVATESECRET','-H','Cookie: private-cookie-secret']),/\n401$/);
+ const diagnosticId='9ab961be-2edd-4502-b26c-1943cf272380';
+ const diagnostic=await ordinary('/api/proxy-fixture?private-query-secret',{Cookie:'private-cookie-secret',Authorization:'Bearer private-authorization-secret','X-SchoolOrbit-Diagnostic-Id':diagnosticId});
+ assert.equal(diagnostic.body.diagnosticId,diagnosticId);
+ for(const invalid of ['private-header-secret',diagnosticId.toUpperCase(),'9ab961be-2edd-5502-b26c-1943cf272380',`${diagnosticId}, ${diagnosticId}`]){
+  const response=await ordinary('/api/proxy-fixture',{'X-SchoolOrbit-Diagnostic-Id':invalid});
+  assert.equal(response.body.diagnosticId,'-');
+ }
+ assert.equal(replies[0].diagnosticId,'-');
+ // Sanitized forwarding is explicit in every special location as well.
+ for(const url of ['/api/files/fixture','/api/admission/portal/upload','/api/notifications/stream','/ws/fixture']){
+  const valid=request('school',url,['-i','-H',`X-SchoolOrbit-Diagnostic-Id: ${diagnosticId}`]);
+  assert.match(valid,/\n401$/);
+  assert.ok(valid.toLowerCase().includes(`x-fixture-diagnostic-id: ${diagnosticId}`));
+  const invalid=request('school',url,['-i','-H','X-SchoolOrbit-Diagnostic-Id: private-header-secret']);
+  assert.match(invalid,/x-fixture-diagnostic-id: -/i);
+ }
+ const preflight=request('school','/api/proxy-fixture',['-X','OPTIONS','-H','Origin: https://alpha.example.test','-H','Access-Control-Request-Headers: x-schoolorbit-diagnostic-id','-i']);
+ assert.match(preflight,/Access-Control-Allow-Headers: [^\r\n]*X-SchoolOrbit-Diagnostic-Id/i);
+ assert.match(preflight,/\n204$/);
+ // The real Nginx parser and request path validate maps, JSON escaping and numeric fields.
+ const events=docker('logs',proxy).split('\n').flatMap(line=>{
+  try {const event=JSON.parse(line);return event.operation==='school_proxy_request'?[event]:[];} catch{return [];}
+ });
+ const correlated=events.filter(event=>event.diagnostic_id===diagnosticId);
+ assert.equal(correlated.length,4);
+ for(const event of events){
+  assert.match(event.request_id,/^[0-9a-f]{32}$/);
+  assert.equal(typeof event.request_time,'number');
+  assert.equal(typeof event.status,'number');
+  for(const field of ['upstream_connect_time','upstream_header_time','upstream_response_time']){
+   assert.ok(event[field]===null || typeof event[field]==='number',`${field} must be numeric or null`);
+  }
+  assert.deepEqual(Object.keys(event).sort(),['operation','timestamp','request_id','diagnostic_id','method','route_family','status','request_time','upstream_connect_time','upstream_header_time','upstream_response_time'].sort());
+  assert.doesNotMatch(JSON.stringify(event),/private-|PRIVATESECRET|fixture_session|Bearer|csrf-/);
+ }
+ assert.ok(events.some(event=>event.method==='OTHER'&&event.route_family==='other'));
+ const proxied=correlated.find(event=>event.status===200);
+ assert.equal(proxied.route_family,'other');
+ assert.equal(proxied.method,'GET');
+ for(const field of ['upstream_connect_time','upstream_header_time','upstream_response_time']) assert.equal(typeof proxied[field],'number');
+ const local=events.find(event=>event.status===204);
+ for(const field of ['upstream_connect_time','upstream_header_time','upstream_response_time']) assert.equal(local[field],null);
+
 });

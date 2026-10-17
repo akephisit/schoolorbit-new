@@ -749,6 +749,36 @@ connection churn by comparing proxy network-namespace TCP active opens with
 request counts; backend replacement still requires the canonical readiness and
 proxy reload gates so cached sockets cannot retain the retired backend.
 
+School API access logs use the JSON `school_proxy_request` event with a generated
+`request_id`, static `route_family`, standard method (`OTHER` for custom methods),
+status and numeric `request_time`, `upstream_connect_time`, `upstream_header_time`
+and `upstream_response_time` in seconds. Upstream timings are `null` when absent
+or when Nginx reports multiple attempts; do not treat `null` as zero. The School
+normal proxy overrides the default access format, including local responses;
+WebSocket access logging stays disabled. No raw path, query, client address,
+credential, cookie or request body is included in this timing event.
+
+For a bounded diagnostic run, clients may send `X-SchoolOrbit-Diagnostic-Id` with a
+fresh lowercase, canonical UUIDv4 per request. The proxy forwards only that exact
+format; missing, invalid or duplicate values become `-`, which the backend omits.
+This optional opaque correlation value grants no access and must never encode a
+user, tenant, national ID or other business identity. Keep it in private request
+evidence, not metric labels. Backend `http_response_headers` records response-header
+completion; `http_request_cancelled` records the request future being dropped before
+headers, exactly once, with numeric `duration_ms`, the static matched route (or
+`unmatched`), standard method and optional validated `diagnostic_id`. Health and
+readiness requests remain excluded from these backend timing events.
+
+Compare client failure timing, the proxy event and the backend event for the same
+UUID to locate delay across the client/edge connection, proxy upstream and application.
+The backend timer includes authentication, pool acquisition and handler work up to
+response headers. It does not measure body transport or prove a mutation rolled back
+when the client times out. A proxy can continue waiting after its client disconnects,
+and a dropped application future does not identify its cause. Proxy request time
+covers its own request lifetime, including body transport; inspect status (including
+499 for a client disconnect) alongside upstream timings. Use the normal public API
+path for capacity acceptance and retain the existing timeout, retry and pool settings.
+
 Preserve:
 
 - WebSocket upgrade headers and long-lived connection timeouts;

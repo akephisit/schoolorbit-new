@@ -284,12 +284,242 @@ async fn request_timing(
         .get::<axum::extract::MatchedPath>()
         .map(|path| path.as_str().to_owned())
         .unwrap_or_else(|| "unmatched".into());
-    let method = request.method().clone();
-    let started = std::time::Instant::now();
+    let mut timing = RequestTiming {
+        route,
+        method: timing_method(request.method()),
+        diagnostic_id: diagnostic_id(request.headers()),
+        started: std::time::Instant::now(),
+        completed: false,
+    };
     let response = next.run(request).await;
-    if !matches!(route.as_str(), "/health" | "/ready") {
-        tracing::info!(operation = "http_response_headers", route, method = %method,
-            status = response.status().as_u16(), duration_ms = started.elapsed().as_secs_f64() * 1000.0);
+    timing.completed = true;
+    if timing.enabled() {
+        tracing::info!(
+            operation = "http_response_headers",
+            route = timing.route,
+            method = timing.method,
+            diagnostic_id = timing.diagnostic_id.as_deref(),
+            status = response.status().as_u16(),
+            duration_ms = timing.duration_ms()
+        );
     }
     response
+}
+
+// Retain only server-owned labels and a validated opaque diagnostic UUID across await.
+// Dropping the request future before response headers must still leave timing evidence.
+struct RequestTiming {
+    route: String,
+    method: &'static str,
+    diagnostic_id: Option<String>,
+    started: std::time::Instant,
+    completed: bool,
+}
+
+impl RequestTiming {
+    fn enabled(&self) -> bool {
+        !matches!(self.route.as_str(), "/health" | "/ready")
+    }
+
+    fn duration_ms(&self) -> f64 {
+        self.started.elapsed().as_secs_f64() * 1000.0
+    }
+}
+
+impl Drop for RequestTiming {
+    fn drop(&mut self) {
+        if !self.completed && self.enabled() {
+            tracing::info!(
+                operation = "http_request_cancelled",
+                route = self.route,
+                method = self.method,
+                diagnostic_id = self.diagnostic_id.as_deref(),
+                duration_ms = self.duration_ms()
+            );
+        }
+    }
+}
+
+fn timing_method(method: &axum::http::Method) -> &'static str {
+    match method.as_str() {
+        "GET" => "GET",
+        "HEAD" => "HEAD",
+        "POST" => "POST",
+        "PUT" => "PUT",
+        "PATCH" => "PATCH",
+        "DELETE" => "DELETE",
+        "OPTIONS" => "OPTIONS",
+        "CONNECT" => "CONNECT",
+        "TRACE" => "TRACE",
+        _ => "OTHER",
+    }
+}
+
+fn diagnostic_id(headers: &axum::http::HeaderMap) -> Option<String> {
+    let mut values = headers.get_all("x-schoolorbit-diagnostic-id").iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+    let uuid = uuid::Uuid::parse_str(value).ok()?;
+    (uuid.get_version_num() == 4
+        && uuid.get_variant() == uuid::Variant::RFC4122
+        && uuid.hyphenated().to_string() == value)
+        .then(|| value.to_owned())
+}
+
+#[cfg(test)]
+mod request_timing_tests {
+    use super::request_timing;
+    use axum::{body::Body, http::Request, middleware::from_fn, routing::any, Router};
+    use std::{
+        io::Write,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+    use tower::ServiceExt;
+
+    #[derive(Clone, Default)]
+    struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for LogBuffer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl LogBuffer {
+        fn events(&self) -> Vec<serde_json::Value> {
+            String::from_utf8(self.0.lock().unwrap().clone())
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect()
+        }
+    }
+
+    fn capture() -> (LogBuffer, tracing::subscriber::DefaultGuard) {
+        let output = LogBuffer::default();
+        let writer = output.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .without_time()
+            .with_writer(move || writer.clone())
+            .finish();
+        (output, tracing::subscriber::set_default(subscriber))
+    }
+
+    const DIAGNOSTIC_ID: &str = "9ab961be-2edd-4502-b26c-1943cf272380";
+
+    #[tokio::test]
+    async fn completed_headers_emit_once_without_cancellation_or_private_request_values() {
+        let (output, _guard) = capture();
+        let app = Router::new()
+            .route("/students/{student}", any(|| async { "ok" }))
+            .layer(from_fn(request_timing));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/students/private-student?national_id=private-query")
+                    .header("Cookie", "private-cookie")
+                    .header("Authorization", "private-authorization")
+                    .header("X-SchoolOrbit-Diagnostic-Id", DIAGNOSTIC_ID)
+                    .body(Body::from("private-body"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        drop(response);
+        let events = output.events();
+        assert_eq!(events.len(), 1);
+        let fields = &events[0]["fields"];
+        assert_eq!(fields["operation"], "http_response_headers");
+        assert_eq!(fields["route"], "/students/{student}");
+        assert_eq!(fields["method"], "GET");
+        assert_eq!(fields["diagnostic_id"], DIAGNOSTIC_ID);
+        assert_eq!(fields["status"], 200);
+        assert!(fields["duration_ms"].as_f64().unwrap() >= 0.0);
+        assert!(!events[0].to_string().contains("private-"));
+    }
+
+    #[tokio::test]
+    async fn interrupted_handler_emits_one_cancellation_with_numeric_elapsed_time() {
+        let (output, _guard) = capture();
+        let app = Router::new()
+            .route(
+                "/students/{student}",
+                any(|| async {
+                    std::future::pending::<()>().await;
+                    "unreachable"
+                }),
+            )
+            .layer(from_fn(request_timing));
+        let request = Request::builder()
+            .uri("/students/private-student?private-query")
+            .header("X-SchoolOrbit-Diagnostic-Id", DIAGNOSTIC_ID)
+            .body(Body::empty())
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), app.oneshot(request))
+                .await
+                .is_err()
+        );
+        let events = output.events();
+        assert_eq!(events.len(), 1);
+        let fields = &events[0]["fields"];
+        assert_eq!(fields["operation"], "http_request_cancelled");
+        assert_eq!(fields["route"], "/students/{student}");
+        assert_eq!(fields["diagnostic_id"], DIAGNOSTIC_ID);
+        assert!(fields["duration_ms"].as_f64().unwrap() > 0.0);
+        assert!(fields.get("status").is_none());
+        assert!(!events[0].to_string().contains("private-"));
+    }
+
+    #[tokio::test]
+    async fn invalid_or_missing_diagnostic_ids_and_custom_methods_are_never_logged_raw() {
+        let (output, _guard) = capture();
+        let app = Router::new().layer(from_fn(request_timing));
+        let invalid = [
+            None,
+            Some("private-header"),
+            Some("9AB961BE-2EDD-4502-B26C-1943CF272380"),
+            Some("9ab961be2edd4502b26c1943cf272380"),
+            Some("9ab961be-2edd-5502-b26c-1943cf272380"),
+            Some("9ab961be-2edd-4502-726c-1943cf272380"),
+        ];
+        for value in invalid {
+            let mut request = Request::builder()
+                .method("private-method")
+                .uri("/private-unmatched?private-query")
+                .header("Cookie", "private-cookie");
+            if let Some(value) = value {
+                request = request.header("X-SchoolOrbit-Diagnostic-Id", value);
+            }
+            app.clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+        }
+        let duplicate = Request::builder()
+            .uri("/private-unmatched")
+            .header("X-SchoolOrbit-Diagnostic-Id", DIAGNOSTIC_ID)
+            .header("X-SchoolOrbit-Diagnostic-Id", DIAGNOSTIC_ID)
+            .body(Body::empty())
+            .unwrap();
+        app.oneshot(duplicate).await.unwrap();
+        let events = output.events();
+        assert_eq!(events.len(), invalid.len() + 1);
+        for event in &events {
+            let fields = &event["fields"];
+            assert_eq!(fields["route"], "unmatched");
+            assert!(fields.get("diagnostic_id").is_none());
+            assert!(!event.to_string().contains("private-"));
+        }
+        assert_eq!(events[0]["fields"]["method"], "OTHER");
+    }
 }
