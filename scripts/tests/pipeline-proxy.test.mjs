@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { Agent, request as httpsRequest } from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
-test('real Nginx serves public maintenance, CORS preflight and token probes without bypassing backend authorization', async (t) => {
+test('real Nginx preserves maintenance and authorization, then reuses School upstream sockets with isolated request headers', async (t) => {
  const temp=mkdtempSync(path.join(os.tmpdir(),'pipeline-proxy-'));
  const suffix=`${process.pid}-${Math.random().toString(16).slice(2,10)}`;
  const network=`pipeline-proxy-${suffix}`,backend=`pipeline-upstream-${suffix}`,proxy=`pipeline-proxy-${suffix}`;
@@ -20,7 +21,17 @@ test('real Nginx serves public maintenance, CORS preflight and token probes with
  docker('network','create',network);
  docker('create','--name',backend,'--network',network,'--network-alias','schoolorbit-backend-school','--network-alias','schoolorbit-backend-admin',image);
  const upstream=path.join(temp,'upstream.conf');
- writeFileSync(upstream,'server { listen 8080; listen 8081; location = /ready { default_type application/json; return 200 \'{"status":"ready"}\'; } location / { if ($request_method = OPTIONS) { return 405; } default_type application/json; return 401 \'{"error":"unauthorized"}\'; } }');
+ writeFileSync(upstream,`server {
+  listen 8080; listen 8081;
+  location = /ready { default_type application/json; return 200 '{"status":"ready"}'; }
+  location = /api/proxy-fixture {
+   default_type application/json;
+   add_header Set-Cookie "fixture_session=response-$http_x_school_subdomain; Path=/; Secure; HttpOnly";
+   add_header X-CSRF-Token "response-$http_x_csrf_token";
+   return 200 '{"socket":"$connection","requestNumber":$connection_requests,"method":"$request_method","uri":"$request_uri","protocol":"$server_protocol","connectionHeader":"$http_connection","host":"$http_host","origin":"$http_origin","tenant":"$http_x_school_subdomain","cookie":"$http_cookie","csrf":"$http_x_csrf_token","authorization":"$http_authorization","realIp":"$http_x_real_ip","forwardedFor":"$http_x_forwarded_for","forwardedProto":"$http_x_forwarded_proto"}';
+  }
+  location / { if ($request_method = OPTIONS) { return 405; } default_type application/json; return 401 '{"error":"unauthorized"}'; }
+ }`);
  docker('cp',upstream,`${backend}:/etc/nginx/conf.d/default.conf`);docker('start',backend);
  const conf=path.join(temp,'conf'),ssl=path.join(temp,'ssl');mkdirSync(conf);mkdirSync(ssl);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(ssl,'schoolorbit-origin.key'),'-out',path.join(ssl,'schoolorbit-origin.pem'),'-days','1','-subj','/CN=example.test','-addext','subjectAltName=DNS:school-api.example.test,DNS:admin-api.example.test,DNS:admin.example.test'],{stdio:'ignore'});
@@ -71,4 +82,62 @@ test('real Nginx serves public maintenance, CORS preflight and token probes with
  assert.match(request('admin','/api/private'),/"error":"unauthorized"[\s\S]*\n401$/);
  assert.match(request('admin','/api/private',['-X','OPTIONS','-H','Origin: https://example.test','-i']),/Access-Control-Allow-Origin: https:\/\/example.test[\s\S]*\n204$/i);
  assert.match(request('school','/ready'),/"error":"maintenance"[\s\S]*\n503$/);
+
+ execFileSync('bash',['scripts/render_nginx_config.sh','nginx-configs/school-api.conf.template',path.join(conf,'school.conf'),'example.test','a'.repeat(40),'ready']);
+ docker('cp',path.join(conf,'school.conf'),`${proxy}:/etc/nginx/conf.d/school.conf`);
+ docker('exec',proxy,'nginx','-t');docker('exec',proxy,'nginx','-s','reload');
+ for(let attempt=0;;attempt++){
+  if(request('school','/deployment-status').includes('"status":"ready"'))break;
+  if(attempt===30)throw new Error('School ready configuration did not activate');
+  await delay(100);
+ }
+ // One verified TLS connection pins these sequential requests to one proxy worker.
+ // The upstream's connection ID and request counter prove backend socket reuse.
+ const agent=new Agent({keepAlive:true,maxSockets:1,ca:readFileSync(path.join(ssl,'schoolorbit-origin.pem'))});
+ t.after(()=>agent.destroy());
+ const ordinary=(url,headers={})=>new Promise((resolve,reject)=>{
+  const outgoing=httpsRequest({host:'127.0.0.1',port,servername:'school-api.example.test',path:url,agent,headers:{Host:'school-api.example.test',...headers}},response=>{
+   let body='';response.setEncoding('utf8');response.on('data',chunk=>body+=chunk);
+   response.on('end',()=>resolve({status:response.statusCode,headers:response.headers,body:JSON.parse(body)}));
+   response.on('error',reject);
+  });
+  outgoing.setTimeout(5000,()=>outgoing.destroy(new Error('School proxy fixture timed out')));
+  outgoing.on('error',reject);outgoing.end();
+ });
+ const replies=[];
+ for(const [index,tenant] of ['alpha','beta',''].entries()){
+  const origin=tenant?`https://${tenant}.example.test`:'https://untrusted.invalid';
+  const credentials=tenant?{
+   Cookie:`fixture_session=${tenant}`,
+   'X-School-Subdomain':tenant,
+   'X-CSRF-Token':`csrf-${tenant}`,
+   Authorization:`Bearer fixture-${tenant}`,
+  }:{};
+  const response=await ordinary(`/api/proxy-fixture?request=${index}`,{Origin:origin,...credentials});
+  replies.push(response.body);
+  assert.equal(response.status,200);
+  assert.equal(response.body.uri,`/api/proxy-fixture?request=${index}`);
+  assert.equal(response.body.method,'GET');
+  assert.equal(response.body.protocol,'HTTP/1.1');
+  assert.equal(response.body.connectionHeader,'');
+  assert.equal(response.body.host,'school-api.example.test');
+  assert.equal(response.body.origin,origin);
+  assert.equal(response.body.tenant,tenant);
+  assert.equal(response.body.cookie,tenant?`fixture_session=${tenant}`:'');
+  assert.equal(response.body.csrf,tenant?`csrf-${tenant}`:'');
+  assert.equal(response.body.authorization,tenant?`Bearer fixture-${tenant}`:'');
+  assert.ok(response.body.realIp);
+  assert.equal(response.body.forwardedFor,response.body.realIp);
+  assert.equal(response.body.forwardedProto,'https');
+  assert.equal(response.headers['access-control-allow-origin'],tenant?origin:undefined);
+  assert.equal(response.headers['access-control-allow-credentials'],'true');
+  assert.match(response.headers['access-control-expose-headers'],/X-CSRF-Token/i);
+  assert.deepEqual(response.headers['set-cookie'],[`fixture_session=response-${tenant}; Path=/; Secure; HttpOnly`]);
+  assert.equal(response.headers['x-csrf-token'],tenant?`response-csrf-${tenant}`:'response-');
+ }
+ assert.equal(new Set(replies.map(reply=>reply.socket)).size,1,'ordinary requests must reuse the backend socket');
+ assert.deepEqual(replies.map(reply=>reply.requestNumber),[1,2,3]);
+ const denied=await ordinary('/api/private');
+ assert.equal(denied.status,401);assert.deepEqual(denied.body,{error:'unauthorized'});
+ assert.match(request('school','/api/private',['-X','OPTIONS','-H','Origin: https://alpha.example.test','-i']),/Access-Control-Allow-Origin: https:\/\/alpha.example.test[\s\S]*\n204$/i);
 });
