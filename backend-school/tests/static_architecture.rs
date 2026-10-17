@@ -7314,18 +7314,56 @@ fn scheduled_jobs_use_explicit_bangkok_timezone() {
     assert!(!scheduling.contains("0 */5 * * * *"));
 }
 
+fn scheduler_pool_access_is_non_migrating(source: &str) -> bool {
+    let structural = lexical_mask(source, false).structural;
+    let normalized: String = structural.chars().filter(|c| !c.is_whitespace()).collect();
+    normalized.contains(".get_pool_without_migrations(") && !normalized.contains(".get_pool(")
+}
+
+fn scheduler_pool_owners() -> [&'static str; 3] {
+    [
+        "backend-school/src/main.rs",
+        "backend-school/crates/school-calendar/src/delivery/reminders.rs",
+        "backend-school/crates/school-auth/src/retention.rs",
+    ]
+}
+
 #[test]
 fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
-    let main = read_source(repo_root().join("backend-school/src/main.rs"));
-    let reminders = read_source(
-        repo_root().join("backend-school/crates/school-calendar/src/delivery/reminders.rs"),
-    );
+    for owner in scheduler_pool_owners() {
+        let source = read_source(repo_root().join(owner));
+        assert!(
+            scheduler_pool_access_is_non_migrating(&source),
+            "{owner} must acquire runtime pools without lazy migrations"
+        );
+    }
+}
 
-    let non_migrating_call = ".get_pool_without_migrations(&db_url, &school.subdomain)";
-    assert!(main.contains(non_migrating_call));
-    assert!(reminders.contains(non_migrating_call));
-    assert!(!main.contains(".get_pool(&db_url, &school.subdomain)"));
-    assert!(!reminders.contains(".get_pool(&db_url, &school.subdomain)"));
+#[test]
+fn scheduler_pool_guard_rejects_lazy_provider_mutation_in_every_owner() {
+    for owner in scheduler_pool_owners() {
+        let source = read_source(repo_root().join(owner));
+        let mutated = source.replacen("get_pool_without_migrations", "get_pool", 1);
+        assert_ne!(
+            mutated, source,
+            "{owner} fixture must mutate a real provider call"
+        );
+        assert!(
+            !scheduler_pool_access_is_non_migrating(&mutated),
+            "{owner} must refuse a lazy migration provider"
+        );
+    }
+    let renamed_and_spaced = r#"
+        // manager.get_pool(&obsolete_name, &school.subdomain)
+        let diagnostic = ".get_pool(&not_a_call, tenant)";
+        manager . get_pool_without_migrations (
+            runtime_url, current_tenant
+        ).await
+    "#;
+    assert!(scheduler_pool_access_is_non_migrating(renamed_and_spaced));
+    assert!(!scheduler_pool_access_is_non_migrating(
+        "manager . get_pool_without_migrations(url, tenant).await; manager . get_pool (url, tenant).await;"
+    ));
 }
 
 #[test]
