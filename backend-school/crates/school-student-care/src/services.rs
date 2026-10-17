@@ -324,6 +324,13 @@ pub async fn create_instrument(
     .await?;
     Ok(result)
 }
+// All collection/count projections share this predicate. Guardian authority is
+// defined by Students and evaluated in the same query, before pagination/counts.
+// Parameter positions and the `ca` alias are exclusively server-owned.
+fn own_assignment_predicate(own_parameter: usize, actor_parameter: usize) -> String {
+    let relationships = school_students::guardian_relationships::ACTIVE_GUARDIAN_RELATIONSHIPS_SQL;
+    format!("(${own_parameter} AND ca.respondent_id=${actor_parameter} AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM ({relationships}) current_guardian WHERE current_guardian.guardian_id=${actor_parameter} AND current_guardian.student_id=ca.student_id)))")
+}
 pub async fn rounds(
     pool: &PgPool,
     a: CareAccess,
@@ -331,7 +338,23 @@ pub async fn rounds(
 ) -> Result<Vec<CareRound>, AppError> {
     a.require_read()?;
     let limit = page(&q)?;
-    Ok(sqlx::query_scalar::<_,Json<CareRound>>("SELECT r.document FROM care_rounds r WHERE ($1::uuid IS NULL OR r.id>$1) AND ($2::text IS NULL OR r.document->>'status'=$2) AND ($3 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND (($4 AND ca.respondent_id=$5) OR ($6 AND $5=ANY(ca.reviewer_ids))))) ORDER BY r.id LIMIT $7").bind(q.after_id).bind(q.status).bind(a.routine_school()||a.routine_assigned()||a.configure||a.sensitive_school()).bind(a.own).bind(a.actor_id).bind(a.sensitive_assigned()).bind(limit).fetch_all(pool).await?.into_iter().map(|v|v.0).collect())
+    let own = own_assignment_predicate(4, 5);
+    let query = format!("SELECT r.document FROM care_rounds r WHERE ($1::uuid IS NULL OR r.id>$1) AND ($2::text IS NULL OR r.document->>'status'=$2) AND ($3 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND ({own} OR ($6 AND $5=ANY(ca.reviewer_ids))))) ORDER BY r.id LIMIT $7");
+    Ok(
+        sqlx::query_scalar::<_, Json<CareRound>>(sqlx::AssertSqlSafe(query))
+            .bind(q.after_id)
+            .bind(q.status)
+            .bind(a.routine_school() || a.routine_assigned() || a.configure || a.sensitive_school())
+            .bind(a.own)
+            .bind(a.actor_id)
+            .bind(a.sensitive_assigned())
+            .bind(limit)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(|v| v.0)
+            .collect(),
+    )
 }
 async fn load_round(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<CareRound, AppError> {
     let sql = if lock {
@@ -610,8 +633,8 @@ pub async fn assignments(
 ) -> Result<Vec<CareAssignment>, AppError> {
     a.require_read()?;
     let limit = page(&q)?;
-    const OWN:&str="($5 AND ca.respondent_id=$6 AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM student_parents p JOIN users parent ON parent.id=p.parent_user_id AND parent.status='active' AND parent.user_type='parent' JOIN users child ON child.id=p.student_user_id AND child.status='active' AND child.user_type='student' WHERE p.parent_user_id=$6 AND p.student_user_id=ca.student_id)))";
-    let query=format!("SELECT ca.document,ca.reviewer_ids,{OWN} AS own_access FROM care_assignments ca WHERE ($1::uuid IS NULL OR ca.id>$1) AND ($2::uuid IS NULL OR ca.round_id=$2) AND ($3::uuid IS NULL OR ca.student_id=$3) AND ($4::text IS NULL OR ca.document->>'status'=$4) AND ({OWN} OR $7 OR ($8 AND $6=ANY(ca.reviewer_ids)) OR $10 OR ($11 AND ca.created_by=$6)) AND ($12::uuid IS NULL OR ca.respondent_id=$12) ORDER BY ca.id LIMIT $9");
+    let own = own_assignment_predicate(5, 6);
+    let query=format!("SELECT ca.document,ca.reviewer_ids,{own} AS own_access FROM care_assignments ca WHERE ($1::uuid IS NULL OR ca.id>$1) AND ($2::uuid IS NULL OR ca.round_id=$2) AND ($3::uuid IS NULL OR ca.student_id=$3) AND ($4::text IS NULL OR ca.document->>'status'=$4) AND ({own} OR $7 OR ($8 AND $6=ANY(ca.reviewer_ids)) OR $10 OR ($11 AND ca.created_by=$6)) AND ($12::uuid IS NULL OR ca.respondent_id=$12) ORDER BY ca.id LIMIT $9");
     let rows: Vec<AssignmentSummaryRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(q.after_id)
         .bind(q.round_id)
@@ -1470,8 +1493,17 @@ pub async fn add_case_event(
 pub async fn overview(pool: &PgPool, a: CareAccess) -> Result<CareOverview, AppError> {
     a.require_read()?;
     // Each aggregate applies the same explicit-resource authority as its list.
-    let counts:(i64,i64,i64)=sqlx::query_as("SELECT count(*) FILTER(WHERE ca.document->>'status' IN('assigned','in_progress')),count(*) FILTER(WHERE ca.document->>'status'='submitted'),count(*) FILTER(WHERE ca.document->>'urgent'='true' AND ca.document->>'acknowledgedAt' IS NULL AND ($3 OR ($4 AND $1=ANY(ca.reviewer_ids)))) FROM care_assignments ca WHERE ($2 AND ca.respondent_id=$1 AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM student_parents p JOIN users u ON u.id=p.parent_user_id AND u.status='active' WHERE p.parent_user_id=$1 AND p.student_user_id=ca.student_id))) OR $3 OR ($4 AND $1=ANY(ca.reviewer_ids)) OR $5 OR ($6 AND ca.created_by=$1)")
- .bind(a.actor_id).bind(a.own).bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.routine_school()).bind(a.routine_assigned()).fetch_one(pool).await?;
+    let own = own_assignment_predicate(2, 1);
+    let query = format!("SELECT count(*) FILTER(WHERE ca.document->>'status' IN('assigned','in_progress')),count(*) FILTER(WHERE ca.document->>'status'='submitted'),count(*) FILTER(WHERE ca.document->>'urgent'='true' AND ca.document->>'acknowledgedAt' IS NULL AND ($3 OR ($4 AND $1=ANY(ca.reviewer_ids)))) FROM care_assignments ca WHERE {own} OR $3 OR ($4 AND $1=ANY(ca.reviewer_ids)) OR $5 OR ($6 AND ca.created_by=$1)");
+    let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(a.actor_id)
+        .bind(a.own)
+        .bind(a.sensitive_school())
+        .bind(a.sensitive_assigned())
+        .bind(a.routine_school())
+        .bind(a.routine_assigned())
+        .fetch_one(pool)
+        .await?;
     let visits:i64=sqlx::query_scalar("SELECT count(*) FROM care_visits WHERE document->>'status'='planned' AND ($1 OR ($2 AND $3=ANY(visitor_ids)))").bind(a.routine_school()).bind(a.routine_assigned()).bind(a.actor_id).fetch_one(pool).await?;
     let cases:i64=sqlx::query_scalar("SELECT count(*) FROM care_cases WHERE status<>'closed' AND ($1 OR ($2 AND $3=ANY(assigned_user_ids)))").bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).fetch_one(pool).await?;
     let today = Utc::now()
@@ -1512,7 +1544,16 @@ mod db_tests;
 
 pub async fn get_round(pool: &PgPool, a: CareAccess, id: Uuid) -> Result<CareRound, AppError> {
     a.require_read()?;
-    let visible:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM care_rounds r WHERE r.id=$1 AND ($2 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND (($3 AND ca.respondent_id=$4 AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=ca.student_id AND p.parent_user_id=$4))) OR ($5 AND $4=ANY(ca.reviewer_ids))))))").bind(id).bind(a.routine_school()||a.routine_assigned()||a.configure||a.sensitive_school()).bind(a.own).bind(a.actor_id).bind(a.sensitive_assigned()).fetch_one(pool).await?;
+    let own = own_assignment_predicate(3, 4);
+    let query = format!("SELECT EXISTS(SELECT 1 FROM care_rounds r WHERE r.id=$1 AND ($2 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND ({own} OR ($5 AND $4=ANY(ca.reviewer_ids))))))");
+    let visible: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+        .bind(id)
+        .bind(a.routine_school() || a.routine_assigned() || a.configure || a.sensitive_school())
+        .bind(a.own)
+        .bind(a.actor_id)
+        .bind(a.sensitive_assigned())
+        .fetch_one(pool)
+        .await?;
     if !visible {
         return Err(missing());
     }

@@ -524,6 +524,112 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         .is_ok());
 }
 #[tokio::test]
+async fn care_current_guardian_authority_matches_rounds_overview_and_responses() {
+    let f = fixture("care_guardian_projections").await;
+    let parent = access(f.parent, &[codes::STUDENT_CARE_READ_OWN]);
+    let (v, draft_round) =
+        instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Guardian).await;
+    let draft = assignment(&f, &v, &draft_round, f.parent).await;
+    let draft_payload = response(1);
+    save_response(&f.pool, parent, draft.id, draft_payload.clone(), false)
+        .await
+        .unwrap();
+    let (v, submitted_round) =
+        instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Guardian).await;
+    let submitted = assignment(&f, &v, &submitted_round, f.parent).await;
+    let submitted_payload = response(1);
+    save_response(
+        &f.pool,
+        parent,
+        submitted.id,
+        submitted_payload.clone(),
+        true,
+    )
+    .await
+    .unwrap();
+
+    // A second current child must remain visible even when older assignments
+    // lose authority: scope filtering must precede LIMIT and aggregate counting.
+    sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')")
+        .bind(f.second).bind(f.parent).execute(&f.pool).await.unwrap();
+    let (v, current_round) =
+        instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Guardian).await;
+    let current = create_assignments(
+        &f.pool,
+        f.admin,
+        CreateCareAssignments {
+            request_id: Uuid::now_v7(),
+            round_id: current_round.id,
+            instrument_version_id: v.id,
+            targets: vec![CareAssignmentTarget {
+                student_id: f.second,
+                respondent_id: f.parent,
+            }],
+            reviewer_user_ids: vec![f.teacher.actor_id],
+        },
+    )
+    .await
+    .unwrap()
+    .remove(0);
+    let initial = overview(&f.pool, parent).await.unwrap();
+    assert_eq!((initial.assigned_count, initial.submitted_count), (2, 1));
+    assert_eq!(
+        rounds(&f.pool, parent, CareListQuery::default())
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+
+    for (change, restore, child_only) in [
+        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", true),
+        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='student' WHERE id=$1", true),
+        ("UPDATE users SET status='inactive' WHERE id=$1", "UPDATE users SET status='active' WHERE id=$1", false),
+        ("UPDATE users SET user_type='staff' WHERE id=$1", "UPDATE users SET user_type='parent' WHERE id=$1", false),
+        ("DELETE FROM student_parents WHERE student_user_id=$1", "INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'father')", true),
+    ] {
+        let target = if child_only { f.student } else { f.parent };
+        sqlx::query(change).bind(target).execute(&f.pool).await.unwrap();
+        let listed = assignments(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
+        let listed_rounds = rounds(&f.pool, parent, CareListQuery { limit: Some(1), ..Default::default() }).await.unwrap();
+        if child_only {
+            assert_eq!(listed.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current.id]);
+            assert_eq!(listed_rounds.iter().map(|v|v.id).collect::<Vec<_>>(), vec![current_round.id]);
+            get_assignment(&f.pool, parent, current.id).await.unwrap();
+            get_round(&f.pool, parent, current_round.id).await.unwrap();
+        } else {
+            assert!(listed.is_empty());
+            assert!(listed_rounds.is_empty());
+            assert!(matches!(get_assignment(&f.pool, parent, current.id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(get_round(&f.pool, parent, current_round.id).await, Err(AppError::NotFound(_))));
+        }
+        let counts = overview(&f.pool, parent).await.unwrap();
+        assert_eq!((counts.assigned_count, counts.submitted_count, counts.urgent_unacknowledged_count), (i64::from(child_only), 0, 0));
+        for (id, round_id, payload, submit) in [
+            (draft.id, draft_round.id, draft_payload.clone(), false),
+            (submitted.id, submitted_round.id, submitted_payload.clone(), true),
+        ] {
+            assert!(matches!(get_assignment(&f.pool, parent, id).await, Err(AppError::NotFound(_))));
+            assert!(matches!(get_round(&f.pool, parent, round_id).await, Err(AppError::NotFound(_))));
+            // Exact successful receipt replay and fresh saves both use current authority.
+            assert!(matches!(save_response(&f.pool, parent, id, payload, submit).await, Err(AppError::NotFound(_))));
+            assert!(matches!(save_response(&f.pool, parent, id, response(2), false).await, Err(AppError::NotFound(_))));
+        }
+        // Independent school authority is an OR branch, not revoked own authority.
+        assert_eq!(rounds(&f.pool, f.admin, CareListQuery::default()).await.unwrap().len(), 3);
+        assert_eq!(overview(&f.pool, f.admin).await.unwrap().submitted_count, 1);
+        get_assignment(&f.pool, f.teacher, submitted.id).await.unwrap();
+        if restore.starts_with("INSERT") {
+            sqlx::query(restore).bind(target).bind(f.parent).execute(&f.pool).await.unwrap();
+        } else {
+            sqlx::query(restore).bind(target).execute(&f.pool).await.unwrap();
+        }
+        assert_eq!(assignments(&f.pool, parent, CareListQuery::default()).await.unwrap().len(), 3);
+        get_round(&f.pool, parent, draft_round.id).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn care_private_replay_revocation_case_transitions_and_concurrent_revision() {
     let f = fixture("care_replay").await;
     let (v, r) =
