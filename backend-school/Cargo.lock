@@ -4261,6 +4261,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dashmap",
+ "futures",
  "hex",
  "school-academic-core",
  "school-academic-delivery",

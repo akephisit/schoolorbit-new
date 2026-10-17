@@ -4079,3 +4079,121 @@ async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_
     assert!(!after_reset.archived);
     assert_eq!(after_reset.total, 0);
 }
+
+#[tokio::test]
+async fn attendance_history_snapshot_allows_parallel_readers_and_first_save_without_mixed_facts() {
+    let f = fixture("attendance_history_save_overlap").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(date).execute(&f.pool).await.unwrap();
+    let room = core::students(&f.pool, TERM, date).await.unwrap().into_iter()
+        .find(|student| student.student_id == STUDENT).unwrap().homeroom_id.unwrap();
+    let context = OpenAttendanceSession { academic_term_id: TERM, date, kind: AttendanceKind::Arrival, source_key: room.to_string() };
+    let preview = open(&f.pool, &f.actor, context.clone()).await.unwrap();
+    let mut blocker = f.pool.begin().await.unwrap();
+    // Arrival saves do not use the timetable provider. Pause history after it has
+    // read the existing rounds, so a first save can commit between its queries.
+    sqlx::query("LOCK TABLE academic_timetable_versions IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker).await.unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker).await.unwrap();
+    let mut readers = Vec::new();
+    for _ in 0..2 {
+        let pool = f.pool.clone(); let actor = f.actor.clone();
+        readers.push(tokio::spawn(async move {
+            history(&pool, &actor, AttendanceHistoryQuery { academic_term_id: TERM, student_id: STUDENT, start: date, end: date }).await
+        }));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))")
+                .bind(blocker_pid).fetch_one(&f.pool).await.unwrap();
+            if waiting == 2 { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("both history readers must reach the provider concurrently");
+    tokio::time::timeout(std::time::Duration::from_secs(3), save(
+        &f.pool, &f.actor, preview.session.id, save_payload(&preview, STUDENT, AttendanceResult::Present),
+    )).await.expect("first arrival save must not wait for history readers").unwrap();
+    blocker.rollback().await.unwrap();
+    for reader in readers {
+        let rows = reader.await.unwrap().unwrap();
+        let selected: Vec<_> = rows.iter().filter(|row| row.session_id == preview.session.id).collect();
+        assert_eq!(selected.len(), 1, "one snapshot must not mix virtual and saved copies");
+        assert_eq!(selected[0].result, AttendanceResult::Unchecked);
+    }
+    let current = history(&f.pool, &f.actor, AttendanceHistoryQuery { academic_term_id: TERM, student_id: STUDENT, start: date, end: date }).await.unwrap();
+    let selected: Vec<_> = current.iter().filter(|row| row.session_id == preview.session.id).collect();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].result, AttendanceResult::Present);
+}
+
+#[tokio::test]
+async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start_facts() {
+    let f = fixture("attendance_history_queued_reset").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let preview = sessions::detail(&f.pool, &f.actor, session.id).await.unwrap();
+    sessions::save(&f.pool, &f.actor, session.id, save_payload(&preview, STUDENT, AttendanceResult::Present)).await.unwrap();
+    let impact = school_attendance::services::reset::impact(&f.pool).await.unwrap();
+    let mut reset_tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_module_exclusive(&mut reset_tx).await.unwrap();
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()").fetch_one(&mut *reset_tx).await.unwrap();
+    let pool = f.pool.clone(); let actor = f.actor.clone();
+    let reader = tokio::spawn(async move {
+        history(&pool, &actor, AttendanceHistoryQuery { academic_term_id: TERM, student_id: STUDENT, start: date, end: date }).await
+    });
+    attendance_wait_for_blocker(&f.pool, blocker).await;
+    school_attendance::services::reset::reset_in_transaction(&f.pool, reset_tx, TEACHER, ResetAttendanceModule {
+        generation: impact.generation, token: impact.token, reason: "reset waiting history".into(),
+    }).await.unwrap();
+    let before = reader.await.unwrap().unwrap();
+    assert!(before.iter().any(|row| row.session_id == session.id && row.result == AttendanceResult::Present));
+    let after = history(&f.pool, &f.actor, AttendanceHistoryQuery { academic_term_id: TERM, student_id: STUDENT, start: date, end: date }).await.unwrap();
+    assert!(after.is_empty());
+}
+
+async fn attendance_queue_rows(f: &Fixture, count: i64) {
+    sqlx::query("INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,title,message,link) SELECT $1,$2,$2,'queue-fixture-'||n,'fixture','fixture','/student/attendance' FROM generate_series(1,$3) n")
+        .bind(TERM).bind(STUDENT).bind(count).execute(&f.pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn attendance_notification_claims_are_bounded_disjoint_and_future_leases_are_not_due() {
+    let f = fixture("attendance_bounded_notice_claims").await;
+    attendance_queue_rows(&f, notifications::DELIVERY_BATCH_SIZE + 3).await;
+    let (first, second) = tokio::join!(notifications::pending(&f.pool), notifications::pending(&f.pool));
+    let first = first.unwrap(); let second = second.unwrap();
+    assert!(!first.is_empty() && !second.is_empty());
+    assert!(first.len() <= 32 && second.len() <= 32);
+    assert_eq!(first.len() + second.len(), 35);
+    let ids: std::collections::HashSet<_> = first.iter().chain(&second).map(|n| n.id).collect();
+    assert_eq!(ids.len(), 35);
+    assert!(notifications::has_pending(&f.pool).await.unwrap());
+    assert!(!notifications::has_due(&f.pool).await.unwrap(), "leased retries must not wake a tight loop");
+    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
+    let notice = &first[0];
+    assert!(notifications::store(&f.pool, notice).await.unwrap());
+    assert!(notifications::store(&f.pool, notice).await.unwrap());
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM notifications WHERE id=$1").bind(notice.notification_id).fetch_one(&f.pool).await.unwrap(), 1);
+    sqlx::query("UPDATE attendance_notifications SET next_attempt_at=now()-interval '1 second' WHERE id=$1")
+        .bind(notice.id).execute(&f.pool).await.unwrap();
+    assert!(notifications::has_due(&f.pool).await.unwrap());
+    let retry = notifications::pending(&f.pool).await.unwrap();
+    assert_eq!(retry.len(), 1);
+    assert_eq!(retry[0].notification_id, notice.notification_id);
+    assert_eq!(sqlx::query_scalar::<_,i32>("SELECT attempts FROM attendance_notifications WHERE id=$1").bind(notice.id).fetch_one(&f.pool).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn attendance_notification_invalid_recipients_consume_only_one_due_batch() {
+    let f = fixture("attendance_bounded_invalid_notices").await;
+    attendance_queue_rows(&f, notifications::DELIVERY_BATCH_SIZE + 3).await;
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1").bind(STUDENT).execute(&f.pool).await.unwrap();
+    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM attendance_notifications WHERE published_at IS NOT NULL").fetch_one(&f.pool).await.unwrap(), 32);
+    assert!(notifications::has_due(&f.pool).await.unwrap());
+    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
+    assert!(!notifications::has_pending(&f.pool).await.unwrap());
+}

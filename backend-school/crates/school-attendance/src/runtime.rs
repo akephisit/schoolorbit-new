@@ -18,6 +18,7 @@ use crate::{
 };
 use chrono::{NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
+use futures::{stream, StreamExt};
 use school_errors::AppError;
 use school_notifications::{
     events::TenantNotificationEvent,
@@ -28,6 +29,41 @@ use sqlx::{types::Json, PgPool};
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
+const DELIVERY_CONCURRENCY: usize = 4;
+const DELIVERY_ITEM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[derive(Default, Debug, PartialEq)]
+struct BatchDelivery {
+    completed: usize,
+    failed: usize,
+    timed_out: usize,
+}
+
+async fn deliver_batch<T, F, Fut, E>(
+    items: Vec<T>,
+    concurrency: usize,
+    timeout: std::time::Duration,
+    deliver: F,
+) -> BatchDelivery
+where
+    F: Fn(T) -> Fut,
+    Fut: std::future::Future<Output = Result<(), E>>,
+{
+    // These futures are not spawned. The scheduled run's TenantPool lease owns
+    // their complete lifetime, including cancellation and every sibling result.
+    stream::iter(items)
+        .map(|item| tokio::time::timeout(timeout, deliver(item)))
+        .buffer_unordered(concurrency)
+        .fold(BatchDelivery::default(), |mut outcome, result| async move {
+            match result {
+                Ok(Ok(())) => outcome.completed += 1,
+                Ok(Err(_)) => outcome.failed += 1,
+                Err(_) => outcome.timed_out += 1,
+            }
+            outcome
+        })
+        .await
+}
 #[derive(Clone)]
 struct TermSchedule {
     term: Uuid,
@@ -252,20 +288,39 @@ async fn run(
         }
     }
     if r.pending {
-        for n in notifications::pending(&r.pool).await? {
-            if !notifications::store(&r.pool, &n).await? {
-                continue;
-            }
-            let notice:Notification=sqlx::query_as("SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1").bind(n.notification_id).fetch_one(&r.pool).await?;
-            let publisher = TenantNotificationPublisher::new(tenant, &r.channel);
-            if NotificationService::deliver_stored(&r.pool, &publisher, n.recipient_id, notice)
-                .await
-                .is_ok()
-            {
-                notifications::delivered(&r.pool, n.id).await?;
-            }
+        let batch = notifications::pending(&r.pool).await?;
+        let pool = &r.pool;
+        let channel = &r.channel;
+        let outcome = deliver_batch(
+            batch,
+            DELIVERY_CONCURRENCY,
+            DELIVERY_ITEM_TIMEOUT,
+            |n| async move {
+                if !notifications::store(pool, &n).await? {
+                    return Ok::<(), AppError>(());
+                }
+                let notice:Notification=sqlx::query_as("SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1").bind(n.notification_id).fetch_one(pool).await?;
+                let publisher = TenantNotificationPublisher::new(tenant, channel);
+                NotificationService::deliver_stored(pool, &publisher, n.recipient_id, notice)
+                    .await
+                    .map_err(|_| AppError::ServiceUnavailable("notification_transport_unavailable".into()))?;
+                notifications::delivered(pool, n.id).await
+            },
+        ).await;
+        if outcome.failed > 0 || outcome.timed_out > 0 {
+            tracing::warn!(
+                error_code = "attendance_notification_retry",
+                failed = outcome.failed,
+                timed_out = outcome.timed_out,
+                "Attendance notices remain leased for retry"
+            );
         }
         r.pending = notifications::has_pending(&r.pool).await?;
+        if notifications::has_due(&r.pool).await? {
+            // Finish the remaining tenants in this pass before the next batch.
+            // Future leased retries wait for the regular tick instead of spinning.
+            WAKE.notify_one();
+        }
     }
     if r.last_retention != Some(date) {
         if faces::expire_evidence(&r.pool).await? < faces::EVIDENCE_EXPIRY_BATCH {
@@ -279,7 +334,8 @@ fn digest_due(current: u32, due: u32, delivered: bool) -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use super::digest_due;
+    use super::{deliver_batch, digest_due, BatchDelivery};
+    use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
     #[test]
     fn digest_window_catches_up_once_and_does_not_send_early() {
         assert!(!digest_due(479, 480, false));
@@ -287,6 +343,35 @@ mod tests {
         assert!(digest_due(540, 480, false));
         assert!(!digest_due(541, 480, false));
         assert!(!digest_due(480, 480, true));
+    }
+    #[tokio::test]
+    async fn delivery_batch_bounds_concurrency_and_joins_failed_and_timed_out_siblings() {
+        struct Active(Arc<AtomicUsize>);
+        impl Drop for Active {
+            fn drop(&mut self) { self.0.fetch_sub(1, Ordering::SeqCst); }
+        }
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let completed = Arc::new(AtomicUsize::new(0));
+        let result = deliver_batch((0..10).collect(), 4, std::time::Duration::from_millis(100), |item| {
+            let active = Arc::clone(&active);
+            let peak = Arc::clone(&peak);
+            let completed = Arc::clone(&completed);
+            async move {
+                let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                let _active = Active(active);
+                peak.fetch_max(count, Ordering::SeqCst);
+                if item == 0 { std::future::pending::<()>().await; }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                if item == 1 { return Err(()); }
+                completed.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }).await;
+        assert_eq!(result, BatchDelivery { completed: 8, failed: 1, timed_out: 1 });
+        assert_eq!(peak.load(Ordering::SeqCst), 4, "independent work must overlap up to the bound");
+        assert_eq!(active.load(Ordering::SeqCst), 0, "no delivery may outlive the batch");
+        assert_eq!(completed.load(Ordering::SeqCst), 8, "one failure must not cancel siblings");
     }
 }
 

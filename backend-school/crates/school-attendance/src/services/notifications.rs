@@ -105,11 +105,24 @@ pub struct PendingAttendanceNotification {
     pub message: String,
     pub link: String,
 }
+pub const DELIVERY_BATCH_SIZE: i64 = 32;
 pub async fn pending(pool: &PgPool) -> Result<Vec<PendingAttendanceNotification>, AppError> {
     // One worker leases each row. A crash expires the lease without losing stored identity.
-    sqlx::query("UPDATE attendance_notifications n SET published_at=now() WHERE published_at IS NULL AND (NOT EXISTS(SELECT 1 FROM users u WHERE u.id=n.recipient_id AND u.status='active') OR (n.student_id IS NOT NULL AND n.recipient_id<>n.student_id AND NOT EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=n.student_id AND p.parent_user_id=n.recipient_id)))").execute(pool).await?;
-    Ok(sqlx::query_as(r#"WITH due AS (SELECT id FROM attendance_notifications WHERE published_at IS NULL AND next_attempt_at<=now() ORDER BY next_attempt_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)
- UPDATE attendance_notifications n SET next_attempt_at=now()+interval '2 minutes',attempts=attempts+1 FROM due WHERE n.id=due.id RETURNING n.id,n.recipient_id,n.notification_id,n.title,n.message,n.link"#).fetch_all(pool).await?)
+    // Invalid recipients consume this same bounded claim, rather than requiring an
+    // unbounded housekeeping UPDATE before each batch.
+    Ok(sqlx::query_as(r#"WITH due AS (
+ SELECT n.id,EXISTS(SELECT 1 FROM users u WHERE u.id=n.recipient_id AND u.status='active')
+ AND (n.student_id IS NULL OR n.recipient_id=n.student_id OR EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=n.student_id AND p.parent_user_id=n.recipient_id)) eligible
+ FROM attendance_notifications n WHERE n.published_at IS NULL AND n.next_attempt_at<=now()
+ ORDER BY n.next_attempt_at,n.id LIMIT $1 FOR UPDATE OF n SKIP LOCKED
+ ),claimed AS (
+ UPDATE attendance_notifications n SET published_at=CASE WHEN due.eligible THEN NULL ELSE now() END,
+ next_attempt_at=CASE WHEN due.eligible THEN now()+interval '2 minutes' ELSE n.next_attempt_at END,
+ attempts=n.attempts+CASE WHEN due.eligible THEN 1 ELSE 0 END
+ FROM due WHERE n.id=due.id
+ RETURNING n.id,n.recipient_id,n.notification_id,n.title,n.message,n.link,n.published_at
+ ) SELECT id,recipient_id,notification_id,title,message,link FROM claimed WHERE published_at IS NULL"#)
+        .bind(DELIVERY_BATCH_SIZE).fetch_all(pool).await?)
 }
 pub async fn store(pool: &PgPool, n: &PendingAttendanceNotification) -> Result<bool, AppError> {
     let mut tx = pool.begin().await?;
@@ -144,6 +157,13 @@ pub async fn delivered(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
 pub async fn has_pending(pool: &PgPool) -> Result<bool, AppError> {
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE published_at IS NULL)",
+    )
+    .fetch_one(pool)
+    .await?)
+}
+pub async fn has_due(pool: &PgPool) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE published_at IS NULL AND next_attempt_at<=now())",
     )
     .fetch_one(pool)
     .await?)
