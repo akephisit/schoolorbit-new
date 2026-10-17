@@ -26,7 +26,7 @@ impl PoolManagerConfig {
     pub fn from_env() -> Result<Self, String> {
         let config = Self {
             runtime_connections: setting("TENANT_RUNTIME_CONNECTIONS", 40, 1, 10_000)?,
-            per_tenant: setting("TENANT_POOL_MAX_CONNECTIONS", 5, 1, 100)?,
+            per_tenant: setting("TENANT_POOL_MAX_CONNECTIONS", 10, 1, 100)?,
             admission_timeout: Duration::from_millis(setting(
                 "TENANT_POOL_ADMISSION_TIMEOUT_MS",
                 5000,
@@ -71,7 +71,7 @@ impl Default for PoolManagerConfig {
     fn default() -> Self {
         Self {
             runtime_connections: 40,
-            per_tenant: 5,
+            per_tenant: 10,
             admission_timeout: Duration::from_secs(5),
         }
     }
