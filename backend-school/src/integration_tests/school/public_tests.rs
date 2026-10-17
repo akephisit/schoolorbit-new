@@ -517,7 +517,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         school_tenancy::TenantContext {
             tenant_id: Uuid::new_v4(),
             subdomain: "school-a".into(),
-            pool: a.clone(),
+            pool: a.clone().into(),
         },
         Uuid::new_v4(),
         actor_id,

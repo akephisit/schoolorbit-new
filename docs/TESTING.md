@@ -212,6 +212,12 @@ moving handlers without changing their contract.
 
 For tenant pool lifecycle changes, run the `school-tenancy` pool-manager tests through
 `scripts/test_backend_school.sh --package school-tenancy pool_manager::tests`.
+Run the complete provider suite with
+`scripts/test_backend_school.sh --package school-tenancy`. It additionally covers
+cache hits/expiry/outages, coalesced bursts, credential/status invalidation,
+in-flight stale fills, bounded fenced entries and stale mutation tokens. The pool
+fixtures exercise aggregate physical reservations, logical leases between queries,
+detached push retention, bounded admission/cancellation and recovery.
 They cover a silent TCP peer, blocked schema reads, cancelled initialization,
 client socket closure while the database is still blocked, concurrent tenant isolation,
 closed cached handles and outstanding borrowers during
@@ -1262,7 +1268,7 @@ Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx pl
 
 ## Attendance and supervised webcam check-in
 
-For per-person note removal, run `./scripts/test_backend_school.sh attendance_note_migration -- --test-threads=1 --nocapture` with the documented local Cargo profile against its owned Docker PostgreSQL fixture. It covers non-note record equality, retained live and orphaned audit identities/results/revisions, calendar/unrelated note preservation, rejected unknown or partial snapshots, reconciliation failure before cleanup and retry. The current Attendance suite uses schema 108 while historical cutover fixtures retain their explicitly requested predecessor. The generated contract and domain input tests reject removed per-person note fields.
+For per-person note removal, run `./scripts/test_backend_school.sh attendance_note_migration -- --test-threads=1 --nocapture` with the documented local Cargo profile against its owned Docker PostgreSQL fixture. It covers non-note record equality, retained live and orphaned audit identities/results/revisions, calendar/unrelated note preservation, rejected unknown or partial snapshots, reconciliation failure before cleanup and retry. The ordinary Attendance suite derives the latest version from the canonical migration timeline; historical cutover fixtures retain their explicitly requested predecessors through `fixture_at`. The generated contract and domain input tests reject removed per-person note fields.
 
 The Attendance browser suite checks seven visible single-selection status buttons plus explicit unchecked clearing, one-tap changes, repeated-tap retention, keyboard focus/activation, disabled read-only access and per-person note absence. Exercise narrow mobile and desktop light/dark layouts against a ready production build, together with sparse saves, correction reasons, same-day arrival context, special-round score overrides and overlapping scan conflicts. No browser fixture mutates a real tenant.
 
@@ -1382,3 +1388,9 @@ The deployment verification scope includes these cases. Use the owning locked
 Wrangler `deploy --dry-run` against the generated bootstrap to verify packaging
 without publishing code. Actual Worker recreation and route acceptance require
 a reviewed production release and are separate from offline tests.
+
+Tenant directory durable barriers are covered by the Admin `tenant_directory_barriers`
+integration test through the existing disposable Admin database runner. It verifies
+pending get/list/migration-connection denial after a School restart, transaction
+rollback, exact-token recovery and refusal of a stale writer claim. Never use a
+shared control-plane database for this fixture.

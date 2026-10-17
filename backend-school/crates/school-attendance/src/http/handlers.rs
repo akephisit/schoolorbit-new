@@ -42,7 +42,7 @@ pub async fn save_settings(
     let result = settings::save(pool, context.actor.user_id, term, payload).await?;
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -77,7 +77,7 @@ pub async fn save_days(
     let result = settings::save_days(pool, context.actor.user_id, term, payload).await?;
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -128,7 +128,7 @@ pub async fn save_results(
     let result = services::save(pool, &context.actor, id, payload).await?;
     runtime::wake_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -146,7 +146,7 @@ pub async fn cancel_session(
     let result = services::cancel(pool, &context.actor, id, payload).await?;
     runtime::wake_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -202,7 +202,7 @@ pub async fn create_special(
     let result = services::create_special(pool, &context.actor, term, payload).await?;
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -292,7 +292,7 @@ pub async fn scan(
     let result = services::scan(&context, payload).await?;
     runtime::wake_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -349,7 +349,7 @@ pub async fn purge_term(
     let result = services::purge(pool, context.actor.user_id, term, payload).await?;
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
-        pool.clone(),
+        pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;
@@ -380,7 +380,7 @@ pub async fn reset_module(
     }
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
-        context.tenant.pool.clone(),
+        context.tenant.pool.as_ref().clone(),
         state.notification_channel.clone(),
     )
     .await;

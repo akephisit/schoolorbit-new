@@ -25,7 +25,7 @@ use school_file_platform::{
     runtime_config::FilePlatformRuntimeConfig,
 };
 use school_notifications::events::{TenantNotificationEvent, WorkChangeEvent};
-use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
+use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, PoolManagerConfig};
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
@@ -120,7 +120,11 @@ async fn main() {
     ));
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
 
-    let pool_manager = Arc::new(PoolManager::new());
+    let pool_manager_config = PoolManagerConfig::from_env().unwrap_or_else(|error| {
+        tracing::error!(%error, "Invalid tenant connection budget");
+        std::process::exit(1)
+    });
+    let pool_manager = Arc::new(PoolManager::with_config(pool_manager_config));
     let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();
 
@@ -279,7 +283,7 @@ async fn main() {
                     {
                         Ok(pool) => {
                             let cleaner = services::cleaner::FileCleaner::new(
-                                pool,
+                                pool.as_ref().clone(),
                                 Arc::clone(&file_platform),
                             );
                             cleaner.reconcile_file_operations().await;

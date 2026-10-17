@@ -52,6 +52,36 @@ pub async fn lock_term(
     }
     Ok(())
 }
+/// A report reads one transaction-start snapshot, including when it waits behind
+/// a purge/reset. Shared guards protect that read from lifecycle/module teardown
+/// while permitting ordinary saves and other reports. No row locks or lazy writes
+/// are allowed in this read-only transaction.
+pub async fn begin_report_snapshot(
+    pool: &PgPool,
+    term: Uuid,
+) -> Result<Transaction<'_, Postgres>, AppError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    lock_module(&mut tx).await?;
+    school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1)",
+    )
+    .bind(term)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !exists {
+        return Err(AppError::NotFound("ไม่พบภาคเรียน".into()));
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(hashtextextended($1,1701))")
+        .bind(term.to_string())
+        .execute(&mut *tx)
+        .await?;
+    Ok(tx)
+}
+
 pub async fn validate_date(pool: &PgPool, term: Uuid, date: NaiveDate) -> Result<(), AppError> {
     let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND $2 BETWEEN t.start_date AND COALESCE(t.closed_on,t.planned_end_date,y.end_date))").bind(term).bind(date).fetch_one(pool).await?;
     if valid {

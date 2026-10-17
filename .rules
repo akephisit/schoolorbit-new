@@ -536,6 +536,19 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   host reaches TCP 5432; human database management uses SSH and separate operator roles.
 - New persisted business IDs use UUIDv7; preserve existing identities, deterministic UUIDv5,
   externally provided IDs, security tokens and fixtures. Default changes use forward migrations.
+- Runtime tenant pools use `school-tenancy::TenantPool` logical leases and the shared
+  aggregate physical reservation budget. Keep the lease alive across every database
+  operation, including gaps between queries; raw pool clones passed to detached work
+  must retain the originating lease before spawning. Dormant realtime/scheduler state
+  reacquires before database work. Release pool reservations only after physical
+  drainage, including cancellation and failed initialization. Owner/provisioning
+  connections use their separate bounded reserve, never the runtime cache.
+- Tenant directory caches retain only runtime credentials, with bounded age/capacity,
+  single-flight fills and stale revision rejection. Application status/credential
+  mutations persist a durable Admin barrier before fencing School; claim the exact
+  token and change school state in one transaction. Fences never expire open and
+  stale completion cannot release a newer operation. Internal all-tenant lists fail
+  closed while a relevant barrier is pending.
 - Bound connection pools, cache entries/revision maps, background batches and log retention.
   Revision pruning must reject stale async fills. Session/file retention uses existing domain
   owners; never delete business history merely to free disk. Autovacuum reuses dead row space

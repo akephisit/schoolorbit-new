@@ -13,6 +13,28 @@ use std::collections::HashSet;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+// Two-int namespace is separate from Attendance/Behavior bigint entity locks.
+const STUDENT_NUMBER_NAMESPACE: i32 = 0x534F_4144;
+
+// Hold permits inside the blocking job so cancellation cannot oversubscribe CPU.
+static PASSWORD_HASH_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+
+async fn hash_enrollment_password(password: &str) -> Result<String, AppError> {
+    let permit = PASSWORD_HASH_WORKERS
+        .acquire()
+        .await
+        .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?;
+    let password = Zeroizing::new(password.to_string());
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        bcrypt::hash(password.as_bytes(), 8)
+    })
+    .await
+    .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?
+    .map_err(|_| AppError::InternalServerError("Password hash failed".into()))
+}
 
 fn pii_error(context: &str, error: String) -> AppError {
     tracing::error!("Admission PII {} failed: {}", context, error);
@@ -50,8 +72,28 @@ fn application_number_prefix(now: chrono::DateTime<FixedOffset>, round_number: i
     )
 }
 
-fn next_application_number(prefix: &str, max_sequence: i64) -> String {
-    format!("{prefix}{:05}", max_sequence + 1)
+async fn allocate_application_number(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    prefix: &str,
+) -> Result<String, AppError> {
+    if prefix.len() != 8 || !prefix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(AppError::Conflict("รูปแบบเลขที่ใบสมัครเกินขนาดที่รองรับ".into()));
+    }
+    // The row lock is scoped to the actual rendered prefix, across all years and
+    // rounds that render it. Rollback returns the number with the application.
+    let sequence: Option<i32> = sqlx::query_scalar(
+        "INSERT INTO admission_application_number_counters(prefix,last_sequence) VALUES($1,1)
+         ON CONFLICT(prefix) DO UPDATE
+         SET last_sequence=admission_application_number_counters.last_sequence+1
+         WHERE admission_application_number_counters.last_sequence<99999
+         RETURNING last_sequence",
+    )
+    .bind(prefix)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let sequence =
+        sequence.ok_or_else(|| AppError::Conflict("เลขที่ใบสมัครสำหรับวันที่และรอบนี้เต็มแล้ว".into()))?;
+    Ok(format!("{prefix}{sequence:05}"))
 }
 
 fn occupied_student_numbers(existing: &[String]) -> HashSet<i64> {
@@ -183,7 +225,7 @@ pub async fn submit_application(
         .await
         .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    let (year, round_number): (i32, i64) = sqlx::query_as(
+    let (_year, round_number): (i32, i64) = sqlx::query_as(
         r#"SELECT ay.year,
                   ROW_NUMBER() OVER (PARTITION BY ar.academic_year_id ORDER BY ar.created_at ASC)
            FROM admission_rounds ar
@@ -194,12 +236,6 @@ pub async fn submit_application(
     .fetch_one(&mut *tx)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
-
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(year as i64)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| AppError::InternalServerError("Lock failed".to_string()))?;
 
     let already_applied: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id_hash = $1 AND admission_round_id = $2)",
@@ -216,29 +252,12 @@ pub async fn submit_application(
         ));
     }
 
-    let _ = year;
     let bangkok = FixedOffset::east_opt(7 * 3600).ok_or_else(|| {
         AppError::InternalServerError("ไม่สามารถสร้าง timezone offset ได้".to_string())
     })?;
     let now = Utc::now().with_timezone(&bangkok);
     let app_prefix = application_number_prefix(now, round_number);
-    let app_pattern = format!("{}%", app_prefix);
-
-    let max_seq: i64 = sqlx::query_scalar(
-        r#"SELECT COALESCE(MAX(
-            CASE WHEN application_number ~ '^[0-9]{13}$'
-            THEN CAST(SUBSTRING(application_number, 9, 5) AS BIGINT)
-            ELSE 0::BIGINT END
-        ), 0::BIGINT) FROM admission_applications WHERE application_number LIKE $1"#,
-    )
-    .bind(&app_pattern)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| {
-        AppError::InternalServerError("Failed to compute application number".to_string())
-    })?;
-
-    let application_number = next_application_number(&app_prefix, max_seq);
+    let application_number = allocate_application_number(&mut tx, &app_prefix).await?;
 
     let application = sqlx::query_as::<_, AdmissionApplication>(
         r#"
@@ -347,8 +366,14 @@ pub async fn submit_application(
     .bind(&encrypted_pii.guardian_national_id_hash)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to submit application: {}", e);
+    .map_err(|error| {
+        if error.as_database_error().is_some_and(|database| {
+            database.is_unique_violation()
+                && database.constraint() == Some("idx_applications_national_id_hash_round")
+        }) {
+            return AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".into());
+        }
+        tracing::error!(error_code = "admission_submit_failed", "Failed to submit application");
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
@@ -832,6 +857,36 @@ struct EnrollmentPlacementContext {
     placement_start_date: chrono::NaiveDate,
 }
 
+/// Hash an explicit/preassigned code before borrowing the mutation connection.
+/// The unlocked preparation is only a CPU hint: the row-locked code below remains
+/// authoritative, and a changed assignment uses a fresh hash without any retry.
+async fn prepare_enrollment_password(
+    pool: &PgPool,
+    id: Uuid,
+    requested: Option<&str>,
+) -> Result<Option<(String, String)>, AppError> {
+    let (status, assigned): (String, Option<String>) =
+        sqlx::query_as("SELECT status,assigned_student_id FROM admission_applications WHERE id=$1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
+    if status != "accepted" {
+        return Ok(None);
+    }
+    let code = requested
+        .filter(|code| !code.is_empty())
+        .map(str::to_owned)
+        .or_else(|| assigned.filter(|code| !code.is_empty()));
+    match code {
+        Some(code) => {
+            let hash = hash_enrollment_password(&code).await?;
+            Ok(Some((code, hash)))
+        }
+        None => Ok(None),
+    }
+}
+
 pub async fn complete_enrollment(
     pool: &PgPool,
     id: Uuid,
@@ -839,6 +894,8 @@ pub async fn complete_enrollment(
     enroller_id: Uuid,
     placement_rosters: &dyn school_academic_core::ports::PlacementRosterPort,
 ) -> Result<EnrollmentResult, AppError> {
+    let prepared_password =
+        prepare_enrollment_password(pool, id, payload.student_code.as_deref()).await?;
     let mut tx = pool
         .begin()
         .await
@@ -857,7 +914,7 @@ pub async fn complete_enrollment(
     .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
     let receipt_only = before_status == "enrolled";
     if !receipt_only {
-        lifecycle_guard::require_year_write_exclusive(&mut tx, before_year).await?;
+        lifecycle_guard::require_year_write_shared(&mut tx, before_year).await?;
     }
 
     let application = sqlx::query_as::<_, AdmissionApplication>(
@@ -974,18 +1031,29 @@ pub async fn complete_enrollment(
     {
         pre
     } else {
+        // Auto-numbering must serialize through commit to preserve MAX+1 and
+        // rollback/no-gap behavior. Explicit and assigned codes bypass this lock.
+        sqlx::query("SELECT pg_advisory_xact_lock($1,$2)")
+            .bind(STUDENT_NUMBER_NAMESPACE)
+            .bind(1_i32)
+            .execute(&mut *tx)
+            .await?;
         let max_id: i64 = sqlx::query_scalar(
-            r#"SELECT COALESCE(MAX(student_id::bigint), 0) FROM student_info WHERE student_id ~ '^\d+$'"#,
+            r"SELECT COALESCE(MAX(student_id::bigint), 0) FROM student_info WHERE student_id ~ '^[0-9]+$'",
         )
         .fetch_one(&mut *tx)
-        .await
-        .unwrap_or(0);
-        (max_id + 1).to_string()
+        .await?;
+        max_id
+            .checked_add(1)
+            .ok_or_else(|| AppError::Conflict("เลขประจำตัวนักเรียนเกินขนาดที่รองรับ".into()))?
+            .to_string()
     };
 
     let username = student_code.clone();
-    let password_hash = bcrypt::hash(&student_code, 8)
-        .map_err(|_| AppError::InternalServerError("Password hash failed".to_string()))?;
+    let password_hash = match prepared_password {
+        Some((code, hash)) if code == student_code => hash,
+        _ => hash_enrollment_password(&student_code).await?,
+    };
 
     let gender_normalized: Option<String> = application.gender.as_deref().map(|g| {
         match g.to_lowercase().as_str() {
@@ -1253,10 +1321,13 @@ pub async fn complete_enrollment(
             }
 
             let mut seen_phones = std::collections::HashSet::new();
-            let parent_entries: Vec<_> = parent_entries
+            let mut parent_entries: Vec<_> = parent_entries
                 .into_iter()
                 .filter(|(_, _, _, phone, _)| seen_phones.insert(phone.clone()))
                 .collect();
+            // Shared-year enrollment can create the same guardians concurrently.
+            // Acquire username uniqueness locks in a stable order across siblings.
+            parent_entries.sort_by(|left, right| left.3.cmp(&right.3));
 
             for (title, first_name, last_name, phone, relationship) in parent_entries {
                 let existing_parent_id: Option<Uuid> =
@@ -1269,15 +1340,14 @@ pub async fn complete_enrollment(
                 let parent_id = if let Some(pid) = existing_parent_id {
                     pid
                 } else {
-                    let parent_password_hash = bcrypt::hash(&phone, 8).map_err(|_| {
-                        AppError::InternalServerError("Parent password hash failed".to_string())
-                    })?;
+                    let parent_password_hash = hash_enrollment_password(&phone).await?;
 
-                    let pid: Uuid = sqlx::query_scalar(
+                    let inserted_id: Option<Uuid> = sqlx::query_scalar(
                         r#"
                         INSERT INTO users (
                             username, password_hash, title, first_name, last_name, phone, user_type, status
                         ) VALUES ($1, $2, $3, $4, $5, $6, 'parent', 'active')
+                        ON CONFLICT (username) DO NOTHING
                         RETURNING id
                         "#,
                     )
@@ -1287,12 +1357,21 @@ pub async fn complete_enrollment(
                     .bind(&first_name)
                     .bind(&last_name)
                     .bind(&phone)
-                    .fetch_one(&mut *tx)
+                    .fetch_optional(&mut *tx)
                     .await
                     .map_err(|e| {
                         tracing::error!("Failed to create parent user: {}", e);
                         AppError::InternalServerError("ไม่สามารถสร้าง account ผู้ปกครองได้".to_string())
                     })?;
+
+                    let pid = if let Some(pid) = inserted_id {
+                        pid
+                    } else {
+                        sqlx::query_scalar("SELECT id FROM users WHERE username=$1")
+                            .bind(&phone)
+                            .fetch_one(&mut *tx)
+                            .await?
+                    };
 
                     let parent_role_id: Option<Uuid> = sqlx::query_scalar(
                         "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
@@ -1302,7 +1381,7 @@ pub async fn complete_enrollment(
                     .ok()
                     .flatten();
 
-                    if let Some(rid) = parent_role_id {
+                    if let Some(rid) = parent_role_id.filter(|_| inserted_id.is_some()) {
                         let _ = sqlx::query(
                             "INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)",
                         )
@@ -1873,12 +1952,6 @@ mod tests {
         let now = bangkok.with_ymd_and_hms(2026, 6, 6, 8, 30, 0).unwrap();
 
         assert_eq!(application_number_prefix(now, 3), "69060603");
-    }
-
-    #[test]
-    fn next_application_number_pads_sequence_to_five_digits() {
-        assert_eq!(next_application_number("69060603", 0), "6906060300001");
-        assert_eq!(next_application_number("69060603", 42), "6906060300043");
     }
 
     #[test]

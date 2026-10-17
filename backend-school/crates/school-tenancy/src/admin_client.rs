@@ -1,6 +1,7 @@
+use crate::directory_cache::DirectoryCache;
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
 const INTERNAL_CALLER: &str = "backend-school";
@@ -15,6 +16,8 @@ pub struct AdminClientConfig {
     request_timeout: Duration,
     max_attempts: usize,
     retry_base_delay: Duration,
+    directory_capacity: usize,
+    directory_ttl: Duration,
 }
 
 impl AdminClientConfig {
@@ -38,6 +41,22 @@ impl AdminClientConfig {
         base_delay: Option<&str>,
     ) -> Result<Self, String> {
         Ok(Self {
+            directory_capacity: parse_bounded(
+                "TENANT_DIRECTORY_CAPACITY",
+                std::env::var("TENANT_DIRECTORY_CAPACITY").ok().as_deref(),
+                1024,
+                1,
+                100_000,
+            )?,
+            directory_ttl: Duration::from_secs(parse_bounded(
+                "TENANT_DIRECTORY_TTL_SECONDS",
+                std::env::var("TENANT_DIRECTORY_TTL_SECONDS")
+                    .ok()
+                    .as_deref(),
+                30,
+                1,
+                300,
+            )?),
             request_timeout: Duration::from_millis(parse_bounded(
                 "BACKEND_ADMIN_REQUEST_TIMEOUT_MS",
                 timeout,
@@ -72,6 +91,8 @@ impl AdminClientConfig {
             request_timeout,
             max_attempts,
             retry_base_delay,
+            directory_capacity: 1024,
+            directory_ttl: Duration::from_secs(30),
         }
     }
 }
@@ -110,6 +131,7 @@ pub struct AdminClient {
     base_url: String,
     secret: String,
     config: AdminClientConfig,
+    directory: Arc<DirectoryCache>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,10 +141,18 @@ struct SchoolDbInfo {
     name: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct SchoolDatabaseInfo {
     pub tenant_id: Uuid,
     pub database_url: String,
+}
+
+impl std::fmt::Debug for SchoolDatabaseInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SchoolDatabaseInfo")
+            .field("tenant_id", &self.tenant_id)
+            .finish_non_exhaustive()
+    }
 }
 
 /// School info returned by the list endpoint, includes migration metadata
@@ -154,6 +184,10 @@ impl AdminClient {
             client: Client::new(),
             base_url: base_url.trim_end_matches('/').to_string(),
             secret,
+            directory: Arc::new(DirectoryCache::new(
+                config.directory_capacity,
+                config.directory_ttl,
+            )),
             config,
         }
     }
@@ -223,6 +257,23 @@ impl AdminClient {
     /// Fetch the database connection and immutable tenant identity for a school.
     /// Tenant-sensitive platform state must use this UUID, never a mutable subdomain.
     pub async fn get_school_database_info(
+        &self,
+        subdomain: &str,
+    ) -> Result<SchoolDatabaseInfo, String> {
+        self.directory
+            .resolve(subdomain, || self.fetch_school_database_info(subdomain))
+            .await
+    }
+
+    pub fn begin_directory_mutation(&self, subdomain: &str, token: Uuid) -> Result<(), String> {
+        self.directory.begin(subdomain, token)
+    }
+
+    pub fn finish_directory_mutation(&self, subdomain: &str, token: Uuid) -> Result<(), String> {
+        self.directory.finish(subdomain, token)
+    }
+
+    async fn fetch_school_database_info(
         &self,
         subdomain: &str,
     ) -> Result<SchoolDatabaseInfo, String> {

@@ -109,6 +109,27 @@ pub async fn require_term_write(
     lock_context(tx, year, term).await?.require_writable()
 }
 
+/// Independent year-owned inserts coordinate with lifecycle closure without
+/// excluding term writers or other inserts. Callers must lock their own entities
+/// and any shared allocators after this guard, and never upgrade it to exclusive.
+pub async fn require_year_write_shared(
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+) -> Result<AcademicYearStatus, AppError> {
+    lock_transition_shared(tx).await?;
+    let status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR SHARE")
+        .bind(year)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
+    if !year_is_writable(status) {
+        return Err(AppError::Conflict(
+            "ปีการศึกษานี้ปิดแล้ว ดูข้อมูลเดิมได้ แต่แก้ไขผ่านงานปกติไม่ได้".into(),
+        ));
+    }
+    Ok(status)
+}
+
 /// Year-owned writers take this mode before any child/entity lock. They must
 /// not upgrade a shared year lock acquired earlier by a term-scoped writer.
 pub async fn require_year_write_exclusive(

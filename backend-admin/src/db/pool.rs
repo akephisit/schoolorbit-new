@@ -6,11 +6,21 @@ pub async fn init_admin_pool(database_url: &str) -> Result<PgPool, sqlx::Error> 
     let options = database_url
         .parse::<sqlx::postgres::PgConnectOptions>()?
         .disable_statement_logging();
+    let maximum = std::env::var("ADMIN_POOL_MAX_CONNECTIONS").map_or(Ok(5u32), |raw| {
+        raw.parse::<u32>().map_err(|_| {
+            sqlx::Error::Protocol("ADMIN_POOL_MAX_CONNECTIONS must be an integer".into())
+        })
+    })?;
+    if !(1..=1000).contains(&maximum) {
+        return Err(sqlx::Error::Protocol(
+            "ADMIN_POOL_MAX_CONNECTIONS outside supported range".into(),
+        ));
+    }
     PgPoolOptions::new()
         .min_connections(0)
         .acquire_time_level(log::LevelFilter::Info)
         .acquire_slow_threshold(Duration::from_millis(250))
-        .max_connections(5)
+        .max_connections(maximum)
         .acquire_timeout(Duration::from_secs(30))
         .idle_timeout(Duration::from_secs(300)) // Close idle connections after 5 minutes
         .test_before_acquire(true)

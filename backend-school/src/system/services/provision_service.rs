@@ -1,7 +1,5 @@
 use crate::system::models::ProvisionRequest;
 use school_errors::AppError;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::ConnectOptions;
 
 pub struct ProvisionOutcome {
     pub school_id: String,
@@ -22,20 +20,9 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
         "Provisioning tenant database"
     );
 
-    let options = payload
-        .db_migration_connection_string
-        .parse::<sqlx::postgres::PgConnectOptions>()
-        .map_err(|_| AppError::InternalServerError("Invalid migration connection".into()))?
-        .disable_statement_logging();
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(30))
-        .connect_with(options)
+    let pool = school_tenancy::connect_privileged_pool(&payload.db_migration_connection_string, 5)
         .await
-        .map_err(|error| {
-            tracing::error!("Failed to connect to tenant database: {}", error);
-            AppError::InternalServerError(format!("Database connection failed: {}", error))
-        })?;
+        .map_err(|_| AppError::ServiceUnavailable("privileged_database_budget".into()))?;
 
     school_migrations::run_tenant_migrations(&pool)
         .await
@@ -49,7 +36,7 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
         SELECT id FROM roles WHERE code = 'ADMIN'
         "#,
     )
-    .fetch_one(&pool)
+    .fetch_one(pool.as_ref())
     .await
     .map_err(|error| {
         tracing::error!("Failed to find admin role: {}", error);
@@ -76,7 +63,7 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
                SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
            )"#,
     )
-    .fetch_one(&pool)
+    .fetch_one(pool.as_ref())
     .await
     .unwrap_or(Some(1))
     .unwrap_or(1);

@@ -60,7 +60,7 @@ impl Fixture {
             tenant: TenantContext {
                 tenant_id: Uuid::new_v4(),
                 subdomain: name.into(),
-                pool: pool.clone(),
+                pool: pool.clone().into(),
             },
             pool,
             state: StudentHttpState {

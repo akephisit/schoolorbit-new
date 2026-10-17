@@ -107,7 +107,7 @@ pub async fn save_settings(
         .runtime
         .refresh_after_commit(
             &context.tenant.subdomain,
-            pool.clone(),
+            pool.as_ref().clone(),
             state.notification_channel.clone(),
         )
         .await;
@@ -219,7 +219,7 @@ pub async fn execute_cleanup(
         .runtime
         .refresh_after_commit(
             &context.tenant.subdomain,
-            pool.clone(),
+            pool.as_ref().clone(),
             state.notification_channel.clone(),
         )
         .await;
@@ -269,7 +269,7 @@ pub async fn reset(
         .runtime
         .refresh_after_commit(
             &context.tenant.subdomain,
-            pool.clone(),
+            pool.as_ref().clone(),
             state.notification_channel.clone(),
         )
         .await;

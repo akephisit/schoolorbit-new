@@ -116,7 +116,7 @@ pub async fn get_question_file(
     Path((question_id, file_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let repository = SqlFileRepository::new(context.tenant.pool);
+    let repository = SqlFileRepository::new(context.tenant.pool.as_ref().clone());
     let file = state
         .file_platform
         .metadata(&repository, file_id)

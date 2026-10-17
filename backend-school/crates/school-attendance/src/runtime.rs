@@ -118,9 +118,13 @@ async fn refresh_directory(state: &AttendanceRuntimeState) {
                         .await
                     {
                         Ok(pool) => {
-                            if touch(&school.subdomain, pool, state.notification_channel.clone())
-                                .await
-                                .is_err()
+                            if touch(
+                                &school.subdomain,
+                                pool.as_ref().clone(),
+                                state.notification_channel.clone(),
+                            )
+                            .await
+                            .is_err()
                             {
                                 tracing::warn!(
                                     error_code = "attendance_schedule_unavailable",
@@ -161,6 +165,20 @@ pub async fn start(state: AttendanceRuntimeState) {
             .map(|v| (v.key().clone(), v.value().clone()))
             .collect();
         for (tenant, mut r) in work {
+            // Dormant registrations never pin a pool. Reacquire for the whole logical run.
+            let school = match state.admin_client.get_school_database_info(&tenant).await {
+                Ok(school) => school,
+                Err(_) => continue,
+            };
+            let operation_pool = match state
+                .pool_manager
+                .get_pool(&school.database_url, &tenant)
+                .await
+            {
+                Ok(pool) => pool,
+                Err(_) => continue,
+            };
+            r.pool = operation_pool.as_ref().clone();
             if run(&tenant, &mut r, state.behavior).await.is_err() {
                 tracing::warn!(
                     error_code = "attendance_background_retry",

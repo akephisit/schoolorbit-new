@@ -89,6 +89,14 @@ fn public_routes(state: &AppState) -> Router<AppState> {
 fn internal_routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/internal/tenant-directory/{subdomain}/begin",
+            post(system::handlers::tenant_directory::begin),
+        )
+        .route(
+            "/internal/tenant-directory/{subdomain}/finish",
+            post(system::handlers::tenant_directory::finish),
+        )
+        .route(
             "/internal/provision",
             post(system::handlers::provision::provision_tenant),
         )

@@ -57,7 +57,7 @@ mod tests {
             TenantContext {
                 tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
                 subdomain: tenant.to_string(),
-                pool,
+                pool: pool.into(),
             },
             Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
             Uuid::parse_str(USER_ID).unwrap(),

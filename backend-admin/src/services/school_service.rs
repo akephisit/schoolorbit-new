@@ -177,13 +177,32 @@ impl SchoolService {
     ) -> Result<(), String> {
         warn!(%school_id, status, reason, "marking school status after provisioning error");
 
+        let subdomain: String = sqlx::query_scalar("SELECT subdomain FROM schools WHERE id = $1")
+            .bind(school_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| "School lookup failed".to_string())?;
+        let (client, _, token) = self
+            .begin_directory_mutation(&subdomain)
+            .await
+            .map_err(|_| "Tenant directory mutation unavailable".to_string())?;
+        let mut transaction = self
+            .directory_transaction(&subdomain, token)
+            .await
+            .map_err(|_| "Tenant directory mutation unavailable".to_string())?;
         match sqlx::query("UPDATE schools SET status = $1, updated_at = NOW() WHERE id = $2")
             .bind(status)
             .bind(school_id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await
         {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| "School status commit failed".to_string())?;
+                client.directory_mutation(&subdomain, token, true).await
+            }
             Err(e) => {
                 warn!(error = %e, "failed to update school status after provisioning error");
                 Err(e.to_string())
@@ -192,9 +211,22 @@ impl SchoolService {
     }
 
     async fn delete_school_record(&self, school_id: Uuid) -> Result<(), String> {
+        let subdomain: String = sqlx::query_scalar("SELECT subdomain FROM schools WHERE id = $1")
+            .bind(school_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| "School lookup failed".to_string())?;
+        let (client, _, token) = self
+            .begin_directory_mutation(&subdomain)
+            .await
+            .map_err(|_| "Tenant directory mutation unavailable".to_string())?;
+        let mut transaction = self
+            .directory_transaction(&subdomain, token)
+            .await
+            .map_err(|_| "Tenant directory mutation unavailable".to_string())?;
         let result = sqlx::query("DELETE FROM schools WHERE id = $1")
             .bind(school_id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -202,7 +234,11 @@ impl SchoolService {
             return Err("school record was already missing".to_string());
         }
 
-        Ok(())
+        transaction
+            .commit()
+            .await
+            .map_err(|_| "School deletion commit failed".to_string())?;
+        client.directory_mutation(&subdomain, token, true).await
     }
 
     async fn rollback_failed_provisioning(
@@ -514,6 +550,8 @@ impl SchoolService {
         // Update school record with deployment info
         let config = build_active_school_config(&dns_record_id, &subdomain_url);
 
+        let (directory, _, token) = self.begin_directory_mutation(&data.subdomain).await?;
+        let mut transaction = self.directory_transaction(&data.subdomain, token).await?;
         let updated_school = sqlx::query_as::<_, School>(
             r#"
             UPDATE schools 
@@ -524,10 +562,18 @@ impl SchoolService {
         )
         .bind(Json(config))
         .bind(school_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
+        transaction
+            .commit()
+            .await
+            .map_err(|_| AppError::DatabaseError("School activation commit failed".into()))?;
+        directory
+            .directory_mutation(&data.subdomain, token, true)
+            .await
+            .map_err(AppError::ExternalServiceError)?;
         options.success("✅ School activated").await;
         options
             .success("🎉 School provisioning completed successfully!")
@@ -616,6 +662,12 @@ impl SchoolService {
     }
 
     pub async fn update_school(&self, id: Uuid, data: UpdateSchool) -> Result<School, AppError> {
+        let fence = if data.status.is_some() {
+            let school = self.get_school(id).await?;
+            Some(self.begin_directory_mutation(&school.subdomain).await?)
+        } else {
+            None
+        };
         // Start building the update query dynamically
         let mut query = String::from("UPDATE schools SET updated_at = NOW()");
         let mut bind_count = 1;
@@ -649,13 +701,84 @@ impl SchoolService {
 
         q = q.bind(id);
 
+        let mut transaction =
+            self.pool.begin().await.map_err(|_| {
+                AppError::DatabaseError("School update transaction unavailable".into())
+            })?;
+        if let Some((_, subdomain, token)) = &fence {
+            Self::claim_directory_mutation(&mut transaction, subdomain, *token).await?;
+        }
         let school = q
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *transaction)
             .await
             .map_err(|e| AppError::DatabaseError(e.to_string()))?
             .ok_or_else(|| AppError::NotFound("School not found".to_string()))?;
 
+        transaction
+            .commit()
+            .await
+            .map_err(|_| AppError::DatabaseError("School update commit failed".into()))?;
+        if let Some((client, subdomain, token)) = fence {
+            client.directory_mutation(&subdomain, token, true).await.map_err(|_| {
+                warn!(%subdomain, %token, operation = "tenant_directory_recovery_required", "School mutation committed but directory remains fenced");
+                AppError::ExternalServiceError("School updated; tenant directory recovery required".into())
+            })?;
+        }
         Ok(school)
+    }
+
+    async fn begin_directory_mutation(
+        &self,
+        subdomain: &str,
+    ) -> Result<
+        (
+            crate::clients::backend_school_client::BackendSchoolClient,
+            String,
+            Uuid,
+        ),
+        AppError,
+    > {
+        let client = crate::clients::backend_school_client::BackendSchoolClient::new()
+            .map_err(AppError::ExternalServiceError)?;
+        let token = Uuid::new_v4();
+        sqlx::query("INSERT INTO tenant_directory_mutations (school_id, token) SELECT id, $2 FROM schools WHERE subdomain = $1")
+            .bind(subdomain).bind(token).execute(&self.pool).await
+            .map_err(|_| AppError::ExternalServiceError("Tenant directory mutation already pending or unavailable".into()))?;
+        // Record before sending: cancellation can leave an acknowledged fence without a response.
+        info!(%subdomain, %token, operation = "tenant_directory_mutation", "Beginning tenant directory mutation");
+        client
+            .directory_mutation(subdomain, token, false)
+            .await
+            .map_err(AppError::ExternalServiceError)?;
+        Ok((client, subdomain.to_owned(), token))
+    }
+
+    async fn claim_directory_mutation(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        subdomain: &str,
+        token: Uuid,
+    ) -> Result<(), AppError> {
+        let claimed: Option<Uuid> = sqlx::query_scalar("DELETE FROM tenant_directory_mutations m USING schools s WHERE m.school_id = s.id AND s.subdomain = $1 AND m.token = $2 RETURNING m.token")
+            .bind(subdomain).bind(token).fetch_optional(&mut **transaction).await
+            .map_err(|_| AppError::DatabaseError("Tenant directory mutation claim failed".into()))?;
+        if claimed != Some(token) {
+            return Err(AppError::ExternalServiceError(
+                "Tenant directory mutation superseded".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn directory_transaction(
+        &self,
+        subdomain: &str,
+        token: Uuid,
+    ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, AppError> {
+        let mut transaction = self.pool.begin().await.map_err(|_| {
+            AppError::DatabaseError("Tenant directory mutation transaction unavailable".into())
+        })?;
+        Self::claim_directory_mutation(&mut transaction, subdomain, token).await?;
+        Ok(transaction)
     }
 
     pub async fn delete_school(&self, id: Uuid) -> Result<(), AppError> {
@@ -663,6 +786,7 @@ impl SchoolService {
 
         // Get school info first
         let school = self.get_school(id).await?;
+        let (directory, _, token) = self.begin_directory_mutation(&school.subdomain).await?;
 
         info!(school = %school.name, subdomain = %school.subdomain, "loaded school for deletion");
 
@@ -713,9 +837,10 @@ impl SchoolService {
 
         // Step 4: Delete school record from database
         info!("deleting school record");
+        let mut transaction = self.directory_transaction(&school.subdomain, token).await?;
         let result = sqlx::query("DELETE FROM schools WHERE id = $1")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await
             .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
@@ -723,6 +848,14 @@ impl SchoolService {
             return Err(AppError::NotFound("School not found".to_string()));
         }
 
+        transaction
+            .commit()
+            .await
+            .map_err(|_| AppError::DatabaseError("School deletion commit failed".into()))?;
+        directory
+            .directory_mutation(&school.subdomain, token, true)
+            .await
+            .map_err(AppError::ExternalServiceError)?;
         info!("school deletion completed");
 
         Ok(())

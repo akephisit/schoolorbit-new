@@ -496,16 +496,7 @@ async fn migrate_single_school(
     tracing::info!("🔄 Migrating school: {}", subdomain);
 
     let migration = async {
-        use sqlx::ConnectOptions;
-        let options = db_url
-            .parse::<sqlx::postgres::PgConnectOptions>()
-            .map_err(|_| "Invalid migration connection".to_string())?
-            .disable_statement_logging();
-        let owner_pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await
-            .map_err(|_| "Migration connection failed".to_string())?;
+        let owner_pool = school_tenancy::connect_privileged_pool(db_url, 1).await?;
         let result = school_migrations::run_tenant_migrations(&owner_pool).await;
         // Migrations/permission sync may have committed even if a later grant failed.
         // Invalidate before drainage or any other fallible post-migration work.
@@ -552,7 +543,7 @@ async fn migrate_single_school(
         std::time::Duration::from_secs(30),
         school_attendance::runtime::touch(
             subdomain,
-            pool.clone(),
+            pool.as_ref().clone(),
             state.notification_channel.clone(),
         ),
     )
@@ -657,19 +648,12 @@ async fn get_latest_migration_version() -> Result<i64, String> {
 
 /// A one-shot verifier owns one connection, not a second pool lifecycle.
 async fn verify_runtime_schema(database_url: &str) -> Result<i64, String> {
-    use sqlx::{ConnectOptions, Connection};
     let started = std::time::Instant::now();
     let mut stage = "connect";
     let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        let options = database_url
-            .parse::<sqlx::postgres::PgConnectOptions>()
-            .map_err(|_| "Invalid runtime verification connection".to_string())?
-            .disable_statement_logging();
-        let mut connection = sqlx::PgConnection::connect_with(&options)
-            .await
-            .map_err(|_| "Runtime verification connection failed".to_string())?;
+        let mut connection = school_tenancy::connect_privileged_connection(database_url).await?;
         stage = "schema_history";
-        let result = school_migrations::verify_tenant_schema(&mut connection).await;
+        let result = school_migrations::verify_tenant_schema(&mut *connection).await;
         stage = "connection_close";
         let closed = connection.close().await;
         let version = result?;

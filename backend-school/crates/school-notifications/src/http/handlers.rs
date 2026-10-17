@@ -253,7 +253,10 @@ pub async fn stream_notifications(
         SESSION_REVALIDATION_INTERVAL,
     );
     revalidation_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut session = session;
+    session.tenant.pool.release_for_realtime();
     let revalidation_session = session.clone();
+    let revalidation_runtime = state.auth_runtime.clone();
     let events = session_bound_notification_stream(
         session,
         notification_rx,
@@ -263,7 +266,10 @@ pub async fn stream_notifications(
         revalidation_interval,
         move || {
             let session = revalidation_session.clone();
-            async move { session_service::revalidate(&session, Utc::now()).await }
+            let runtime = revalidation_runtime.clone();
+            async move {
+                school_auth_http::tenant::revalidate_realtime_session(&runtime, &session).await
+            }
         },
     );
     let stream = events.map(|event| Ok::<_, Infallible>(event.into_sse_event()));
@@ -333,7 +339,8 @@ mod tests {
                 subdomain: tenant.to_string(),
                 pool: PgPoolOptions::new()
                     .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
-                    .unwrap(),
+                    .unwrap()
+                    .into(),
             },
             Uuid::new_v4(),
             Uuid::new_v4(),

@@ -456,7 +456,7 @@ pub async fn staff_upload_document(
         )));
     }
 
-    let repository = SqlFileRepository::new(pool.clone());
+    let repository = SqlFileRepository::new(pool.as_ref().clone());
     let file = state
         .file_platform
         .upload(

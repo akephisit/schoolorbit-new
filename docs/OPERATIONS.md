@@ -76,10 +76,65 @@ Mode, canonical migrations and authenticated proxy/browser acceptance.
 
 Start with the tracked `scripts/lib/postgres-vps/workload.conf` budget for 2 vCPU /
 4 GiB: 64 connections, 512 MiB shared buffers, 4 MiB work memory, 128 MiB maintenance
-memory. Pools allow five connections per tenant, zero minimum and five-minute idle
-expiry; migration is sequential. Per-operation work memory can multiply across
+memory. The supported topology is one School process and one Admin process per
+PostgreSQL server. The default connection allocation is School runtime 40 + Admin 5 +
+Admin provisioning 2 + School privileged 5 + operator/headroom 12 = 64. Runtime pools
+reserve their complete per-tenant maximum (five by default), so at most eight tenant
+pools are resident. Logical operation leases protect the gaps between queries;
+idle LRU pools are evicted under pressure only after all leases and borrowers end.
+Admission waits at most five seconds, then returns 503; writes are never replayed.
+Draining and cancelled pools retain their allocation until physical closure.
+Dormant Attendance registrations and realtime sessions reacquire a lease for work.
+School owner/provisioning pools share the separate privileged reserve; Admin
+provisioning uses a global limit around directly owned connections. Pools have zero
+minimum and five-minute idle expiry; migration is sequential.
+
+The examples and both Compose files expose `TENANT_RUNTIME_CONNECTIONS`,
+`TENANT_POOL_MAX_CONNECTIONS`, `TENANT_POOL_ADMISSION_TIMEOUT_MS`,
+`ADMIN_POOL_MAX_CONNECTIONS`, `PG_PROVISIONING_MAX_CONNECTIONS`,
+`SCHOOL_PRIVILEGED_CONNECTIONS`, `POSTGRES_MAX_CONNECTIONS`, and
+`POSTGRES_CONNECTION_HEADROOM`. `SCHOOL_PRIVILEGED_CONNECTIONS` must be at least
+five, including provisioning's transaction and follow-up read. School startup rejects allocations exceeding the
+server budget. Keep the server setting and values in both services synchronized.
+Before running multiple replicas, divide these process allocations across replicas
+or separately review a shared pooler; adding replicas with unchanged defaults
+exceeds the physical budget. Per-operation work memory can multiply across
 sort/hash operations, connections and parallel workers; these are initial budgets,
 not a guarantee of fixed RAM consumption. Keep autovacuum and worker AIO enabled.
+
+Tenant directory lookups cache only successful UUID/runtime credentials, for 30
+seconds and at most 1024 entries by default (`TENANT_DIRECTORY_TTL_SECONDS`,
+`TENANT_DIRECTORY_CAPACITY`). Expired lookups fail closed during Admin outages;
+owner credentials never enter this cache. Status changes first persist an Admin
+`tenant_directory_mutations` barrier, then fence the School cache. The exact token
+is claimed and removed in the same transaction as the school mutation; School
+finish invalidates before reopening. Pending barriers fail the internal all-tenant
+list as a whole, preventing incomplete migration acceptance.
+
+Deploy matching School and Admin writers under normal Maintenance Mode. After
+Admin migration 011 and School migration 118 are active and traffic has reopened,
+prohibit rollback to pre-counter School or pre-fence Admin binaries and mixed
+writer generations. Additive schema changes still require compatible writer
+protocols: an old School `MAX+1` writer leaves the counter behind, causing repeated
+unique collisions when counter allocation resumes; an old Admin writer bypasses
+the durable barrier and cache invalidation. On failure, retain maintenance and
+recover with a compatible forward release. Preserve the counters and SQLx migration
+history; never drop, reset or rewrite them to recover.
+
+If a mutation is interrupted, find its subdomain/token in the
+`tenant_directory_mutation` log and inspect the corresponding Admin pending row.
+Never delete a pending barrier by age. Stop/reconcile the old operation and its
+external provisioning/deletion effects, then use a transaction to delete only that
+school UUID and exact token with `DELETE ... RETURNING token`. This serializes with
+the writer's identical claim: a late writer without its token must refuse to write.
+Verify the canonical school state, commit, and send authenticated
+`POST /internal/tenant-directory/<subdomain>/finish` to School with JSON
+`{"token":"<recorded UUID>"}` and the normal internal caller/secret headers. Retry
+that same finish token after transport failure; a different active token is never
+released. No secrets belong in logs or command arguments. If the School process
+restarts during an operation, Admin's durable barrier continues to deny cold reads.
+Direct SQL status/credential changes must use this same barrier/fence protocol or
+run under maintenance with School restarted after the final state commits.
 
 pgAdmin Desktop connects to `127.0.0.1:5432`, database `postgres`, with observer or
 human administration credentials, verify-full TLS and the laptop CA file. Configure

@@ -29,7 +29,7 @@ async fn soft_deleted_staff_cannot_reuse_a_warm_session_after_root_invalidation(
     let tenant = TenantContext {
         tenant_id: Uuid::new_v4(),
         subdomain: "auth-staff-soft-delete".to_string(),
-        pool: pool.clone(),
+        pool: pool.clone().into(),
     };
     let permission_cache = Arc::new(PermissionCache::new());
     let identity_cache = Arc::new(SessionCache::new());
