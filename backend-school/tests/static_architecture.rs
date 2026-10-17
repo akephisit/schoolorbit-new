@@ -810,6 +810,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
+                "school-tenancy",
             ],
         ),
         ("school-permissions", &[]),
@@ -6176,15 +6177,50 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
         "biased select must prioritize revocation and due revalidation before socket and room input"
     );
 
-    let heartbeat_revalidation = socket_loop[heartbeat_branch..]
-        .find("session_service::revalidate(")
-        .map(|offset| heartbeat_branch + offset)
-        .expect("heartbeat must revalidate the authoritative session");
-    let heartbeat_ping = socket_loop[heartbeat_branch..]
+    let heartbeat = extract_braced_block(&socket_loop, "_ = heartbeat.tick() =>", false);
+    let heartbeat_revalidation = heartbeat
+        .find("school_auth_http::tenant::revalidate_realtime_session(")
+        .expect("heartbeat must reacquire a tenant lease and revalidate the authoritative session");
+    let heartbeat_ping = heartbeat
         .find("Message::Ping")
-        .map(|offset| heartbeat_branch + offset)
         .expect("heartbeat must send a ping after revalidation");
     assert!(heartbeat_revalidation < heartbeat_ping);
+
+    let tenant_adapter = read_source(manifest_dir().join("crates/school-auth-http/src/tenant.rs"));
+    let revalidation = extract_braced_block(
+        &tenant_adapter,
+        "pub async fn revalidate_realtime_session",
+        false,
+    );
+    let tenant_lookup = revalidation
+        .find("resolve_tenant_context_by_subdomain(runtime, &session.tenant.subdomain).await?")
+        .expect("realtime validation must reacquire through the central tenant resolver");
+    let stable_identity = revalidation
+        .find("if tenant.tenant_id != session.tenant.tenant_id")
+        .expect("realtime validation must reject a different immutable tenant identity");
+    let refreshed_session = revalidation
+        .find("active.tenant = tenant")
+        .expect("authoritative validation must use the freshly leased tenant context");
+    let session_validation = revalidation
+        .find("school_auth::session_service::revalidate(&active,")
+        .expect("realtime validation must retain authoritative session checks");
+    assert!(tenant_lookup < stable_identity && stable_identity < refreshed_session);
+    assert!(refreshed_session < session_validation);
+    let identity_mismatch = extract_braced_block(
+        &revalidation,
+        "if tenant.tenant_id != session.tenant.tenant_id",
+        false,
+    );
+    assert!(identity_mismatch.contains("return Ok(false)"));
+    for (branch, reason) in [
+        ("Ok(false) =>", "SocketCloseReason::SessionInvalid"),
+        ("Err(_) =>", "SocketCloseReason::SessionUnavailable"),
+    ] {
+        let denied = extract_braced_block(&heartbeat, branch, false);
+        assert!(denied.contains("close_realtime_socket("));
+        assert!(denied.contains(reason));
+        assert!(denied.contains("break;"));
+    }
 }
 
 #[test]
@@ -7076,7 +7112,31 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             ));
         }
 
-        if file_name != "src/system/handlers/migration.rs"
+        if file_name == "crates/school-attendance/src/runtime.rs" {
+            // Background work has no HTTP request context. Its exact exception must
+            // reacquire through the central directory/manager and retain a logical
+            // operation lease throughout the scheduled run.
+            let runtime = extract_braced_block(&source, "pub async fn start", false);
+            let work = extract_braced_block(&runtime, "for (tenant, mut r) in work", false);
+            let directory = work
+                .find("state.admin_client.get_school_database_info(&tenant).await")
+                .expect("Attendance work must refresh the authoritative tenant directory");
+            let operation_lease = work
+                .find("let operation_pool = match state")
+                .expect("Attendance must own a lease for the complete logical run");
+            let pool = work
+                .find(".get_pool(&school.database_url, &tenant)")
+                .expect("Attendance work must reacquire through the central pool manager");
+            let refreshed = work
+                .find("r.pool = operation_pool.as_ref().clone()")
+                .expect("Attendance must replace any dormant pool handle before work");
+            let run = work
+                .find("run(&tenant, &mut r, state.behavior).await")
+                .expect("Attendance must run while the operation lease is in scope");
+            assert!(directory < operation_lease && operation_lease < pool);
+            assert!(pool < refreshed && refreshed < run);
+            assert!(!work[..run].contains("drop(operation_pool)"));
+        } else if file_name != "src/system/handlers/migration.rs"
             && pool_manager_get_pool.is_match(&source)
         {
             violations.push(format!(
