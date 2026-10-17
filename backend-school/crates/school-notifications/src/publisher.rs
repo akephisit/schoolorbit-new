@@ -31,7 +31,7 @@ impl<'a> TenantNotificationPublisher<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationType {
     Info,
     Success,
@@ -81,7 +81,7 @@ impl NotificationService {
     }
 
     /// Send a notification to a specific user.
-    /// This handles database insertion, real-time broadcasting via SSE, AND Web Push.
+    /// Store the inbox and durable dispatch job atomically; transport follows commit.
     pub async fn send(
         pool: &sqlx::PgPool,
         publisher: &TenantNotificationPublisher<'_>,
@@ -91,51 +91,23 @@ impl NotificationService {
         type_: NotificationType,
         link: Option<&str>,
     ) -> Result<Uuid, sqlx::Error> {
-        let notification = sqlx::query_as::<_, Notification>(
-            r#"
-            INSERT INTO notifications (user_id, title, message, type, link)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, title, message, type AS type_, link, read_at, created_at
-            "#,
-        )
-        .bind(user_id)
-        .bind(title)
-        .bind(message)
-        .bind(type_.as_str())
-        .bind(link)
-        .fetch_one(pool)
-        .await?;
-
-        let id = notification.id;
-
-        // Broadcast to SSE (Real-time)
-        publisher.publish(user_id, notification);
-
-        // 🚀 Trigger Web Push (Fire-and-forget task)
-        let retention =
-            school_tenancy::TenantPool::retain_for_pool(pool).map_err(sqlx::Error::Protocol)?;
-        let pool_clone = pool.clone();
-        let notification_id = id;
-        let title = title.to_string();
-        let message = message.to_string();
-        let link = link.map(|s| s.to_string());
-
-        tokio::spawn(async move {
-            let _retention = retention;
-            if let Err(e) = Self::send_web_push(
-                &pool_clone,
-                user_id,
-                notification_id,
-                &title,
-                &message,
-                link.as_deref(),
-            )
+        let item = crate::dispatch::QueuedNotification {
+            id: Uuid::new_v4(),
+            notification_id: Uuid::new_v4(),
+            recipient_id: user_id,
+            source: crate::dispatch::NotificationSource::Direct,
+            dedup_key: None,
+            title: title.into(),
+            message: message.into(),
+            type_,
+            link: link.map(str::to_owned),
+        };
+        let mut tx = pool.begin().await?;
+        let id = crate::dispatch::store_and_enqueue_in_transaction(&mut tx, &item)
             .await
-            {
-                tracing::error!("Web Push Failed for user {}: {}", user_id, e);
-            }
-        });
-
+            .map_err(|_| sqlx::Error::Protocol("notification_enqueue_failed".into()))?;
+        tx.commit().await?;
+        crate::runtime::wake_after_commit(publisher.tenant);
         Ok(id)
     }
 
@@ -148,12 +120,6 @@ impl NotificationService {
         message: &str,
         link: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // 1. Get VAPID config from .env
-        let _vapid_public = env::var("VAPID_PUBLIC_KEY")?;
-        let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
-        let vapid_subject =
-            env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
-
         // 3. Get user subscriptions
         #[derive(sqlx::FromRow)]
         struct SubRow {
@@ -173,6 +139,12 @@ impl NotificationService {
             return Ok(());
         }
 
+        // 1. Get VAPID config from .env
+        let _vapid_public = env::var("VAPID_PUBLIC_KEY")?;
+        let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
+        let vapid_subject =
+            env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
+
         // 4. Construct payload
         let payload = serde_json::json!({
             "id": notification_id,
@@ -183,11 +155,9 @@ impl NotificationService {
         })
         .to_string();
 
-        // 5. Send to each subscription
-        let client = IsahcWebPushClient::new()?; // Or async-std/tokio client depending on features
-
-        // Note: web-push 0.10+ uses different API. Assuming 0.11
-        // Let's use simple loop
+        let client = IsahcWebPushClient::new()?;
+        let mut retryable = 0usize;
+        let mut removed = 0usize;
         for sub in subs {
             let subscription_info = SubscriptionInfo {
                 endpoint: sub.endpoint.clone(),
@@ -196,38 +166,47 @@ impl NotificationService {
                     auth: sub.auth_key,
                 },
             };
-
-            let mut builder = WebPushMessageBuilder::new(&subscription_info);
-            builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
-
-            // Sign with VAPID
-            let mut sig_builder =
-                VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
-            sig_builder.add_claim("sub", vapid_subject.clone());
-            let signature = sig_builder.build()?;
-            builder.set_vapid_signature(signature);
-
-            match client.send(builder.build()?).await {
-                Ok(_) => {
-                    tracing::info!("Push sent to device");
-                }
-                Err(e) => {
-                    tracing::warn!("Push failed for endpoint {}: {:?}", sub.endpoint, e);
-
-                    let should_delete = matches!(
-                        e,
-                        WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)
-                    );
-
-                    if should_delete {
-                        tracing::info!("Removing invalid subscription: {}", sub.endpoint);
-                        let _ = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1")
-                            .bind(&sub.endpoint)
-                            .execute(pool)
-                            .await;
+            // One malformed/device failure must not skip the remaining subscriptions.
+            let result = async {
+                let mut builder = WebPushMessageBuilder::new(&subscription_info);
+                builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
+                let mut signature =
+                    VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
+                signature.add_claim("sub", vapid_subject.clone());
+                builder.set_vapid_signature(signature.build()?);
+                client.send(builder.build()?).await
+            }
+            .await;
+            match result {
+                Ok(()) => {}
+                Err(WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)) => {
+                    if sqlx::query(
+                        "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
+                    )
+                    .bind(&sub.endpoint)
+                    .bind(user_id)
+                    .execute(pool)
+                    .await
+                    .is_ok()
+                    {
+                        removed += 1;
+                    } else {
+                        retryable += 1;
                     }
                 }
+                Err(_) => retryable += 1,
             }
+        }
+        if removed > 0 {
+            tracing::debug!(
+                error_code = "notification_subscription_removed",
+                removed,
+                "Invalid push subscriptions removed"
+            );
+        }
+        if retryable > 0 {
+            tracing::warn!(error_code="notification_push_retry",retryable,notification_id=%notification_id,"Push subscription delivery will retry");
+            return Err(std::io::Error::other("notification_push_retry").into());
         }
 
         Ok(())

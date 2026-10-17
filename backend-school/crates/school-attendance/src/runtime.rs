@@ -18,52 +18,12 @@ use crate::{
 };
 use chrono::{NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
-use futures::{stream, StreamExt};
 use school_errors::AppError;
-use school_notifications::{
-    events::TenantNotificationEvent,
-    models::Notification,
-    publisher::{NotificationService, TenantNotificationPublisher},
-};
+use school_notifications::events::TenantNotificationEvent;
 use sqlx::{types::Json, PgPool};
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
-const DELIVERY_CONCURRENCY: usize = 4;
-const DELIVERY_ITEM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
-#[derive(Default, Debug, PartialEq)]
-struct BatchDelivery {
-    completed: usize,
-    failed: usize,
-    timed_out: usize,
-}
-
-async fn deliver_batch<T, F, Fut, E>(
-    items: Vec<T>,
-    concurrency: usize,
-    timeout: std::time::Duration,
-    deliver: F,
-) -> BatchDelivery
-where
-    F: Fn(T) -> Fut,
-    Fut: std::future::Future<Output = Result<(), E>>,
-{
-    // These futures are not spawned. The scheduled run's TenantPool lease owns
-    // their complete lifetime, including cancellation and every sibling result.
-    stream::iter(items)
-        .map(|item| tokio::time::timeout(timeout, deliver(item)))
-        .buffer_unordered(concurrency)
-        .fold(BatchDelivery::default(), |mut outcome, result| async move {
-            match result {
-                Ok(Ok(())) => outcome.completed += 1,
-                Ok(Err(_)) => outcome.failed += 1,
-                Err(_) => outcome.timed_out += 1,
-            }
-            outcome
-        })
-        .await
-}
 #[derive(Clone)]
 struct TermSchedule {
     term: Uuid,
@@ -75,9 +35,7 @@ struct TermSchedule {
 #[derive(Clone)]
 struct Registration {
     pool: PgPool,
-    channel: broadcast::Sender<TenantNotificationEvent>,
     terms: Vec<TermSchedule>,
-    pending: bool,
     generation: Uuid,
     module_generation: Uuid,
     digests: HashSet<String>,
@@ -95,7 +53,7 @@ fn tenants() -> &'static DashMap<String, Registration> {
 pub async fn touch(
     tenant: &str,
     pool: PgPool,
-    channel: broadcast::Sender<TenantNotificationEvent>,
+    _channel: broadcast::Sender<TenantNotificationEvent>,
 ) -> Result<(), AppError> {
     let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=sqlx::query_as("SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all(&pool).await?;
     let mut terms = vec![];
@@ -115,7 +73,6 @@ pub async fn touch(
         });
     }
     let module_generation = crate::services::sessions::module_generation(&pool).await?;
-    let pending = notifications::has_pending(&pool).await?;
     let prior = tenants()
         .get(tenant)
         .filter(|v| v.module_generation == module_generation)
@@ -125,9 +82,7 @@ pub async fn touch(
         tenant.into(),
         Registration {
             pool,
-            channel,
             terms,
-            pending,
             generation: Uuid::new_v4(),
             module_generation,
             digests,
@@ -225,7 +180,6 @@ pub async fn start(state: AttendanceRuntimeState) {
                 if live.generation == r.generation {
                     live.digests.extend(r.digests);
                     live.last_retention = r.last_retention;
-                    live.pending = r.pending;
                     live.terms = r.terms;
                     live.last_finalization_poll = r.last_finalization_poll;
                 }
@@ -282,44 +236,9 @@ async fn run(
                     &expected,
                 )
                 .await?;
-                r.pending = true;
+                school_notifications::runtime::wake_after_commit(tenant);
                 r.digests.insert(key);
             }
-        }
-    }
-    if r.pending {
-        let batch = notifications::pending(&r.pool).await?;
-        let pool = &r.pool;
-        let channel = &r.channel;
-        let outcome = deliver_batch(
-            batch,
-            DELIVERY_CONCURRENCY,
-            DELIVERY_ITEM_TIMEOUT,
-            |n| async move {
-                if !notifications::store(pool, &n).await? {
-                    return Ok::<(), AppError>(());
-                }
-                let notice:Notification=sqlx::query_as("SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1").bind(n.notification_id).fetch_one(pool).await?;
-                let publisher = TenantNotificationPublisher::new(tenant, channel);
-                NotificationService::deliver_stored(pool, &publisher, n.recipient_id, notice)
-                    .await
-                    .map_err(|_| AppError::ServiceUnavailable("notification_transport_unavailable".into()))?;
-                notifications::delivered(pool, n.id).await
-            },
-        ).await;
-        if outcome.failed > 0 || outcome.timed_out > 0 {
-            tracing::warn!(
-                error_code = "attendance_notification_retry",
-                failed = outcome.failed,
-                timed_out = outcome.timed_out,
-                "Attendance notices remain leased for retry"
-            );
-        }
-        r.pending = notifications::has_pending(&r.pool).await?;
-        if notifications::has_due(&r.pool).await? {
-            // Finish the remaining tenants in this pass before the next batch.
-            // Future leased retries wait for the regular tick instead of spinning.
-            WAKE.notify_one();
         }
     }
     if r.last_retention != Some(date) {
@@ -334,11 +253,7 @@ fn digest_due(current: u32, due: u32, delivered: bool) -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use super::{deliver_batch, digest_due, BatchDelivery};
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    };
+    use super::digest_due;
     #[test]
     fn digest_window_catches_up_once_and_does_not_send_early() {
         assert!(!digest_due(479, 480, false));
@@ -347,66 +262,6 @@ mod tests {
         assert!(!digest_due(541, 480, false));
         assert!(!digest_due(480, 480, true));
     }
-    #[tokio::test]
-    async fn delivery_batch_bounds_concurrency_and_joins_failed_and_timed_out_siblings() {
-        struct Active(Arc<AtomicUsize>);
-        impl Drop for Active {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let active = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-        let completed = Arc::new(AtomicUsize::new(0));
-        let result = deliver_batch(
-            (0..10).collect(),
-            4,
-            std::time::Duration::from_millis(100),
-            |item| {
-                let active = Arc::clone(&active);
-                let peak = Arc::clone(&peak);
-                let completed = Arc::clone(&completed);
-                async move {
-                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    let _active = Active(active);
-                    peak.fetch_max(count, Ordering::SeqCst);
-                    if item == 0 {
-                        std::future::pending::<()>().await;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                    if item == 1 {
-                        return Err(());
-                    }
-                    completed.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                }
-            },
-        )
-        .await;
-        assert_eq!(
-            result,
-            BatchDelivery {
-                completed: 8,
-                failed: 1,
-                timed_out: 1
-            }
-        );
-        assert_eq!(
-            peak.load(Ordering::SeqCst),
-            4,
-            "independent work must overlap up to the bound"
-        );
-        assert_eq!(
-            active.load(Ordering::SeqCst),
-            0,
-            "no delivery may outlive the batch"
-        );
-        assert_eq!(
-            completed.load(Ordering::SeqCst),
-            8,
-            "one failure must not cancel siblings"
-        );
-    }
 }
 
 pub async fn refresh_after_commit(
@@ -414,6 +269,7 @@ pub async fn refresh_after_commit(
     pool: sqlx::PgPool,
     channel: broadcast::Sender<TenantNotificationEvent>,
 ) {
+    school_notifications::runtime::wake_after_commit(subdomain);
     if touch(subdomain, pool, channel).await.is_err() {
         tracing::error!(
             error_code = "attendance_cache_refresh",
@@ -427,10 +283,10 @@ pub async fn wake_after_commit(
     pool: PgPool,
     channel: broadcast::Sender<TenantNotificationEvent>,
 ) {
+    school_notifications::runtime::wake_after_commit(tenant);
     {
         if let Some(mut entry) = tenants().get_mut(tenant) {
             WAKE.notify_one();
-            entry.pending = true;
             entry.generation = Uuid::new_v4();
             entry.last_finalization_poll = None;
             return;

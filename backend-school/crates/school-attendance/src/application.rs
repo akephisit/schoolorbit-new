@@ -938,7 +938,13 @@ pub async fn reset(
     )
     .fetch_all(&mut *tx)
     .await?;
-    school_notifications::services::delete_identified_in_transaction(&mut tx, &ids).await?;
+    school_notifications::dispatch::cancel_identified_in_transaction(
+        &mut tx,
+        school_notifications::dispatch::NotificationSourceKind::Attendance,
+        &ids,
+        true,
+    )
+    .await?;
     crate::services::reset::reset_in_transaction(pool, tx, actor, p).await
 }
 

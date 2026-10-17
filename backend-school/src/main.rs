@@ -409,6 +409,14 @@ async fn main() {
         calendar_next_run,
     );
     sched.start().await.expect("Failed to start scheduler");
+    tokio::spawn(school_notifications::runtime::start(
+        school_notifications::runtime::NotificationRuntimeState {
+            admin_client: state.admin_client.clone(),
+            pool_manager: state.pool_manager.clone(),
+            notification_channel: state.notification_channel.clone(),
+            eligibility: &adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        },
+    ));
     tokio::spawn(school_attendance::runtime::start(
         school_attendance::runtime::AttendanceRuntimeState {
             admin_client: state.admin_client.clone(),

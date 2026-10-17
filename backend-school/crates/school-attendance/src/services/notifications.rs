@@ -89,84 +89,73 @@ pub async fn queue_batch(
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended(daily_slot,1711)) FROM (SELECT DISTINCT daily_slot FROM jsonb_to_recordset($1) AS n(daily_slot text) WHERE daily_slot IS NOT NULL ORDER BY daily_slot) slots")
             .bind(Json(notices)).execute(&mut **tx).await?;
     }
-    sqlx::query(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
+    let rows: Vec<NewLedgerNotice> = sqlx::query_as(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
  SELECT f.*,u.id recipient_id,u.user_type FROM facts f JOIN users u ON u.id=f.student_id AND u.status='active'
- UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent')
- INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,title,message,link)
- SELECT $1,recipient_id,student_id,key,title,message,CASE WHEN user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || student_id::text FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(Json(notices)).execute(&mut **tx).await?;
-    Ok(())
+ UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent'), inserted AS (
+ INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key)
+ SELECT $1,recipient_id,student_id,key FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING
+ RETURNING id,notification_id,recipient_id,student_id,dedup_key)
+ SELECT i.id,i.notification_id,i.recipient_id,i.dedup_key,r.title,r.message,
+ CASE WHEN r.user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || i.student_id::text link
+ FROM inserted i JOIN recipients r ON r.recipient_id=i.recipient_id AND r.student_id=i.student_id AND r.key=i.dedup_key"#).bind(term).bind(Json(notices)).fetch_all(&mut **tx).await?;
+    enqueue_new_ledger(tx, rows).await
 }
 #[derive(sqlx::FromRow)]
-pub struct PendingAttendanceNotification {
-    pub id: Uuid,
-    pub recipient_id: Uuid,
-    pub notification_id: Uuid,
-    pub title: String,
-    pub message: String,
-    pub link: String,
+struct NewLedgerNotice {
+    id: Uuid,
+    notification_id: Uuid,
+    recipient_id: Uuid,
+    dedup_key: String,
+    title: String,
+    message: String,
+    link: String,
 }
-pub const DELIVERY_BATCH_SIZE: i64 = 32;
-pub async fn pending(pool: &PgPool) -> Result<Vec<PendingAttendanceNotification>, AppError> {
-    // One worker leases each row. A crash expires the lease without losing stored identity.
-    // Invalid recipients consume this same bounded claim, rather than requiring an
-    // unbounded housekeeping UPDATE before each batch.
-    Ok(sqlx::query_as(r#"WITH due AS (
- SELECT n.id,EXISTS(SELECT 1 FROM users u WHERE u.id=n.recipient_id AND u.status='active')
- AND (n.student_id IS NULL OR n.recipient_id=n.student_id OR EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=n.student_id AND p.parent_user_id=n.recipient_id)) eligible
- FROM attendance_notifications n WHERE n.published_at IS NULL AND n.next_attempt_at<=now()
- ORDER BY n.next_attempt_at,n.id LIMIT $1 FOR UPDATE OF n SKIP LOCKED
- ),claimed AS (
- UPDATE attendance_notifications n SET published_at=CASE WHEN due.eligible THEN NULL ELSE now() END,
- next_attempt_at=CASE WHEN due.eligible THEN now()+interval '2 minutes' ELSE n.next_attempt_at END,
- attempts=n.attempts+CASE WHEN due.eligible THEN 1 ELSE 0 END
- FROM due WHERE n.id=due.id
- RETURNING n.id,n.recipient_id,n.notification_id,n.title,n.message,n.link,n.published_at
- ) SELECT id,recipient_id,notification_id,title,message,link FROM claimed WHERE published_at IS NULL"#)
-        .bind(DELIVERY_BATCH_SIZE).fetch_all(pool).await?)
-}
-pub async fn store(pool: &PgPool, n: &PendingAttendanceNotification) -> Result<bool, AppError> {
-    let mut tx = pool.begin().await?;
-    super::lock_module(&mut tx).await?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE id=$1 FOR SHARE)",
-    )
-    .bind(n.id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !exists {
-        tx.commit().await?;
-        return Ok(false);
+async fn enqueue_new_ledger(
+    tx: &mut Transaction<'_, Postgres>,
+    rows: Vec<NewLedgerNotice>,
+) -> Result<(), AppError> {
+    use school_notifications::{
+        dispatch::{self, NotificationSource, QueuedNotification},
+        publisher::NotificationType,
+    };
+    let items: Vec<_> = rows
+        .into_iter()
+        .map(|n| QueuedNotification {
+            id: n.id,
+            notification_id: n.notification_id,
+            recipient_id: n.recipient_id,
+            source: NotificationSource::Attendance { source_id: n.id },
+            dedup_key: Some(n.dedup_key),
+            title: n.title,
+            message: n.message,
+            type_: NotificationType::Info,
+            link: Some(n.link),
+        })
+        .collect();
+    let outcomes = dispatch::enqueue_in_transaction(tx, &items).await?;
+    if outcomes.iter().zip(&items).any(|(o, n)| {
+        o.input_id != n.id
+            || o.queue_id != n.id
+            || o.notification_id != n.notification_id
+            || o.source != n.source
+    }) {
+        return Err(AppError::Conflict(
+            "notification_ledger_identity_conflict".into(),
+        ));
     }
-    sqlx::query("INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,'info',$5) ON CONFLICT(id) DO NOTHING").bind(n.notification_id).bind(n.recipient_id).bind(&n.title).bind(&n.message).bind(&n.link).execute(&mut *tx).await?;
-    sqlx::query(
-        "UPDATE attendance_notifications SET stored_at=coalesce(stored_at,now()) WHERE id=$1",
-    )
-    .bind(n.id)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(true)
-}
-pub async fn delivered(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("UPDATE attendance_notifications SET published_at=now() WHERE id=$1")
-        .bind(id)
-        .execute(pool)
-        .await?;
     Ok(())
 }
-pub async fn has_pending(pool: &PgPool) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE published_at IS NULL)",
-    )
-    .fetch_one(pool)
-    .await?)
-}
-pub async fn has_due(pool: &PgPool) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE published_at IS NULL AND next_attempt_at<=now())",
-    )
-    .fetch_one(pool)
-    .await?)
+/// Domain eligibility only. The central provider owns queue locks and storage.
+pub async fn authorize_delivery_on_connection(
+    connection: &mut sqlx::PgConnection,
+    source_id: Uuid,
+    recipient_id: Uuid,
+) -> Result<bool, AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(17010000)")
+        .execute(&mut *connection)
+        .await?;
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_notifications n WHERE n.id=$1 AND n.recipient_id=$2 AND (n.student_id IS NULL OR n.student_id=n.recipient_id OR EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=n.student_id AND p.parent_user_id=n.recipient_id)))")
+        .bind(source_id).bind(recipient_id).fetch_one(connection).await?)
 }
 pub async fn queue_digest(
     pool: &PgPool,
@@ -190,7 +179,7 @@ pub async fn queue_digest_in_transaction(
     if super::sessions::module_generation_in_tx(&mut tx).await? != epoch {
         return Err(AppError::Conflict("ข้อมูลการเช็คชื่อถูกล้างแล้ว".into()));
     }
-    sqlx::query(r#"WITH actual AS (
+    let rows: Vec<NewLedgerNotice> = sqlx::query_as(r#"WITH actual AS (
  SELECT teacher,CASE s.kind WHEN 'arrival' THEN 'school' ELSE s.kind END category,COALESCE(r.result,'unchecked') result,1::bigint weight
  FROM attendance_sessions s CROSS JOIN LATERAL unnest(s.teacher_ids) teacher
  CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p("studentId" uuid)
@@ -208,10 +197,14 @@ pub async fn queue_digest_in_transaction(
  COALESCE(sum(weight) FILTER(WHERE result='activity'),0) activity,COALESCE(sum(weight) FILTER(WHERE result='unchecked'),0) unchecked
  FROM actual GROUP BY teacher,category),
  messages AS (SELECT teacher,string_agg((CASE category WHEN 'school' THEN 'เข้าโรงเรียน' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' หนีเรียน '||skipped||' ลาป่วย '||sick_leave||' ลากิจ '||personal_leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked,E'\n' ORDER BY category) message FROM summaries GROUP BY teacher)
- INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key,title,message,link)
- SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text,'สรุปเช็คชื่อ '||$2::text,message,
- '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text FROM messages JOIN users u ON u.id=teacher AND u.status='active'
- ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(date).bind(time).bind(Json(expected)).execute(&mut *tx).await?;
+ , inserted AS (
+ INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key)
+ SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text FROM messages JOIN users u ON u.id=teacher AND u.status='active'
+ ON CONFLICT(recipient_id,dedup_key) DO NOTHING RETURNING id,notification_id,recipient_id,dedup_key)
+ SELECT i.id,i.notification_id,i.recipient_id,i.dedup_key,'สรุปเช็คชื่อ '||$2::text title,m.message,
+ '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text link FROM inserted i JOIN messages m ON m.teacher=i.recipient_id"#)
+        .bind(term).bind(date).bind(time).bind(Json(expected)).fetch_all(&mut *tx).await?;
+    enqueue_new_ledger(&mut tx, rows).await?;
     tx.commit().await?;
     Ok(())
 }

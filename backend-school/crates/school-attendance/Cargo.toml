@@ -18,7 +18,6 @@ school-academic-delivery = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 dashmap = { workspace = true }
-futures = { workspace = true }
 tokio = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-tenancy = { workspace = true }
