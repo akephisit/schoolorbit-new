@@ -153,6 +153,13 @@ test('real Nginx preserves maintenance, authorization, socket reuse and privacy-
   const response=await ordinary('/api/proxy-fixture',{'X-SchoolOrbit-Diagnostic-Id':invalid});
   assert.equal(response.body.diagnosticId,'-');
  }
+ // Separate wire header lines must be rejected even when each value alone is valid.
+ for(const duplicate of [diagnosticId,'private-duplicate-secret']){
+  const response=request('school','/api/proxy-fixture',['-H',`X-SchoolOrbit-Diagnostic-Id: ${diagnosticId}`,'-H',`X-SchoolOrbit-Diagnostic-Id: ${duplicate}`]);
+  const [body,status]=response.split('\n');
+  assert.equal(status,'200');
+  assert.equal(JSON.parse(body).diagnosticId,'-');
+ }
  assert.equal(replies[0].diagnosticId,'-');
  // Sanitized forwarding is explicit in every special location as well.
  for(const url of ['/api/files/fixture','/api/admission/portal/upload','/api/notifications/stream','/ws/fixture']){

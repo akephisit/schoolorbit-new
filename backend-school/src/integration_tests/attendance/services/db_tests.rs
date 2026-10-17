@@ -1433,6 +1433,11 @@ async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope
 async fn attendance_scoped_arrival_uses_latest_dated_placement_and_keeps_saved_roster() {
     let f = fixture("attendance_scoped_arrival_transfer").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     let actor = ActorContext {
         user_id: TEACHER,
         permissions: vec![
@@ -1509,6 +1514,332 @@ async fn attendance_scoped_arrival_uses_latest_dated_placement_and_keeps_saved_r
     assert_eq!(retained.result, AttendanceResult::Present);
     assert_eq!(retained.class_number, original_number);
     assert_eq!(preserved.session.roster_token, saved.session.roster_token);
+    let cancelled = cancel(
+        &f.pool,
+        &actor,
+        saved.session.id,
+        AttendanceCancellation {
+            session: session_context(&saved.session),
+            roster_token: saved.session.roster_token.clone(),
+            row_version: saved.session.row_version,
+            cancelled: true,
+            reason: "งดรอบหลังย้ายห้อง".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let items = history(
+        &f.pool,
+        &actor,
+        AttendanceHistoryQuery {
+            academic_term_id: TERM,
+            student_id: STUDENT,
+            start: date,
+            end: date,
+        },
+    )
+    .await
+    .unwrap();
+    let arrivals: Vec<_> = items
+        .iter()
+        .filter(|r| r.kind == AttendanceKind::Arrival)
+        .collect();
+    assert_eq!(
+        arrivals.len(),
+        1,
+        "the new room must not recreate the saved school day"
+    );
+    assert_eq!(arrivals[0].session_id, cancelled.session.id);
+    assert!(arrivals[0].cancelled);
+    assert_eq!(arrivals[0].result, AttendanceResult::Present);
+}
+
+#[tokio::test]
+async fn attendance_history_student_scope_does_not_recreate_a_frozen_roster_exclusion() {
+    let f = fixture("attendance_history_frozen_exclusion").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![
+            codes::ATTENDANCE_READ_SCHOOL.into(),
+            codes::ATTENDANCE_UPDATE_SCHOOL.into(),
+        ],
+    };
+    let mut source = seeds(&f.pool, TERM, date)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| {
+            s.session.kind == AttendanceKind::Arrival
+                && s.students.iter().any(|s| s.student_id == STUDENT)
+        })
+        .unwrap();
+    // The occurrence was frozen before this pupil joined; the later placement
+    // must not make that existing occurrence virtual again for this pupil.
+    source.students = vec![f.students[1].clone()];
+    let frozen = sessions::ensure(&f.pool, &actor, source).await.unwrap();
+    let query = |student_id| AttendanceHistoryQuery {
+        academic_term_id: TERM,
+        student_id,
+        start: date,
+        end: date,
+    };
+    let excluded = history(&f.pool, &actor, query(STUDENT)).await.unwrap();
+    assert!(!excluded.iter().any(|r| r.session_id == frozen.id));
+    let included = history(&f.pool, &actor, query(f.students[1].student_id))
+        .await
+        .unwrap();
+    assert_eq!(
+        included
+            .iter()
+            .filter(|r| r.session_id == frozen.id)
+            .count(),
+        1
+    );
+    cancel(
+        &f.pool,
+        &actor,
+        frozen.id,
+        AttendanceCancellation {
+            session: session_context(&frozen),
+            roster_token: frozen.roster_token.clone(),
+            row_version: frozen.row_version,
+            cancelled: true,
+            reason: "งดรอบรายชื่อเดิม".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!history(&f.pool, &actor, query(STUDENT))
+        .await
+        .unwrap()
+        .iter()
+        .any(|r| r.session_id == frozen.id));
+    let included = history(&f.pool, &actor, query(f.students[1].student_id))
+        .await
+        .unwrap();
+    let row = included.iter().find(|r| r.session_id == frozen.id).unwrap();
+    assert!(row.cancelled);
+    assert_eq!(row.result, AttendanceResult::Unchecked);
+}
+
+#[tokio::test]
+async fn attendance_history_student_scope_providers_match_full_dated_rosters() {
+    use school_academic_delivery::services::attendance_roster as delivery;
+    let f = fixture("attendance_history_scoped_providers").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let second = &f.students[1];
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,end_date,status,enrollment_type,class_number) SELECT gen_random_uuid(),$1,academic_year_id,homeroom_id,start_date,$3,'ended','regular',2 FROM homeroom_placements WHERE student_academic_year_id=$2 AND status='current'")
+        .bind(second.student_academic_year_id).bind(f.students[0].student_academic_year_id).bind(date)
+        .execute(&f.pool).await.unwrap();
+    let group: Uuid = sqlx::query_scalar("SELECT learning_group_id FROM learning_group_students WHERE student_id=$1 AND academic_term_id=$2 AND membership_status='active' ORDER BY learning_group_id LIMIT 1")
+        .bind(STUDENT).bind(TERM).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at,left_at) SELECT gen_random_uuid(),learning_group_id,academic_term_id,academic_year_id,$1,$2,'ended','manual',joined_at,$4 FROM learning_group_students WHERE learning_group_id=$3 AND student_id=$5 AND membership_status='active'")
+        .bind(second.student_academic_year_id).bind(second.student_id).bind(group).bind(date).bind(STUDENT)
+        .execute(&f.pool).await.unwrap();
+    let mut connection = f.pool.acquire().await.unwrap();
+    for selected in [STUDENT, second.student_id, Uuid::new_v4()] {
+        for day in [date, date.succ_opt().unwrap()] {
+            let all = core::placement_spans(&mut connection, TERM, day, day)
+                .await
+                .unwrap();
+            let scoped =
+                core::placement_spans_for_student(&mut connection, TERM, day, day, selected)
+                    .await
+                    .unwrap();
+            let fields = |p: &core::AttendancePlacementSpan| {
+                (
+                    p.student_id,
+                    p.student_academic_year_id,
+                    p.homeroom_id,
+                    p.class_number,
+                    p.start_date,
+                    p.end_date,
+                )
+            };
+            assert_eq!(
+                scoped.iter().map(fields).collect::<Vec<_>>(),
+                all.iter()
+                    .filter(|p| p.student_id == selected)
+                    .map(fields)
+                    .collect::<Vec<_>>()
+            );
+            assert!(all.iter().any(|p| p.student_id == STUDENT));
+            let all = delivery::membership_spans(&mut connection, &[group], day, day)
+                .await
+                .unwrap();
+            let scoped = delivery::membership_spans_for_student(
+                &mut connection,
+                &[group],
+                day,
+                day,
+                selected,
+            )
+            .await
+            .unwrap();
+            let fields = |m: &delivery::AttendanceMembershipSpan| {
+                (m.learning_group_id, m.student_id, m.joined_at, m.left_at)
+            };
+            assert_eq!(
+                scoped.iter().map(fields).collect::<Vec<_>>(),
+                all.iter()
+                    .filter(|m| m.student_id == selected)
+                    .map(fields)
+                    .collect::<Vec<_>>()
+            );
+            assert!(all.iter().any(|m| m.student_id == STUDENT));
+            if selected == second.student_id {
+                assert_eq!(scoped.len(), usize::from(day == date));
+            }
+        }
+    }
+    assert!(
+        delivery::membership_spans_for_student(&mut connection, &[], date, date, STUDENT)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn attendance_history_student_scope_timing_and_rows() {
+    use school_academic_delivery::services::attendance_roster as delivery;
+    let f = fixture("attendance_history_scope_timing").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let original_room: Uuid = sqlx::query_scalar("SELECT homeroom_id FROM homeroom_placements WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(f.students[0].student_academic_year_id).fetch_one(&f.pool).await.unwrap();
+    let group: Uuid = sqlx::query_scalar("SELECT learning_group_id FROM learning_group_students WHERE student_id=$1 AND academic_term_id=$2 AND membership_status='active' ORDER BY learning_group_id LIMIT 1")
+        .bind(STUDENT).bind(TERM).fetch_one(&f.pool).await.unwrap();
+    for index in 0..100 {
+        let room = Uuid::new_v4();
+        sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT $1,$2,$2,academic_year_id,grade_level_id,$2,study_program_id,40,true FROM homerooms WHERE id=$3")
+            .bind(room).bind(format!("HISTORY-PERF-{index}")).bind(original_room).execute(&f.pool).await.unwrap();
+        sqlx::query(r#"WITH source AS MATERIALIZED (
+            SELECT gen_random_uuid() student_id,gen_random_uuid() year_id,n number FROM generate_series(1,30) n
+        ), added_users AS (
+            INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status)
+            SELECT student_id,student_id::text||'@example.invalid',student_id::text,'fixture-not-a-login','นักเรียนทดสอบ','ระบบ','student','active' FROM source RETURNING id
+        ), added_years AS (
+            INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status)
+            SELECT s.year_id,s.student_id,y.academic_year_id,y.grade_level_id,y.study_program_id,'active'
+            FROM source s JOIN added_users u ON u.id=s.student_id CROSS JOIN student_academic_years y WHERE y.id=$2
+            RETURNING id,student_id,academic_year_id
+        ), added_placements AS (
+            INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number)
+            SELECT gen_random_uuid(),y.id,y.academic_year_id,$1,'2025-05-01','current','regular',s.number
+            FROM added_years y JOIN source s ON s.student_id=y.student_id RETURNING student_academic_year_id
+        ) INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at)
+          SELECT gen_random_uuid(),m.learning_group_id,m.academic_term_id,y.academic_year_id,y.id,y.student_id,'active','manual',m.joined_at
+          FROM added_years y JOIN added_placements p ON p.student_academic_year_id=y.id
+          CROSS JOIN learning_group_students m WHERE m.learning_group_id=$3 AND m.student_id=$4 AND m.membership_status='active'"#)
+            .bind(room).bind(f.students[0].student_academic_year_id).bind(group).bind(STUDENT).execute(&f.pool).await.unwrap();
+    }
+    for table in [
+        "homeroom_placements",
+        "student_academic_years",
+        "learning_group_students",
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(format!("ANALYZE {table}")))
+            .execute(&f.pool)
+            .await
+            .unwrap();
+    }
+    let mut baseline_times = Vec::new();
+    let mut scoped_times = Vec::new();
+    let mut counts = (0, 0, 0, 0);
+    for sample in 0..6 {
+        let started = std::time::Instant::now();
+        let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+            .await
+            .unwrap();
+        let placements = core::placement_spans(&mut snapshot, TERM, date, date)
+            .await
+            .unwrap();
+        let memberships = delivery::membership_spans(&mut snapshot, &[group], date, date)
+            .await
+            .unwrap();
+        snapshot.rollback().await.unwrap();
+        let baseline_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
+        let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+            .await
+            .unwrap();
+        let selected_placements =
+            core::placement_spans_for_student(&mut snapshot, TERM, date, date, STUDENT)
+                .await
+                .unwrap();
+        let selected_memberships =
+            delivery::membership_spans_for_student(&mut snapshot, &[group], date, date, STUDENT)
+                .await
+                .unwrap();
+        snapshot.rollback().await.unwrap();
+        let scoped_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let placement_fields = |p: &core::AttendancePlacementSpan| {
+            (
+                p.student_id,
+                p.student_academic_year_id,
+                p.homeroom_id,
+                p.class_number,
+                p.start_date,
+                p.end_date,
+            )
+        };
+        let membership_fields = |m: &delivery::AttendanceMembershipSpan| {
+            (m.learning_group_id, m.student_id, m.joined_at, m.left_at)
+        };
+        assert_eq!(
+            selected_placements
+                .iter()
+                .map(placement_fields)
+                .collect::<Vec<_>>(),
+            placements
+                .iter()
+                .filter(|p| p.student_id == STUDENT)
+                .map(placement_fields)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            selected_memberships
+                .iter()
+                .map(membership_fields)
+                .collect::<Vec<_>>(),
+            memberships
+                .iter()
+                .filter(|m| m.student_id == STUDENT)
+                .map(membership_fields)
+                .collect::<Vec<_>>()
+        );
+        assert!(placements.len() >= 3001 && memberships.len() >= 3001);
+        assert_eq!(
+            (selected_placements.len(), selected_memberships.len()),
+            (1, 1)
+        );
+        counts = (
+            placements.len(),
+            memberships.len(),
+            selected_placements.len(),
+            selected_memberships.len(),
+        );
+        if sample > 0 {
+            baseline_times.push(baseline_ms);
+            scoped_times.push(scoped_ms);
+        }
+    }
+    baseline_times.sort_by(f64::total_cmp);
+    scoped_times.sort_by(f64::total_cmp);
+    println!("attendance_history_provider_cost synthetic_rooms=100 synthetic_students=3000 samples=5 full_placement_rows={} full_membership_rows={} selected_placement_rows={} selected_membership_rows={} full_snapshot_hold_median_ms={:.3} scoped_snapshot_hold_median_ms={:.3}", counts.0, counts.1, counts.2, counts.3, baseline_times[2], scoped_times[2]);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
