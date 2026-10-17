@@ -221,7 +221,7 @@ pub async fn portal_upload_document(
         .authorize_portal_application(&pool, application_id, application_id, None)
         .await?;
 
-    let repository = SqlFileRepository::new(pool.clone());
+    let repository = SqlFileRepository::new(pool.as_ref().clone());
     let file = state
         .file_platform
         .upload(

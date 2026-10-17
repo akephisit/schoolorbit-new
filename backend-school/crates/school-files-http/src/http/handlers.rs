@@ -110,7 +110,7 @@ pub async fn upload_file(
 
     let (purpose, resource_id, owner_user_id, display_filename, bytes) =
         upload.ok_or_else(|| AppError::BadRequest("ไม่พบ file".to_string()))?;
-    let repository = SqlFileRepository::new(context.tenant.pool.clone());
+    let repository = SqlFileRepository::new(context.tenant.pool.as_ref().clone());
     let file = state
         .file_platform
         .upload(

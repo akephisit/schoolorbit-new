@@ -756,7 +756,7 @@ pub async fn scan(
  let mut tx=context.tenant.pool.begin().await?;
  sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE").bind(file).execute(&mut *tx).await?;
  let disposable:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files f WHERE f.id=$1 AND f.purpose_code='attendance_evidence' AND f.created_by=$2 AND NOT EXISTS(SELECT 1 FROM attendance_scan_events e WHERE e.evidence_file_id=f.id))").bind(file).bind(context.actor.user_id).fetch_one(&mut *tx).await?;
- if disposable{school_file_platform::repository::SqlFileRepository::new(context.tenant.pool.clone()).request_delete_in_transaction(&mut tx,file).await.map_err(|_|AppError::ServiceUnavailable("เตรียมล้างภาพชั่วคราวไม่ได้".into()))?;}tx.commit().await?;Ok::<_,AppError>(())}.await;
+ if disposable{school_file_platform::repository::SqlFileRepository::new(context.tenant.pool.as_ref().clone()).request_delete_in_transaction(&mut tx,file).await.map_err(|_|AppError::ServiceUnavailable("เตรียมล้างภาพชั่วคราวไม่ได้".into()))?;}tx.commit().await?;Ok::<_,AppError>(())}.await;
         if cleanup.is_err() {
             tracing::warn!(
                 error_code = "attendance_orphan_cleanup_pending",

@@ -1,10 +1,9 @@
 use axum::http::HeaderMap;
-use sqlx::PgPool;
 
 use crate::origin::{extract_subdomain_from_request, TenantOriginPolicy};
 use school_auth::runtime::AuthRuntime;
 use school_errors::AppError;
-use school_tenancy::{get_school_database_info, TenantContext};
+use school_tenancy::{get_school_database_info, TenantContext, TenantPool};
 
 pub async fn resolve_tenant_context(
     runtime: &AuthRuntime,
@@ -23,26 +22,18 @@ pub async fn resolve_tenant_context_by_subdomain(
     let school = get_school_database_info(&runtime.admin_client, subdomain)
         .await
         .map_err(|error| {
-            tracing::warn!(
-                subdomain = %subdomain,
-                error = %error,
-                "Failed to resolve school database URL"
-            );
-            AppError::NotFound("ไม่พบโรงเรียน".to_string())
+            if error.contains("not found or inactive") {
+                AppError::NotFound("ไม่พบโรงเรียน".to_string())
+            } else {
+                AppError::ServiceUnavailable("tenant_directory".to_string())
+            }
         })?;
 
     let pool = runtime
         .pool_manager
         .get_pool(&school.database_url, subdomain)
         .await
-        .map_err(|error| {
-            tracing::error!(
-                subdomain = %subdomain,
-                error = %error,
-                "Failed to resolve tenant database pool"
-            );
-            AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
-        })?;
+        .map_err(|_| AppError::ServiceUnavailable("tenant_pool".to_string()))?;
 
     Ok(TenantContext {
         tenant_id: school.tenant_id,
@@ -58,7 +49,10 @@ pub async fn tenant_context(
     resolve_tenant_context(runtime, headers).await
 }
 
-pub async fn tenant_pool(runtime: &AuthRuntime, headers: &HeaderMap) -> Result<PgPool, AppError> {
+pub async fn tenant_pool(
+    runtime: &AuthRuntime,
+    headers: &HeaderMap,
+) -> Result<TenantPool, AppError> {
     Ok(resolve_tenant_context(runtime, headers).await?.pool)
 }
 
@@ -206,4 +200,18 @@ mod tests {
 
         server.abort();
     }
+}
+
+/// Dormant realtime identities reacquire an operation lease for each validation.
+pub async fn revalidate_realtime_session(
+    runtime: &AuthRuntime,
+    session: &school_auth::session_service::AuthenticatedSession,
+) -> Result<bool, AppError> {
+    let tenant = resolve_tenant_context_by_subdomain(runtime, &session.tenant.subdomain).await?;
+    if tenant.tenant_id != session.tenant.tenant_id {
+        return Ok(false);
+    }
+    let mut active = session.clone();
+    active.tenant = tenant;
+    school_auth::session_service::revalidate(&active, chrono::Utc::now()).await
 }

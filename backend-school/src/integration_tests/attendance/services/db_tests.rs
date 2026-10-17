@@ -4007,3 +4007,70 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
     assert!(!after.archived);
     assert_eq!(after.total, 0);
 }
+
+#[tokio::test]
+async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_state() {
+    let f = fixture("attendance_report_queued_reset").await;
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    purge(
+        &f.pool,
+        TEACHER,
+        TERM,
+        PurgeAttendanceTerm {
+            expected_records: 0,
+            reason: "archive before reset".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let mut reset_tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_module_exclusive(&mut reset_tx)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *reset_tx)
+        .await
+        .unwrap();
+    let pool = f.pool.clone();
+    let reader = tokio::spawn(async move {
+        report(
+            &pool,
+            &ActorContext {
+                user_id: TEACHER,
+                permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+            },
+            report_query(None, 1, 100),
+        )
+        .await
+    });
+    attendance_wait_for_blocker(&f.pool, pid).await;
+    school_attendance::services::reset::reset_in_transaction(
+        &f.pool,
+        reset_tx,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "reset queued report".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let before_reset = reader.await.unwrap().unwrap();
+    assert!(
+        before_reset.archived,
+        "a waiting report must retain the snapshot established before its module-lock wait"
+    );
+    let after_reset = report(&f.pool, &f.actor, report_query(None, 1, 100))
+        .await
+        .unwrap();
+    assert!(!after_reset.archived);
+    assert_eq!(after_reset.total, 0);
+}

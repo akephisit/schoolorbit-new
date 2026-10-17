@@ -1,7 +1,7 @@
 //! Database-per-tenant provisioning. Resource markers authorize retry and cleanup.
 use reqwest::Url;
 use sqlx::ConnectOptions;
-use sqlx::{postgres::PgPoolOptions, PgConnection, PgPool};
+use sqlx::{postgres::PgConnectOptions, Connection, PgConnection};
 use std::str::FromStr;
 use std::time::Duration;
 use uuid::Uuid;
@@ -33,7 +33,7 @@ fn db_error(error: sqlx::Error) -> String {
 }
 
 pub struct PostgresClient {
-    pool: PgPool,
+    options: PgConnectOptions,
     template: Url,
 }
 
@@ -56,13 +56,8 @@ impl PostgresClient {
         let options = sqlx::postgres::PgConnectOptions::from_str(provisioning)
             .map_err(|_| "Invalid provisioning connection".to_string())?
             .disable_statement_logging();
-        let pool = PgPoolOptions::new()
-            .max_connections(2)
-            .min_connections(0)
-            .acquire_timeout(Duration::from_secs(20))
-            .idle_timeout(Duration::from_secs(300))
-            .connect_lazy_with(options);
-        Ok(Self { pool, template })
+        provisioning_budget()?;
+        Ok(Self { options, template })
     }
 
     pub fn connection_string(
@@ -117,7 +112,10 @@ impl PostgresClient {
         let runtime = tenant_role(tenant, "runtime")?;
         // A stable school record with encrypted passwords exists before this operation.
         // Serialize the whole nontransactional CREATE DATABASE operation across processes.
-        let mut connection = self.pool.acquire().await.map_err(db_error)?.detach();
+        let _permit = provisioning_permit().await?;
+        let mut connection = PgConnection::connect_with(&self.options)
+            .await
+            .map_err(db_error)?;
         sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
             .bind(db_name)
             .execute(&mut connection)
@@ -228,7 +226,10 @@ impl PostgresClient {
 
     pub async fn delete_database(&self, tenant: Uuid, db_name: &str) -> Result<(), String> {
         ident(db_name)?;
-        let mut owned_connection = self.pool.acquire().await.map_err(db_error)?.detach();
+        let _permit = provisioning_permit().await?;
+        let mut owned_connection = PgConnection::connect_with(&self.options)
+            .await
+            .map_err(db_error)?;
         let connection = &mut owned_connection;
         sqlx::query("SELECT pg_advisory_lock(hashtextextended($1, 0))")
             .bind(db_name)
@@ -275,4 +276,35 @@ impl PostgresClient {
         }
         Ok(())
     }
+}
+
+static PROVISIONING_BUDGET: std::sync::OnceLock<
+    Result<std::sync::Arc<tokio::sync::Semaphore>, String>,
+> = std::sync::OnceLock::new();
+fn provisioning_budget() -> Result<std::sync::Arc<tokio::sync::Semaphore>, String> {
+    PROVISIONING_BUDGET
+        .get_or_init(|| {
+            let count =
+                std::env::var("PG_PROVISIONING_MAX_CONNECTIONS").map_or(Ok(2u32), |raw| {
+                    raw.parse::<u32>().map_err(|_| {
+                        "PG_PROVISIONING_MAX_CONNECTIONS must be an integer".to_string()
+                    })
+                })?;
+            if !(1..=100).contains(&count) {
+                return Err("PG_PROVISIONING_MAX_CONNECTIONS outside supported range".into());
+            }
+            Ok(std::sync::Arc::new(tokio::sync::Semaphore::new(
+                count as usize,
+            )))
+        })
+        .clone()
+}
+async fn provisioning_permit() -> Result<tokio::sync::OwnedSemaphorePermit, String> {
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        provisioning_budget()?.acquire_owned(),
+    )
+    .await
+    .map_err(|_| "Provisioning connection budget timed out")?
+    .map_err(|_| "Provisioning connection budget closed".into())
 }

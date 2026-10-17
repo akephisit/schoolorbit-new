@@ -112,6 +112,8 @@ impl NotificationService {
         publisher.publish(user_id, notification);
 
         // 🚀 Trigger Web Push (Fire-and-forget task)
+        let retention =
+            school_tenancy::TenantPool::retain_for_pool(pool).map_err(sqlx::Error::Protocol)?;
         let pool_clone = pool.clone();
         let notification_id = id;
         let title = title.to_string();
@@ -119,6 +121,7 @@ impl NotificationService {
         let link = link.map(|s| s.to_string());
 
         tokio::spawn(async move {
+            let _retention = retention;
             if let Err(e) = Self::send_web_push(
                 &pool_clone,
                 user_id,

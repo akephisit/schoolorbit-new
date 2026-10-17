@@ -53,7 +53,7 @@ impl HandlerFixture {
         let tenant = TenantContext {
             tenant_id: Uuid::new_v4(),
             subdomain: format!("{test_name}-school"),
-            pool: pool.clone(),
+            pool: pool.clone().into(),
         };
         let (session_events, _) = broadcast::channel(32);
         let (permission_events, _) = broadcast::channel(32);

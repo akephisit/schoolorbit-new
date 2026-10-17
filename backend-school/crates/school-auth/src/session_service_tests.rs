@@ -243,7 +243,7 @@ impl AuthServiceFixture {
         let tenant = TenantContext {
             tenant_id: Uuid::new_v4(),
             subdomain: format!("{test_name}-school"),
-            pool: pool.clone(),
+            pool: pool.clone().into(),
         };
         let (events, _) = broadcast::channel(32);
         let context = SessionServiceContext::new(

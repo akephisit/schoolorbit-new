@@ -437,7 +437,6 @@ impl AdminClient {
 #[cfg(test)]
 mod tests {
     use super::{is_retryable_status, AdminClient, AdminClientConfig};
-    use crate::directory_cache::DirectoryCache;
     use axum::{
         http::StatusCode,
         routing::{get, put},
@@ -448,7 +447,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
         Arc,
     };
-    use std::{sync::Arc, time::Duration};
+    use std::time::Duration;
 
     fn test_config(timeout: Duration, attempts: usize) -> AdminClientConfig {
         AdminClientConfig::for_tests(timeout, attempts, Duration::from_millis(1))

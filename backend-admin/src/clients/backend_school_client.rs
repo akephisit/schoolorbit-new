@@ -180,6 +180,53 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
+    #[tokio::test]
+    async fn directory_fence_preserves_token_internal_headers_and_bounded_errors() {
+        use axum::{extract::Path, http::StatusCode};
+        use std::sync::{Arc, Mutex};
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let captured = calls.clone();
+        let app = Router::new().route(
+            "/internal/tenant-directory/{subdomain}/{action}",
+            post(
+                move |Path((subdomain, action)): Path<(String, String)>,
+                      headers: HeaderMap,
+                      Json(body): Json<Value>| {
+                    let calls = captured.clone();
+                    async move {
+                        assert_eq!(headers[INTERNAL_SECRET_HEADER], "fixture-secret");
+                        assert_eq!(headers["X-Internal-Caller"], INTERNAL_CALLER);
+                        calls.lock().unwrap().push((subdomain, action, body));
+                        StatusCode::NO_CONTENT
+                    }
+                },
+            ),
+        );
+        let (origin, server) = start_backend_school(app).await;
+        let client = BackendSchoolClient::from_config(
+            reqwest::Client::new(),
+            origin,
+            "fixture-secret".into(),
+        );
+        let token = uuid::Uuid::new_v4();
+        client
+            .directory_mutation("fixture", token, false)
+            .await
+            .unwrap();
+        client
+            .directory_mutation("fixture", token, true)
+            .await
+            .unwrap();
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "fixture");
+        assert_eq!(calls[0].1, "begin");
+        assert_eq!(calls[1].1, "finish");
+        assert_eq!(calls[0].2["token"], token.to_string());
+        assert_eq!(calls[1].2["token"], token.to_string());
+        server.abort();
+    }
+
     #[test]
     fn provision_response_deserializes_backend_school_envelope() {
         let response: ProvisionResponse = serde_json::from_str(

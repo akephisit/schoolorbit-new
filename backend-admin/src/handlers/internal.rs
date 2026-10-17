@@ -121,6 +121,31 @@ pub async fn list_schools_internal(
 ) -> Result<Json<ListSchoolsResponse>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
 
+    let mut transaction = state.pool.begin().await.map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory unavailable".into(),
+        )
+    })?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Tenant directory unavailable".into(),
+            )
+        })?;
+    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenant_directory_mutations m JOIN schools s ON s.id = m.school_id WHERE ($1::text IS NULL OR s.status = $1))")
+        .bind(params.status.as_deref()).fetch_one(&mut *transaction).await
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Tenant directory unavailable".into()))?;
+    if blocked {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory mutation pending".into(),
+        ));
+    }
+
     let schools = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
                 migration_version, migration_status, last_migrated_at, migration_error
@@ -128,10 +153,16 @@ pub async fn list_schools_internal(
          WHERE NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)
          ORDER BY created_at DESC",
     )
-    .fetch_all(&state.pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    transaction.commit().await.map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory unavailable".into(),
+        )
+    })?;
     let filtered: Vec<SchoolInfo> = schools
         .into_iter()
         .filter(|s| {
@@ -173,6 +204,16 @@ pub async fn get_school_by_subdomain_internal(
     Path(subdomain): Path<String>,
 ) -> Result<Json<SchoolInfo>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
+
+    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenant_directory_mutations m JOIN schools s ON s.id = m.school_id WHERE s.subdomain = $1)")
+        .bind(&subdomain).fetch_one(&state.pool).await
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Tenant directory unavailable".into()))?;
+    if blocked {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory mutation pending".into(),
+        ));
+    }
 
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
@@ -340,6 +381,16 @@ pub async fn get_migration_connection_internal(
             "Migration caller is not authorized".into(),
         ));
     }
+    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenant_directory_mutations m JOIN schools s ON s.id = m.school_id WHERE s.subdomain = $1)")
+        .bind(&subdomain).fetch_one(&state.pool).await
+        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Tenant directory unavailable".into()))?;
+    if blocked {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory mutation pending".into(),
+        ));
+    }
+
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
           migration_version, migration_status, last_migrated_at, migration_error

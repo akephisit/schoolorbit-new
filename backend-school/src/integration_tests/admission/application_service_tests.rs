@@ -701,6 +701,7 @@ mod tests {
         entered: tokio::sync::Notify,
         release: tokio::sync::Notify,
         calls: AtomicUsize,
+        pid: std::sync::atomic::AtomicI32,
     }
 
     #[async_trait::async_trait]
@@ -712,6 +713,10 @@ mod tests {
             ids: &[Uuid],
         ) -> Result<(), AppError> {
             if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                    .fetch_one(&mut **transaction)
+                    .await?;
+                self.pid.store(pid, Ordering::SeqCst);
                 self.entered.notify_one();
                 self.release.notified().await;
             }
@@ -823,8 +828,8 @@ mod tests {
         });
         let mut blocked = false;
         for _ in 0..200 {
-            blocked = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%FOR UPDATE OF aa%')")
-                .fetch_one(&fixture.pool).await.unwrap();
+            blocked = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) AND query LIKE '%FOR UPDATE OF aa%')")
+                .bind(rosters.pid.load(Ordering::SeqCst)).fetch_one(&fixture.pool).await.unwrap();
             if blocked {
                 break;
             }
@@ -1072,7 +1077,7 @@ mod tests {
         )
         .await
         .is_err());
-        let (number, _) = submit_application(
+        let (number, retry) = submit_application(
             &fixture.pool,
             round,
             submit_payload(track, "1100000000002", "Retry"),
@@ -1080,6 +1085,23 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(number, format!("{prefix}00044"));
+        sqlx::query("DELETE FROM admission_applications WHERE id=$1")
+            .bind(retry.id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let (number, _) = submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000004", "After deletion"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            number,
+            format!("{prefix}00045"),
+            "deleted application numbers must never identify a later applicant"
+        );
         sqlx::query(
             "UPDATE admission_application_number_counters SET last_sequence=99999 WHERE prefix=$1",
         )
@@ -1150,11 +1172,108 @@ mod tests {
         )
         .await
         .is_err());
+        let mut boundary = fixture.pool.begin().await.unwrap();
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *boundary)
+            .await
+            .unwrap();
+        sqlx::query("SELECT prefix FROM admission_application_number_counters FOR UPDATE")
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        let duplicate = |name: &'static str| {
+            let pool = fixture.pool.clone();
+            tokio::spawn(async move {
+                submit_application(&pool, round, submit_payload(track, "1200000000099", name)).await
+            })
+        };
+        let first = duplicate("Duplicate first");
+        let second = duplicate("Duplicate second");
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                let waiting: i64 = sqlx::query_scalar(
+                    "WITH RECURSIVE waiting(pid) AS (SELECT pid FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) UNION SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid=ANY(pg_blocking_pids(a.pid))) SELECT count(*) FROM waiting",
+                )
+                .bind(pid)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+                if waiting == 2 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("both duplicate requests must pass the precheck before allocating");
+        boundary.rollback().await.unwrap();
+        let results = [first.await.unwrap(), second.await.unwrap()];
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(results.iter().filter(|result| matches!(result, Err(AppError::BadRequest(message)) if message=="เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว")).count(),1);
         let last: i32 =
             sqlx::query_scalar("SELECT last_sequence FROM admission_application_number_counters")
                 .fetch_one(&fixture.pool)
                 .await
                 .unwrap();
-        assert_eq!(last, 12);
+        assert_eq!(last, 13);
+    }
+
+    #[tokio::test]
+    async fn enrollment_prehash_revalidates_assigned_code_after_row_lock_wait() {
+        let fixture = enrollment_fixture("admission_enrollment_stale_prepared_hash", 3).await;
+        sqlx::query("UPDATE admission_applications SET assigned_student_id='970001' WHERE id=$1")
+            .bind(fixture.application_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let mut boundary = fixture.pool.begin().await.unwrap();
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *boundary)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM admission_applications WHERE id=$1 FOR UPDATE")
+            .bind(fixture.application_id)
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        let pool = fixture.pool.clone();
+        let id = fixture.application_id;
+        let actor = fixture.enroller_id;
+        let worker = tokio::spawn(async move {
+            complete_enrollment(
+                &pool,
+                id,
+                CompleteEnrollmentRequest {
+                    student_code: None,
+                    form_data: None,
+                },
+                actor,
+                &crate::http_state::PLACEMENT_ROSTERS,
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))")
+                    .bind(pid).fetch_one(&fixture.pool).await.unwrap();
+                if waiting { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.unwrap();
+        sqlx::query("UPDATE admission_applications SET assigned_student_id='970099' WHERE id=$1")
+            .bind(fixture.application_id)
+            .execute(&mut *boundary)
+            .await
+            .unwrap();
+        boundary.commit().await.unwrap();
+        let student = worker.await.unwrap().unwrap();
+        assert_eq!(student.student_code, "970099");
+        let hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+            .bind(student.user_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        assert!(bcrypt::verify("970099", &hash).unwrap());
+        assert!(!bcrypt::verify("970001", &hash).unwrap());
     }
 }

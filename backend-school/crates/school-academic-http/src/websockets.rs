@@ -771,6 +771,8 @@ pub async fn timetable_websocket_handler(
         return Err(AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()));
     }
 
+    let mut authenticated = authenticated;
+    authenticated.tenant.pool.release_for_realtime();
     Ok(ws.on_upgrade(move |socket| {
         handle_socket(
             socket,
@@ -935,7 +937,7 @@ async fn handle_socket(
                     }
                 },
                 _ = heartbeat.tick() => {
-                    match session_service::revalidate(&authenticated, Utc::now()).await {
+                    match school_auth_http::tenant::revalidate_realtime_session(&state.auth_runtime, &authenticated).await {
                         Ok(true) => {}
                         Ok(false) => {
                             close_realtime_socket(
@@ -1058,7 +1060,8 @@ mod security_tests {
                 subdomain: tenant.to_string(),
                 pool: PgPoolOptions::new()
                     .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
-                    .unwrap(),
+                    .unwrap()
+                    .into(),
             },
             Uuid::new_v4(),
             Uuid::new_v4(),

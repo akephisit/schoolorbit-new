@@ -212,6 +212,12 @@ moving handlers without changing their contract.
 
 For tenant pool lifecycle changes, run the `school-tenancy` pool-manager tests through
 `scripts/test_backend_school.sh --package school-tenancy pool_manager::tests`.
+Run the complete provider suite with
+`scripts/test_backend_school.sh --package school-tenancy`. It additionally covers
+cache hits/expiry/outages, coalesced bursts, credential/status invalidation,
+in-flight stale fills, bounded fenced entries and stale mutation tokens. The pool
+fixtures exercise aggregate physical reservations, logical leases between queries,
+detached push retention, bounded admission/cancellation and recovery.
 They cover a silent TCP peer, blocked schema reads, cancelled initialization,
 client socket closure while the database is still blocked, concurrent tenant isolation,
 closed cached handles and outstanding borrowers during
@@ -1382,3 +1388,9 @@ The deployment verification scope includes these cases. Use the owning locked
 Wrangler `deploy --dry-run` against the generated bootstrap to verify packaging
 without publishing code. Actual Worker recreation and route acceptance require
 a reviewed production release and are separate from offline tests.
+
+Tenant directory durable barriers are covered by the Admin `tenant_directory_barriers`
+integration test through the existing disposable Admin database runner. It verifies
+pending get/list/migration-connection denial after a School restart, transaction
+rollback, exact-token recovery and refusal of a stale writer claim. Never use a
+shared control-plane database for this fixture.

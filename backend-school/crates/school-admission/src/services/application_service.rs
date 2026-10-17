@@ -366,8 +366,14 @@ pub async fn submit_application(
     .bind(&encrypted_pii.guardian_national_id_hash)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to submit application: {}", e);
+    .map_err(|error| {
+        if error.as_database_error().is_some_and(|database| {
+            database.is_unique_violation()
+                && database.constraint() == Some("idx_applications_national_id_hash_round")
+        }) {
+            return AppError::BadRequest("เลขบัตรประชาชนนี้ได้สมัครรอบนี้ไปแล้ว".into());
+        }
+        tracing::error!(error_code = "admission_submit_failed", "Failed to submit application");
         AppError::InternalServerError("ไม่สามารถยื่นใบสมัครได้".to_string())
     })?;
 
@@ -851,6 +857,36 @@ struct EnrollmentPlacementContext {
     placement_start_date: chrono::NaiveDate,
 }
 
+/// Hash an explicit/preassigned code before borrowing the mutation connection.
+/// The unlocked preparation is only a CPU hint: the row-locked code below remains
+/// authoritative, and a changed assignment uses a fresh hash without any retry.
+async fn prepare_enrollment_password(
+    pool: &PgPool,
+    id: Uuid,
+    requested: Option<&str>,
+) -> Result<Option<(String, String)>, AppError> {
+    let (status, assigned): (String, Option<String>) =
+        sqlx::query_as("SELECT status,assigned_student_id FROM admission_applications WHERE id=$1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
+    if status != "accepted" {
+        return Ok(None);
+    }
+    let code = requested
+        .filter(|code| !code.is_empty())
+        .map(str::to_owned)
+        .or_else(|| assigned.filter(|code| !code.is_empty()));
+    match code {
+        Some(code) => {
+            let hash = hash_enrollment_password(&code).await?;
+            Ok(Some((code, hash)))
+        }
+        None => Ok(None),
+    }
+}
+
 pub async fn complete_enrollment(
     pool: &PgPool,
     id: Uuid,
@@ -858,6 +894,8 @@ pub async fn complete_enrollment(
     enroller_id: Uuid,
     placement_rosters: &dyn school_academic_core::ports::PlacementRosterPort,
 ) -> Result<EnrollmentResult, AppError> {
+    let prepared_password =
+        prepare_enrollment_password(pool, id, payload.student_code.as_deref()).await?;
     let mut tx = pool
         .begin()
         .await
@@ -1012,7 +1050,10 @@ pub async fn complete_enrollment(
     };
 
     let username = student_code.clone();
-    let password_hash = hash_enrollment_password(&student_code).await?;
+    let password_hash = match prepared_password {
+        Some((code, hash)) if code == student_code => hash,
+        _ => hash_enrollment_password(&student_code).await?,
+    };
 
     let gender_normalized: Option<String> = application.gender.as_deref().map(|g| {
         match g.to_lowercase().as_str() {
