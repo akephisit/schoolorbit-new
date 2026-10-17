@@ -211,7 +211,9 @@ pub async fn store_and_enqueue_in_transaction(
 ) -> Result<Uuid, AppError> {
     let outcome = enqueue_in_transaction(tx, std::slice::from_ref(item))
         .await?
-        .remove(0);
+        .into_iter()
+        .next()
+        .ok_or_else(|| integrity("notification_enqueue_missing"))?;
     if outcome.queue_id != item.id {
         return Err(integrity("notification_identity_conflict"));
     }
@@ -235,6 +237,12 @@ async fn insert_inbox(
 ) -> Result<(), AppError> {
     sqlx::query("INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING")
         .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).execute(&mut *connection).await?;
+    validate_inbox(connection, item).await
+}
+async fn validate_inbox(
+    connection: &mut PgConnection,
+    item: &QueuedNotification,
+) -> Result<(), AppError> {
     let matches:bool=sqlx::query_scalar("SELECT user_id IS NOT DISTINCT FROM $2 AND title=$3 AND message=$4 AND type=$5 AND link IS NOT DISTINCT FROM $6 FROM notifications WHERE id=$1")
         .bind(item.notification_id).bind(item.recipient_id).bind(&item.title).bind(&item.message).bind(item.type_.as_str()).bind(&item.link).fetch_one(connection).await?;
     if !matches {
@@ -351,6 +359,8 @@ pub async fn materialize(
     if notification.is_none() {
         sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute(&mut *tx).await?;
         tracing::warn!(error_code="notification_inbox_missing",notification_id=%job.notification_id,"Previously stored notification is absent");
+    } else {
+        validate_inbox(&mut tx, &claimed.notification).await?;
     }
     tx.commit().await?;
     Ok(notification)
@@ -366,5 +376,64 @@ pub struct QueueStatus {
     pub due: bool,
 }
 pub async fn status(pool: &PgPool) -> Result<QueueStatus, AppError> {
-    Ok(sqlx::query_as("SELECT coalesce(bool_or(published_at IS NULL),false) pending,coalesce(bool_or(published_at IS NULL AND next_attempt_at<=now()),false) due FROM notification_dispatch_jobs WHERE published_at IS NULL").fetch_one(pool).await?)
+    Ok(sqlx::query_as("SELECT EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL) pending,EXISTS(SELECT 1 FROM notification_dispatch_jobs WHERE published_at IS NULL AND next_attempt_at<=now()) due").fetch_one(pool).await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn job() -> Job {
+        Job {
+            id: Uuid::new_v4(),
+            notification_id: Uuid::new_v4(),
+            recipient_id: Uuid::new_v4(),
+            source_kind: "direct".into(),
+            source_id: None,
+            dedup_key: None,
+            title: "Synthetic".into(),
+            message: "Body".into(),
+            type_: "info".into(),
+            link: None,
+            stored_at: None,
+            lease_token: None,
+        }
+    }
+    #[test]
+    fn source_and_type_decoding_reject_unknown_or_inconsistent_persisted_policy() {
+        let mut row = job();
+        assert_eq!(
+            row.notification().unwrap().source,
+            NotificationSource::Direct
+        );
+        row.source_kind = "unknown".into();
+        assert!(row.notification().is_err());
+        row.source_kind = "attendance".into();
+        assert!(row.notification().is_err());
+        row.source_id = Some(row.id);
+        assert_eq!(
+            row.notification().unwrap().source,
+            NotificationSource::Attendance { source_id: row.id }
+        );
+        row.source_kind = "direct".into();
+        assert!(row.notification().is_err());
+        row.source_id = None;
+        row.type_ = "private-unregistered-type".into();
+        assert!(row.notification().is_err());
+    }
+    #[test]
+    fn stable_identity_validation_rejects_recipient_payload_and_source_drift() {
+        let original = job().notification().unwrap();
+        let mut changed = original.clone();
+        assert!(same_identity(&original, &changed));
+        changed.recipient_id = Uuid::new_v4();
+        assert!(!same_identity(&original, &changed));
+        changed = original.clone();
+        changed.message = "Different body".into();
+        assert!(!same_identity(&original, &changed));
+        changed = original.clone();
+        changed.source = NotificationSource::Attendance {
+            source_id: changed.id,
+        };
+        assert!(!same_identity(&original, &changed));
+    }
 }

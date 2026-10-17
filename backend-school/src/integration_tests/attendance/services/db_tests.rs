@@ -522,10 +522,27 @@ async fn attendance_partial_save_preserves_unchecked_and_deduplicates_every_guar
             .summaries
             .is_empty()
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
@@ -677,9 +694,20 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     )
     .await
     .is_err());
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
         .bind(TERM)
@@ -1109,9 +1137,20 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
             .absent,
         1
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
@@ -2377,9 +2416,18 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     )
     .await
     .unwrap();
-    let pending = notifications::pending(&f.pool).await.unwrap();
-    assert!(notifications::store(&f.pool, &pending[0]).await.unwrap());
-    let owned_notice = pending[0].notification_id;
+    let pending = school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap();
+    assert!(school_notifications::dispatch::materialize(
+        &f.pool,
+        &pending[0],
+        &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
+    )
+    .await
+    .unwrap()
+    .is_some());
+    let owned_notice = pending[0].notification.notification_id;
     let evidence = evidence_file(&f.pool, STUDENT).await;
     let unrelated_file = evidence_file(&f.pool, STUDENT).await;
     sqlx::query("UPDATE files SET purpose_code='profile_avatar' WHERE id=$1")
@@ -2500,7 +2548,14 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     .await
     .unwrap());
     for notice in pending {
-        assert!(!notifications::store(&f.pool, &notice).await.unwrap());
+        assert!(school_notifications::dispatch::materialize(
+            &f.pool,
+            &notice,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
+        )
+        .await
+        .unwrap()
+        .is_none());
     }
     assert!(matches!(
         sessions::save_with_seed(
@@ -2930,9 +2985,20 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
             .unwrap(),
         1
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -3034,9 +3100,17 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
     )
     .await
     .unwrap();
-    for notice in notifications::pending(&pool).await.unwrap() {
-        notifications::store(&pool, &notice).await.unwrap();
-        notifications::delivered(&pool, notice.id).await.unwrap();
+    for notice in school_notifications::dispatch::claim(&pool).await.unwrap() {
+        school_notifications::dispatch::materialize(
+            &pool,
+            &notice,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&pool, &notice)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -3528,7 +3602,7 @@ async fn attendance_score_queue_rejects_non_reset_stale_generation_without_readi
 
 #[tokio::test]
 async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_generation_once() {
-    let f = fixture_at("attendance_behavior_adapter", 109).await;
+    let f = fixture("attendance_behavior_adapter").await;
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
@@ -3718,7 +3792,7 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
     use chrono::TimeZone;
     use school_academic_lifecycle::ports::ExternalLifecyclePort;
     use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
-    let f = fixture_at("attendance_lifecycle_delivery_gate", 109).await;
+    let f = fixture("attendance_lifecycle_delivery_gate").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
@@ -4286,209 +4360,58 @@ async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start
     assert!(after.is_empty());
 }
 
-async fn attendance_queue_rows(f: &Fixture, count: i64) {
-    sqlx::query("INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,title,message,link) SELECT $1,$2,$2,'queue-fixture-'||n,'fixture','fixture','/student/attendance' FROM generate_series(1,$3) n")
-        .bind(TERM).bind(STUDENT).bind(count).execute(&f.pool).await.unwrap();
-}
-
 #[tokio::test]
-async fn attendance_notification_claims_are_bounded_disjoint_and_future_leases_are_not_due() {
-    let f = fixture("attendance_bounded_notice_claims").await;
-    attendance_queue_rows(&f, notifications::DELIVERY_BATCH_SIZE + 3).await;
-    let (first, second) = tokio::join!(
-        notifications::pending(&f.pool),
-        notifications::pending(&f.pool)
-    );
-    let first = first.unwrap();
-    let second = second.unwrap();
-    assert!(!first.is_empty() && !second.is_empty());
-    assert!(first.len() <= 32 && second.len() <= 32);
-    assert_eq!(first.len() + second.len(), 35);
-    let ids: std::collections::HashSet<_> = first.iter().chain(&second).map(|n| n.id).collect();
-    assert_eq!(ids.len(), 35);
-    assert!(notifications::has_pending(&f.pool).await.unwrap());
-    assert!(
-        !notifications::has_due(&f.pool).await.unwrap(),
-        "leased retries must not wake a tight loop"
-    );
-    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
-    let notice = &first[0];
-    assert!(notifications::store(&f.pool, notice).await.unwrap());
-    assert!(notifications::store(&f.pool, notice).await.unwrap());
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications WHERE id=$1")
-            .bind(notice.notification_id)
-            .fetch_one(&f.pool)
-            .await
-            .unwrap(),
-        1
-    );
-    sqlx::query(
-        "UPDATE attendance_notifications SET next_attempt_at=now()-interval '1 second' WHERE id=$1",
+async fn attendance_notification_first_arrival_keeps_original_payload_across_rounds() {
+    let f = fixture("attendance_first_notice_wins").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let mut first = seed(&f, AttendanceKind::Arrival, date);
+    first.session.start_time = NaiveTime::from_hms_opt(8, 0, 0).unwrap();
+    first.session.end_time = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+    let first_session = sessions::ensure(&f.pool, &f.actor, first).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, first_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        first_session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
     )
-    .bind(notice.id)
-    .execute(&f.pool)
     .await
     .unwrap();
-    assert!(notifications::has_due(&f.pool).await.unwrap());
-    let retry = notifications::pending(&f.pool).await.unwrap();
-    assert_eq!(retry.len(), 1);
-    assert_eq!(retry[0].notification_id, notice.notification_id);
-    assert_eq!(
-        sqlx::query_scalar::<_, i32>("SELECT attempts FROM attendance_notifications WHERE id=$1")
-            .bind(notice.id)
-            .fetch_one(&f.pool)
-            .await
-            .unwrap(),
-        2
-    );
-}
-
-#[tokio::test]
-async fn attendance_notification_invalid_recipients_consume_only_one_due_batch() {
-    let f = fixture("attendance_bounded_invalid_notices").await;
-    attendance_queue_rows(&f, notifications::DELIVERY_BATCH_SIZE + 3).await;
-    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
-        .bind(STUDENT)
-        .execute(&f.pool)
-        .await
-        .unwrap();
-    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM attendance_notifications WHERE published_at IS NOT NULL"
-        )
-        .fetch_one(&f.pool)
-        .await
-        .unwrap(),
-        32
-    );
-    assert!(notifications::has_due(&f.pool).await.unwrap());
-    assert!(notifications::pending(&f.pool).await.unwrap().is_empty());
-    assert!(!notifications::has_pending(&f.pool).await.unwrap());
-}
-
-#[tokio::test]
-async fn attendance_notification_due_backlog_revisits_other_tenants_before_next_batch() {
-    use axum::{extract::Path, http::StatusCode, routing::get, Json, Router};
-    use std::{collections::HashMap, sync::Arc};
-    struct AbortOnDrop(tokio::task::JoinHandle<()>);
-    impl Drop for AbortOnDrop {
-        fn drop(&mut self) {
-            self.0.abort();
-        }
-    }
-    struct Behavior;
-    #[async_trait::async_trait]
-    impl school_attendance::runtime::AttendanceBehaviorPort for Behavior {
-        async fn run(&self, _pool: &PgPool) -> Result<(), AppError> {
-            Ok(())
-        }
-    }
-    static BEHAVIOR: Behavior = Behavior;
-    let first = fixture("attendance_fair_queue_first").await;
-    let second = fixture("attendance_fair_queue_second").await;
-    let lock_key = i64::from_le_bytes(*Uuid::new_v4().as_bytes().first_chunk::<8>().unwrap());
-    let mut blocker = first.pool.begin().await.unwrap();
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(lock_key)
-        .execute(&mut *blocker)
-        .await
-        .unwrap();
-    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *blocker)
-        .await
-        .unwrap();
-    let mut directory = HashMap::new();
-    let mut active = Vec::new();
-    for (f, name) in [(&first, "queue-first"), (&second, "queue-second")] {
-        attendance_queue_rows(f, 97).await;
-        // Two complete passes are permitted; the third must pause. A worker that
-        // drains one tenant before visiting the other leaves that other at zero.
-        sqlx::raw_sql(&format!("CREATE FUNCTION block_later_notice_batch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.published_at IS NOT NULL AND OLD.published_at IS NULL AND (SELECT count(*) FROM attendance_notifications WHERE published_at IS NOT NULL)>=64 THEN PERFORM pg_advisory_xact_lock({lock_key}); END IF; RETURN NEW; END $$; CREATE TRIGGER block_later_notice_batch BEFORE UPDATE ON attendance_notifications FOR EACH ROW EXECUTE FUNCTION block_later_notice_batch();"))
-            .execute(&f.pool).await.unwrap();
-        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
-            .fetch_one(&f.pool)
-            .await
-            .unwrap();
-        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
-        url.query_pairs_mut()
-            .append_pair("options", &format!("-csearch_path={schema},public"));
-        let subdomain = format!("{name}-{}", Uuid::new_v4().simple());
-        directory.insert(subdomain.clone(), serde_json::json!({"id":Uuid::new_v4(),"name":"fixture","db_connection_string":url.as_str()}));
-        active.push(serde_json::json!({"subdomain":subdomain,"db_connection_string":url.as_str()}));
-    }
-    let directory = Arc::new(directory);
-    let app = Router::new()
-        .route(
-            "/internal/schools",
-            get(move || {
-                let schools = active.clone();
-                async move { Json(serde_json::json!({"schools":schools})) }
-            }),
-        )
-        .route(
-            "/internal/schools/{tenant}",
-            get(move |Path(tenant): Path<String>| {
-                let directory = directory.clone();
-                async move {
-                    directory
-                        .get(&tenant)
-                        .cloned()
-                        .map(Json)
-                        .ok_or(StatusCode::NOT_FOUND)
-                }
-            }),
-        );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let mut _server = AbortOnDrop(tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    }));
-    let (channel, _) = tokio::sync::broadcast::channel(100);
-    let state = school_attendance::runtime::AttendanceRuntimeState {
-        admin_client: Arc::new(school_tenancy::AdminClient::new(
-            format!("http://{address}"),
-            "fixture-internal".into(),
-            school_tenancy::AdminClientConfig::from_env().unwrap(),
-        )),
-        pool_manager: Arc::new(school_tenancy::PoolManager::new()),
-        notification_channel: channel,
-        behavior: &BEHAVIOR,
-    };
-    let mut _worker = AbortOnDrop(tokio::spawn(school_attendance::runtime::start(state)));
-    // Startup contributes at most one Notify permit and the initial interval tick.
-    // Reaching the third batch promptly also proves due-work self-waking.
-    attendance_wait_for_blocker(&first.pool, blocker_pid).await;
-    for f in [&first, &second] {
-        assert_eq!(
-            sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM attendance_notifications WHERE published_at IS NOT NULL"
-            )
-            .fetch_one(&f.pool)
-            .await
-            .unwrap(),
-            64,
-            "each tenant must receive one bounded batch per pass"
-        );
-    }
-    blocker.rollback().await.unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        loop {
-            if !notifications::has_pending(&first.pool).await.unwrap()
-                && !notifications::has_pending(&second.pool).await.unwrap()
-            {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
+    let original: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+    )
+    .fetch_all(&f.pool)
     .await
-    .expect("due backlog must drain without waiting for the 15-second timer");
-    _worker.0.abort();
-    let _ = (&mut _worker.0).await;
-    _server.0.abort();
-    let _ = (&mut _server.0).await;
-    first.pool.close().await;
-    second.pool.close().await;
+    .unwrap();
+    assert!(!original.is_empty());
+    assert!(original.iter().all(|row| row.2.contains("08:00")));
+    let mut later = seed(&f, AttendanceKind::Arrival, date);
+    later.session.id = Uuid::new_v4();
+    later.session.source_key = "later-fixture-room".into();
+    later.session.start_time = NaiveTime::from_hms_opt(10, 0, 0).unwrap();
+    later.session.end_time = NaiveTime::from_hms_opt(11, 0, 0).unwrap();
+    let later_session = sessions::ensure(&f.pool, &f.actor, later).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, later_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        later_session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+    )
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        original, after,
+        "a later arrival changes neither first notification identity nor time text"
+    );
 }

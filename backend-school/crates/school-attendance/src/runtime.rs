@@ -196,6 +196,9 @@ async fn run(
     let date = now.date_naive();
     if r.last_finalization_poll != Some(date) {
         let processed = crate::application::finalization::catch_up(&r.pool, Utc::now(), 4).await?;
+        if processed > 0 {
+            school_notifications::runtime::wake_after_commit(tenant);
+        }
         if processed < 4 {
             r.last_finalization_poll = Some(date);
         }

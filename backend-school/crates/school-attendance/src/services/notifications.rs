@@ -92,8 +92,8 @@ pub async fn queue_batch(
     let rows: Vec<NewLedgerNotice> = sqlx::query_as(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
  SELECT f.*,u.id recipient_id,u.user_type FROM facts f JOIN users u ON u.id=f.student_id AND u.status='active'
  UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent'), inserted AS (
- INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key)
- SELECT $1,recipient_id,student_id,key FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING
+ INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,notification_id)
+ SELECT $1,recipient_id,student_id,key,uuidv7() FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING
  RETURNING id,notification_id,recipient_id,student_id,dedup_key)
  SELECT i.id,i.notification_id,i.recipient_id,i.dedup_key,r.title,r.message,
  CASE WHEN r.user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || i.student_id::text link
@@ -133,12 +133,14 @@ async fn enqueue_new_ledger(
         })
         .collect();
     let outcomes = dispatch::enqueue_in_transaction(tx, &items).await?;
-    if outcomes.iter().zip(&items).any(|(o, n)| {
-        o.input_id != n.id
-            || o.queue_id != n.id
-            || o.notification_id != n.notification_id
-            || o.source != n.source
-    }) {
+    if outcomes.len() != items.len()
+        || outcomes.iter().zip(&items).any(|(o, n)| {
+            o.input_id != n.id
+                || o.queue_id != n.id
+                || o.notification_id != n.notification_id
+                || o.source != n.source
+        })
+    {
         return Err(AppError::Conflict(
             "notification_ledger_identity_conflict".into(),
         ));
@@ -198,8 +200,8 @@ pub async fn queue_digest_in_transaction(
  FROM actual GROUP BY teacher,category),
  messages AS (SELECT teacher,string_agg((CASE category WHEN 'school' THEN 'เข้าโรงเรียน' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' หนีเรียน '||skipped||' ลาป่วย '||sick_leave||' ลากิจ '||personal_leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked,E'\n' ORDER BY category) message FROM summaries GROUP BY teacher)
  , inserted AS (
- INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key)
- SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text FROM messages JOIN users u ON u.id=teacher AND u.status='active'
+ INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key,notification_id)
+ SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text,uuidv7() FROM messages JOIN users u ON u.id=teacher AND u.status='active'
  ON CONFLICT(recipient_id,dedup_key) DO NOTHING RETURNING id,notification_id,recipient_id,dedup_key)
  SELECT i.id,i.notification_id,i.recipient_id,i.dedup_key,'สรุปเช็คชื่อ '||$2::text title,m.message,
  '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text link FROM inserted i JOIN messages m ON m.teacher=i.recipient_id"#)

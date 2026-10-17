@@ -92,8 +92,8 @@ impl NotificationService {
         link: Option<&str>,
     ) -> Result<Uuid, sqlx::Error> {
         let item = crate::dispatch::QueuedNotification {
-            id: Uuid::new_v4(),
-            notification_id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
+            notification_id: Uuid::now_v7(),
             recipient_id: user_id,
             source: crate::dispatch::NotificationSource::Direct,
             dedup_key: None,
@@ -145,71 +145,117 @@ impl NotificationService {
         let vapid_subject =
             env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
 
-        // 4. Construct payload
-        let payload = serde_json::json!({
-            "id": notification_id,
-            "title": title,
-            "body": message,
-            "link": link,
-            // Add icon if needed
-        })
-        .to_string();
+        let payload = serde_json::to_vec(&PushPayload {
+            id: notification_id,
+            title,
+            body: message,
+            link,
+        })?;
 
         let client = IsahcWebPushClient::new()?;
-        let mut retryable = 0usize;
-        let mut removed = 0usize;
-        for sub in subs {
-            let subscription_info = SubscriptionInfo {
-                endpoint: sub.endpoint.clone(),
-                keys: SubscriptionKeys {
-                    p256dh: sub.p256dh_key,
-                    auth: sub.auth_key,
-                },
-            };
-            // One malformed/device failure must not skip the remaining subscriptions.
-            let result = async {
-                let mut builder = WebPushMessageBuilder::new(&subscription_info);
-                builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_bytes());
-                let mut signature =
-                    VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
-                signature.add_claim("sub", vapid_subject.clone());
-                builder.set_vapid_signature(signature.build()?);
-                client.send(builder.build()?).await
-            }
-            .await;
-            match result {
-                Ok(()) => {}
-                Err(WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)) => {
-                    if sqlx::query(
-                        "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
-                    )
-                    .bind(&sub.endpoint)
-                    .bind(user_id)
-                    .execute(pool)
-                    .await
-                    .is_ok()
-                    {
-                        removed += 1;
-                    } else {
-                        retryable += 1;
-                    }
+        let result = attempt_subscriptions(subs, |sub| {
+            let client = &client;
+            let payload = &payload;
+            let vapid_private = &vapid_private;
+            let vapid_subject = &vapid_subject;
+            async move {
+                let subscription_info = SubscriptionInfo {
+                    endpoint: sub.endpoint.clone(),
+                    keys: SubscriptionKeys {
+                        p256dh: sub.p256dh_key,
+                        auth: sub.auth_key,
+                    },
+                };
+                // One malformed/device failure must not skip the remaining subscriptions.
+                let result = async {
+                    let mut builder = WebPushMessageBuilder::new(&subscription_info);
+                    builder.set_payload(ContentEncoding::Aes128Gcm, payload.as_slice());
+                    let mut signature =
+                        VapidSignatureBuilder::from_base64(&vapid_private, &subscription_info)?;
+                    signature.add_claim("sub", vapid_subject.clone());
+                    builder.set_vapid_signature(signature.build()?);
+                    client.send(builder.build()?).await
                 }
-                Err(_) => retryable += 1,
+                .await;
+                match result {
+                    Ok(()) => Ok(EndpointDelivery::Delivered),
+                    Err(WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)) => {
+                        if sqlx::query(
+                            "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
+                        )
+                        .bind(&sub.endpoint)
+                        .bind(user_id)
+                        .execute(pool)
+                        .await
+                        .is_ok()
+                        {
+                            Ok(EndpointDelivery::Removed)
+                        } else {
+                            Err(())
+                        }
+                    }
+                    Err(_) => Err(()),
+                }
             }
-        }
-        if removed > 0 {
+        })
+        .await;
+        let (counts, retry) = match result {
+            Ok(counts) => (counts, false),
+            Err(counts) => (counts, true),
+        };
+        if counts.removed > 0 {
             tracing::debug!(
                 error_code = "notification_subscription_removed",
-                removed,
+                removed = counts.removed,
                 "Invalid push subscriptions removed"
             );
         }
-        if retryable > 0 {
-            tracing::warn!(error_code="notification_push_retry",retryable,notification_id=%notification_id,"Push subscription delivery will retry");
+        if retry {
+            tracing::warn!(error_code="notification_push_retry",retryable=counts.retryable,notification_id=%notification_id,"Push subscription delivery will retry");
             return Err(std::io::Error::other("notification_push_retry").into());
         }
 
         Ok(())
+    }
+}
+
+#[derive(serde::Serialize)]
+struct PushPayload<'a> {
+    id: Uuid,
+    title: &'a str,
+    body: &'a str,
+    link: Option<&'a str>,
+}
+#[derive(Default, Debug, PartialEq)]
+struct SubscriptionCounts {
+    delivered: usize,
+    removed: usize,
+    retryable: usize,
+}
+enum EndpointDelivery {
+    Delivered,
+    Removed,
+}
+async fn attempt_subscriptions<T, F, Fut>(
+    items: Vec<T>,
+    mut deliver: F,
+) -> Result<SubscriptionCounts, SubscriptionCounts>
+where
+    F: FnMut(T) -> Fut,
+    Fut: std::future::Future<Output = Result<EndpointDelivery, ()>>,
+{
+    let mut counts = SubscriptionCounts::default();
+    for item in items {
+        match deliver(item).await {
+            Ok(EndpointDelivery::Delivered) => counts.delivered += 1,
+            Ok(EndpointDelivery::Removed) => counts.removed += 1,
+            Err(()) => counts.retryable += 1,
+        }
+    }
+    if counts.retryable > 0 {
+        Err(counts)
+    } else {
+        Ok(counts)
     }
 }
 
@@ -218,6 +264,38 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
+    #[tokio::test]
+    async fn subscription_failure_propagates_after_all_siblings_and_terminal_removal_succeeds() {
+        let attempted = std::sync::atomic::AtomicUsize::new(0);
+        let result = attempt_subscriptions(vec![0, 1, 2], |item| {
+            attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async move {
+                match item {
+                    0 => Err(()),
+                    1 => Ok(EndpointDelivery::Removed),
+                    _ => Ok(EndpointDelivery::Delivered),
+                }
+            }
+        })
+        .await;
+        assert_eq!(attempted.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(
+            result,
+            Err(SubscriptionCounts {
+                delivered: 1,
+                removed: 1,
+                retryable: 1
+            })
+        );
+        assert_eq!(
+            attempt_subscriptions(vec![()], |_| async { Ok(EndpointDelivery::Removed) }).await,
+            Ok(SubscriptionCounts {
+                delivered: 0,
+                removed: 1,
+                retryable: 0
+            })
+        );
+    }
     #[test]
     fn tenant_publisher_emits_supplied_tenant_and_user() {
         let (notification_tx, mut notification_rx) = broadcast::channel(1);
