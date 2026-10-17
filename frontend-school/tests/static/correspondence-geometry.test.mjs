@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	fromDisplay,
+	pathData,
 	toDisplay,
 	pointerPoint,
 	hasInk
@@ -38,5 +39,19 @@ test('empty and accidental taps cannot confirm a drawn signature', () => {
 			}
 		]),
 		true
+	);
+});
+test('vector path uses visual PDF point dimensions without stretching the coordinate space', () => {
+	assert.equal(
+		pathData(
+			[
+				{ x: 0.1, y: 0.25 },
+				{ x: 0.5, y: 0.75 }
+			],
+			0,
+			600,
+			400
+		),
+		'M 60 100 L 300 300'
 	);
 });

@@ -14,4 +14,7 @@
 	const source = $derived(correspondenceSource(data.records, identity));
 </script>
 
-{#key identity}<RegisterList {source} filters={data.filters} />{/key}
+{#key `${identity}:${JSON.stringify(data.filters)}`}<RegisterList
+		{source}
+		filters={data.filters}
+	/>{/key}

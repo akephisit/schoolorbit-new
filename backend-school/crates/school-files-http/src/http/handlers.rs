@@ -161,9 +161,15 @@ async fn record_upload_relation_or_request_cleanup(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let relation_result = match purpose {
-        FilePurpose::CorrespondenceDocument => {
-            Some(school_workflow::correspondence_files::record_upload(repository.pool(),actor_user_id,resource_id.ok_or_else(||AppError::BadRequest("ต้องระบุหนังสือ".into()))?,file_id).await)
-        },
+        FilePurpose::CorrespondenceDocument => Some(
+            school_workflow::correspondence_files::record_upload(
+                repository.pool(),
+                actor_user_id,
+                resource_id.ok_or_else(|| AppError::BadRequest("ต้องระบุหนังสือ".into()))?,
+                file_id,
+            )
+            .await,
+        ),
         FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
             let template_id = resource_id.ok_or_else(|| {
                 AppError::InternalServerError(
@@ -340,7 +346,15 @@ pub async fn delete_file(
         .await
         .map_err(map_platform_error)?;
     let domain_delete_guard = match file.purpose {
-        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => Some(school_workflow::correspondence_files::delete_guard(&context.tenant.pool,&context.actor,&file,query.resource_id).await?),
+        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => Some(
+            school_workflow::correspondence_files::delete_guard(
+                &context.tenant.pool,
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
         FilePurpose::TeachingLicense => Some(
             school_staff::services::staff_license_service::delete_guard(
                 repository.pool(),

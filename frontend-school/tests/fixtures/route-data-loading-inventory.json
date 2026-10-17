@@ -988,12 +988,12 @@
 		{
 			"route": "staff/correspondence/new",
 			"wave": "correspondence",
-			"dataOwner": "no-data",
+			"dataOwner": "interaction-only",
 			"preload": "tap",
 			"context": "tenant and authenticated actor; correspondence ID for detail",
 			"status": "complete",
 			"backendOwner": "school-workflow",
-			"notes": "Creation fields are local; exact creator route guard. Uploads begin only after a real draft resource exists. No primary reads."
+			"notes": "Creation fields are local; exact creator route guard. Optional owner-unit lookup opens only from its action. Uploads begin only after a real draft resource exists. No primary reads."
 		},
 		{
 			"route": "staff/correspondence/signatures",

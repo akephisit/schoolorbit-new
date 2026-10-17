@@ -44,7 +44,7 @@
 				() =>
 					template?.steps.map((step) => ({
 						...step,
-						recipients: step.recipients.map((recipient) => ({ ...recipient }))
+						recipients: (step.recipients ?? []).map((recipient) => ({ ...recipient }))
 					})) ?? [emptyStep()]
 			)
 		),

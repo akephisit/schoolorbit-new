@@ -1,4 +1,3 @@
-use school_workflow::process_models::*;
 use school_academic_assessment::assessment::models::*;
 use school_academic_assessment::exam_schedule::models::*;
 use school_academic_assessment::gradebook::models::*;
@@ -161,6 +160,7 @@ use school_students::models::{
 use school_students::parents::models::{ChildDto, ParentProfile};
 use school_supervision::http::handlers::{ItemsData, ListObservationsQuery};
 use school_supervision::models::*;
+use school_workflow::process_models::*;
 use serde_json::Value;
 use utoipa::OpenApi;
 
@@ -6615,5 +6615,45 @@ mod tests {
         }
         assert!(document["components"]["schemas"]["TermActivationWorkspace"].is_object());
         assert!(document["components"]["schemas"]["OpeningPolicy"].is_object());
+    }
+    #[test]
+    fn documents_correspondence_source_and_signature_contracts() {
+        let document = school_api_value().unwrap();
+        let paths = &document["paths"];
+        for (path, method) in [
+            ("/api/correspondence", "post"),
+            ("/api/correspondence/{id}/actions", "post"),
+            ("/api/correspondence/{id}/preview", "get"),
+            ("/api/correspondence/{id}/export", "get"),
+            ("/api/process/templates", "post"),
+        ] {
+            assert!(paths[path][method].is_object(), "{path}");
+        }
+        let list = &paths["/api/correspondence"]["get"]["parameters"];
+        for name in ["cursor", "limit", "register", "status", "search"] {
+            assert!(list.as_array().unwrap().iter().any(|p| p["name"] == name));
+        }
+        for status in ["400", "403", "409"] {
+            assert!(
+                paths["/api/correspondence/{id}/actions"]["post"]["responses"][status].is_object()
+            );
+        }
+        let schemas = &document["components"]["schemas"];
+        for field in [
+            "expectedRevision",
+            "requestId",
+            "annotations",
+            "signature",
+            "reassignFromUserId",
+        ] {
+            assert!(schemas["ProcessActionRequest"]["properties"][field].is_object());
+        }
+        for field in ["documentRevision", "contentHash", "method"] {
+            assert!(schemas["SignatureInput"]["properties"][field].is_object());
+        }
+        assert!(
+            paths["/api/process/instances"]["post"].is_null(),
+            "browser callers cannot invent another domain's source"
+        );
     }
 }

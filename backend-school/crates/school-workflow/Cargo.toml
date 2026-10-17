@@ -15,7 +15,6 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 lopdf = { workspace = true }
 image = { workspace = true }
-bytes = { workspace = true }
 school-file-platform = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }

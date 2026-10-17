@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import {
 		getCorrespondenceOptions,
 		sendCorrespondence,
@@ -30,6 +30,7 @@
 		templateId = $state(''),
 		steps = $state<ProcessStepRecipients[]>([]),
 		dueDate = $state<string | undefined>();
+	let expectedRevision = $state(untrack(() => detail.record.revision));
 	let disposed = false;
 	const controller = new AbortController();
 	onDestroy(() => {
@@ -56,7 +57,7 @@
 		if (!template) return;
 		steps = template.steps.map((step, stepIndex) => ({
 			stepIndex,
-			recipients: step.recipients.map((recipient) => ({ ...recipient }))
+			recipients: (step.recipients ?? []).map((recipient) => ({ ...recipient }))
 		}));
 	}
 	$effect.pre(() => {
@@ -75,7 +76,7 @@
 		try {
 			const result = await sendCorrespondence(detail.record.id, {
 				requestId: crypto.randomUUID(),
-				expectedRevision: detail.record.revision,
+				expectedRevision,
 				templateId,
 				stepRecipients: steps,
 				dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
@@ -91,6 +92,16 @@
 
 <form class="space-y-4" onsubmit={submit} data-testid="correspondence-send">
 	<h3 class="font-semibold">ส่งหนังสือดำเนินการ</h3>
+	{#if expectedRevision !== detail.record.revision}<p class="text-sm text-warning">
+			เอกสารเปลี่ยนแปลงแล้ว กรุณาตรวจสอบฉบับปัจจุบัน
+		</p>
+		<Button
+			type="button"
+			variant="outline"
+			onclick={() => {
+				expectedRevision = detail.record.revision;
+			}}>ใช้ข้อมูลล่าสุดและเก็บผู้รับที่เลือก</Button
+		>{/if}
 	{#if error}<PageState
 			variant="error"
 			title={error}

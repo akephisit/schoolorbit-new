@@ -1,100 +1,1034 @@
 //! Canonical private document preview and server-authoritative evidence composition.
 //! Sarabun is bundled under the SIL OFL in assets; rustybuzz shapes Thai marks.
-use crate::{correspondence,process::{invalid},process_models::*};
-use lopdf::{content::{Content,Operation},dictionary,Dictionary,Document,Object,ObjectId,Stream};
+use crate::{correspondence, process::invalid, process_models::*};
+use chrono::{Datelike, Timelike};
+use lopdf::{
+    content::{Content, Operation},
+    dictionary, Dictionary, Document, Object, ObjectId, Stream,
+};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::{consumer_service::map_platform_error,platform_service::FilePlatform,repository::SqlFileRepository};
+use school_file_platform::{
+    consumer_service::map_platform_error, platform_service::FilePlatform,
+    repository::SqlFileRepository,
+};
 use school_permissions::registry::codes;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use sha2::{Digest,Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-const FONT:&[u8]=include_bytes!("../assets/Sarabun-Regular.ttf");
-fn pdf_error(_:impl std::fmt::Display)->AppError{invalid("ไม่สามารถอ่านหรือจัดวางเอกสาร PDF ได้")}
-#[derive(Clone,Copy,Debug)]struct Geometry{width:f64,height:f64,matrix:[f64;6]}
-fn inherited(doc:&Document,page:ObjectId,key:&[u8])->Option<Object>{let mut id=page;for _ in 0..32{let dict=doc.get_dictionary(id).ok()?;if let Ok(value)=dict.get(key){return doc.dereference(value).ok().map(|(_,v)|v.clone())}id=dict.get(b"Parent").and_then(Object::as_reference).ok()?;}None}
-fn geometry(doc:&Document,page:ObjectId)->Result<Geometry,AppError>{
- let bounds=inherited(doc,page,b"CropBox").or_else(||inherited(doc,page,b"MediaBox")).ok_or_else(||invalid("PDF ไม่มีขนาดหน้า"))?;
- let bounds=bounds.as_array().map_err(pdf_error)?;if bounds.len()!=4{return Err(invalid("ขนาดหน้า PDF ไม่ถูกต้อง"))}let n=|i:usize|bounds[i].as_float().map(f64::from).map_err(pdf_error);let x=n(0)?;let y=n(1)?;let w=n(2)?-x;let h=n(3)?-y;
- if ![x,y,w,h].iter().all(|v|v.is_finite())||w<=0.0||h<=0.0||w>20000.0||h>20000.0{return Err(invalid("ขนาดหน้า PDF เกินกำหนด"))}
- let rotation=inherited(doc,page,b"Rotate").and_then(|v|v.as_i64().ok()).unwrap_or(0).rem_euclid(360);
- Ok(match rotation{0=>Geometry{width:w,height:h,matrix:[1.0,0.0,0.0,1.0,x,y]},90=>Geometry{width:h,height:w,matrix:[0.0,1.0,-1.0,0.0,x+w,y]},180=>Geometry{width:w,height:h,matrix:[-1.0,0.0,0.0,-1.0,x+w,y+h]},270=>Geometry{width:h,height:w,matrix:[0.0,-1.0,1.0,0.0,x,y+h]},_=>return Err(invalid("มุมหมุน PDF ไม่รองรับ"))})
+const FONT: &[u8] = include_bytes!("../assets/Sarabun-Regular.ttf");
+fn pdf_error(_: impl std::fmt::Display) -> AppError {
+    invalid("ไม่สามารถอ่านหรือจัดวางเอกสาร PDF ได้")
 }
-fn op(name:&str,args:Vec<Object>)->Operation{Operation::new(name,args)}
-fn num(value:f64)->Object{Object::Real(value as f32)}
-fn color(value:&str)->Result<[f64;3],AppError>{if value.len()!=7||!value.starts_with('#'){return Err(invalid("สีไม่ถูกต้อง"))}let parse=|range:std::ops::Range<usize>|u8::from_str_radix(&value[range],16).map(|v|f64::from(v)/255.0).map_err(pdf_error);Ok([parse(1..3)?,parse(3..5)?,parse(5..7)?])}
-fn font_face()->Result<rustybuzz::Face<'static>,AppError>{rustybuzz::Face::from_slice(FONT,0).ok_or_else(||AppError::InternalServerError("correspondence_font_invalid".into()))}
-fn shaped(text:&str)->Result<(Vec<rustybuzz::GlyphInfo>,Vec<rustybuzz::GlyphPosition>,f64),AppError>{let face=font_face()?;let mut buffer=rustybuzz::UnicodeBuffer::new();buffer.push_str(text);buffer.guess_segment_properties();let shaped=rustybuzz::shape(&face,&[],buffer);Ok((shaped.glyph_infos().to_vec(),shaped.glyph_positions().to_vec(),f64::from(face.units_per_em())))}
-fn text_width(text:&str,size:f64)->Result<f64,AppError>{let(_,positions,units)=shaped(text)?;Ok(positions.iter().map(|p|f64::from(p.x_advance)*size/units).sum())}
-fn wrap(text:&str,width:f64,size:f64)->Result<Vec<String>,AppError>{
- let mut lines=Vec::new();for paragraph in text.split('\n'){let mut line=String::new();for ch in paragraph.chars(){let combining=matches!(ch,'\u{0e31}'|'\u{0e34}'..='\u{0e3a}'|'\u{0e47}'..='\u{0e4e}');let mut candidate=line.clone();candidate.push(ch);if !combining&&!line.is_empty()&&text_width(&candidate,size)?>width{lines.push(line);line=ch.to_string();}else{line=candidate;}}lines.push(line);}Ok(lines)
+#[derive(Clone, Copy, Debug)]
+struct Geometry {
+    width: f64,
+    height: f64,
+    matrix: [f64; 6],
 }
-fn font_object(doc:&mut Document)->Result<ObjectId,AppError>{
- let face=font_face()?;let font_file=doc.add_object(Stream::new(dictionary!{"Length1"=>FONT.len() as i64},FONT.to_vec()));let bbox=face.global_bounding_box();
- let descriptor=doc.add_object(dictionary!{"Type"=>"FontDescriptor","FontName"=>"Sarabun","Flags"=>4,"FontBBox"=>vec![Object::Integer(i64::from(bbox.x_min)),Object::Integer(i64::from(bbox.y_min)),Object::Integer(i64::from(bbox.x_max)),Object::Integer(i64::from(bbox.y_max))],"ItalicAngle"=>0,"Ascent"=>i64::from(face.ascender()),"Descent"=>i64::from(face.descender()),"CapHeight"=>i64::from(face.ascender()),"StemV"=>80,"FontFile2"=>font_file});
- let descendant=doc.add_object(dictionary!{"Type"=>"Font","Subtype"=>"CIDFontType2","BaseFont"=>"Sarabun","CIDSystemInfo"=>dictionary!{"Registry"=>Object::string_literal("Adobe"),"Ordering"=>Object::string_literal("Identity"),"Supplement"=>0},"FontDescriptor"=>descriptor,"DW"=>1000,"CIDToGIDMap"=>"Identity"});
- Ok(doc.add_object(dictionary!{"Type"=>"Font","Subtype"=>"Type0","BaseFont"=>"Sarabun","Encoding"=>"Identity-H","DescendantFonts"=>vec![Object::Reference(descendant)]}))
+fn inherited(doc: &Document, page: ObjectId, key: &[u8]) -> Option<Object> {
+    let mut id = page;
+    for _ in 0..32 {
+        let dict = doc.get_dictionary(id).ok()?;
+        if let Ok(value) = dict.get(key) {
+            return doc.dereference(value).ok().map(|(_, v)| v.clone());
+        }
+        id = dict.get(b"Parent").and_then(Object::as_reference).ok()?;
+    }
+    None
 }
-fn resources(doc:&Document,page:ObjectId)->Dictionary{inherited(doc,page,b"Resources").and_then(|v|v.as_dict().ok().cloned()).unwrap_or_default()}
-fn install_resource(doc:&mut Document,page:ObjectId,category:&str,name:&str,id:ObjectId)->Result<(),AppError>{let mut r=resources(doc,page);let mut group=r.get_deref(category.as_bytes(),doc).ok().and_then(|v|v.as_dict().ok()).cloned().unwrap_or_default();group.set(name,id);r.set(category,group);doc.get_object_mut(page).map_err(pdf_error)?.as_dict_mut().map_err(pdf_error)?.set("Resources",r);Ok(())}
-fn text(ops:&mut Vec<Operation>,text:&str,x:f64,y:f64,size:f64,color_value:&str)->Result<(),AppError>{
- let(rgb,(_,positions,units))=(color(color_value)?,shaped(text)?);let(infos,_,_)=shaped(text)?;ops.push(op("rg",rgb.into_iter().map(num).collect()));ops.push(op("BT",vec![]));ops.push(op("Tf",vec![Object::Name(b"WorkflowFont".to_vec()),num(size)]));let mut pen_x=x;let mut pen_y=y;
- for(info,position)in infos.iter().zip(positions){let glyph=u16::try_from(info.glyph_id).map_err(pdf_error)?;if glyph==0{return Err(invalid("แบบอักษรไม่รองรับอักขระในเอกสาร"))}ops.push(op("Tm",vec![1.into(),0.into(),0.into(),1.into(),num(pen_x+f64::from(position.x_offset)*size/units),num(pen_y+f64::from(position.y_offset)*size/units)]));ops.push(op("Tj",vec![Object::String(glyph.to_be_bytes().to_vec(),lopdf::StringFormat::Hexadecimal)]));pen_x+=f64::from(position.x_advance)*size/units;pen_y+=f64::from(position.y_advance)*size/units;}ops.push(op("ET",vec![]));Ok(())
+fn geometry(doc: &Document, page: ObjectId) -> Result<Geometry, AppError> {
+    let bounds = inherited(doc, page, b"CropBox")
+        .or_else(|| inherited(doc, page, b"MediaBox"))
+        .ok_or_else(|| invalid("PDF ไม่มีขนาดหน้า"))?;
+    let bounds = bounds.as_array().map_err(pdf_error)?;
+    if bounds.len() != 4 {
+        return Err(invalid("ขนาดหน้า PDF ไม่ถูกต้อง"));
+    }
+    let n = |i: usize| bounds[i].as_float().map(f64::from).map_err(pdf_error);
+    let x = n(0)?;
+    let y = n(1)?;
+    let w = n(2)? - x;
+    let h = n(3)? - y;
+    if ![x, y, w, h].iter().all(|v| v.is_finite())
+        || w <= 0.0
+        || h <= 0.0
+        || w > 20000.0
+        || h > 20000.0
+    {
+        return Err(invalid("ขนาดหน้า PDF เกินกำหนด"));
+    }
+    let rotation = inherited(doc, page, b"Rotate")
+        .and_then(|v| v.as_i64().ok())
+        .unwrap_or(0)
+        .rem_euclid(360);
+    Ok(match rotation {
+        0 => Geometry {
+            width: w,
+            height: h,
+            matrix: [1.0, 0.0, 0.0, 1.0, x, y],
+        },
+        90 => Geometry {
+            width: h,
+            height: w,
+            matrix: [0.0, 1.0, -1.0, 0.0, x + w, y],
+        },
+        180 => Geometry {
+            width: w,
+            height: h,
+            matrix: [-1.0, 0.0, 0.0, -1.0, x + w, y + h],
+        },
+        270 => Geometry {
+            width: h,
+            height: w,
+            matrix: [0.0, -1.0, 1.0, 0.0, x, y + h],
+        },
+        _ => return Err(invalid("มุมหมุน PDF ไม่รองรับ")),
+    })
 }
-fn text_box(ops:&mut Vec<Operation>,value:&str,x:f64,y:f64,w:f64,h:f64,color:&str)->Result<(),AppError>{
- let mut size=14.0;loop{let lines=wrap(value,w,size)?;if lines.len() as f64*size*1.3<=h{for(index,line)in lines.iter().enumerate(){text(ops,line,x,y-size*1.1-index as f64*size*1.3,size,color)?;}return Ok(())}if size<=5.0{return Err(invalid("ข้อความกำกับยาวเกินพื้นที่ กรุณาขยายพื้นที่หรือลดข้อความ"))}size-=0.5;}
+fn op(name: &str, args: Vec<Object>) -> Operation {
+    Operation::new(name, args)
 }
-fn blank_document()->Document{Document::with_version("1.7")}
-fn add_pages(doc:&mut Document,contents:Vec<(f64,f64,Vec<Operation>)>)->Result<(),AppError>{let pages=doc.new_object_id();let mut kids=Vec::new();for(w,h,operations)in contents{let content=doc.add_object(Stream::new(Dictionary::new(),Content{operations}.encode().map_err(pdf_error)?));let page=doc.add_object(dictionary!{"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),num(w),num(h)],"Resources"=>Dictionary::new(),"Contents"=>content});kids.push(Object::Reference(page));}doc.objects.insert(pages,Object::Dictionary(dictionary!{"Type"=>"Pages","Count"=>kids.len() as i64,"Kids"=>kids}));let catalog=doc.add_object(dictionary!{"Type"=>"Catalog","Pages"=>pages});doc.trailer.set("Root",catalog);Ok(())}
-fn image_object(doc:&mut Document,bytes:&[u8])->Result<(ObjectId,u32,u32),AppError>{let image=image::load_from_memory(bytes).map_err(pdf_error)?.to_rgba8();let(w,h)=image.dimensions();if u64::from(w)*u64::from(h)>80_000_000{return Err(invalid("ภาพมีขนาดเกินกำหนด"))}let mut rgb=Vec::with_capacity(w as usize*h as usize*3);let mut alpha=Vec::with_capacity(w as usize*h as usize);for p in image.pixels(){rgb.extend_from_slice(&p.0[..3]);alpha.push(p.0[3]);}let mask=doc.add_object(Stream::new(dictionary!{"Type"=>"XObject","Subtype"=>"Image","Width"=>i64::from(w),"Height"=>i64::from(h),"ColorSpace"=>"DeviceGray","BitsPerComponent"=>8},alpha));let id=doc.add_object(Stream::new(dictionary!{"Type"=>"XObject","Subtype"=>"Image","Width"=>i64::from(w),"Height"=>i64::from(h),"ColorSpace"=>"DeviceRGB","BitsPerComponent"=>8,"SMask"=>mask},rgb));Ok((id,w,h))}
-fn image_ops(name:&str,x:f64,y:f64,w:f64,h:f64)->Vec<Operation>{vec![op("q",vec![]),op("cm",vec![num(w),0.into(),0.into(),num(h),num(x),num(y)]),op("Do",vec![Object::Name(name.as_bytes().to_vec())]),op("Q",vec![])]}
-fn source_document(document:&CorrespondenceDocumentRevision,original:Option<&[u8]>)->Result<Document,AppError>{
- if let Some(original)=original{if original.starts_with(b"%PDF-"){return Document::load_mem(original).map_err(pdf_error)}let mut doc=blank_document();let(id,w,h)=image_object(&mut doc,original)?;let scale=(595.0/f64::from(w)).min(842.0/f64::from(h));let iw=f64::from(w)*scale;let ih=f64::from(h)*scale;add_pages(&mut doc,vec![(595.0,842.0,image_ops("SourceImage",(595.0-iw)/2.0,(842.0-ih)/2.0,iw,ih))])?;let page=*doc.get_pages().get(&1).ok_or_else(||invalid("ไม่พบหน้าเอกสาร"))?;install_resource(&mut doc,page,"XObject","SourceImage",id)?;return Ok(doc)}
- let mut doc=blank_document();let lines=wrap(&document.content,515.0,14.0)?;let mut pages=Vec::new();for chunk in lines.chunks(41){let mut ops=Vec::new();for(index,line)in chunk.iter().enumerate(){text(&mut ops,line,40.0,795.0-index as f64*18.0,14.0,"#111111")?;}pages.push((595.0,842.0,ops));}if pages.is_empty(){pages.push((595.0,842.0,vec![]))}add_pages(&mut doc,pages)?;let font=font_object(&mut doc)?;for page in doc.get_pages().values(){install_resource(&mut doc,*page,"Font","WorkflowFont",font)?;}Ok(doc)
+fn num(value: f64) -> Object {
+    Object::Real(value as f32)
 }
-fn ink(ops:&mut Vec<Operation>,strokes:&[InkStroke],x:f64,y:f64,w:f64,h:f64)->Result<(),AppError>{for stroke in strokes{let c=color(&stroke.color)?;ops.push(op("RG",c.into_iter().map(num).collect()));ops.push(op("w",vec![num((stroke.width*w).max(0.25))]));ops.push(op("J",vec![1.into()]));ops.push(op("j",vec![1.into()]));for(index,point)in stroke.points.iter().enumerate(){ops.push(op(if index==0{"m"}else{"l"},vec![num(x+point.x*w),num(y-point.y*h)]));}ops.push(op("S",vec![]));}Ok(())}
-fn annotation(ops:&mut Vec<Operation>,a:&DocumentAnnotation,g:Geometry)->Result<(),AppError>{let x=a.x*g.width;let y=(1.0-a.y)*g.height;let w=a.width*g.width;let h=a.height*g.height;let c=color(&a.color)?;ops.push(op("q",vec![]));match a.kind{DocumentAnnotationKind::Text=>text_box(ops,a.text.as_deref().unwrap_or(""),x,y,w,h,&a.color)?,DocumentAnnotationKind::Ink=>ink(ops,&a.strokes,x,y,w,h)?,DocumentAnnotationKind::Highlight=>{ops.push(op("gs",vec![Object::Name(b"WorkflowHighlight".to_vec())]));ops.push(op("rg",c.into_iter().map(num).collect()));ops.push(op("re",vec![num(x),num(y-h),num(w),num(h)]));ops.push(op("f",vec![]));},DocumentAnnotationKind::Circle=>{let cx=x+w/2.0;let cy=y-h/2.0;let rx=w/2.0;let ry=h/2.0;let k=0.55228475;ops.push(op("RG",c.into_iter().map(num).collect()));ops.push(op("w",vec![1.2.into()]));ops.push(op("m",vec![num(cx+rx),num(cy)]));for values in [[cx+rx,cy+k*ry,cx+k*rx,cy+ry,cx,cy+ry],[cx-k*rx,cy+ry,cx-rx,cy+k*ry,cx-rx,cy],[cx-rx,cy-k*ry,cx-k*rx,cy-ry,cx,cy-ry],[cx+k*rx,cy-ry,cx+rx,cy-k*ry,cx+rx,cy]]{ops.push(op("c",values.into_iter().map(num).collect()));}ops.push(op("S",vec![]));}}ops.push(op("Q",vec![]));Ok(())}
-fn compose(mut doc:Document,detail:&CorrespondenceDetail,images:&BTreeMap<Uuid,Vec<u8>>)->Result<Vec<u8>,AppError>{
- let font=font_object(&mut doc)?;let alpha=doc.add_object(dictionary!{"Type"=>"ExtGState","ca"=>0.3,"CA"=>0.3});let pages=doc.get_pages();
- let revision=detail.document.revision;let annotations:Vec<_>=detail.document.annotations.iter().chain(detail.history.iter().filter(|h|h.document_revision==revision).flat_map(|h|h.annotations.iter())).collect();
- if annotations.iter().any(|a|!pages.contains_key(&a.page))||detail.signatures.iter().filter(|s|s.signature.document_revision==revision).any(|s|!pages.contains_key(&s.signature.page)){return Err(invalid("ตำแหน่งกำกับหรือลายเซ็นอยู่นอกหน้าเอกสาร"))}
- for(number,page)in pages{let g=geometry(&doc,page)?;install_resource(&mut doc,page,"Font","WorkflowFont",font)?;install_resource(&mut doc,page,"ExtGState","WorkflowHighlight",alpha)?;let mut ops=vec![op("q",vec![]),op("cm",g.matrix.into_iter().map(num).collect())];for a in annotations.iter().filter(|a|a.page==number){annotation(&mut ops,a,g)?;}
- for signature in detail.signatures.iter().filter(|s|s.signature.document_revision==revision&&s.signature.page==number){let s=&signature.signature;let x=s.x*g.width;let y=(1.0-s.y)*g.height;let w=s.width*g.width;let h=s.height*g.height;match s.method{SignatureMethod::Drawn=>ink(&mut ops,&s.strokes,x,y,w,h)?,SignatureMethod::Image=>{let bytes=signature.file_id.and_then(|f|images.get(&f)).ok_or_else(||invalid("ไม่พบไฟล์ลายเซ็นที่ยืนยันแล้ว"))?;let(image,iw,ih)=image_object(&mut doc,bytes)?;let name=format!("Signature{}",signature.id.simple());install_resource(&mut doc,page,"XObject",&name,image)?;let scale=(w/f64::from(iw)).min(h/f64::from(ih));let sw=f64::from(iw)*scale;let sh=f64::from(ih)*scale;ops.extend(image_ops(&name,x+(w-sw)/2.0,y-h+(h-sh)/2.0,sw,sh));}}
- let label=format!("{} {}  {}",signature.signer_name,signature.signer_role.as_deref().unwrap_or(""),signature.signed_at.format("%d/%m/%Y %H:%M UTC"));text_box(&mut ops,&label,x,(y-h-2.0).max(10.0),w,20.0,"#333333")?;
- }ops.push(op("Q",vec![]));doc.add_page_contents(page,Content{operations:ops}.encode().map_err(pdf_error)?).map_err(pdf_error)?;}
- // Evidence is embedded from authoritative snapshots, independently of visual rendering.
- let evidence=serde_json::to_vec(&(&detail.record,&detail.document,&detail.history,&detail.signatures)).map_err(pdf_error)?;let embedded=doc.add_object(Stream::new(dictionary!{"Type"=>"EmbeddedFile","Subtype"=>Object::Name(b"application/json".to_vec())},evidence));let spec=doc.add_object(dictionary!{"Type"=>"Filespec","F"=>Object::string_literal("signing-evidence.json"),"EF"=>dictionary!{"F"=>embedded}});let root=doc.trailer.get(b"Root").map_err(pdf_error)?.as_reference().map_err(pdf_error)?;doc.get_object_mut(root).map_err(pdf_error)?.as_dict_mut().map_err(pdf_error)?.set("Names",dictionary!{"EmbeddedFiles"=>dictionary!{"Names"=>vec![Object::string_literal("signing-evidence.json"),Object::Reference(spec)]}});doc.compress();let mut bytes=Vec::new();doc.save_to(&mut bytes).map_err(pdf_error)?;Ok(bytes)
+fn color(value: &str) -> Result<[f64; 3], AppError> {
+    if value.len() != 7 || !value.starts_with('#') {
+        return Err(invalid("สีไม่ถูกต้อง"));
+    }
+    let parse = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&value[range], 16)
+            .map(|v| f64::from(v) / 255.0)
+            .map_err(pdf_error)
+    };
+    Ok([parse(1..3)?, parse(3..5)?, parse(5..7)?])
 }
-async fn source_bytes(pool:&PgPool,platform:&FilePlatform,document:&CorrespondenceDocumentRevision)->Result<Option<Vec<u8>>,AppError>{let Some(id)=document.original_file_id else{return Ok(None)};let snapshot=document.file_snapshots.iter().find(|s|s.file_id==id).ok_or_else(||invalid("ไม่พบตัวตนฉบับเอกสาร"))?;let current:Option<(Uuid,String)>=sqlx::query_as("SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1").bind(id).fetch_optional(pool).await?;if current!=Some((snapshot.version_id,snapshot.checksum.clone())){return Err(invalid("ฉบับไฟล์ไม่ตรงกับเอกสารที่ยืนยัน"))}let bytes=platform.read_private_original(&SqlFileRepository::new(pool.clone()),id).await.map_err(map_platform_error)?;if Sha256::digest(&bytes).iter().map(|b|format!("{b:02x}")).collect::<String>()!=snapshot.checksum{return Err(invalid("เนื้อหาไฟล์ไม่ตรงกับฉบับที่ยืนยัน"))}Ok(Some(bytes.to_vec()))}
-pub async fn preview(pool:&PgPool,actor:&ActorContext,platform:&FilePlatform,id:Uuid,revision:i64)->Result<Vec<u8>,AppError>{let detail=correspondence::detail(pool,actor,id).await?;let document=detail.revisions.into_iter().find(|d|d.revision==revision).ok_or_else(||invalid("ไม่พบฉบับเอกสาร"))?;let original=source_bytes(pool,platform,&document).await?;tokio::task::spawn_blocking(move||{let mut doc=source_document(&document,original.as_deref())?;let mut bytes=Vec::new();doc.save_to(&mut bytes).map_err(pdf_error)?;Ok(bytes)}).await.map_err(pdf_error)?}
-pub async fn export(pool:&PgPool,actor:&ActorContext,platform:&FilePlatform,id:Uuid)->Result<Vec<u8>,AppError>{actor.require_permission(codes::CORRESPONDENCE_DOWNLOAD_ASSIGNED)?;let detail=correspondence::detail(pool,actor,id).await?;let original=source_bytes(pool,platform,&detail.document).await?;let mut images=BTreeMap::new();for file in detail.signatures.iter().filter(|s|s.signature.document_revision==detail.document.revision).filter_map(|s|s.file_id){if let std::collections::btree_map::Entry::Vacant(entry)=images.entry(file){entry.insert(platform.read_private_original(&SqlFileRepository::new(pool.clone()),file).await.map_err(map_platform_error)?.to_vec());}}
- tokio::task::spawn_blocking(move||{let source=source_document(&detail.document,original.as_deref())?;compose(source,&detail,&images)}).await.map_err(pdf_error)?
+fn font_face() -> Result<rustybuzz::Face<'static>, AppError> {
+    rustybuzz::Face::from_slice(FONT, 0)
+        .ok_or_else(|| AppError::InternalServerError("correspondence_font_invalid".into()))
+}
+fn shaped(
+    text: &str,
+) -> Result<
+    (
+        Vec<rustybuzz::GlyphInfo>,
+        Vec<rustybuzz::GlyphPosition>,
+        f64,
+    ),
+    AppError,
+> {
+    let face = font_face()?;
+    let mut buffer = rustybuzz::UnicodeBuffer::new();
+    buffer.push_str(text);
+    buffer.guess_segment_properties();
+    let shaped = rustybuzz::shape(&face, &[], buffer);
+    Ok((
+        shaped.glyph_infos().to_vec(),
+        shaped.glyph_positions().to_vec(),
+        f64::from(face.units_per_em()),
+    ))
+}
+fn text_width(text: &str, size: f64) -> Result<f64, AppError> {
+    let (_, positions, units) = shaped(text)?;
+    Ok(positions
+        .iter()
+        .map(|p| f64::from(p.x_advance) * size / units)
+        .sum())
+}
+fn wrap(text: &str, width: f64, size: f64) -> Result<Vec<String>, AppError> {
+    let mut lines = Vec::new();
+    let normalized = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\t', "    ");
+    for paragraph in normalized.split('\n') {
+        let mut line = String::new();
+        for ch in paragraph.chars() {
+            let combining = matches!(ch,'\u{0e31}'|'\u{0e34}'..='\u{0e3a}'|'\u{0e47}'..='\u{0e4e}');
+            let mut candidate = line.clone();
+            candidate.push(ch);
+            if !combining && !line.is_empty() && text_width(&candidate, size)? > width {
+                lines.push(line);
+                line = ch.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+        lines.push(line);
+    }
+    Ok(lines)
+}
+fn font_object(doc: &mut Document) -> Result<ObjectId, AppError> {
+    let face = font_face()?;
+    let font_file = doc.add_object(Stream::new(
+        dictionary! {"Length1"=>FONT.len() as i64},
+        FONT.to_vec(),
+    ));
+    let bbox = face.global_bounding_box();
+    let descriptor=doc.add_object(dictionary!{"Type"=>"FontDescriptor","FontName"=>"Sarabun","Flags"=>4,"FontBBox"=>vec![Object::Integer(i64::from(bbox.x_min)),Object::Integer(i64::from(bbox.y_min)),Object::Integer(i64::from(bbox.x_max)),Object::Integer(i64::from(bbox.y_max))],"ItalicAngle"=>0,"Ascent"=>i64::from(face.ascender()),"Descent"=>i64::from(face.descender()),"CapHeight"=>i64::from(face.ascender()),"StemV"=>80,"FontFile2"=>font_file});
+    let descendant=doc.add_object(dictionary!{"Type"=>"Font","Subtype"=>"CIDFontType2","BaseFont"=>"Sarabun","CIDSystemInfo"=>dictionary!{"Registry"=>Object::string_literal("Adobe"),"Ordering"=>Object::string_literal("Identity"),"Supplement"=>0},"FontDescriptor"=>descriptor,"DW"=>1000,"CIDToGIDMap"=>"Identity"});
+    Ok(doc.add_object(dictionary!{"Type"=>"Font","Subtype"=>"Type0","BaseFont"=>"Sarabun","Encoding"=>"Identity-H","DescendantFonts"=>vec![Object::Reference(descendant)]}))
+}
+fn resources(doc: &Document, page: ObjectId) -> Dictionary {
+    inherited(doc, page, b"Resources")
+        .and_then(|v| v.as_dict().ok().cloned())
+        .unwrap_or_default()
+}
+fn install_resource(
+    doc: &mut Document,
+    page: ObjectId,
+    category: &str,
+    name: &str,
+    id: ObjectId,
+) -> Result<(), AppError> {
+    let mut r = resources(doc, page);
+    let mut group = r
+        .get_deref(category.as_bytes(), doc)
+        .ok()
+        .and_then(|v| v.as_dict().ok())
+        .cloned()
+        .unwrap_or_default();
+    group.set(name, id);
+    r.set(category, group);
+    doc.get_object_mut(page)
+        .map_err(pdf_error)?
+        .as_dict_mut()
+        .map_err(pdf_error)?
+        .set("Resources", r);
+    Ok(())
+}
+fn text(
+    ops: &mut Vec<Operation>,
+    text: &str,
+    x: f64,
+    y: f64,
+    size: f64,
+    color_value: &str,
+) -> Result<(), AppError> {
+    let (rgb, (_, positions, units)) = (color(color_value)?, shaped(text)?);
+    let (infos, _, _) = shaped(text)?;
+    ops.push(op("rg", rgb.into_iter().map(num).collect()));
+    ops.push(op("BT", vec![]));
+    ops.push(op(
+        "Tf",
+        vec![Object::Name(b"WorkflowFont".to_vec()), num(size)],
+    ));
+    let mut pen_x = x;
+    let mut pen_y = y;
+    for (info, position) in infos.iter().zip(positions) {
+        let glyph = u16::try_from(info.glyph_id).map_err(pdf_error)?;
+        if glyph == 0 {
+            return Err(invalid("แบบอักษรไม่รองรับอักขระในเอกสาร"));
+        }
+        ops.push(op(
+            "Tm",
+            vec![
+                1.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+                num(pen_x + f64::from(position.x_offset) * size / units),
+                num(pen_y + f64::from(position.y_offset) * size / units),
+            ],
+        ));
+        ops.push(op(
+            "Tj",
+            vec![Object::String(
+                glyph.to_be_bytes().to_vec(),
+                lopdf::StringFormat::Hexadecimal,
+            )],
+        ));
+        pen_x += f64::from(position.x_advance) * size / units;
+        pen_y += f64::from(position.y_advance) * size / units;
+    }
+    ops.push(op("ET", vec![]));
+    Ok(())
+}
+fn text_box(
+    ops: &mut Vec<Operation>,
+    value: &str,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    color: &str,
+) -> Result<(), AppError> {
+    let mut size = 14.0;
+    loop {
+        let lines = wrap(value, w, size)?;
+        if lines.len() as f64 * size * 1.3 <= h {
+            for (index, line) in lines.iter().enumerate() {
+                text(
+                    ops,
+                    line,
+                    x,
+                    y - size * 1.1 - index as f64 * size * 1.3,
+                    size,
+                    color,
+                )?;
+            }
+            return Ok(());
+        }
+        if size <= 5.0 {
+            return Err(invalid("ข้อความกำกับยาวเกินพื้นที่ กรุณาขยายพื้นที่หรือลดข้อความ"));
+        }
+        size -= 0.5;
+    }
+}
+fn blank_document() -> Document {
+    Document::with_version("1.7")
+}
+fn add_pages(
+    doc: &mut Document,
+    contents: Vec<(f64, f64, Vec<Operation>)>,
+) -> Result<(), AppError> {
+    let pages = doc.new_object_id();
+    let mut kids = Vec::new();
+    for (w, h, operations) in contents {
+        let content = doc.add_object(Stream::new(
+            Dictionary::new(),
+            Content { operations }.encode().map_err(pdf_error)?,
+        ));
+        let page=doc.add_object(dictionary!{"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),num(w),num(h)],"Resources"=>Dictionary::new(),"Contents"=>content});
+        kids.push(Object::Reference(page));
+    }
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(dictionary! {"Type"=>"Pages","Count"=>kids.len() as i64,"Kids"=>kids}),
+    );
+    let catalog = doc.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages});
+    doc.trailer.set("Root", catalog);
+    Ok(())
+}
+fn image_object(doc: &mut Document, bytes: &[u8]) -> Result<(ObjectId, u32, u32), AppError> {
+    let image = image::load_from_memory(bytes)
+        .map_err(pdf_error)?
+        .to_rgba8();
+    let (w, h) = image.dimensions();
+    if u64::from(w) * u64::from(h) > 80_000_000 {
+        return Err(invalid("ภาพมีขนาดเกินกำหนด"));
+    }
+    let mut rgb = Vec::with_capacity(w as usize * h as usize * 3);
+    let mut alpha = Vec::with_capacity(w as usize * h as usize);
+    for p in image.pixels() {
+        rgb.extend_from_slice(&p.0[..3]);
+        alpha.push(p.0[3]);
+    }
+    let mask=doc.add_object(Stream::new(dictionary!{"Type"=>"XObject","Subtype"=>"Image","Width"=>i64::from(w),"Height"=>i64::from(h),"ColorSpace"=>"DeviceGray","BitsPerComponent"=>8},alpha));
+    let id=doc.add_object(Stream::new(dictionary!{"Type"=>"XObject","Subtype"=>"Image","Width"=>i64::from(w),"Height"=>i64::from(h),"ColorSpace"=>"DeviceRGB","BitsPerComponent"=>8,"SMask"=>mask},rgb));
+    Ok((id, w, h))
+}
+fn image_ops(name: &str, x: f64, y: f64, w: f64, h: f64) -> Vec<Operation> {
+    vec![
+        op("q", vec![]),
+        op(
+            "cm",
+            vec![num(w), 0.into(), 0.into(), num(h), num(x), num(y)],
+        ),
+        op("Do", vec![Object::Name(name.as_bytes().to_vec())]),
+        op("Q", vec![]),
+    ]
+}
+fn source_document(
+    document: &CorrespondenceDocumentRevision,
+    original: Option<&[u8]>,
+) -> Result<Document, AppError> {
+    if let Some(original) = original {
+        if original.starts_with(b"%PDF-") {
+            return Document::load_mem(original).map_err(pdf_error);
+        }
+        let mut doc = blank_document();
+        let (id, w, h) = image_object(&mut doc, original)?;
+        let scale = (595.0 / f64::from(w)).min(842.0 / f64::from(h));
+        let iw = f64::from(w) * scale;
+        let ih = f64::from(h) * scale;
+        add_pages(
+            &mut doc,
+            vec![(
+                595.0,
+                842.0,
+                image_ops(
+                    "SourceImage",
+                    (595.0 - iw) / 2.0,
+                    (842.0 - ih) / 2.0,
+                    iw,
+                    ih,
+                ),
+            )],
+        )?;
+        let page = *doc
+            .get_pages()
+            .get(&1)
+            .ok_or_else(|| invalid("ไม่พบหน้าเอกสาร"))?;
+        install_resource(&mut doc, page, "XObject", "SourceImage", id)?;
+        return Ok(doc);
+    }
+    let mut doc = blank_document();
+    let lines = wrap(&document.content, 515.0, 14.0)?;
+    let mut pages = Vec::new();
+    for chunk in lines.chunks(41) {
+        let mut ops = Vec::new();
+        for (index, line) in chunk.iter().enumerate() {
+            text(
+                &mut ops,
+                line,
+                40.0,
+                795.0 - index as f64 * 18.0,
+                14.0,
+                "#111111",
+            )?;
+        }
+        pages.push((595.0, 842.0, ops));
+    }
+    if pages.is_empty() {
+        pages.push((595.0, 842.0, vec![]))
+    }
+    add_pages(&mut doc, pages)?;
+    let font = font_object(&mut doc)?;
+    for page in doc.get_pages().values() {
+        install_resource(&mut doc, *page, "Font", "WorkflowFont", font)?;
+    }
+    Ok(doc)
+}
+fn ink(
+    ops: &mut Vec<Operation>,
+    strokes: &[InkStroke],
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), AppError> {
+    for stroke in strokes {
+        let c = color(&stroke.color)?;
+        ops.push(op("RG", c.into_iter().map(num).collect()));
+        ops.push(op("w", vec![num((stroke.width * w).max(0.25))]));
+        ops.push(op("J", vec![1.into()]));
+        ops.push(op("j", vec![1.into()]));
+        for (index, point) in stroke.points.iter().enumerate() {
+            ops.push(op(
+                if index == 0 { "m" } else { "l" },
+                vec![num(x + point.x * w), num(y - point.y * h)],
+            ));
+        }
+        ops.push(op("S", vec![]));
+    }
+    Ok(())
+}
+fn annotation(
+    ops: &mut Vec<Operation>,
+    a: &DocumentAnnotation,
+    g: Geometry,
+) -> Result<(), AppError> {
+    let x = a.x * g.width;
+    let y = (1.0 - a.y) * g.height;
+    let w = a.width * g.width;
+    let h = a.height * g.height;
+    let c = color(&a.color)?;
+    ops.push(op("q", vec![]));
+    match a.kind {
+        DocumentAnnotationKind::Text => {
+            text_box(ops, a.text.as_deref().unwrap_or(""), x, y, w, h, &a.color)?
+        }
+        DocumentAnnotationKind::Ink => ink(ops, &a.strokes, x, y, w, h)?,
+        DocumentAnnotationKind::Highlight => {
+            ops.push(op("gs", vec![Object::Name(b"WorkflowHighlight".to_vec())]));
+            ops.push(op("rg", c.into_iter().map(num).collect()));
+            ops.push(op("re", vec![num(x), num(y - h), num(w), num(h)]));
+            ops.push(op("f", vec![]));
+        }
+        DocumentAnnotationKind::Circle => {
+            let cx = x + w / 2.0;
+            let cy = y - h / 2.0;
+            let rx = w / 2.0;
+            let ry = h / 2.0;
+            let k = 0.55228475;
+            ops.push(op("RG", c.into_iter().map(num).collect()));
+            ops.push(op("w", vec![1.2.into()]));
+            ops.push(op("m", vec![num(cx + rx), num(cy)]));
+            for values in [
+                [cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry],
+                [cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy],
+                [cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry],
+                [cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy],
+            ] {
+                ops.push(op("c", values.into_iter().map(num).collect()));
+            }
+            ops.push(op("S", vec![]));
+        }
+    }
+    ops.push(op("Q", vec![]));
+    Ok(())
+}
+fn compose(
+    mut doc: Document,
+    detail: &CorrespondenceDetail,
+    images: &BTreeMap<Uuid, Vec<u8>>,
+) -> Result<Vec<u8>, AppError> {
+    let font = font_object(&mut doc)?;
+    let alpha = doc.add_object(dictionary! {"Type"=>"ExtGState","ca"=>0.3,"CA"=>0.3});
+    let pages = doc.get_pages();
+    let revision = detail.document.revision;
+    let annotations: Vec<_> = detail
+        .document
+        .annotations
+        .iter()
+        .chain(
+            detail
+                .history
+                .iter()
+                .filter(|h| h.document_revision == revision)
+                .flat_map(|h| h.annotations.iter()),
+        )
+        .collect();
+    if annotations.iter().any(|a| !pages.contains_key(&a.page))
+        || detail
+            .signatures
+            .iter()
+            .filter(|s| s.signature.document_revision == revision)
+            .any(|s| !pages.contains_key(&s.signature.page))
+    {
+        return Err(invalid("ตำแหน่งกำกับหรือลายเซ็นอยู่นอกหน้าเอกสาร"));
+    }
+    for (number, page) in pages {
+        let g = geometry(&doc, page)?;
+        install_resource(&mut doc, page, "Font", "WorkflowFont", font)?;
+        install_resource(&mut doc, page, "ExtGState", "WorkflowHighlight", alpha)?;
+        let mut ops = vec![
+            op("q", vec![]),
+            op("cm", g.matrix.into_iter().map(num).collect()),
+        ];
+        for a in detail
+            .document
+            .annotations
+            .iter()
+            .filter(|a| a.page == number)
+        {
+            annotation(&mut ops, a, g)?;
+        }
+        for action in detail
+            .history
+            .iter()
+            .filter(|h| h.document_revision == revision)
+        {
+            for a in action.annotations.iter().filter(|a| a.page == number) {
+                annotation(&mut ops, a, g)?;
+            }
+            for signature in detail.signatures.iter().filter(|s| {
+                s.action_id == action.id
+                    && s.signature.document_revision == revision
+                    && s.signature.page == number
+            }) {
+                let s = &signature.signature;
+                let x = s.x * g.width;
+                let y = (1.0 - s.y) * g.height;
+                let w = s.width * g.width;
+                let h = s.height * g.height;
+                match s.method {
+                    SignatureMethod::Drawn => ink(&mut ops, &s.strokes, x, y, w, h)?,
+                    SignatureMethod::Image => {
+                        let bytes = signature
+                            .file_id
+                            .and_then(|f| images.get(&f))
+                            .ok_or_else(|| invalid("ไม่พบไฟล์ลายเซ็นที่ยืนยันแล้ว"))?;
+                        let (image, iw, ih) = image_object(&mut doc, bytes)?;
+                        let name = format!("Signature{}", signature.id.simple());
+                        install_resource(&mut doc, page, "XObject", &name, image)?;
+                        let scale = (w / f64::from(iw)).min(h / f64::from(ih));
+                        let sw = f64::from(iw) * scale;
+                        let sh = f64::from(ih) * scale;
+                        ops.extend(image_ops(
+                            &name,
+                            x + (w - sw) / 2.0,
+                            y - h + (h - sh) / 2.0,
+                            sw,
+                            sh,
+                        ));
+                    }
+                }
+                let label = signing_label(
+                    &signature.signer_name,
+                    signature.signer_role.as_deref(),
+                    signature.signed_at,
+                );
+                signature_caption(&mut ops, &label, s, g)?;
+            }
+        }
+        ops.push(op("Q", vec![]));
+        doc.add_page_contents(
+            page,
+            Content { operations: ops }.encode().map_err(pdf_error)?,
+        )
+        .map_err(pdf_error)?;
+    }
+    // Evidence is embedded from authoritative snapshots, independently of visual rendering.
+    let evidence = serde_json::to_vec(&(
+        &detail.record,
+        &detail.document,
+        &detail.history,
+        &detail.signatures,
+    ))
+    .map_err(pdf_error)?;
+    let embedded = doc.add_object(Stream::new(
+        dictionary! {"Type"=>"EmbeddedFile","Subtype"=>Object::Name(b"application/json".to_vec())},
+        evidence,
+    ));
+    let spec=doc.add_object(dictionary!{"Type"=>"Filespec","F"=>Object::string_literal("signing-evidence.json"),"EF"=>dictionary!{"F"=>embedded}});
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .map_err(pdf_error)?
+        .as_reference()
+        .map_err(pdf_error)?;
+    let root_dict = doc.get_dictionary(root).map_err(pdf_error)?;
+    let mut names = root_dict
+        .get_deref(b"Names", &doc)
+        .ok()
+        .and_then(|v| v.as_dict().ok())
+        .cloned()
+        .unwrap_or_default();
+    let new_files=doc.add_object(dictionary!{"Names"=>vec![Object::string_literal("signing-evidence.json"),Object::Reference(spec)]});
+    let embedded_tree = if let Ok(old) = names.get(b"EmbeddedFiles") {
+        dictionary! {"Kids"=>vec![old.clone(),Object::Reference(new_files)]}
+    } else {
+        dictionary! {"Kids"=>vec![Object::Reference(new_files)]}
+    };
+    names.set("EmbeddedFiles", embedded_tree);
+    doc.get_object_mut(root)
+        .map_err(pdf_error)?
+        .as_dict_mut()
+        .map_err(pdf_error)?
+        .set("Names", names);
+    doc.compress();
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).map_err(pdf_error)?;
+    Ok(bytes)
+}
+async fn source_bytes(
+    pool: &PgPool,
+    platform: &FilePlatform,
+    document: &CorrespondenceDocumentRevision,
+) -> Result<Option<Vec<u8>>, AppError> {
+    let Some(id) = document.original_file_id else {
+        return Ok(None);
+    };
+    let snapshot = document
+        .file_snapshots
+        .iter()
+        .find(|s| s.file_id == id)
+        .ok_or_else(|| invalid("ไม่พบตัวตนฉบับเอกสาร"))?;
+    Ok(Some(read_snapshot(pool, platform, snapshot).await?))
+}
+async fn read_snapshot(
+    pool: &PgPool,
+    platform: &FilePlatform,
+    snapshot: &CorrespondenceFileSnapshot,
+) -> Result<Vec<u8>, AppError> {
+    let current:Option<(Uuid,String)>=sqlx::query_as("SELECT v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1").bind(snapshot.file_id).fetch_optional(pool).await?;
+    if current != Some((snapshot.version_id, snapshot.checksum.clone())) {
+        return Err(invalid("ฉบับไฟล์ไม่ตรงกับเอกสารที่ยืนยัน"));
+    }
+    let bytes = platform
+        .read_private_original(&SqlFileRepository::new(pool.clone()), snapshot.file_id)
+        .await
+        .map_err(map_platform_error)?;
+    if Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>()
+        != snapshot.checksum
+    {
+        return Err(invalid("เนื้อหาไฟล์ไม่ตรงกับฉบับที่ยืนยัน"));
+    }
+    Ok(bytes.to_vec())
 }
 
-#[cfg(test)]mod tests{
- use super::*;
- #[test]fn visual_rotation_maps_normalized_view_back_to_crop(){let mut doc=blank_document();add_pages(&mut doc,vec![(600.0,800.0,vec![])]).unwrap();let page=doc.get_pages()[&1];doc.get_object_mut(page).unwrap().as_dict_mut().unwrap().set("CropBox",vec![20.into(),30.into(),580.into(),770.into()]);doc.get_object_mut(page).unwrap().as_dict_mut().unwrap().set("Rotate",90);let g=geometry(&doc,page).unwrap();assert_eq!((g.width,g.height),(740.0,560.0));assert_eq!(g.matrix,[0.0,1.0,-1.0,0.0,580.0,30.0]);}
- #[test]fn thai_combining_marks_are_shaped_and_font_embedded(){let text="บันทึกข้อความ ผู้อนุมัติ กำหนดให้ดำเนินการ น้ำ";let(info,positions,_)=shaped(text).unwrap();assert!(!info.is_empty());assert!(info.iter().all(|g|g.glyph_id!=0));assert!(positions.iter().any(|p|p.y_offset!=0||p.x_offset!=0));assert!(text_width(text,14.0).unwrap()>0.0);}
- fn fixture_detail()->CorrespondenceDetail{
-  serde_json::from_value(serde_json::json!({
+pub async fn preview(
+    pool: &PgPool,
+    actor: &ActorContext,
+    platform: &FilePlatform,
+    id: Uuid,
+    revision: i64,
+) -> Result<Vec<u8>, AppError> {
+    let detail = correspondence::detail(pool, actor, id).await?;
+    let document = detail
+        .revisions
+        .into_iter()
+        .find(|d| d.revision == revision)
+        .ok_or_else(|| invalid("ไม่พบฉบับเอกสาร"))?;
+    let original = source_bytes(pool, platform, &document).await?;
+    tokio::task::spawn_blocking(move || {
+        let mut doc = source_document(&document, original.as_deref())?;
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).map_err(pdf_error)?;
+        Ok(bytes)
+    })
+    .await
+    .map_err(pdf_error)?
+}
+pub async fn export(
+    pool: &PgPool,
+    actor: &ActorContext,
+    platform: &FilePlatform,
+    id: Uuid,
+) -> Result<Vec<u8>, AppError> {
+    actor.require_permission(codes::CORRESPONDENCE_DOWNLOAD_ASSIGNED)?;
+    let detail = correspondence::detail(pool, actor, id).await?;
+    let original = source_bytes(pool, platform, &detail.document).await?;
+    let mut images = BTreeMap::new();
+    for signature in detail
+        .signatures
+        .iter()
+        .filter(|s| s.signature.document_revision == detail.document.revision)
+    {
+        if let Some(file) = signature.file_id {
+            if let std::collections::btree_map::Entry::Vacant(entry) = images.entry(file) {
+                let snapshot = signature
+                    .signature_file_snapshot
+                    .as_ref()
+                    .filter(|s| s.file_id == file)
+                    .ok_or_else(|| invalid("ไม่พบตัวตนฉบับลายเซ็นที่ยืนยัน"))?;
+                entry.insert(read_snapshot(pool, platform, snapshot).await?);
+            }
+        }
+    }
+    tokio::task::spawn_blocking(move || {
+        let source = source_document(&detail.document, original.as_deref())?;
+        compose(source, &detail, &images)
+    })
+    .await
+    .map_err(pdf_error)?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn visual_rotation_maps_normalized_view_back_to_crop() {
+        let mut doc = blank_document();
+        add_pages(&mut doc, vec![(600.0, 800.0, vec![])]).unwrap();
+        let page = doc.get_pages()[&1];
+        doc.get_object_mut(page)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set(
+                "CropBox",
+                vec![20.into(), 30.into(), 580.into(), 770.into()],
+            );
+        doc.get_object_mut(page)
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("Rotate", 90);
+        let g = geometry(&doc, page).unwrap();
+        assert_eq!((g.width, g.height), (740.0, 560.0));
+        assert_eq!(g.matrix, [0.0, 1.0, -1.0, 0.0, 580.0, 30.0]);
+    }
+    #[test]
+    fn thai_combining_marks_are_shaped_and_font_embedded() {
+        let text = "บันทึกข้อความ ผู้อนุมัติ กำหนดให้ดำเนินการ น้ำ";
+        let (info, positions, _) = shaped(text).unwrap();
+        assert!(!info.is_empty());
+        assert!(info.iter().all(|g| g.glyph_id != 0));
+        assert!(positions.iter().any(|p| p.y_offset != 0 || p.x_offset != 0));
+        assert!(text_width(text, 14.0).unwrap() > 0.0);
+    }
+    fn fixture_detail() -> CorrespondenceDetail {
+        serde_json::from_value(serde_json::json!({
    "record":{"id":Uuid::now_v7(),"registerNumber":1,"registerYear":2569,"register":"internal","title":"บันทึกข้อความ ทดสอบระบบ","sender":"Synthetic school","documentNumber":"TEST-1","documentDate":null,"urgency":"normal","organizationUnitId":null,"revision":3,"status":"completed","createdBy":Uuid::now_v7(),"createdAt":"2026-10-18T00:00:00Z"},
    "sourceLinks":[],"document":{"revision":1,"content":"บันทึกข้อความ\nเรื่อง ทดสอบการจัดวางภาษาไทย\nผู้อนุมัติ กำหนดให้ดำเนินการ น้ำ กิ กี่ กุ กู้ กำ", "originalFileId":null,"attachmentFileIds":[],"annotations":[],"contentHash":"synthetic","fileSnapshots":[],"createdBy":Uuid::now_v7(),"createdAt":"2026-10-18T00:00:00Z"},
    "revisions":[],"instance":null,"history":[],"signatures":[],"canManage":false,"canAct":false,"availableActions":[]
   })).unwrap()
- }
- #[test]fn actual_compositor_keeps_thai_rotation_annotations_and_both_signature_methods(){
-  let mut detail=fixture_detail();
-  detail.document.annotations=vec![DocumentAnnotation{id:Uuid::now_v7(),kind:DocumentAnnotationKind::Text,page:1,x:0.1,y:0.25,width:0.55,height:0.12,text:Some("อนุมัติ ให้ดำเนินการตามเสนอ น้ำ กิ กี่ กุ กู้".into()),color:"#172554".into(),strokes:vec![]},DocumentAnnotation{id:Uuid::now_v7(),kind:DocumentAnnotationKind::Highlight,page:1,x:0.1,y:0.4,width:0.5,height:0.04,text:None,color:"#ffff00".into(),strokes:vec![]},DocumentAnnotation{id:Uuid::now_v7(),kind:DocumentAnnotationKind::Circle,page:1,x:0.7,y:0.2,width:0.2,height:0.1,text:None,color:"#cc0000".into(),strokes:vec![]}];
-  let action=Uuid::now_v7();let file=Uuid::now_v7();let signature=|method,asset_id,strokes,x|CorrespondenceSigningEvidence{id:Uuid::now_v7(),signer_id:Uuid::now_v7(),signer_name:"นายทดสอบ ใจดี".into(),signer_role:Some("ผู้อำนวยการ".into()),signed_at:chrono::DateTime::parse_from_rfc3339("2026-10-18T09:00:00Z").unwrap().with_timezone(&chrono::Utc),signed_content_hash:"synthetic-evidence-hash".into(),signature:SignatureInput{method,asset_id,strokes,page:1,x,y:0.6,width:0.32,height:0.12,document_revision:1,content_hash:"synthetic".into()},file_id:if method==SignatureMethod::Image{Some(file)}else{None},action_id:action};
-  detail.signatures.push(signature(SignatureMethod::Drawn,None,vec![InkStroke{points:vec![InkPoint{x:0.0,y:0.8},InkPoint{x:0.2,y:0.1},InkPoint{x:0.4,y:0.6},InkPoint{x:0.9,y:0.3}],width:0.01,color:"#000088".into()}],0.1));
-  detail.signatures.push(signature(SignatureMethod::Image,Some(Uuid::now_v7()),vec![],0.58));
-  let image=image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(120,40,|x,y|if (x/8+y/5)%3==0{image::Rgba([0,40,180,255])}else{image::Rgba([0,0,0,0])}));let mut png=Vec::new();image.write_to(&mut std::io::Cursor::new(&mut png),image::ImageFormat::Png).unwrap();let images=BTreeMap::from([(file,png)]);
-  for rotated in [false,true]{let mut source=source_document(&detail.document,None).unwrap();if rotated{let page=source.get_pages()[&1];let dictionary=source.get_object_mut(page).unwrap().as_dict_mut().unwrap();dictionary.set("CropBox",vec![20.into(),30.into(),575.into(),812.into()]);dictionary.set("Rotate",90);}
-   let bytes=compose(source,&detail,&images).unwrap();let parsed=Document::load_mem(&bytes).unwrap();assert_eq!(parsed.get_pages().len(),1);assert!(bytes.starts_with(b"%PDF-"));assert!(parsed.objects.values().any(|o|o.as_dict().is_ok_and(|d|d.get(b"Subtype").is_ok_and(|s|s.as_name()==Ok(b"CIDFontType2")))));
-   if let Ok(directory)=std::env::var("WORKFLOW_PDF_FIXTURE_DIR"){std::fs::create_dir_all(&directory).unwrap();std::fs::write(std::path::Path::new(&directory).join(if rotated{"correspondence-rotated.pdf"}else{"correspondence-thai.pdf"}),bytes).unwrap();}
-  }
- }
+    }
+    #[test]
+    fn actual_compositor_keeps_thai_rotation_annotations_and_both_signature_methods() {
+        let mut detail = fixture_detail();
+        detail.document.annotations = vec![
+            DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Text,
+                page: 1,
+                x: 0.1,
+                y: 0.25,
+                width: 0.55,
+                height: 0.12,
+                text: Some("อนุมัติ ให้ดำเนินการตามเสนอ น้ำ กิ กี่ กุ กู้".into()),
+                color: "#172554".into(),
+                strokes: vec![],
+            },
+            DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Highlight,
+                page: 1,
+                x: 0.1,
+                y: 0.4,
+                width: 0.5,
+                height: 0.04,
+                text: None,
+                color: "#ffff00".into(),
+                strokes: vec![],
+            },
+            DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Circle,
+                page: 1,
+                x: 0.7,
+                y: 0.2,
+                width: 0.2,
+                height: 0.1,
+                text: None,
+                color: "#cc0000".into(),
+                strokes: vec![],
+            },
+        ];
+        let action = Uuid::now_v7();
+        detail.history.push(ProcessHistoryEntry {
+            id: action,
+            actor_id: Uuid::now_v7(),
+            actor_name: "นายทดสอบ ใจดี".into(),
+            reassigned_from_user_id: None,
+            reassigned_to_user_id: None,
+            action: "approve".into(),
+            document_revision: 1,
+            annotations: vec![],
+            comment: Some("ทดสอบการลงนาม".into()),
+            evidence_file_ids: vec![],
+            created_at: chrono::Utc::now(),
+            revision: 3,
+        });
+        let file = Uuid::now_v7();
+        let signature = |method, asset_id, strokes, x| CorrespondenceSigningEvidence {
+            id: Uuid::now_v7(),
+            signer_id: Uuid::now_v7(),
+            signer_name: "นายทดสอบ ใจดี".into(),
+            signer_role: Some("ผู้อำนวยการ".into()),
+            signed_at: chrono::DateTime::parse_from_rfc3339("2026-10-18T09:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            signed_content_hash: "synthetic-evidence-hash".into(),
+            signature_file_snapshot: None,
+            signature: SignatureInput {
+                method,
+                asset_id,
+                strokes,
+                page: 1,
+                x,
+                y: 0.6,
+                width: 0.32,
+                height: 0.12,
+                document_revision: 1,
+                content_hash: "synthetic".into(),
+            },
+            file_id: if method == SignatureMethod::Image {
+                Some(file)
+            } else {
+                None
+            },
+            action_id: action,
+        };
+        detail.signatures.push(signature(
+            SignatureMethod::Drawn,
+            None,
+            vec![InkStroke {
+                points: vec![
+                    InkPoint { x: 0.0, y: 0.8 },
+                    InkPoint { x: 0.2, y: 0.1 },
+                    InkPoint { x: 0.4, y: 0.6 },
+                    InkPoint { x: 0.9, y: 0.3 },
+                ],
+                width: 0.01,
+                color: "#000088".into(),
+            }],
+            0.1,
+        ));
+        detail.signatures.push(signature(
+            SignatureMethod::Image,
+            Some(Uuid::now_v7()),
+            vec![],
+            0.58,
+        ));
+        let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_fn(120, 40, |x, y| {
+            if (x / 8 + y / 5) % 3 == 0 {
+                image::Rgba([0, 40, 180, 255])
+            } else {
+                image::Rgba([0, 0, 0, 0])
+            }
+        }));
+        let mut png = Vec::new();
+        image
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let images = BTreeMap::from([(file, png)]);
+        for rotated in [false, true] {
+            let mut source = source_document(&detail.document, None).unwrap();
+            if rotated {
+                let page = source.get_pages()[&1];
+                let dictionary = source.get_object_mut(page).unwrap().as_dict_mut().unwrap();
+                dictionary.set(
+                    "CropBox",
+                    vec![20.into(), 30.into(), 575.into(), 812.into()],
+                );
+                dictionary.set("Rotate", 90);
+            }
+            let bytes = compose(source, &detail, &images).unwrap();
+            let parsed = Document::load_mem(&bytes).unwrap();
+            assert_eq!(parsed.get_pages().len(), 1);
+            assert!(bytes.starts_with(b"%PDF-"));
+            assert!(parsed.objects.values().any(|o| o.as_dict().is_ok_and(|d| d
+                .get(b"Subtype")
+                .is_ok_and(|s| s.as_name().is_ok_and(|name| name == b"CIDFontType2")))));
+            if let Ok(directory) = std::env::var("WORKFLOW_PDF_FIXTURE_DIR") {
+                std::fs::create_dir_all(&directory).unwrap();
+                std::fs::write(
+                    std::path::Path::new(&directory).join(if rotated {
+                        "correspondence-rotated.pdf"
+                    } else {
+                        "correspondence-thai.pdf"
+                    }),
+                    bytes,
+                )
+                .unwrap();
+            }
+        }
+    }
+    #[test]
+    fn signer_caption_uses_bangkok_buddhist_date_and_wraps_long_identity() {
+        let mut detail = fixture_detail();
+        let name = "นายชื่อยาวทดสอบ".repeat(12);
+        let role = "ผู้อำนวยการโรงเรียนและผู้รับมอบหมาย".repeat(5);
+        let time = chrono::DateTime::parse_from_rfc3339("2026-10-18T20:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let label = signing_label(&name, Some(&role), time);
+        assert!(label.contains("19/10/2569 03:00"));
+        assert!(label.contains("UTC+07:00"));
+        let signature = SignatureInput {
+            method: SignatureMethod::Drawn,
+            asset_id: None,
+            strokes: vec![],
+            page: 1,
+            x: 0.92,
+            y: 0.92,
+            width: 0.07,
+            height: 0.06,
+            document_revision: 1,
+            content_hash: "synthetic".into(),
+        };
+        detail.document.content = "เอกสารภาษาไทย".into();
+        let source = source_document(&detail.document, None).unwrap();
+        let page = source.get_pages()[&1];
+        let mut operations = Vec::new();
+        signature_caption(
+            &mut operations,
+            &label,
+            &signature,
+            geometry(&source, page).unwrap(),
+        )
+        .unwrap();
+        assert!(!operations.is_empty());
+    }
+}
 
+/// Required source-rendering port; HTTP composition binds the private File Platform implementation.
+#[async_trait::async_trait]
+pub trait DocumentValidationPort: Send + Sync {
+    async fn validate(
+        &self,
+        document: &CorrespondenceDocumentRevision,
+        annotations: &[DocumentAnnotation],
+        signature: Option<&SignatureInput>,
+        signer_label: &str,
+    ) -> Result<(), AppError>;
+}
+pub struct PlatformDocumentValidator<'a> {
+    pub pool: &'a PgPool,
+    pub platform: &'a FilePlatform,
+}
+#[async_trait::async_trait]
+impl DocumentValidationPort for PlatformDocumentValidator<'_> {
+    async fn validate(
+        &self,
+        document: &CorrespondenceDocumentRevision,
+        annotations: &[DocumentAnnotation],
+        signature: Option<&SignatureInput>,
+        signer_label: &str,
+    ) -> Result<(), AppError> {
+        let original = source_bytes(self.pool, self.platform, document).await?;
+        let document = document.clone();
+        let annotations = annotations.to_vec();
+        let signature = signature.cloned();
+        let signer_label = signer_label.to_owned();
+        tokio::task::spawn_blocking(move || {
+            validate_document_bytes(
+                &document,
+                original.as_deref(),
+                &annotations,
+                signature.as_ref(),
+                &signer_label,
+            )
+        })
+        .await
+        .map_err(pdf_error)?
+    }
+}
+/// Memory providers and production use the same real source parser and layout validator.
+pub fn validate_document_bytes(
+    document: &CorrespondenceDocumentRevision,
+    original: Option<&[u8]>,
+    annotations: &[DocumentAnnotation],
+    signature: Option<&SignatureInput>,
+    signer_label: &str,
+) -> Result<(), AppError> {
+    let source = source_document(document, original)?;
+    let pages = source.get_pages();
+    for a in document.annotations.iter().chain(annotations) {
+        let page = pages
+            .get(&a.page)
+            .ok_or_else(|| invalid("หมายเหตุอยู่นอกหน้าเอกสาร"))?;
+        annotation(&mut Vec::new(), a, geometry(&source, *page)?)?;
+    }
+    if let Some(s) = signature {
+        let page = pages
+            .get(&s.page)
+            .ok_or_else(|| invalid("ลายเซ็นอยู่นอกหน้าเอกสาร"))?;
+        let geometry = geometry(&source, *page)?;
+        signature_caption(&mut Vec::new(), signer_label, s, geometry)?;
+    }
+    Ok(())
+}
+fn signature_caption(
+    operations: &mut Vec<Operation>,
+    label: &str,
+    signature: &SignatureInput,
+    geometry: Geometry,
+) -> Result<(), AppError> {
+    let width = (signature.width * geometry.width)
+        .max(180.0)
+        .min(geometry.width);
+    let left = (signature.x * geometry.width)
+        .min(geometry.width - width)
+        .max(0.0);
+    let top = ((1.0 - signature.y - signature.height) * geometry.height - 2.0)
+        .max(48.0)
+        .min(geometry.height);
+    text_box(operations, label, left, top, width, 48.0, "#333333")
+}
+pub(crate) fn signing_label(
+    name: &str,
+    role: Option<&str>,
+    signed_at: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let local = signed_at + chrono::Duration::hours(7);
+    format!(
+        "{} {} {:02}/{:02}/{} {:02}:{:02} น. (UTC+07:00)",
+        name,
+        role.unwrap_or(""),
+        local.day(),
+        local.month(),
+        local.year() + 543,
+        local.hour(),
+        local.minute()
+    )
 }

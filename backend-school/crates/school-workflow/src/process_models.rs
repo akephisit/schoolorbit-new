@@ -6,52 +6,106 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ProcessStepKind { Acknowledge, Review, Approve, Execute, Sign }
+pub enum ProcessStepKind {
+    Acknowledge,
+    Review,
+    Approve,
+    Execute,
+    Sign,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ProcessCompletionPolicy { All, Any }
+pub enum ProcessCompletionPolicy {
+    All,
+    Any,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ProcessRecipientKind { User, OrganizationUnit, OrganizationPosition }
+pub enum ProcessRecipientKind {
+    User,
+    OrganizationUnit,
+    OrganizationPosition,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ProcessStatus { Active, RevisionRequested, Completed, Rejected, Closed }
+pub enum ProcessStatus {
+    Active,
+    RevisionRequested,
+    Completed,
+    Rejected,
+    Closed,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ProcessAction { Read, Acknowledge, Review, Approve, Execute, Sign, Reject, ReturnForRevision, Report, Close, Reassign }
+pub enum ProcessAction {
+    Read,
+    Acknowledge,
+    Review,
+    Approve,
+    Execute,
+    Sign,
+    Reject,
+    ReturnForRevision,
+    Report,
+    Close,
+    Reassign,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum CorrespondenceRegister { Incoming, Outgoing, Internal }
+pub enum CorrespondenceRegister {
+    Incoming,
+    Outgoing,
+    Internal,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum CorrespondenceUrgency { Normal, Urgent, VeryUrgent }
+pub enum CorrespondenceUrgency {
+    Normal,
+    Urgent,
+    VeryUrgent,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum CorrespondenceStatus { Draft, InProgress, RevisionRequested, Completed, Rejected, Closed }
+pub enum CorrespondenceStatus {
+    Draft,
+    InProgress,
+    RevisionRequested,
+    Completed,
+    Rejected,
+    Closed,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum DocumentAnnotationKind { Text, Ink, Highlight, Circle }
+pub enum DocumentAnnotationKind {
+    Text,
+    Ink,
+    Highlight,
+    Circle,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum SignatureMethod { Drawn, Image }
+pub enum SignatureMethod {
+    Drawn,
+    Image,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
@@ -233,6 +287,7 @@ pub struct ProcessActionRequest {
     pub evidence_file_ids: Vec<Uuid>,
     pub signature: Option<SignatureInput>,
     pub reassign_user_id: Option<Uuid>,
+    pub reassign_from_user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -334,6 +389,8 @@ pub struct ProcessHistoryEntry {
     pub id: Uuid,
     pub actor_id: Uuid,
     pub actor_name: String,
+    pub reassigned_from_user_id: Option<Uuid>,
+    pub reassigned_to_user_id: Option<Uuid>,
     pub action: String,
     pub document_revision: i64,
     pub annotations: Vec<DocumentAnnotation>,
@@ -353,6 +410,7 @@ pub struct CorrespondenceSigningEvidence {
     pub signer_role: Option<String>,
     pub signed_at: DateTime<Utc>,
     pub signed_content_hash: String,
+    pub signature_file_snapshot: Option<CorrespondenceFileSnapshot>,
     pub signature: SignatureInput,
     pub file_id: Option<Uuid>,
     pub action_id: Uuid,
@@ -436,10 +494,11 @@ pub struct CorrespondenceOptions {
     pub templates: Vec<ProcessTemplate>,
 }
 
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CorrespondenceFileSnapshot {
- pub file_id: Uuid, pub version_id: Uuid, pub checksum: String,
+    pub file_id: Uuid,
+    pub version_id: Uuid,
+    pub checksum: String,
 }

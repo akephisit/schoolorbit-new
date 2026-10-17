@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import {
 		createCorrespondence,
+		getCorrespondenceOptions,
+		type CorrespondenceOptions,
 		reviseCorrespondence,
 		type CorrespondenceDetail,
 		type CreateCorrespondenceRequest
@@ -25,6 +27,23 @@
 		documentDate = $state<string | undefined>(),
 		urgency = $state('normal'),
 		content = $state('');
+	let ownerOptions = $state<CorrespondenceOptions | null>(null),
+		organizationUnitId = $state(''),
+		ownerLoading = $state(false),
+		ownerError = $state('');
+	const ownerController = new AbortController();
+	async function loadOwners() {
+		ownerLoading = true;
+		ownerError = '';
+		try {
+			const result = await getCorrespondenceOptions('', { signal: ownerController.signal });
+			if (!disposed) ownerOptions = result;
+		} catch (cause) {
+			if (!disposed) ownerError = cause instanceof Error ? cause.message : 'โหลดหน่วยงานไม่สำเร็จ';
+		} finally {
+			if (!disposed) ownerLoading = false;
+		}
+	}
 	let sourceLinks = $state<{ label: string; url: string }[]>([]);
 	let original = $state<File | null>(null),
 		attachments = $state<File[]>([]);
@@ -37,6 +56,7 @@
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
+		ownerController.abort();
 	});
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -71,6 +91,7 @@
 					urgency: urgency as CreateCorrespondenceRequest['urgency'],
 					content,
 					sourceLinks,
+					organizationUnitId: organizationUnitId || undefined,
 					annotations: [],
 					attachmentFileIds: []
 				};
@@ -183,6 +204,30 @@
 						disabled={pending || !!created}
 						clearable
 					/>
+				</div>
+				<div class="space-y-2 sm:col-span-2">
+					{#if ownerOptions}<Choice
+							id="create-owner"
+							label="หน่วยงานเจ้าของเรื่อง (ถ้ามี)"
+							bind:value={organizationUnitId}
+							options={ownerOptions.organizations.map((unit) => ({
+								value: unit.id,
+								label: unit.name
+							}))}
+							searchable
+							disabled={pending || !!created}
+						/>{:else}<LoadingButton
+							type="button"
+							variant="outline"
+							loading={ownerLoading}
+							disabled={pending || !!created}
+							onclick={loadOwners}>ระบุหน่วยงานเจ้าของเรื่อง</LoadingButton
+						>{/if}{#if ownerError}<PageState
+							variant="error"
+							title={ownerError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadOwners}
+						/>{/if}
 				</div>
 			</Card.Content></Card.Root
 		>

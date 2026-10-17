@@ -35,7 +35,8 @@
 		signature = $bindable(),
 		oncomplete,
 		oncancel,
-		onrefresh
+		onrefresh,
+		onpendingchange
 	}: {
 		detail: CorrespondenceDetail;
 		action: ProcessAction;
@@ -44,6 +45,7 @@
 		oncomplete: (result: CorrespondenceDetail) => void;
 		oncancel: () => void;
 		onrefresh: () => void;
+		onpendingchange?: (pending: boolean) => void;
 	} = $props();
 	const initialRevision = untrack(() => detail.record.revision);
 	let expectedRevision = $state(initialRevision),
@@ -60,9 +62,20 @@
 		imagePending = $state(false),
 		evidence = $state<File[]>([]),
 		reassignUserId = $state(''),
+		reassignFromUserId = $state(''),
 		options = $state<CorrespondenceOptions | null>(null);
 	const definition = $derived(detail.instance?.steps[detail.instance.currentStep]?.definition);
 	const requirements = $derived(actionRequirements(action, definition));
+	const pendingRecipients = $derived(
+		detail.instance?.steps[detail.instance.currentStep]?.recipients.filter(
+			(recipient) => !recipient.completedAt
+		) ?? []
+	);
+	const recovery = $derived(
+		action === 'reassign' &&
+			!pendingRecipients.some((recipient) => recipient.userId === $authStore.user?.id)
+	);
+	const commentRequired = $derived(requirements.comment || recovery);
 	const needsSignature = $derived(requirements.signature);
 	let includeSignature = $state(false);
 	const signing = $derived(needsSignature || includeSignature);
@@ -154,12 +167,16 @@
 		event.preventDefault();
 		if (pending) return;
 		error = '';
-		if (requirements.comment && !comment.trim()) {
+		if (commentRequired && !comment.trim()) {
 			error = 'กรอกความคิดเห็น / เหตุผล';
 			return;
 		}
 		if (requirements.evidence && !evidence.length) {
 			error = 'แนบหลักฐานประกอบการดำเนินการ';
+			return;
+		}
+		if (recovery && !reassignFromUserId) {
+			error = 'เลือกผู้รับเดิมที่ต้องเปลี่ยน';
 			return;
 		}
 		if (action === 'reassign' && !reassignUserId) {
@@ -181,6 +198,7 @@
 			}
 		}
 		pending = true;
+		onpendingchange?.(true);
 		try {
 			const evidenceFileIds: string[] = [];
 			for (const file of requirements.acceptsEvidence ? evidence : []) {
@@ -208,13 +226,17 @@
 				evidenceFileIds,
 				signature: signingInput,
 				reassignUserId: reassignUserId || undefined,
+				reassignFromUserId: recovery ? reassignFromUserId : undefined,
 				annotations: requirements.acceptsEvidence ? annotations : []
 			});
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
 		} finally {
-			if (!disposed) pending = false;
+			if (!disposed) {
+				pending = false;
+				onpendingchange?.(false);
+			}
 		}
 	}
 </script>
@@ -248,14 +270,29 @@
 			>
 		</div>{/if}
 	{#if action !== 'read'}<div class="space-y-2">
-			<Label for="action-comment">ความคิดเห็น / เหตุผล{requirements.comment ? ' *' : ''}</Label
-			><Textarea id="action-comment" rows={4} bind:value={comment} disabled={pending} />
+			<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label><Textarea
+				id="action-comment"
+				rows={4}
+				bind:value={comment}
+				disabled={pending}
+			/>
 		</div>{/if}
-	{#if action === 'reassign'}{#if options}<Choice
+	{#if action === 'reassign'}{#if recovery}<Choice
+				id="reassign-source"
+				label="ผู้รับเดิมที่ต้องเปลี่ยน"
+				bind:value={reassignFromUserId}
+				options={pendingRecipients.map((recipient) => ({
+					value: recipient.userId,
+					label: recipient.displayName
+				}))}
+				disabled={pending}
+			/>{/if}{#if options}<Choice
 				id="reassign-user"
 				label="ผู้รับผิดชอบใหม่"
 				bind:value={reassignUserId}
-				options={options.users.map((user) => ({ value: user.id, label: user.displayName }))}
+				options={options.users
+					.filter((user) => !pendingRecipients.some((recipient) => recipient.userId === user.id))
+					.map((user) => ({ value: user.id, label: user.displayName }))}
 				searchable
 				disabled={pending}
 			/>{:else}<Button type="button" variant="outline" onclick={loadReassign}
@@ -337,7 +374,7 @@
 				</div>
 			{/if}
 			<div class="grid grid-cols-3 gap-3">
-				{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย', min: 0, max: 1, step: 0.01 }, { key: 'y', label: 'จากบน', min: 0, max: 1, step: 0.01 }, { key: 'width', label: 'ความกว้าง', min: 0.01, max: 1, step: 0.01 }, { key: 'height', label: 'ความสูง', min: 0.01, max: 1, step: 0.01 }] as field (field.key)}<div
+				{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย (%)', min: 0, max: 100, step: 1 }, { key: 'y', label: 'จากบน (%)', min: 0, max: 100, step: 1 }, { key: 'width', label: 'ความกว้าง (%)', min: 1, max: 100, step: 1 }, { key: 'height', label: 'ความสูง (%)', min: 1, max: 100, step: 1 }] as field (field.key)}<div
 						class="space-y-2"
 					>
 						<Label for={`placement-${field.key}`}>{field.label}</Label><Input
@@ -346,18 +383,23 @@
 							min={field.min}
 							max={field.max}
 							step={field.step}
-							value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height']}
+							value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
+								(field.key === 'page' ? 1 : 100)}
 							disabled={pending}
 							oninput={(event) => {
 								if (signature)
-									signature = { ...signature, [field.key]: Number(event.currentTarget.value) };
+									signature = {
+										...signature,
+										[field.key]:
+											Number(event.currentTarget.value) / (field.key === 'page' ? 1 : 100)
+									};
 								confirmed = false;
 							}}
 						/>
 					</div>{/each}
 			</div>
 			<p class="text-xs text-muted-foreground">
-				ตำแหน่งและขนาดเป็นสัดส่วน 0–1 ของหน้า วางตำแหน่งด้วยการแตะเอกสารได้
+				ปรับตำแหน่งและขนาดเป็นเปอร์เซ็นต์ของหน้า หรือแตะบนเอกสารเพื่อวางลายมือชื่อ
 			</p>
 			<div class="flex items-start gap-2">
 				<Checkbox

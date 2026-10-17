@@ -45,6 +45,7 @@ test('opening a document stays distinct from completing a required-signature ste
 	});
 	assert.equal(actionRequirements('return_for_revision', step).evidence, false);
 	assert.equal(actionRequirements('reassign', step).acceptsEvidence, false);
+	assert.equal(actionRequirements('reassign', step).comment, true);
 });
 test('signature confirmation binds the immutable document revision and refuses escaped placement', () => {
 	assert.equal(validateSigningDraft(signature, paths, 'drawn', '', true, 3), null);

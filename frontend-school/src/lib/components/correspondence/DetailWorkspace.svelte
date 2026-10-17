@@ -49,6 +49,7 @@
 		signature = $state<SignatureInput | undefined>(),
 		error = $state(''),
 		savePending = $state(false),
+		actionPending = $state(false),
 		exportPending = $state(false),
 		original = $state<File | null>(null),
 		attachments = $state<File[]>([]);
@@ -97,19 +98,32 @@
 	const canRevise = $derived(
 		!!detail?.canManage && ['draft', 'revision_requested'].includes(detail.record.status)
 	);
+	function recipientName(userId?: string | null): string {
+		return (
+			detail?.instance?.steps
+				.flatMap((step) => step.recipients)
+				.find((recipient) => recipient.userId === userId)?.displayName ?? 'ผู้รับ'
+		);
+	}
 	function refresh() {
 		region.retry((signal) => getCorrespondence(id, { signal }));
 	}
 	function complete(result: CorrespondenceDetail) {
+		actionPending = false;
 		const preserveAnnotations =
 			selectedAction !== null && ['read', 'close', 'reassign'].includes(selectedAction);
-		region.patch(result);
+		const current = region.value;
+		const latest =
+			current?.record.id === result.record.id && current.record.revision > result.record.revision
+				? current
+				: result;
+		region.patch(latest);
 		selectedAction = null;
 		sending = false;
 		if (!preserveAnnotations) annotations = [];
 		signature = undefined;
-		editBaseRevision = result.record.revision;
-		content = result.document.content;
+		editBaseRevision = latest.record.revision;
+		content = latest.document.content;
 	}
 	async function saveRevision() {
 		if (!detail || savePending) return;
@@ -224,6 +238,7 @@
 						<DocumentViewer
 							{detail}
 							bind:draft={annotations}
+							disabled={savePending || actionPending || sending}
 							editable={canRevise ||
 								detail.availableActions.some(
 									(action) => !['read', 'close', 'reassign'].includes(action)
@@ -251,7 +266,7 @@
 										id="revision-content"
 										bind:value={content}
 										rows={6}
-										disabled={savePending}
+										disabled={savePending || actionPending || sending}
 									/>
 								</div>
 								<div class="space-y-2">
@@ -259,7 +274,7 @@
 										id="revision-original"
 										type="file"
 										accept="application/pdf,image/*"
-										disabled={savePending}
+										disabled={savePending || actionPending || sending}
 										onchange={(event) => {
 											original = event.currentTarget.files?.[0] ?? null;
 										}}
@@ -270,7 +285,7 @@
 										id="revision-attachments"
 										type="file"
 										multiple
-										disabled={savePending}
+										disabled={savePending || actionPending || sending}
 										onchange={(event) => {
 											attachments = Array.from(event.currentTarget.files ?? []);
 										}}
@@ -287,7 +302,10 @@
 										}}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
 									>{/if}
 								<div class="flex justify-end">
-									<LoadingButton loading={savePending} onclick={saveRevision}
+									<LoadingButton
+										loading={savePending}
+										disabled={actionPending || sending}
+										onclick={saveRevision}
 										>บันทึกฉบับแก้ไข{annotations.length
 											? ` (${annotations.length} หมายเหตุ)`
 											: ''}</LoadingButton
@@ -385,6 +403,9 @@
 											signature = undefined;
 										}}
 										onrefresh={refresh}
+										onpendingchange={(value) => {
+											actionPending = value;
+										}}
 									/>{:else}
 									{#if canRevise}<Button
 											onclick={() => {
@@ -445,6 +466,11 @@
 											{historyActionLabel(entry.action)} · {entry.actorName}
 										</p>
 										<p class="text-muted-foreground">{dateLabel(entry.createdAt)}</p>
+										{#if entry.reassignedFromUserId && entry.reassignedToUserId}<p>
+												เปลี่ยนผู้รับจาก {recipientName(entry.reassignedFromUserId)} เป็น {recipientName(
+													entry.reassignedToUserId
+												)}
+											</p>{/if}
 										{#if entry.comment}<p class="whitespace-pre-wrap break-words">
 												{entry.comment}
 											</p>{/if}{#if entry.annotations.length}<p class="text-muted-foreground">

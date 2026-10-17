@@ -23,6 +23,11 @@ export async function mockCorrespondence(
 		permissions?: string[];
 		failAction?: number;
 		holdDetail?: boolean;
+		holdAction?: boolean;
+		holdActionResponse?: boolean;
+		holdListRefresh?: boolean;
+		failCreate?: boolean;
+		recovery?: boolean;
 		rotation?: number;
 	} = {}
 ) {
@@ -143,6 +148,53 @@ export async function mockCorrespondence(
 		canAct: settings.mode !== 'draft',
 		availableActions: settings.mode === 'draft' ? [] : [kind, 'read']
 	};
+	if (settings.recovery && detail.instance) {
+		detail = {
+			...detail,
+			availableActions: ['reassign'],
+			instance: {
+				...detail.instance,
+				steps: detail.instance.steps.map((step) => ({
+					...step,
+					recipients: step.recipients.map((recipient) =>
+						recipient.userId === actor
+							? { ...recipient, userId: id(21), displayName: 'ครูเดิมที่ย้ายงาน' }
+							: recipient
+					)
+				}))
+			}
+		};
+	}
+	function addCommittedAnnotation(text: string) {
+		detail.history = [
+			...detail.history,
+			{
+				id: id(850),
+				actorId: actor,
+				actorName: 'ครูเจ้าของ ทดสอบ',
+				action: 'review',
+				documentRevision: detail.document.revision,
+				annotations: [
+					{
+						id: id(851),
+						kind: 'text',
+						page: 1,
+						x: 0.1,
+						y: 0.25,
+						width: 0.6,
+						height: 0.1,
+						text,
+						color: '#111827',
+						strokes: []
+					}
+				],
+				evidenceFileIds: [],
+				createdAt: now,
+				revision: detail.record.revision
+			}
+		];
+	}
+
 	function advanceDocument() {
 		const current = {
 			...detail.document,
@@ -167,6 +219,9 @@ export async function mockCorrespondence(
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ3kAAAAASUVORK5CYII=',
 		'base64'
 	);
+	const uploads: string[] = [],
+		assetWrites: { label: string; fileId: string }[] = [];
+	let createAttempts = 0;
 	const reads = new Map<string, number>(),
 		writes: {
 			path: string;
@@ -204,22 +259,31 @@ export async function mockCorrespondence(
 				return route.fulfill({ contentType: 'image/png', body: png });
 			if (path.endsWith('/preview') || path.endsWith('/export'))
 				return route.fulfill({ contentType: 'application/pdf', body: pdfBytes });
-			if (path === '/api/files' && method === 'POST')
+			if (path === '/api/files' && method === 'POST') {
+				uploads.push(request.postData() ?? '');
 				return reply(route, {
-					id: fileId,
+					id: id(840 + uploads.length),
 					originalFilename: 'signature.png',
 					mimeType: 'image/png',
 					lifecycleStatus: 'ready'
 				});
+			}
 			if (path.includes('/download'))
 				return reply(route, { url: new URL('/fixture-signature.png', page.url()).href });
-			if (path === '/api/correspondence/signatures')
-				return reply(
-					route,
-					method === 'GET'
-						? [{ id: signatureId, label: 'ลายมือชื่อส่วนตัว', fileId, createdAt: now }]
-						: { id: signatureId, label: 'ลายมือชื่อใหม่', fileId, createdAt: now }
-				);
+			if (path === '/api/correspondence/signatures') {
+				if (method === 'GET')
+					return reply(route, [
+						{ id: signatureId, label: 'ลายมือชื่อส่วนตัว', fileId, createdAt: now }
+					]);
+				const payload = request.postDataJSON();
+				assetWrites.push(payload);
+				return reply(route, {
+					id: id(845),
+					label: payload.label,
+					fileId: payload.fileId,
+					createdAt: now
+				});
+			}
 			if (path === '/api/correspondence/options')
 				return reply(route, {
 					users: [
@@ -236,8 +300,17 @@ export async function mockCorrespondence(
 				template = { ...template, ...payload, version: template.version + 1 };
 				return reply(route, template);
 			}
-			if (path === '/api/correspondence' && method === 'GET')
-				return reply(route, { items: [detail.record], nextCursor: null });
+			if (path === '/api/correspondence' && method === 'GET') {
+				if (settings.holdListRefresh && (reads.get(path) ?? 0) > 1) await held;
+				return reply(route, {
+					items:
+						!url.searchParams.get('search') ||
+						detail.record.title.includes(url.searchParams.get('search')!)
+							? [detail.record]
+							: [],
+					nextCursor: null
+				});
+			}
 			if (path === `/api/correspondence/${correspondenceId}` && method === 'GET') {
 				if (settings.holdDetail) await held;
 				return reply(route, detail);
@@ -245,6 +318,9 @@ export async function mockCorrespondence(
 			const payload = request.postDataJSON();
 			writes.push({ path, payload });
 			if (path === '/api/correspondence') {
+				createAttempts += 1;
+				if (settings.failCreate && createAttempts === 1)
+					return reply(route, 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง', 503);
 				detail = {
 					...detail,
 					record: { ...detail.record, ...payload, id: correspondenceId, status: 'draft' },
@@ -275,6 +351,7 @@ export async function mockCorrespondence(
 				return reply(route, detail);
 			}
 			if (path.endsWith('/actions')) {
+				if (settings.holdAction) await held;
 				actionAttempts += 1;
 				if (settings.failAction && actionAttempts === 1) {
 					if (settings.failAction === 409) advanceDocument();
@@ -298,10 +375,12 @@ export async function mockCorrespondence(
 							actorId: actor,
 							actorName: 'ครูเจ้าของ ทดสอบ',
 							action: action.action,
+							reassignedFromUserId: action.reassignFromUserId,
+							reassignedToUserId: action.reassignUserId,
 							documentRevision: detail.document.revision,
 							annotations: action.annotations ?? [],
 							comment: action.comment ?? null,
-							evidenceFileIds: action.evidenceFileIds,
+							evidenceFileIds: action.evidenceFileIds ?? [],
 							createdAt: now,
 							revision: detail.record.revision + 1
 						}
@@ -335,7 +414,9 @@ export async function mockCorrespondence(
 							}))
 						}
 					};
-				return reply(route, detail);
+				const accepted = structuredClone(detail);
+				if (settings.holdActionResponse) await held;
+				return reply(route, accepted);
 			}
 			return reply(route, 'Unexpected synthetic request', 400);
 		}
@@ -343,9 +424,12 @@ export async function mockCorrespondence(
 	return {
 		...base,
 		reads,
+		uploads,
+		assetWrites,
 		writes,
 		release,
 		advanceDocument,
+		addCommittedAnnotation,
 		detail: () => detail,
 		count: (path: string) => reads.get(path) ?? 0
 	};

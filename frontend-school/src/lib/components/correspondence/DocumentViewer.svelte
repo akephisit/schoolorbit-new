@@ -22,16 +22,24 @@
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
+	import AnnotationText from './AnnotationText.svelte';
+	import {
+		fitAnnotationText,
+		loadAnnotationTextMeasure,
+		type TextMeasure
+	} from '#lib/correspondence/text-layout.js';
 	let {
 		detail,
 		draft = $bindable([]),
 		editable = false,
+		disabled = false,
 		placement,
 		onplacement
 	}: {
 		detail: CorrespondenceDetail;
 		draft?: DocumentAnnotation[];
 		editable?: boolean;
+		disabled?: boolean;
 		placement?: SignatureInput;
 		onplacement?: (point: PagePoint, page: number) => void;
 	} = $props();
@@ -44,6 +52,9 @@
 		aspect = $state(0.707),
 		opened = $state(false),
 		fullscreen = $state(false);
+	let pageWidth = $state(595),
+		pageHeight = $state(842);
+	let measure = $state<TextMeasure>((text, size) => text.length * size * 0.5);
 	let rotation = $state<PageRotation>(0);
 	let tool = $state('view'),
 		text = $state(''),
@@ -90,10 +101,16 @@
 			selected = pageNumber;
 		if (!target || !current) return;
 		const controller = new AbortController();
-		void current
-			.renderPage(selected, target, controller.signal)
-			.then(() => {
-				if (!controller.signal.aborted) aspect = target.width / target.height;
+		void Promise.all([
+			current.renderPage(selected, target, controller.signal),
+			current.pageSize(selected)
+		])
+			.then(([, size]) => {
+				if (!controller.signal.aborted) {
+					pageWidth = size.width;
+					pageHeight = size.height;
+					aspect = size.width / size.height;
+				}
 			})
 			.catch((cause) => {
 				if (!controller.signal.aborted && !isAbortError(cause))
@@ -108,9 +125,13 @@
 		loading = true;
 		error = '';
 		try {
-			const blob = await previewCorrespondence(detail.record.id, detail.document.revision, {
-				signal: ticket.signal
-			});
+			const [blob, fontMeasure] = await Promise.all([
+				previewCorrespondence(detail.record.id, detail.document.revision, {
+					signal: ticket.signal
+				}),
+				loadAnnotationTextMeasure()
+			]);
+			measure = fontMeasure;
 			if (!request.isCurrent(ticket.revision)) return;
 			if (blob.type.includes('pdf')) {
 				const { loadPdfPreview } = await import('#lib/files/document-preview.js');
@@ -131,7 +152,19 @@
 		}
 	}
 	function addText(point: PagePoint = { x: 0.1, y: 0.1 }) {
-		if (!text.trim() || !opened) return;
+		if (!text.trim() || !opened || disabled) return;
+		if (
+			fitAnnotationText(
+				text,
+				Math.min(0.6, 1 - point.x) * pageWidth,
+				Math.min(0.08, 1 - point.y) * pageHeight,
+				measure
+			).overflow
+		) {
+			error = 'ข้อความยาวเกินพื้นที่หมายเหตุ กรุณาลดข้อความหรือวางตำแหน่งใหม่';
+			return;
+		}
+		error = '';
 		draft = [
 			...draft,
 			{
@@ -152,6 +185,7 @@
 	function begin(event: PointerEvent) {
 		if (
 			!editable ||
+			disabled ||
 			!opened ||
 			tool === 'view' ||
 			active !== null ||
@@ -283,6 +317,7 @@
 						if (value) tool = value;
 					}}
 					aria-label="เครื่องมือหมายเหตุ"
+					{disabled}
 					class="flex flex-wrap gap-1"
 				>
 					{#each [{ value: 'view', label: 'เลื่อนอ่าน' }, { value: 'text', label: 'ข้อความ' }, { value: 'ink', label: 'ปากกา' }, { value: 'highlight', label: 'เน้นข้อความ' }, { value: 'circle', label: 'วงกลม' }, ...(onplacement ? [{ value: 'placement', label: 'วางลายมือชื่อ' }] : [])] as item (item.value)}<ToggleGroup.Item
@@ -295,13 +330,14 @@
 								id="annotation-text"
 								bind:value={text}
 								maxlength={2000}
+								{disabled}
 							/>
 						</div>
 						<Button
 							type="button"
 							variant="outline"
 							onclick={() => addText()}
-							disabled={!text.trim()}>เพิ่มข้อความ</Button
+							disabled={disabled || !text.trim()}>เพิ่มข้อความ</Button
 						>
 					</div>
 					<p class="text-sm text-muted-foreground">
@@ -314,15 +350,17 @@
 						type="button"
 						variant="outline"
 						size="sm"
+						{disabled}
 						onclick={() => {
-							draft = draft.slice(0, -1);
+							if (!disabled) draft = draft.slice(0, -1);
 						}}>เลิกทำหมายเหตุล่าสุด</Button
 					>{/if}
 			</div>{/if}
 		{#if error}<PageState variant="error" title={error} />{/if}
 		<div class="overflow-auto rounded-xl border bg-muted/30 p-3 sm:p-5">
 			<div
-				class="relative mx-auto w-full max-w-3xl bg-card text-card-foreground shadow-sm"
+				class="relative mx-auto w-full max-w-3xl bg-white text-black shadow-sm"
+				data-testid="document-page"
 				style:aspect-ratio={aspect}
 				style:transform={`rotate(${rotation}deg)`}
 				style:margin-block={rotation === 90 || rotation === 270 ? '25%' : '0'}
@@ -337,11 +375,10 @@
 
 				<svg
 					bind:this={overlay}
-					viewBox="0 0 1000 1000"
-					preserveAspectRatio="none"
+					viewBox={`0 0 ${pageWidth} ${pageHeight}`}
 					class="absolute inset-0 h-full w-full"
-					class:touch-none={editable && opened && tool !== 'view'}
-					class:pointer-events-none={!editable || !opened || tool === 'view'}
+					class:touch-none={editable && opened && !disabled && tool !== 'view'}
+					class:pointer-events-none={!editable || !opened || disabled || tool === 'view'}
 					role="img"
 					aria-label="ชั้นหมายเหตุบนเอกสาร"
 					onpointerdown={begin}
@@ -354,55 +391,69 @@
 					}}
 				>
 					{#each opened ? layers : [] as annotation (annotation.id)}
-						{#if annotation.kind === 'text'}<text
-								x={annotation.x * 1000}
-								y={annotation.y * 1000 + 20}
-								font-size="20"
-								fill={annotation.color}>{annotation.text}</text
+						{#if annotation.kind === 'text'}<AnnotationText
+								text={annotation.text ?? ''}
+								x={annotation.x * pageWidth}
+								y={annotation.y * pageHeight}
+								width={annotation.width * pageWidth}
+								height={annotation.height * pageHeight}
+								color={annotation.color}
+								{measure}
+							/>
+						{:else if annotation.kind === 'ink'}<g
+								transform={`translate(${annotation.x * pageWidth} ${annotation.y * pageHeight})`}
+								>{#each annotation.strokes ?? [] as stroke, index (index)}<path
+										d={pathData(
+											stroke.points,
+											0,
+											annotation.width * pageWidth,
+											annotation.height * pageHeight
+										)}
+										fill="none"
+										stroke={stroke.color}
+										stroke-width={Math.max(0.25, stroke.width * annotation.width * pageWidth)}
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>{/each}</g
 							>
-						{:else if annotation.kind === 'ink'}{#each annotation.strokes as stroke, index (index)}<path
-									d={pathData(stroke.points)}
-									fill="none"
-									stroke={stroke.color}
-									stroke-width={stroke.width * 1000}
-									stroke-linecap="round"
-								/>{/each}
 						{:else if annotation.kind === 'circle'}<ellipse
-								cx={(annotation.x + annotation.width / 2) * 1000}
-								cy={(annotation.y + annotation.height / 2) * 1000}
-								rx={annotation.width * 500}
-								ry={annotation.height * 500}
+								cx={(annotation.x + annotation.width / 2) * pageWidth}
+								cy={(annotation.y + annotation.height / 2) * pageHeight}
+								rx={(annotation.width * pageWidth) / 2}
+								ry={(annotation.height * pageHeight) / 2}
 								fill="none"
 								stroke={annotation.color}
-								stroke-width="3"
+								stroke-width="1.2"
 							/>
 						{:else}<rect
-								x={annotation.x * 1000}
-								y={annotation.y * 1000}
-								width={annotation.width * 1000}
-								height={annotation.height * 1000}
+								x={annotation.x * pageWidth}
+								y={annotation.y * pageHeight}
+								width={annotation.width * pageWidth}
+								height={annotation.height * pageHeight}
 								fill={annotation.color}
 								opacity="0.3"
 							/>{/if}
 					{/each}
 					{#if drawing.length}<path
-							d={pathData(drawing)}
+							d={pathData(drawing, 0, pageWidth, pageHeight)}
 							fill="none"
 							stroke="currentColor"
-							stroke-width="3"
+							stroke-width={0.003 * pageWidth}
+							stroke-linecap="round"
+							stroke-linejoin="round"
 						/>{/if}
 					{#if placement && placement.page === pageNumber}<rect
-							x={placement.x * 1000}
-							y={placement.y * 1000}
-							width={placement.width * 1000}
-							height={placement.height * 1000}
+							x={placement.x * pageWidth}
+							y={placement.y * pageHeight}
+							width={placement.width * pageWidth}
+							height={placement.height * pageHeight}
 							fill="none"
 							class="stroke-primary"
-							stroke-width="3"
-							stroke-dasharray="8 4"
+							stroke-width="1.2"
+							stroke-dasharray="4 2"
 						/>{/if}
 				</svg>
-				{#each detail.signatures.filter((signature) => signature.signature.documentRevision === detail.document.revision && signature.signature.page === pageNumber) as signed (signed.id)}
+				{#each (opened ? detail.signatures : []).filter((signature) => signature.signature.documentRevision === detail.document.revision && signature.signature.page === pageNumber) as signed (signed.id)}
 					<div
 						class="pointer-events-none absolute"
 						style:left={`${signed.signature.x * 100}%`}
@@ -416,15 +467,21 @@
 								alt={`ลายมือชื่อ ${signed.signerName}`}
 								class="h-full w-full object-contain"
 							/>{:else}<svg
-								viewBox="0 0 1000 1000"
-								preserveAspectRatio="none"
+								viewBox={`0 0 ${signed.signature.width * pageWidth} ${signed.signature.height * pageHeight}`}
 								class="h-full w-full"
 								aria-label={`ลายมือชื่อ ${signed.signerName}`}
-								>{#each signed.signature.strokes as stroke, index (index)}<path
-										d={pathData(stroke.points)}
+								>{#each signed.signature.strokes ?? [] as stroke, index (index)}<path
+										d={pathData(
+											stroke.points,
+											0,
+											signed.signature.width * pageWidth,
+											signed.signature.height * pageHeight
+										)}
 										fill="none"
 										stroke={stroke.color}
-										stroke-width={stroke.width * 1000}
+										stroke-width={Math.max(0.25, stroke.width * signed.signature.width * pageWidth)}
+										stroke-linecap="round"
+										stroke-linejoin="round"
 									/>{/each}</svg
 							>{/if}
 					</div>
@@ -442,8 +499,9 @@
 									type="button"
 									variant="ghost"
 									size="sm"
+									{disabled}
 									onclick={() => {
-										draft = draft.filter((item) => item.id !== annotation.id);
+										if (!disabled) draft = draft.filter((item) => item.id !== annotation.id);
 									}}>ลบข้อความ</Button
 								>{/if}
 						</li>{/each}

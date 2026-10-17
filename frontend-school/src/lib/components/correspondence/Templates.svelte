@@ -56,7 +56,8 @@
 	backHref="/staff/correspondence"
 	description="กำหนดขั้นตอน ผู้รับ และเงื่อนไขมาตรฐานของหนังสือ"
 >
-	{#snippet actions()}<Button onclick={() => open()}>สร้างแม่แบบ</Button>{/snippet}
+	{#snippet actions()}<Button disabled={editing} onclick={() => open()}>สร้างแม่แบบ</Button
+		>{/snippet}
 	{#if editing}<Card.Root
 			><Card.Header><Card.Title>{selected ? 'แก้ไขแม่แบบ' : 'สร้างแม่แบบ'}</Card.Title></Card.Header
 			><Card.Content
@@ -101,7 +102,8 @@
 							><ol class="mb-4 list-inside list-decimal space-y-2 text-sm">
 								{#each template.steps as step, index (index)}<li>{step.title}</li>{/each}
 							</ol>
-							<Button variant="outline" onclick={() => open(template)}>แก้ไขแม่แบบ</Button
+							<Button disabled={editing} variant="outline" onclick={() => open(template)}
+								>แก้ไขแม่แบบ</Button
 							></Card.Content
 						></Card.Root
 					>{/each}

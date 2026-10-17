@@ -105,7 +105,7 @@ INSERT INTO permissions(code,name,module,action,scope,description) VALUES('corre
 INSERT INTO permissions(code,name,module,action,scope,description) VALUES('process.manage.school','จัดการแม่แบบกระบวนงาน','process','manage','school','จัดการแม่แบบกระบวนงาน') ON CONFLICT(code) DO NOTHING;
 INSERT INTO role_permissions(role_id,permission_id) SELECT r.id,p.id FROM roles r CROSS JOIN permissions p WHERE r.code IN ('TEACHER','OFFICER','HEAD','MEMBER','DIRECTOR') AND p.code IN ('correspondence.read.own','correspondence.read.assigned','correspondence.create.own','correspondence.update.assigned','correspondence.sign.own','correspondence.download.assigned') ON CONFLICT DO NOTHING;
 
-CREATE TABLE process_notification_sources (id uuid PRIMARY KEY,instance_id uuid NOT NULL REFERENCES process_instances(id),recipient_id uuid NOT NULL REFERENCES users(id));
+CREATE TABLE process_notification_sources (id uuid PRIMARY KEY,instance_id uuid NOT NULL REFERENCES process_instances(id),recipient_id uuid NOT NULL REFERENCES users(id),work_item_id uuid REFERENCES work_items(id),cancelled_at timestamptz);
 ALTER TABLE notification_dispatch_jobs DROP CONSTRAINT notification_dispatch_jobs_source_kind_check;
 ALTER TABLE notification_dispatch_jobs DROP CONSTRAINT notification_dispatch_jobs_check;
 ALTER TABLE notification_dispatch_jobs ADD CONSTRAINT notification_dispatch_jobs_source_kind_check CHECK(source_kind IN ('direct','attendance','process'));
@@ -120,3 +120,6 @@ CREATE TABLE process_instance_revisions(instance_id uuid NOT NULL REFERENCES pro
 CREATE TRIGGER immutable_process_snapshots BEFORE UPDATE OR DELETE ON process_instance_revisions FOR EACH ROW EXECUTE FUNCTION preserve_workflow_evidence();
 
 INSERT INTO menu_groups(id,code,name,name_en,icon,display_order,is_active,workspace_code) VALUES(uuidv7(),'correspondence','งานสารบรรณ','Correspondence','mail',15,true,'operations') ON CONFLICT(code) DO NOTHING;
+
+CREATE TABLE process_action_events(id uuid PRIMARY KEY,instance_id uuid NOT NULL REFERENCES process_instances(id),actor_id uuid NOT NULL REFERENCES users(id),request_id uuid NOT NULL,revision bigint NOT NULL,event jsonb NOT NULL,UNIQUE(instance_id,actor_id,request_id));
+CREATE TRIGGER immutable_process_action_events BEFORE UPDATE OR DELETE ON process_action_events FOR EACH ROW EXECUTE FUNCTION preserve_workflow_evidence();

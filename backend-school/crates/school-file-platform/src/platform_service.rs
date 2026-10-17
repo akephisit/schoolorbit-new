@@ -369,16 +369,28 @@ impl FilePlatform {
     /// Bounded original bytes for an already resource-authorized server consumer.
     /// Never resolves or fetches a client bearer grant.
     pub async fn read_private_original(
-        &self, repository: &dyn FileRepository, file_id: Uuid,
+        &self,
+        repository: &dyn FileRepository,
+        file_id: Uuid,
     ) -> Result<Bytes, FilePlatformError> {
         let delivery = ready_delivery(repository, file_id).await?;
-        if delivery.file.visibility != FileVisibility::Private { return Err(FilePlatformError::VisibilityMismatch); }
+        if delivery.file.visibility != FileVisibility::Private {
+            return Err(FilePlatformError::VisibilityMismatch);
+        }
         let limit = crate::purpose_registry::purpose_definition(delivery.file.purpose)
-            .map_err(|_| FilePlatformError::MetadataUnavailable)?.limits.max_bytes;
-        if delivery.file.byte_size < 0 || delivery.file.byte_size as u64 > limit { return Err(FilePlatformError::InspectionRejected); }
-        let object = delivery.object.ok_or(FilePlatformError::MetadataUnavailable)?;
+            .map_err(|_| FilePlatformError::MetadataUnavailable)?
+            .limits
+            .max_bytes;
+        if delivery.file.byte_size < 0 || delivery.file.byte_size as u64 > limit {
+            return Err(FilePlatformError::InspectionRejected);
+        }
+        let object = delivery
+            .object
+            .ok_or(FilePlatformError::MetadataUnavailable)?;
         let bytes = self.provider.get(&object, limit).await?;
-        if bytes.len() as u64 > limit { return Err(FilePlatformError::InspectionRejected); }
+        if bytes.len() as u64 > limit {
+            return Err(FilePlatformError::InspectionRejected);
+        }
         Ok(bytes)
     }
 
@@ -662,11 +674,7 @@ mod tests {
                 .unwrap_or(Ok(()))
         }
 
-        async fn get(
-            &self,
-            _object: &StoredObject,
-            max_bytes: u64,
-        ) -> Result<Bytes, StorageError> {
+        async fn get(&self, _object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError> {
             *self.gets.lock().unwrap() += 1;
             self.get_limits.lock().unwrap().push(max_bytes);
             Ok(png())
@@ -1372,25 +1380,75 @@ mod tests {
     }
     #[tokio::test]
     async fn private_original_consumer_checks_ready_visibility_and_purpose_byte_bound() {
-        let provider=Arc::new(FakeProvider::default());
-        let repository=FakeRepository::default();
-        let service=platform(ScanOutcome::Clean,provider.clone());
-        let id=Uuid::new_v4();
-        let object=StoredObject::new(original_object_key(Uuid::new_v4(),FilePurpose::CorrespondenceDocument,id,1,crate::platform_types::DetectedContent::Png).unwrap(),"image/png");
-        let file=PlatformFile{id,owner_user_id:Some(Uuid::new_v4()),purpose:FilePurpose::CorrespondenceDocument,visibility:FileVisibility::Private,lifecycle_status:FileLifecycleStatus::Ready,current_version:Some(1),display_filename:"fixture.png".into(),detected_mime_type:"image/png".into(),byte_size:100};
-        for (visibility,lifecycle,bytes,expected) in [
-            (FileVisibility::Public,FileLifecycleStatus::Ready,100,FilePlatformError::VisibilityMismatch),
-            (FileVisibility::Private,FileLifecycleStatus::Processing,100,FilePlatformError::NotReady),
-            (FileVisibility::Private,FileLifecycleStatus::Ready,30_000_000,FilePlatformError::InspectionRejected),
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        let service = platform(ScanOutcome::Clean, provider.clone());
+        let id = Uuid::new_v4();
+        let object = StoredObject::new(
+            original_object_key(
+                Uuid::new_v4(),
+                FilePurpose::CorrespondenceDocument,
+                id,
+                1,
+                crate::platform_types::DetectedContent::Png,
+            )
+            .unwrap(),
+            "image/png",
+        );
+        let file = PlatformFile {
+            id,
+            owner_user_id: Some(Uuid::new_v4()),
+            purpose: FilePurpose::CorrespondenceDocument,
+            visibility: FileVisibility::Private,
+            lifecycle_status: FileLifecycleStatus::Ready,
+            current_version: Some(1),
+            display_filename: "fixture.png".into(),
+            detected_mime_type: "image/png".into(),
+            byte_size: 100,
+        };
+        for (visibility, lifecycle, bytes, expected) in [
+            (
+                FileVisibility::Public,
+                FileLifecycleStatus::Ready,
+                100,
+                FilePlatformError::VisibilityMismatch,
+            ),
+            (
+                FileVisibility::Private,
+                FileLifecycleStatus::Processing,
+                100,
+                FilePlatformError::NotReady,
+            ),
+            (
+                FileVisibility::Private,
+                FileLifecycleStatus::Ready,
+                30_000_000,
+                FilePlatformError::InspectionRejected,
+            ),
         ] {
-            let mut candidate=file.clone();candidate.visibility=visibility;candidate.lifecycle_status=lifecycle;candidate.byte_size=bytes;
-            *repository.delivery.lock().unwrap()=Some(DeliveryRecord{file:candidate,object:Some(object.clone())});
-            assert_eq!(service.read_private_original(&repository,id).await,Err(expected));
+            let mut candidate = file.clone();
+            candidate.visibility = visibility;
+            candidate.lifecycle_status = lifecycle;
+            candidate.byte_size = bytes;
+            *repository.delivery.lock().unwrap() = Some(DeliveryRecord {
+                file: candidate,
+                object: Some(object.clone()),
+            });
+            assert_eq!(
+                service.read_private_original(&repository, id).await,
+                Err(expected)
+            );
         }
-        assert_eq!(*provider.gets.lock().unwrap(),0);
-        *repository.delivery.lock().unwrap()=Some(DeliveryRecord{file,object:Some(object)});
-        assert!(!service.read_private_original(&repository,id).await.unwrap().is_empty());
-        assert_eq!(*provider.get_limits.lock().unwrap(),vec![20*1024*1024]);
+        assert_eq!(*provider.gets.lock().unwrap(), 0);
+        *repository.delivery.lock().unwrap() = Some(DeliveryRecord {
+            file,
+            object: Some(object),
+        });
+        assert!(!service
+            .read_private_original(&repository, id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(*provider.get_limits.lock().unwrap(), vec![20 * 1024 * 1024]);
     }
-
 }

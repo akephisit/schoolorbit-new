@@ -86,6 +86,12 @@ const IMAGE_CONTENT: &[DetectedContent] = &[
     DetectedContent::Png,
     DetectedContent::Webp,
 ];
+const CORRESPONDENCE_CONTENT: &[DetectedContent] = &[
+    DetectedContent::Jpeg,
+    DetectedContent::Png,
+    DetectedContent::Webp,
+    DetectedContent::Pdf,
+];
 const PDF_CONTENT: &[DetectedContent] = &[DetectedContent::Pdf];
 const FONT_CONTENT: &[DetectedContent] = &[DetectedContent::Ttf, DetectedContent::Otf];
 const ADMISSION_CONTENT: &[DetectedContent] = &[
@@ -137,17 +143,27 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
-        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => PurposeDefinition {
-            domain_segment: "correspondence",
-            purpose_segment: if purpose == FilePurpose::CorrespondenceDocument { "document" } else { "signature" },
-            visibility: FileVisibility::Private,
-            allowed_content: if purpose == FilePurpose::CorrespondenceDocument { ADMISSION_CONTENT } else { IMAGE_CONTENT },
-            limits: image_limits_with_pixels(20 * 1024 * 1024, 16000, 16000, 80_000_000),
-            scan_requirement: ScanRequirement::RequiredClean,
-            derivatives: &[],
-            retention_class: RetentionClass::Temporary,
-            policy_key: PolicyKey::ExplicitOwningResource,
-        },
+        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
+            PurposeDefinition {
+                domain_segment: "correspondence",
+                purpose_segment: if purpose == FilePurpose::CorrespondenceDocument {
+                    "document"
+                } else {
+                    "signature"
+                },
+                visibility: FileVisibility::Private,
+                allowed_content: if purpose == FilePurpose::CorrespondenceDocument {
+                    CORRESPONDENCE_CONTENT
+                } else {
+                    IMAGE_CONTENT
+                },
+                limits: image_limits_with_pixels(20 * 1024 * 1024, 16000, 16000, 80_000_000),
+                scan_requirement: ScanRequirement::RequiredClean,
+                derivatives: &[],
+                retention_class: RetentionClass::Temporary,
+                policy_key: PolicyKey::ExplicitOwningResource,
+            }
+        }
         FilePurpose::TeachingLicense => PurposeDefinition {
             domain_segment: "staff",
             purpose_segment: "teaching-license",
@@ -994,5 +1010,18 @@ mod teaching_license_tests {
             purpose_from_code("teaching_license").unwrap(),
             FilePurpose::TeachingLicense
         );
+    }
+    #[test]
+    fn correspondence_document_and_personal_signature_purposes_stay_private_and_scanned() {
+        let document = purpose_definition(FilePurpose::CorrespondenceDocument).unwrap();
+        let signature = purpose_definition(FilePurpose::CorrespondenceSignature).unwrap();
+        for definition in [document, signature] {
+            assert_eq!(definition.visibility, FileVisibility::Private);
+            assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+            assert_eq!(definition.retention_class, RetentionClass::Temporary);
+        }
+        assert!(document.allowed_content.contains(&DetectedContent::Pdf));
+        assert!(document.allowed_content.contains(&DetectedContent::Webp));
+        assert!(!signature.allowed_content.contains(&DetectedContent::Pdf));
     }
 }

@@ -46,11 +46,16 @@ export function pointerPoint(
 	);
 }
 
-export function pathData(points: PagePoint[], rotation: PageRotation = 0): string {
+export function pathData(
+	points: PagePoint[],
+	rotation: PageRotation = 0,
+	width = 1000,
+	height = 1000
+): string {
 	return points
 		.map((point, index) => {
 			const displayed = toDisplay(point, rotation);
-			return `${index ? 'L' : 'M'} ${displayed.x * 1000} ${displayed.y * 1000}`;
+			return `${index ? 'L' : 'M'} ${displayed.x * width} ${displayed.y * height}`;
 		})
 		.join(' ');
 }

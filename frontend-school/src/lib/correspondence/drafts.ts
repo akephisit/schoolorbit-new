@@ -10,7 +10,7 @@ export function actionRequirements(action: ProcessAction, step?: ProcessTemplate
 	return {
 		acceptsEvidence: !['read', 'reassign', 'close'].includes(action),
 		comment:
-			['reject', 'return_for_revision', 'report'].includes(action) ||
+			['reject', 'return_for_revision', 'report', 'reassign'].includes(action) ||
 			(completion && !!step?.requiresComment),
 		evidence: completion && !!step?.requiresEvidence,
 		signature: action === 'sign' || (completion && !!step?.requiresSignature)

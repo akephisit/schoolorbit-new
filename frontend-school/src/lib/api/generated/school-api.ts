@@ -16503,6 +16503,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			signature: components['schemas']['SignatureInput'];
+			signatureFileSnapshot?: null | components['schemas']['CorrespondenceFileSnapshot'];
 			/** Format: date-time */
 			signedAt: string;
 			signedContentHash: string;
@@ -20140,6 +20141,8 @@ export interface components {
 			/** Format: int64 */
 			expectedRevision: number;
 			/** Format: uuid */
+			reassignFromUserId?: string | null;
+			/** Format: uuid */
 			reassignUserId?: string | null;
 			/** Format: uuid */
 			requestId: string;
@@ -20161,6 +20164,10 @@ export interface components {
 			evidenceFileIds: string[];
 			/** Format: uuid */
 			id: string;
+			/** Format: uuid */
+			reassignedFromUserId?: string | null;
+			/** Format: uuid */
+			reassignedToUserId?: string | null;
 			/** Format: int64 */
 			revision: number;
 		};
@@ -48074,7 +48081,13 @@ export interface operations {
 		parameters: {
 			query?: never;
 			header?: never;
-			path?: never;
+			path: {
+				cursor: string | null;
+				limit: number | null;
+				register: null | components['schemas']['CorrespondenceRegister'];
+				search: string | null;
+				status: null | components['schemas']['CorrespondenceStatus'];
+			};
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48085,6 +48098,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceList'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -48110,6 +48147,30 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	get_correspondence: {
@@ -48130,6 +48191,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -48156,6 +48241,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -48230,6 +48339,30 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	send_correspondence: {
@@ -48256,13 +48389,39 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	correspondence_options: {
 		parameters: {
 			query?: never;
 			header?: never;
-			path?: never;
+			path: {
+				search: string | null;
+			};
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48273,6 +48432,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -48292,6 +48475,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_Vec_SignatureAsset'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -48315,6 +48522,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_SignatureAsset'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -51008,6 +51239,30 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
 				};
 			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	act_process_instance: {
@@ -51033,6 +51288,30 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
 				};
 			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	list_process_templates: {
@@ -51050,6 +51329,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_Vec_ProcessTemplate'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -51073,6 +51376,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
@@ -51099,6 +51426,30 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
