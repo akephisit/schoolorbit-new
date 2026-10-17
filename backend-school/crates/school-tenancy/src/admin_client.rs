@@ -503,6 +503,46 @@ mod tests {
     }
 
     #[test]
+    fn directory_admission_configuration_rejects_unbounded_values() {
+        for raw in ["0", "65", "invalid"] {
+            assert!(super::parse_bounded::<usize>(
+                "TENANT_DIRECTORY_MAX_IN_FLIGHT",
+                Some(raw),
+                4,
+                1,
+                64
+            )
+            .is_err());
+        }
+        for raw in ["0", "9", "30001", "invalid"] {
+            assert!(super::parse_bounded::<u64>(
+                "TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS",
+                Some(raw),
+                1000,
+                10,
+                30_000
+            )
+            .is_err());
+        }
+        assert_eq!(
+            super::parse_bounded::<usize>("TENANT_DIRECTORY_MAX_IN_FLIGHT", None, 4, 1, 64)
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            super::parse_bounded::<u64>(
+                "TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS",
+                None,
+                1000,
+                10,
+                30_000
+            )
+            .unwrap(),
+            1000
+        );
+    }
+
+    #[test]
     fn environment_values_are_bounded() {
         assert!(AdminClientConfig::from_values(Some("5000"), Some("3"), Some("100")).is_ok());
         assert!(AdminClientConfig::from_values(Some("0"), Some("3"), Some("100")).is_err());

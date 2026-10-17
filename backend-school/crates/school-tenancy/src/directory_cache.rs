@@ -411,6 +411,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn independent_keys_use_available_slots_without_exceeding_the_global_bound() {
+        let cache = Arc::new(DirectoryCache::new(
+            8,
+            Duration::from_secs(60),
+            2,
+            Duration::from_millis(20),
+        ));
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::channel(2);
+        let mut leaders = Vec::new();
+        for key in ["a", "b"] {
+            let reader = cache.clone();
+            let release = release.clone();
+            let started = started_tx.clone();
+            leaders.push(tokio::spawn(async move {
+                reader
+                    .resolve(key, || async {
+                        started.send(()).await.unwrap();
+                        let _release = release.acquire().await.unwrap();
+                        Ok(value(key))
+                    })
+                    .await
+            }));
+        }
+        tokio::time::timeout(Duration::from_secs(1), async {
+            started_rx.recv().await.unwrap();
+            started_rx.recv().await.unwrap();
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            cache
+                .resolve("c", || async { panic!("both slots occupied") })
+                .await
+                .unwrap_err(),
+            "Tenant directory admission timed out"
+        );
+        release.add_permits(2);
+        for leader in leaders {
+            assert!(leader.await.unwrap().is_ok());
+        }
+        assert!(cache
+            .resolve("c", || async { Ok(value("c")) })
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
     async fn distinct_keys_and_evicted_flights_share_bounded_admission() {
         let cache = Arc::new(DirectoryCache::new(
             1,

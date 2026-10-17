@@ -98,20 +98,54 @@ The examples and both Compose files expose `TENANT_RUNTIME_CONNECTIONS`,
 `POSTGRES_CONNECTION_HEADROOM`. `SCHOOL_PRIVILEGED_CONNECTIONS` must be at least
 five, including provisioning's transaction and follow-up read. School startup rejects allocations exceeding the
 server budget. Keep the server setting and values in both services synchronized.
-Before running multiple replicas, divide these process allocations across replicas
-or separately review a shared pooler; adding replicas with unchanged defaults
-exceeds the physical budget. Per-operation work memory can multiply across
+Run exactly one backend-school process on one VPS; do not add School replicas or
+overlap live School processes. These allocations are process-local. Per-operation
+work memory can multiply across
 sort/hash operations, connections and parallel workers; these are initial budgets,
 not a guarantee of fixed RAM consumption. Keep autovacuum and worker AIO enabled.
 
 Tenant directory lookups cache only successful UUID/runtime credentials, for 30
 seconds and at most 1024 entries by default (`TENANT_DIRECTORY_TTL_SECONDS`,
-`TENANT_DIRECTORY_CAPACITY`). Expired lookups fail closed during Admin outages;
+`TENANT_DIRECTORY_CAPACITY`). At most four distinct directory fills run concurrently
+(`TENANT_DIRECTORY_MAX_IN_FLIGHT`, supported range 1–64); excess fills wait up to
+one second (`TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS`, 10–30000 ms) before a safe
+admission error. Waiting callers share the active fill's success or failure; a later
+independent call retries failures immediately. Cancelling a leader wakes its cohort
+and releases its slot. Mutation/eviction fences are checked again when followers
+consume a completed fill. Expired lookups fail closed during Admin outages;
 owner credentials never enter this cache. Status changes first persist an Admin
 `tenant_directory_mutations` barrier, then fence the School cache. The exact token
 is claimed and removed in the same transaction as the school mutation; School
 finish invalidates before reopening. Pending barriers fail the internal all-tenant
 list as a whole, preventing incomplete migration acceptance.
+
+Calendar and Auth retention share `TENANT_BACKGROUND_MAX_TURNS` admission (default
+2, range 1–64), clamped to `max(1, floor(runtime connections / per-tenant maximum) - 1)`.
+This leaves a feasible resident tenant slot with ordinary allocations; when the
+physical budget fits only one tenant, the minimum one background turn shares that
+slot with foreground work. It does not reserve exclusive foreground sockets.
+Each owner polls at most that many tenant futures and excludes overlapping turns for the same tenant/job kind. Notification,
+Attendance and File Platform workers keep their existing independent limits; this
+is not a universal background connection budget. No idle scheduler pins a pool.
+
+Calendar's daily 07:00 Bangkok invocation has a process-local sweep guard; a cron
+tick skips while the prior invocation is still running, preventing accumulated
+waiting queues. It requeues unfinished tenants behind other
+waiting tenants as each turn completes. A stalled tenant does not hold up healthy
+backlog revisits in another available slot. Each turn attempts at most 200 reminders and yields after a ten-second soft budget checked
+between reminders. A recipient fan-out finishes before yielding; an unusually slow
+reminder can exceed that budget. A stable `(remind_on, created_at, id)` keyset advances
+past failed or contended rows for this invocation, then resets on the next cron
+invocation. Healthy due backlogs continue in the same invocation. New rows behind
+the cursor are picked up next invocation. An interrupted lock attempt or failed
+unlock closes the advisory-lock session instead of returning it to the pool.
+Calendar's existing partial-success completion and all-failed retry policy remains.
+
+Auth retains its hourly schedule, 120-second sweep budget and 100-row `SKIP LOCKED`
+cleanup transactions. Each tenant gets a ten-second timeout including pool admission;
+cancellation rolls back an unfinished transaction. Its process-local rotation cursor
+advances before waiting for shared admission, so repeated exhaustion reaches later
+tenants. A restart resets traversal but preserves all database-backed retention work.
 
 Deploy matching School and Admin writers under normal Maintenance Mode. After
 Admin migration 011 and School migration 118 are active and traffic has reopened,
@@ -817,9 +851,15 @@ Direct SQL changes bypass those events and can remain unseen for up to the appli
 (plus the realtime heartbeat interval). Use application operations for immediate revocation. If an
 emergency operation changes identity/session state directly, restart the single backend process to
 clear caches and terminate old realtime connections. Restarts preserve database-backed sessions and
-reload them on demand. Do not scale to multiple workers/replicas or overlap old and new processes
-without first implementing shared invalidation. A fresh cache can serve during a database outage;
+reload them on demand. Do not scale to multiple workers/replicas or overlap old and
+new School processes. The supported architecture stays one School process on one
+VPS. A fresh cache can serve during a database outage;
 once its validation window ends, authentication fails closed instead of extending stale entries.
+
+Notification/work broadcast overflow emits `reconcile_required` with `{}`. The central
+browser store re-reads auth, inbox/unread counts and work state on that signal and
+each successful SSE reconnection. This does not replay missing messages; persisted
+HTTP state remains authoritative. Session/permission channel loss closes the stream.
 
 Browser tabs hidden for 60 seconds pause notifications SSE and timetable WebSocket. On returning,
 the client refreshes authentication and reconciles authoritative state across the disconnected gap.

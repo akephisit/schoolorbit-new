@@ -63,16 +63,17 @@ fn due_reminder_candidate_query_does_not_lock_or_mark_sent() {
 
     assert!(sql.contains("LIMIT 200"));
     assert!(sql.contains("sent_at IS NULL"));
-    assert!(sql.contains("$2::uuid[]"));
+    assert!(sql.contains("$2::date IS NULL"));
     assert!(!sql.contains("FOR UPDATE"));
     assert!(!sql.contains("SET sent_at"));
 }
 
 #[test]
-fn due_reminder_candidate_query_excludes_attempted_ids_for_batching() {
+fn due_reminder_candidate_query_uses_stable_keyset_for_bounded_turns() {
     let sql = select_due_calendar_reminder_candidates_sql();
 
-    assert!(sql.contains("NOT (id = ANY($2::uuid[]))"));
+    assert!(sql.contains("(remind_on, created_at, id) > ($2, $3, $4)"));
+    assert!(sql.contains("ORDER BY remind_on ASC, created_at ASC, id ASC"));
     assert!(sql.contains("LIMIT 200"));
 }
 
