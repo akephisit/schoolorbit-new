@@ -18,6 +18,64 @@ map $http_origin $allow_origin {
     # "~^https://.*$" $http_origin;
 }
 
+# These declarations live at HTTP scope through nginx/conf.d/*.conf.
+# Never log raw headers, paths, queries, cookies, credentials or client identity.
+map $http_x_schoolorbit_diagnostic_id $school_diagnostic_id {
+    default "-";
+    "~^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" $http_x_schoolorbit_diagnostic_id;
+}
+
+map $request_method $school_timing_method {
+    default OTHER;
+    ~^GET$ GET;
+    ~^HEAD$ HEAD;
+    ~^POST$ POST;
+    ~^PUT$ PUT;
+    ~^PATCH$ PATCH;
+    ~^DELETE$ DELETE;
+    ~^OPTIONS$ OPTIONS;
+    ~^CONNECT$ CONNECT;
+    ~^TRACE$ TRACE;
+}
+
+# Static families avoid recording resource IDs or arbitrary unmatched paths.
+map $uri $school_timing_route {
+    default other;
+    /health health;
+    /ready ready;
+    /deployment-status deployment_status;
+    /api/auth/me identity;
+    /api/menu/user menu;
+    ~^/api/attendance(/|$) attendance;
+    ~^/api/files(/|$) files;
+    /api/notifications/stream notifications_stream;
+    ~^/ws/ websocket;
+}
+
+# Upstream timings can be '-' or a list after retries. Emit JSON null for
+# unavailable/non-scalar samples rather than inventing a numeric duration.
+map $upstream_connect_time $school_upstream_connect_seconds {
+    default null;
+    ~^[0-9]+\.[0-9]+$ $upstream_connect_time;
+}
+map $upstream_header_time $school_upstream_header_seconds {
+    default null;
+    ~^[0-9]+\.[0-9]+$ $upstream_header_time;
+}
+map $upstream_response_time $school_upstream_response_seconds {
+    default null;
+    ~^[0-9]+\.[0-9]+$ $upstream_response_time;
+}
+
+log_format school_request_timing escape=json
+    '{"operation":"school_proxy_request","timestamp":"$time_iso8601",'
+    '"request_id":"$request_id","diagnostic_id":"$school_diagnostic_id",'
+    '"method":"$school_timing_method","route_family":"$school_timing_route",'
+    '"status":$status,"request_time":$request_time,'
+    '"upstream_connect_time":$school_upstream_connect_seconds,'
+    '"upstream_header_time":$school_upstream_header_seconds,'
+    '"upstream_response_time":$school_upstream_response_seconds}';
+
 upstream school_api_http {
     server schoolorbit-backend-school:8081;
     keepalive 32 local;
@@ -29,12 +87,14 @@ upstream school_api_http {
 server {
     listen 80;
     server_name school-api.${BASE_DOMAIN};
+    access_log /var/log/nginx/access.log school_request_timing;
     location / { return 301 https://$host$request_uri; }
 }
 
 server {
     listen 443 ssl;
     server_name school-api.${BASE_DOMAIN};
+    access_log /var/log/nginx/access.log school_request_timing;
 
     ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
     ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
@@ -95,6 +155,7 @@ server {
         proxy_http_version 1.1;
         
         # Proxy Headers (สำคัญ!)
+        proxy_set_header X-SchoolOrbit-Diagnostic-Id $school_diagnostic_id;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -106,7 +167,7 @@ server {
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
         add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range,X-CSRF-Token' always;
 
         # Handle OPTIONS preflight
@@ -114,7 +175,7 @@ server {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
             add_header 'Access-Control-Max-Age' 1728000;
             add_header 'Content-Type' 'text/plain; charset=utf-8';
             add_header 'Content-Length' 0;
@@ -145,6 +206,7 @@ server {
         proxy_http_version 1.1;
 
         # Proxy Headers
+        proxy_set_header X-SchoolOrbit-Diagnostic-Id $school_diagnostic_id;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -156,7 +218,7 @@ server {
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
         add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range,X-CSRF-Token' always;
 
         # Handle OPTIONS preflight
@@ -164,7 +226,7 @@ server {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
             add_header 'Access-Control-Max-Age' 1728000;
             add_header 'Content-Type' 'text/plain; charset=utf-8';
             add_header 'Content-Length' 0;
@@ -190,6 +252,7 @@ server {
         chunked_transfer_encoding on;
         
         # Proxy Headers
+        proxy_set_header X-SchoolOrbit-Diagnostic-Id $school_diagnostic_id;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -199,14 +262,14 @@ server {
         add_header 'Access-Control-Allow-Origin' $allow_origin always;
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
         
         # จัดการ Preflight Request
         if ($request_method = 'OPTIONS') {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
             add_header 'Access-Control-Max-Age' 1728000;
             add_header 'Content-Type' 'text/plain; charset=utf-8';
             add_header 'Content-Length' 0;
@@ -223,6 +286,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_set_header X-SchoolOrbit-Diagnostic-Id $school_diagnostic_id;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -254,7 +318,7 @@ server {
         add_header 'Access-Control-Allow-Credentials' 'true' always;
         
         add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
         add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range,X-CSRF-Token' always;
 
         # จัดการ Preflight Request (OPTIONS)
@@ -262,7 +326,7 @@ server {
             add_header 'Access-Control-Allow-Origin' $allow_origin always;
             add_header 'Access-Control-Allow-Credentials' 'true' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
-            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token' always;
+            add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token,X-SchoolOrbit-Diagnostic-Id' always;
             add_header 'Access-Control-Max-Age' 1728000;
             add_header 'Content-Type' 'text/plain; charset=utf-8';
             add_header 'Content-Length' 0;
@@ -270,6 +334,7 @@ server {
         }
 
         # Proxy Headers ปกติ
+        proxy_set_header X-SchoolOrbit-Diagnostic-Id $school_diagnostic_id;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -1,7 +1,7 @@
 //! Date-effective enrollment projection for attendance consumers.
 use chrono::NaiveDate;
 use school_errors::AppError;
-use sqlx::{FromRow, PgConnection, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 #[derive(Debug, Clone, FromRow)]
 pub struct AttendanceCoreStudent {
@@ -84,8 +84,41 @@ pub async fn placement_spans(
     start: NaiveDate,
     end: NaiveDate,
 ) -> Result<Vec<AttendancePlacementSpan>, AppError> {
-    let rows:Vec<AttendancePlacementSpan>=sqlx::query_as("SELECT y.student_id,y.id student_academic_year_id,p.homeroom_id,p.class_number,p.start_date,p.end_date FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE t.id=$1 AND p.status IN ('current','ended') AND p.start_date<=$3 AND (p.end_date IS NULL OR p.end_date>=$2) ORDER BY y.student_id,p.start_date DESC,p.id LIMIT 100001")
-        .bind(term).bind(start).bind(end).fetch_all(&mut *connection).await?;
+    placement_spans_scoped(connection, term, start, end, None).await
+}
+
+/// The same dated-placement precedence, scoped before transfer and row limits.
+pub async fn placement_spans_for_student(
+    connection: &mut PgConnection,
+    term: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+    student: Uuid,
+) -> Result<Vec<AttendancePlacementSpan>, AppError> {
+    placement_spans_scoped(connection, term, start, end, Some(student)).await
+}
+
+async fn placement_spans_scoped(
+    connection: &mut PgConnection,
+    term: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+    student: Option<Uuid>,
+) -> Result<Vec<AttendancePlacementSpan>, AppError> {
+    let mut query = QueryBuilder::<Postgres>::new("SELECT y.student_id,y.id student_academic_year_id,p.homeroom_id,p.class_number,p.start_date,p.end_date FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE t.id=");
+    query
+        .push_bind(term)
+        .push(" AND p.status IN ('current','ended') AND p.start_date<=")
+        .push_bind(end)
+        .push(" AND (p.end_date IS NULL OR p.end_date>=")
+        .push_bind(start)
+        .push(")");
+    if let Some(student) = student {
+        query.push(" AND y.student_id=").push_bind(student);
+    }
+    query.push(" ORDER BY y.student_id,p.start_date DESC,p.id LIMIT 100001");
+    let rows: Vec<AttendancePlacementSpan> =
+        query.build_query_as().fetch_all(&mut *connection).await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError(
             "ประวัติห้องเรียนเกินขนาดที่รองรับ".into(),

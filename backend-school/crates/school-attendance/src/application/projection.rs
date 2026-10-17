@@ -100,6 +100,8 @@ async fn project(
         .configuration;
     let days = settings::days_on_connection(connection, term, start, end).await?;
     let overrides: HashMap<_, _> = days.into_iter().map(|d| (d.date, d.counted)).collect();
+    // Existing occurrences suppress virtual recreation even if their frozen roster
+    // excludes a pupil who joined later. This set must not be student-filtered.
     let existing: HashSet<Uuid> = sqlx::query_scalar(
         "SELECT id FROM attendance_sessions WHERE academic_term_id=$1 AND date BETWEEN $2 AND $3",
     )
@@ -112,7 +114,11 @@ async fn project(
     .collect();
     // A saved arrival roster owns that pupil's school day, including a cancelled round.
     // A later placement change must not add another virtual school day in the new room.
-    let saved_arrivals: HashSet<(NaiveDate, Uuid)> = sqlx::query_as(
+    let saved_arrivals: HashSet<(NaiveDate, Uuid)> = if let Some((student, _)) = history_scope {
+        sqlx::query_as("SELECT DISTINCT s.date,$4::uuid FROM attendance_sessions s WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival' AND s.roster @> jsonb_build_array(jsonb_build_object('studentId',$4::uuid))")
+            .bind(term).bind(start).bind(end).bind(student).fetch_all(&mut *connection).await?.into_iter().collect()
+    } else {
+        sqlx::query_as(
         "SELECT DISTINCT s.date,p.\"studentId\" FROM attendance_sessions s CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p(\"studentId\" uuid) WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival'",
     )
     .bind(term)
@@ -121,8 +127,13 @@ async fn project(
     .fetch_all(&mut *connection)
     .await?
     .into_iter()
-    .collect();
-    let placements = core::placement_spans(connection, term, start, end).await?;
+    .collect()
+    };
+    let placements = if let Some((student, _)) = history_scope {
+        core::placement_spans_for_student(connection, term, start, end, student).await?
+    } else {
+        core::placement_spans(connection, term, start, end).await?
+    };
     let rooms = core::rooms_on_connection(connection, term).await?;
     let spans = school_academic_timetable::services::attendance::published_spans(
         connection, term, start, end,
@@ -137,10 +148,17 @@ async fn project(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
-    let memberships = school_academic_delivery::services::attendance_roster::membership_spans(
-        connection, &group_ids, start, end,
-    )
-    .await?;
+    let memberships = if let Some((student, _)) = history_scope {
+        school_academic_delivery::services::attendance_roster::membership_spans_for_student(
+            connection, &group_ids, start, end, student,
+        )
+        .await?
+    } else {
+        school_academic_delivery::services::attendance_roster::membership_spans(
+            connection, &group_ids, start, end,
+        )
+        .await?
+    };
     let mut groups = HashMap::<Uuid, Vec<_>>::new();
     for membership in &memberships {
         groups
@@ -169,14 +187,16 @@ async fn project(
                             p.homeroom_id == room.id
                                 && !saved_arrivals.contains(&(date, p.student_id))
                         }) {
-                            add(
-                                &mut rows,
-                                p.student_id,
-                                "school",
-                                "",
-                                "การเข้าโรงเรียน",
-                                &room.teacher_ids,
-                            );
+                            if history_scope.is_none() {
+                                add(
+                                    &mut rows,
+                                    p.student_id,
+                                    "school",
+                                    "",
+                                    "การเข้าโรงเรียน",
+                                    &room.teacher_ids,
+                                );
+                            }
                             history_row(
                                 &mut history,
                                 history_scope,
@@ -230,14 +250,16 @@ async fn project(
                             for member in members.iter().filter(|m| {
                                 m.joined_at <= date && m.left_at.is_none_or(|d| d >= date)
                             }) {
-                                add(
-                                    &mut rows,
-                                    member.student_id,
-                                    "lesson",
-                                    &scope,
-                                    &label,
-                                    &teachers,
-                                );
+                                if history_scope.is_none() {
+                                    add(
+                                        &mut rows,
+                                        member.student_id,
+                                        "lesson",
+                                        &scope,
+                                        &label,
+                                        &teachers,
+                                    );
+                                }
                                 history_row(
                                     &mut history,
                                     history_scope,
@@ -279,15 +301,19 @@ async fn project(
             }) {
                 continue;
             }
-            for student in g.students {
-                add(
-                    &mut rows,
-                    student.student_id,
-                    "special",
-                    &template.to_string(),
-                    &label,
-                    &g.teacher_ids,
-                );
+            for student in g.students.into_iter().filter(|student| {
+                history_scope.is_none_or(|(selected, _)| selected == student.student_id)
+            }) {
+                if history_scope.is_none() {
+                    add(
+                        &mut rows,
+                        student.student_id,
+                        "special",
+                        &template.to_string(),
+                        &label,
+                        &g.teacher_ids,
+                    );
+                }
                 history_row(
                     &mut history,
                     history_scope,
