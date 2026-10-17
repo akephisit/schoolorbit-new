@@ -79,8 +79,10 @@ Start with the tracked `scripts/lib/postgres-vps/workload.conf` budget for 2 vCP
 memory. The supported topology is one School process and one Admin process per
 PostgreSQL server. The default connection allocation is School runtime 40 + Admin 5 +
 Admin provisioning 2 + School privileged 5 + operator/headroom 12 = 64. Runtime pools
-reserve their complete per-tenant maximum (five by default), so at most eight tenant
-pools are resident. Logical operation leases protect the gaps between queries;
+reserve their complete per-tenant maximum (ten by default), so at most four tenant
+pools are resident. This gives each active tenant more query concurrency while
+reducing the number of resident pools within the unchanged 40-connection budget.
+Logical operation leases protect the gaps between queries;
 idle LRU pools are evicted under pressure only after all leases and borrowers end.
 Admission waits at most five seconds, then returns 503; writes are never replayed.
 Draining and cancelled pools retain their allocation until physical closure.
