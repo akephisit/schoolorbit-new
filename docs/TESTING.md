@@ -1199,6 +1199,25 @@ previous tokens, invalidation during reads, and cache hits with an unavailable d
 query-count test is not a database cost measurement. Browser execution and deployed-proxy smoke remain
 separate required rollout checks.
 
+The notification recovery browser fixture uses real Chromium `EventSource`, the actual central
+notification/work/auth stores and HTTP client, and real Nginx with the rendered School SSE/API
+locations and Origin maps unchanged. From `frontend-school`, with the matching Playwright Chromium
+installed, Docker running, `envsubst` on `PATH`, and local ports 3000/8081 free:
+
+```bash
+npx playwright test tests/e2e/notification-recovery-proxy.spec.ts --project=chromium --workers=1
+```
+
+The fixture creates and removes one uniquely named container using the same pinned Nginx image as
+the executable proxy tests. It serves synthetic HTTP/SSE responses, never accesses a tenant or
+requires account credentials, and checks streamed small messages, credentialed CORS/cookie
+forwarding, native reconnect and lag catch-up, unavailable/revoked sessions, and late snapshots
+after logout. It uses the proxy's existing `http://127.0.0.1:3000` Origin allowance and Chromium's
+trustworthy loopback handling for a synthetic Secure/HttpOnly `__Host-schoolorbit_session` cookie;
+it does not establish production TLS, cross-host cookie behavior, backend database authorization,
+deployed-proxy acceptance or device receipt. Chromium bypasses the external proxy for this local
+fixture. Run this focused spec alone because its canonical fixture ports are exclusive.
+
 From `frontend-school`:
 
 ```bash
