@@ -209,3 +209,11 @@ impl FromRef<AppState> for school_auth::runtime::AuthRuntime {
         state.auth_runtime.clone()
     }
 }
+
+impl FromRef<AppState> for school_student_care::http::state::StudentCareHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+        }
+    }
+}

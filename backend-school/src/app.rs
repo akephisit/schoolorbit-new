@@ -207,6 +207,11 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
                 .with_state(school_attendance::http::state::AttendanceHttpState::from_ref(state)),
         )
         .merge(
+            school_student_care::http::routes::protected_routes().with_state(
+                school_student_care::http::state::StudentCareHttpState::from_ref(state),
+            ),
+        )
+        .merge(
             school_behavior::http::routes::protected_routes().with_state(
                 school_behavior::http::state::BehaviorHttpState::from_ref(state),
             ),

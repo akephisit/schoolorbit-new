@@ -1317,6 +1317,76 @@
       "scope": "school",
       "name": "ตรวจคำเสนอพัสดุ",
       "description": "แก้ไขและอนุมัติหรือปฏิเสธคำเสนอพัสดุ"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "own",
+      "name": "Student Care read own",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "assigned",
+      "name": "Student Care read assigned",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "school",
+      "name": "Student Care read school",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "Student Care manage assigned",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care",
+      "action": "manage",
+      "scope": "school",
+      "name": "Student Care manage school",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care_config",
+      "action": "manage",
+      "scope": "school",
+      "name": "Configure Student Care instrument versions",
+      "description": "Student Care routine workflow"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "read",
+      "scope": "assigned",
+      "name": "Student Care read assigned",
+      "description": "Confidential access requires explicit individual assignment"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "read",
+      "scope": "school",
+      "name": "Student Care read school",
+      "description": "Confidential access requires explicit individual assignment"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "Student Care manage assigned",
+      "description": "Confidential access requires explicit individual assignment"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "manage",
+      "scope": "school",
+      "name": "Student Care manage school",
+      "description": "Confidential access requires explicit individual assignment"
     }
   ]
 }
