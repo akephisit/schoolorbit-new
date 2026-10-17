@@ -279,7 +279,8 @@ async fn notification_dispatch_row_failure_keeps_retry_while_other_claimed_sibli
     let items: Vec<_> = (0..35).map(|_| item(recipient)).collect();
     enqueue(&pool, &items).await;
     let failed = items[0].notification_id;
-    sqlx::raw_sql(&format!("CREATE FUNCTION reject_one_notice() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='{failed}'::uuid THEN RAISE EXCEPTION 'synthetic_notice_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_one_notice BEFORE INSERT ON notifications FOR EACH ROW EXECUTE FUNCTION reject_one_notice();"))
+    // Only a generated UUID is formatted; fixture SQL contains no caller input.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE FUNCTION reject_one_notice() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.id='{failed}'::uuid THEN RAISE EXCEPTION 'synthetic_notice_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_one_notice BEFORE INSERT ON notifications FOR EACH ROW EXECUTE FUNCTION reject_one_notice();")))
         .execute(&pool).await.unwrap();
     let (channel, _) = tokio::sync::broadcast::channel(100);
     for _ in 0..2 {
@@ -521,7 +522,8 @@ async fn notification_dispatch_due_backlog_revisits_other_tenants_before_next_ba
         enqueue(f, &(0..97).map(|_| item(recipient)).collect::<Vec<_>>()).await;
         // Two complete passes are permitted; the third must pause. A worker that
         // drains one tenant before visiting the other leaves that other at zero.
-        sqlx::raw_sql(&format!("CREATE FUNCTION block_later_notice_batch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.published_at IS NOT NULL AND OLD.published_at IS NULL AND (SELECT count(*) FROM notification_dispatch_jobs WHERE published_at IS NOT NULL)>=64 THEN PERFORM pg_advisory_xact_lock({lock_key}); END IF; RETURN NEW; END $$; CREATE TRIGGER block_later_notice_batch BEFORE UPDATE ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION block_later_notice_batch();"))
+        // The formatted advisory key is a generated i64, never caller SQL.
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE FUNCTION block_later_notice_batch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.published_at IS NOT NULL AND OLD.published_at IS NULL AND (SELECT count(*) FROM notification_dispatch_jobs WHERE published_at IS NOT NULL)>=64 THEN PERFORM pg_advisory_xact_lock({lock_key}); END IF; RETURN NEW; END $$; CREATE TRIGGER block_later_notice_batch BEFORE UPDATE ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION block_later_notice_batch();")))
             .execute(&*f).await.unwrap();
         let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
             .fetch_one(&*f)
