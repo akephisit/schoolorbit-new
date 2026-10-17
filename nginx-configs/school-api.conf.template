@@ -18,6 +18,11 @@ map $http_origin $allow_origin {
     # "~^https://.*$" $http_origin;
 }
 
+upstream school_api_http {
+    server schoolorbit-backend-school:8081;
+    keepalive 32 local;
+}
+
 # --------------------------------------------------------
 # SERVER BLOCK
 # --------------------------------------------------------
@@ -231,7 +236,9 @@ server {
     # NORMAL API ENDPOINTS
     # --------------------------------------------------------
     location / {
-        proxy_pass http://schoolorbit-backend-school:8081;
+        proxy_pass http://school_api_http;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
 
         # เพิ่ม file size limit สำหรับ API อื่นๆ ด้วย (เผื่อมี API อื่นที่ต้องรับไฟล์)
         client_max_body_size 5M;

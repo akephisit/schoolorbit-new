@@ -737,6 +737,14 @@ for the school API and
 for the admin API. The backend deployment workflows render them with the validated base domain,
 install the result, validate Nginx, and then reload it.
 
+Ordinary School API requests reuse HTTP/1.1 backend connections through a cache
+of at most 32 idle sockets per Nginx worker, scoped to that location. This is an
+idle-cache bound, not a limit on active requests or database connections. File,
+SSE and WebSocket locations retain their dedicated proxy configuration. Diagnose
+connection churn by comparing proxy network-namespace TCP active opens with
+request counts; backend replacement still requires the canonical readiness and
+proxy reload gates so cached sockets cannot retain the retired backend.
+
 Preserve:
 
 - WebSocket upgrade headers and long-lived connection timeouts;
