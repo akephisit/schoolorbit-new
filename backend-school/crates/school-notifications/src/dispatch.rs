@@ -66,7 +66,8 @@ pub struct NotificationProgress {
 }
 #[async_trait::async_trait]
 pub trait DeliveryEligibilityPort: Send + Sync {
-    /// Acquire domain guards here, BEFORE the provider locks the dispatch row.
+    /// Validate structural source identity under its guards BEFORE the job lock.
+    /// Recipient activity/relationships were resolved by the producer and are never rechecked here.
     async fn authorize_on_connection(
         &self,
         connection: &mut PgConnection,
@@ -325,13 +326,10 @@ pub async fn cancel_identified_in_transaction(
 }
 pub async fn claim(pool: &PgPool) -> Result<Vec<ClaimedNotification>, AppError> {
     let rows:Vec<Job>=sqlx::query_as(r#"WITH due AS (
-        SELECT id,EXISTS(SELECT 1 FROM users u WHERE u.id=j.recipient_id AND u.status='active') eligible
-        FROM notification_dispatch_jobs j WHERE published_at IS NULL AND next_attempt_at<=now()
+        SELECT id FROM notification_dispatch_jobs j WHERE published_at IS NULL AND next_attempt_at<=now()
         ORDER BY next_attempt_at,id LIMIT $1 FOR UPDATE OF j SKIP LOCKED
-    ) UPDATE notification_dispatch_jobs j SET published_at=CASE WHEN due.eligible THEN NULL ELSE now() END,
-        lease_token=CASE WHEN due.eligible THEN gen_random_uuid() ELSE NULL END,
-        next_attempt_at=CASE WHEN due.eligible THEN now()+interval '120 seconds' ELSE j.next_attempt_at END,
-        attempts=j.attempts+CASE WHEN due.eligible THEN 1 ELSE 0 END FROM due WHERE j.id=due.id
+    ) UPDATE notification_dispatch_jobs j SET lease_token=gen_random_uuid(),
+        next_attempt_at=now()+interval '120 seconds',attempts=j.attempts+1 FROM due WHERE j.id=due.id
         RETURNING j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token"#)
         .bind(DELIVERY_BATCH_SIZE).fetch_all(pool).await?;
     rows.into_iter()
@@ -367,12 +365,7 @@ pub async fn materialize(
     if !same_identity(&job.notification()?, &claimed.notification) {
         return Err(integrity("notification_identity_conflict"));
     }
-    let active: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND status='active')")
-            .bind(job.recipient_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !allowed || !active {
+    if !allowed {
         sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2").bind(job.id).bind(claimed.lease_token).execute(&mut *tx).await?;
         tx.commit().await?;
         return Ok(None);

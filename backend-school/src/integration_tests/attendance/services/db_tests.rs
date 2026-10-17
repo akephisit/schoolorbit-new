@@ -4186,6 +4186,8 @@ async fn attendance_history_snapshot_allows_parallel_readers_and_first_save_with
         .unwrap()
         .homeroom_id
         .unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT(homeroom_id,user_id) DO NOTHING")
+        .bind(room).bind(TEACHER).execute(&f.pool).await.unwrap();
     let context = OpenAttendanceSession {
         academic_term_id: TERM,
         date,
@@ -4345,19 +4347,21 @@ async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start
     assert!(before
         .iter()
         .any(|row| row.session_id == session.id && row.result == AttendanceResult::Present));
-    let after = history(
-        &f.pool,
-        &f.actor,
-        AttendanceHistoryQuery {
-            academic_term_id: TERM,
-            student_id: STUDENT,
-            start: date,
-            end: date,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(after.is_empty());
+    let query = AttendanceHistoryQuery {
+        academic_term_id: TERM,
+        student_id: STUDENT,
+        start: date,
+        end: date,
+    };
+    assert!(matches!(
+        history(&f.pool, &f.actor, query.clone()).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let student = ActorContext {
+        user_id: STUDENT,
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    assert!(history(&f.pool, &student, query).await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -4413,6 +4417,181 @@ async fn attendance_notification_first_arrival_keeps_original_payload_across_rou
     assert_eq!(
         original, after,
         "a later arrival changes neither first notification identity nor time text"
+    );
+}
+
+async fn snapshot_parent(f: &Fixture, active: bool, linked: bool) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'not-a-login','Snapshot','Parent','parent',$2)")
+        .bind(id).bind(if active {"active"} else {"inactive"}).execute(&f.pool).await.unwrap();
+    if linked {
+        sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'parent')").bind(STUDENT).bind(id).execute(&f.pool).await.unwrap();
+    }
+    id
+}
+
+#[tokio::test]
+async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_guardian_changes() {
+    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
+    use school_notifications::dispatch;
+    let f = fixture("attendance_recipient_snapshot").await;
+    let original = snapshot_parent(&f, true, true).await;
+    let inactive = snapshot_parent(&f, false, true).await;
+    let unlinked = snapshot_parent(&f, true, false).await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let recipients: std::collections::HashSet<Uuid> =
+        sqlx::query_scalar("SELECT recipient_id FROM notification_dispatch_jobs")
+            .fetch_all(&f.pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+    assert_eq!(
+        recipients,
+        std::collections::HashSet::from([STUDENT, original])
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=ANY($1)")
+        .bind(vec![STUDENT, original])
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM student_parents WHERE student_user_id=$1 AND parent_user_id=$2")
+        .bind(STUDENT)
+        .bind(original)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let later = snapshot_parent(&f, true, true).await;
+    let claimed = dispatch::claim(&f.pool).await.unwrap();
+    assert_eq!(claimed.len(), 2);
+    for claim in &claimed {
+        assert!(
+            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    sqlx::query("UPDATE notifications SET read_at=now() WHERE user_id=$1")
+        .bind(original)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let before: Vec<(
+        Uuid,
+        Uuid,
+        Option<chrono::DateTime<Utc>>,
+        chrono::DateTime<Utc>,
+    )> = sqlx::query_as("SELECT id,user_id,read_at,created_at FROM notifications ORDER BY id")
+        .fetch_all(&f.pool)
+        .await
+        .unwrap();
+    // Retry the unacknowledged snapshot, without recomputing any recipients.
+    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    crate::integration_tests::notification_dispatch::drain(
+        &f.pool,
+        "attendance-snapshot",
+        &channel,
+    )
+    .await;
+    let mut delivered = std::collections::HashSet::new();
+    while let Ok(event) = events.try_recv() {
+        assert!(delivered.insert(event.user_id));
+    }
+    assert_eq!(delivered, recipients);
+    let after: Vec<(
+        Uuid,
+        Uuid,
+        Option<chrono::DateTime<Utc>>,
+        chrono::DateTime<Utc>,
+    )> = sqlx::query_as("SELECT id,user_id,read_at,created_at FROM notifications ORDER BY id")
+        .fetch_all(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM notification_dispatch_jobs WHERE attempts=2 AND published_at IS NOT NULL").fetch_one(&f.pool).await.unwrap(),2);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=ANY($1)"
+        )
+        .bind(vec![inactive, unlinked, later])
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn attendance_notification_inactive_student_excludes_self_and_guardians_at_save() {
+    let f = fixture("attendance_inactive_save_snapshot").await;
+    let _parent = snapshot_parent(&f, true, true).await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(STUDENT)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let saved = sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    assert!(saved
+        .students
+        .iter()
+        .any(|row| row.student_id == STUDENT && row.result == AttendanceResult::Present));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_dispatch_jobs")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
     );
 }
 

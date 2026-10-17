@@ -89,8 +89,8 @@ pub async fn queue_batch(
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended(daily_slot,1711)) FROM (SELECT DISTINCT daily_slot FROM jsonb_to_recordset($1) AS n(daily_slot text) WHERE daily_slot IS NOT NULL ORDER BY daily_slot) slots")
             .bind(Json(notices)).execute(&mut **tx).await?;
     }
-    let rows: Vec<NewLedgerNotice> = sqlx::query_as(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
- SELECT f.*,u.id recipient_id,u.user_type FROM facts f JOIN users u ON u.id=f.student_id AND u.status='active'
+    let rows: Vec<NewLedgerNotice> = sqlx::query_as(r#"WITH facts AS (SELECT n.* FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text) JOIN users student ON student.id=n.student_id AND student.status='active' AND student.user_type='student'), recipients AS (
+ SELECT f.*,f.student_id recipient_id,'student'::text user_type FROM facts f
  UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent'), inserted AS (
  INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,notification_id)
  SELECT $1,recipient_id,student_id,key,uuidv7() FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING
@@ -147,7 +147,7 @@ async fn enqueue_new_ledger(
     }
     Ok(())
 }
-/// Domain eligibility only. The central provider owns queue locks and storage.
+/// Structural source guard only. Recipients were fixed by the save-time snapshot.
 pub async fn authorize_delivery_on_connection(
     connection: &mut sqlx::PgConnection,
     source_id: Uuid,
@@ -156,8 +156,13 @@ pub async fn authorize_delivery_on_connection(
     sqlx::query("SELECT pg_advisory_xact_lock_shared(17010000)")
         .execute(&mut *connection)
         .await?;
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_notifications n WHERE n.id=$1 AND n.recipient_id=$2 AND (n.student_id IS NULL OR n.student_id=n.recipient_id OR EXISTS(SELECT 1 FROM student_parents p WHERE p.student_user_id=n.student_id AND p.parent_user_id=n.recipient_id)))")
-        .bind(source_id).bind(recipient_id).fetch_one(connection).await?)
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE id=$1 AND recipient_id=$2)",
+    )
+    .bind(source_id)
+    .bind(recipient_id)
+    .fetch_one(connection)
+    .await?)
 }
 pub async fn queue_digest(
     pool: &PgPool,

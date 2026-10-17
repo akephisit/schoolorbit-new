@@ -1,4 +1,4 @@
-//! Compose domain eligibility without a reverse dependency in Notifications.
+//! Compose structural source guards; notification recipients are immutable snapshots.
 use school_errors::AppError;
 use school_notifications::dispatch::{DeliveryEligibilityPort, NotificationSource};
 use sqlx::PgConnection;

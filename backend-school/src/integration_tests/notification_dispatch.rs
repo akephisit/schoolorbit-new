@@ -148,6 +148,104 @@ async fn notification_dispatch_atomic_enqueue_and_immediate_send_preserve_inbox_
 }
 
 #[tokio::test]
+async fn notification_dispatch_direct_selects_active_once_and_retries_original_recipient() {
+    let (pool, recipient) = fixture("dispatch_direct_snapshot").await;
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    let publisher = TenantNotificationPublisher::new("direct-snapshot", &channel);
+    let id = NotificationService::send(
+        &pool,
+        &publisher,
+        recipient,
+        "Snapshot",
+        "Body",
+        NotificationType::Info,
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE notifications SET read_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before: (
+        Option<chrono::DateTime<chrono::Utc>>,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(recipient)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for target in [recipient, Uuid::new_v4()] {
+        assert!(matches!(
+            NotificationService::send(
+                &pool,
+                &publisher,
+                target,
+                "Rejected",
+                "Body",
+                NotificationType::Info,
+                None
+            )
+            .await,
+            Err(sqlx::Error::RowNotFound)
+        ));
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_dispatch_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    let first = dispatch::claim(&pool).await.unwrap().remove(0);
+    let notice = dispatch::materialize(&pool, &first, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .unwrap();
+    NotificationService::deliver_stored(&pool, &publisher, recipient, notice)
+        .await
+        .unwrap();
+    // Simulate interruption after external delivery but before acknowledgement.
+    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE id=$1").bind(first.notification.id).execute(&pool).await.unwrap();
+    drain(&pool, "direct-snapshot", &channel).await;
+    assert_eq!(events.try_recv().unwrap().notification.id, id);
+    assert_eq!(events.try_recv().unwrap().notification.id, id);
+    assert!(events.try_recv().is_err());
+    let after: (
+        Option<chrono::DateTime<chrono::Utc>>,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>(
+            "SELECT attempts FROM notification_dispatch_jobs WHERE notification_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn notification_dispatch_claims_are_disjoint_and_expired_tokens_cannot_store_or_ack() {
     let (pool, recipient) = fixture("dispatch_fenced_claims").await;
     let items: Vec<_> = (0..35).map(|_| item(recipient)).collect();
@@ -197,15 +295,34 @@ async fn notification_dispatch_claims_are_disjoint_and_expired_tokens_cannot_sto
 }
 
 #[tokio::test]
-async fn notification_dispatch_invalid_recipients_consume_one_bounded_batch() {
-    let (pool, recipient) = fixture("dispatch_invalid_recipients").await;
+async fn notification_dispatch_snapshot_recipients_remain_claimable_in_bounded_batches_after_deactivation(
+) {
+    let (pool, recipient) = fixture("dispatch_inactive_snapshot").await;
     enqueue(&pool, &(0..35).map(|_| item(recipient)).collect::<Vec<_>>()).await;
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(recipient)
         .execute(&pool)
         .await
         .unwrap();
-    assert!(dispatch::claim(&pool).await.unwrap().is_empty());
+    for expected in [32, 3] {
+        let batch = dispatch::claim(&pool).await.unwrap();
+        assert_eq!(batch.len(), expected);
+        for claimed in batch {
+            assert!(dispatch::materialize(&pool, &claimed, &ELIGIBILITY)
+                .await
+                .unwrap()
+                .is_some());
+            dispatch::acknowledge(&pool, &claimed).await.unwrap();
+        }
+    }
+    assert!(!dispatch::status(&pool).await.unwrap().pending);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        35
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM notification_dispatch_jobs WHERE published_at IS NOT NULL"
@@ -213,17 +330,7 @@ async fn notification_dispatch_invalid_recipients_consume_one_bounded_batch() {
         .fetch_one(&pool)
         .await
         .unwrap(),
-        32
-    );
-    assert!(dispatch::status(&pool).await.unwrap().due);
-    assert!(dispatch::claim(&pool).await.unwrap().is_empty());
-    assert!(!dispatch::status(&pool).await.unwrap().pending);
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
-            .fetch_one(&pool)
-            .await
-            .unwrap(),
-        0
+        35
     );
 }
 
@@ -340,7 +447,7 @@ async fn notification_dispatch_row_failure_keeps_retry_while_other_claimed_sibli
 }
 
 #[tokio::test]
-async fn notification_dispatch_attendance_guardian_unlink_and_owned_cancel_prevent_recreation() {
+async fn notification_dispatch_owned_source_cancel_prevents_prefetched_recreation() {
     let (pool, recipient) = fixture("dispatch_source_cancellation").await;
     let student: Uuid =
         sqlx::query_scalar("SELECT id FROM users WHERE user_type='student' ORDER BY id LIMIT 1")
@@ -367,17 +474,10 @@ async fn notification_dispatch_attendance_guardian_unlink_and_owned_cancel_preve
         .unwrap();
     tx.commit().await.unwrap();
     let claimed = dispatch::claim(&pool).await.unwrap().remove(0);
-    sqlx::query("DELETE FROM student_parents WHERE student_user_id=$1 AND parent_user_id=$2")
-        .bind(student)
-        .bind(parent)
-        .execute(&pool)
-        .await
-        .unwrap();
     assert!(dispatch::materialize(&pool, &claimed, &ELIGIBILITY)
         .await
         .unwrap()
-        .is_none());
-    assert!(sqlx::query_scalar::<_,bool>("SELECT published_at IS NOT NULL AND stored_at IS NULL FROM notification_dispatch_jobs WHERE id=$1").bind(owned.id).fetch_one(&pool).await.unwrap());
+        .is_some());
     let direct = item(recipient);
     enqueue(&pool, std::slice::from_ref(&direct)).await;
     let direct_claim = dispatch::claim(&pool).await.unwrap().remove(0);

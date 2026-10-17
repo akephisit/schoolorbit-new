@@ -103,6 +103,11 @@ impl NotificationService {
             link: link.map(str::to_owned),
         };
         let mut tx = pool.begin().await?;
+        // Direct notifications select their recipient once at acceptance, not retry.
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 AND status='active'")
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
         let id = crate::dispatch::store_and_enqueue_in_transaction(&mut tx, &item)
             .await
             .map_err(|_| sqlx::Error::Protocol("notification_enqueue_failed".into()))?;
