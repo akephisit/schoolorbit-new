@@ -686,8 +686,7 @@ pub async fn history(
     if q.end < q.start || (q.end - q.start).num_days() > 31 {
         return Err(invalid("ดูรายละเอียดครั้งละไม่เกิน 31 วัน"));
     }
-    let mut guard = pool.begin().await?;
-    crate::services::lock_term(&mut guard, q.academic_term_id, false, true).await?;
+    let mut guard = crate::services::begin_report_snapshot(pool, q.academic_term_id).await?;
     let full = policy::read_school(actor)
         || own_student_read_on_connection(&mut *guard, actor, q.student_id).await?;
     let virtual_rows = if settings::get_on_connection(&mut *guard, q.academic_term_id)
@@ -939,7 +938,13 @@ pub async fn reset(
     )
     .fetch_all(&mut *tx)
     .await?;
-    school_notifications::services::delete_identified_in_transaction(&mut tx, &ids).await?;
+    school_notifications::dispatch::cancel_identified_in_transaction(
+        &mut tx,
+        school_notifications::dispatch::NotificationSourceKind::Attendance,
+        &ids,
+        true,
+    )
+    .await?;
     crate::services::reset::reset_in_transaction(pool, tx, actor, p).await
 }
 

@@ -222,7 +222,17 @@ pub async fn purge_in_transaction(
         return Err(AppError::Conflict("ล้างได้เฉพาะภาคเรียนที่ปิดแล้ว".into()));
     }
     super::score_changes::require_drained(&mut tx, term).await?;
-    let pending:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE academic_term_id=$1 AND stored_at IS NULL AND published_at IS NULL)").bind(term).fetch_one(&mut *tx).await?;
+    let notification_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT notification_id FROM attendance_notifications WHERE academic_term_id=$1",
+    )
+    .bind(term)
+    .fetch_all(&mut *tx)
+    .await?;
+    let progress =
+        school_notifications::dispatch::progress_on_connection(&mut tx, &notification_ids).await?;
+    let pending = progress
+        .iter()
+        .any(|n| n.stored_at.is_none() && n.published_at.is_none());
     if pending {
         return Err(AppError::Conflict("รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง".into()));
     }
@@ -291,7 +301,12 @@ pub async fn purge_in_transaction(
         .bind(term)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM attendance_notifications WHERE academic_term_id=$1 AND published_at IS NOT NULL").bind(term).execute(&mut *tx).await?;
+    let completed: Vec<Uuid> = progress
+        .iter()
+        .filter(|n| n.published_at.is_some())
+        .map(|n| n.notification_id)
+        .collect();
+    sqlx::query("DELETE FROM attendance_notifications WHERE academic_term_id=$1 AND notification_id=ANY($2)").bind(term).bind(completed).execute(&mut *tx).await?;
     audit(&mut tx, actor, term, "delete", &p.reason).await?;
     tx.commit().await?;
     impact(pool, term).await

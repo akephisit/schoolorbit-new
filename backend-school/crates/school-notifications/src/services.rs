@@ -231,16 +231,3 @@ mod tests {
         );
     }
 }
-
-/// Provider-owned removal of identities resolved by a trusted domain adapter.
-/// Callers must establish ownership before supplying IDs and retain the same transaction.
-pub async fn delete_identified_in_transaction(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ids: &[Uuid],
-) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM notifications WHERE id=ANY($1)")
-        .bind(ids)
-        .execute(&mut **tx)
-        .await?;
-    Ok(())
-}

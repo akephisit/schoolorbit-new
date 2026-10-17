@@ -11,6 +11,7 @@ api-docs = [
 ]
 
 [dependencies]
+async-trait = { workspace = true }
 async-stream = { workspace = true }
 futures = { workspace = true }
 school-permissions = { workspace = true }

@@ -111,7 +111,12 @@ struct CalendarFixture {
 }
 
 async fn migrated_pool(name: &str) -> PgPool {
-    migrated_pool_through(name, 98).await
+    let latest = sqlx::migrate!("./migrations")
+        .iter()
+        .map(|m| m.version)
+        .max()
+        .unwrap();
+    migrated_pool_through(name, latest).await
 }
 
 async fn migrated_pool_through(name: &str, version: i64) -> PgPool {
@@ -1272,6 +1277,12 @@ async fn successful_reminder_marks_sent_once_and_second_run_is_idempotent() {
         .await
         .expect("first reminder run should complete");
     assert_eq!(first, 1);
+    crate::integration_tests::notification_dispatch::drain(
+        &pool,
+        "calendar-test",
+        &notification_tx,
+    )
+    .await;
     let notification =
         tokio::time::timeout(std::time::Duration::from_secs(2), notification_rx.recv())
             .await
@@ -1514,6 +1525,19 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
         end_time: None,
     };
     let request = workflow.create(&actor, payload.clone()).await.unwrap();
+    assert!(
+        rx.try_recv().is_err(),
+        "committed inbox is available before asynchronous transport"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications WHERE user_id=$1")
+            .bind(manager_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    crate::integration_tests::notification_dispatch::drain(&pool, "synthetic-tenant", &tx).await;
     let created = rx.try_recv().unwrap();
     assert_eq!(created.tenant, "synthetic-tenant");
     assert_eq!(created.user_id, manager_id);
@@ -1534,6 +1558,7 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
         workflow.approve(&manager, request.id, event)
     );
     assert_eq!(usize::from(one.is_ok()) + usize::from(two.is_ok()), 1);
+    crate::integration_tests::notification_dispatch::drain(&pool, "synthetic-tenant", &tx).await;
     let decision = rx.try_recv().unwrap();
     assert_eq!(decision.user_id, actor.user_id);
     assert_eq!(decision.tenant, "synthetic-tenant");
@@ -1549,6 +1574,7 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
         .is_err());
     assert!(rx.try_recv().is_err());
     let rejected = workflow.create(&actor, payload.clone()).await.unwrap();
+    crate::integration_tests::notification_dispatch::drain(&pool, "synthetic-tenant", &tx).await;
     assert_eq!(rx.try_recv().unwrap().user_id, manager_id);
     let rejected = workflow
         .reject(&manager, rejected.id, "Synthetic rejection reason")
@@ -1559,6 +1585,7 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
         rejected.rejection_reason.as_deref(),
         Some("Synthetic rejection reason")
     );
+    crate::integration_tests::notification_dispatch::drain(&pool, "synthetic-tenant", &tx).await;
     let decision = rx.try_recv().unwrap();
     assert_eq!(decision.user_id, actor.user_id);
     assert_eq!(decision.notification.type_, "warning");

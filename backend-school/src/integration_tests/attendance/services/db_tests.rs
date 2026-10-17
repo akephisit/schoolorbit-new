@@ -522,10 +522,27 @@ async fn attendance_partial_save_preserves_unchecked_and_deduplicates_every_guar
             .summaries
             .is_empty()
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
@@ -677,9 +694,20 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     )
     .await
     .is_err());
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
         .bind(TERM)
@@ -1109,9 +1137,20 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
             .absent,
         1
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
@@ -2377,9 +2416,18 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     )
     .await
     .unwrap();
-    let pending = notifications::pending(&f.pool).await.unwrap();
-    assert!(notifications::store(&f.pool, &pending[0]).await.unwrap());
-    let owned_notice = pending[0].notification_id;
+    let pending = school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap();
+    assert!(school_notifications::dispatch::materialize(
+        &f.pool,
+        &pending[0],
+        &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
+    )
+    .await
+    .unwrap()
+    .is_some());
+    let owned_notice = pending[0].notification.notification_id;
     let evidence = evidence_file(&f.pool, STUDENT).await;
     let unrelated_file = evidence_file(&f.pool, STUDENT).await;
     sqlx::query("UPDATE files SET purpose_code='profile_avatar' WHERE id=$1")
@@ -2500,7 +2548,14 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
     .await
     .unwrap());
     for notice in pending {
-        assert!(!notifications::store(&f.pool, &notice).await.unwrap());
+        assert!(school_notifications::dispatch::materialize(
+            &f.pool,
+            &notice,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY
+        )
+        .await
+        .unwrap()
+        .is_none());
     }
     assert!(matches!(
         sessions::save_with_seed(
@@ -2930,9 +2985,20 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
             .unwrap(),
         1
     );
-    for n in notifications::pending(&f.pool).await.unwrap() {
-        notifications::store(&f.pool, &n).await.unwrap();
-        notifications::delivered(&f.pool, n.id).await.unwrap();
+    for n in school_notifications::dispatch::claim(&f.pool)
+        .await
+        .unwrap()
+    {
+        school_notifications::dispatch::materialize(
+            &f.pool,
+            &n,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&f.pool, &n)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -3034,9 +3100,17 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
     )
     .await
     .unwrap();
-    for notice in notifications::pending(&pool).await.unwrap() {
-        notifications::store(&pool, &notice).await.unwrap();
-        notifications::delivered(&pool, notice.id).await.unwrap();
+    for notice in school_notifications::dispatch::claim(&pool).await.unwrap() {
+        school_notifications::dispatch::materialize(
+            &pool,
+            &notice,
+            &crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY,
+        )
+        .await
+        .unwrap();
+        school_notifications::dispatch::acknowledge(&pool, &notice)
+            .await
+            .unwrap();
     }
     sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
         .bind(TERM)
@@ -3528,7 +3602,7 @@ async fn attendance_score_queue_rejects_non_reset_stale_generation_without_readi
 
 #[tokio::test]
 async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_generation_once() {
-    let f = fixture_at("attendance_behavior_adapter", 109).await;
+    let f = fixture("attendance_behavior_adapter").await;
     let date = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
@@ -3718,7 +3792,7 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
     use chrono::TimeZone;
     use school_academic_lifecycle::ports::ExternalLifecyclePort;
     use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
-    let f = fixture_at("attendance_lifecycle_delivery_gate", 109).await;
+    let f = fixture("attendance_lifecycle_delivery_gate").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
@@ -4078,4 +4152,671 @@ async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_
         .unwrap();
     assert!(!after_reset.archived);
     assert_eq!(after_reset.total, 0);
+}
+
+#[tokio::test]
+async fn attendance_history_snapshot_allows_parallel_readers_and_first_save_without_mixed_facts() {
+    let mut f = fixture("attendance_history_save_overlap").await;
+    // Keep a blocker, two readers and an independent observer/save connection.
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let options = (*f.pool.connect_options())
+        .clone()
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(6)
+        .connect_with(options)
+        .await
+        .unwrap();
+    f.pool.close().await;
+    f.pool = pool;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let room = core::students(&f.pool, TERM, date)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|student| student.student_id == STUDENT)
+        .unwrap()
+        .homeroom_id
+        .unwrap();
+    sqlx::query("INSERT INTO homeroom_advisors(homeroom_id,user_id,role) VALUES($1,$2,'primary') ON CONFLICT(homeroom_id,user_id) DO NOTHING")
+        .bind(room).bind(TEACHER).execute(&f.pool).await.unwrap();
+    let context = OpenAttendanceSession {
+        academic_term_id: TERM,
+        date,
+        kind: AttendanceKind::Arrival,
+        source_key: room.to_string(),
+    };
+    let preview = open(&f.pool, &f.actor, context.clone()).await.unwrap();
+    let mut blocker = f.pool.begin().await.unwrap();
+    // Arrival saves do not use the timetable provider. Pause history after it has
+    // read the existing rounds, so a first save can commit between its queries.
+    sqlx::query("LOCK TABLE academic_timetable_versions IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let mut readers = Vec::new();
+    for _ in 0..2 {
+        let pool = f.pool.clone();
+        let actor = f.actor.clone();
+        readers.push(tokio::spawn(async move {
+            history(
+                &pool,
+                &actor,
+                AttendanceHistoryQuery {
+                    academic_term_id: TERM,
+                    student_id: STUDENT,
+                    start: date,
+                    end: date,
+                },
+            )
+            .await
+        }));
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))",
+            )
+            .bind(blocker_pid)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+            if waiting == 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("both history readers must reach the provider concurrently");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        save(
+            &f.pool,
+            &f.actor,
+            preview.session.id,
+            save_payload(&preview, STUDENT, AttendanceResult::Present),
+        ),
+    )
+    .await
+    .expect("first arrival save must not wait for history readers")
+    .unwrap();
+    blocker.rollback().await.unwrap();
+    for reader in readers {
+        let rows = reader.await.unwrap().unwrap();
+        let selected: Vec<_> = rows
+            .iter()
+            .filter(|row| row.session_id == preview.session.id)
+            .collect();
+        assert_eq!(
+            selected.len(),
+            1,
+            "one snapshot must not mix virtual and saved copies"
+        );
+        assert_eq!(selected[0].result, AttendanceResult::Unchecked);
+    }
+    let current = history(
+        &f.pool,
+        &f.actor,
+        AttendanceHistoryQuery {
+            academic_term_id: TERM,
+            student_id: STUDENT,
+            start: date,
+            end: date,
+        },
+    )
+    .await
+    .unwrap();
+    let selected: Vec<_> = current
+        .iter()
+        .filter(|row| row.session_id == preview.session.id)
+        .collect();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].result, AttendanceResult::Present);
+}
+
+#[tokio::test]
+async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start_facts() {
+    let f = fixture("attendance_history_queued_reset").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let preview = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&preview, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let mut reset_tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_module_exclusive(&mut reset_tx)
+        .await
+        .unwrap();
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *reset_tx)
+        .await
+        .unwrap();
+    let pool = f.pool.clone();
+    let actor = f.actor.clone();
+    let reader = tokio::spawn(async move {
+        history(
+            &pool,
+            &actor,
+            AttendanceHistoryQuery {
+                academic_term_id: TERM,
+                student_id: STUDENT,
+                start: date,
+                end: date,
+            },
+        )
+        .await
+    });
+    attendance_wait_for_blocker(&f.pool, blocker).await;
+    school_attendance::services::reset::reset_in_transaction(
+        &f.pool,
+        reset_tx,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "reset waiting history".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let before = reader.await.unwrap().unwrap();
+    assert!(before
+        .iter()
+        .any(|row| row.session_id == session.id && row.result == AttendanceResult::Present));
+    let query = AttendanceHistoryQuery {
+        academic_term_id: TERM,
+        student_id: STUDENT,
+        start: date,
+        end: date,
+    };
+    assert!(matches!(
+        history(&f.pool, &f.actor, query.clone()).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let student = ActorContext {
+        user_id: STUDENT,
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    assert!(history(&f.pool, &student, query).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn attendance_notification_first_arrival_keeps_original_payload_across_rounds() {
+    let f = fixture("attendance_first_notice_wins").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let mut first = seed(&f, AttendanceKind::Arrival, date);
+    first.session.start_time = NaiveTime::from_hms_opt(8, 0, 0).unwrap();
+    first.session.end_time = NaiveTime::from_hms_opt(9, 0, 0).unwrap();
+    let first_session = sessions::ensure(&f.pool, &f.actor, first).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, first_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        first_session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let original: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+    )
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert!(!original.is_empty());
+    assert!(original.iter().all(|row| row.2.contains("08:00")));
+    let mut later = seed(&f, AttendanceKind::Arrival, date);
+    later.session.id = Uuid::new_v4();
+    later.session.source_key = "later-fixture-room".into();
+    later.session.start_time = NaiveTime::from_hms_opt(10, 0, 0).unwrap();
+    later.session.end_time = NaiveTime::from_hms_opt(11, 0, 0).unwrap();
+    let later_session = sessions::ensure(&f.pool, &f.actor, later).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, later_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        later_session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT id,notification_id,message FROM notification_dispatch_jobs ORDER BY id",
+    )
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        original, after,
+        "a later arrival changes neither first notification identity nor time text"
+    );
+}
+
+async fn snapshot_parent(f: &Fixture, active: bool, linked: bool) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'not-a-login','Snapshot','Parent','parent',$2)")
+        .bind(id).bind(if active {"active"} else {"inactive"}).execute(&f.pool).await.unwrap();
+    if linked {
+        sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'parent')").bind(STUDENT).bind(id).execute(&f.pool).await.unwrap();
+    }
+    id
+}
+
+#[tokio::test]
+async fn attendance_notification_recipient_snapshot_ignores_later_activity_and_guardian_changes() {
+    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
+    use school_notifications::dispatch;
+    let f = fixture("attendance_recipient_snapshot").await;
+    let original = snapshot_parent(&f, true, true).await;
+    let inactive = snapshot_parent(&f, false, true).await;
+    let unlinked = snapshot_parent(&f, true, false).await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let recipients: std::collections::HashSet<Uuid> =
+        sqlx::query_scalar("SELECT recipient_id FROM notification_dispatch_jobs")
+            .fetch_all(&f.pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+    assert_eq!(
+        recipients,
+        std::collections::HashSet::from([STUDENT, original])
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=ANY($1)")
+        .bind(vec![STUDENT, original])
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM student_parents WHERE student_user_id=$1 AND parent_user_id=$2")
+        .bind(STUDENT)
+        .bind(original)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let later = snapshot_parent(&f, true, true).await;
+    let claimed = dispatch::claim(&f.pool).await.unwrap();
+    assert_eq!(claimed.len(), 2);
+    for claim in &claimed {
+        assert!(
+            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    sqlx::query("UPDATE notifications SET read_at=now() WHERE user_id=$1")
+        .bind(original)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let before: Vec<(
+        Uuid,
+        Uuid,
+        Option<chrono::DateTime<Utc>>,
+        chrono::DateTime<Utc>,
+    )> = sqlx::query_as("SELECT id,user_id,read_at,created_at FROM notifications ORDER BY id")
+        .fetch_all(&f.pool)
+        .await
+        .unwrap();
+    // Retry the unacknowledged snapshot, without recomputing any recipients.
+    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(8);
+    crate::integration_tests::notification_dispatch::drain(
+        &f.pool,
+        "attendance-snapshot",
+        &channel,
+    )
+    .await;
+    let mut delivered = std::collections::HashSet::new();
+    while let Ok(event) = events.try_recv() {
+        assert!(delivered.insert(event.user_id));
+    }
+    assert_eq!(delivered, recipients);
+    let after: Vec<(
+        Uuid,
+        Uuid,
+        Option<chrono::DateTime<Utc>>,
+        chrono::DateTime<Utc>,
+    )> = sqlx::query_as("SELECT id,user_id,read_at,created_at FROM notifications ORDER BY id")
+        .fetch_all(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM notification_dispatch_jobs WHERE attempts=2 AND published_at IS NOT NULL").fetch_one(&f.pool).await.unwrap(),2);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=ANY($1)"
+        )
+        .bind(vec![inactive, unlinked, later])
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn attendance_notification_inactive_student_excludes_self_and_guardians_at_save() {
+    let f = fixture("attendance_inactive_save_snapshot").await;
+    let _parent = snapshot_parent(&f, true, true).await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(STUDENT)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let saved = sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    assert!(saved
+        .students
+        .iter()
+        .any(|row| row.student_id == STUDENT && row.result == AttendanceResult::Present));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notification_dispatch_jobs")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublished_after_archive() {
+    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
+    use school_notifications::dispatch;
+    let f = fixture("attendance_purge_dispatch_progress").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    drain_score_changes(&f.pool).await;
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT status='closed' FROM academic_terms WHERE id=$1"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_score_changes WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+    let impact = reports::impact(&f.pool, TERM).await.unwrap();
+    let request = || PurgeAttendanceTerm {
+        expected_records: impact.records,
+        reason: "Preserve pending dispatch".into(),
+    };
+    assert!(
+        matches!(reports::purge(&f.pool,TEACHER,TERM,request()).await,Err(AppError::Conflict(code)) if code=="รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง")
+    );
+    assert_eq!(
+        reports::impact(&f.pool, TERM).await.unwrap().records,
+        impact.records
+    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    let claims = dispatch::claim(&f.pool).await.unwrap();
+    assert!(!claims.is_empty());
+    for claim in &claims {
+        assert!(
+            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    let id = claims[0].notification.notification_id;
+    sqlx::query("UPDATE notifications SET read_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let inbox_before: (Option<chrono::DateTime<Utc>>, chrono::DateTime<Utc>) =
+        sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+            .bind(id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert!(inbox_before.0.is_some());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT bool_and(stored_at IS NOT NULL AND published_at IS NULL) FROM notification_dispatch_jobs").fetch_one(&f.pool).await.unwrap());
+    reports::purge(&f.pool, TEACHER, TERM, request())
+        .await
+        .unwrap();
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(reports::impact(&f.pool, TERM).await.unwrap().records, 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_notifications WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        claims.len() as i64
+    );
+    // A retry after archive must keep its source identity and existing read inbox.
+    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(16);
+    crate::integration_tests::notification_dispatch::drain(
+        &f.pool,
+        "purged-attendance-fixture",
+        &channel,
+    )
+    .await;
+    let inbox_after: (Option<chrono::DateTime<Utc>>, chrono::DateTime<Utc>) =
+        sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+            .bind(id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(inbox_before, inbox_after);
+    let mut delivered_ids = std::collections::HashSet::new();
+    while let Ok(event) = events.try_recv() {
+        assert!(delivered_ids.insert(event.notification.id));
+    }
+    assert_eq!(
+        delivered_ids,
+        claims
+            .iter()
+            .map(|claim| claim.notification.notification_id)
+            .collect()
+    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT bool_and(published_at IS NOT NULL) FROM notification_dispatch_jobs"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        claims.len() as i64
+    );
+}
+
+#[tokio::test]
+async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay_commits_once() {
+    let f = fixture("attendance_enqueue_rollback").await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let before = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    let payload = save_payload(&before, STUDENT, AttendanceResult::Present);
+    let counts_sql="SELECT (SELECT count(*) FROM attendance_records),(SELECT count(*) FROM attendance_notifications),(SELECT count(*) FROM notification_dispatch_jobs),(SELECT count(*) FROM attendance_score_changes),(SELECT count(*) FROM audit_logs WHERE entity_type='attendance')";
+    let counts_before: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    sqlx::raw_sql("CREATE FUNCTION reject_attendance_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_kind='attendance' THEN RAISE EXCEPTION 'synthetic_enqueue_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_attendance_dispatch BEFORE INSERT ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION reject_attendance_dispatch();")
+        .execute(&f.pool).await.unwrap();
+    assert!(matches!(
+        sessions::save(&f.pool, &f.actor, session.id, payload.clone()).await,
+        Err(AppError::DbError(_))
+    ));
+    let after = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    assert_eq!(before.session.row_version, after.session.row_version);
+    assert_eq!(before.session.saved_at, after.session.saved_at);
+    assert_eq!(
+        serde_json::to_value(&before.students).unwrap(),
+        serde_json::to_value(&after.students).unwrap()
+    );
+    let counts_after: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(counts_before, counts_after);
+    sqlx::raw_sql("DROP TRIGGER reject_attendance_dispatch ON notification_dispatch_jobs; DROP FUNCTION reject_attendance_dispatch();").execute(&f.pool).await.unwrap();
+    let saved = sessions::save(&f.pool, &f.actor, session.id, payload)
+        .await
+        .unwrap();
+    assert_eq!(saved.session.row_version, before.session.row_version + 1);
+    assert!(saved.session.saved_at.is_some());
+    assert_eq!(
+        saved
+            .students
+            .iter()
+            .filter(|row| row.result == AttendanceResult::Present)
+            .count(),
+        1
+    );
+    let committed: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(
+        committed,
+        (
+            counts_before.0 + 1,
+            counts_before.1 + 1,
+            counts_before.2 + 1,
+            counts_before.3 + 1,
+            counts_before.4 + 1
+        )
+    );
 }

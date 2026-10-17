@@ -7136,6 +7136,42 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             assert!(directory < operation_lease && operation_lease < pool);
             assert!(pool < refreshed && refreshed < run);
             assert!(!work[..run].contains("drop(operation_pool)"));
+        } else if file_name == "crates/school-notifications/src/runtime.rs" {
+            // Central dispatch has no request context. Its registry must stay
+            // dormant between turns and each admitted batch must own its lease.
+            let runtime = extract_braced_block(&source, "pub async fn start", false);
+            assert!(runtime.contains("BTreeMap<String, TenantSchedule>"));
+            let schedule = extract_braced_block(&source, "struct TenantSchedule", false);
+            for forbidden in ["PgPool", "TenantPool", "database_url", "SchoolDatabaseInfo"] {
+                assert!(!schedule.contains(forbidden));
+            }
+            assert!(schedule.contains("pending: bool"));
+            assert!(schedule.contains("next_probe: tokio::time::Instant"));
+            let work =
+                extract_braced_block(&runtime, "for (tenant, schedule) in &mut tenants", false);
+            let directory = work
+                .find("state.admin_client.get_school_database_info(tenant).await")
+                .expect("Notification work must refresh the authoritative tenant directory");
+            let admission = work
+                .find(".get_pool(&school.database_url, tenant)")
+                .expect("Notification work must use the central pool manager");
+            let operation_lease = work
+                .find("let pool = match admitted")
+                .expect("Notification work must retain its admitted logical lease");
+            let run = work
+                .find("match deliver_tenant_batch(")
+                .expect("Notification work must use its bounded central dispatcher");
+            let result = work[run..]
+                .find("Ok(progress)")
+                .expect("Notification work must await its batch outcome");
+            let delivery = &work[run..run + result];
+            assert!(directory < admission && admission < operation_lease && operation_lease < run);
+            assert!(delivery.contains("&pool,"));
+            assert!(delivery.contains(".await"));
+            assert!(!work.contains("drop(pool)"));
+            assert!(!work.contains("spawn("));
+            assert!(!work.contains("spawn_local("));
+            assert!(!work.contains("pool.clone()"));
         } else if file_name != "src/system/handlers/migration.rs"
             && pool_manager_get_pool.is_match(&source)
         {

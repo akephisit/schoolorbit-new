@@ -19,11 +19,7 @@ use crate::{
 use chrono::{NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
 use school_errors::AppError;
-use school_notifications::{
-    events::TenantNotificationEvent,
-    models::Notification,
-    publisher::{NotificationService, TenantNotificationPublisher},
-};
+use school_notifications::events::TenantNotificationEvent;
 use sqlx::{types::Json, PgPool};
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
@@ -39,9 +35,7 @@ struct TermSchedule {
 #[derive(Clone)]
 struct Registration {
     pool: PgPool,
-    channel: broadcast::Sender<TenantNotificationEvent>,
     terms: Vec<TermSchedule>,
-    pending: bool,
     generation: Uuid,
     module_generation: Uuid,
     digests: HashSet<String>,
@@ -59,7 +53,7 @@ fn tenants() -> &'static DashMap<String, Registration> {
 pub async fn touch(
     tenant: &str,
     pool: PgPool,
-    channel: broadcast::Sender<TenantNotificationEvent>,
+    _channel: broadcast::Sender<TenantNotificationEvent>,
 ) -> Result<(), AppError> {
     let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=sqlx::query_as("SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all(&pool).await?;
     let mut terms = vec![];
@@ -79,7 +73,6 @@ pub async fn touch(
         });
     }
     let module_generation = crate::services::sessions::module_generation(&pool).await?;
-    let pending = notifications::has_pending(&pool).await?;
     let prior = tenants()
         .get(tenant)
         .filter(|v| v.module_generation == module_generation)
@@ -89,9 +82,7 @@ pub async fn touch(
         tenant.into(),
         Registration {
             pool,
-            channel,
             terms,
-            pending,
             generation: Uuid::new_v4(),
             module_generation,
             digests,
@@ -189,7 +180,6 @@ pub async fn start(state: AttendanceRuntimeState) {
                 if live.generation == r.generation {
                     live.digests.extend(r.digests);
                     live.last_retention = r.last_retention;
-                    live.pending = r.pending;
                     live.terms = r.terms;
                     live.last_finalization_poll = r.last_finalization_poll;
                 }
@@ -206,6 +196,9 @@ async fn run(
     let date = now.date_naive();
     if r.last_finalization_poll != Some(date) {
         let processed = crate::application::finalization::catch_up(&r.pool, Utc::now(), 4).await?;
+        if processed > 0 {
+            school_notifications::runtime::wake_after_commit(tenant);
+        }
         if processed < 4 {
             r.last_finalization_poll = Some(date);
         }
@@ -246,26 +239,10 @@ async fn run(
                     &expected,
                 )
                 .await?;
-                r.pending = true;
+                school_notifications::runtime::wake_after_commit(tenant);
                 r.digests.insert(key);
             }
         }
-    }
-    if r.pending {
-        for n in notifications::pending(&r.pool).await? {
-            if !notifications::store(&r.pool, &n).await? {
-                continue;
-            }
-            let notice:Notification=sqlx::query_as("SELECT id,title,message,type type_,link,read_at,created_at FROM notifications WHERE id=$1").bind(n.notification_id).fetch_one(&r.pool).await?;
-            let publisher = TenantNotificationPublisher::new(tenant, &r.channel);
-            if NotificationService::deliver_stored(&r.pool, &publisher, n.recipient_id, notice)
-                .await
-                .is_ok()
-            {
-                notifications::delivered(&r.pool, n.id).await?;
-            }
-        }
-        r.pending = notifications::has_pending(&r.pool).await?;
     }
     if r.last_retention != Some(date) {
         if faces::expire_evidence(&r.pool).await? < faces::EVIDENCE_EXPIRY_BATCH {
@@ -295,6 +272,7 @@ pub async fn refresh_after_commit(
     pool: sqlx::PgPool,
     channel: broadcast::Sender<TenantNotificationEvent>,
 ) {
+    school_notifications::runtime::wake_after_commit(subdomain);
     if touch(subdomain, pool, channel).await.is_err() {
         tracing::error!(
             error_code = "attendance_cache_refresh",
@@ -308,10 +286,10 @@ pub async fn wake_after_commit(
     pool: PgPool,
     channel: broadcast::Sender<TenantNotificationEvent>,
 ) {
+    school_notifications::runtime::wake_after_commit(tenant);
     {
         if let Some(mut entry) = tenants().get_mut(tenant) {
             WAKE.notify_one();
-            entry.pending = true;
             entry.generation = Uuid::new_v4();
             entry.last_finalization_poll = None;
             return;
