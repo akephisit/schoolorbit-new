@@ -44,7 +44,7 @@ pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
     prepare_core_fixture_through(name, 114).await
 }
 
-async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
+pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)

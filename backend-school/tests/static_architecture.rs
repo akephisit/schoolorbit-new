@@ -1674,8 +1674,41 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(request_adapter.contains("HeaderMap"));
     assert!(request_adapter.contains("TenantOriginPolicy"));
     assert!(!request_adapter.contains("struct TenantContext"));
+    let tenancy_api = read_source(workspace_crate_dir("school-tenancy").join("src/lib.rs"));
+    let managed_pool =
+        read_source(workspace_crate_dir("school-tenancy").join("src/tenant_pool.rs"));
+    let startup = read_source(manifest_dir().join("src/main.rs"));
     assert!(pool_manager.contains("statement_cache_capacity(100)"));
-    assert!(pool_manager.contains("max_connections_per_school: 5"));
+    // Configuration and the physical budget belong to the provider. The application
+    // validates environment allocations before constructing the one runtime manager.
+    for required in [
+        "pub struct PoolManagerConfig",
+        "pub fn from_env() -> Result<Self, String>",
+        "runtime_connections: setting(\"TENANT_RUNTIME_CONNECTIONS\", 40,",
+        "per_tenant: setting(\"TENANT_POOL_MAX_CONNECTIONS\", 5,",
+        "runtime_connections: 40",
+        "per_tenant: 5",
+        "config.runtime_connections + reserved > server",
+        "config.per_tenant > config.runtime_connections",
+        "budget: Arc::new(Semaphore::new(config.runtime_connections as usize))",
+        "max_connections_per_school: config.per_tenant",
+        ".max_connections(self.max_connections_per_school)",
+        ".try_acquire_many_owned(self.max_connections_per_school)",
+    ] {
+        assert!(
+            pool_manager.contains(required),
+            "tenant budget owner is missing {required}"
+        );
+    }
+    assert!(startup.contains("PoolManagerConfig::from_env()"));
+    assert!(startup.contains("PoolManager::with_config(pool_manager_config)"));
+    assert!(tenancy_api.contains("pub use pool_manager::{"));
+    assert!(tenancy_api.contains("PoolManagerConfig"));
+    assert!(tenancy_api.contains("pub use tenant_pool::{TenantPool, TenantPoolRetention}"));
+    assert!(tenancy_api.contains("pub pool: TenantPool"));
+    assert!(managed_pool.contains("pub struct TenantPool"));
+    assert!(managed_pool.contains("lease: Option<Arc<Lease>>"));
+    assert!(pool_manager.contains("e.lease.strong_count() == 0"));
     assert!(pool_manager.contains("pool_ttl: Duration::from_secs(1800)"));
 }
 

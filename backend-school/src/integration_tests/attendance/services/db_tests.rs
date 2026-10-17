@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::{
-    core::services_tests::prepare_current_core_fixture,
+    core::services_tests::prepare_core_fixture_through,
     cutover_test_support::apply_migrations_through,
 };
 use school_attendance::{
@@ -19,8 +19,7 @@ pub(super) async fn fixture(name: &str) -> Fixture {
     fixture_at(name, 108).await
 }
 async fn fixture_at(name: &str, version: i64) -> Fixture {
-    let pool = prepare_current_core_fixture(name).await;
-    apply_migrations_through(&pool, version).await.unwrap();
+    let pool = prepare_core_fixture_through(name, version).await;
     let actor = ActorContext {
         user_id: TEACHER,
         permissions: vec![
@@ -2522,8 +2521,7 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
 
 #[tokio::test]
 async fn attendance_migration_preserves_explicit_legacy_ceremony_facts_and_retries() {
-    let pool = prepare_current_core_fixture("attendance_legacy_sparse_migration").await;
-    apply_migrations_through(&pool, 103).await.unwrap();
+    let pool = prepare_core_fixture_through("attendance_legacy_sparse_migration", 103).await;
     let session = Uuid::new_v4();
     sqlx::query("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,start_time,end_time,saved_by) VALUES($1,$2,'2025-10-09','flag','legacy','ceremony',$3,'08:00','08:15',$4)").bind(session).bind(TERM).bind(vec![TEACHER]).bind(TEACHER).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,class_number,result,origin,note,row_version) SELECT $1,$2,id,11,'present','teacher','preserved',7 FROM student_academic_years WHERE student_id=$2 AND academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$3)").bind(session).bind(STUDENT).bind(TERM).execute(&pool).await.unwrap();
