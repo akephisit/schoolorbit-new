@@ -691,6 +691,73 @@ async fn cross_column_and_concurrent_same_digest_collisions_are_rejected() {
 }
 
 #[tokio::test]
+async fn cleanup_cancellation_rolls_back_prior_steps_and_retries() {
+    let fixture = SessionFixture::concurrent("cleanup_cancel_rollback", 5).await;
+    let now = database_timestamp(Utc::now());
+    fixture.set_rotated_at(now - Duration::minutes(2)).await;
+    sqlx::query("UPDATE auth_sessions SET previous_token_hash=decode(repeat('fe',32),'hex'), previous_token_valid_until=$1 - interval '1 minute' WHERE id=$2")
+        .bind(now).bind(fixture.session_id).execute(&fixture.pool).await.unwrap();
+    let mut blocker = fixture.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE auth_login_throttles IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let worker_pool = fixture.pool.clone();
+    let task = tokio::spawn(async move { cleanup_auth_state(&worker_pool, now).await });
+    // The cleanup reached its third statement after changing previous-token
+    // state inside its still-uncommitted transaction.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE relation='auth_login_throttles'::regclass AND NOT granted)")
+                .fetch_one(&fixture.pool).await.unwrap();
+            if waiting { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    blocker.rollback().await.unwrap();
+    let retry = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        cleanup_auth_state(&fixture.pool, now),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        retry.previous_tokens_cleared, 1,
+        "cancelled transaction must preserve its earlier token cleanup for retry"
+    );
+    assert!(fixture.hashes().await.1.is_none());
+}
+
+#[tokio::test]
+async fn cleanup_skips_locked_rows_and_resumes_after_release() {
+    let fixture = SessionFixture::concurrent("cleanup_skip_locked", 5).await;
+    let now = database_timestamp(Utc::now());
+    fixture.set_rotated_at(now - Duration::minutes(2)).await;
+    sqlx::query("UPDATE auth_sessions SET previous_token_hash=decode(repeat('fe',32),'hex'), previous_token_valid_until=$1 - interval '1 minute' WHERE id=$2")
+        .bind(now).bind(fixture.session_id).execute(&fixture.pool).await.unwrap();
+    let mut blocker = fixture.pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM auth_sessions WHERE id=$1 FOR UPDATE")
+        .bind(fixture.session_id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let skipped = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        cleanup_auth_state(&fixture.pool, now),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(skipped.previous_tokens_cleared, 0);
+    blocker.rollback().await.unwrap();
+    let retry = cleanup_auth_state(&fixture.pool, now).await.unwrap();
+    assert_eq!(retry.previous_tokens_cleared, 1);
+}
+
+#[tokio::test]
 async fn cleanup_retains_recent_rows_and_deletes_exactly_one_batch() {
     let fixture = SessionFixture::active("cleanup_batch").await;
     let now = database_timestamp(Utc::now());

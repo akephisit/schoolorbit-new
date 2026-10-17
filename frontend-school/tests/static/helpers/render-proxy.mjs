@@ -7,6 +7,11 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 
+/**
+ * @param {string} template
+ * @param {string} [baseDomain]
+ * @returns {Promise<string>}
+ */
 export async function renderProxy(template, baseDomain = 'example.test') {
 	const temporary = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-proxy-test-'));
 	const output = path.join(temporary, 'rendered.conf');

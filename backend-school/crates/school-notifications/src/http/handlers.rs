@@ -38,6 +38,7 @@ const X_ACCEL_BUFFERING: HeaderName = HeaderName::from_static("x-accel-buffering
 enum NotificationStreamEvent {
     Notification(String),
     PermissionChanged,
+    ReconcileRequired,
     WorkChanged(&'static str),
     SessionInvalid,
     SessionUnavailable,
@@ -48,6 +49,7 @@ impl NotificationStreamEvent {
         match self {
             Self::Notification(data) => Event::default().data(data),
             Self::PermissionChanged => Event::default().event("permission_changed").data("{}"),
+            Self::ReconcileRequired => Event::default().event("reconcile_required").data("{}"),
             Self::WorkChanged(event_name) => Event::default().event(event_name).data("{}"),
             Self::SessionInvalid => Event::default().event("session_invalid").data("{}"),
             Self::SessionUnavailable => Event::default().event("session_unavailable").data("{}"),
@@ -164,7 +166,9 @@ where
                             }
                         }
                         Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            yield NotificationStreamEvent::ReconcileRequired;
+                        }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -174,7 +178,9 @@ where
                             yield NotificationStreamEvent::WorkChanged(event.event_name());
                         }
                         Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            yield NotificationStreamEvent::ReconcileRequired;
+                        }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -372,6 +378,90 @@ mod tests {
             session_tx,
             session_rx,
         )
+    }
+
+    #[tokio::test]
+    async fn reconciliation_control_event_has_empty_wire_payload() {
+        let stream = futures::stream::iter([Ok::<_, Infallible>(
+            NotificationStreamEvent::ReconcileRequired.into_sse_event(),
+        )]);
+        let response = Sse::new(stream).into_response();
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], b"event: reconcile_required\ndata: {}\n\n");
+    }
+
+    #[tokio::test]
+    async fn missed_data_signals_request_reconciliation_and_keep_tenant_filtering() {
+        for notification_lag in [false, true] {
+            let session = authenticated_session("demo");
+            let (
+                notification_tx,
+                notification_rx,
+                permission_tx,
+                permission_rx,
+                work_tx,
+                work_rx,
+                session_tx,
+                session_rx,
+            ) = event_receivers();
+            let stream = session_bound_notification_stream(
+                session,
+                notification_rx,
+                permission_rx,
+                work_rx,
+                session_rx,
+                interval_at(
+                    Instant::now() + Duration::from_secs(3600),
+                    Duration::from_secs(3600),
+                ),
+                || future::ready(Ok::<bool, school_errors::AppError>(true)),
+            );
+            futures::pin_mut!(stream);
+            for _ in 0..9 {
+                if notification_lag {
+                    notification_tx
+                        .send(TenantNotificationEvent::new(
+                            "other",
+                            Uuid::new_v4(),
+                            crate::models::Notification {
+                                id: Uuid::new_v4(),
+                                title: "private".into(),
+                                message: "private".into(),
+                                type_: "info".into(),
+                                link: None,
+                                read_at: None,
+                                created_at: Utc::now(),
+                            },
+                        ))
+                        .unwrap();
+                } else {
+                    work_tx
+                        .send(WorkChangeEvent::work_items_changed("other"))
+                        .unwrap();
+                }
+            }
+            assert_eq!(
+                stream.next().await,
+                Some(NotificationStreamEvent::ReconcileRequired)
+            );
+            assert!(
+                tokio::time::timeout(Duration::from_millis(5), stream.next())
+                    .await
+                    .is_err()
+            );
+            work_tx
+                .send(WorkChangeEvent::workflow_window_changed("demo"))
+                .unwrap();
+            assert_eq!(
+                stream.next().await,
+                Some(NotificationStreamEvent::WorkChanged(
+                    "workflow_window_changed"
+                ))
+            );
+            drop((notification_tx, permission_tx, work_tx, session_tx));
+        }
     }
 
     #[tokio::test]

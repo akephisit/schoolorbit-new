@@ -1,4 +1,5 @@
 mod admin_client;
+pub mod background;
 mod directory_cache;
 mod pool_manager;
 mod school_mapping;

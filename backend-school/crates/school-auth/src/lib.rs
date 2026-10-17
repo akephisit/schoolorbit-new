@@ -2,6 +2,7 @@ pub mod audit;
 pub mod config;
 pub mod events;
 pub mod models;
+pub mod retention;
 pub mod runtime;
 pub mod services;
 pub mod session_cache;

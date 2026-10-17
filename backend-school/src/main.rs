@@ -124,6 +124,13 @@ async fn main() {
         tracing::error!(%error, "Invalid tenant connection budget");
         std::process::exit(1)
     });
+    let background_turns = Arc::new(
+        school_tenancy::background::TenantTurnExecutor::from_env(&pool_manager_config)
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "Invalid tenant background admission configuration");
+                std::process::exit(1)
+            }),
+    );
     let pool_manager = Arc::new(PoolManager::with_config(pool_manager_config));
     let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();
@@ -304,54 +311,19 @@ async fn main() {
     .expect("Failed to create cleaner job");
 
     let cleanup_state = state.clone();
-    let auth_cleanup_running = Arc::new(tokio::sync::Mutex::new(()));
+    let auth_retention = Arc::new(school_auth::retention::AuthRetentionRuntime::new(
+        background_turns.clone(),
+    ));
     let auth_cleanup_job = scheduling::new_school_cron_job(
         scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
         move |_id, _scheduler| {
             let state = cleanup_state.clone();
-            let running = auth_cleanup_running.clone();
+            let retention = auth_retention.clone();
             Box::pin(async move {
-                let Ok(_guard) = running.try_lock() else {
-                    return;
-                };
                 state.auth_runtime.permission_cache.cleanup_expired();
-                let cleanup = async {
-                    let Ok(schools) = state.admin_client.list_active_schools().await else {
-                        return;
-                    };
-                    for school in schools {
-                        let Some(url) = school.db_connection_string else {
-                            continue;
-                        };
-                        if let Ok(pool) = state
-                            .pool_manager
-                            .get_pool_without_migrations(&url, &school.subdomain)
-                            .await
-                        {
-                            if school_auth::session_repository::cleanup_auth_state(
-                                &pool,
-                                chrono::Utc::now(),
-                            )
-                            .await
-                            .is_err()
-                            {
-                                tracing::warn!(
-                                    operation = "auth_retention_cleanup",
-                                    "Tenant cleanup failed"
-                                );
-                            }
-                        }
-                    }
-                };
-                if tokio::time::timeout(std::time::Duration::from_secs(120), cleanup)
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!(
-                        operation = "auth_retention_cleanup",
-                        "Cleanup time budget exhausted"
-                    );
-                }
+                retention
+                    .sweep(&state.admin_client, &state.pool_manager)
+                    .await;
             })
         },
     )
@@ -364,17 +336,27 @@ async fn main() {
     let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
     let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
     let notification_channel_for_calendar_job = state.notification_channel.clone();
+    let calendar_turns = background_turns.clone();
+    let calendar_reminder_running = Arc::new(tokio::sync::Mutex::new(()));
     let calendar_reminder_job =
         scheduling::new_school_cron_job(scheduling::CALENDAR_REMINDER_CRON, move |_uuid, _l| {
             let admin_client = Arc::clone(&admin_client_for_calendar_job);
             let pool_manager = Arc::clone(&pool_manager_for_calendar_job);
             let notification_channel = notification_channel_for_calendar_job.clone();
+            let turns = calendar_turns.clone();
+            let running = calendar_reminder_running.clone();
 
             Box::pin(async move {
+                // A stalled daily sweep must not accumulate another bounded
+                // queue on each cron tick. This guard owns no tenant pool.
+                let Ok(_running) = running.try_lock() else {
+                    return;
+                };
                 school_calendar::delivery::process_due_calendar_reminders_for_all_tenants(
                     admin_client,
                     pool_manager,
                     notification_channel,
+                    turns,
                 )
                 .await;
             })

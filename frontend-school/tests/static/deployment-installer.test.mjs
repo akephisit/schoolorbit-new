@@ -100,6 +100,30 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 	}
 });
 
+test('single School process receives bounded directory and Calendar/Auth admission settings', async () => {
+	const settings = [
+		['TENANT_DIRECTORY_MAX_IN_FLIGHT', '4'],
+		['TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS', '1000'],
+		['TENANT_BACKGROUND_MAX_TURNS', '2']
+	];
+	for (const file of ['compose.local.yml', 'podman-compose.yml']) {
+		const compose = await readRepo(file);
+		const start = compose.indexOf('  backend-school:');
+		const school = compose.slice(start, compose.indexOf('  clamd:', start));
+		for (const [name, fallback] of settings) {
+			assert.ok(
+				school.includes(`${name}`) && school.includes(`$${'{'}${name}:-${fallback}}`),
+				`${file} forwards ${name}`
+			);
+		}
+	}
+	for (const file of ['.env.example', 'backend-school/.env.example']) {
+		const example = await readRepo(file);
+		for (const [name, fallback] of settings)
+			assert.ok(example.includes(`${name}=${fallback}`), `${file} documents ${name}`);
+	}
+});
+
 test('school session runtime is independent of Admin opaque sessions', async () => {
 	for (const file of ['compose.local.yml', 'podman-compose.yml']) {
 		const compose = await readRepo(file);

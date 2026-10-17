@@ -210,6 +210,51 @@ implementation paths; cross-domain/database fixtures retain application-level ow
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+For single-process tenant fairness, run the focused pure/concurrency checks from
+`backend-school`:
+
+```bash
+cargo test -p school-tenancy directory_cache::tests -- --test-threads=1
+cargo test -p school-tenancy background::tests -- --test-threads=1
+cargo test -p school-auth retention::tests -- --test-threads=1
+cargo test -p school-notifications http::handlers::tests -- --test-threads=1
+```
+
+These exercise shared success/failure cohorts without negative caching, independent
+retry, leader/waiter cancellation, bounded distinct-key admission including evicted
+fills, completed-result mutation fencing, shared Calendar/Auth admission, same-key
+exclusion, release after cancellation, Auth rotation after a sweep waits behind
+occupied slots, and payload-free SSE reconciliation with retained tenant filtering
+and identity fail-close. They do not measure production capacity.
+
+From the repository root, run the database-dependent owners with the disposable
+PostgreSQL wrapper:
+
+```bash
+./scripts/test_backend_school.sh --package school-calendar delivery::reminders::turn_tests -- --test-threads=1
+./scripts/test_backend_school.sh --package school-auth cleanup_ -- --test-threads=1
+```
+
+The Calendar cases use 401 durable reminders, lock the first 200, verify suffix
+progress and next-invocation retry, observe a real advisory lock before cancelling
+a blocked event load, and verify that its session releases the lock before retry.
+A controlled slow tenant and a healthy multi-turn backlog verify completion-driven
+fair revisits without a round barrier. Auth cases preserve 100-row batches and
+`SKIP LOCKED`, and cancel after an earlier cleanup statement to verify transaction
+rollback and retry. These fixtures never use a tenant database. The complete
+Calendar package now includes database tests and must use the wrapper; pure
+validation can still use `cargo test -p school-calendar services::tests`.
+
+From the repository root, check Compose/example forwarding of the three admission settings:
+
+```bash
+node --test --test-name-pattern='single School process' frontend-school/tests/static/deployment-installer.test.mjs
+```
+
+This checks executable configuration, not runtime fairness. Run the central
+notification store's focused frontend reconciliation tests for reconnect, failure retry and stale identity disposal.
+Deployed reverse-proxy SSE delivery and browser/device acceptance remain separate.
+
 For tenant pool lifecycle changes, run the `school-tenancy` pool-manager tests through
 `scripts/test_backend_school.sh --package school-tenancy pool_manager::tests`.
 Run the complete provider suite with
@@ -1154,6 +1199,25 @@ previous tokens, invalidation during reads, and cache hits with an unavailable d
 query-count test is not a database cost measurement. Browser execution and deployed-proxy smoke remain
 separate required rollout checks.
 
+The notification recovery browser fixture uses real Chromium `EventSource`, the actual central
+notification/work/auth stores and HTTP client, and real Nginx with the rendered School SSE/API
+locations and Origin maps unchanged. From `frontend-school`, with the matching Playwright Chromium
+installed, Docker running, `envsubst` on `PATH`, and local ports 3000/8081 free:
+
+```bash
+npx playwright test tests/e2e/notification-recovery-proxy.spec.ts --project=chromium --workers=1
+```
+
+The fixture creates and removes one uniquely named container using the same pinned Nginx image as
+the executable proxy tests. It serves synthetic HTTP/SSE responses, never accesses a tenant or
+requires account credentials, and checks streamed small messages, credentialed CORS/cookie
+forwarding, native reconnect and lag catch-up, unavailable/revoked sessions, and late snapshots
+after logout. It uses the proxy's existing `http://127.0.0.1:3000` Origin allowance and Chromium's
+trustworthy loopback handling for a synthetic Secure/HttpOnly `__Host-schoolorbit_session` cookie;
+it does not establish production TLS, cross-host cookie behavior, backend database authorization,
+deployed-proxy acceptance or device receipt. Chromium bypasses the external proxy for this local
+fixture. Run this focused spec alone because its canonical fixture ports are exclusive.
+
 From `frontend-school`:
 
 ```bash
@@ -1262,7 +1326,7 @@ The sandbox E2E workflow uses Ubuntu 24.04.
 
 ## Date calendar and activity requests
 
-Run `cargo test -p school-calendar` for date/time validation and request authorization policy. Run `./scripts/test_backend_school.sh integration_tests::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants when resolving the notification recipients; and verify immediate inbox visibility with central dispatch acceptance, tenant/user-scoped realtime delivery, concurrent decision deduplication and committed outcomes when notification enqueue fails. Calendar retains its business post-commit enqueue boundary; these checks do not imply atomicity between its business mutation and central enqueue or external device receipt. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
+Run `cargo test -p school-calendar services::tests` and `cargo test -p school-calendar requests::tests` for pure date/time validation and request authorization policy; run `./scripts/test_backend_school.sh --package school-calendar` from the repository root for the complete package, including reminder fairness/cancellation database cases. Run `./scripts/test_backend_school.sh integration_tests::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. The request notification cases compare recipient resolution with actor authorization across roles, organization positions, wildcard and delegated grants; exclude inactive users and expired/revoked grants when resolving the notification recipients; and verify immediate inbox visibility with central dispatch acceptance, tenant/user-scoped realtime delivery, concurrent decision deduplication and committed outcomes when notification enqueue fails. Calendar retains its business post-commit enqueue boundary; these checks do not imply atomicity between its business mutation and central enqueue or external device receipt. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
 
 Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-region-loading.spec.ts tests/e2e/calendar-requests.spec.ts tests/e2e/calendar-pending-overlay.spec.ts tests/e2e/calendar-timed-display.spec.ts tests/e2e/calendar-event-popovers.spec.ts tests/e2e/calendar-embed-dialog.spec.ts tests/e2e/calendar-action-menus.spec.ts --project=chromium`. The fixtures use synthetic staff sessions and intercept calendar APIs. Action-menu cases cover header and selected-day creation menus, date inheritance, manager/requester/reader permissions, disabled catalog actions, settings tools and the absence of an extra empty-month box. They do not exercise a deployed database. The request tests cover selected-day defaults in a future month, timed defaults, 24-hour compact input normalization, invalid time refusal, minimal payloads, failure draft retention, own status tracking, approval and rejection, including desktop and mobile layouts. Timed-display cases inspect centered dates, continuous all-day bars, per-day timed dots, retained edit values and desktop/mobile light/dark layouts; pure helper tests cover time boundaries, week-spanning layout and per-day timed lane packing. Event popover cases verify full-width staff calendars, direct event selection, complete details, manager/reader actions, keyboard focus return, outside mouse/touch dismissal without reopening another day, context changes and mobile/desktop light/dark layouts. Region-loading cases verify stable paired navigation buttons and an immediately visible new-month grid during delayed event reads. Public and staff mobile cases hide grid times while retaining full times in details and on desktop. Pending overlay cases cover inline manager approval/rejection with local draft retry, lazy detail loading and cancellation, compact filter popovers, removed notices, lazy reads, multiday and timed markers, toggle cancellation, month/history ownership, independent errors/retry, explicit overflow, scope controls and mutation patches. The calendar database suite also verifies oldest-first review paging and ties with approved requests excluded before pagination, manager-only detail access, newest-first own history, pending-only date overlap, private scope and bounded overlay results.
 

@@ -10,6 +10,7 @@ api-docs = [
 test-support = []
 
 [dependencies]
+futures = { workspace = true }
 base64 = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }

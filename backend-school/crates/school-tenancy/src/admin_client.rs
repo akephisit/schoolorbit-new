@@ -18,6 +18,8 @@ pub struct AdminClientConfig {
     retry_base_delay: Duration,
     directory_capacity: usize,
     directory_ttl: Duration,
+    directory_max_in_flight: usize,
+    directory_admission_timeout: Duration,
 }
 
 impl AdminClientConfig {
@@ -41,6 +43,24 @@ impl AdminClientConfig {
         base_delay: Option<&str>,
     ) -> Result<Self, String> {
         Ok(Self {
+            directory_max_in_flight: parse_bounded(
+                "TENANT_DIRECTORY_MAX_IN_FLIGHT",
+                std::env::var("TENANT_DIRECTORY_MAX_IN_FLIGHT")
+                    .ok()
+                    .as_deref(),
+                4,
+                1,
+                64,
+            )?,
+            directory_admission_timeout: Duration::from_millis(parse_bounded(
+                "TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS",
+                std::env::var("TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS")
+                    .ok()
+                    .as_deref(),
+                1000,
+                10,
+                30_000,
+            )?),
             directory_capacity: parse_bounded(
                 "TENANT_DIRECTORY_CAPACITY",
                 std::env::var("TENANT_DIRECTORY_CAPACITY").ok().as_deref(),
@@ -92,6 +112,8 @@ impl AdminClientConfig {
             max_attempts,
             retry_base_delay,
             directory_capacity: 1024,
+            directory_max_in_flight: 4,
+            directory_admission_timeout: Duration::from_secs(1),
             directory_ttl: Duration::from_secs(30),
         }
     }
@@ -187,6 +209,8 @@ impl AdminClient {
             directory: Arc::new(DirectoryCache::new(
                 config.directory_capacity,
                 config.directory_ttl,
+                config.directory_max_in_flight,
+                config.directory_admission_timeout,
             )),
             config,
         }
@@ -476,6 +500,46 @@ mod tests {
         assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
         assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+    }
+
+    #[test]
+    fn directory_admission_configuration_rejects_unbounded_values() {
+        for raw in ["0", "65", "invalid"] {
+            assert!(super::parse_bounded::<usize>(
+                "TENANT_DIRECTORY_MAX_IN_FLIGHT",
+                Some(raw),
+                4,
+                1,
+                64
+            )
+            .is_err());
+        }
+        for raw in ["0", "9", "30001", "invalid"] {
+            assert!(super::parse_bounded::<u64>(
+                "TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS",
+                Some(raw),
+                1000,
+                10,
+                30_000
+            )
+            .is_err());
+        }
+        assert_eq!(
+            super::parse_bounded::<usize>("TENANT_DIRECTORY_MAX_IN_FLIGHT", None, 4, 1, 64)
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            super::parse_bounded::<u64>(
+                "TENANT_DIRECTORY_ADMISSION_TIMEOUT_MS",
+                None,
+                1000,
+                10,
+                30_000
+            )
+            .unwrap(),
+            1000
+        );
     }
 
     #[test]

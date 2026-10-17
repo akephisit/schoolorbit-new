@@ -119,9 +119,8 @@ function createNotificationStore() {
 	const idle = createVisibilityIdle({
 		...browserVisibilityDependencies(),
 		onPause: () => {
-			dataGeneration++;
 			sseGeneration++;
-			needsReconcile = true;
+			markReconcileRequired();
 			clearReconnectTimer();
 			closeEventSource();
 		},
@@ -129,6 +128,13 @@ function createNotificationStore() {
 			void recoverAfterSessionSignal(sseGeneration);
 		}
 	});
+
+	function markReconcileRequired() {
+		needsReconcile = true;
+		// A gap invalidates even an HTTP snapshot already in flight on this source.
+		dataGeneration++;
+		signalVersion++;
+	}
 
 	function clearReconnectTimer() {
 		if (!reconnectTimeout) return;
@@ -188,6 +194,7 @@ function createNotificationStore() {
 		if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 		if (recoveryInFlight?.generation === generation) return recoveryInFlight.promise;
 
+		markReconcileRequired();
 		clearReconnectTimer();
 		closeEventSource();
 
@@ -225,11 +232,18 @@ function createNotificationStore() {
 	}
 
 	async function reconcileAfterOpen(source: EventSource, generation: number) {
-		if (!ownsEventSource(source, generation) || !needsReconcile || reconcileInFlight === source)
+		if (
+			!ownsEventSource(source, generation) ||
+			source.readyState !== 1 ||
+			!needsReconcile ||
+			reconcileInFlight === source ||
+			reconnectTimeout !== null
+		)
 			return;
 		reconcileInFlight = source;
 		const version = signalVersion;
-		const ownsSnapshot = () => ownsEventSource(source, generation) && version === signalVersion;
+		const ownsSnapshot = () =>
+			ownsEventSource(source, generation) && source.readyState === 1 && version === signalVersion;
 		try {
 			const { authAPI } = await import('#lib/api/auth.js');
 			if (!ownsEventSource(source, generation)) return;
@@ -241,18 +255,21 @@ function createNotificationStore() {
 				closeSSE();
 				return;
 			}
-			if (action === 'reconnect') {
+			if (action === 'reconnect' && ownsSnapshot()) {
 				const results = await Promise.all([
 					notificationStore.fetchNotifications(10, ownsSnapshot),
 					workStore.refreshSilently({ isCurrent: ownsSnapshot, windowsChanged: true })
 				]);
-				if (ownsSnapshot() && results.every(Boolean)) needsReconcile = false;
+				if (ownsSnapshot() && results.every(Boolean)) {
+					needsReconcile = false;
+					reconnectDelay = INITIAL_SSE_RECONNECT_DELAY_MS;
+				}
 			}
 		} catch (error) {
 			console.error('Failed to reconcile notification stream', error);
 		} finally {
 			if (reconcileInFlight === source) reconcileInFlight = null;
-			if (ownsEventSource(source, generation) && needsReconcile) {
+			if (ownsEventSource(source, generation) && source.readyState === 1 && needsReconcile) {
 				scheduleSseTask(generation, () => {
 					void reconcileAfterOpen(source, generation);
 				});
@@ -340,6 +357,12 @@ function createNotificationStore() {
 			void workStore.refreshSilently({ windowsChanged: true });
 		});
 
+		source.addEventListener('reconcile_required', () => {
+			if (!ownsEventSource(source, generation)) return;
+			markReconcileRequired();
+			void reconcileAfterOpen(source, generation);
+		});
+
 		const recover = () => {
 			if (!ownsEventSource(source, generation)) return;
 			void recoverAfterSessionSignal(generation);
@@ -349,6 +372,8 @@ function createNotificationStore() {
 
 		source.onerror = () => {
 			if (!ownsEventSource(source, generation)) return;
+			markReconcileRequired();
+			clearReconnectTimer();
 			if (source.readyState !== EventSource.CLOSED) {
 				console.log('🔄 SSE Reconnecting...');
 				return;

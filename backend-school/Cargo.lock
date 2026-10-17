@@ -4294,6 +4294,7 @@ dependencies = [
  "bcrypt",
  "chrono",
  "dotenvy",
+ "futures",
  "hex",
  "hmac 0.13.0",
  "ipnet",
@@ -4386,6 +4387,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
+ "futures",
  "school-auth",
  "school-auth-http",
  "school-authorization",
@@ -4394,6 +4396,7 @@ dependencies = [
  "school-notifications",
  "school-permissions",
  "school-tenancy",
+ "school-test-db",
  "serde",
  "serde_json",
  "sqlx",

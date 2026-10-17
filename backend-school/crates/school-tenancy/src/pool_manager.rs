@@ -23,6 +23,11 @@ pub struct PoolManagerConfig {
     admission_timeout: Duration,
 }
 impl PoolManagerConfig {
+    pub(crate) fn background_turn_limit(&self, requested: usize) -> usize {
+        let resident_slots = self.runtime_connections / self.per_tenant;
+        requested.min(resident_slots.saturating_sub(1).max(1) as usize)
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let config = Self {
             runtime_connections: setting("TENANT_RUNTIME_CONNECTIONS", 40, 1, 10_000)?,
@@ -467,6 +472,25 @@ impl Default for PoolManager {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn background_turn_admission_clamps_to_resident_pool_capacity() {
+        use super::PoolManagerConfig;
+        let one = PoolManagerConfig {
+            runtime_connections: 10,
+            per_tenant: 10,
+            ..PoolManagerConfig::default()
+        };
+        assert_eq!(one.background_turn_limit(64), 1);
+        let two = PoolManagerConfig {
+            runtime_connections: 20,
+            ..one
+        };
+        assert_eq!(two.background_turn_limit(64), 1);
+        let four = PoolManagerConfig::default();
+        assert_eq!(four.background_turn_limit(64), 3);
+        assert_eq!(four.background_turn_limit(2), 2);
+    }
+
+    #[test]
     fn privileged_capacity_reserves_provisioning_transaction_and_followup_reads() {
         for raw in ["0", "1", "2", "3", "4", "101", "bad"] {
             assert!(
@@ -573,6 +597,82 @@ mod tests {
         assert!(!third.is_closed());
         assert!(!second.is_closed());
         assert_eq!(manager.pool_count().await, 2);
+    }
+
+    #[tokio::test]
+    async fn background_turn_keeps_managed_lease_between_queries_until_cancellation() {
+        use crate::background::{TenantJobKind, TenantTurnExecutor};
+        let fixture = school_test_db::create_named_test_pool("turn_managed_lease").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut base = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        base.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let tenant_url = |name: &str| {
+            let mut url = base.clone();
+            url.query_pairs_mut().append_pair("application_name", name);
+            url
+        };
+        let first_url = tenant_url("turn-lease-one");
+        let second_url = tenant_url("turn-lease-two");
+        let third_url = tenant_url("turn-lease-three");
+        let manager = Arc::new(small_manager());
+        let turns = Arc::new(TenantTurnExecutor::for_tests(2));
+        let worker_manager = manager.clone();
+        let worker_turns = turns.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let turn = tokio::spawn(async move {
+            worker_turns
+                .run("one", TenantJobKind::AuthRetention, || async {
+                    let pool = worker_manager
+                        .get_pool(first_url.as_str(), "one")
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        sqlx::query_scalar::<_, i32>("SELECT 1")
+                            .fetch_one(&*pool)
+                            .await
+                            .unwrap(),
+                        1
+                    );
+                    started_tx.send(()).unwrap();
+                    // No physical query is borrowed here, but the entire domain
+                    // turn still owns its logical lease across this await.
+                    std::future::pending::<()>().await;
+                    sqlx::query_scalar::<_, i32>("SELECT 2")
+                        .fetch_one(&*pool)
+                        .await
+                        .unwrap()
+                })
+                .await
+        });
+        started_rx.await.unwrap();
+        let foreground = manager.get_pool(second_url.as_str(), "two").await.unwrap();
+        assert!(
+            manager.get_pool(third_url.as_str(), "three").await.is_err(),
+            "a turn between queries must remain ineligible for eviction"
+        );
+        assert!(!foreground.is_closed());
+        turn.abort();
+        assert!(turn.await.unwrap_err().is_cancelled());
+        let admitted = manager.get_pool(third_url.as_str(), "three").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 3")
+                .fetch_one(&*admitted)
+                .await
+                .unwrap(),
+            3
+        );
+        assert!(!foreground.is_closed());
+        assert_eq!(
+            turns
+                .run("one", TenantJobKind::AuthRetention, || async { 4 })
+                .await,
+            Some(4)
+        );
     }
 
     #[tokio::test]
