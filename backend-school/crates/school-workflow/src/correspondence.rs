@@ -760,6 +760,21 @@ async fn act_impl(
     let mut engine_request = request.clone();
     engine_request.expected_revision = instance.revision;
     let document = document_in(&mut tx, id, doc).await?;
+    if !request.annotations.is_empty() {
+        let ids: Vec<_> = request.annotations.iter().map(|a| a.id).collect();
+        let committed = document.annotations.iter().any(|a| ids.contains(&a.id))
+            || sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM process_action_history h CROSS JOIN LATERAL jsonb_array_elements(h.entry->'annotations') a WHERE h.correspondence_id=$1 AND (h.entry->>'documentRevision')::bigint=$2 AND (a->>'id')::uuid=ANY($3))",
+            )
+            .bind(id)
+            .bind(doc)
+            .bind(&ids)
+            .fetch_one(&mut *tx)
+            .await?;
+        if committed {
+            return Err(invalid("รหัสบันทึกกำกับซ้ำกับรายการที่บันทึกแล้ว"));
+        }
+    }
     if let Some(signature) = &request.signature {
         actor.require_permission(codes::CORRESPONDENCE_SIGN_OWN)?;
         if signature.document_revision != doc || signature.content_hash != document.content_hash {
@@ -799,16 +814,17 @@ async fn act_impl(
         .await?;
         sqlx::query("INSERT INTO correspondence_file_links(correspondence_id,file_id,document_revision) SELECT $1,unnest($2::uuid[]),$3 ON CONFLICT DO NOTHING").bind(id).bind(&request.evidence_file_ids).bind(doc).execute(&mut *tx).await?;
     }
+    let manager_user_id = if can_manage_record_on_connection(&mut tx, actor, &record).await? {
+        Some(actor.user_id)
+    } else {
+        None
+    };
     process::action_in_transaction(
         &mut tx,
         actor,
         &CorrespondenceSource {
             source_id: id,
-            manager_user_id: if can_manage_record(pool, actor, &before.record).await? {
-                Some(actor.user_id)
-            } else {
-                None
-            },
+            manager_user_id,
         },
         &mut instance,
         &engine_request,
@@ -1037,6 +1053,8 @@ pub async fn options(
     if !actor.has_any_permission(&[
         codes::CORRESPONDENCE_CREATE_OWN,
         codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        codes::CORRESPONDENCE_MANAGE_SCHOOL,
+        codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT,
         codes::PROCESS_MANAGE_SCHOOL,
     ]) {
         return Err(denied());
@@ -1214,6 +1232,28 @@ async fn can_manage_record(
         if actor.has_permission(codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT) {
             return school_authorization::has_exact_unit_permission(
                 pool,
+                actor.user_id,
+                unit,
+                codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT,
+            )
+            .await;
+        }
+    }
+    Ok(false)
+}
+
+async fn can_manage_record_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    record: &CorrespondenceSummary,
+) -> Result<bool, AppError> {
+    if actor.has_permission(codes::CORRESPONDENCE_MANAGE_SCHOOL) {
+        return Ok(true);
+    }
+    if let Some(unit) = record.organization_unit_id {
+        if actor.has_permission(codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT) {
+            return school_authorization::has_exact_unit_permission_on_connection(
+                connection,
                 actor.user_id,
                 unit,
                 codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT,

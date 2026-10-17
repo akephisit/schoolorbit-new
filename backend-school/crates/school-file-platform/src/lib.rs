@@ -3,6 +3,7 @@ mod favicon;
 mod file_hash;
 pub mod file_inspector;
 mod file_processor;
+pub use file_processor::ImageProcessor;
 pub mod malware_scanner;
 pub mod platform_service;
 pub mod platform_types;

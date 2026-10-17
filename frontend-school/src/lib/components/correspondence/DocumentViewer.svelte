@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { previewCorrespondence } from '#lib/api/correspondence.js';
 	import type {
 		DocumentAnnotation,
@@ -62,15 +63,21 @@
 		start = $state<PagePoint | null>(null),
 		active = $state<number | null>(null);
 	const request = new LatestRequest();
-	const layers = $derived(
-		[
+	const layers = $derived.by(() => {
+		const accepted = [
 			...detail.document.annotations,
 			...detail.history
 				.filter((entry) => entry.documentRevision === detail.document.revision)
-				.flatMap((entry) => entry.annotations),
-			...draft
-		].filter((annotation) => annotation.page === pageNumber)
-	);
+				.flatMap((entry) => entry.annotations)
+		];
+		const unique = new SvelteMap<string, DocumentAnnotation>();
+		// A refresh may observe acceptance before the action response reaches this browser.
+		// Reconcile the visible layer only; local drafts and signature consent keep their owners.
+		for (const annotation of [...accepted, ...draft]) {
+			if (!unique.has(annotation.id)) unique.set(annotation.id, annotation);
+		}
+		return [...unique.values()].filter((annotation) => annotation.page === pageNumber);
+	});
 	const pageCount = $derived(pdf?.pageCount ?? 1);
 	function cleanup() {
 		request.abort();

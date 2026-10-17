@@ -333,7 +333,7 @@
 								<dd>ฉบับ {detail.document.revision}</dd>
 							</dl>
 							{#if detail.sourceLinks.length}<ul class="mt-4 space-y-2">
-									{#each detail.sourceLinks as link (link.url)}<li>
+									{#each detail.sourceLinks as link, index (`${index}:${link.url}`)}<li>
 											<a
 												href={link.url}
 												target="_blank"
@@ -343,7 +343,7 @@
 										</li>{/each}
 								</ul>{/if}{#if detail.document.attachmentFileIds.length}<div class="mt-4 space-y-2">
 									<h3 class="text-sm font-medium">ไฟล์แนบ</h3>
-									{#each detail.document.attachmentFileIds as fileId, index (fileId)}<Button
+									{#each detail.document.attachmentFileIds as fileId, index (`${index}:${fileId}`)}<Button
 											type="button"
 											variant="outline"
 											size="sm"
@@ -371,7 +371,7 @@
 												: ''}
 										</p>
 										<ul class="space-y-2 text-sm">
-											{#each current.recipients as recipient (recipient.userId)}<li
+											{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
 													class="flex justify-between gap-2"
 												>
 													<span class="break-words">{recipient.displayName}</span><span
@@ -475,7 +475,7 @@
 												{entry.comment}
 											</p>{/if}{#if entry.annotations.length}<p class="text-muted-foreground">
 												{entry.annotations.length} หมายเหตุบนเอกสาร
-											</p>{/if}{#each entry.evidenceFileIds as fileId, index (fileId)}<Button
+											</p>{/if}{#each entry.evidenceFileIds as fileId, index (`${index}:${fileId}`)}<Button
 												type="button"
 												variant="outline"
 												size="sm"

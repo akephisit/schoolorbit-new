@@ -50,7 +50,7 @@
 		),
 		pending = $state(false),
 		error = $state('');
-	const code = untrack(() => template?.code ?? `flow-${crypto.randomUUID()}`);
+	const code = untrack(() => template?.code ?? `flow_${crypto.randomUUID().replaceAll('-', '')}`);
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;

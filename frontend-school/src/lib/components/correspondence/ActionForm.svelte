@@ -218,6 +218,14 @@
 									: []
 						}
 					: undefined;
+			const acceptedAnnotationIds = new Set(
+				[
+					...detail.document.annotations,
+					...detail.history
+						.filter((entry) => entry.documentRevision === detail.document.revision)
+						.flatMap((entry) => entry.annotations)
+				].map((annotation) => annotation.id)
+			);
 			const result = await actOnCorrespondence(detail.record.id, {
 				requestId: crypto.randomUUID(),
 				expectedRevision,
@@ -227,7 +235,9 @@
 				signature: signingInput,
 				reassignUserId: reassignUserId || undefined,
 				reassignFromUserId: recovery ? reassignFromUserId : undefined,
-				annotations: requirements.acceptsEvidence ? annotations : []
+				annotations: requirements.acceptsEvidence
+					? annotations.filter((annotation) => !acceptedAnnotationIds.has(annotation.id))
+					: []
 			});
 			if (!disposed) oncomplete(result);
 		} catch (cause) {

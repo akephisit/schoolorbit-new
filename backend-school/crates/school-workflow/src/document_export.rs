@@ -9,8 +9,9 @@ use lopdf::{
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_file_platform::{
-    consumer_service::map_platform_error, platform_service::FilePlatform,
-    repository::SqlFileRepository,
+    consumer_service::map_platform_error, file_inspector::inspect_file,
+    platform_service::FilePlatform, platform_types::FilePurpose, repository::SqlFileRepository,
+    ImageProcessor,
 };
 use school_permissions::registry::codes;
 use sha2::{Digest, Sha256};
@@ -302,8 +303,14 @@ fn add_pages(
     doc.trailer.set("Root", catalog);
     Ok(())
 }
-fn image_object(doc: &mut Document, bytes: &[u8]) -> Result<(ObjectId, u32, u32), AppError> {
-    let image = image::load_from_memory(bytes)
+fn image_object(
+    doc: &mut Document,
+    bytes: &[u8],
+    purpose: FilePurpose,
+) -> Result<(ObjectId, u32, u32), AppError> {
+    let inspected =
+        inspect_file(purpose, bytes).map_err(|error| pdf_error(format!("{error:?}")))?;
+    let image = ImageProcessor::decode_inspected_image(&inspected)
         .map_err(pdf_error)?
         .to_rgba8();
     let (w, h) = image.dimensions();
@@ -337,10 +344,12 @@ fn source_document(
 ) -> Result<Document, AppError> {
     if let Some(original) = original {
         if original.starts_with(b"%PDF-") {
+            inspect_file(FilePurpose::CorrespondenceDocument, original)
+                .map_err(|error| pdf_error(format!("{error:?}")))?;
             return Document::load_mem(original).map_err(pdf_error);
         }
         let mut doc = blank_document();
-        let (id, w, h) = image_object(&mut doc, original)?;
+        let (id, w, h) = image_object(&mut doc, original, FilePurpose::CorrespondenceDocument)?;
         let scale = (595.0 / f64::from(w)).min(842.0 / f64::from(h));
         let iw = f64::from(w) * scale;
         let ih = f64::from(h) * scale;
@@ -532,7 +541,8 @@ fn compose(
                             .file_id
                             .and_then(|f| images.get(&f))
                             .ok_or_else(|| invalid("ไม่พบไฟล์ลายเซ็นที่ยืนยันแล้ว"))?;
-                        let (image, iw, ih) = image_object(&mut doc, bytes)?;
+                        let (image, iw, ih) =
+                            image_object(&mut doc, bytes, FilePurpose::CorrespondenceSignature)?;
                         let name = format!("Signature{}", signature.id.simple());
                         install_resource(&mut doc, page, "XObject", &name, image)?;
                         let scale = (w / f64::from(iw)).min(h / f64::from(ih));
@@ -704,6 +714,37 @@ pub async fn export(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn export_image_decoding_enforces_actual_document_and_signature_purpose() {
+        let encode = |format, width, height| {
+            let image = image::DynamicImage::new_rgba8(width, height);
+            let mut bytes = Vec::new();
+            image
+                .write_to(&mut std::io::Cursor::new(&mut bytes), format)
+                .unwrap();
+            bytes
+        };
+        let png = encode(image::ImageFormat::Png, 2, 3);
+        let bmp = encode(image::ImageFormat::Bmp, 2, 3);
+        let too_wide = encode(image::ImageFormat::Png, 16001, 1);
+        for purpose in [
+            FilePurpose::CorrespondenceDocument,
+            FilePurpose::CorrespondenceSignature,
+        ] {
+            let mut pdf = blank_document();
+            let (_, width, height) = image_object(&mut pdf, &png, purpose).unwrap();
+            assert_eq!((width, height), (2, 3));
+            assert!(image_object(&mut pdf, &bmp, purpose).is_err());
+            assert!(image_object(&mut pdf, &too_wide, purpose).is_err());
+            assert!(image_object(&mut pdf, &png[..png.len() - 1], purpose).is_err());
+        }
+        let detail = fixture_detail();
+        let mut pdf = source_document(&detail.document, None).unwrap();
+        let mut bytes = Vec::new();
+        pdf.save_to(&mut bytes).unwrap();
+        assert!(source_document(&detail.document, Some(&bytes)).is_ok());
+        assert!(image_object(&mut pdf, &bytes, FilePurpose::CorrespondenceSignature).is_err());
+    }
     #[test]
     fn visual_rotation_maps_normalized_view_back_to_crop() {
         let mut doc = blank_document();

@@ -25,6 +25,9 @@ export async function mockCorrespondence(
 		holdDetail?: boolean;
 		holdAction?: boolean;
 		holdActionResponse?: boolean;
+		abortAcceptedAction?: boolean;
+		acceptedAnnotationColor?: string;
+		nextStepAfterAccept?: boolean;
 		holdListRefresh?: boolean;
 		failCreate?: boolean;
 		recovery?: boolean;
@@ -47,7 +50,7 @@ export async function mockCorrespondence(
 	const kind = settings.mode === 'acknowledge' ? 'acknowledge' : 'sign';
 	let template: ProcessTemplate = {
 		id: templateId,
-		code: 'internal-fixture-code',
+		code: 'internal_fixture_code',
 		title: 'เวียนหนังสือมาตรฐาน',
 		version: 1,
 		active: true,
@@ -148,6 +151,21 @@ export async function mockCorrespondence(
 		canAct: settings.mode !== 'draft',
 		availableActions: settings.mode === 'draft' ? [] : [kind, 'read']
 	};
+	if (settings.nextStepAfterAccept && detail.instance) {
+		const first = detail.instance.steps[0];
+		const nextDefinition = { ...first.definition, title: 'ลงนามขั้นถัดไป' };
+		detail.instance.steps = [
+			{ ...first, definition: { ...first.definition, completionPolicy: 'any' } },
+			{
+				...first,
+				stepIndex: 1,
+				definition: nextDefinition,
+				recipients: [first.recipients[0]],
+				workItemId: null
+			}
+		];
+	}
+
 	if (settings.recovery && detail.instance) {
 		detail = {
 			...detail,
@@ -165,6 +183,51 @@ export async function mockCorrespondence(
 			}
 		};
 	}
+	function applyReassignmentRoundTrip() {
+		if (!detail.instance) throw new Error('Expected process instance');
+		const first = detail.instance.steps[0].recipients[0];
+		const second = detail.instance.steps[0].recipients[1];
+		detail = {
+			...detail,
+			record: { ...detail.record, revision: 3 },
+			sourceLinks: [
+				{ label: 'แหล่งอ้างอิงแรก', url: 'https://school.example/source' },
+				{ label: 'แหล่งอ้างอิงอีกชื่อ', url: 'https://school.example/source' }
+			],
+			document: { ...detail.document, attachmentFileIds: [id(870), id(870)] },
+			availableActions: ['acknowledge', 'reassign'],
+			instance: {
+				...detail.instance,
+				revision: 3,
+				steps: detail.instance.steps.map((step) => ({
+					...step,
+					recipients: [
+						{ ...first, completedAt: now },
+						{ ...second, completedAt: now, reassignedFrom: actor },
+						{ ...first, completedAt: null, reassignedFrom: firstStaff }
+					]
+				}))
+			},
+			history: [
+				[actor, firstStaff],
+				[firstStaff, actor]
+			].map(([from, to], index) => ({
+				id: id(860 + index),
+				actorId: from,
+				actorName: from === actor ? first.displayName : second.displayName,
+				action: 'reassign',
+				reassignedFromUserId: from,
+				reassignedToUserId: to,
+				documentRevision: detail.document.revision,
+				annotations: [],
+				evidenceFileIds: index === 0 ? [id(870), id(870)] : [],
+				comment: 'ส่งต่อและรับคืนหน้าที่',
+				createdAt: now,
+				revision: index + 2
+			}))
+		};
+	}
+
 	function addCommittedAnnotation(text: string) {
 		detail.history = [
 			...detail.history,
@@ -221,6 +284,7 @@ export async function mockCorrespondence(
 	);
 	const uploads: string[] = [],
 		assetWrites: { label: string; fileId: string }[] = [];
+	const templateWrites: { code: string }[] = [];
 	let createAttempts = 0;
 	const reads = new Map<string, number>(),
 		writes: {
@@ -297,7 +361,14 @@ export async function mockCorrespondence(
 			if (path === '/api/process/templates' && method === 'GET') return reply(route, [template]);
 			if (path.startsWith('/api/process/templates') && method !== 'GET') {
 				const payload = request.postDataJSON();
-				template = { ...template, ...payload, version: template.version + 1 };
+				templateWrites.push(payload);
+				if (!/^[a-z0-9_]{1,100}$/.test(payload.code))
+					return reply(route, 'ชื่อหรือรหัสแม่แบบไม่ถูกต้อง', 400);
+				template = {
+					...template,
+					...payload,
+					version: method === 'POST' ? 1 : template.version + 1
+				};
 				return reply(route, template);
 			}
 			if (path === '/api/correspondence' && method === 'GET') {
@@ -364,6 +435,16 @@ export async function mockCorrespondence(
 					);
 				}
 				const action = payload as ProcessActionRequest;
+				const committedIds = new Set(
+					[
+						...detail.document.annotations,
+						...detail.history
+							.filter((entry) => entry.documentRevision === detail.document.revision)
+							.flatMap((entry) => entry.annotations)
+					].map((annotation) => annotation.id)
+				);
+				if ((action.annotations ?? []).some((annotation) => committedIds.has(annotation.id)))
+					return reply(route, 'หมายเหตุนี้ถูกบันทึกในฉบับเอกสารแล้ว', 400);
 				detail = {
 					...detail,
 					record: { ...detail.record, revision: detail.record.revision + 1 },
@@ -378,7 +459,10 @@ export async function mockCorrespondence(
 							reassignedFromUserId: action.reassignFromUserId,
 							reassignedToUserId: action.reassignUserId,
 							documentRevision: detail.document.revision,
-							annotations: action.annotations ?? [],
+							annotations: (action.annotations ?? []).map((annotation) => ({
+								...annotation,
+								color: settings.acceptedAnnotationColor ?? annotation.color
+							})),
 							comment: action.comment ?? null,
 							evidenceFileIds: action.evidenceFileIds ?? [],
 							createdAt: now,
@@ -387,8 +471,9 @@ export async function mockCorrespondence(
 					],
 					signatures: action.signature
 						? [
+								...detail.signatures,
 								{
-									id: id(830),
+									id: id(830 + actionAttempts),
 									signerId: actor,
 									signerName: 'ครูเจ้าของ ทดสอบ',
 									signerRole: 'ครู',
@@ -409,13 +494,31 @@ export async function mockCorrespondence(
 							steps: detail.instance.steps.map((step) => ({
 								...step,
 								recipients: step.recipients.map((recipient) =>
-									recipient.userId === actor ? { ...recipient, completedAt: now } : recipient
+									step.stepIndex === detail.instance?.currentStep && recipient.userId === actor
+										? { ...recipient, completedAt: now }
+										: recipient
 								)
 							}))
 						}
 					};
+				if (settings.nextStepAfterAccept && actionAttempts === 1 && detail.instance)
+					detail = {
+						...detail,
+						availableActions: [kind],
+						instance: {
+							...detail.instance,
+							currentStep: 1,
+							steps: detail.instance.steps.map((step) =>
+								step.stepIndex === 0
+									? { ...step, completedAt: now }
+									: { ...step, workItemId: id(807) }
+							)
+						}
+					};
 				const accepted = structuredClone(detail);
 				if (settings.holdActionResponse) await held;
+				if (settings.abortAcceptedAction && actionAttempts === 1)
+					return route.abort('connectionreset');
 				return reply(route, accepted);
 			}
 			return reply(route, 'Unexpected synthetic request', 400);
@@ -426,9 +529,11 @@ export async function mockCorrespondence(
 		reads,
 		uploads,
 		assetWrites,
+		templateWrites,
 		writes,
 		release,
 		advanceDocument,
+		applyReassignmentRoundTrip,
 		addCommittedAnnotation,
 		detail: () => detail,
 		count: (path: string) => reads.get(path) ?? 0

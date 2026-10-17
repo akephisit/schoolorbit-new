@@ -1,7 +1,7 @@
 //! Exact and tree organization-unit resolution for generated permissions.
 
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::{Executor, PgConnection, PgPool, Postgres};
 use uuid::Uuid;
 
 /// Resolves exact active organization units for one generated permission code.
@@ -24,6 +24,23 @@ pub async fn has_exact_unit_permission(
 ) -> Result<bool, AppError> {
     Ok(query_exact_units_for_permission(
         pool,
+        actor_user_id,
+        permission_code,
+        Some(organization_unit_id),
+    )
+    .await?
+    .contains(&organization_unit_id))
+}
+
+/// Checks the same exact-unit policy using the caller's existing connection or transaction.
+pub async fn has_exact_unit_permission_on_connection(
+    connection: &mut PgConnection,
+    actor_user_id: Uuid,
+    organization_unit_id: Uuid,
+    permission_code: &str,
+) -> Result<bool, AppError> {
+    Ok(query_exact_units_for_permission(
+        connection,
         actor_user_id,
         permission_code,
         Some(organization_unit_id),
@@ -74,8 +91,8 @@ pub async fn accessible_tree_units_for_permission(
     })
 }
 
-async fn query_exact_units_for_permission(
-    pool: &PgPool,
+async fn query_exact_units_for_permission<'e>(
+    executor: impl Executor<'e, Database = Postgres>,
     actor_user_id: Uuid,
     permission_code: &str,
     target_organization_unit_id: Option<Uuid>,
@@ -140,7 +157,7 @@ async fn query_exact_units_for_permission(
     .bind(actor_user_id)
     .bind(permission_code)
     .bind(target_organization_unit_id)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await
     .map_err(|error| {
         tracing::error!(

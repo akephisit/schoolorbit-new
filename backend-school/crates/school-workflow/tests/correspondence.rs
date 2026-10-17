@@ -5,7 +5,13 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 async fn fixture(name: &str) -> (PgPool, ActorContext, ActorContext, ActorContext) {
-    let pool = school_test_db::create_named_test_pool_with_max_connections(name, 5).await;
+    fixture_with_connections(name, 5).await
+}
+async fn fixture_with_connections(
+    name: &str,
+    connections: u32,
+) -> (PgPool, ActorContext, ActorContext, ActorContext) {
+    let pool = school_test_db::create_named_test_pool_with_max_connections(name, connections).await;
     school_test_db::run_test_migrations(&pool).await;
     let mut users = Vec::new();
     for name in ["Creator", "First", "Second"] {
@@ -1398,4 +1404,214 @@ async fn task_notification_eligibility_follows_canonical_assignment_cancellation
     )
     .await
     .unwrap());
+}
+
+#[tokio::test]
+async fn manager_options_allow_recovery_without_granting_record_mutation() {
+    let (pool, creator, a, b) = fixture("manager_recovery_options").await;
+    for permission in [
+        codes::CORRESPONDENCE_MANAGE_SCHOOL,
+        codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT,
+    ] {
+        let manager = ActorContext {
+            user_id: a.user_id,
+            permissions: vec![permission.into()],
+        };
+        let options = correspondence::options(
+            &pool,
+            &manager,
+            correspondence::CorrespondenceOptionsQuery { search: None },
+        )
+        .await
+        .unwrap();
+        assert!(options.users.iter().any(|u| u.id == creator.user_id));
+        assert!(!options.organizations.is_empty());
+    }
+    for permissions in [vec![], vec![codes::CORRESPONDENCE_READ_ASSIGNED.into()]] {
+        let reader = ActorContext {
+            user_id: a.user_id,
+            permissions,
+        };
+        assert!(correspondence::options(
+            &pool,
+            &reader,
+            correspondence::CorrespondenceOptionsQuery { search: None },
+        )
+        .await
+        .is_err());
+    }
+    let record = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Approve,
+            ProcessCompletionPolicy::All,
+            &[b.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &record, t.id).await;
+    let unscoped_manager = ActorContext {
+        user_id: a.user_id,
+        permissions: vec![codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT.into()],
+    };
+    let mut request = action(sent.record.revision, ProcessAction::Reassign);
+    request.comment = Some("Attempt outside exact managed unit".into());
+    request.reassign_from_user_id = Some(b.user_id);
+    request.reassign_user_id = Some(creator.user_id);
+    assert!(correspondence::act(
+        &pool,
+        &unscoped_manager,
+        record.record.id,
+        &MemoryValidator,
+        request
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+async fn exact_unit_manager_action_uses_one_connection() {
+    let (pool, creator, a, b) = fixture_with_connections("unit_manager_one_connection", 1).await;
+    let unit: Uuid =
+        sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO organization_members(id,user_id,organization_unit_id,position_code) VALUES($1,$2,$3,'member')").bind(Uuid::now_v7()).bind(a.user_id).bind(unit).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code) SELECT $1,id,'member' FROM permissions WHERE code=$2 ON CONFLICT DO NOTHING").bind(unit).bind(codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+    let mut input = create_request();
+    input.organization_unit_id = Some(unit);
+    let record = correspondence::create(&pool, &creator, &MemoryValidator, input)
+        .await
+        .unwrap();
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Approve,
+            ProcessCompletionPolicy::All,
+            &[b.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &record, t.id).await;
+    let manager = ActorContext {
+        user_id: a.user_id,
+        permissions: vec![codes::CORRESPONDENCE_MANAGE_ORGANIZATION_UNIT.into()],
+    };
+    let mut request = action(sent.record.revision, ProcessAction::Reassign);
+    request.comment = Some("Recover exact unit assignment".into());
+    request.reassign_from_user_id = Some(b.user_id);
+    request.reassign_user_id = Some(creator.user_id);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        correspondence::act(&pool, &manager, record.record.id, &MemoryValidator, request),
+    )
+    .await
+    .expect("locked action must not acquire another pool connection")
+    .unwrap();
+    assert_eq!(result.history.last().unwrap().actor_id, a.user_id);
+    assert_eq!(
+        result.history.last().unwrap().reassigned_to_user_id,
+        Some(creator.user_id)
+    );
+    assert_eq!(result.available_actions, vec![ProcessAction::Reassign]);
+}
+
+#[tokio::test]
+async fn accepted_annotation_ids_are_unique_across_base_and_history_but_replay_succeeds() {
+    let (pool, creator, a, _) = fixture("annotation_committed_identity").await;
+    let base = DocumentAnnotation {
+        id: Uuid::now_v7(),
+        kind: DocumentAnnotationKind::Text,
+        page: 1,
+        x: 0.1,
+        y: 0.1,
+        width: 0.6,
+        height: 0.1,
+        text: Some("Base instruction".into()),
+        color: "#111111".into(),
+        strokes: vec![],
+    };
+    let mut input = create_request();
+    input.annotations.push(base.clone());
+    let record = correspondence::create(&pool, &creator, &MemoryValidator, input)
+        .await
+        .unwrap();
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Approve,
+            ProcessCompletionPolicy::All,
+            &[a.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &record, t.id).await;
+    let mut first = action(sent.record.revision, ProcessAction::Report);
+    first.comment = Some("Report with instruction".into());
+    first.annotations.push(DocumentAnnotation {
+        text: Some("Attempt to reuse base identity".into()),
+        ..base.clone()
+    });
+    assert!(
+        correspondence::act(&pool, &a, record.record.id, &MemoryValidator, first.clone())
+            .await
+            .is_err()
+    );
+    first.annotations[0].id = Uuid::now_v7();
+    first.annotations[0].text = Some("Accepted instruction".into());
+    let accepted =
+        correspondence::act(&pool, &a, record.record.id, &MemoryValidator, first.clone())
+            .await
+            .unwrap();
+    let replay = correspondence::act(&pool, &a, record.record.id, &MemoryValidator, first.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.record.revision, accepted.record.revision);
+    assert_eq!(replay.history.len(), accepted.history.len());
+    let mut different = action(accepted.record.revision, ProcessAction::Report);
+    different.comment = Some("Different report".into());
+    different.annotations = first.annotations.clone();
+    different.annotations[0].text = Some("Must not replace accepted instruction".into());
+    let rejected_request_id = different.request_id;
+    assert!(correspondence::act(
+        &pool,
+        &a,
+        record.record.id,
+        &MemoryValidator,
+        different.clone()
+    )
+    .await
+    .is_err());
+    let current = correspondence::detail(&pool, &a, record.record.id)
+        .await
+        .unwrap();
+    assert_eq!(current.record.revision, accepted.record.revision);
+    assert_eq!(current.history.len(), accepted.history.len());
+    assert_eq!(
+        current.history.last().unwrap().annotations[0].text,
+        first.annotations[0].text
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM workflow_mutation_receipts WHERE request_id=$1"
+        )
+        .bind(rejected_request_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    different.annotations[0].id = Uuid::now_v7();
+    let next = correspondence::act(&pool, &a, record.record.id, &MemoryValidator, different)
+        .await
+        .unwrap();
+    assert_eq!(next.history.len(), accepted.history.len() + 1);
+    assert_eq!(next.document.annotations[0].id, base.id);
 }

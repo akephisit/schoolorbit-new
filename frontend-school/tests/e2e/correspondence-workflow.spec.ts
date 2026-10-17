@@ -188,8 +188,22 @@ test('template edits create a new version with organization position recipients 
 	await page.getByRole('button', { name: 'บันทึกแม่แบบรุ่นใหม่', exact: true }).click();
 	await expect(page.getByTestId('process-templates')).toContainText('แม่แบบอนุมัติใหม่');
 	await expect(page.getByTestId('process-templates')).toContainText('รุ่น 2');
-	await expect(page.getByTestId('process-templates')).not.toContainText('internal-fixture-code');
+	await expect(page.getByTestId('process-templates')).not.toContainText('internal_fixture_code');
 	expect(api.detail().instance?.templateVersion).toBe(1);
+});
+
+test('new template generates a hidden code accepted by the real backend character contract', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { permissions: ['process.manage.school'] });
+	await page.goto('/staff/correspondence/templates');
+	expect(api.count('/api/correspondence/options')).toBe(0);
+	await page.getByRole('button', { name: 'สร้างแม่แบบ', exact: true }).click();
+	await page.getByLabel('ชื่อแม่แบบ *', { exact: true }).fill('แม่แบบใหม่ของโรงเรียน');
+	await page.getByRole('button', { name: 'บันทึกแม่แบบรุ่นใหม่', exact: true }).click();
+	await expect(page.getByTestId('process-templates')).toContainText('แม่แบบใหม่ของโรงเรียน');
+	expect(api.templateWrites[0].code).toMatch(/^flow_[a-f0-9]{32}$/);
+	expect(api.count('/api/correspondence/options')).toBe(1);
 });
 
 test('personal drawn signature saves as a private owning-resource image for reuse', async ({
@@ -286,7 +300,134 @@ test('server-authorized manager recovery selects pending source and reason witho
 	expect(payload.reassignUserId).toBe('55000000-0000-4000-8000-000000000010');
 	expect(payload.signature).toBeUndefined();
 	expect(payload.annotations).toEqual([]);
+	expect(api.count('/api/correspondence/options')).toBe(1);
 });
+
+test('reassignment A to B to A preserves completed snapshots and offers only pending user semantics', async ({
+	page
+}) => {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	const api = await mockCorrespondence(page, { mode: 'acknowledge' });
+	api.applyReassignmentRoundTrip();
+	await page.goto(detailPath);
+	const step = page.getByTestId('correspondence-current-step');
+	await expect(step.locator('li')).toHaveCount(3);
+	await expect(step.getByText('ดำเนินการแล้ว', { exact: true })).toHaveCount(2);
+	await expect(step.getByText('รอดำเนินการ', { exact: true })).toHaveCount(1);
+	await expect(page.getByText('ส่งต่อและรับคืนหน้าที่', { exact: true })).toHaveCount(2);
+	for (const label of ['แหล่งอ้างอิงแรก', 'แหล่งอ้างอิงอีกชื่อ'])
+		await expect(page.getByRole('link', { name: label, exact: true })).toHaveAttribute(
+			'href',
+			'https://school.example/source'
+		);
+	for (const label of ['เอกสารแนบ 1', 'เอกสารแนบ 2', 'หลักฐาน 1', 'หลักฐาน 2'])
+		await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'ส่งต่อผู้รับผิดชอบ', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
+	).toHaveCount(0);
+	await page.getByRole('button', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
+	await expect(page.getByRole('option', { name: 'ครูผู้รับคนที่สอง', exact: true })).toBeVisible();
+	await expect(page.getByRole('option', { name: 'ครูเจ้าของ ทดสอบ', exact: true })).toHaveCount(0);
+	expect(errors).toEqual([]);
+});
+
+for (const delivery of ['delayed', 'ambiguous'] as const)
+	test(`same-revision accepted annotation reconciles ${delivery} response without losing draft or consent`, async ({
+		page
+	}) => {
+		const errors: string[] = [];
+		page.on('pageerror', (error) => errors.push(error.message));
+		const api = await mockCorrespondence(page, {
+			holdActionResponse: delivery === 'delayed',
+			abortAcceptedAction: delivery === 'ambiguous',
+			acceptedAnnotationColor: '#b91c1c',
+			nextStepAfterAccept: delivery === 'ambiguous'
+		});
+		await page.goto(detailPath);
+		await openSource(page);
+		await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
+		await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุที่เซิร์ฟเวอร์รับแล้ว');
+		await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+		await page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true }).fill('ความคิดเห็นที่ยังเก็บไว้');
+		await draw(page);
+		await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+		await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
+		await expect.poll(() => api.detail().record.revision).toBe(2);
+		if (delivery === 'ambiguous') {
+			await expect(
+				page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true })
+			).toBeVisible();
+			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
+			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			await page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true }).click();
+		} else {
+			await page.evaluate(async () => {
+				const modulePath = '/src/lib/stores/work.ts';
+				const { workStore } = await import(/* @vite-ignore */ modulePath);
+				await workStore.refreshSilently();
+			});
+		}
+		await expect(
+			page.getByText('รายการมีการเปลี่ยนแปลง กรุณาตรวจเอกสารและขั้นตอนล่าสุด')
+		).toBeVisible();
+		await expect(
+			page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
+		).toHaveCount(1);
+		await expect(
+			page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
+		).toHaveAttribute('fill', '#b91c1c');
+		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
+			'ความคิดเห็นที่ยังเก็บไว้'
+		);
+		await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
+		expect(errors).toEqual([]);
+		if (delivery === 'delayed') {
+			api.release();
+			await expect(page.getByTestId('correspondence-action')).toHaveCount(0);
+			await expect(
+				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
+			).toHaveCount(1);
+		} else {
+			await expect(
+				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
+			).toBeVisible();
+			await page.getByRole('button', { name: 'เลิกทำหมายเหตุล่าสุด', exact: true }).click();
+			await expect(
+				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
+			).toHaveCount(0);
+			await expect(
+				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
+			).toHaveCount(1);
+			await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
+			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
+			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			await page
+				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
+				.click();
+			await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+			await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
+			await expect(page.getByTestId('correspondence-action')).toHaveCount(0);
+			const next = api.writes.at(-1)!.payload as ProcessActionRequest;
+			const prior = api.writes[0].payload as ProcessActionRequest;
+			expect(next.expectedRevision).toBe(2);
+			const nextAnnotations = next.annotations ?? [];
+			const priorAnnotations = prior.annotations ?? [];
+			expect(priorAnnotations).toHaveLength(1);
+			expect(nextAnnotations.map((annotation) => annotation.text)).toEqual([
+				'ร่างอื่นที่ยังไม่ยืนยัน'
+			]);
+			expect(nextAnnotations[0].id).not.toBe(priorAnnotations[0].id);
+			await expect(
+				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
+			).toHaveCount(1);
+			await expect(
+				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
+			).toHaveCount(1);
+		}
+	});
 
 test('accepted signing request freezes related marks while preserving independent viewer controls', async ({
 	page
