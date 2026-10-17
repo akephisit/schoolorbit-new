@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/school-student-care",
     "crates/school-files-http",
     "crates/school-administration",
     "crates/school-attendance",
@@ -46,6 +47,7 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-student-care = { path = "crates/school-student-care" }
 school-files-http = { path = "crates/school-files-http" }
 school-administration = { path = "crates/school-administration" }
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
@@ -142,6 +144,7 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-student-care/api-docs",
     "school-files-http/api-docs",
     "school-administration/api-docs",
     "dep:utoipa",
@@ -172,6 +175,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-student-care = { workspace = true }
 school-files-http = { workspace = true }
 school-administration = { workspace = true }
 axum = { workspace = true }

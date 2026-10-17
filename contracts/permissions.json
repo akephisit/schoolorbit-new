@@ -1317,6 +1317,76 @@
       "scope": "school",
       "name": "ตรวจคำเสนอพัสดุ",
       "description": "แก้ไขและอนุมัติหรือปฏิเสธคำเสนอพัสดุ"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูแบบประเมินที่ได้รับมอบหมายของตนเอง",
+      "description": "ดูแบบประเมินที่ได้รับมอบหมายของตนเอง"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูงานดูแลช่วยเหลือที่มอบหมาย",
+      "description": "ดูงานดูแลช่วยเหลือที่มอบหมาย"
+    },
+    {
+      "module": "student_care",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูภาพรวมงานดูแลช่วยเหลือโรงเรียน",
+      "description": "ดูภาพรวมงานดูแลช่วยเหลือโรงเรียน"
+    },
+    {
+      "module": "student_care",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการงานดูแลช่วยเหลือที่มอบหมาย",
+      "description": "จัดการงานดูแลช่วยเหลือที่มอบหมาย"
+    },
+    {
+      "module": "student_care",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการรอบและงานดูแลช่วยเหลือโรงเรียน",
+      "description": "จัดการรอบและงานดูแลช่วยเหลือโรงเรียน"
+    },
+    {
+      "module": "student_care_config",
+      "action": "manage",
+      "scope": "school",
+      "name": "ตั้งค่ารุ่นแบบประเมินดูแลช่วยเหลือ",
+      "description": "ตั้งค่ารุ่นแบบประเมินดูแลช่วยเหลือ"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน",
+      "description": "ดูข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
+      "description": "ดูข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "manage",
+      "scope": "assigned",
+      "name": "จัดการข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน",
+      "description": "จัดการข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน"
+    },
+    {
+      "module": "student_care_sensitive",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
+      "description": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
     }
   ]
 }

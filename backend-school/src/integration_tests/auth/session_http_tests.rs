@@ -1256,6 +1256,299 @@ mod protected_router {
     }
 
     #[tokio::test]
+    async fn concrete_student_care_routes_preserve_session_csrf_scope_and_response_contract() {
+        use school_authorization::ActorContext;
+        use school_permissions::registry::codes;
+        use school_student_care::{models::*, policy::CareAccess};
+        use sqlx::types::Json as DbJson;
+        let fixture = ProtectedFixture::new("care_http_boundary").await;
+        let respondent = fixture
+            .insert_user(&fixture.tenant_a_pool, "care-http-respondent", "active")
+            .await;
+        let routine = fixture
+            .insert_user(&fixture.tenant_a_pool, "care-http-routine", "active")
+            .await;
+        let student = fixture
+            .insert_user(&fixture.tenant_a_pool, "care-http-student", "active")
+            .await;
+        sqlx::query("UPDATE users SET user_type='student' WHERE id=$1")
+            .bind(student)
+            .execute(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+        for (user, code, permission) in [
+            (respondent, "CARE_HTTP_OWN", codes::STUDENT_CARE_READ_OWN),
+            (
+                routine,
+                "CARE_HTTP_ROUTINE",
+                codes::STUDENT_CARE_READ_SCHOOL,
+            ),
+        ] {
+            let role: Uuid = sqlx::query_scalar(
+                "INSERT INTO roles(code,name,user_type) VALUES($1,$1,'staff') RETURNING id",
+            )
+            .bind(code)
+            .fetch_one(&fixture.tenant_a_pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(role).bind(permission).execute(&fixture.tenant_a_pool).await.unwrap();
+            sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+                .bind(user)
+                .bind(role)
+                .execute(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        }
+        let a = CareAccess::new(&ActorContext {
+            user_id: respondent,
+            permissions: vec![
+                codes::STUDENT_CARE_CONFIG_MANAGE_SCHOOL.into(),
+                codes::STUDENT_CARE_MANAGE_SCHOOL.into(),
+            ],
+        });
+        let version = school_student_care::services::create_instrument(
+            &fixture.tenant_a_pool,
+            a,
+            CreateCareInstrumentVersion {
+                request_id: Uuid::now_v7(),
+                instrument_id: None,
+                expected_version: None,
+                definition: CareInstrumentDefinition {
+                    name: "Synthetic HTTP fixture".into(),
+                    family: CareFamily::Other,
+                    variant: "Fixture".into(),
+                    language: "en".into(),
+                    respondent: CareRespondent::Teacher,
+                    minimum_age: 0,
+                    maximum_age: 120,
+                    mode: CareInstrumentMode::Digital,
+                    instructions: String::new(),
+                    source: "Synthetic fixture".into(),
+                    license_note: "Test content".into(),
+                    digital_rights_confirmed: true,
+                    questions: vec![CareQuestion {
+                        key: "q".into(),
+                        text: "Synthetic HTTP question".into(),
+                        scale_key: "s".into(),
+                        reverse: false,
+                        options: vec![
+                            CareOption {
+                                key: "a".into(),
+                                label: "A".into(),
+                                points: 0,
+                                urgent: false,
+                            },
+                            CareOption {
+                                key: "b".into(),
+                                label: "B".into(),
+                                points: 1,
+                                urgent: false,
+                            },
+                        ],
+                    }],
+                    scales: vec![CareScale {
+                        key: "s".into(),
+                        label: "Synthetic".into(),
+                        source_scale_keys: vec![],
+                        bands: vec![CareBand {
+                            key: "all".into(),
+                            label: "Synthetic".into(),
+                            minimum: 0,
+                            maximum: 1,
+                            urgent: false,
+                        }],
+                    }],
+                },
+            },
+        )
+        .await
+        .unwrap();
+        let today = Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive();
+        let year:Uuid=sqlx::query_scalar("INSERT INTO academic_years(year,name,start_date,end_date,status) VALUES(2986,'Care HTTP',$1,$2,'active') RETURNING id").bind(today).bind(today+Duration::days(90)).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'CARE_HTTP','Care HTTP',true) RETURNING id").bind(year).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES($1,1,'CARE_HTTP','Care HTTP','regular',$2,$3,$4,'active',true,true) RETURNING id").bind(year).bind(today).bind(today+Duration::days(90)).bind(bell).fetch_one(&fixture.tenant_a_pool).await.unwrap();
+        let round = school_student_care::services::create_round(
+            &fixture.tenant_a_pool,
+            a,
+            CreateCareRound {
+                request_id: Uuid::now_v7(),
+                name: "Synthetic HTTP round".into(),
+                purpose: "HTTP fixture purpose".into(),
+                instrument_version_ids: vec![version.id],
+                academic_term_id: term,
+                roster_date: today,
+                due_date: today + Duration::days(10),
+            },
+        )
+        .await
+        .unwrap();
+        // Seed one accepted respondent assignment; HTTP below exercises actual
+        // service authorization/draft persistence through the canonical session middleware.
+        let assignment = CareAssignment {
+            created_by: routine,
+            id: Uuid::now_v7(),
+            round_id: round.id,
+            student_id: student,
+            student_name: "Synthetic student".into(),
+            respondent_id: respondent,
+            respondent: CareRespondent::Teacher,
+            instrument_version_id: version.id,
+            instrument_name: version.definition.name.clone(),
+            reviewer_user_ids: vec![routine],
+            status: CareAssignmentStatus::Assigned,
+            row_version: 1,
+            submitted_at: None,
+            acknowledged_at: None,
+            urgent: false,
+        };
+        let response = school_crypto::encrypt(
+            &json!({"answers":[],"manualScores":[],"manualNote":null,"results":[]}).to_string(),
+        )
+        .unwrap();
+        sqlx::query("INSERT INTO care_assignments(id,round_id,student_id,respondent_id,instrument_version_id,reviewer_ids,document,response_ciphertext,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)").bind(assignment.id).bind(round.id).bind(student).bind(respondent).bind(version.id).bind(vec![routine]).bind(DbJson(&assignment)).bind(response).bind(routine).execute(&fixture.tenant_a_pool).await.unwrap();
+        let case = CareCase {
+            id: Uuid::now_v7(),
+            source_assignment_id: Some(assignment.id),
+            source_visit_id: None,
+            student_id: student,
+            student_name: "Synthetic student".into(),
+            title: "Synthetic private case".into(),
+            status: CareCaseStatus::Open,
+            assigned_user_ids: vec![respondent],
+            next_follow_up: None,
+            row_version: 1,
+            created_at: Utc::now(),
+        };
+        sqlx::query("INSERT INTO care_cases(id,student_id,assigned_user_ids,status,row_version,source_assignment_id,record_ciphertext) VALUES($1,$2,$3,'open',1,$4,$5)").bind(case.id).bind(student).bind(vec![respondent]).bind(assignment.id).bind(school_crypto::encrypt(&serde_json::to_string(&case).unwrap()).unwrap()).execute(&fixture.tenant_a_pool).await.unwrap();
+        let (sid, token) = fixture
+            .insert_session(&fixture.tenant_a_pool, respondent, 81, false)
+            .await;
+        let (_, routine_token) = fixture
+            .insert_session(&fixture.tenant_a_pool, routine, 82, false)
+            .await;
+        let app = Router::new()
+            .merge(
+                school_student_care::http::routes::protected_routes().with_state(
+                    school_student_care::http::state::StudentCareHttpState {
+                        auth_runtime: fixture.runtime.clone(),
+                    },
+                ),
+            )
+            .route_layer(from_fn_with_state(
+                fixture.runtime.clone(),
+                session_middleware,
+            ));
+        let origin = "https://tenant-a.schoolorbit.test";
+        for path in [
+            "overview",
+            "instruments",
+            "rounds",
+            "assignments",
+            "visits",
+            "cases",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(
+                    Method::GET,
+                    &format!("/api/student-care/{path}"),
+                    Some(origin),
+                    None,
+                    None,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        for path in [
+            format!("/api/student-care/assignments/{}", assignment.id),
+            format!("/api/student-care/cases/{}", case.id),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(
+                    Method::GET,
+                    &path,
+                    Some(origin),
+                    Some(&routine_token),
+                    None,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        let path = format!("/api/student-care/assignments/{}", assignment.id);
+        let response = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                &path,
+                Some(origin),
+                Some(&token),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"]["assignment"]["id"], assignment.id.to_string());
+        let payload = SaveCareResponse {
+            request_id: Uuid::now_v7(),
+            row_version: 1,
+            acknowledge_purpose: true,
+            answers: vec![CareAnswer {
+                question_key: "q".into(),
+                option_key: "a".into(),
+            }],
+            manual_scores: vec![],
+            manual_note: None,
+        };
+        for (request_origin, csrf, expected) in [
+            (origin, None, StatusCode::FORBIDDEN),
+            (
+                "https://tenant-b.schoolorbit.test",
+                Some(fixture.csrf(sid)),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (origin, Some(fixture.csrf(sid)), StatusCode::OK),
+        ] {
+            let mut req = request(
+                Method::PUT,
+                &format!("{path}/draft"),
+                Some(request_origin),
+                Some(&token),
+                csrf.as_deref(),
+            )
+            .map(|_| Body::from(serde_json::to_vec(&payload).unwrap()));
+            req.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), expected);
+            if expected == StatusCode::OK {
+                let body: serde_json::Value = serde_json::from_slice(
+                    &axum::body::to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(body["success"], true);
+                assert_eq!(body["data"]["assignment"]["rowVersion"], 2);
+                assert_eq!(body["data"]["answers"][0]["optionKey"], "a");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
         use school_academic_http::state::AcademicHttpState;
 

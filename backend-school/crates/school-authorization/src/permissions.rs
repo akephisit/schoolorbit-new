@@ -1,6 +1,6 @@
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::PermissionCache;
@@ -156,6 +156,16 @@ pub async fn staff_users_with_all_permissions(
     pool: &PgPool,
     required: &[&str],
 ) -> Result<Vec<Uuid>, sqlx::Error> {
+    let mut connection = pool.acquire().await?;
+    staff_users_with_all_permissions_on_connection(&mut connection, required).await
+}
+
+/// Caller-owned recipient acceptance transaction keeps active account row locks
+/// until commit; retries use the accepted snapshot instead of this resolver.
+pub async fn staff_users_with_all_permissions_on_connection(
+    connection: &mut PgConnection,
+    required: &[&str],
+) -> Result<Vec<Uuid>, sqlx::Error> {
     let query = format!(
         "{EFFECTIVE_PERMISSIONS_CTE}
         SELECT users.id FROM users WHERE users.status='active' AND users.user_type='staff'
@@ -163,12 +173,12 @@ pub async fn staff_users_with_all_permissions(
             SELECT 1 FROM unnest($1::text[]) AS required(code)
             WHERE NOT EXISTS (SELECT 1 FROM effective_permissions grant_row
                 WHERE grant_row.user_id=users.id AND grant_row.code IN (required.code, $2))
-        ) ORDER BY users.id"
+        ) ORDER BY users.id FOR SHARE OF users"
     );
     sqlx::query_scalar(sqlx::AssertSqlSafe(query))
         .bind(required)
         .bind(codes::WILDCARD)
-        .fetch_all(pool)
+        .fetch_all(connection)
         .await
 }
 
