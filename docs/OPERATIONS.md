@@ -111,6 +111,16 @@ is claimed and removed in the same transaction as the school mutation; School
 finish invalidates before reopening. Pending barriers fail the internal all-tenant
 list as a whole, preventing incomplete migration acceptance.
 
+Deploy matching School and Admin writers under normal Maintenance Mode. After
+Admin migration 011 and School migration 118 are active and traffic has reopened,
+prohibit rollback to pre-counter School or pre-fence Admin binaries and mixed
+writer generations. Additive schema changes still require compatible writer
+protocols: an old School `MAX+1` writer leaves the counter behind, causing repeated
+unique collisions when counter allocation resumes; an old Admin writer bypasses
+the durable barrier and cache invalidation. On failure, retain maintenance and
+recover with a compatible forward release. Preserve the counters and SQLx migration
+history; never drop, reset or rewrite them to recover.
+
 If a mutation is interrupted, find its subdomain/token in the
 `tenant_directory_mutation` log and inspect the corresponding Admin pending row.
 Never delete a pending barrier by age. Stop/reconcile the old operation and its
