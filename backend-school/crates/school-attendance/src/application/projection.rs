@@ -116,7 +116,7 @@ async fn project(
     // A later placement change must not add another virtual school day in the new room.
     let saved_arrivals: HashSet<(NaiveDate, Uuid)> = if let Some((student, _)) = history_scope {
         sqlx::query_as("SELECT DISTINCT s.date,$4::uuid FROM attendance_sessions s WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival' AND s.roster @> jsonb_build_array(jsonb_build_object('studentId',$4::uuid))")
-            .bind(term).bind(start).bind(end).bind(student).fetch_all(&mut *connection).await?
+            .bind(term).bind(start).bind(end).bind(student).fetch_all(&mut *connection).await?.into_iter().collect()
     } else {
         sqlx::query_as(
         "SELECT DISTINCT s.date,p.\"studentId\" FROM attendance_sessions s CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p(\"studentId\" uuid) WHERE s.academic_term_id=$1 AND s.date BETWEEN $2 AND $3 AND s.kind='arrival'",
