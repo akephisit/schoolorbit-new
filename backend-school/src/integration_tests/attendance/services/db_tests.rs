@@ -4082,7 +4082,22 @@ async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_
 
 #[tokio::test]
 async fn attendance_history_snapshot_allows_parallel_readers_and_first_save_without_mixed_facts() {
-    let f = fixture("attendance_history_save_overlap").await;
+    let mut f = fixture("attendance_history_save_overlap").await;
+    // Keep a blocker, two readers and an independent observer/save connection.
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let options = (*f.pool.connect_options())
+        .clone()
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(6)
+        .connect_with(options)
+        .await
+        .unwrap();
+    f.pool.close().await;
+    f.pool = pool;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
         .bind(date)
