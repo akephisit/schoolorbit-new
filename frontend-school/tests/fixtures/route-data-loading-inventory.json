@@ -966,6 +966,56 @@
 			"notes": "Explicit create route starts independent academic-year and exact-create owner options together; region skeleton/error/retry, stable form draft and save prerequisites, owner/disposal guard against late navigation. No primary lifecycle reads or duplicate identity."
 		},
 		{
+			"route": "staff/correspondence",
+			"wave": "correspondence",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "tenant and authenticated actor; correspondence ID for detail",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Loader owns bounded URL-filtered correspondence register. Lazy actions do not fetch recipients or signatures; identity-tagged results and cancellable retries."
+		},
+		{
+			"route": "staff/correspondence/[id]",
+			"wave": "correspondence",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "tenant and authenticated actor; correspondence ID for detail",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Loader owns source-authorized detail. Source-only PDF preview, recipient options, signature assets and attachment downloads are interaction-only. Local mutation patches and retained conflict drafts; identity disposal."
+		},
+		{
+			"route": "staff/correspondence/new",
+			"wave": "correspondence",
+			"dataOwner": "interaction-only",
+			"preload": "tap",
+			"context": "tenant and authenticated actor; correspondence ID for detail",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Creation fields are local; exact creator route guard. Optional owner-unit lookup opens only from its action. Uploads begin only after a real draft resource exists. No primary reads."
+		},
+		{
+			"route": "staff/correspondence/signatures",
+			"wave": "correspondence",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "tenant and authenticated actor; correspondence ID for detail",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Exact signer loader owns personal private asset list. Draw or upload on action; no durable browser draft storage and owning-resource file delivery."
+		},
+		{
+			"route": "staff/correspondence/templates",
+			"wave": "correspondence",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "tenant and authenticated actor; correspondence ID for detail",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Exact process manager loader owns versioned template list; editor recipients lazy. Typed saves patch only affected template."
+		},
+		{
 			"route": "staff/exams",
 			"wave": "teaching",
 			"dataOwner": "route",

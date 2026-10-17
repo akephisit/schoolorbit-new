@@ -418,19 +418,34 @@ pub async fn create_work_item(pool: &PgPool, input: CreateWorkItemInput) -> Resu
 
 pub async fn list_my_work_items(
     pool: &PgPool,
-    user_id: Uuid,
+    actor: &school_authorization::ActorContext,
     filter: WorkItemFilter,
 ) -> Result<Vec<WorkItem>, AppError> {
-    let rows = query_my_work_items(pool, user_id, &filter).await?;
+    let rows = query_my_work_items(pool, actor.user_id, &filter).await?;
     let mut items = map_work_item_rows(rows, Utc::now())?;
+    let correspondence_ids: Vec<Uuid> = items
+        .iter()
+        .filter(|item| item.module_code == "correspondence")
+        .filter_map(|item| item.source_resource_id)
+        .collect();
+    let allowed = crate::correspondence::readable_ids(pool, actor, &correspondence_ids).await?;
+    items.retain(|item| {
+        item.module_code != "correspondence"
+            || item
+                .source_resource_id
+                .is_some_and(|id| allowed.contains(&id))
+    });
     if let Some(state) = filter.state {
         items.retain(|item| item.state == state);
     }
     Ok(items)
 }
 
-pub async fn get_my_work_counts(pool: &PgPool, user_id: Uuid) -> Result<WorkItemCounts, AppError> {
-    let items = list_my_work_items(pool, user_id, WorkItemFilter::default()).await?;
+pub async fn get_my_work_counts(
+    pool: &PgPool,
+    actor: &school_authorization::ActorContext,
+) -> Result<WorkItemCounts, AppError> {
+    let items = list_my_work_items(pool, actor, WorkItemFilter::default()).await?;
     let states = items.iter().map(|item| item.state).collect::<Vec<_>>();
     Ok(work_item_counts_from_states(&states))
 }
@@ -705,4 +720,42 @@ mod tests {
             }
         );
     }
+}
+
+/// Transaction-aware projection used by process acceptance; callers own commit.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_work_item_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+    window: Uuid,
+    module: &str,
+    resource_type: &str,
+    resource: Uuid,
+    title: &str,
+    action_path: &str,
+    actor: Uuid,
+    users: &[Uuid],
+) -> Result<(), AppError> {
+    sqlx::query("INSERT INTO work_items(id,workflow_window_id,module_code,source_resource_type,source_resource_id,title,action_path,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)").bind(id).bind(window).bind(module).bind(resource_type).bind(resource).bind(title).bind(action_path).bind(actor).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO work_item_assignees(id,work_item_id,assignee_type,user_id) SELECT uuidv7(),$1,'user',unnest($2::uuid[])").bind(id).bind(users).execute(&mut **tx).await?;
+    Ok(())
+}
+pub async fn mark_process_assignment_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: Option<Uuid>,
+    user: Uuid,
+    completed: bool,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE work_item_assignees SET status=CASE WHEN $3 THEN 'submitted' ELSE 'read' END,read_at=coalesce(read_at,now()),submitted_at=CASE WHEN $3 THEN now() ELSE submitted_at END WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read')").bind(item).bind(user).bind(completed).execute(&mut **tx).await?;
+    Ok(())
+}
+pub async fn close_process_item_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: Option<Uuid>,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE work_items SET status='closed' WHERE id=$1")
+        .bind(item)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }

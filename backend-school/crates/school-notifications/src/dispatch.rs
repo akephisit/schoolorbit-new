@@ -12,17 +12,20 @@ pub const DELIVERY_BATCH_SIZE: i64 = 32;
 pub enum NotificationSource {
     Direct,
     Attendance { source_id: Uuid },
+    Process { source_id: Uuid },
 }
 #[derive(Clone, Copy)]
 pub enum NotificationSourceKind {
     Direct,
     Attendance,
+    Process,
 }
 impl NotificationSourceKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Direct => "direct",
             Self::Attendance => "attendance",
+            Self::Process => "process",
         }
     }
 }
@@ -31,6 +34,7 @@ impl NotificationSource {
         match self {
             Self::Direct => ("direct", None),
             Self::Attendance { source_id } => ("attendance", Some(source_id)),
+            Self::Process { source_id } => ("process", Some(source_id)),
         }
     }
 }
@@ -112,6 +116,7 @@ impl Job {
         let source = match (self.source_kind.as_str(), self.source_id) {
             ("direct", None) => NotificationSource::Direct,
             ("attendance", Some(source_id)) => NotificationSource::Attendance { source_id },
+            ("process", Some(source_id)) => NotificationSource::Process { source_id },
             _ => return Err(integrity("notification_source_unsupported")),
         };
         let type_ = match self.type_.as_str() {

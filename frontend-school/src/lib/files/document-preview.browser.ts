@@ -17,6 +17,11 @@ export async function openPdfPreview(blob: Blob, signal: AbortSignal): Promise<P
 		signal.throwIfAborted();
 		return {
 			pageCount: document.numPages,
+			async pageSize(pageNumber) {
+				const page = await document.getPage(pageNumber);
+				const viewport = page.getViewport({ scale: 1 });
+				return { width: viewport.width, height: viewport.height };
+			},
 			async renderPage(pageNumber, canvas, renderSignal) {
 				renderSignal.throwIfAborted();
 				const page = await document.getPage(pageNumber);

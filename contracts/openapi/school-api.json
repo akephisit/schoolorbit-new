@@ -7131,6 +7131,175 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CorrespondenceDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "availableActions": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessAction"
+                },
+                "type": "array"
+              },
+              "canAct": {
+                "type": "boolean"
+              },
+              "canManage": {
+                "type": "boolean"
+              },
+              "document": {
+                "$ref": "#/components/schemas/CorrespondenceDocumentRevision"
+              },
+              "history": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessHistoryEntry"
+                },
+                "type": "array"
+              },
+              "instance": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessInstance"
+                  }
+                ]
+              },
+              "record": {
+                "$ref": "#/components/schemas/CorrespondenceSummary"
+              },
+              "revisions": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceDocumentRevision"
+                },
+                "type": "array"
+              },
+              "signatures": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceSigningEvidence"
+                },
+                "type": "array"
+              },
+              "sourceLinks": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceSourceLink"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "record",
+              "sourceLinks",
+              "document",
+              "revisions",
+              "history",
+              "signatures",
+              "canManage",
+              "canAct",
+              "availableActions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CorrespondenceList": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceSummary"
+                },
+                "type": "array"
+              },
+              "nextCursor": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CorrespondenceOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "organizations": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceOrganizationOption"
+                },
+                "type": "array"
+              },
+              "positions": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondencePositionOption"
+                },
+                "type": "array"
+              },
+              "templates": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplate"
+                },
+                "type": "array"
+              },
+              "users": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceUserOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "users",
+              "organizations",
+              "positions",
+              "templates"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CoursePreparationWorkspace": {
         "properties": {
           "data": {
@@ -12303,6 +12472,149 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ProcessInstance": {
+        "properties": {
+          "data": {
+            "properties": {
+              "actionPath": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "currentStep": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "dueAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "source": {
+                "$ref": "#/components/schemas/ProcessSource"
+              },
+              "status": {
+                "$ref": "#/components/schemas/ProcessStatus"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessRuntimeStep"
+                },
+                "type": "array"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "templateVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "title",
+              "actionPath",
+              "templateId",
+              "templateVersion",
+              "revision",
+              "status",
+              "currentStep",
+              "steps",
+              "createdBy",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_ProcessTemplate": {
+        "properties": {
+          "data": {
+            "properties": {
+              "active": {
+                "type": "boolean"
+              },
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplateStep"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "title",
+              "version",
+              "steps",
+              "active",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ProfileResponse": {
         "properties": {
           "data": {
@@ -14099,6 +14411,47 @@
             },
             "required": [
               "sessions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SignatureAsset": {
+        "properties": {
+          "data": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "fileId",
+              "createdAt"
             ],
             "type": "object"
           },
@@ -23548,6 +23901,65 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_ProcessTemplate": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "steps": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessTemplateStep"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "title",
+                "version",
+                "steps",
+                "active",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_PromotionPolicyVersion": {
         "properties": {
           "data": {
@@ -24037,6 +24449,50 @@
                 "studentId",
                 "studentName",
                 "seatNumber"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_SignatureAsset": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "fileId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "fileId",
+                "createdAt"
               ],
               "type": "object"
             },
@@ -32621,6 +33077,443 @@
         ],
         "type": "object"
       },
+      "CorrespondenceDetail": {
+        "properties": {
+          "availableActions": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessAction"
+            },
+            "type": "array"
+          },
+          "canAct": {
+            "type": "boolean"
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "document": {
+            "$ref": "#/components/schemas/CorrespondenceDocumentRevision"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessHistoryEntry"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessInstance"
+              }
+            ]
+          },
+          "record": {
+            "$ref": "#/components/schemas/CorrespondenceSummary"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceDocumentRevision"
+            },
+            "type": "array"
+          },
+          "signatures": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceSigningEvidence"
+            },
+            "type": "array"
+          },
+          "sourceLinks": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceSourceLink"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "record",
+          "sourceLinks",
+          "document",
+          "revisions",
+          "history",
+          "signatures",
+          "canManage",
+          "canAct",
+          "availableActions"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceDocumentRevision": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentAnnotation"
+            },
+            "type": "array"
+          },
+          "attachmentFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fileSnapshots": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceFileSnapshot"
+            },
+            "type": "array"
+          },
+          "originalFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "content",
+          "attachmentFileIds",
+          "annotations",
+          "contentHash",
+          "fileSnapshots",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceFileSnapshot": {
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "versionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileId",
+          "versionId",
+          "checksum"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceOptions": {
+        "properties": {
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceOrganizationOption"
+            },
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondencePositionOption"
+            },
+            "type": "array"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplate"
+            },
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "organizations",
+          "positions",
+          "templates"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceOrganizationOption": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CorrespondencePositionOption": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationUnitId",
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceRegister": {
+        "enum": [
+          "incoming",
+          "outgoing",
+          "internal"
+        ],
+        "type": "string"
+      },
+      "CorrespondenceSigningEvidence": {
+        "properties": {
+          "actionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SignatureInput"
+          },
+          "signatureFileSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CorrespondenceFileSnapshot"
+              }
+            ]
+          },
+          "signedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "signedContentHash": {
+            "type": "string"
+          },
+          "signerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "signerName": {
+            "type": "string"
+          },
+          "signerRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "signerId",
+          "signerName",
+          "signedAt",
+          "signedContentHash",
+          "signature",
+          "actionId"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceSourceLink": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "url"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceStatus": {
+        "enum": [
+          "draft",
+          "in_progress",
+          "revision_requested",
+          "completed",
+          "rejected",
+          "closed"
+        ],
+        "type": "string"
+      },
+      "CorrespondenceSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "documentDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "register": {
+            "$ref": "#/components/schemas/CorrespondenceRegister"
+          },
+          "registerNumber": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "registerYear": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CorrespondenceStatus"
+          },
+          "title": {
+            "type": "string"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/CorrespondenceUrgency"
+          }
+        },
+        "required": [
+          "id",
+          "registerNumber",
+          "registerYear",
+          "register",
+          "title",
+          "sender",
+          "urgency",
+          "revision",
+          "status",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceUrgency": {
+        "enum": [
+          "normal",
+          "urgent",
+          "very_urgent"
+        ],
+        "type": "string"
+      },
+      "CorrespondenceUserOption": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "type": "object"
+      },
       "CourseAggregateInput": {
         "additionalProperties": false,
         "description": "One expected subject in one student's term, including an absent locked result.",
@@ -33476,6 +34369,91 @@
         ],
         "type": "object"
       },
+      "CreateCorrespondenceRequest": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentAnnotation"
+            },
+            "type": "array"
+          },
+          "attachmentFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "documentDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "originalFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "register": {
+            "$ref": "#/components/schemas/CorrespondenceRegister"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "sourceLinks": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceSourceLink"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/CorrespondenceUrgency"
+          }
+        },
+        "required": [
+          "requestId",
+          "register",
+          "title",
+          "sender",
+          "urgency",
+          "content"
+        ],
+        "type": "object"
+      },
       "CreateCourseOfferingRequest": {
         "additionalProperties": false,
         "properties": {
@@ -34279,6 +35257,27 @@
         "required": [
           "name_th",
           "room_type"
+        ],
+        "type": "object"
+      },
+      "CreateSignatureAssetRequest": {
+        "properties": {
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "label",
+          "fileId"
         ],
         "type": "object"
       },
@@ -37616,6 +38615,73 @@
         ],
         "type": "object"
       },
+      "DocumentAnnotation": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DocumentAnnotationKind"
+          },
+          "page": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/InkStroke"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "page",
+          "x",
+          "y",
+          "width",
+          "height",
+          "color"
+        ],
+        "type": "object"
+      },
+      "DocumentAnnotationKind": {
+        "enum": [
+          "text",
+          "ink",
+          "highlight",
+          "circle"
+        ],
+        "type": "string"
+      },
       "DocumentUploadResponse": {
         "properties": {
           "docType": {
@@ -39873,6 +40939,8 @@
       },
       "FilePurpose": {
         "enum": [
+          "correspondence_document",
+          "correspondence_signature",
           "teaching_license",
           "attendance_evidence",
           "school_logo",
@@ -41493,6 +42561,46 @@
           "fileId",
           "alignment",
           "widthPercent"
+        ],
+        "type": "object"
+      },
+      "InkPoint": {
+        "properties": {
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "InkStroke": {
+        "properties": {
+          "color": {
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/InkPoint"
+            },
+            "type": "array"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "points",
+          "width",
+          "color"
         ],
         "type": "object"
       },
@@ -45276,6 +46384,511 @@
         ],
         "type": "object"
       },
+      "ProcessAction": {
+        "enum": [
+          "read",
+          "acknowledge",
+          "review",
+          "approve",
+          "execute",
+          "sign",
+          "reject",
+          "return_for_revision",
+          "report",
+          "close",
+          "reassign"
+        ],
+        "type": "string"
+      },
+      "ProcessActionRequest": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProcessAction"
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentAnnotation"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidenceFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reassignFromUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reassignUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "signature": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SignatureInput"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "action"
+        ],
+        "type": "object"
+      },
+      "ProcessCompletionPolicy": {
+        "enum": [
+          "all",
+          "any"
+        ],
+        "type": "string"
+      },
+      "ProcessHistoryEntry": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "actorName": {
+            "type": "string"
+          },
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentAnnotation"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "documentRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidenceFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reassignedFromUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reassignedToUserId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorName",
+          "action",
+          "documentRevision",
+          "annotations",
+          "evidenceFileIds",
+          "createdAt",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "ProcessInstance": {
+        "properties": {
+          "actionPath": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "currentStep": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ProcessSource"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProcessStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRuntimeStep"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "templateVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "title",
+          "actionPath",
+          "templateId",
+          "templateVersion",
+          "revision",
+          "status",
+          "currentStep",
+          "steps",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ProcessRecipient": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ProcessRecipientKind"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "positionCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "ProcessRecipientKind": {
+        "enum": [
+          "user",
+          "organization_unit",
+          "organization_position"
+        ],
+        "type": "string"
+      },
+      "ProcessRecipientSnapshot": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "readAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reassignedFrom": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "ProcessRuntimeStep": {
+        "properties": {
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "definition": {
+            "$ref": "#/components/schemas/ProcessTemplateStep"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRecipientSnapshot"
+            },
+            "type": "array"
+          },
+          "stepIndex": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "workItemId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "stepIndex",
+          "definition",
+          "recipients"
+        ],
+        "type": "object"
+      },
+      "ProcessSource": {
+        "properties": {
+          "moduleCode": {
+            "type": "string"
+          },
+          "resourceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "moduleCode",
+          "resourceType",
+          "resourceId"
+        ],
+        "type": "object"
+      },
+      "ProcessStatus": {
+        "enum": [
+          "active",
+          "revision_requested",
+          "completed",
+          "rejected",
+          "closed"
+        ],
+        "type": "string"
+      },
+      "ProcessStepKind": {
+        "enum": [
+          "acknowledge",
+          "review",
+          "approve",
+          "execute",
+          "sign"
+        ],
+        "type": "string"
+      },
+      "ProcessStepRecipients": {
+        "properties": {
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRecipient"
+            },
+            "type": "array"
+          },
+          "stepIndex": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stepIndex",
+          "recipients"
+        ],
+        "type": "object"
+      },
+      "ProcessTemplate": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "version",
+          "steps",
+          "active",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ProcessTemplateStep": {
+        "properties": {
+          "completionPolicy": {
+            "$ref": "#/components/schemas/ProcessCompletionPolicy"
+          },
+          "dueAfterDays": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProcessStepKind"
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRecipient"
+            },
+            "type": "array"
+          },
+          "requiresComment": {
+            "type": "boolean"
+          },
+          "requiresDelegatedAuthority": {
+            "type": "boolean"
+          },
+          "requiresEvidence": {
+            "type": "boolean"
+          },
+          "requiresSignature": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "kind",
+          "completionPolicy"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "properties": {
           "address": {
@@ -48778,6 +50391,47 @@
         ],
         "type": "object"
       },
+      "ReviseCorrespondenceRequest": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentAnnotation"
+            },
+            "type": "array"
+          },
+          "attachmentFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "originalFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "content"
+        ],
+        "type": "object"
+      },
       "RevokeCertificateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -49748,6 +51402,44 @@
         },
         "type": "object"
       },
+      "SaveProcessTemplateRequest": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "code",
+          "title",
+          "steps",
+          "active"
+        ],
+        "type": "object"
+      },
       "SchoolFontDeleteConflict": {
         "properties": {
           "referenceCount": {
@@ -50239,6 +51931,41 @@
         ],
         "type": "object"
       },
+      "SendCorrespondenceRequest": {
+        "properties": {
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "stepRecipients": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessStepRecipients"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "templateId"
+        ],
+        "type": "object"
+      },
       "SessionListData": {
         "properties": {
           "sessions": {
@@ -50296,6 +52023,98 @@
           "isCurrent"
         ],
         "type": "object"
+      },
+      "SignatureAsset": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "fileId",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "SignatureInput": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "documentRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "height": {
+            "format": "double",
+            "type": "number"
+          },
+          "method": {
+            "$ref": "#/components/schemas/SignatureMethod"
+          },
+          "page": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/InkStroke"
+            },
+            "type": "array"
+          },
+          "width": {
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "method",
+          "page",
+          "x",
+          "y",
+          "width",
+          "height",
+          "documentRevision",
+          "contentHash"
+        ],
+        "type": "object"
+      },
+      "SignatureMethod": {
+        "enum": [
+          "drawn",
+          "image"
+        ],
+        "type": "string"
       },
       "SpecialAttendanceDefinition": {
         "additionalProperties": false,
@@ -92453,6 +94272,693 @@
         ]
       }
     },
+    "/api/correspondence": {
+      "get": {
+        "operationId": "list_correspondence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cursor",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "limit",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "register",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/CorrespondenceRegister"
+                }
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/CorrespondenceStatus"
+                }
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceList"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      },
+      "post": {
+        "operationId": "create_correspondence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCorrespondenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}": {
+      "get": {
+        "operationId": "get_correspondence",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/actions": {
+      "post": {
+        "operationId": "act_correspondence",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/export": {
+      "get": {
+        "operationId": "export_correspondence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Server composed PDF"
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/preview": {
+      "get": {
+        "operationId": "preview_correspondence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "documentRevision",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Canonical source-only PDF"
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/revisions": {
+      "post": {
+        "operationId": "revise_correspondence",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseCorrespondenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/send": {
+      "post": {
+        "operationId": "send_correspondence",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendCorrespondenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/options": {
+      "get": {
+        "operationId": "correspondence_options",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "search",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/signatures": {
+      "get": {
+        "operationId": "list_signature_assets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_SignatureAsset"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      },
+      "post": {
+        "operationId": "create_signature_asset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSignatureAssetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SignatureAsset"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
     "/api/facilities/buildings": {
       "get": {
         "operationId": "listFacilityBuildings",
@@ -96205,6 +98711,319 @@
         },
         "tags": [
           "permissions"
+        ]
+      }
+    },
+    "/api/process/instances/{id}": {
+      "get": {
+        "operationId": "get_process_instance",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProcessInstance"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/process/instances/{id}/actions": {
+      "post": {
+        "operationId": "act_process_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProcessInstance"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/process/templates": {
+      "get": {
+        "operationId": "list_process_templates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ProcessTemplate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      },
+      "post": {
+        "operationId": "create_process_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveProcessTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProcessTemplate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/process/templates/{id}": {
+      "put": {
+        "operationId": "update_process_template",
+        "parameters": [
+          {
+            "description": "Resource identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveProcessTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProcessTemplate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
         ]
       }
     },

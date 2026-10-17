@@ -357,3 +357,10 @@ test('CLI rejects unknown flags before reading repository files', () => {
 	assert.match(result.stderr, /unknown argument: --unknown/);
 	assert.doesNotMatch(result.stderr, /permission contract/);
 });
+
+test('admits explicit owner-scoped electronic signature capability', () => {
+ const contract=structuredClone(validContract);
+ contract.permissions.push({module:'correspondence',action:'sign',scope:'own',name:'ลงนาม',description:'Explicit owner electronic signature'});
+ const normalized=validateAndNormalizeContract(contract);
+ assert.ok(normalized.permissions.some(({code})=>code==='correspondence.sign.own'));
+});

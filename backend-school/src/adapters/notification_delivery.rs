@@ -18,6 +18,14 @@ impl DeliveryEligibilityPort for ApplicationNotificationEligibility {
     ) -> Result<bool, AppError> {
         match source {
             NotificationSource::Direct => Ok(true),
+            NotificationSource::Process { source_id } => {
+                school_workflow::process::authorize_notification_on_connection(
+                    connection,
+                    *source_id,
+                    recipient_id,
+                )
+                .await
+            }
             NotificationSource::Attendance { source_id } => {
                 school_attendance::services::notifications::authorize_delivery_on_connection(
                     connection,

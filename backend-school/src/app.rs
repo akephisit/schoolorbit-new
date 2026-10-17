@@ -243,9 +243,11 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_workflow::http::routes::work_routes().with_state(
-                school_workflow::http::state::WorkflowHttpState::from_ref(state),
-            ),
+            school_workflow::http::routes::work_routes()
+                .merge(school_workflow::http::process_handlers::routes())
+                .with_state(school_workflow::http::state::WorkflowHttpState::from_ref(
+                    state,
+                )),
         )
         .nest(
             "/api/admission",

@@ -2,6 +2,7 @@ use school_auth::runtime::AuthRuntime;
 
 #[derive(Clone)]
 pub struct WorkflowHttpState {
+    pub file_platform: std::sync::Arc<school_file_platform::platform_service::FilePlatform>,
     pub auth_runtime: AuthRuntime,
     pub work_event_channel:
         tokio::sync::broadcast::Sender<school_notifications::events::WorkChangeEvent>,
