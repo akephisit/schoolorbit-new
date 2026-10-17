@@ -426,7 +426,7 @@ mod request_timing_tests {
                 Request::builder()
                     .uri("/students/private-student?national_id=private-query")
                     .header("Cookie", "private-cookie")
-                    .header("Authorization", "private-authorization")
+                    .header(axum::http::header::AUTHORIZATION, "private-authorization")
                     .header("X-SchoolOrbit-Diagnostic-Id", DIAGNOSTIC_ID)
                     .body(Body::from("private-body"))
                     .unwrap(),
