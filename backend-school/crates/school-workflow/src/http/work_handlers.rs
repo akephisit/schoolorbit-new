@@ -61,7 +61,7 @@ pub async fn list_my_work_items(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let items = services::list_my_work_items(
         &context.tenant.pool,
-        context.actor.user_id,
+        &context.actor,
         WorkItemFilter {
             module_code: query.module_code,
             state: query.state,
@@ -77,7 +77,7 @@ pub async fn get_my_work_counts(
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let counts = services::get_my_work_counts(&context.tenant.pool, context.actor.user_id).await?;
+    let counts = services::get_my_work_counts(&context.tenant.pool, &context.actor).await?;
 
     Ok(Json(ApiResponse::ok(counts)).into_response())
 }

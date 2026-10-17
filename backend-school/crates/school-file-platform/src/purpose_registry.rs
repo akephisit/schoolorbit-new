@@ -137,6 +137,17 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => PurposeDefinition {
+            domain_segment: "correspondence",
+            purpose_segment: if purpose == FilePurpose::CorrespondenceDocument { "document" } else { "signature" },
+            visibility: FileVisibility::Private,
+            allowed_content: if purpose == FilePurpose::CorrespondenceDocument { ADMISSION_CONTENT } else { IMAGE_CONTENT },
+            limits: image_limits_with_pixels(20 * 1024 * 1024, 16000, 16000, 80_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::ExplicitOwningResource,
+        },
         FilePurpose::TeachingLicense => PurposeDefinition {
             domain_segment: "staff",
             purpose_segment: "teaching-license",
@@ -731,7 +742,7 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 19);
+        assert_eq!(FilePurpose::ALL.len(), 21);
     }
 
     #[test]

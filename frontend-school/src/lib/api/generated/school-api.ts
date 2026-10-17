@@ -5172,6 +5172,150 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/correspondence': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['list_correspondence'];
+		put?: never;
+		post: operations['create_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['get_correspondence'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['act_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}/export': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['export_correspondence'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['preview_correspondence'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}/revisions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['revise_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/{id}/send': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['send_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['correspondence_options'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/signatures': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['list_signature_assets'];
+		put?: never;
+		post: operations['create_signature_asset'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/facilities/buildings': {
 		parameters: {
 			query?: never;
@@ -5938,6 +6082,70 @@ export interface paths {
 		};
 		get: operations['listPermissionsByModule'];
 		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/process/instances/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['get_process_instance'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/process/instances/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['act_process_instance'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/process/templates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['list_process_templates'];
+		put?: never;
+		post: operations['create_process_template'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/process/templates/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['update_process_template'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -9165,6 +9373,41 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CorrespondenceDetail: {
+			data: {
+				availableActions: components['schemas']['ProcessAction'][];
+				canAct: boolean;
+				canManage: boolean;
+				document: components['schemas']['CorrespondenceDocumentRevision'];
+				history: components['schemas']['ProcessHistoryEntry'][];
+				instance?: null | components['schemas']['ProcessInstance'];
+				record: components['schemas']['CorrespondenceSummary'];
+				revisions: components['schemas']['CorrespondenceDocumentRevision'][];
+				signatures: components['schemas']['CorrespondenceSigningEvidence'][];
+				sourceLinks: components['schemas']['CorrespondenceSourceLink'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CorrespondenceList: {
+			data: {
+				items: components['schemas']['CorrespondenceSummary'][];
+				/** Format: uuid */
+				nextCursor?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CorrespondenceOptions: {
+			data: {
+				organizations: components['schemas']['CorrespondenceOrganizationOption'][];
+				positions: components['schemas']['CorrespondencePositionOption'][];
+				templates: components['schemas']['ProcessTemplate'][];
+				users: components['schemas']['CorrespondenceUserOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CoursePreparationWorkspace: {
 			data: {
 				blockers: components['schemas']['ResultBlocker'][];
@@ -10577,6 +10820,48 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_ProcessInstance: {
+			data: {
+				actionPath: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy: string;
+				currentStep: number;
+				/** Format: date-time */
+				dueAt?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				revision: number;
+				source: components['schemas']['ProcessSource'];
+				status: components['schemas']['ProcessStatus'];
+				steps: components['schemas']['ProcessRuntimeStep'][];
+				/** Format: uuid */
+				templateId: string;
+				/** Format: int64 */
+				templateVersion: number;
+				title: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ProcessTemplate: {
+			data: {
+				active: boolean;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				steps: components['schemas']['ProcessTemplateStep'][];
+				title: string;
+				/** Format: int64 */
+				version: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ProfileResponse: {
 			data: {
 				address: string | null;
@@ -11042,6 +11327,19 @@ export interface components {
 		ApiResponse_SessionListData: {
 			data: {
 				sessions: components['schemas']['SessionResponse'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SignatureAsset: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				fileId: string;
+				/** Format: uuid */
+				id: string;
+				label: string;
 			};
 			message?: string;
 			success: boolean;
@@ -13610,6 +13908,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_ProcessTemplate: {
+			data: {
+				active: boolean;
+				code: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				steps: components['schemas']['ProcessTemplateStep'][];
+				title: string;
+				/** Format: int64 */
+				version: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_PromotionPolicyVersion: {
 			data: {
 				/** Format: uuid */
@@ -13734,6 +14048,19 @@ export interface components {
 				/** Format: uuid */
 				studentId: string;
 				studentName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SignatureAsset: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				fileId: string;
+				/** Format: uuid */
+				id: string;
+				label: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -16110,6 +16437,118 @@ export interface components {
 			expectedRevision: number;
 			reason: string;
 		};
+		CorrespondenceDetail: {
+			availableActions: components['schemas']['ProcessAction'][];
+			canAct: boolean;
+			canManage: boolean;
+			document: components['schemas']['CorrespondenceDocumentRevision'];
+			history: components['schemas']['ProcessHistoryEntry'][];
+			instance?: null | components['schemas']['ProcessInstance'];
+			record: components['schemas']['CorrespondenceSummary'];
+			revisions: components['schemas']['CorrespondenceDocumentRevision'][];
+			signatures: components['schemas']['CorrespondenceSigningEvidence'][];
+			sourceLinks: components['schemas']['CorrespondenceSourceLink'][];
+		};
+		CorrespondenceDocumentRevision: {
+			annotations: components['schemas']['DocumentAnnotation'][];
+			attachmentFileIds: string[];
+			content: string;
+			contentHash: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			fileSnapshots: components['schemas']['CorrespondenceFileSnapshot'][];
+			/** Format: uuid */
+			originalFileId?: string | null;
+			/** Format: int64 */
+			revision: number;
+		};
+		CorrespondenceFileSnapshot: {
+			checksum: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: uuid */
+			versionId: string;
+		};
+		CorrespondenceList: {
+			items: components['schemas']['CorrespondenceSummary'][];
+			/** Format: uuid */
+			nextCursor?: string | null;
+		};
+		CorrespondenceOptions: {
+			organizations: components['schemas']['CorrespondenceOrganizationOption'][];
+			positions: components['schemas']['CorrespondencePositionOption'][];
+			templates: components['schemas']['ProcessTemplate'][];
+			users: components['schemas']['CorrespondenceUserOption'][];
+		};
+		CorrespondenceOrganizationOption: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		CorrespondencePositionOption: {
+			code: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+		};
+		/** @enum {string} */
+		CorrespondenceRegister: 'incoming' | 'outgoing' | 'internal';
+		CorrespondenceSigningEvidence: {
+			/** Format: uuid */
+			actionId: string;
+			/** Format: uuid */
+			fileId?: string | null;
+			/** Format: uuid */
+			id: string;
+			signature: components['schemas']['SignatureInput'];
+			/** Format: date-time */
+			signedAt: string;
+			signedContentHash: string;
+			/** Format: uuid */
+			signerId: string;
+			signerName: string;
+			signerRole?: string | null;
+		};
+		CorrespondenceSourceLink: {
+			label: string;
+			url: string;
+		};
+		/** @enum {string} */
+		CorrespondenceStatus:
+			'draft' | 'in_progress' | 'revision_requested' | 'completed' | 'rejected' | 'closed';
+		CorrespondenceSummary: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			/** Format: date */
+			documentDate?: string | null;
+			documentNumber?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+			register: components['schemas']['CorrespondenceRegister'];
+			/** Format: int64 */
+			registerNumber: number;
+			/** Format: int32 */
+			registerYear: number;
+			/** Format: int64 */
+			revision: number;
+			sender: string;
+			status: components['schemas']['CorrespondenceStatus'];
+			title: string;
+			urgency: components['schemas']['CorrespondenceUrgency'];
+		};
+		/** @enum {string} */
+		CorrespondenceUrgency: 'normal' | 'urgent' | 'very_urgent';
+		CorrespondenceUserOption: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+		};
 		/** @description One expected subject in one student's term, including an absent locked result. */
 		CourseAggregateInput: {
 			credits: string;
@@ -16340,6 +16779,27 @@ export interface components {
 			allowedRecipientTypes: components['schemas']['RecipientType'][];
 			name: string;
 		};
+		CreateCorrespondenceRequest: {
+			annotations?: components['schemas']['DocumentAnnotation'][];
+			attachmentFileIds?: string[];
+			content: string;
+			/** Format: date */
+			documentDate?: string | null;
+			documentNumber?: string | null;
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+			/** Format: uuid */
+			originalFileId?: string | null;
+			register: components['schemas']['CorrespondenceRegister'];
+			/** Format: uuid */
+			requestId: string;
+			sender: string;
+			sourceLinks?: components['schemas']['CorrespondenceSourceLink'][];
+			/** Format: uuid */
+			templateId?: string | null;
+			title: string;
+			urgency: components['schemas']['CorrespondenceUrgency'];
+		};
 		CreateCourseOfferingRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -16538,6 +16998,13 @@ export interface components {
 			name_th: string;
 			room_type: string;
 			status?: string | null;
+		};
+		CreateSignatureAssetRequest: {
+			/** Format: uuid */
+			fileId: string;
+			label: string;
+			/** Format: uuid */
+			requestId: string;
 		};
 		CreateStaffCareerHistoryRequest: {
 			entry: components['schemas']['StaffCareerEntryInput'];
@@ -17446,6 +17913,26 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		DocumentAnnotation: {
+			color: string;
+			/** Format: double */
+			height: number;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['DocumentAnnotationKind'];
+			/** Format: int32 */
+			page: number;
+			strokes?: components['schemas']['InkStroke'][];
+			text?: string | null;
+			/** Format: double */
+			width: number;
+			/** Format: double */
+			x: number;
+			/** Format: double */
+			y: number;
+		};
+		/** @enum {string} */
+		DocumentAnnotationKind: 'text' | 'ink' | 'highlight' | 'circle';
 		DocumentUploadResponse: {
 			docType: string;
 			/** Format: uuid */
@@ -18108,6 +18595,8 @@ export interface components {
 		};
 		/** @enum {string} */
 		FilePurpose:
+			| 'correspondence_document'
+			| 'correspondence_signature'
 			| 'teaching_license'
 			| 'attendance_evidence'
 			| 'school_logo'
@@ -18575,6 +19064,18 @@ export interface components {
 			fileId: string;
 			/** Format: int32 */
 			widthPercent: number;
+		};
+		InkPoint: {
+			/** Format: double */
+			x: number;
+			/** Format: double */
+			y: number;
+		};
+		InkStroke: {
+			color: string;
+			points: components['schemas']['InkPoint'][];
+			/** Format: double */
+			width: number;
 		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
@@ -19618,6 +20119,145 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		/** @enum {string} */
+		ProcessAction:
+			| 'read'
+			| 'acknowledge'
+			| 'review'
+			| 'approve'
+			| 'execute'
+			| 'sign'
+			| 'reject'
+			| 'return_for_revision'
+			| 'report'
+			| 'close'
+			| 'reassign';
+		ProcessActionRequest: {
+			action: components['schemas']['ProcessAction'];
+			annotations?: components['schemas']['DocumentAnnotation'][];
+			comment?: string | null;
+			evidenceFileIds?: string[];
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			reassignUserId?: string | null;
+			/** Format: uuid */
+			requestId: string;
+			signature?: null | components['schemas']['SignatureInput'];
+		};
+		/** @enum {string} */
+		ProcessCompletionPolicy: 'all' | 'any';
+		ProcessHistoryEntry: {
+			action: string;
+			/** Format: uuid */
+			actorId: string;
+			actorName: string;
+			annotations: components['schemas']['DocumentAnnotation'][];
+			comment?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: int64 */
+			documentRevision: number;
+			evidenceFileIds: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		ProcessInstance: {
+			actionPath: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			currentStep: number;
+			/** Format: date-time */
+			dueAt?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			revision: number;
+			source: components['schemas']['ProcessSource'];
+			status: components['schemas']['ProcessStatus'];
+			steps: components['schemas']['ProcessRuntimeStep'][];
+			/** Format: uuid */
+			templateId: string;
+			/** Format: int64 */
+			templateVersion: number;
+			title: string;
+		};
+		ProcessRecipient: {
+			kind: components['schemas']['ProcessRecipientKind'];
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+			positionCode?: string | null;
+			/** Format: uuid */
+			userId?: string | null;
+		};
+		/** @enum {string} */
+		ProcessRecipientKind: 'user' | 'organization_unit' | 'organization_position';
+		ProcessRecipientSnapshot: {
+			/** Format: date-time */
+			completedAt?: string | null;
+			displayName: string;
+			/** Format: date-time */
+			readAt?: string | null;
+			/** Format: uuid */
+			reassignedFrom?: string | null;
+			/** Format: uuid */
+			userId: string;
+		};
+		ProcessRuntimeStep: {
+			/** Format: date-time */
+			completedAt?: string | null;
+			definition: components['schemas']['ProcessTemplateStep'];
+			/** Format: date-time */
+			dueAt?: string | null;
+			recipients: components['schemas']['ProcessRecipientSnapshot'][];
+			stepIndex: number;
+			/** Format: uuid */
+			workItemId?: string | null;
+		};
+		ProcessSource: {
+			moduleCode: string;
+			/** Format: uuid */
+			resourceId: string;
+			resourceType: string;
+		};
+		/** @enum {string} */
+		ProcessStatus: 'active' | 'revision_requested' | 'completed' | 'rejected' | 'closed';
+		/** @enum {string} */
+		ProcessStepKind: 'acknowledge' | 'review' | 'approve' | 'execute' | 'sign';
+		ProcessStepRecipients: {
+			/** Format: date-time */
+			dueAt?: string | null;
+			recipients: components['schemas']['ProcessRecipient'][];
+			stepIndex: number;
+		};
+		ProcessTemplate: {
+			active: boolean;
+			code: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			steps: components['schemas']['ProcessTemplateStep'][];
+			title: string;
+			/** Format: int64 */
+			version: number;
+		};
+		ProcessTemplateStep: {
+			completionPolicy: components['schemas']['ProcessCompletionPolicy'];
+			/** Format: int32 */
+			dueAfterDays?: number | null;
+			kind: components['schemas']['ProcessStepKind'];
+			recipients?: components['schemas']['ProcessRecipient'][];
+			requiresComment?: boolean;
+			requiresDelegatedAuthority?: boolean;
+			requiresEvidence?: boolean;
+			requiresSignature?: boolean;
+			title: string;
+		};
 		ProfileResponse: {
 			address: string | null;
 			/** Format: date-time */
@@ -20616,6 +21256,17 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		ReviseCorrespondenceRequest: {
+			annotations?: components['schemas']['DocumentAnnotation'][];
+			attachmentFileIds?: string[];
+			content: string;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			originalFileId?: string | null;
+			/** Format: uuid */
+			requestId: string;
+		};
 		RevokeCertificateRequest: {
 			createReplacementCandidate: boolean;
 			reason: string;
@@ -20876,6 +21527,16 @@ export interface components {
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
 		};
+		SaveProcessTemplateRequest: {
+			active: boolean;
+			code: string;
+			/** Format: int64 */
+			expectedRevision?: number | null;
+			/** Format: uuid */
+			requestId: string;
+			steps: components['schemas']['ProcessTemplateStep'][];
+			title: string;
+		};
 		SchoolFontDeleteConflict: {
 			/** Format: int64 */
 			referenceCount: number;
@@ -21021,6 +21682,17 @@ export interface components {
 			/** Format: uuid */
 			studentAcademicYearId: string;
 		};
+		SendCorrespondenceRequest: {
+			/** Format: date-time */
+			dueAt?: string | null;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+			stepRecipients?: components['schemas']['ProcessStepRecipients'][];
+			/** Format: uuid */
+			templateId: string;
+		};
 		SessionListData: {
 			sessions: components['schemas']['SessionResponse'][];
 		};
@@ -21039,6 +21711,36 @@ export interface components {
 			lastSeenAt: string;
 			rememberMe: boolean;
 		};
+		SignatureAsset: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: uuid */
+			id: string;
+			label: string;
+		};
+		SignatureInput: {
+			/** Format: uuid */
+			assetId?: string | null;
+			contentHash: string;
+			/** Format: int64 */
+			documentRevision: number;
+			/** Format: double */
+			height: number;
+			method: components['schemas']['SignatureMethod'];
+			/** Format: int32 */
+			page: number;
+			strokes?: components['schemas']['InkStroke'][];
+			/** Format: double */
+			width: number;
+			/** Format: double */
+			x: number;
+			/** Format: double */
+			y: number;
+		};
+		/** @enum {string} */
+		SignatureMethod: 'drawn' | 'image';
 		SpecialAttendanceDefinition: {
 			counted: boolean;
 			dates: string[];
@@ -47368,6 +48070,255 @@ export interface operations {
 			};
 		};
 	};
+	list_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceList'];
+				};
+			};
+		};
+	};
+	create_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCorrespondenceRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+		};
+	};
+	get_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+		};
+	};
+	act_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ProcessActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+		};
+	};
+	export_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Server composed PDF */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/pdf': unknown;
+				};
+			};
+		};
+	};
+	preview_correspondence: {
+		parameters: {
+			query: {
+				documentRevision: number;
+			};
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Canonical source-only PDF */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/pdf': unknown;
+				};
+			};
+		};
+	};
+	revise_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReviseCorrespondenceRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+		};
+	};
+	send_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SendCorrespondenceRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+		};
+	};
+	correspondence_options: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceOptions'];
+				};
+			};
+		};
+	};
+	list_signature_assets: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SignatureAsset'];
+				};
+			};
+		};
+	};
+	create_signature_asset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateSignatureAssetRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SignatureAsset'];
+				};
+			};
+		};
+	};
 	listFacilityBuildings: {
 		parameters: {
 			query?: never;
@@ -50033,6 +50984,121 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	get_process_instance: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
+				};
+			};
+		};
+	};
+	act_process_instance: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ProcessActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
+				};
+			};
+		};
+	};
+	list_process_templates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ProcessTemplate'];
+				};
+			};
+		};
+	};
+	create_process_template: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveProcessTemplateRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
+				};
+			};
+		};
+	};
+	update_process_template: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identifier */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveProcessTemplateRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
 				};
 			};
 		};

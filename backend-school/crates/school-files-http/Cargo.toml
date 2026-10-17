@@ -20,6 +20,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-workflow = { workspace = true }
 school-administration = { workspace = true }
 school-attendance = { workspace = true }
 school-admission = { workspace = true }

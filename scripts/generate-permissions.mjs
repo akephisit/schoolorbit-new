@@ -27,6 +27,7 @@ const ALLOWED_ACTIONS = new Set([
 	'request',
 	'revoke',
 	'scores',
+	'sign',
 	'submit',
 	'update',
 	'verify'

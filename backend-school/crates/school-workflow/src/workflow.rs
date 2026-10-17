@@ -227,7 +227,7 @@ pub async fn set_workflow_window_status(
     status: WorkflowWindowStatus,
 ) -> Result<WorkflowWindow, AppError> {
     let current_status =
-        sqlx::query_scalar::<_, String>("SELECT status FROM workflow_windows WHERE id = $1")
+        sqlx::query_scalar::<_, String>("SELECT status FROM workflow_windows WHERE id = $1 AND workflow_code <> 'process_step'")
             .bind(id)
             .fetch_optional(pool)
             .await
@@ -253,7 +253,7 @@ pub async fn set_workflow_window_status(
         r#"
         UPDATE workflow_windows
         SET status = $2
-        WHERE id = $1
+        WHERE id = $1 AND workflow_code <> 'process_step'
         RETURNING id, module_code, workflow_code, title, description, organization_unit_id,
                   managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                   created_by, created_at, updated_at
@@ -280,7 +280,7 @@ async fn list_workflow_windows_query(
                 managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                 created_by, created_at, updated_at
          FROM workflow_windows
-         WHERE true",
+         WHERE workflow_code <> 'process_step'",
     );
 
     match access {

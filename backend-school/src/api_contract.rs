@@ -1,3 +1,4 @@
+use school_workflow::process_models::*;
 use school_academic_assessment::assessment::models::*;
 use school_academic_assessment::exam_schedule::models::*;
 use school_academic_assessment::gradebook::models::*;
@@ -166,6 +167,23 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_workflow::http::process_handlers::list_correspondence,
+        school_workflow::http::process_handlers::create_correspondence,
+        school_workflow::http::process_handlers::get_correspondence,
+        school_workflow::http::process_handlers::revise_correspondence,
+        school_workflow::http::process_handlers::send_correspondence,
+        school_workflow::http::process_handlers::act_correspondence,
+        school_workflow::http::process_handlers::correspondence_options,
+        school_workflow::http::process_handlers::list_signature_assets,
+        school_workflow::http::process_handlers::create_signature_asset,
+        school_workflow::http::process_handlers::list_process_templates,
+        school_workflow::http::process_handlers::create_process_template,
+        school_workflow::http::process_handlers::update_process_template,
+        school_workflow::http::process_handlers::get_process_instance,
+        school_workflow::http::process_handlers::export_correspondence,
+        school_workflow::http::process_handlers::preview_correspondence,
+        school_workflow::http::process_handlers::act_process_instance,
+
         school_behavior::http::handlers::cleanup_job,
         school_administration::supply_catalog::http::handlers::duplicates,
         school_administration::supply_catalog::http::handlers::list_categories,
@@ -783,6 +801,48 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    ProcessStepKind,
+    ProcessCompletionPolicy,
+    ProcessRecipientKind,
+    ProcessStatus,
+    ProcessAction,
+    CorrespondenceRegister,
+    CorrespondenceUrgency,
+    CorrespondenceStatus,
+    DocumentAnnotationKind,
+    SignatureMethod,
+    ProcessRecipient,
+    ProcessTemplateStep,
+    SaveProcessTemplateRequest,
+    ProcessTemplate,
+    ProcessRecipientSnapshot,
+    ProcessRuntimeStep,
+    ProcessSource,
+    ProcessInstance,
+    ProcessStepRecipients,
+    InkPoint,
+    InkStroke,
+    DocumentAnnotation,
+    SignatureInput,
+    ProcessActionRequest,
+    CorrespondenceSourceLink,
+    CreateCorrespondenceRequest,
+    ReviseCorrespondenceRequest,
+    SendCorrespondenceRequest,
+    CorrespondenceDocumentRevision,
+    CorrespondenceSummary,
+    ProcessHistoryEntry,
+    CorrespondenceSigningEvidence,
+    CorrespondenceDetail,
+    CorrespondenceList,
+    SignatureAsset,
+    CreateSignatureAssetRequest,
+    CorrespondenceUserOption,
+    CorrespondenceOrganizationOption,
+    CorrespondencePositionOption,
+    CorrespondenceOptions,
+    CorrespondenceFileSnapshot,
+
         school_attendance::models::AttendanceReportQuery,
         ConsentRecordResponse,
         UserConsentStatus,
