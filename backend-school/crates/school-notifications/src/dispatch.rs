@@ -3,6 +3,7 @@ use crate::{models::Notification, publisher::NotificationType};
 use chrono::{DateTime, Utc};
 use school_errors::AppError;
 use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 pub const DELIVERY_BATCH_SIZE: i64 = 32;
@@ -255,13 +256,15 @@ pub async fn progress_on_connection(
     ids: &[Uuid],
 ) -> Result<Vec<NotificationProgress>, AppError> {
     let rows:Vec<NotificationProgress>=sqlx::query_as("SELECT notification_id,stored_at,published_at FROM notification_dispatch_jobs WHERE notification_id=ANY($1)").bind(ids).fetch_all(connection).await?;
-    if ids
-        .iter()
-        .any(|id| !rows.iter().any(|row| row.notification_id == *id))
-    {
+    require_complete_progress(ids, &rows)?;
+    Ok(rows)
+}
+fn require_complete_progress(ids: &[Uuid], rows: &[NotificationProgress]) -> Result<(), AppError> {
+    let present: HashSet<_> = rows.iter().map(|row| row.notification_id).collect();
+    if ids.iter().any(|id| !present.contains(id)) {
         return Err(integrity("notification_progress_missing"));
     }
-    Ok(rows)
+    Ok(())
 }
 pub async fn cancel_identified_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
@@ -435,5 +438,19 @@ mod tests {
             source_id: changed.id,
         };
         assert!(!same_identity(&original, &changed));
+    }
+    #[test]
+    fn progress_requires_every_identity_but_accepts_duplicate_requests() {
+        let id = Uuid::new_v4();
+        let rows = [NotificationProgress {
+            notification_id: id,
+            stored_at: None,
+            published_at: None,
+        }];
+        assert!(require_complete_progress(&[id, id], &rows).is_ok());
+        assert!(
+            matches!(require_complete_progress(&[id,Uuid::new_v4()],&rows),Err(AppError::Conflict(code)) if code=="notification_progress_missing")
+        );
+        assert!(require_complete_progress(&[], &[]).is_ok());
     }
 }
