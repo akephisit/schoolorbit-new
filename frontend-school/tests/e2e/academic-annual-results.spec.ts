@@ -424,9 +424,7 @@ test('switching years ignores a late roster from the previous year', async ({ pa
 	await expect(page.getByRole('button', { name: 'นักเรียนปีเดิม' })).toHaveCount(0);
 });
 
-test('annual roster refresh retains visible data and recovers through a local retry', async ({
-	page
-}) => {
+test('annual roster browser reload shows a fresh skeleton and focused retry', async ({ page }) => {
 	await mock(page);
 	await page.goto(url);
 	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
@@ -447,12 +445,13 @@ test('annual roster refresh retains visible data and recovers through a local re
 		}
 		return route.fallback();
 	});
-	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
-	await expect(page.getByText('กำลังอัปเดตรายชื่อนักเรียน...')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
+	await page.reload();
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: /กำลังอัปเดต/ })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toHaveCount(0);
 	releaseRefresh();
 	await expect(page.getByText('อ่านรายชื่อชั่วคราวไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
 	expect(attempts).toBe(2);
 });

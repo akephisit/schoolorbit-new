@@ -14,15 +14,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import {
-		Award,
-		Download,
-		FileBadge2,
-		RefreshCw,
-		Search,
-		ShieldAlert,
-		UsersRound
-	} from '@lucide/svelte';
+	import { Award, Download, FileBadge2, Search, ShieldAlert, UsersRound } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -248,9 +240,6 @@
 				{/if}
 			</div>
 			<div class="flex flex-wrap gap-2">
-				<Button variant="outline" disabled={loading} onclick={() => loadCertificates(campaignId)}>
-					<RefreshCw class="size-4" /> โหลดใหม่
-				</Button>
 				{#if canDownload}
 					<Button
 						data-sveltekit-preload-data="tap"
@@ -272,7 +261,6 @@
 			description="หน้านี้เปิดได้เมื่อมีสิทธิ์อ่านเกียรติบัตรของหน่วยงานหรือระดับโรงเรียน"
 		/>
 	{:else}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตใบที่ออกแล้ว</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"
@@ -286,7 +274,7 @@
 				<PageSkeleton variant="table" />
 			</div>
 		{:else if loaded}
-			<div class="space-y-4">
+			<div class="space-y-4" aria-busy={loading}>
 				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
 					<div class="grid gap-px bg-border sm:grid-cols-3">
 						<div class="relative overflow-hidden bg-card p-5">

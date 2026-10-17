@@ -811,17 +811,31 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.doesNotMatch(handleExport + exportUtil, /nationalId|national_id|phone|email|username/);
 });
 
-test('exam invigilator staff names join title and first name without a middle space', () => {
+test('exam invigilator staff names use the canonical language-aware display-name projection', () => {
 	const service = readFileSync(
 		projectPath(
 			'../backend-school/crates/school-academic-assessment/src/exam_schedule/services/invigilation.rs'
 		),
 		'utf8'
 	);
+	const nameProjection = readFileSync(
+		projectPath('../backend-school/migrations/113_staff_names_and_educations_expand.sql'),
+		'utf8'
+	);
 
+	assert.match(service, /FROM user_display_names user_account/);
+	assert.match(service, /user_account\.display_name/);
 	assert.match(
-		service,
-		/concat_ws\('',\s*NULLIF\(TRIM\(user_account\.title\), ''\),\s*NULLIF\(TRIM\(user_account\.first_name\), ''\)\)/
+		nameProjection,
+		/CREATE VIEW user_display_names AS[^]*?CROSS JOIN LATERAL resolve_person_name/
+	);
+	assert.match(
+		nameProjection,
+		/CASE WHEN english THEN concat_ws\(' ',\s*nullif\(title,''\),\s*nullif\(given,''\),\s*nullif\(family,''\)\)/
+	);
+	assert.match(
+		nameProjection,
+		/ELSE concat_ws\(' ',\s*nullif\(title \|\| given,''\),\s*nullif\(family,''\)\)/
 	);
 	assert.doesNotMatch(
 		service,
@@ -911,7 +925,7 @@ test('staff exam schedule detail uses compact status and removes large readiness
 
 	assert.match(page, /CompactExamScheduleStatus/);
 	assert.match(actionsSnippet, /<CompactExamScheduleStatus/);
-	assert.match(actionsSnippet, /<RefreshCw/);
+	assert.doesNotMatch(actionsSnippet, /<RefreshCw|รีเฟรช/);
 	assert.doesNotMatch(bodyBeforeTabs, /<CompactExamScheduleStatus/);
 	assert.doesNotMatch(page, /<aside class="min-w-0 xl:sticky/);
 	assert.doesNotMatch(page, /xl:grid-cols-\[minmax\(0,1fr\)_22rem\]/);

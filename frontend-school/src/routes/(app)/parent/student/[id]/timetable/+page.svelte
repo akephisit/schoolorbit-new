@@ -17,7 +17,7 @@
 	import { type TimetableBlock } from '#lib/api/timetable.js';
 	import { getChildTimetable, getChildProfile } from '#lib/api/parents.js';
 	import type { Student } from '#lib/api/students.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -256,12 +256,6 @@
 		? `ตารางเรียนของ ${child.first_name} ${child.last_name}`
 		: 'รายวิชาและกิจกรรมของนักเรียนในแต่ละภาคเรียน'}
 >
-	{#snippet actions()}<Button
-			variant="outline"
-			disabled={loading || contextLoading || !selectedTermId}
-			onclick={loadPrimary}>โหลดข้อมูลใหม่</Button
-		>{/snippet}
-
 	<div data-testid="parent-child-profile-region" aria-busy={childLoading || contextLoading}>
 		{#if childError}<PageState
 				variant="error"
@@ -270,13 +264,7 @@
 				actionLabel="ลองข้อมูลนักเรียนอีกครั้ง"
 				onaction={loadChild}
 			/>{/if}
-		{#if childLoading && child}<p
-				role="status"
-				aria-label="กำลังอัปเดตข้อมูลนักเรียน"
-				class="text-muted-foreground text-sm"
-			>
-				กำลังอัปเดตข้อมูลนักเรียน…
-			</p>{/if}
+
 		{#if (childLoading || contextLoading) && !child && !contextError}<div
 				role="status"
 				aria-label="กำลังโหลดข้อมูลนักเรียน"
@@ -356,11 +344,6 @@
 		/>
 	{/if}
 	<div data-testid="parent-timetable-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}
-			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
-				กำลังอัปเดตข้อมูล…
-			</p>
-		{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดตารางเรียน">
 				<PageSkeleton variant="table" rows={6} columns={4} />

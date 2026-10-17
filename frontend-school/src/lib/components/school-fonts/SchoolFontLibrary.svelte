@@ -23,7 +23,7 @@
 		CardHeader,
 		CardTitle
 	} from '#lib/components/ui/card/index.js';
-	import { Library, RefreshCw, Trash2, Type } from '@lucide/svelte';
+	import { Library, Trash2, Type } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import SchoolFontBatchUpload from './SchoolFontBatchUpload.svelte';
 
@@ -35,8 +35,6 @@
 	let fonts = $state.raw<SchoolFontSummary[]>([]);
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
-	let refreshing = $state(false);
-	let uploadPending = $state(false);
 	let deleteTarget = $state.raw<SchoolFontSummary | null>(null);
 	let deletingId = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
@@ -71,7 +69,6 @@
 	function applyFonts(result: RouteLoadResult<SchoolFontListResponse | null>, revision: number) {
 		if (!request.isCurrent(revision)) return;
 		loading = false;
-		refreshing = false;
 		if (result.ok) {
 			fonts = (result.data?.items ?? []).toSorted(compareFonts);
 			loaded = true;
@@ -91,10 +88,9 @@
 		disposed = true;
 		request.abort();
 	});
-	async function loadFonts(refresh = false): Promise<void> {
+	async function loadFonts(): Promise<void> {
 		if (disposed) return;
 		const ticket = request.begin();
-		refreshing = refresh;
 		loading = true;
 		loadError = null;
 		applyFonts(
@@ -107,7 +103,6 @@
 		if (disposed) return;
 		request.abort();
 		loading = false;
-		refreshing = false;
 		if (!loaded) {
 			void loadFonts();
 			return;
@@ -129,7 +124,6 @@
 		if (!target || deletingId || disposed) return;
 		request.abort();
 		loading = false;
-		refreshing = false;
 		deletingId = target.id;
 		actionError = null;
 		try {
@@ -137,7 +131,6 @@
 			if (disposed) return;
 			request.abort();
 			loading = false;
-			refreshing = false;
 			fonts = fonts.filter((font) => font.id !== target.id);
 			deleteTarget = null;
 			toast.success(`ลบ ${target.displayName} จากคลังแล้ว`);
@@ -173,7 +166,6 @@
 					inspectUploads={inspectSchoolFontUploads}
 					attachBatch={attachSchoolFontBatch}
 					onattached={patchAttached}
-					onpendingchange={(pending) => (uploadPending = pending)}
 				/>
 			</CardContent>
 		</Card>
@@ -191,14 +183,6 @@
 						จัดเรียงตาม family และ variant เพื่อให้ผู้จัดทำงานทุกคนเลือกใช้ชื่อเดียวกัน
 					</CardDescription>
 				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() => loadFonts(true)}
-					disabled={refreshing || loading || uploadPending}
-				>
-					<RefreshCw class={refreshing ? 'size-4 animate-spin' : 'size-4'} /> รีเฟรช
-				</Button>
 			</CardHeader>
 			<CardContent class="space-y-4">
 				<div class="grid grid-cols-3 divide-x rounded-xl border bg-muted/20 py-3 text-center">
@@ -230,7 +214,7 @@
 						<PageSkeleton variant="detail" rows={4} />
 					</div>
 				{/if}
-				{#if loading && loaded}<p role="status">กำลังอัปเดตคลังฟอนต์</p>{/if}
+
 				{#if loadError}
 					<PageState
 						variant="error"

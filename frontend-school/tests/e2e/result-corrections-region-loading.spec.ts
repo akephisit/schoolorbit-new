@@ -1,3 +1,4 @@
+import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
 
@@ -210,7 +211,10 @@ test('empty correction results remain a usable region during same-query refresh'
 	await page.goto(routeUrl);
 	await expect(page.getByText('ยังไม่พบผลที่ล็อกแล้ว')).toBeVisible();
 	await page.getByRole('button', { name: 'ค้นหา' }).click();
-	await expect(page.getByText('กำลังอัปเดตผลที่ค้นพบ...')).toBeVisible();
+	await expectSilentBackground(
+		page,
+		page.locator('main [aria-busy]').filter({ hasText: 'ยังไม่พบผลที่ล็อกแล้ว' }).last()
+	);
 	await expect(page.getByText('ยังไม่พบผลที่ล็อกแล้ว')).toBeVisible();
 	observed.releaseSecondRead();
 	await expect(page.getByText('นักเรียน ทดสอบ')).toBeVisible();

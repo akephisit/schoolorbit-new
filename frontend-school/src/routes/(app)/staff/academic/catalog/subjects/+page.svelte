@@ -26,7 +26,7 @@
 	} from '#lib/academic-core/catalog-presentation.js';
 	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -309,7 +309,6 @@
 			aria-busy={loading}
 			data-testid="catalog-subjects-ready"
 		>
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตทะเบียนรายวิชา" />{/if}
 			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
 				<div class="flex flex-col gap-4 border-b bg-muted/25 p-4 lg:flex-row lg:items-end">
 					<div class="min-w-0 flex-1">

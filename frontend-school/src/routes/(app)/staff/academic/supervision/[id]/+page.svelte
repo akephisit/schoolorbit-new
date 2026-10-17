@@ -800,13 +800,6 @@
 		else templateError = result.error;
 	}
 
-	async function loadPage() {
-		await Promise.all([
-			retryObservation(),
-			...(observation ? [retryCycle(), retryTemplate()] : [])
-		]);
-	}
-
 	function observationContextLabel(item: SupervisionObservation): string {
 		const year = academicContextOptions?.years.find((option) => option.id === item.academicYearId);
 		const term = academicContextOptions?.terms.find((option) => option.id === item.academicTermId);
@@ -1104,10 +1097,6 @@
 			<ArrowLeft class="h-4 w-4" />
 			กลับ
 		</Button>
-		<Button variant="outline" onclick={loadPage} disabled={loading}>
-			<RefreshCw class="h-4 w-4" />
-			รีเฟรช
-		</Button>
 	{/snippet}
 
 	<div data-testid="supervision-detail" aria-busy={loading}>
@@ -1122,9 +1111,6 @@
 				description="รายการนี้อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง"
 			/>
 		{:else}
-			{#if loading}<p role="status" class="text-sm text-muted-foreground">
-					กำลังอัปเดตรายการ...
-				</p>{/if}
 			{#if error}<PageState title="อัปเดตรายการไม่สำเร็จ" description={error} /><Button
 					variant="outline"
 					onclick={retryObservation}>ลองใหม่</Button
@@ -1306,7 +1292,6 @@
 										</Button>
 									</div>
 								{:else if review && reviewOpen}
-									{#if loadingReview}<p role="status">กำลังอัปเดตผล...</p>{/if}
 									{#if reviewError}<PageState
 											title="อัปเดตผลไม่สำเร็จ"
 											description={reviewError}
@@ -1507,7 +1492,7 @@
 					<div data-testid="supervision-detail-cycle" aria-busy={cycleLoading}>
 						{#if cycleLoading && !cycle}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
-							</div>{:else if cycleLoading}<p role="status">กำลังอัปเดตรอบ...</p>{/if}
+							</div>{/if}
 						{#if cycleError}<PageState
 								title="โหลดรอบนิเทศไม่สำเร็จ"
 								description={cycleError}
@@ -1516,7 +1501,7 @@
 					<div data-testid="supervision-detail-template" aria-busy={templateLoading}>
 						{#if templateLoading && !template}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
-							</div>{:else if templateLoading}<p role="status">กำลังอัปเดตแบบประเมิน...</p>{/if}
+							</div>{/if}
 						{#if templateError}<PageState
 								title="โหลดข้อมูลแบบประเมินไม่สำเร็จ"
 								description={templateError}

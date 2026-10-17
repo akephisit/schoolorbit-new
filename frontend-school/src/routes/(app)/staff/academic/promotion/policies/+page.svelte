@@ -1,14 +1,9 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { Plus, RefreshCw, Trash2, ArrowRight } from '@lucide/svelte';
+	import { Plus, Trash2, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		PageState,
-		PageSkeleton,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -318,17 +313,11 @@
 	description="ยืนยันเกณฑ์ของโรงเรียนเป็นรุ่น แล้วจึงนำไปตรวจผลรายปีและพิจารณานักเรียนแต่ละคน"
 >
 	{#snippet actions()}
-		<Button variant="outline" disabled={loading || saving} onclick={loadPolicies}
-			><RefreshCw class="size-4" />รีเฟรช</Button
-		>
 		{#if canCreate}<Button onclick={openCreate} disabled={saving}
 				><Plus class="size-4" />สร้างเกณฑ์รุ่นใหม่</Button
 			>{/if}
 	{/snippet}
-	{#if canRead && loaded && loading}<RegionUpdatingState
-			class="static"
-			label="กำลังอัปเดตเกณฑ์..."
-		/>{/if}
+
 	{#if canRead && loaded && loadError}<p role="alert" class="text-sm text-destructive">
 			{loadError}
 			<Button variant="outline" size="sm" onclick={loadPolicies}>ลองใหม่</Button>
@@ -347,7 +336,7 @@
 			description="ผู้มีสิทธิ์จัดเตรียมและอนุมัติสามารถสร้างเกณฑ์รุ่นแรกได้ ระบบจะไม่กำหนดให้ทุกคนผ่านโดยอัตโนมัติ"
 		/>
 	{:else}
-		<div class="overflow-x-auto rounded-xl border bg-card">
+		<div class="overflow-x-auto rounded-xl border bg-card" aria-busy={loading}>
 			<Table.Root
 				><Table.Header
 					><Table.Row

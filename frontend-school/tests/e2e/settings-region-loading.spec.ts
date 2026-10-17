@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import {
 	mockSettings,
@@ -47,7 +48,7 @@ test('feature refresh failure retains usable cards and typed toggle does no rere
 	const api = await mockSettings(page, { fail: featurePath, failAt: 2 });
 	await page.goto('/staff/features');
 	await expect(page.getByTestId('settings-features')).toContainText('ระบบงานทดสอบ');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('settings-features')).toContainText('ส่วนนี้ไม่พร้อม');
 	await expect(page.getByTestId('settings-features')).toContainText('ระบบงานทดสอบ');
 	await page.getByRole('switch').click();
@@ -120,7 +121,7 @@ test('font refresh failure retains its list and delete patches without an extra 
 	const api = await mockSettings(page, { fail: fontsPath, failAt: 2 });
 	await page.goto('/staff/school-fonts');
 	await expect(page.getByTestId('school-font-library')).toContainText('ฟอนต์ทดสอบ');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('school-font-library')).toContainText('ส่วนนี้ไม่พร้อม');
 	await expect(page.getByTestId('school-font-library')).toContainText('ฟอนต์ทดสอบ');
 	await page.getByRole('button', { name: 'ลบฟอนต์ ฟอนต์ทดสอบ', exact: true }).click();

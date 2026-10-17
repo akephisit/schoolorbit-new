@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 
 import { installTimetableMock, makeTimetableBlock, timetableIds } from './timetable-test-harness';
@@ -78,8 +79,19 @@ test('does not prompt a published timetable to update when opening data changes'
 }) => {
 	const mock = await installTimetableMock(page, { status: 'published' });
 	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+	expect(mock.workspaceRequestCount()).toBe(1);
 	mock.publishNewOpening();
-	await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
+	const refreshed = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			url.pathname === '/api/academic/timetable-blocks/workspace' &&
+			url.searchParams.get('timetableVersionId') === timetableIds.publishedVersion
+		);
+	});
+	await revalidatePage(page);
+	await (await refreshed).finished();
 	await expect.poll(mock.workspaceRequestCount).toBe(2);
 	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
@@ -135,7 +147,7 @@ test('notifies of a newer opening without changing an in-progress draft and keep
 	await expect(page.getByText(/ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่/)).toHaveCount(0);
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	mock.publishNewOpening();
-	await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
+	await revalidatePage(page);
 	await expect(
 		page.getByText('ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม')
 	).toBeVisible();

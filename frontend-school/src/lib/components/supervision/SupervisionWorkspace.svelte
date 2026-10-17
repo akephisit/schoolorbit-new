@@ -14,7 +14,6 @@
 		Eye,
 		FileSignature,
 		Plus,
-		RefreshCw,
 		Send,
 		Settings2,
 		Trash2,
@@ -71,12 +70,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -354,9 +348,6 @@
 	const teacherStatusRequest = new LatestRequest();
 
 	const templateChoices = $derived(routeData ? templateSummaries : templates);
-	const managementLoading = $derived(
-		cyclesLoading || templatesLoading || observationsLoading || loadingTeacherStatus
-	);
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const sectionConfig = $derived(sectionConfigByKey[section]);
@@ -1268,14 +1259,6 @@
 
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
-	}
-	async function refreshAll() {
-		const tasks: Promise<void>[] = [];
-		if (routeData.cycles) tasks.push(retryManagementCycles());
-		if (routeData.templates) tasks.push(retryManagementTemplates());
-		if (routeData.observations) tasks.push(retryObservations());
-		if (section === 'overview') tasks.push(loadTeacherStatusOverview());
-		await Promise.all(tasks);
 	}
 	async function retryObservations() {
 		if (!academicYearId || !canReadObservations) return;
@@ -2231,22 +2214,10 @@
 			onaction={retry}
 		/>
 	{/if}
-	{#if pending && loaded}
-		<RegionUpdatingState />
-	{/if}
 {/snippet}
 
 <PageShell title={sectionConfig.title} description={sectionConfig.description}>
 	{#snippet actions()}
-		<Button
-			variant="outline"
-			size="sm"
-			onclick={refreshAll}
-			disabled={managementLoading || mutationBusy}
-		>
-			<RefreshCw class={cn('mr-2 h-4 w-4', managementLoading && 'animate-spin')} />
-			รีเฟรช
-		</Button>
 		{#if canManageSchool && section === 'cycles'}
 			<Button size="sm" onclick={openCreateCycleDialog}>
 				<Plus class="mr-2 h-4 w-4" />

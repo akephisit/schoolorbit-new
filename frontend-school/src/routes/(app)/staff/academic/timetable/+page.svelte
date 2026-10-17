@@ -85,7 +85,7 @@
 	import TimetableUnscheduledTray from '#lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
 	import TimetableWorkspaceHeader from '#lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -119,7 +119,6 @@
 		Send,
 		LoaderCircle,
 		Plus,
-		RefreshCw,
 		Trash2
 	} from '@lucide/svelte';
 	import type { PageProps } from './$types';
@@ -1912,9 +1911,6 @@
 			{/if}
 			สรุปคาบ XLSX
 		</Button>
-		<Button variant="outline" disabled={loading || !controller} onclick={() => reload()}>
-			<RefreshCw class={`size-4 ${controller?.isRefreshing ? 'animate-spin' : ''}`} /> โหลดล่าสุด
-		</Button>
 	{/snippet}
 
 	{#if lifecycleError && !controller}<p role="alert" class="text-sm text-destructive">
@@ -1967,14 +1963,10 @@
 			aria-busy={loading || controller.isRefreshing}
 			data-testid="timetable-board-ready"
 		>
-			{#if loading || controller.isRefreshing}<RegionUpdatingState
-					label="กำลังอัปเดตตารางสอน..."
-				/>{/if}
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
 				view={activeView}
 				isSaving={busy || previewing || pendingOperationCount > 0}
-				isRefreshing={controller.isRefreshing}
 				editing={controller.editing}
 				onViewChange={changeView}
 			>
@@ -1983,9 +1975,7 @@
 						<div class="flex flex-wrap items-end gap-3" aria-busy={versionsLoading}>
 							<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 								<Label class="text-sm text-muted-foreground">รุ่นตารางสอน</Label>
-								{#if versionsLoading}<span role="status" class="text-xs text-muted-foreground"
-										>กำลังโหลดรุ่น...</span
-									>{/if}
+
 								<Select.Root
 									type="single"
 									bind:value={versionSelectValue}

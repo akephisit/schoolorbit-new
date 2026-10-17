@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Route } from '@playwright/test';
 
 import { installTimetableMock, makeTimetableBlock, timetableIds } from './timetable-test-harness';
@@ -126,7 +127,7 @@ test('daily refresh retains usable data and exposes a local retry after failure'
 	await fulfill(pending[0], overview(pending[0], 'ครูข้อมูลเดิม'));
 	const ready = page.getByTestId('daily-teaching-ready');
 	await expect(ready).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await revalidatePage(page);
 	await expect.poll(() => pending.length).toBe(2);
 	await expect(ready).toHaveAttribute('aria-busy', 'true');
 	await expect(page.getByText('ครูข้อมูลเดิม')).toBeVisible();

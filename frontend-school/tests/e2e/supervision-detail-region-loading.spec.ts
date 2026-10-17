@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import {
 	id,
@@ -57,16 +58,61 @@ test('identity retry restarts only references that failed its dependency', async
 	await expect.poll(() => api.count(cyclePath)).toBe(1);
 	expect(api.count(summaryPath)).toBe(1);
 });
-test('detail refresh preserves content when identity fails', async ({ page }) => {
+test('detail revalidation retains identity and recovers each dependent error locally', async ({
+	page
+}) => {
 	const api = await mock(page, { fail: 'observation-detail', failAt: 2 });
 	await page.goto(detailPath());
-	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
-	await expect(page.getByText('region ไม่พร้อม')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await page.getByTestId('supervision-detail').getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('region ไม่พร้อม')).toHaveCount(0);
+	const detail = page.getByTestId('supervision-detail');
+	const cycle = page.getByTestId('supervision-detail-cycle');
+	const template = page.getByTestId('supervision-detail-template');
+	const teacher = page.getByRole('heading', { name: 'ครู ในคิว', exact: true });
+	const identityError = detail
+		.locator('[data-slot="card"]')
+		.filter({ has: page.getByRole('heading', { name: 'อัปเดตรายการไม่สำเร็จ', exact: true }) });
+	await expect(teacher).toBeVisible();
+	await expect(cycle).toHaveAttribute('aria-busy', 'false');
+	await expect(template).toHaveAttribute('aria-busy', 'false');
+	expect(api.count(cyclePath)).toBe(1);
+	expect(api.count(summaryPath)).toBe(1);
+	await revalidatePage(page);
+	await expect(identityError.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+	await expect(cycle.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+	await expect(template.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+	await expect(teacher).toBeVisible();
+	expect(api.count(observationPath)).toBe(2);
+	expect(api.count(cyclePath)).toBe(1);
+	expect(api.count(summaryPath)).toBe(1);
+	await detail
+		.locator(':scope > button')
+		.filter({ hasText: /^ลองใหม่$/ })
+		.click();
+	await expect.poll(() => api.count(observationPath)).toBe(3);
+	await expect(detail).toHaveAttribute('aria-busy', 'false');
+	await expect(identityError).toHaveCount(0);
+	await expect(teacher).toBeVisible();
+	await expect(cycle.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+	await expect(template.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+	expect(api.count(cyclePath)).toBe(1);
+	expect(api.count(summaryPath)).toBe(1);
+	await cycle.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
+	await expect.poll(() => api.count(cyclePath)).toBe(2);
+	await expect(cycle).toHaveAttribute('aria-busy', 'false');
+	await expect(cycle.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
+	await expect(template.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
 	expect(api.count(observationPath)).toBe(3);
+	expect(api.count(summaryPath)).toBe(1);
+	await template.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
+	await expect.poll(() => api.count(summaryPath)).toBe(2);
+	await expect(template).toHaveAttribute('aria-busy', 'false');
+	await expect(detail.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
+	await expect(teacher).toBeVisible();
+	expect(api.count(observationPath)).toBe(3);
+	expect(api.count(cyclePath)).toBe(2);
+	expect(api.count(summaryPath)).toBe(2);
+	expect(api.count('/api/supervision/cycles')).toBe(0);
+	expect(api.count(`/api/supervision/templates/${templateId}`)).toBe(0);
+	expect(api.count(`${observationPath}/review`)).toBe(0);
 });
 test('a delayed first ID cannot replace the next selected observation', async ({ page }) => {
 	const api = await mock(page, { hold: 'observation-detail' });
@@ -123,7 +169,7 @@ test('cancel patches identity and beats a stale refresh', async ({ page }) => {
 	const api = await mock(page, { hold: 'observation-detail', holdAt: 2 });
 	await page.goto(detailPath());
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect.poll(() => api.count(observationPath)).toBe(2);
 	await page.getByRole('button', { name: 'ยกเลิก', exact: true }).first().click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยันยกเลิก' }).click();

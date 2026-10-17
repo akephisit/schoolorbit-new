@@ -28,7 +28,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -554,7 +554,6 @@
 				class="relative gap-0 border-primary/10 bg-gradient-to-br from-primary/5 via-card to-card p-4 sm:p-5"
 			>
 				<div data-testid="organization-unit" aria-busy={loading} class="relative">
-					{#if loading && department}<RegionUpdatingState label="กำลังอัปเดตหน่วยงาน" />{/if}
 					{#if error}<PageState
 							variant="error"
 							title="โหลดหน่วยงานไม่สำเร็จ"
@@ -741,9 +740,7 @@
 									actionLabel="ลองอีกครั้ง"
 									onaction={loadStructure}
 								/>{/if}
-							{#if structureLoading && structureLoaded}<RegionUpdatingState
-									label="กำลังอัปเดตโครงสร้าง"
-								/>{/if}
+
 							{#if structureLoading && !structureLoaded}<div
 									role="status"
 									aria-label="กำลังโหลดโครงสร้าง"
@@ -810,9 +807,7 @@
 									actionLabel="ลองอีกครั้ง"
 									onaction={loadDelegations}
 								/>{/if}
-							{#if delegationsLoading && delegationsLoaded}<RegionUpdatingState
-									label="กำลังอัปเดตการมอบหมาย"
-								/>{/if}
+
 							{#if delegationsLoading && !delegationsLoaded}<div
 									role="status"
 									aria-label="กำลังโหลดการมอบหมาย"
@@ -971,9 +966,7 @@
 								actionLabel="ลองอีกครั้ง"
 								onaction={loadStructure}
 							/>{/if}
-						{#if structureLoading && structureLoaded}<RegionUpdatingState
-								label="กำลังอัปเดตโครงสร้าง"
-							/>{/if}
+
 						{#if structureLoading && !structureLoaded}<div
 								role="status"
 								aria-label="กำลังโหลดโครงสร้าง"

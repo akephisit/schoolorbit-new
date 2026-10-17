@@ -24,24 +24,14 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { toast } from 'svelte-sonner';
-	import {
-		Search,
-		Check,
-		X,
-		Eye,
-		Filter,
-		LoaderCircle,
-		Trash2,
-		RotateCcw,
-		RefreshCw
-	} from '@lucide/svelte';
+	import { Search, Check, X, Eye, Filter, LoaderCircle, Trash2, RotateCcw } from '@lucide/svelte';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -434,17 +424,6 @@
 	description="ค้นหา ตรวจสอบ และจัดการสถานะใบสมัครของรอบนี้"
 	backHref="/staff/academic/admission/{id}"
 >
-	{#snippet actions()}
-		<Button
-			variant="outline"
-			size="icon"
-			onclick={refreshVisibleApps}
-			disabled={loading || !canReadAdmission}
-			aria-label="โหลดใบสมัครใหม่"
-		>
-			<RefreshCw class="size-4" />
-		</Button>
-	{/snippet}
 	{#if !canReadAdmission}
 		<PageState
 			variant="permission"
@@ -534,7 +513,6 @@
 			/>
 		{:else}
 			<div aria-busy={loading}>
-				{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตใบสมัคร..." />{/if}
 				{#if error}<p role="alert" class="text-sm text-destructive">
 						{error}
 						<Button variant="outline" size="sm" onclick={refreshVisibleApps}>ลองใหม่</Button>

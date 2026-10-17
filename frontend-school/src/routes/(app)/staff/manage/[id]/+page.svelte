@@ -290,15 +290,6 @@
 			name={staff && canReadStaff ? staff.display_name : undefined}
 		/>{/snippet}
 	{#snippet actions()}
-		<Button variant="outline" onclick={loadStaffProfile} disabled={loading || !canReadStaff}
-			>รีเฟรชข้อมูล</Button
-		>
-		<Button
-			variant="outline"
-			onclick={loadAchievements}
-			disabled={loadingAchievements || achievementSaving || !canReadAchievements}
-			>รีเฟรชผลงาน</Button
-		>
 		{#if staff && canReadStaff && canUpdateStaff}
 			<Button
 				href={withStaffReturn(`/staff/manage/${staff.id}/edit`, returnHref)}
@@ -318,7 +309,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadStaffProfile}
 			/>{/if}
-		{#if loading && staff && canReadStaff}<p role="status">กำลังอัปเดตข้อมูลบุคลากร...</p>{/if}
+
 		{#if !canReadStaff}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลบุคลากร" />
 		{:else if loading && !staff}<div role="status" aria-label="กำลังโหลดข้อมูลบุคลากร">
 				<PageSkeleton variant="detail" />
@@ -661,9 +652,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadAchievements}
 			/>{/if}
-		{#if loadingAchievements && achievementsLoaded && canReadAchievements}<p role="status">
-				กำลังอัปเดตผลงาน...
-			</p>{/if}
+
 		<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
 			<div class="flex items-center justify-between mb-4">
 				<h3 class="font-semibold text-foreground flex items-center gap-2">

@@ -188,7 +188,6 @@
 					onaction={loadStaffProfile}
 				/>
 			{:else if staff}
-				{#if loading}<p role="status">กำลังอัปเดตบุคลากร...</p>{/if}
 				{#if error}<PageState
 						title="อัปเดตบุคลากรไม่สำเร็จ"
 						description={error}
@@ -329,9 +328,6 @@
 					<CardDescription>รายการความภาคภูมิใจและเกียรติบัตรทั้งหมด</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{#if loadingAchievements && achievementsLoaded}<p role="status">
-							กำลังอัปเดตผลงาน...
-						</p>{/if}
 					{#if achievementsError && achievementsLoaded}<PageState
 							title="อัปเดตผลงานไม่สำเร็จ"
 							description={achievementsError}

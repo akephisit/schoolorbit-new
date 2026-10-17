@@ -12,16 +12,11 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar, RefreshCw } from '@lucide/svelte';
+	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar } from '@lucide/svelte';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { PageProps } from './$types';
@@ -153,15 +148,6 @@
 
 <PageShell title="ระบบรับสมัครนักเรียน" description="จัดการรอบรับสมัคร สายการเรียน และใบสมัคร">
 	{#snippet actions()}
-		<Button
-			variant="outline"
-			size="icon"
-			onclick={() => void load()}
-			disabled={loading || !academicYearId}
-			aria-label="โหลดรอบใหม่"
-		>
-			<RefreshCw class="size-4" />
-		</Button>
 		{#if canManageAdmission}
 			<Button
 				href={`/staff/academic/admission/new?academicYearId=${encodeURIComponent(academicYearId ?? '')}`}
@@ -194,7 +180,6 @@
 		/>
 	{:else}
 		<div data-testid="admission-round-list-region" aria-busy={loading}>
-			{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />{/if}
 			{#if error}<p role="alert" class="text-sm text-destructive">
 					{error}
 					<Button variant="outline" size="sm" onclick={() => void load()}>ลองใหม่</Button>

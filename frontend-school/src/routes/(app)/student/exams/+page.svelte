@@ -15,7 +15,7 @@
 		type AcademicContextOptionsResponse
 	} from '#lib/api/academic-context.js';
 	import { listMyExamSchedules, type PersonalExamScheduleRound } from '#lib/api/examSchedule.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import PersonalExamScheduleView from '#lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
@@ -197,10 +197,6 @@
 </script>
 
 <PageShell title={data.title} description="ตารางสอบที่ประกาศแล้วสำหรับฉัน">
-	<Button variant="outline" disabled={loading || contextLoading} onclick={loadPrimary}
-		>โหลดข้อมูลใหม่</Button
-	>
-
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
 		<div class="min-w-52 space-y-2">
 			<Label for="student-exam-year">ปีการศึกษา</Label>
@@ -258,11 +254,6 @@
 		/>
 	{/if}
 	<div data-testid="student-exams-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}
-			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
-				กำลังอัปเดตข้อมูล…
-			</p>
-		{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดตารางสอบ">
 				<PageSkeleton variant="table" rows={6} columns={7} />

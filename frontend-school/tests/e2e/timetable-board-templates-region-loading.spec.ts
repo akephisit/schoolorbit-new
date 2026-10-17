@@ -49,11 +49,20 @@ test('explicit board workspace paints before delayed versions without requesting
 	await workspaces[0].fallback();
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
 	expect(changeSets).toHaveLength(0);
-	await expect(page.getByText('กำลังโหลดรุ่น...')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'เลือกรุ่นตารางสอน' })).toBeDisabled();
-	await versions[0].fallback();
+	const version = page.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true });
+	const versionRegion = page.locator('[aria-busy]').filter({ has: version }).last();
+	await expect(versionRegion).toHaveAttribute('aria-busy', 'true');
+	await expect(version).toBeDisabled();
+	await expect(version).toHaveText(/^แบบร่าง ·/);
 	await expect(page.getByText('กำลังโหลดรุ่น...')).toHaveCount(0);
+	await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0);
+	await versions[0].fallback();
+	await expect(versionRegion).toHaveAttribute('aria-busy', 'false');
+	await expect(version).toBeEnabled();
+	await expect(version).toHaveText(/^แบบร่าง ·/);
+	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
 	expect(workspaces).toHaveLength(1);
+	expect(changeSets).toHaveLength(0);
 });
 
 test('default board waits only for its version selection, then starts one workspace', async ({

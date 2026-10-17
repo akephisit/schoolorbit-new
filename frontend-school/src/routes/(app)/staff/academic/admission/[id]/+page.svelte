@@ -39,7 +39,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -723,7 +723,6 @@
 		/>
 	{:else if round}
 		<div class="space-y-6" aria-busy={loading}>
-			{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />{/if}
 			{#if error}<p role="alert" class="text-sm text-destructive">
 					{error}
 					<Button variant="outline" size="sm" onclick={() => void loadRound()}>ลองใหม่</Button>
@@ -968,10 +967,7 @@
 								<Plus class="w-3.5 h-3.5" /> เพิ่ม
 							</Button>
 						</Card.Header>
-						{#if loadingTracks && tracksLoaded}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตสายการเรียน..."
-							/>{/if}
+
 						{#if tracksError && tracksLoaded}<p role="alert" class="px-4 text-sm text-destructive">
 								{tracksError}
 								<Button variant="outline" size="sm" onclick={() => void loadTracks()}
@@ -1122,10 +1118,7 @@
 								<Plus class="w-3.5 h-3.5" /> เพิ่ม
 							</Button>
 						</Card.Header>
-						{#if loadingSubjects && subjectsLoaded}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตวิชาสอบ..."
-							/>{/if}
+
 						{#if subjectsError && subjectsLoaded}<p
 								role="alert"
 								class="px-4 text-sm text-destructive"

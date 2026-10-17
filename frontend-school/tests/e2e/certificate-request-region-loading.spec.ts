@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import {
 	mockRequests,
@@ -77,7 +78,7 @@ test('queue retains rows through focused refresh failure', async ({ page }) => {
 	const api = await mockRequests(page, { fail: queuePath, failAt: 2 });
 	await page.goto('/staff/certificate-requests');
 	await expect(page.getByText('คำขอแรก', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'โหลดใหม่', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 	await expect(page.getByText('คำขอแรก', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
@@ -138,7 +139,7 @@ test('issued retained refresh preserves table and retries no optional workflows'
 	const api = await mockRequests(page, { fail: issuedPath(), failAt: 2 });
 	await page.goto(`/staff/certificates/${campaignId}/issued`);
 	await expect(page.getByText('ผู้รับ ใบแรก', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'โหลดใหม่', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 	await expect(page.getByText('ผู้รับ ใบแรก', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();

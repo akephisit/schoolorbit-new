@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page } from '@playwright/test';
 import { navigate } from './fixtures/supervision-route-data';
 import type { components } from '../../src/lib/api/generated/school-api';
@@ -360,7 +361,7 @@ test('background history failure retains current facts until its own retry succe
 	await page.goto(staffPath());
 	const current = region(page).getByTestId('career-current-academic_rank');
 	await expect(current).toContainText('29 ก.พ. 2567');
-	await region(page).getByRole('button', { name: 'รีเฟรชประวัติ', exact: true }).click();
+	await revalidatePage(page);
 	await expect(region(page)).toContainText('โหลดประวัติไม่สำเร็จ');
 	await expect(current).toContainText('29 ก.พ. 2567');
 	await region(page).getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();

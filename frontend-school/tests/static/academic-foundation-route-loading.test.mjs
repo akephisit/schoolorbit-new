@@ -54,11 +54,13 @@ test('loaded empty regions remain visible with focused retry during failed refre
 	const curricula = await readFile(path.join(routesRoot, 'curricula/+page.svelte'), 'utf8');
 	assert.match(setup, /loading\s*&&\s*!workspaceReady/);
 	assert.match(setup, /errorMessage\s*&&\s*!workspaceReady/);
-	assert.match(setup, /RegionUpdatingState/);
+	assert.doesNotMatch(setup, /RegionUpdatingState/);
+	assert.match(setup, /aria-busy/);
 	assert.match(setup, /role="alert"[^]*?onclick=\{loadWorkspace\}[^]*?ลองอีกครั้ง/);
 	assert.match(curricula, /loading\s*&&\s*!overview/);
 	assert.match(curricula, /errorMessage\s*&&\s*!overview/);
-	assert.match(curricula, /RegionUpdatingState/);
+	assert.doesNotMatch(curricula, /RegionUpdatingState/);
+	assert.match(curricula, /aria-busy/);
 	assert.match(curricula, /role="alert"[^]*?onclick=\{loadOverview\}[^]*?ลองอีกครั้ง/);
 });
 

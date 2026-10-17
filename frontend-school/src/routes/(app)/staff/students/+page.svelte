@@ -38,7 +38,7 @@
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
-	import { Plus, Search, Pencil, Trash2, Eye, RefreshCw, GraduationCap } from '@lucide/svelte';
+	import { Plus, Search, Pencil, Trash2, Eye, GraduationCap } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	const readScope = $derived(
@@ -274,14 +274,6 @@
 	description="ทะเบียนกลางของนักเรียนทุกสถานะ การจัดชั้นและห้องอยู่ในทะเบียนรายปี"
 >
 	{#snippet actions()}
-		<Button
-			variant="outline"
-			onclick={reloadRegistry}
-			disabled={loading || deleting || !canReadStudents}
-		>
-			<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
-			รีเฟรช
-		</Button>
 		{#if canCreateStudent}
 			<Button href={createHref}><Plus class="size-4" aria-hidden="true" />เพิ่มนักเรียน</Button>
 		{/if}
@@ -418,9 +410,7 @@
 							<h2 class="font-medium">รายชื่อนักเรียน</h2>
 							<Badge variant="secondary">{students.length} คนในหน้านี้</Badge>
 						</div>
-						<p class="text-xs text-muted-foreground" role="status" aria-live="polite">
-							{loading ? 'กำลังอัปเดตรายชื่อนักเรียน...' : `หน้า ${currentPage}`}
-						</p>
+						<p class="text-xs text-muted-foreground">หน้า {currentPage}</p>
 					</div>
 					{#if students.length === 0}
 						<PageState

@@ -437,9 +437,11 @@
 		{/if}
 		{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 		<Dialog.Footer>
-			<LoadingButton variant="outline" {loading} onclick={() => void load()}>
-				โหลดข้อมูลล่าสุด
-			</LoadingButton>
+			{#if errorMessage || needsRefresh}
+				<LoadingButton variant="outline" {loading} onclick={() => void load()}>
+					โหลดข้อมูลล่าสุด
+				</LoadingButton>
+			{/if}
 			<Button onclick={() => changeOpen(false)}>กลับไปรอบเลื่อนชั้น</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

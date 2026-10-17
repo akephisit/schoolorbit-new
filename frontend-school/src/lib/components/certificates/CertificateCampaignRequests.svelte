@@ -216,7 +216,6 @@
 			description="หน้านี้ใช้สิทธิ์อ่านในขอบเขตหน่วยงานหรือทั้งโรงเรียน"
 		/>
 	{:else}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตประวัติคำขอ</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"
@@ -238,6 +237,7 @@
 		{:else if loaded}
 			<div
 				class="relative space-y-4 before:absolute before:inset-y-5 before:left-[21px] before:w-px before:bg-border"
+				aria-busy={loading}
 			>
 				{#each requests as request (request.id)}
 					{@const meta = statusMeta[request.status]}

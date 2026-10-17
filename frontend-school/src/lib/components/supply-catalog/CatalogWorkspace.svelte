@@ -434,9 +434,6 @@
 		{#if result}<section class="space-y-4" aria-busy={itemsLoading}>
 				<div class="flex items-center justify-between">
 					<p class="text-sm text-muted-foreground">{result.total.toLocaleString('th-TH')} รายการ</p>
-					{#if itemsLoading}<span role="status" class="text-xs text-muted-foreground"
-							>กำลังอัปเดต</span
-						>{/if}
 				</div>
 				{#if result.items.length === 0}<PageState
 						title={query.search || query.categoryId || query.favoritesOnly

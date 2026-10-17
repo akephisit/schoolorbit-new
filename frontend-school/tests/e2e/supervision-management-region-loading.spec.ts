@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -116,7 +117,7 @@ test('cycles retains data through a failed refresh and retries only its list', a
 	const api = await mock(page, { fail: 'cycles', failAt: 2 });
 	await page.goto(path('cycles'));
 	await expect(page.getByText('รอบแรก', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('supervision-cycles').getByText('region ไม่พร้อม')).toBeVisible();
 	await expect(page.getByText('รอบแรก', { exact: true })).toBeVisible();
 	await page.getByTestId('supervision-cycles').getByRole('button', { name: 'ลองใหม่' }).click();

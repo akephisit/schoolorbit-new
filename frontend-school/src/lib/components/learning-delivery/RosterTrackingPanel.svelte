@@ -8,12 +8,7 @@
 	} from '#lib/api/learning-delivery.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -165,7 +160,6 @@
 			onaction={retry}
 		/>
 	{:else}
-		{#if loading}<RegionUpdatingState label="กำลังอัปเดตวิธีจัดรายชื่อ" />{/if}
 		<p class="mt-2 text-sm text-muted-foreground">
 			{tracking.mode === 'homeroom'
 				? `ติดตามนักเรียนจากห้องต้นทาง ${group.homeroomIds.length} ห้อง เริ่ม ${formatCalendarDate(tracking.effectiveFrom ?? tracking.startsOn)} การเพิ่ม ย้าย และนำออกจากห้องจะปรับรายชื่อกลุ่มนี้พร้อมกัน`

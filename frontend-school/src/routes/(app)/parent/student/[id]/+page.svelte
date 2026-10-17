@@ -20,7 +20,7 @@
 	import StudentSummary from '#lib/components/student/StudentSummary.svelte';
 	import StudentDestinations from '#lib/components/student/StudentDestinations.svelte';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -232,11 +232,6 @@
 		: 'ข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีผู้ปกครอง'}
 	backHref={parentHref}
 >
-	{#snippet actions()}<Button
-			variant="outline"
-			disabled={loading || contextLoading || !selectedYearId}
-			onclick={loadProfile}>โหลดข้อมูลใหม่</Button
-		>{/snippet}
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="parent-child-detail-year">ปีการศึกษา</Label>
@@ -265,13 +260,6 @@
 			onaction={loadProfile}
 		/>{/if}
 	<div data-testid="parent-profile-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}<p
-				role="status"
-				aria-label="กำลังอัปเดตข้อมูล"
-				class="text-muted-foreground text-sm"
-			>
-				กำลังอัปเดตข้อมูล…
-			</p>{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดข้อมูลนักเรียน">
 				<PageSkeleton variant="detail" rows={3} />

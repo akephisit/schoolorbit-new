@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import {
 	mockParent,
@@ -144,11 +145,11 @@ for (const [route, label] of [
 		const api = await mockParent(page, { fail: 'profile', failAt: 2 });
 		await page.goto(route);
 		await expect(page.getByTestId('parent-profile-region')).toContainText(label);
-		await page.getByRole('button', { name: 'โหลดข้อมูลใหม่', exact: true }).click();
+		await revalidatePage(page);
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 		await expect(page.getByTestId('parent-profile-region')).toContainText(label);
 		expect(api.count('profile')).toBe(3);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(2);
 	});
 	test(`${route}: year change and Back repair no duplicate primary`, async ({ page }) => {
 		const api = await mockParent(page);
@@ -186,10 +187,26 @@ test('logout during child prerequisite never launches child primary', async ({ p
 	const pending = page.waitForResponse((r) => r.url().includes('/academic-context/options'));
 	await page.goto(childRoute('exams'));
 	await expect.poll(() => api.count('context')).toBe(1);
-	await page.getByRole('banner').getByRole('button').last().click();
-	await page.getByRole('menuitem', { name: 'ออกจากระบบ' }).click();
-	await expect(page).toHaveURL(/\/login/);
-	api.release();
+	try {
+		await page
+			.getByRole('banner')
+			.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })
+			.click();
+		const logout = page.waitForRequest(
+			(request) =>
+				request.method() === 'POST' && new URL(request.url()).pathname === '/api/auth/logout'
+		);
+		await page.getByRole('menuitem', { name: 'ออกจากระบบ', exact: true }).click();
+		await logout;
+		await expect(page).toHaveURL(new URL('/', page.url()).href);
+		await expect(
+			page.getByRole('banner').getByRole('link', { name: 'เข้าสู่ระบบ', exact: true })
+		).toBeVisible();
+		await expect(page.getByTestId('parent-exams-region')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })).toHaveCount(0);
+	} finally {
+		api.release();
+	}
 	await pending;
 	await page.evaluate(
 		() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))

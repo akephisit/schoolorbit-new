@@ -726,9 +726,6 @@
 										data-testid="organization-selected-members"
 										aria-busy={selectedMembersLoading}
 									>
-										{#if selectedMembersLoading && membersLoaded}<p role="status">
-												กำลังอัปเดตสมาชิก...
-											</p>{/if}
 										{#if selectedMembersError && membersLoaded}<PageState
 												variant="error"
 												title="โหลดสมาชิกไม่สำเร็จ"

@@ -16,7 +16,7 @@
 	import StudentSummary from '#lib/components/student/StudentSummary.svelte';
 	import StudentDestinations from '#lib/components/student/StudentDestinations.svelte';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -221,11 +221,6 @@
 		? `สวัสดี, ${student.first_name} ${student.last_name}`
 		: 'ภาพรวมข้อมูลนักเรียน'}
 >
-	{#snippet actions()}<Button
-			variant="outline"
-			disabled={loading || contextLoading || !selectedYearId}
-			onclick={loadProfile}>โหลดข้อมูลใหม่</Button
-		>{/snippet}
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="student-dashboard-year">ปีการศึกษา</Label>

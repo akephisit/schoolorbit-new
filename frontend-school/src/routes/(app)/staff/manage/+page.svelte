@@ -332,9 +332,7 @@
 		<Button href="/staff/manage/overview" variant="outline" data-sveltekit-preload-data="tap">
 			<ChartNoAxesCombined class="size-4" aria-hidden="true" />ภาพรวมงานบุคคล
 		</Button>
-		<Button variant="outline" onclick={loadStaff} disabled={loading || deleting || !canReadStaff}
-			>รีเฟรช</Button
-		>
+
 		{#if canCreateStaff}
 			<Button href={withStaffReturn('/staff/manage/new', directoryHref)} class="gap-2">
 				<Plus class="h-4 w-4" />
@@ -548,7 +546,7 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadStaff}
 				/>{/if}
-			{#if loading && loaded}<p role="status">กำลังอัปเดตรายชื่อ...</p>{/if}
+
 			{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดรายชื่อบุคลากร">
 					<PageSkeleton variant={view === 'cards' ? 'cards' : 'table'} rows={6} columns={5} />
 				</div>

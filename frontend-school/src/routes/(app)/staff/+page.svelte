@@ -31,7 +31,6 @@
 		GraduationCap,
 		Inbox,
 		LayoutGrid,
-		RefreshCw,
 		Users
 	} from '@lucide/svelte';
 
@@ -152,7 +151,10 @@
 				actionLabel="ลองใหม่"
 				onaction={() => void workStore.fetchCounts()}
 			/>{/if}
-		{#if $workStore.loadingCounts}<p role="status" class="text-sm text-muted-foreground">
+		{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
+				role="status"
+				class="text-sm text-muted-foreground"
+			>
 				กำลังโหลดจำนวนงาน...
 			</p>{/if}
 		<div>
@@ -227,7 +229,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={appMenu.retry}
 			/>{/if}
-		{#if loadingMenu && appMenu.loaded}<p role="status">กำลังอัปเดตบริการ...</p>{/if}
+
 		<div>
 			<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
 			<p class="text-sm text-muted-foreground">
@@ -308,7 +310,6 @@
 		aria-labelledby="school-summary-title"
 		class="space-y-3"
 	>
-		{#if loadingStats && stats}<p role="status">กำลังอัปเดตภาพรวม...</p>{/if}
 		{#if statsError && stats}<PageState
 				title="อัปเดตภาพรวมไม่สำเร็จ"
 				description={statsError}
@@ -320,16 +321,6 @@
 				<h2 id="school-summary-title" class="text-lg font-semibold">ภาพรวมโรงเรียน</h2>
 				<p class="text-sm text-muted-foreground">ข้อมูลรวมสำหรับประกอบการทำงาน</p>
 			</div>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="gap-2"
-				onclick={() => loadDashboard(academicYearId)}
-				disabled={loadingStats || !academicYearId}
-			>
-				<RefreshCw class={`h-4 w-4 ${loadingStats ? 'animate-spin' : ''}`} />
-				รีเฟรช
-			</Button>
 		</div>
 
 		{#if !academicYearId}

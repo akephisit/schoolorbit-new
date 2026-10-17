@@ -449,7 +449,6 @@
 			<PageSkeleton variant="detail" />
 		</div>
 	{:else}
-		{#if loading && campaign}<p role="status">กำลังอัปเดตกิจกรรม</p>{/if}
 		{#if error}
 			<PageState
 				variant="error"

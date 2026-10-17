@@ -1,3 +1,4 @@
+import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -50,7 +51,7 @@ async function reply(route: Route, data: unknown, status = 200) {
 	});
 }
 
-async function mock(page: Page, manager = true) {
+async function mock(page: Page, manager = true, validContext = false) {
 	const reads: string[] = [];
 	const writes: string[] = [];
 	let holdRooms = false;
@@ -85,9 +86,20 @@ async function mock(page: Page, manager = true) {
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
+					activeAcademicYearId: validContext ? yearId : null,
 					activeAcademicTermId: null,
-					years: [],
+					years: validContext
+						? [
+								{
+									id: yearId,
+									year: 2569,
+									name: '2569',
+									status: 'active',
+									startDate: '2026-05-01',
+									endDate: '2027-04-30'
+								}
+							]
+						: [],
 					terms: []
 				});
 			if (path === `/api/admission/rounds/${roundId}` && method === 'GET')
@@ -295,21 +307,32 @@ test('capacity edit patches previously loaded seat-group capacity without anothe
 	expect(state.reads.filter((path) => path.endsWith('/exam-seats'))).toHaveLength(1);
 });
 
-test('room refresh retains usable rows and only rereads rooms', async ({ page }) => {
-	const state = await mock(page);
-	await page.goto(`/staff/academic/admission/${roundId}/exam-rooms`, {
+test('page revalidation retains rooms and rereads route-owned setup', async ({ page }) => {
+	const state = await mock(page, true, true);
+	await page.goto(`/staff/academic/admission/${roundId}/exam-rooms?academicYearId=${yearId}`, {
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
 	state.holdRooms();
-	await page.getByRole('button', { name: 'โหลดห้องสอบใหม่' }).click();
+	await revalidatePage(page);
+	await expect
+		.poll(() => state.reads.filter((path) => path.endsWith('/exam-rooms')).length)
+		.toBe(2);
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
-	await expect(page.getByText('กำลังอัปเดตห้องสอบ...')).toBeVisible();
+	await expectSilentBackground(
+		page,
+		page
+			.locator('main [aria-busy]')
+			.filter({ has: page.getByText(examRoom.roomName, { exact: true }) })
+			.last()
+	);
 	state.releaseRooms();
 	await expect
 		.poll(() => state.reads.filter((path) => path.endsWith('/exam-rooms')).length)
 		.toBe(2);
-	expect(state.reads.filter((path) => path.endsWith('/exam-config'))).toHaveLength(1);
+	expect(state.reads.filter((path) => path.endsWith('/exam-config'))).toHaveLength(2);
+	expect(state.reads).not.toContain('/api/facilities/rooms');
+	expect(state.reads.some((path) => path.endsWith('/exam-seats'))).toBe(false);
 });
 
 test('saving config does not reread the room list or config', async ({ page }) => {

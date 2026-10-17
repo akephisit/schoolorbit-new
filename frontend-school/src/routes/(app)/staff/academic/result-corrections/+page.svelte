@@ -20,7 +20,7 @@
 	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import ResultCorrectionDialog from '#lib/components/academic/results/ResultCorrectionDialog.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -283,10 +283,6 @@
 				/>
 			{:else if results.length === 0}
 				<div aria-busy={loading}>
-					{#if loading}<RegionUpdatingState
-							class="static mb-2"
-							label="กำลังอัปเดตผลที่ค้นพบ..."
-						/>{/if}
 					{#if errorMessage}<div
 							role="alert"
 							class="mb-2 flex items-center gap-2 text-sm text-destructive"
@@ -314,10 +310,7 @@
 					<div class="border-b px-4 py-3">
 						<p class="font-semibold">ผลที่ค้นพบ {results.length} รายการ</p>
 						<p class="text-sm text-muted-foreground">การแก้ไขจะไม่เปลี่ยนคะแนนหรือผลเริ่มต้น</p>
-						{#if loading}<RegionUpdatingState
-								class="static mt-2"
-								label="กำลังอัปเดตผลที่ค้นพบ..."
-							/>{/if}
+
 						{#if errorMessage}<div
 								role="alert"
 								class="mt-2 flex items-center gap-2 text-sm text-destructive"

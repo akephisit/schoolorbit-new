@@ -18,7 +18,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import StudentProfileHistory from '#lib/components/academic-core/StudentProfileHistory.svelte';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
-	import { Edit, HeartPulse, RefreshCw, UserRound } from '@lucide/svelte';
+	import { Edit, HeartPulse, UserRound } from '@lucide/svelte';
 	import { getStudent, type StudentRegister } from '#lib/api/students.js';
 	import {
 		REGISTRATION_STATUS_LABELS,
@@ -150,10 +150,6 @@
 	backPreload={false}
 >
 	{#snippet actions()}
-		<Button variant="outline" onclick={reloadProfile} disabled={loading || !canReadStudent}>
-			<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} aria-hidden="true" />
-			รีเฟรช
-		</Button>
 		{#if student && canReadStudent && canUpdateStudent}
 			<Button href={editHref} data-sveltekit-preload-data="tap">
 				<Edit class="size-4" aria-hidden="true" />
@@ -170,7 +166,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={reloadProfile}
 			/>{/if}
-		{#if loading && student && canReadStudent}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
+
 		{#if !canReadStudent}
 			<PageState
 				variant="permission"

@@ -37,7 +37,7 @@
 	import DeliveryVersionOfferingView from '#lib/components/learning-delivery/DeliveryVersionOfferingView.svelte';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
 	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
@@ -765,7 +765,6 @@
 					aria-busy={offeringLoading}
 					data-testid="delivery-offering-ready"
 				>
-					{#if offeringLoading}<RegionUpdatingState label="กำลังอัปเดตรายการเปิดสอน" />{/if}
 					{#if offeringError}<div
 							role="alert"
 							class="mx-5 mt-4 flex items-center gap-2 text-sm text-destructive"
@@ -855,7 +854,6 @@
 										onaction={retryVersions}
 									/>
 								{:else}
-									{#if versionsLoading}<RegionUpdatingState label="กำลังอัปเดตรุ่นเปิดสอน" />{/if}
 									<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
 										{selectedTimetableTarget
 											? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
@@ -908,7 +906,6 @@
 				/>
 			{:else if hasGroups}
 				<div class="relative" aria-busy={groupsLoading} data-testid="delivery-groups-ready">
-					{#if groupsLoading}<RegionUpdatingState label="กำลังอัปเดตรายการกลุ่มเรียน" />{/if}
 					<LearningGroupList
 						{groups}
 						selectedGroupId={selectedGroup?.id}
@@ -945,7 +942,6 @@
 					aria-busy={groupLoading}
 					data-testid="delivery-selected-group-ready"
 				>
-					{#if groupLoading}<RegionUpdatingState label="กำลังอัปเดตกลุ่มเรียน" />{/if}
 					{#if groupError}<div
 							role="alert"
 							class="flex items-center gap-2 text-sm text-destructive"

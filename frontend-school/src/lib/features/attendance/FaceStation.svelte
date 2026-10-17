@@ -720,7 +720,6 @@
 				students={initial.students}
 				{enrollments}
 				disabled={busy}
-				onrefresh={reloadEnrollments}
 				onremove={(id) => {
 					removalStudent = id;
 					confirmRemoval = true;

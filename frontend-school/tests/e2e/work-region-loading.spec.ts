@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import { mockWork, itemsPath, countsPath, windowsPath } from './fixtures/work-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -75,7 +76,7 @@ test('window refresh retains data on failure and retries without options', async
 	const api = await mockWork(page, { fail: 'windows', failAt: 2 });
 	await page.goto('/staff/work/manage');
 	await expect(page.getByTestId('work-windows')).toContainText('รอบงานแรก');
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('work-windows')).toContainText('region windows ไม่พร้อม');
 	await expect(page.getByTestId('work-windows')).toContainText('รอบงานแรก');
 	await page.getByTestId('work-windows').getByRole('button', { name: 'ลองอีกครั้ง' }).click();
@@ -208,3 +209,28 @@ test('late assignment cannot clear a draft for another selected window', async (
 	await expect(page.getByLabel('ชื่องาน', { exact: true })).toHaveValue('ร่างรอบใหม่');
 	expect(api.count(windowsPath)).toBe(1);
 });
+
+for (const [route, testId] of [
+	['/staff', 'staff-work-counts'],
+	['/staff/work', 'work-counts']
+]) {
+	test(`${route}: notification counts refresh silently retains the loaded numbers`, async ({
+		page
+	}) => {
+		const api = await mockWork(page, { event: 'work_items_changed', hold: 'counts', holdAt: 2 });
+		await page.goto(route);
+		const region = page.getByTestId(testId);
+		await expect(region).toHaveAttribute('aria-busy', 'false');
+		await expect.poll(() => api.count(countsPath)).toBe(1);
+		const loadedText = await region.innerText();
+		api.releaseEvent();
+		await expect.poll(() => api.count(countsPath)).toBe(2);
+		await expect(region).toHaveAttribute('aria-busy', 'true');
+		await expect(region).toHaveText(loadedText);
+		await expect(region.getByRole('status')).toHaveCount(0);
+		await expect(region.locator('[data-slot="skeleton"]')).toHaveCount(0);
+		api.release();
+		await expect(region).toHaveAttribute('aria-busy', 'false');
+		await expect(region).toHaveText(loadedText);
+	});
+}

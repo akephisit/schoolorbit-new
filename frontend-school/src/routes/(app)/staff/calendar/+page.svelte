@@ -80,7 +80,6 @@
 		Copy,
 		FolderPlus,
 		Settings,
-		RefreshCw,
 		Search,
 		SlidersHorizontal,
 		X
@@ -287,10 +286,6 @@
 			pendingHasMore = result.data.hasMore;
 			pendingLoaded = true;
 		} else pendingError = result.error;
-	}
-	function refreshCalendar() {
-		void loadCalendar();
-		if (showPendingRequests) void loadPendingRequests();
 	}
 	function applyCategories(result: Awaited<typeof data.categories>, revision: number) {
 		if (!categoriesRequest.isCurrent(revision)) return;
@@ -1128,14 +1123,10 @@
 							<CalendarDays class="size-4 shrink-0 text-primary" />
 							<h2 class="truncate text-base font-semibold capitalize">{monthLabel}</h2>
 						</div>
-						<p
-							role={loading && calendarRendered ? 'status' : undefined}
-							class="mt-0.5 text-xs text-muted-foreground"
-						>
-							{#if loading && calendarRendered}กำลังโหลดกิจกรรม...
-							{:else}{eventsLoaded ? selectedMonthEvents.length : '—'} กิจกรรม · {eventsLoaded
-									? publicEventCount
-									: '—'} สาธารณะ{/if}
+						<p class="mt-0.5 text-xs text-muted-foreground">
+							{eventsLoaded ? selectedMonthEvents.length : '—'} กิจกรรม · {eventsLoaded
+								? publicEventCount
+								: '—'} สาธารณะ
 						</p>
 					</div>
 				</div>
@@ -1287,15 +1278,6 @@
 					<Button variant="outline" size="sm" onclick={goToToday} disabled={isTodaySelected}>
 						วันนี้
 					</Button>
-					<Button
-						variant="ghost"
-						size="icon"
-						onclick={refreshCalendar}
-						disabled={loading}
-						aria-label="รีเฟรชปฏิทิน"
-					>
-						<RefreshCw class={loading ? 'size-4 animate-spin' : 'size-4'} />
-					</Button>
 				</div>
 			</div>
 		</div>
@@ -1323,7 +1305,10 @@
 				</div>{:else if eventsLoaded || calendarRendered}
 				<div class="min-w-0 space-y-3">
 					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
-						{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
+						{#if pendingLoading && !pendingLoaded}<p
+								role="status"
+								class="text-sm text-muted-foreground"
+							>
 								กำลังโหลดคำร้องรออนุมัติ...
 							</p>{/if}
 						{#if pendingError}<PageState
@@ -1430,7 +1415,10 @@
 										{canManageCalendar ? 'เปิดคิวอนุมัติ' : 'คำร้องของฉัน'}
 									</Button>
 								</div>
-								{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
+								{#if pendingLoading && !pendingLoaded}<p
+										role="status"
+										class="text-sm text-muted-foreground"
+									>
 										กำลังโหลดคำร้องรออนุมัติ...
 									</p>{/if}
 								{#if pendingError}<PageState

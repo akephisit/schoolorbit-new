@@ -1,3 +1,4 @@
+import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { CatalogActivityOverview } from '../../src/lib/api/academic-core.js';
 
@@ -243,11 +244,10 @@ for (const entry of [
 			await expect(
 				page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
 			).toBeVisible();
-			await expect(
-				page.getByRole('status', {
-					name: entry.kind === 'subject' ? 'กำลังอัปเดตทะเบียนรายวิชา' : 'กำลังอัปเดตทะเบียนกิจกรรม'
-				})
-			).toBeVisible();
+			await expectSilentBackground(
+				page,
+				page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
+			);
 			await expect(page.locator('main [data-slot="skeleton"]')).toHaveCount(0);
 		} finally {
 			refreshGate.release();
@@ -483,6 +483,7 @@ test('activity create failure retains the selection and blocks duplicate pending
 	await page.getByRole('option', { name: 'ชุมนุม', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' }).click();
 	try {
+		await expect.poll(() => writes).toBe(1);
 		await expect(page.getByRole('button', { name: 'กำลังเพิ่มกิจกรรม...' })).toBeDisabled();
 		await expect(page.getByRole('button', { name: 'ยกเลิก' })).toBeDisabled();
 		expect(writes).toBe(1);
@@ -500,6 +501,7 @@ test('activity create failure retains the selection and blocks duplicate pending
 	});
 	await expect(page.getByRole('dialog').getByLabel(/^ประเภทกิจกรรม/)).toContainText('ชุมนุม');
 	await expect(page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' })).toBeEnabled();
+	expect(writes).toBe(1);
 });
 
 test('activity readers can inspect history without create or version actions', async ({ page }) => {

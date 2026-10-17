@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
@@ -10,6 +11,7 @@ test.describe.configure({ mode: 'default' });
 
 const id = (n: number) => `20000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const roundId = id(1);
+const contextYearId = id(30);
 const otherRoundId = id(6);
 const appId = id(2);
 const nextAppId = id(3);
@@ -50,7 +52,7 @@ async function reply(route: Route, data: unknown, status = 200) {
 	});
 }
 
-async function mock(page: Page, manager = true) {
+async function mock(page: Page, manager = true, validContext = false) {
 	const reads: string[] = [];
 	const writes: string[] = [];
 	const filters: string[] = [];
@@ -101,9 +103,20 @@ async function mock(page: Page, manager = true) {
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
-					activeAcademicYearId: null,
+					activeAcademicYearId: validContext ? contextYearId : null,
 					activeAcademicTermId: null,
-					years: [],
+					years: validContext
+						? [
+								{
+									id: contextYearId,
+									year: 2569,
+									name: '2569',
+									status: 'active',
+									startDate: '2026-05-01',
+									endDate: '2027-04-30'
+								}
+							]
+						: [],
 					terms: []
 				});
 			if (path === `/api/admission/rounds/${otherRoundId}/applications` && method === 'GET') {
@@ -112,6 +125,7 @@ async function mock(page: Page, manager = true) {
 			}
 			if (path === `/api/admission/rounds/${roundId}/applications` && method === 'GET') {
 				filters.push(url.search);
+				const snapshotStatus = currentStatus;
 				if (holdList) await listGate;
 				if (failListOnce) {
 					failListOnce = false;
@@ -123,7 +137,7 @@ async function mock(page: Page, manager = true) {
 						applicationNumber: app.applicationNumber,
 						fullName: app.fullName,
 						trackName: app.trackName,
-						status: currentStatus,
+						status: snapshotStatus,
 						phone: app.phone,
 						createdAt: app.createdAt
 					}
@@ -600,13 +614,23 @@ test('date-only navigation during verification preserves the exact identifier re
 });
 
 test('a late list refresh cannot undo a verified status', async ({ page }) => {
-	const state = await mock(page);
-	await page.goto(`/staff/academic/admission/${roundId}/applications`, {
-		waitUntil: 'domcontentloaded'
-	});
+	const state = await mock(page, true, true);
+	await page.goto(
+		`/staff/academic/admission/${roundId}/applications?academicYearId=${contextYearId}`,
+		{
+			waitUntil: 'domcontentloaded'
+		}
+	);
 	await expect(page.getByText(app.fullName, { exact: true })).toBeVisible();
 	state.holdList();
-	await page.getByRole('button', { name: 'โหลดใบสมัครใหม่' }).click();
+	await revalidatePage(page);
+	await expect
+		.poll(
+			() =>
+				state.reads.filter((path) => path === `/api/admission/rounds/${roundId}/applications`)
+					.length
+		)
+		.toBe(2);
 	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
 	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
 	await expect(page.getByText('ผ่านการตรวจสอบ', { exact: true })).toBeVisible();
@@ -668,13 +692,21 @@ test('application detail retries a failed selected read without loading tracks',
 });
 
 test('a late detail refresh cannot undo verification', async ({ page }) => {
-	const state = await mock(page);
-	await page.goto(`/staff/academic/admission/${roundId}/applications/${appId}`, {
-		waitUntil: 'domcontentloaded'
-	});
+	const state = await mock(page, true, true);
+	await page.goto(
+		`/staff/academic/admission/${roundId}/applications/${appId}?academicYearId=${contextYearId}`,
+		{
+			waitUntil: 'domcontentloaded'
+		}
+	);
 	await expect(page.getByText(app.nationalId, { exact: true })).toBeVisible();
 	state.holdDetail();
-	await page.getByRole('button', { name: 'โหลดรายละเอียดใบสมัครใหม่' }).click();
+	await revalidatePage(page);
+	await expect
+		.poll(
+			() => state.reads.filter((path) => path === `/api/admission/applications/${appId}`).length
+		)
+		.toBe(2);
 	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
 	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
 	await expect(page.getByText('ผ่านการตรวจสอบ', { exact: true })).toBeVisible();

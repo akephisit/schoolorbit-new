@@ -282,7 +282,10 @@
 	description="แยกแบบตามบทบาทหรือรางวัล แล้วกำหนด PDF พื้นหลัง รูปประกอบ และฟอนต์ของแต่ละแบบ"
 >
 	{#snippet meta()}
-		<div class="flex items-center gap-2 text-xs text-muted-foreground">
+		<div
+			class="flex items-center gap-2 text-xs text-muted-foreground"
+			aria-busy={campaignLoading || loading}
+		>
 			<FileBadge2 class="size-4" />
 			{loaded ? `${templates.length} แบบ` : 'กำลังโหลดแบบ'}{campaign
 				? ` · ${campaign.name}`
@@ -291,8 +294,6 @@
 	{/snippet}
 
 	{#snippet actions()}
-		{#if canReadTemplates}<Button variant="outline" onclick={retryTemplates}>โหลดแบบใหม่</Button
-			>{/if}
 		{#if canCreateTemplates}
 			<Button onclick={openCreate}>
 				<Plus class="size-4" /> เพิ่มแบบเกียรติบัตร
@@ -307,7 +308,7 @@
 			description="สิทธิ์การอ่านและหน่วยงานเจ้าของกิจกรรมตรวจจาก backend"
 		/>
 	{:else}
-		{#if campaignLoading}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
+		{#if campaignLoading && !campaign}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
 		{#if campaignError}<PageState
 				variant="error"
 				title="โหลดกิจกรรมไม่สำเร็จ"
@@ -318,7 +319,7 @@
 		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดแบบเกียรติบัตร">
 				<PageSkeleton variant="cards" />
 			</div>{/if}
-		{#if loading && loaded}<p role="status">กำลังอัปเดตแบบเกียรติบัตร</p>{/if}
+
 		{#if error}
 			<PageState
 				variant="error"

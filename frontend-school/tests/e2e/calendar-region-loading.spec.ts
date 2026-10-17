@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { test, expect } from '@playwright/test';
 import {
 	mockCalendar,
@@ -66,16 +67,16 @@ test('month history and cross-month search reread events without catalog reloads
 	expect(api.count(tagsPath)).toBe(1);
 	expect(api.count(eventsPath)).toBe(4);
 });
-test('same-context failed refresh retains events and retries only them', async ({ page }) => {
+test('page revalidation retains events and focused retry rereads only events', async ({ page }) => {
 	const api = await mockCalendar(page, { fail: 'events', failAt: 2 });
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
-	await page.getByRole('button', { name: 'รีเฟรชปฏิทิน', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('calendar-events')).toContainText('region events ไม่พร้อม');
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
 	await page.getByTestId('calendar-events').getByRole('button', { name: 'ลองอีกครั้ง' }).click();
-	expect(api.count(categoriesPath)).toBe(1);
-	expect(api.count(tagsPath)).toBe(1);
+	expect(api.count(categoriesPath)).toBe(2);
+	expect(api.count(tagsPath)).toBe(2);
 });
 test('late month response cannot restore old month data', async ({ page }) => {
 	const api = await mockCalendar(page, { hold: 'events' });
@@ -260,7 +261,10 @@ for (const width of [1280, 375]) {
 		await expect(page.getByRole('status', { name: 'กำลังโหลดกิจกรรม', exact: true })).toHaveCount(
 			0
 		);
-		await expect(page.getByRole('status')).toContainText('กำลังโหลดกิจกรรม');
+		await expect(page.getByTestId('calendar-events')).toHaveAttribute('aria-busy', 'true');
+		await expect(
+			page.getByRole('status').filter({ hasText: /กำลังโหลดกิจกรรม|กำลังอัปเดต/ })
+		).toHaveCount(0);
 		await expect(page.getByTestId('calendar-events')).not.toContainText('กิจกรรมแรก');
 		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 		const november = page.locator('[data-calendar-date="2026-11-01"]');

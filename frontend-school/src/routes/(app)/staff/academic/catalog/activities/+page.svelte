@@ -26,12 +26,7 @@
 	} from '#lib/academic-core/catalog-presentation.js';
 	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -299,7 +294,6 @@
 			aria-busy={loading}
 			data-testid="catalog-activities-ready"
 		>
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตทะเบียนกิจกรรม" />{/if}
 			<section aria-label="ค้นหาและกรองกิจกรรม" class="rounded-xl border bg-card p-3 sm:p-4">
 				<div class="space-y-3">
 					<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)_auto]">

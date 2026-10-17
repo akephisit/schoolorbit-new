@@ -9,7 +9,7 @@
 	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -457,7 +457,7 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={onRefresh}
 			/>{/if}
-		{#if loadingMembers && membersLoaded}<RegionUpdatingState label="กำลังอัปเดตสมาชิก" />{/if}
+
 		{#if loadingMembers && !membersLoaded}<div role="status" aria-label="กำลังโหลดสมาชิก">
 				<PageSkeleton variant="table" rows={3} />
 			</div>

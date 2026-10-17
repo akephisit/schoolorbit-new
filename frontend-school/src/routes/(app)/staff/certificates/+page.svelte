@@ -129,7 +129,6 @@
 		/>
 	{:else}
 		<section data-testid="certificate-campaigns">
-			{#if loading && loaded}<p role="status">กำลังอัปเดตกิจกรรม</p>{/if}
 			{#if error}
 				<PageState
 					variant="error"

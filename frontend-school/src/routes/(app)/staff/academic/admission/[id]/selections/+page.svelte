@@ -27,7 +27,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -824,11 +824,7 @@
 		{#if roundLoading && !roundLoaded}
 			<PageSkeleton variant="cards" rows={2} />
 		{:else if roundLoaded}
-			{#if roundLoading}<RegionUpdatingState
-					class="static"
-					label="กำลังอัปเดตรอบรับสมัคร..."
-				/>{/if}
-			<Card.Root class="gap-0 py-0">
+			<Card.Root class="gap-0 py-0" aria-busy={roundLoading}>
 				<Card.Content class="pt-4 pb-4 space-y-3">
 					<div class="flex items-center justify-between">
 						<p class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -907,11 +903,7 @@
 				{#if tracksLoading && !tracksLoaded}
 					<PageSkeleton variant="cards" rows={1} />
 				{:else if tracksLoaded}
-					{#if tracksLoading}<RegionUpdatingState
-							class="static"
-							label="กำลังอัปเดตสายการเรียน..."
-						/>{/if}
-					<Card.Root class="gap-0 py-0">
+					<Card.Root class="gap-0 py-0" aria-busy={tracksLoading}>
 						<Card.Content class="pt-4 pb-4 flex items-center gap-4 flex-wrap">
 							<p class="text-sm font-medium shrink-0">สาย:</p>
 							<div class="flex gap-2 flex-wrap flex-1">
@@ -967,11 +959,7 @@
 				{#if subjectsLoading && !subjectsLoaded}
 					<PageSkeleton variant="cards" rows={1} />
 				{:else if subjects.length > 0}
-					{#if subjectsLoading}<RegionUpdatingState
-							class="static"
-							label="กำลังอัปเดตวิชาสอบ..."
-						/>{/if}
-					<Card.Root class="gap-0 py-0">
+					<Card.Root class="gap-0 py-0" aria-busy={subjectsLoading}>
 						<Card.Content class="pt-4 pb-3 space-y-2">
 							<p class="text-sm font-medium">วิชาที่ใช้คัดผ่าน-ไม่ผ่าน</p>
 							<div class="flex flex-wrap gap-3">
@@ -1041,10 +1029,6 @@
 				{#if loading && !rankingLoaded}
 					<PageSkeleton variant="table" rows={6} columns={7} />
 				{:else if ranking}
-					{#if loading}<RegionUpdatingState
-							class="static"
-							label="กำลังอัปเดตผลเรียงคะแนน..."
-						/>{/if}
 					<!-- Room Summary -->
 					{#if ranking.rooms?.length > 0}
 						<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1070,7 +1054,7 @@
 					{/if}
 
 					<!-- Accepted Table -->
-					<Card.Root>
+					<Card.Root aria-busy={loading}>
 						<Card.Header class="flex flex-row items-center justify-between pb-3">
 							<Card.Title class="flex items-center gap-2">
 								<Trophy class="w-5 h-5 text-yellow-500" />
@@ -1258,7 +1242,7 @@
 
 					<!-- Overflow -->
 					{#if overflowApps.length > 0}
-						<Card.Root class="border-orange-200">
+						<Card.Root class="border-orange-200" aria-busy={loading}>
 							<Card.Header class="pb-3">
 								<Card.Title class="text-orange-600">
 									เกินโควต้า ({overflowApps.length} คน)
@@ -1377,7 +1361,7 @@
 				<!-- ========== โหมด: รวมทุกคน ========== -->
 			{:else}
 				<!-- DnD Room Ordering -->
-				<Card.Root class="gap-0 py-0">
+				<Card.Root class="gap-0 py-0" aria-busy={loadingRooms}>
 					<Card.Content class="pt-4 pb-4 space-y-3">
 						<div class="flex items-center justify-between">
 							<div>
@@ -1415,10 +1399,6 @@
 						{:else if roomOrderForGlobal.length === 0 && !roomsError}
 							<p class="text-sm text-muted-foreground text-center py-6">ไม่พบห้องเรียนในรอบนี้</p>
 						{:else if roomOrderForGlobal.length > 0}
-							{#if loadingRooms}<RegionUpdatingState
-									class="static"
-									label="กำลังอัปเดตรายการห้อง..."
-								/>{/if}
 							<div class="space-y-2" role="list">
 								{#each roomOrderForGlobal as room, i (room.roomId)}
 									<div
@@ -1471,7 +1451,6 @@
 				{#if loadingGlobal && !globalLoaded}
 					<PageSkeleton variant="table" rows={6} columns={7} />
 				{:else if globalRanking}
-					{#if loadingGlobal}<RegionUpdatingState class="static" label="กำลังอัปเดตผลรวม..." />{/if}
 					<!-- Room summary cards -->
 					{#if globalRanking.rooms.length > 0}
 						<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1641,7 +1620,10 @@
 							: globalViewTab === 'all'
 								? globalAccepted
 								: roomNormal}
-					<Card.Root class={globalViewTab === 'overflow' ? 'border-orange-200' : ''}>
+					<Card.Root
+						class={globalViewTab === 'overflow' ? 'border-orange-200' : ''}
+						aria-busy={loadingGlobal}
+					>
 						<Card.Header class="pb-3">
 							<Card.Title class="flex items-center gap-2">
 								{#if globalViewTab === 'overflow'}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { ArrowUpRight, RefreshCw, UsersRound } from '@lucide/svelte';
+	import { ArrowUpRight, UsersRound } from '@lucide/svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -96,13 +96,6 @@
 		<Button href="/staff/manage?status=active" data-sveltekit-preload-data="tap">
 			<UsersRound class="size-4" aria-hidden="true" />
 			ดูรายชื่อบุคลากร
-		</Button>
-		<Button variant="outline" onclick={refresh} disabled={loading}>
-			<RefreshCw
-				class={loading ? 'size-4 motion-safe:animate-spin' : 'size-4'}
-				aria-hidden="true"
-			/>
-			รีเฟรชข้อมูล
 		</Button>
 	{/snippet}
 	<section data-testid="personnel-overview" aria-busy={loading} class="space-y-5">

@@ -10,7 +10,7 @@
 	import CurriculumCreateDialog from '#lib/components/academic-core/CurriculumCreateDialog.svelte';
 	import CurriculumOverviewTable from '#lib/components/academic-core/CurriculumOverviewTable.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
@@ -87,7 +87,6 @@
 			aria-busy={loading}
 			data-testid="curricula-overview-ready"
 		>
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตรายการฉบับหลักสูตร" />{/if}
 			{#if errorMessage && overview}<div
 					role="alert"
 					class="flex flex-wrap items-center gap-3 text-sm text-destructive"

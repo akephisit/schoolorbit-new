@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import { Button } from '#lib/components/ui/button/index.js';
+
 	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -186,11 +186,6 @@
 	title={`สวัสดี, คุณ${profile?.first_name || '...'} ${profile?.last_name || ''}`}
 	description="ติดตามการเรียนและความเป็นอยู่ของบุตรหลาน"
 >
-	<Button
-		variant="outline"
-		disabled={loading || contextLoading || !selectedYearId}
-		onclick={loadProfile}>โหลดข้อมูลใหม่</Button
-	>
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="parent-year">ปีการศึกษา</Label>
@@ -219,13 +214,6 @@
 			onaction={loadProfile}
 		/>{/if}
 	<div data-testid="parent-profile-region" aria-busy={loading || contextLoading}>
-		{#if loading && loaded}<p
-				role="status"
-				aria-label="กำลังอัปเดตข้อมูล"
-				class="text-muted-foreground text-sm"
-			>
-				กำลังอัปเดตข้อมูล…
-			</p>{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดข้อมูลผู้ปกครอง">
 				<PageSkeleton variant="cards" rows={3} />

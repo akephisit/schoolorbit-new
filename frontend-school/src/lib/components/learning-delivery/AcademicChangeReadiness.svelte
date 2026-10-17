@@ -13,11 +13,7 @@
 		type DeleteDeliveryVersionRequest
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
-	import {
-		LoadingButton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageState, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -218,7 +214,7 @@
 
 {#snippet result()}
 	{#if loadingPreview}
-		<div class="relative min-h-24"><RegionUpdatingState label="กำลังตรวจความพร้อม" /></div>
+		<PageSkeleton variant="detail" />
 	{:else if preview}
 		{#if preview.preliminary}<p class="text-sm text-muted-foreground">
 				ผลตรวจเบื้องต้น ต้องเลือกวันเริ่มใช้และตรวจอีกครั้งตอนเผยแพร่

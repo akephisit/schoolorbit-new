@@ -19,12 +19,7 @@
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import {
-		LoadingButton,
-		PageSkeleton,
-		PageState,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -359,7 +354,6 @@
 					aria-busy={versionsLoading}
 					data-testid="timetable-template-versions-ready"
 				>
-					{#if versionsLoading}<RegionUpdatingState />{/if}
 					{#if versionsError}
 						<div
 							role="alert"
@@ -416,7 +410,6 @@
 				/>
 			{:else}
 				<div class="relative" aria-busy={templatesLoading} data-testid="timetable-templates-ready">
-					{#if templatesLoading}<RegionUpdatingState />{/if}
 					{#if templatesError}
 						<div
 							role="alert"

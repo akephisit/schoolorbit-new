@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { careerEntry, personnelInfo, rankOverview } from './fixtures/staff-career-route-data';
 import { expect, test, type Page } from '@playwright/test';
 import { mockStaffDirectory, staffPath } from './fixtures/staff-directory-route-data';
@@ -169,7 +170,7 @@ test('overview ignores old status links and opens the active directory', async (
 		/status=active/
 	);
 	await expect(page.getByRole('button', { name: 'สถานะสำหรับกราฟ', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'รีเฟรชข้อมูล', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('personnel-overview')).toHaveAttribute('aria-busy', 'false');
 	expect(reads.length).toBeGreaterThanOrEqual(3);
 	expect(reads.every((url) => new URL(url).searchParams.get('status') === 'active')).toBe(true);
@@ -343,7 +344,7 @@ test('overview owns its first error and retains data during refresh', async ({ p
 	await expect(region).toContainText('ภาพรวมไม่พร้อม');
 	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 	await expect(region).toContainText('บุคลากรทั้งหมด');
-	await page.getByRole('button', { name: 'รีเฟรชข้อมูล', exact: true }).click();
+	await revalidatePage(page);
 	await expect(region).toHaveAttribute('aria-busy', 'true');
 	await expect(region).toContainText('บุคลากรทั้งหมด');
 	release();

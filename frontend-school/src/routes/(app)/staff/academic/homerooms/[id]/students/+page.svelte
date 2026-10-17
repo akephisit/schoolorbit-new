@@ -2,7 +2,7 @@
 	import { invalidate } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -135,7 +135,6 @@
 		/>
 	{:else}
 		<div class="relative space-y-4" aria-busy={loading} data-testid="homeroom-roster-ready">
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตรายชื่อนักเรียน" />{/if}
 			<div
 				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4"
 			>
@@ -166,7 +165,6 @@
 						><ArrowDownAZ class="size-4" />จัดเลขที่</Button
 					>
 				{/if}
-				<Button variant="ghost" onclick={refresh} disabled={loading}>รีเฟรชรายชื่อ</Button>
 			</div>
 			<div class="rounded-xl border bg-card p-3 sm:p-4">
 				<Input

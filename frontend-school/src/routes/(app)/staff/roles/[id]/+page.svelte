@@ -407,7 +407,7 @@
 							actionLabel="ลองอีกครั้ง"
 							onaction={loadRole}
 						/>{/if}
-					{#if loading}<p role="status">กำลังอัปเดตบทบาท...</p>{/if}
+
 					<Card>
 						<CardHeader>
 							<div class="flex items-center gap-2">
@@ -561,7 +561,7 @@
 									actionLabel="ลองอีกครั้ง"
 									onaction={loadPermissions}
 								/>{/if}
-							{#if rolePermissionListLoading}<p role="status">กำลังอัปเดตรายการสิทธิ์...</p>{/if}
+
 							<div class="space-y-4">
 								{#each Object.entries(permissionsByModule) as [module, permissions] (module)}
 									<div class="border rounded-lg p-4">
@@ -628,14 +628,7 @@
 
 			<div class="flex justify-end gap-2">
 				<Button variant="outline" onclick={() => goto(resolve('staff/roles'))}>ยกเลิก</Button>
-				{#if !isNew}<Button variant="outline" onclick={loadRole} disabled={loading || mutationBusy}
-						>รีเฟรชบทบาท</Button
-					>{/if}
-				{#if canReadPermissionCatalog}<Button
-						variant="outline"
-						onclick={loadPermissions}
-						disabled={rolePermissionListLoading || mutationBusy}>รีเฟรชรายการสิทธิ์</Button
-					>{/if}
+
 				{#if canEditRole}
 					<Button
 						onclick={handleSave}

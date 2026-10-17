@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import {
 	id,
@@ -62,7 +63,7 @@ test('queue refresh retains usable rows through an error', async ({ page }) => {
 	await page.goto(path('requests'));
 	const region = page.getByTestId('supervision-observations');
 	await expect(region.getByText('ครู ในคิว', { exact: true }).first()).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(region.getByText('region ไม่พร้อม')).toBeVisible();
 	await expect(region.getByText('ครู ในคิว', { exact: true }).first()).toBeVisible();
 	await region.getByRole('button', { name: 'ลองใหม่' }).click();
@@ -85,7 +86,7 @@ test('returning a request supersedes a pending stale refresh', async ({ page }) 
 	const api = await mock(page, { hold: 'observations', holdAt: 2 });
 	await page.goto(path('requests'));
 	await expect(page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'true');
 	await page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true }).click();
 	await expect(page.getByText('ไม่มีคำขอจองที่รออนุมัติ')).toBeVisible();
@@ -176,7 +177,7 @@ test('organization approvals avoid school report reads and options', async ({ pa
 		page.getByTestId('supervision-observations').getByText('ครู ในคิว', { exact: true })
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'โหลดรายงาน', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'รีเฟรช', exact: true }).click();
+	await revalidatePage(page);
 	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'false');
 	expect(api.count('/api/supervision/cycles')).toBe(0);
 	expect(api.reads.some((value) => value.endsWith('/progress'))).toBe(false);

@@ -22,12 +22,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import {
-		PageSkeleton,
-		PageState,
-		LoadingButton,
-		RegionUpdatingState
-	} from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState, LoadingButton } from '#lib/components/app-state/index.js';
 	import OrganizationMembersSection from './OrganizationMembersSection.svelte';
 	import OrganizationPermissionDialog from './OrganizationPermissionDialog.svelte';
 	import {
@@ -318,7 +313,6 @@
 		/>
 	{:else if ready}
 		<div class="relative space-y-4" data-testid="catalog-subject-groups-ready">
-			{#if loading}<RegionUpdatingState label="กำลังอัปเดตกลุ่มสาระ" />{/if}
 			{#if error}<PageState
 					variant="error"
 					title="อัปเดตกลุ่มสาระไม่สำเร็จ"

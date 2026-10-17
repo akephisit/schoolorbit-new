@@ -202,7 +202,7 @@ test('policy list first load has a skeleton and a focused retry after failure', 
 	expect(attempts).toBe(2);
 });
 
-test('policy refresh retains the current list and retries only that region', async ({ page }) => {
+test('policy browser reload shows a fresh skeleton and focused retry', async ({ page }) => {
 	await mock(page, 'reader');
 	await page.goto(url);
 	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
@@ -220,12 +220,13 @@ test('policy refresh retains the current list and retries only that region', asy
 		}
 		return route.fallback();
 	});
-	await page.getByRole('button', { name: 'รีเฟรช' }).click();
-	await expect(page.getByText('กำลังอัปเดตเกณฑ์...')).toBeVisible();
-	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
+	await page.reload();
+	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
+	await expect(page.getByRole('status').filter({ hasText: /กำลังอัปเดต/ })).toHaveCount(0);
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toHaveCount(0);
 	release();
 	await expect(page.getByText('อ่านเกณฑ์ชั่วคราวไม่สำเร็จ')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
 	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
 	expect(attempts).toBe(2);
 });

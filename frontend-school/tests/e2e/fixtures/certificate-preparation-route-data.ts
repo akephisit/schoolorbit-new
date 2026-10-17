@@ -23,7 +23,14 @@ export const templateRoute = `/staff/certificates/${campaignId}/templates`,
 	editorRoute = `${templateRoute}/${templateId}/editor`;
 export async function mockPreparation(
 	page: Page,
-	options: { hold?: string; holdAt?: number; fail?: string; failAt?: number; reader?: boolean } = {}
+	options: {
+		hold?: string;
+		holdAt?: number;
+		fail?: string;
+		failAt?: number;
+		reader?: boolean;
+		emptyTemplates?: boolean;
+	} = {}
 ) {
 	const base = await mockCampaigns(page, {
 		permissions: options.reader
@@ -143,7 +150,7 @@ export async function mockPreparation(
 					}
 				});
 			if (method === 'GET' && path.endsWith('/templates') && path.includes('/campaigns/'))
-				return reply(route, [template]);
+				return reply(route, options.emptyTemplates ? [] : [template]);
 			if (method === 'GET' && path === templatePath) return reply(route, template);
 			if (method === 'GET' && path === `${templatePath}/variables`)
 				return reply(route, { variables: ['recipientName'] });

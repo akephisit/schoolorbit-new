@@ -25,7 +25,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -664,19 +664,6 @@
 	description={round?.name ?? 'ตั้งค่าห้องสอบและจัดเลขที่นั่งสอบ'}
 	backHref="/staff/academic/admission/{id}"
 >
-	{#snippet actions()}
-		{#if canManageAdmission}
-			<Button
-				size="icon"
-				variant="outline"
-				onclick={loadRound}
-				disabled={roundLoading}
-				aria-label="โหลดชื่อรอบใหม่"
-			>
-				<RefreshCw class="h-4 w-4" />
-			</Button>
-		{/if}
-	{/snippet}
 	{#if roundLoading && roomsLoading && configLoading && !roundLoaded && !roomsLoaded && !configLoaded}
 		<PageSkeleton variant="detail" />
 	{:else if !canManageAdmission}
@@ -694,8 +681,6 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadRound}
 			/>
-		{:else if roundLoading && roundLoaded}
-			<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />
 		{/if}
 		<!-- Tabs -->
 		<div class="border-b">
@@ -724,17 +709,6 @@
 						<Badge variant="secondary">{totalAssigned}</Badge>
 					{/if}
 				</button>
-				{#if activeTab === 'seats'}
-					<Button
-						size="icon"
-						variant="outline"
-						onclick={loadSeats}
-						disabled={seatsLoading}
-						aria-label="โหลดที่นั่งใหม่"
-					>
-						<RefreshCw class="h-4 w-4" />
-					</Button>
-				{/if}
 			</nav>
 		</div>
 
@@ -754,10 +728,6 @@
 							onaction={loadRooms}
 						/>
 					{:else}
-						{#if roomsLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตห้องสอบ..."
-							/>{/if}
 						{#if roomsError}
 							<p role="alert" class="text-sm text-destructive">
 								{roomsError}
@@ -770,15 +740,6 @@
 								{#if totalAssigned > 0}· จัดแล้ว <strong>{totalAssigned}</strong> คน{/if}
 							</p>
 							<div class="flex gap-2">
-								<Button
-									size="icon"
-									variant="outline"
-									onclick={loadRooms}
-									disabled={roomsLoading}
-									aria-label="โหลดห้องสอบใหม่"
-								>
-									<RefreshCw class="h-4 w-4" />
-								</Button>
 								<Button
 									size="sm"
 									onclick={() => {
@@ -883,10 +844,6 @@
 							onaction={loadConfig}
 						/>
 					{:else}
-						{#if configLoading}<RegionUpdatingState
-								class="static"
-								label="กำลังอัปเดตการตั้งค่า..."
-							/>{/if}
 						{#if configError}
 							<p role="alert" class="text-sm text-destructive">
 								{configError}
@@ -899,15 +856,6 @@
 									<Card.Title class="flex items-center gap-2 text-sm">
 										<Settings class="h-4 w-4" /> ตั้งค่าการจัดที่นั่ง
 									</Card.Title>
-									<Button
-										size="icon"
-										variant="ghost"
-										onclick={loadConfig}
-										disabled={configLoading}
-										aria-label="โหลดการตั้งค่าใหม่"
-									>
-										<RefreshCw class="h-4 w-4" />
-									</Button>
 								</div>
 							</Card.Header>
 							<Card.Content class="space-y-3">
@@ -1065,10 +1013,6 @@
 						onaction={loadSeats}
 					/>
 				{:else}
-					{#if seatsLoading}<RegionUpdatingState
-							class="static"
-							label="กำลังอัปเดตผลจัดที่นั่ง..."
-						/>{/if}
 					{#if seatsError}
 						<p role="alert" class="text-sm text-destructive">
 							{seatsError}
@@ -1190,7 +1134,7 @@
 				<div class="space-y-1.5">
 					<p class="text-sm font-medium">เลือกห้อง</p>
 					{#if facilityLoading}
-						<RegionUpdatingState class="static" label="กำลังโหลดห้องอาคาร..." />
+						<PageSkeleton variant="form" rows={1} />
 					{:else if facilityError}
 						<p role="alert" class="text-sm text-destructive">
 							{facilityError}

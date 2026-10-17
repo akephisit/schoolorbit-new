@@ -12,7 +12,7 @@
 	} from '#lib/api/timetable.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import {
@@ -232,7 +232,6 @@
 		<PageState title="ยังไม่มีตารางสอน" description="ยังไม่มีคาบสอนของคุณในภาคเรียนนี้" />
 	{:else}
 		<div class="relative" aria-busy={loading} data-testid="personal-timetable-ready">
-			{#if loading}<RegionUpdatingState />{/if}
 			{#if errorMessage}
 				<div
 					role="alert"

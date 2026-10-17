@@ -3,28 +3,12 @@
 	import { userPermissions } from '#lib/stores/permissions.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
-	import { authAPI } from '#lib/api/auth.js';
-	import { toast } from 'svelte-sonner';
 
 	const authState = $derived($authStore);
 	const permissions = $derived($userPermissions);
-
-	async function forceRefresh() {
-		const result = await authAPI.refreshCurrentUser({ silent: false });
-		if (result === 'authenticated') {
-			window.location.reload();
-		} else if (result === 'unavailable') {
-			toast.warning('ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง');
-		}
-	}
 </script>
 
 <PageShell title="Debug: Auth State" description="ตรวจสอบ session และ permission ของผู้ใช้ปัจจุบัน">
-	{#snippet actions()}
-		<Button onclick={forceRefresh}>Force Refresh Auth</Button>
-	{/snippet}
-
 	<Card class="border-yellow-500">
 		<CardHeader>
 			<CardTitle>Raw Permissions Value</CardTitle>

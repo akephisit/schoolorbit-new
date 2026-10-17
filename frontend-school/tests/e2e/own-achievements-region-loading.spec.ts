@@ -1,3 +1,4 @@
+import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test } from '@playwright/test';
 import {
 	mockOwnAchievements,
@@ -130,7 +131,7 @@ for (const [role, path] of [
 		});
 		await page.goto(path);
 		await expect(page.getByTestId('my-certificate-card')).toBeVisible();
-		await page.getByRole('button', { name: 'โหลดใหม่', exact: true }).click();
+		await revalidatePage(page);
 		await expect(page.getByRole('button', { name: 'ลองใหม่', exact: true })).toBeVisible();
 		await expect(page.getByTestId('my-certificate-card')).toBeVisible();
 		await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click();

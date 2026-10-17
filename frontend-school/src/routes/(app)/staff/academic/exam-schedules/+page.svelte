@@ -14,7 +14,7 @@
 		type ExamRound,
 		type ExamRoundKind
 	} from '#lib/api/examSchedule.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		AcademicPrerequisiteNotice,
@@ -35,7 +35,7 @@
 	} from '#lib/components/ui/table/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
-	import { CalendarClock, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
+	import { CalendarClock, Plus, Trash2 } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 
@@ -225,15 +225,6 @@
 <PageShell title={data.title} description="จัดการรอบสอบประจำภาคเรียน">
 	{#snippet actions()}
 		<div class="flex flex-wrap items-center gap-2">
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => loadRounds()}
-				disabled={roundsLoading || !academicTermId}
-			>
-				<RefreshCw class="h-4 w-4" />
-				รีเฟรช
-			</Button>
 			{#if canManageExamSchedules}
 				<Button size="sm" onclick={() => (createDialogOpen = true)} disabled={!academicTermId}>
 					<Plus class="h-4 w-4" />
@@ -265,7 +256,6 @@
 		/>
 	{:else}
 		<div class="relative space-y-4" aria-busy={roundsLoading} data-testid="exam-rounds-ready">
-			{#if roundsLoading}<RegionUpdatingState label="กำลังอัปเดตรอบสอบ..." />{/if}
 			{#if error}
 				<div
 					role="alert"
