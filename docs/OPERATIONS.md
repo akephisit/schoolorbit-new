@@ -155,6 +155,14 @@ separate application/pool latency from database time. SSH into each VPS for its 
 CPU, available RAM, disk and network; the database dashboard cannot measure the
 backend host's CPU/RAM. No public metrics endpoint or additional monitoring stack.
 
+Production School logging defaults to one JSON event per line through `LOG_FORMAT`
+in [`podman-compose.yml`](../podman-compose.yml). Ordinary pool acquisition timings
+use DEBUG; acquisitions exceeding 250 ms retain WARN at the default INFO filter.
+For a bounded diagnostic window, set
+`RUST_LOG=info,sqlx::pool::acquire=debug`, then restore INFO after collecting timings
+to limit journal volume. `LOG_FORMAT=pretty` is available for interactive diagnosis;
+restore `json` for normal production operation.
+
 Backend DNS aliases are declared in `podman-compose.yml` before process startup.
 The release network gate checks attachment metadata and resolves both the service
 and container hostname from Nginx to the current container address. DNS retries are

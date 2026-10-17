@@ -126,6 +126,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@schoolorbit.app}
 
       RUST_LOG: ${RUST_LOG:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
     volumes:
       - ${POSTGRES_CA_FILE:-/opt/stack/postgresql/ca.crt}:/run/secrets/postgresql-ca.crt:ro
     healthcheck:
