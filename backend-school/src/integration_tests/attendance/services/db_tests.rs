@@ -3792,3 +3792,218 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
         .unwrap();
     tx.rollback().await.unwrap();
 }
+
+#[tokio::test]
+async fn attendance_report_snapshot_allows_reports_and_first_save_without_mixed_coverage() {
+    let f = fixture("attendance_report_save_overlap").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1")
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let mut preview_session = source.session.clone();
+    preview_session.roster = source.students.clone();
+    let preview = sessions::detail_unchecked(
+        &f.pool,
+        sessions::with_token(&f.pool, preview_session)
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    let query = report_query(Some(STUDENT), 1, 100);
+    let before = report(&f.pool, &actor, query.clone()).await.unwrap();
+    let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+        .await
+        .unwrap();
+    let mode: (String, String) = sqlx::query_as(
+        "SELECT current_setting('transaction_isolation'),current_setting('transaction_read_only')",
+    )
+    .fetch_one(&mut *snapshot)
+    .await
+    .unwrap();
+    assert_eq!(mode, ("repeatable read".into(), "on".into()));
+    let expected = projection::expected(&mut snapshot, TERM, None)
+        .await
+        .unwrap();
+    let concurrent = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        report(&f.pool, &actor, query.clone()),
+    )
+    .await
+    .expect("reports must share the term guard")
+    .unwrap();
+    assert_eq!(concurrent.summaries, before.summaries);
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        sessions::save_with_seed(
+            &f.pool,
+            &f.actor,
+            source.session.id,
+            save_payload(&preview, STUDENT, AttendanceResult::Present),
+            Some(source),
+        ),
+    )
+    .await
+    .expect("first save must commit while a report snapshot is open")
+    .unwrap();
+    let frozen = reports::page_with_expected_on_connection(&mut snapshot, &query, None, &expected)
+        .await
+        .unwrap();
+    assert_eq!(
+        frozen.summaries, before.summaries,
+        "virtual coverage and saved facts must use one snapshot"
+    );
+    snapshot.rollback().await.unwrap();
+    let after = report(&f.pool, &actor, query).await.unwrap();
+    let present =
+        |report: &AttendanceReport| report.summaries.iter().map(|row| row.present).sum::<i64>();
+    assert_eq!(present(&after), present(&before) + 1);
+    assert_eq!(
+        after.summaries.iter().map(|row| row.expected).sum::<i64>(),
+        before.summaries.iter().map(|row| row.expected).sum::<i64>()
+    );
+}
+
+async fn attendance_wait_for_blocker(pool: &PgPool, blocker: i32) {
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",
+            )
+            .bind(blocker)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("destructive operation must wait on report guard");
+}
+
+#[tokio::test]
+async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_release() {
+    let f = fixture("attendance_report_destructive_guards").await;
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let reset_impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *snapshot)
+        .await
+        .unwrap();
+    let pool = f.pool.clone();
+    let lifecycle = tokio::spawn(async move {
+        let mut tx = pool.begin().await.unwrap();
+        school_academic_core::services::lifecycle_guard::lock_transition(&mut tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+    });
+    attendance_wait_for_blocker(&f.pool, pid).await;
+    snapshot.rollback().await.unwrap();
+    lifecycle.await.unwrap();
+
+    let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *snapshot)
+        .await
+        .unwrap();
+    let pool = f.pool.clone();
+    let purge_worker = tokio::spawn(async move {
+        purge(
+            &pool,
+            TEACHER,
+            TERM,
+            PurgeAttendanceTerm {
+                expected_records: 0,
+                reason: "concurrent archive".into(),
+            },
+        )
+        .await
+    });
+    attendance_wait_for_blocker(&f.pool, pid).await;
+    assert!(
+        !settings::get_on_connection(&mut snapshot, TERM)
+            .await
+            .unwrap()
+            .archived
+    );
+    snapshot.rollback().await.unwrap();
+    assert!(purge_worker.await.unwrap().unwrap().archived);
+    let archived = report(&f.pool, &f.actor, report_query(None, 1, 100))
+        .await
+        .unwrap();
+    assert!(archived.archived);
+
+    // Purge changed the reset preview: its stale token must still be rejected.
+    assert!(matches!(
+        super::reset(
+            &f.pool,
+            TEACHER,
+            ResetAttendanceModule {
+                generation: reset_impact.generation,
+                token: reset_impact.token,
+                reason: "stale report reset".into(),
+            }
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let mut snapshot = school_attendance::services::begin_report_snapshot(&f.pool, TERM)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *snapshot)
+        .await
+        .unwrap();
+    let pool = f.pool.clone();
+    let reset_worker = tokio::spawn(async move {
+        super::reset(
+            &pool,
+            TEACHER,
+            ResetAttendanceModule {
+                generation: impact.generation,
+                token: impact.token,
+                reason: "concurrent reset".into(),
+            },
+        )
+        .await
+    });
+    attendance_wait_for_blocker(&f.pool, pid).await;
+    assert!(
+        settings::get_on_connection(&mut snapshot, TERM)
+            .await
+            .unwrap()
+            .archived
+    );
+    snapshot.rollback().await.unwrap();
+    reset_worker.await.unwrap().unwrap();
+    let after = report(&f.pool, &f.actor, report_query(None, 1, 100))
+        .await
+        .unwrap();
+    assert!(!after.archived);
+    assert_eq!(after.total, 0);
+}

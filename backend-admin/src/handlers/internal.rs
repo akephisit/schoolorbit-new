@@ -125,6 +125,7 @@ pub async fn list_schools_internal(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
                 migration_version, migration_status, last_migrated_at, migration_error
          FROM schools
+         WHERE NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)
          ORDER BY created_at DESC",
     )
     .fetch_all(&state.pool)
@@ -177,7 +178,8 @@ pub async fn get_school_by_subdomain_internal(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
                 migration_version, migration_status, last_migrated_at, migration_error
          FROM schools
-         WHERE subdomain = $1 AND status IN ('active', 'provisioning')",
+         WHERE subdomain = $1 AND status IN ('active', 'provisioning')
+           AND NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)",
     )
     .bind(&subdomain)
     .fetch_optional(&state.pool)
@@ -341,7 +343,8 @@ pub async fn get_migration_connection_internal(
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
           migration_version, migration_status, last_migrated_at, migration_error
-         FROM schools WHERE subdomain = $1 AND status IN ('active', 'provisioning')",
+         FROM schools WHERE subdomain = $1 AND status IN ('active', 'provisioning')
+           AND NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)",
     )
     .bind(subdomain)
     .fetch_optional(&state.pool)

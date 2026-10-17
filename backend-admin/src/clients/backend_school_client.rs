@@ -119,6 +119,34 @@ impl BackendSchoolClient {
         Ok(response_data)
     }
 
+    /// Mutation fencing is deliberately not retried with a new token.
+    /// An uncertain outcome remains closed until this exact operation is reconciled.
+    pub async fn directory_mutation(
+        &self,
+        subdomain: &str,
+        token: uuid::Uuid,
+        finish: bool,
+    ) -> Result<(), String> {
+        let action = if finish { "finish" } else { "begin" };
+        let response = self
+            .client
+            .post(format!(
+                "{}/internal/tenant-directory/{subdomain}/{action}",
+                self.base_url
+            ))
+            .header(INTERNAL_SECRET_HEADER, &self.internal_secret)
+            .header(INTERNAL_CALLER_HEADER, INTERNAL_CALLER)
+            .timeout(std::time::Duration::from_secs(5))
+            .json(&serde_json::json!({"token": token}))
+            .send()
+            .await
+            .map_err(|_| "Tenant directory mutation unavailable".to_string())?;
+        if !response.status().is_success() {
+            return Err("Tenant directory mutation unavailable".into());
+        }
+        Ok(())
+    }
+
     /// Health check for backend-school
     pub async fn health_check(&self) -> bool {
         let url = format!("{}/health", self.base_url);

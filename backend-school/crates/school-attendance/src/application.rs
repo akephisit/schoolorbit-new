@@ -862,8 +862,7 @@ pub async fn report(
         codes::ATTENDANCE_UPDATE_SCHOOL,
         codes::ATTENDANCE_MANAGE_SCHOOL,
     ])?;
-    let mut guard = pool.begin().await?;
-    crate::services::lock_term(&mut guard, q.academic_term_id, false, true).await?;
+    let mut guard = crate::services::begin_report_snapshot(pool, q.academic_term_id).await?;
     let expected = if settings::get_on_connection(&mut *guard, q.academic_term_id)
         .await?
         .archived

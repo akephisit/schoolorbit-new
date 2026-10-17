@@ -681,4 +681,480 @@ mod tests {
                 .unwrap();
         assert_eq!(accounts, 0);
     }
+
+    async fn sibling_application(fixture: &EnrollmentFixture) -> Uuid {
+        let hash = Uuid::new_v4().simple().to_string().repeat(2);
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,national_id_hash,first_name,last_name,status)
+             SELECT admission_round_id,admission_track_id,national_id,$2,'Sibling','Fixture','accepted'
+             FROM admission_applications WHERE id=$1 RETURNING id",
+        ).bind(fixture.application_id).bind(hash).fetch_one(&fixture.pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO admission_room_assignments(application_id,homeroom_id,academic_year_id,rank_in_track,rank_in_room)
+             SELECT $2,homeroom_id,academic_year_id,2,2 FROM admission_room_assignments WHERE application_id=$1",
+        ).bind(fixture.application_id).bind(id).execute(&fixture.pool).await.unwrap();
+        id
+    }
+
+    #[derive(Default)]
+    struct PausingEnrollmentRosters {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl PlacementRosterPort for PausingEnrollmentRosters {
+        async fn reconcile(
+            &self,
+            transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            actor: Uuid,
+            ids: &[Uuid],
+        ) -> Result<(), AppError> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            crate::http_state::PLACEMENT_ROSTERS
+                .reconcile(transaction, actor, ids)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn enrollment_shared_year_allows_independent_enrollment_and_attendance_guards() {
+        let fixture = enrollment_fixture("admission_enrollment_shared_year", 4).await;
+        let sibling = sibling_application(&fixture).await;
+        apply_migrations_through(&fixture.pool, 108).await.unwrap();
+        let term: Uuid = sqlx::query_scalar(
+            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,start_date,planned_end_date,status,included_in_year_result,blocks_year_closure)
+             VALUES($1,'Future term',1,'1','regular','2027-05-01','2027-10-31','planning',true,true) RETURNING id",
+        ).bind(fixture.academic_year_id).fetch_one(&fixture.pool).await.unwrap();
+        let rosters = std::sync::Arc::new(PausingEnrollmentRosters::default());
+        let first_rosters = rosters.clone();
+        let pool = fixture.pool.clone();
+        let id = fixture.application_id;
+        let actor = fixture.enroller_id;
+        let first = tokio::spawn(async move {
+            complete_enrollment(
+                &pool,
+                id,
+                enrollment_payload(),
+                actor,
+                first_rosters.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            rosters.entered.notified(),
+        )
+        .await
+        .unwrap();
+        let mut attendance = fixture.pool.begin().await.unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            school_attendance::services::lock_term(&mut attendance, term, true, false),
+        )
+        .await
+        .expect("enrollment must not exclude attendance's shared year guard")
+        .unwrap();
+        attendance.rollback().await.unwrap();
+        let second = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            complete_enrollment(
+                &fixture.pool,
+                sibling,
+                CompleteEnrollmentRequest {
+                    student_code: Some("970002".into()),
+                    form_data: None,
+                },
+                fixture.enroller_id,
+                rosters.as_ref(),
+            ),
+        )
+        .await
+        .expect("a different explicit code must commit before the first enrollment")
+        .unwrap();
+        rosters.release.notify_one();
+        let first = first.await.unwrap().unwrap();
+        assert_ne!(first.user_id, second.user_id);
+        assert_eq!(rosters.calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn enrollment_concurrent_replay_creates_one_student_and_one_roster_change() {
+        let fixture = enrollment_fixture("admission_enrollment_concurrent_replay", 3).await;
+        let rosters = std::sync::Arc::new(PausingEnrollmentRosters::default());
+        let first_rosters = rosters.clone();
+        let pool = fixture.pool.clone();
+        let id = fixture.application_id;
+        let actor = fixture.enroller_id;
+        let first = tokio::spawn(async move {
+            complete_enrollment(
+                &pool,
+                id,
+                enrollment_payload(),
+                actor,
+                first_rosters.as_ref(),
+            )
+            .await
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            rosters.entered.notified(),
+        )
+        .await
+        .unwrap();
+        let pool = fixture.pool.clone();
+        let second_rosters = rosters.clone();
+        let second = tokio::spawn(async move {
+            complete_enrollment(
+                &pool,
+                id,
+                CompleteEnrollmentRequest {
+                    student_code: Some("ignored-replay".into()),
+                    form_data: None,
+                },
+                actor,
+                second_rosters.as_ref(),
+            )
+            .await
+        });
+        let mut blocked = false;
+        for _ in 0..200 {
+            blocked = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%FOR UPDATE OF aa%')")
+                .fetch_one(&fixture.pool).await.unwrap();
+            if blocked {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        rosters.release.notify_one();
+        let first = first.await.unwrap().unwrap();
+        let second = second.await.unwrap().unwrap();
+        assert!(
+            blocked,
+            "same-application replay must wait on its authoritative row"
+        );
+        assert_eq!(first.user_id, second.user_id);
+        assert_eq!(second.student_code, "970001");
+        assert_eq!(rosters.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn enrollment_auto_number_rolls_back_without_gap_and_ignores_behavior_lock() {
+        let fixture = enrollment_fixture("admission_enrollment_auto_number", 3).await;
+        let sibling = sibling_application(&fixture).await;
+        for code in ["985555", "NONNUMERIC-STUDENT"] {
+            let student: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type,status) VALUES($1,'fixture-hash','Number','Fixture','student','active') RETURNING id")
+                .bind(format!("number-fixture-{code}")).fetch_one(&fixture.pool).await.unwrap();
+            sqlx::query("INSERT INTO student_info(user_id,student_id) VALUES($1,$2)")
+                .bind(student)
+                .bind(code)
+                .execute(&fixture.pool)
+                .await
+                .unwrap();
+        }
+        let max: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(student_id::bigint),0) FROM student_info WHERE student_id ~ '^[0-9]+$'")
+            .fetch_one(&fixture.pool).await.unwrap();
+        let mut behavior = fixture.pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock(17020000)")
+            .execute(&mut *behavior)
+            .await
+            .unwrap();
+        let rejected = EnrollmentRosters {
+            actor: fixture.enroller_id,
+            fail: true,
+            calls: AtomicUsize::new(0),
+        };
+        let payload = || CompleteEnrollmentRequest {
+            student_code: None,
+            form_data: None,
+        };
+        let failed = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            complete_enrollment(
+                &fixture.pool,
+                fixture.application_id,
+                payload(),
+                fixture.enroller_id,
+                &rejected,
+            ),
+        )
+        .await
+        .expect("the allocator must not share Behavior's bigint advisory key");
+        assert!(matches!(failed, Err(AppError::InternalServerError(_))));
+        let (first, second) = tokio::join!(
+            complete_enrollment(
+                &fixture.pool,
+                fixture.application_id,
+                payload(),
+                fixture.enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS
+            ),
+            complete_enrollment(
+                &fixture.pool,
+                sibling,
+                payload(),
+                fixture.enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS
+            ),
+        );
+        behavior.rollback().await.unwrap();
+        let mut numbers = [
+            first.unwrap().student_code.parse::<i64>().unwrap(),
+            second.unwrap().student_code.parse::<i64>().unwrap(),
+        ];
+        numbers.sort();
+        assert_eq!(numbers, [max + 1, max + 2]);
+    }
+
+    #[tokio::test]
+    async fn enrollment_concurrent_siblings_reuse_parents_without_overwriting_accounts() {
+        let fixture = enrollment_fixture("admission_enrollment_shared_parents", 3).await;
+        let sibling = sibling_application(&fixture).await;
+        let existing: Uuid = sqlx::query_scalar(
+            "INSERT INTO users(username,password_hash,first_name,last_name,user_type,status)
+             VALUES('0800000002','existing-secret-hash','Existing','Parent','parent','active') RETURNING id",
+        ).fetch_one(&fixture.pool).await.unwrap();
+        let before_roles: Vec<Uuid> =
+            sqlx::query_scalar("SELECT role_id FROM user_roles WHERE user_id=$1 ORDER BY role_id")
+                .bind(existing)
+                .fetch_all(&fixture.pool)
+                .await
+                .unwrap();
+        let payload = |code: &str| CompleteEnrollmentRequest {
+            student_code: Some(code.into()),
+            form_data: Some(serde_json::json!({
+                "father": { "phone": "0800000001", "firstName": "New", "lastName": "Parent" },
+                "mother": { "phone": "0800000002", "firstName": "Changed", "lastName": "Ignored" },
+                "guardians": [{ "phone": "0800000001", "firstName": "Duplicate" }]
+            })),
+        };
+        let (first, second) = tokio::join!(
+            complete_enrollment(
+                &fixture.pool,
+                fixture.application_id,
+                payload("970001"),
+                fixture.enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS
+            ),
+            complete_enrollment(
+                &fixture.pool,
+                sibling,
+                payload("970002"),
+                fixture.enroller_id,
+                &crate::http_state::PLACEMENT_ROSTERS
+            ),
+        );
+        let first = first.unwrap();
+        let second = second.unwrap();
+        let parents: Vec<(String,String,String)> = sqlx::query_as("SELECT username,password_hash,first_name FROM users WHERE username IN ('0800000001','0800000002') ORDER BY username")
+            .fetch_all(&fixture.pool).await.unwrap();
+        assert_eq!(parents.len(), 2);
+        assert!(bcrypt::verify("0800000001", &parents[0].1).unwrap());
+        assert_eq!(
+            parents[1],
+            (
+                "0800000002".into(),
+                "existing-secret-hash".into(),
+                "Existing".into()
+            )
+        );
+        let after_roles: Vec<Uuid> =
+            sqlx::query_scalar("SELECT role_id FROM user_roles WHERE user_id=$1 ORDER BY role_id")
+                .bind(existing)
+                .fetch_all(&fixture.pool)
+                .await
+                .unwrap();
+        assert_eq!(before_roles, after_roles);
+        let links: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM student_parents WHERE student_user_id=ANY($1)",
+        )
+        .bind([first.user_id, second.user_id])
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(links, 4);
+        let student_hash: String =
+            sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1")
+                .bind(first.user_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        assert!(bcrypt::verify("970001", student_hash.as_str()).unwrap());
+    }
+
+    fn submit_payload(
+        track: Uuid,
+        national_id: &str,
+        first_name: &str,
+    ) -> school_admission::applications::SubmitApplicationRequest {
+        serde_json::from_value(serde_json::json!({ "admissionTrackId": track, "nationalId": national_id, "firstName": first_name, "lastName": "Fixture" })).unwrap()
+    }
+
+    async fn open_submission(fixture: &EnrollmentFixture) -> (Uuid, Uuid) {
+        let (round, track): (Uuid, Uuid) = sqlx::query_as(
+            "SELECT admission_round_id,admission_track_id FROM admission_applications WHERE id=$1",
+        )
+        .bind(fixture.application_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE admission_rounds SET status='open' WHERE id=$1")
+            .bind(round)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        (round, track)
+    }
+
+    #[tokio::test]
+    async fn admission_number_counter_backfills_and_rolls_back_failed_or_duplicate_submissions() {
+        use chrono::Datelike;
+        use school_admission::applications::submit_application;
+        let fixture = enrollment_fixture("admission_number_counter_backfill", 3).await;
+        let (round, track) = open_submission(&fixture).await;
+        let today =
+            chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+        let prefix = format!(
+            "{:02}{:02}{:02}01",
+            (today.year() + 543) % 100,
+            today.month(),
+            today.day()
+        );
+        sqlx::query("UPDATE admission_applications SET application_number=$2 WHERE id=$1")
+            .bind(fixture.application_id)
+            .bind(format!("{prefix}00042"))
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let before: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(a) FROM admission_applications a WHERE id=$1")
+                .bind(fixture.application_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        apply_migrations_through(&fixture.pool, 118).await.unwrap();
+        let after: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(a) FROM admission_applications a WHERE id=$1")
+                .bind(fixture.application_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            before, after,
+            "counter backfill must preserve the entire application row"
+        );
+        let (number, application) = submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000001", "First"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(number, format!("{prefix}00043"));
+        assert_eq!(application.national_id, "1100000000001");
+        assert!(submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000001", "Duplicate")
+        )
+        .await
+        .is_err());
+        sqlx::raw_sql("CREATE FUNCTION reject_number_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.first_name='Fail' THEN RAISE EXCEPTION 'fixture rejected'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_number_fixture BEFORE INSERT ON admission_applications FOR EACH ROW EXECUTE FUNCTION reject_number_fixture();")
+            .execute(&fixture.pool).await.unwrap();
+        assert!(submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000002", "Fail")
+        )
+        .await
+        .is_err());
+        let (number, _) = submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000002", "Retry"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(number, format!("{prefix}00044"));
+        sqlx::query(
+            "UPDATE admission_application_number_counters SET last_sequence=99999 WHERE prefix=$1",
+        )
+        .bind(&prefix)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        let full = submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1100000000003", "Overflow"),
+        )
+        .await;
+        assert!(matches!(full, Err(AppError::Conflict(_))));
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM admission_applications WHERE admission_round_id=$1",
+        )
+        .bind(round)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn admission_number_counter_concurrent_submit_is_unique_and_ignores_other_prefixes() {
+        use school_admission::applications::submit_application;
+        let fixture = enrollment_fixture("admission_number_counter_concurrent", 5).await;
+        let (round, track) = open_submission(&fixture).await;
+        apply_migrations_through(&fixture.pool, 118).await.unwrap();
+        let mut unrelated = fixture.pool.begin().await.unwrap();
+        sqlx::query("INSERT INTO admission_application_number_counters VALUES('00000000',1)")
+            .execute(&mut *unrelated)
+            .await
+            .unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock(2570::bigint)")
+            .execute(&mut *unrelated)
+            .await
+            .unwrap();
+        let results = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            futures::future::join_all((1..=12).map(|number| {
+                let pool = fixture.pool.clone();
+                async move {
+                    submit_application(
+                        &pool,
+                        round,
+                        submit_payload(track, &format!("120000000{number:04}"), "Concurrent"),
+                    )
+                    .await
+                }
+            })),
+        )
+        .await
+        .expect("another prefix and the former year advisory lock must not block submissions");
+        unrelated.rollback().await.unwrap();
+        let mut numbers: Vec<_> = results
+            .into_iter()
+            .map(|result| result.unwrap().0[8..].parse::<i32>().unwrap())
+            .collect();
+        numbers.sort();
+        assert_eq!(numbers, (1..=12).collect::<Vec<_>>());
+        // An ambiguous request retry remains subject to the authoritative duplicate constraint.
+        assert!(submit_application(
+            &fixture.pool,
+            round,
+            submit_payload(track, "1200000000001", "Retry")
+        )
+        .await
+        .is_err());
+        let last: i32 =
+            sqlx::query_scalar("SELECT last_sequence FROM admission_application_number_counters")
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        assert_eq!(last, 12);
+    }
 }
