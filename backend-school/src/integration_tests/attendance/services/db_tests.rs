@@ -16,7 +16,14 @@ pub(super) struct Fixture {
     pub(super) students: Vec<AttendanceRosterStudent>,
 }
 pub(super) async fn fixture(name: &str) -> Fixture {
-    fixture_at(name, 108).await
+    // Ordinary service tests use current provider contracts. Historical migration
+    // tests opt into their exact predecessor through fixture_at instead.
+    let latest = sqlx::migrate!("./migrations")
+        .iter()
+        .map(|migration| migration.version)
+        .max()
+        .expect("the active migration timeline must not be empty");
+    fixture_at(name, latest).await
 }
 async fn fixture_at(name: &str, version: i64) -> Fixture {
     let pool = prepare_core_fixture_through(name, version).await;
