@@ -20,8 +20,10 @@ Reports establish a read-only repeatable-read snapshot before reads and acquire 
 
 ## Admission
 
-A new forward migration118 supplies an atomic application-prefix counter. Enrollment retains the shared academic-year guard and locks only the allocator necessary for numbering. Auto-generated-credential password hashing runs in bounded blocking work inside the narrower allocator transaction when its input depends on the allocated code. Preserve enrollment identities, numbering and rollback behavior; verify competing enrollments and lifecycle exclusions.
+A new forward migration118 supplies an atomic high-water application-prefix counter. Enrollment retains the shared academic-year guard and locks only the allocator necessary for numbering. Auto-generated-credential password hashing runs in bounded blocking work inside the narrower allocator transaction when its input depends on the allocated code. Preserve enrollment identities, numbering and rollback behavior; verify competing enrollments and lifecycle exclusions.
 
 ## Rollout and verification
+
+`SCHOOL_PRIVILEGED_CONNECTIONS` is validated at five or greater so provisioning can hold its transaction and perform its existing follow-up read without self-deadlock. One-shot schema verification uses a directly owned raw connection that closes before its reservation is released.
 
 No public frontend contract changes or new infrastructure. Forward migration118 is additive; normal maintenance and migration gates apply. Operational configuration and recovery belong in `docs/OPERATIONS.md`; focused commands belong in `docs/TESTING.md`. Independent review and QA cover the integrated candidate, including cancellation, burst, invalidation, tenant isolation, aggregate limits and transaction races.

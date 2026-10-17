@@ -17,6 +17,17 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
     let pool = PgPool::connect(url.as_str()).await.unwrap();
     migrate_admin(&pool).await.unwrap();
     let id:Uuid = sqlx::query_scalar("INSERT INTO schools(name,subdomain,db_name,status) VALUES('Barrier fixture','barrier-fixture','barrier_fixture','active') RETURNING id").fetch_one(&pool).await.unwrap();
+    std::env::set_var("DATABASE_CREDENTIALS_KEY", "22".repeat(32));
+    std::env::set_var("PG_PROVISIONING_DATABASE_URL", &fixture);
+    std::env::set_var("PG_TENANT_DATABASE_URL", &fixture);
+    let cipher = backend_admin::database_credentials::DatabaseCredentials::from_env().unwrap();
+    sqlx::query("UPDATE schools SET db_runtime_password=$2, db_migration_password=$3 WHERE id=$1")
+        .bind(id)
+        .bind(cipher.encrypt(id, "runtime", "fixture-runtime").unwrap())
+        .bind(cipher.encrypt(id, "migration", "fixture-owner").unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
     let token = Uuid::new_v4();
     sqlx::query("INSERT INTO tenant_directory_mutations(school_id,token) VALUES($1,$2)")
         .bind(id)
@@ -141,6 +152,59 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
         response.json::<serde_json::Value>().await.unwrap()["total"],
         0
     );
+    // Concurrent barrier insertion/removal never turns an existing active school into
+    // a false404. A successful all-tenant snapshot always includes the complete school.
+    sqlx::query("UPDATE schools SET status='active' WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let writer_pool = pool.clone();
+    let writer = tokio::spawn(async move {
+        for _ in 0..100 {
+            let token = Uuid::new_v4();
+            sqlx::query("INSERT INTO tenant_directory_mutations(school_id,token) VALUES($1,$2)")
+                .bind(id)
+                .bind(token)
+                .execute(&writer_pool)
+                .await
+                .unwrap();
+            tokio::task::yield_now().await;
+            sqlx::query("DELETE FROM tenant_directory_mutations WHERE school_id=$1 AND token=$2")
+                .bind(id)
+                .bind(token)
+                .execute(&writer_pool)
+                .await
+                .unwrap();
+        }
+    });
+    for _ in 0..40 {
+        for path in [
+            "/internal/schools/barrier-fixture",
+            "/internal/schools/barrier-fixture/migration-connection",
+            "/internal/schools?status=active",
+        ] {
+            let response = client
+                .get(format!("{origin}{path}"))
+                .header("X-Internal-Caller", "backend-school")
+                .header("X-Internal-Secret", "directory-fixture-secret")
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            assert!(
+                status == StatusCode::OK || status == StatusCode::SERVICE_UNAVAILABLE,
+                "directory snapshot returned unexpected {status}"
+            );
+            if status == StatusCode::OK && path.contains('?') {
+                assert_eq!(
+                    response.json::<serde_json::Value>().await.unwrap()["total"],
+                    1
+                );
+            }
+        }
+    }
+    writer.await.unwrap();
     server.abort();
     pool.close().await;
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(

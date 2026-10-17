@@ -93,7 +93,8 @@ The examples and both Compose files expose `TENANT_RUNTIME_CONNECTIONS`,
 `TENANT_POOL_MAX_CONNECTIONS`, `TENANT_POOL_ADMISSION_TIMEOUT_MS`,
 `ADMIN_POOL_MAX_CONNECTIONS`, `PG_PROVISIONING_MAX_CONNECTIONS`,
 `SCHOOL_PRIVILEGED_CONNECTIONS`, `POSTGRES_MAX_CONNECTIONS`, and
-`POSTGRES_CONNECTION_HEADROOM`. School startup rejects allocations exceeding the
+`POSTGRES_CONNECTION_HEADROOM`. `SCHOOL_PRIVILEGED_CONNECTIONS` must be at least
+five, including provisioning's transaction and follow-up read. School startup rejects allocations exceeding the
 server budget. Keep the server setting and values in both services synchronized.
 Before running multiple replicas, divide these process allocations across replicas
 or separately review a shared pooler; adding replicas with unchanged defaults

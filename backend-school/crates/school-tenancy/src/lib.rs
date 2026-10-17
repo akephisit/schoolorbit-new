@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 pub use admin_client::{ActiveSchool, AdminClient, AdminClientConfig, SchoolDatabaseInfo};
 pub use pool_manager::{
-    close_pool, connect_privileged_pool, PoolManager, PoolManagerConfig, PrivilegedPool,
+    close_pool, connect_privileged_connection, connect_privileged_pool, PoolManager,
+    PoolManagerConfig, PrivilegedConnection, PrivilegedPool,
 };
 pub use school_mapping::get_school_database_info;
 pub use tenant_pool::{TenantPool, TenantPoolRetention};

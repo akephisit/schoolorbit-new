@@ -110,6 +110,7 @@ struct SchoolRow {
     migration_status: Option<String>,
     last_migrated_at: Option<chrono::NaiveDateTime>,
     migration_error: Option<String>,
+    mutation_pending: bool,
 }
 
 /// Internal endpoint to list schools - protected by INTERNAL_API_SECRET
@@ -148,7 +149,8 @@ pub async fn list_schools_internal(
 
     let schools = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
-                migration_version, migration_status, last_migrated_at, migration_error
+                migration_version, migration_status, last_migrated_at, migration_error,
+                false AS mutation_pending
          FROM schools
          WHERE NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)
          ORDER BY created_at DESC",
@@ -205,22 +207,12 @@ pub async fn get_school_by_subdomain_internal(
 ) -> Result<Json<SchoolInfo>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
 
-    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenant_directory_mutations m JOIN schools s ON s.id = m.school_id WHERE s.subdomain = $1)")
-        .bind(&subdomain).fetch_one(&state.pool).await
-        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Tenant directory unavailable".into()))?;
-    if blocked {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Tenant directory mutation pending".into(),
-        ));
-    }
-
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
-                migration_version, migration_status, last_migrated_at, migration_error
+                migration_version, migration_status, last_migrated_at, migration_error,
+                EXISTS(SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id) AS mutation_pending
          FROM schools
-         WHERE subdomain = $1 AND status IN ('active', 'provisioning')
-           AND NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)",
+         WHERE subdomain = $1",
     )
     .bind(&subdomain)
     .fetch_optional(&state.pool)
@@ -231,6 +223,15 @@ pub async fn get_school_by_subdomain_internal(
         format!("School '{}' not found or inactive", subdomain),
     ))?;
 
+    if school.mutation_pending {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory mutation pending".into(),
+        ));
+    }
+    if !matches!(school.status.as_str(), "active" | "provisioning") {
+        return Err((StatusCode::NOT_FOUND, "School not found or inactive".into()));
+    }
     let connection = connection_for(&school, "runtime")?;
     Ok(Json(SchoolInfo {
         id: school.id.to_string(),
@@ -381,21 +382,11 @@ pub async fn get_migration_connection_internal(
             "Migration caller is not authorized".into(),
         ));
     }
-    let blocked: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tenant_directory_mutations m JOIN schools s ON s.id = m.school_id WHERE s.subdomain = $1)")
-        .bind(&subdomain).fetch_one(&state.pool).await
-        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Tenant directory unavailable".into()))?;
-    if blocked {
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Tenant directory mutation pending".into(),
-        ));
-    }
-
     let school = sqlx::query_as::<_, SchoolRow>(
         "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
-          migration_version, migration_status, last_migrated_at, migration_error
-         FROM schools WHERE subdomain = $1 AND status IN ('active', 'provisioning')
-           AND NOT EXISTS (SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id)",
+          migration_version, migration_status, last_migrated_at, migration_error,
+                EXISTS(SELECT 1 FROM tenant_directory_mutations m WHERE m.school_id = schools.id) AS mutation_pending
+         FROM schools WHERE subdomain = $1",
     )
     .bind(subdomain)
     .fetch_optional(&state.pool)
@@ -407,6 +398,15 @@ pub async fn get_migration_connection_internal(
         )
     })?
     .ok_or((StatusCode::NOT_FOUND, "Tenant unavailable".into()))?;
+    if school.mutation_pending {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant directory mutation pending".into(),
+        ));
+    }
+    if !matches!(school.status.as_str(), "active" | "provisioning") {
+        return Err((StatusCode::NOT_FOUND, "School not found or inactive".into()));
+    }
     Ok(Json(MigrationConnection {
         db_migration_connection_string: connection_for(&school, "migration")?,
     }))

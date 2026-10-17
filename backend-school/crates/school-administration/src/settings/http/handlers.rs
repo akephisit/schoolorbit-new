@@ -85,7 +85,8 @@ pub async fn get_public_organization_avatar(
 ) -> Result<Response, AppError> {
     let tenant = tenant_context(&state.auth_runtime, &headers).await?;
     let file_id = school_service::public::organization_avatar_file(&tenant.pool, member_id).await?;
-    let repository = school_file_platform::repository::SqlFileRepository::new(tenant.pool);
+    let repository =
+        school_file_platform::repository::SqlFileRepository::new(tenant.pool.as_ref().clone());
     let grant = state
         .file_platform
         .private_download(&repository, file_id)
@@ -118,7 +119,8 @@ pub async fn get_public_favicon(
         .await?
         .logo_file_id
         .ok_or_else(|| AppError::NotFound("ไม่พบตราโรงเรียน".into()))?;
-    let repository = school_file_platform::repository::SqlFileRepository::new(tenant.pool);
+    let repository =
+        school_file_platform::repository::SqlFileRepository::new(tenant.pool.as_ref().clone());
     let png = state
         .file_platform
         .public_favicon(&repository, file_id, query.size)

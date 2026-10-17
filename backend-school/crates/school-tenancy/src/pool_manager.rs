@@ -37,7 +37,7 @@ impl PoolManagerConfig {
         let server = setting("POSTGRES_MAX_CONNECTIONS", 64, 16, 100_000)?;
         let reserved = setting("ADMIN_POOL_MAX_CONNECTIONS", 5, 1, 1000)?
             + setting("PG_PROVISIONING_MAX_CONNECTIONS", 2, 1, 100)?
-            + setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 1, 100)?
+            + setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 5, 100)?
             + setting("POSTGRES_CONNECTION_HEADROOM", 12, 1, 10_000)?;
         if config.runtime_connections + reserved > server {
             return Err("Aggregate connection allocations exceed POSTGRES_MAX_CONNECTIONS".into());
@@ -49,7 +49,16 @@ impl PoolManagerConfig {
     }
 }
 fn setting(name: &str, default: u32, min: u32, max: u32) -> Result<u32, String> {
-    let value = std::env::var(name).map_or(Ok(default), |raw| {
+    parse_setting(name, std::env::var(name).ok().as_deref(), default, min, max)
+}
+fn parse_setting(
+    name: &str,
+    raw: Option<&str>,
+    default: u32,
+    min: u32,
+    max: u32,
+) -> Result<u32, String> {
+    let value = raw.map_or(Ok(default), |raw| {
         raw.parse::<u32>()
             .map_err(|_| format!("{name} must be an integer"))
     })?;
@@ -456,6 +465,79 @@ impl Default for PoolManager {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn privileged_capacity_reserves_provisioning_transaction_and_followup_reads() {
+        for raw in ["0", "1", "2", "3", "4", "101", "bad"] {
+            assert!(
+                super::parse_setting("SCHOOL_PRIVILEGED_CONNECTIONS", Some(raw), 5, 5, 100)
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            super::parse_setting("SCHOOL_PRIVILEGED_CONNECTIONS", Some("5"), 5, 5, 100).unwrap(),
+            5
+        );
+        assert_eq!(
+            super::parse_setting("SCHOOL_PRIVILEGED_CONNECTIONS", None, 5, 5, 100).unwrap(),
+            5
+        );
+    }
+
+    #[tokio::test]
+    async fn raw_privileged_verification_cancellation_closes_socket_before_unlock() {
+        use tokio::io::AsyncWriteExt;
+        let fixture = school_test_db::create_named_test_pool("raw_privileged_cancel").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        let upstream = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap_or(5432));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        url.set_host(Some("127.0.0.1")).unwrap();
+        url.set_port(Some(listener.local_addr().unwrap().port()))
+            .unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+        let proxy = tokio::spawn(async move {
+            let (client, _) = listener.accept().await.unwrap();
+            let server = tokio::net::TcpStream::connect(upstream).await.unwrap();
+            let (mut client_read, mut client_write) = client.into_split();
+            let (mut server_read, mut server_write) = server.into_split();
+            let forward = async {
+                let _ = tokio::io::copy(&mut client_read, &mut server_write).await;
+                let _ = closed_tx.send(());
+                let _ = server_write.shutdown().await;
+            };
+            let reverse = async {
+                let _ = tokio::io::copy(&mut server_read, &mut client_write).await;
+            };
+            tokio::join!(forward, reverse);
+        });
+        let mut lock = fixture.begin().await.unwrap();
+        sqlx::query("LOCK TABLE _sqlx_migrations IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(Duration::from_millis(150), async {
+            let mut connection = super::connect_privileged_connection(url.as_str())
+                .await
+                .unwrap();
+            school_migrations::verify_tenant_schema(&mut *connection).await
+        })
+        .await;
+        assert!(result.is_err());
+        let closed = tokio::time::timeout(Duration::from_millis(300), closed_rx).await;
+        lock.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), proxy)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(closed.is_ok(),"raw verification cancellation must close its socket before the blocked database query completes");
+    }
+
     fn small_manager() -> super::PoolManager {
         super::PoolManager::with_config(super::PoolManagerConfig {
             runtime_connections: 2,
@@ -1100,7 +1182,7 @@ static PRIVILEGED_BUDGET: std::sync::OnceLock<Result<Arc<Semaphore>, String>> =
 fn privileged_budget() -> Result<Arc<Semaphore>, String> {
     PRIVILEGED_BUDGET
         .get_or_init(|| {
-            setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 1, 100)
+            setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 5, 100)
                 .map(|count| Arc::new(Semaphore::new(count as usize)))
         })
         .clone()
@@ -1126,7 +1208,7 @@ pub async fn connect_privileged_pool(
     database_url: &str,
     maximum: u32,
 ) -> Result<PrivilegedPool, String> {
-    let capacity = setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 1, 100)?;
+    let capacity = setting("SCHOOL_PRIVILEGED_CONNECTIONS", 5, 5, 100)?;
     let maximum = maximum.min(capacity).max(1);
     let permit = tokio::time::timeout(
         Duration::from_secs(5),
@@ -1155,5 +1237,54 @@ pub async fn connect_privileged_pool(
     Ok(PrivilegedPool {
         pool,
         _drain: drain,
+    })
+}
+
+/// A directly owned verification socket. Field order closes it before releasing its slot.
+pub struct PrivilegedConnection {
+    connection: sqlx::PgConnection,
+    reservation: OwnedSemaphorePermit,
+}
+impl std::ops::Deref for PrivilegedConnection {
+    type Target = sqlx::PgConnection;
+    fn deref(&self) -> &Self::Target {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for PrivilegedConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
+    }
+}
+impl PrivilegedConnection {
+    pub async fn close(self) -> Result<(), String> {
+        use sqlx::Connection;
+        // The close future owns the raw socket and drops before the earlier permit binding
+        // if this future is cancelled. No SQLx PoolConnection return task is involved.
+        let _reservation = self.reservation;
+        self.connection
+            .close()
+            .await
+            .map_err(|_| "Privileged verification connection close failed".to_string())
+    }
+}
+pub async fn connect_privileged_connection(
+    database_url: &str,
+) -> Result<PrivilegedConnection, String> {
+    use sqlx::Connection;
+    let reservation =
+        tokio::time::timeout(Duration::from_secs(5), privileged_budget()?.acquire_owned())
+            .await
+            .map_err(|_| "Privileged database connection budget timed out")?
+            .map_err(|_| "Privileged database connection budget closed")?;
+    let options = PgConnectOptions::from_str(database_url)
+        .map_err(|_| "Invalid privileged database configuration")?
+        .disable_statement_logging();
+    let connection = sqlx::PgConnection::connect_with(&options)
+        .await
+        .map_err(|_| "Privileged verification connection failed")?;
+    Ok(PrivilegedConnection {
+        connection,
+        reservation,
     })
 }

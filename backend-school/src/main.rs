@@ -283,7 +283,7 @@ async fn main() {
                     {
                         Ok(pool) => {
                             let cleaner = services::cleaner::FileCleaner::new(
-                                pool,
+                                pool.as_ref().clone(),
                                 Arc::clone(&file_platform),
                             );
                             cleaner.reconcile_file_operations().await;

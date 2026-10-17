@@ -237,7 +237,7 @@ pub async fn get_file_metadata(
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let repository = SqlFileRepository::new(context.tenant.pool);
+    let repository = SqlFileRepository::new(context.tenant.pool.as_ref().clone());
     let file = state
         .file_platform
         .metadata(&repository, file_id)
@@ -280,7 +280,7 @@ pub async fn download_file(
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let repository = SqlFileRepository::new(context.tenant.pool);
+    let repository = SqlFileRepository::new(context.tenant.pool.as_ref().clone());
     let file = state
         .file_platform
         .metadata(&repository, file_id)
@@ -330,7 +330,7 @@ pub async fn delete_file(
     Query(query): Query<FileAccessQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let repository = SqlFileRepository::new(context.tenant.pool);
+    let repository = SqlFileRepository::new(context.tenant.pool.as_ref().clone());
     let file = state
         .file_platform
         .metadata(&repository, file_id)
@@ -441,7 +441,7 @@ pub async fn get_public_file_content(
     Path(file_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let tenant = tenant_context(&state.auth_runtime, &headers).await?;
-    let repository = SqlFileRepository::new(tenant.pool);
+    let repository = SqlFileRepository::new(tenant.pool.as_ref().clone());
     let delivery = state
         .file_platform
         .public_delivery(&repository, file_id)
@@ -472,7 +472,7 @@ pub async fn get_public_file_delivery(
     Path(file_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let tenant = tenant_context(&state.auth_runtime, &headers).await?;
-    let repository = SqlFileRepository::new(tenant.pool);
+    let repository = SqlFileRepository::new(tenant.pool.as_ref().clone());
     let delivery = state
         .file_platform
         .public_delivery(&repository, file_id)

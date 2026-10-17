@@ -651,14 +651,9 @@ async fn verify_runtime_schema(database_url: &str) -> Result<i64, String> {
     let started = std::time::Instant::now();
     let mut stage = "connect";
     let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        let verification_pool = school_tenancy::connect_privileged_pool(database_url, 1).await?;
-        let mut connection = verification_pool
-            .acquire()
-            .await
-            .map_err(|_| "Runtime verification connection failed".to_string())?;
-        connection.close_on_drop();
+        let mut connection = school_tenancy::connect_privileged_connection(database_url).await?;
         stage = "schema_history";
-        let result = school_migrations::verify_tenant_schema(&mut connection).await;
+        let result = school_migrations::verify_tenant_schema(&mut *connection).await;
         stage = "connection_close";
         let closed = connection.close().await;
         let version = result?;
