@@ -731,10 +731,21 @@ mod tests {
         let fixture = enrollment_fixture("admission_enrollment_shared_year", 4).await;
         let sibling = sibling_application(&fixture).await;
         apply_migrations_through(&fixture.pool, 108).await.unwrap();
+        let schedule = school_academic_core::services::bell_schedules::create(
+            &fixture.pool,
+            fixture.enroller_id,
+            school_academic_core::models::CreateBellScheduleRequest {
+                academic_year_id: fixture.academic_year_id,
+                name: "Future enrollment schedule".into(),
+                owning_organization_unit_id: None,
+            },
+        )
+        .await
+        .unwrap();
         let term: Uuid = sqlx::query_scalar(
-            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,start_date,planned_end_date,status,included_in_year_result,blocks_year_closure)
-             VALUES($1,'Future term',1,'1','regular','2027-05-01','2027-10-31','planning',true,true) RETURNING id",
-        ).bind(fixture.academic_year_id).fetch_one(&fixture.pool).await.unwrap();
+            "INSERT INTO academic_terms(academic_year_id,name,sequence_no,code,term_type,start_date,planned_end_date,status,included_in_year_result,blocks_year_closure,bell_schedule_id)
+             VALUES($1,'Future term',1,'1','regular','2027-05-01','2027-10-31','planning',true,true,$2) RETURNING id",
+        ).bind(fixture.academic_year_id).bind(schedule.id).fetch_one(&fixture.pool).await.unwrap();
         let rosters = std::sync::Arc::new(PausingEnrollmentRosters::default());
         let first_rosters = rosters.clone();
         let pool = fixture.pool.clone();
