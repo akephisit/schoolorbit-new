@@ -4415,3 +4415,229 @@ async fn attendance_notification_first_arrival_keeps_original_payload_across_rou
         "a later arrival changes neither first notification identity nor time text"
     );
 }
+
+#[tokio::test]
+async fn attendance_notification_purge_waits_for_storage_and_delivers_unpublished_after_archive() {
+    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY;
+    use school_notifications::dispatch;
+    let f = fixture("attendance_purge_dispatch_progress").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=planned_end_date WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    drain_score_changes(&f.pool).await;
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT status='closed' FROM academic_terms WHERE id=$1"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_score_changes WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+    let impact = reports::impact(&f.pool, TERM).await.unwrap();
+    let request = || PurgeAttendanceTerm {
+        expected_records: impact.records,
+        reason: "Preserve pending dispatch".into(),
+    };
+    assert!(
+        matches!(reports::purge(&f.pool,TEACHER,TERM,request()).await,Err(AppError::Conflict(code)) if code=="รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง")
+    );
+    assert_eq!(
+        reports::impact(&f.pool, TERM).await.unwrap().records,
+        impact.records
+    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    let claims = dispatch::claim(&f.pool).await.unwrap();
+    assert!(!claims.is_empty());
+    for claim in &claims {
+        assert!(
+            dispatch::materialize(&f.pool, claim, &APPLICATION_NOTIFICATION_ELIGIBILITY)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    let id = claims[0].notification.notification_id;
+    sqlx::query("UPDATE notifications SET read_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let inbox_before: (Option<chrono::DateTime<Utc>>, chrono::DateTime<Utc>) =
+        sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+            .bind(id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert!(inbox_before.0.is_some());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT bool_and(stored_at IS NOT NULL AND published_at IS NULL) FROM notification_dispatch_jobs").fetch_one(&f.pool).await.unwrap());
+    reports::purge(&f.pool, TEACHER, TERM, request())
+        .await
+        .unwrap();
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)"
+    )
+    .bind(TERM)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(reports::impact(&f.pool, TERM).await.unwrap().records, 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_notifications WHERE academic_term_id=$1"
+        )
+        .bind(TERM)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        claims.len() as i64
+    );
+    // A retry after archive must keep its source identity and existing read inbox.
+    sqlx::query("UPDATE notification_dispatch_jobs SET next_attempt_at=now()-interval '1 second' WHERE published_at IS NULL").execute(&f.pool).await.unwrap();
+    let (channel, mut events) = tokio::sync::broadcast::channel(16);
+    crate::integration_tests::notification_dispatch::drain(
+        &f.pool,
+        "purged-attendance-fixture",
+        &channel,
+    )
+    .await;
+    let inbox_after: (Option<chrono::DateTime<Utc>>, chrono::DateTime<Utc>) =
+        sqlx::query_as("SELECT read_at,created_at FROM notifications WHERE id=$1")
+            .bind(id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(inbox_before, inbox_after);
+    let mut delivered_ids = std::collections::HashSet::new();
+    while let Ok(event) = events.try_recv() {
+        assert!(delivered_ids.insert(event.notification.id));
+    }
+    assert_eq!(
+        delivered_ids,
+        claims
+            .iter()
+            .map(|claim| claim.notification.notification_id)
+            .collect()
+    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT bool_and(published_at IS NOT NULL) FROM notification_dispatch_jobs"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        claims.len() as i64
+    );
+}
+
+#[tokio::test]
+async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay_commits_once() {
+    let f = fixture("attendance_enqueue_rollback").await;
+    let session = sessions::ensure(
+        &f.pool,
+        &f.actor,
+        seed(
+            &f,
+            AttendanceKind::Arrival,
+            NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+        ),
+    )
+    .await
+    .unwrap();
+    let before = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    let payload = save_payload(&before, STUDENT, AttendanceResult::Present);
+    let counts_sql="SELECT (SELECT count(*) FROM attendance_records),(SELECT count(*) FROM attendance_notifications),(SELECT count(*) FROM notification_dispatch_jobs),(SELECT count(*) FROM attendance_score_changes),(SELECT count(*) FROM audit_logs WHERE entity_type='attendance')";
+    let counts_before: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    sqlx::raw_sql("CREATE FUNCTION reject_attendance_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.source_kind='attendance' THEN RAISE EXCEPTION 'synthetic_enqueue_failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_attendance_dispatch BEFORE INSERT ON notification_dispatch_jobs FOR EACH ROW EXECUTE FUNCTION reject_attendance_dispatch();")
+        .execute(&f.pool).await.unwrap();
+    assert!(matches!(
+        sessions::save(&f.pool, &f.actor, session.id, payload.clone()).await,
+        Err(AppError::DbError(_))
+    ));
+    let after = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    assert_eq!(before.session.row_version, after.session.row_version);
+    assert_eq!(before.session.saved_at, after.session.saved_at);
+    assert_eq!(
+        serde_json::to_value(&before.students).unwrap(),
+        serde_json::to_value(&after.students).unwrap()
+    );
+    let counts_after: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(counts_before, counts_after);
+    sqlx::raw_sql("DROP TRIGGER reject_attendance_dispatch ON notification_dispatch_jobs; DROP FUNCTION reject_attendance_dispatch();").execute(&f.pool).await.unwrap();
+    let saved = sessions::save(&f.pool, &f.actor, session.id, payload)
+        .await
+        .unwrap();
+    assert_eq!(saved.session.row_version, before.session.row_version + 1);
+    assert!(saved.session.saved_at.is_some());
+    assert_eq!(
+        saved
+            .students
+            .iter()
+            .filter(|row| row.result == AttendanceResult::Present)
+            .count(),
+        1
+    );
+    let committed: (i64, i64, i64, i64, i64) =
+        sqlx::query_as(counts_sql).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(
+        committed,
+        (
+            counts_before.0 + 1,
+            counts_before.1 + 1,
+            counts_before.2 + 1,
+            counts_before.3 + 1,
+            counts_before.4 + 1
+        )
+    );
+}
