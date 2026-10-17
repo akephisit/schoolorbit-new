@@ -335,7 +335,10 @@ fn digest_due(current: u32, due: u32, delivered: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{deliver_batch, digest_due, BatchDelivery};
-    use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     #[test]
     fn digest_window_catches_up_once_and_does_not_send_early() {
         assert!(!digest_due(479, 480, false));
@@ -348,30 +351,61 @@ mod tests {
     async fn delivery_batch_bounds_concurrency_and_joins_failed_and_timed_out_siblings() {
         struct Active(Arc<AtomicUsize>);
         impl Drop for Active {
-            fn drop(&mut self) { self.0.fetch_sub(1, Ordering::SeqCst); }
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
         }
         let active = Arc::new(AtomicUsize::new(0));
         let peak = Arc::new(AtomicUsize::new(0));
         let completed = Arc::new(AtomicUsize::new(0));
-        let result = deliver_batch((0..10).collect(), 4, std::time::Duration::from_millis(100), |item| {
-            let active = Arc::clone(&active);
-            let peak = Arc::clone(&peak);
-            let completed = Arc::clone(&completed);
-            async move {
-                let count = active.fetch_add(1, Ordering::SeqCst) + 1;
-                let _active = Active(active);
-                peak.fetch_max(count, Ordering::SeqCst);
-                if item == 0 { std::future::pending::<()>().await; }
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                if item == 1 { return Err(()); }
-                completed.fetch_add(1, Ordering::SeqCst);
-                Ok(())
+        let result = deliver_batch(
+            (0..10).collect(),
+            4,
+            std::time::Duration::from_millis(100),
+            |item| {
+                let active = Arc::clone(&active);
+                let peak = Arc::clone(&peak);
+                let completed = Arc::clone(&completed);
+                async move {
+                    let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    let _active = Active(active);
+                    peak.fetch_max(count, Ordering::SeqCst);
+                    if item == 0 {
+                        std::future::pending::<()>().await;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    if item == 1 {
+                        return Err(());
+                    }
+                    completed.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            },
+        )
+        .await;
+        assert_eq!(
+            result,
+            BatchDelivery {
+                completed: 8,
+                failed: 1,
+                timed_out: 1
             }
-        }).await;
-        assert_eq!(result, BatchDelivery { completed: 8, failed: 1, timed_out: 1 });
-        assert_eq!(peak.load(Ordering::SeqCst), 4, "independent work must overlap up to the bound");
-        assert_eq!(active.load(Ordering::SeqCst), 0, "no delivery may outlive the batch");
-        assert_eq!(completed.load(Ordering::SeqCst), 8, "one failure must not cancel siblings");
+        );
+        assert_eq!(
+            peak.load(Ordering::SeqCst),
+            4,
+            "independent work must overlap up to the bound"
+        );
+        assert_eq!(
+            active.load(Ordering::SeqCst),
+            0,
+            "no delivery may outlive the batch"
+        );
+        assert_eq!(
+            completed.load(Ordering::SeqCst),
+            8,
+            "one failure must not cancel siblings"
+        );
     }
 }
 
