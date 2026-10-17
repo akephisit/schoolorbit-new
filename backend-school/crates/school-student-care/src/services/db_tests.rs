@@ -356,10 +356,21 @@ async fn care_submission_pins_version_replay_durable_alert_and_scoped_ack() {
             .await
             .is_err()
     );
-    let ack = assignment_command(&f.pool, f.teacher, assignment.id, command, true)
+    let ack = assignment_command(&f.pool, f.teacher, assignment.id, command.clone(), true)
         .await
         .unwrap();
     assert!(ack.acknowledged_at.is_some());
+    assignment_command(&f.pool, f.teacher, assignment.id, command, true)
+        .await
+        .unwrap();
+    let audit:Vec<String>=sqlx::query_scalar("SELECT private_detail_ciphertext FROM care_audit WHERE resource_id=$1 AND action='assignment_acknowledge'").bind(assignment.id).fetch_all(&f.pool).await.unwrap();
+    assert_eq!(audit.len(), 1);
+    assert!(!audit[0].contains("Reviewed fixture"));
+    assert_eq!(
+        decrypt::<CareCommandAuditDetail>(&audit[0]).unwrap().reason,
+        "Reviewed fixture"
+    );
+
     assert_eq!(
         overview(&f.pool, f.teacher)
             .await
@@ -396,10 +407,16 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
         .execute(&f.pool)
         .await
         .unwrap();
-    assert!(sensitive_staff(&f.pool, &[read_only]).await.is_err());
-    assert!(sensitive_staff(&f.pool, &[read_only, f.teacher.actor_id])
+    let mut selected_connection = f.pool.acquire().await.unwrap();
+    assert!(sensitive_staff(&mut selected_connection, &[read_only])
         .await
-        .is_ok());
+        .is_err());
+    assert!(
+        sensitive_staff(&mut selected_connection, &[read_only, f.teacher.actor_id])
+            .await
+            .is_ok()
+    );
+    drop(selected_connection);
     let bulk = CreateCareAssignments {
         request_id: Uuid::now_v7(),
         round_id: r.id,
@@ -433,6 +450,22 @@ async fn care_bulk_scope_age_manual_and_guardian_revocation() {
     assert!(save_case(&f.pool, f.teacher, None, case_payload(&f, None))
         .await
         .is_err());
+    let (t, tr) = instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Teacher).await;
+    let target = CreateCareAssignments {
+        request_id: Uuid::now_v7(),
+        round_id: tr.id,
+        instrument_version_id: t.id,
+        targets: vec![CareAssignmentTarget {
+            student_id: f.student,
+            respondent_id: f.other.actor_id,
+        }],
+        reviewer_user_ids: vec![f.teacher.actor_id],
+    };
+    assert!(create_assignments(&f.pool, f.teacher, target.clone())
+        .await
+        .is_err());
+    let teacher_response = create_assignments(&f.pool, f.admin, target).await.unwrap();
+    assert_eq!(teacher_response[0].respondent_id, f.other.actor_id);
     let (g, gr) = instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::Guardian).await;
     let ga = assignment(&f, &g, &gr, f.parent).await;
     let parent = access(f.parent, &[codes::STUDENT_CARE_READ_OWN]);
@@ -523,6 +556,19 @@ async fn care_private_replay_revocation_case_transitions_and_concurrent_revision
     let visit = save_visit(&f.pool, f.teacher, None, visit_input.clone())
         .await
         .unwrap();
+    let outsider = access(
+        f.other.actor_id,
+        &[
+            codes::STUDENT_CARE_READ_SCHOOL,
+            codes::STUDENT_CARE_SENSITIVE_MANAGE_ASSIGNED,
+        ],
+    );
+    let mut escalation = case_payload(&f, None);
+    escalation.source_visit_id = Some(visit.visit.id);
+    escalation.assigned_user_ids = vec![f.other.actor_id];
+    assert!(save_case(&f.pool, outsider, None, escalation)
+        .await
+        .is_err());
     let change = SaveCareVisit {
         request_id: Uuid::now_v7(),
         row_version: Some(1),
@@ -690,4 +736,196 @@ async fn care_submit_notification_failure_rolls_back_and_retries_once() {
         .await
         .unwrap();
     assert_eq!(jobs, 1);
+}
+
+#[tokio::test]
+async fn care_reviewer_handoff_fallback_and_no_active_receiver_still_persists() {
+    let f = fixture("care_handoff").await;
+    let (v, r) =
+        instrument_round(&f, CareInstrumentMode::Digital, CareRespondent::SelfReport).await;
+    let digital = assignment(&f, &v, &r, f.student).await;
+    let (m, mr) = instrument_round(
+        &f,
+        CareInstrumentMode::ManualResult,
+        CareRespondent::SelfReport,
+    )
+    .await;
+    let manual = assignment(&f, &m, &mr, f.student).await;
+    let mut draft = response(1);
+    draft.answers.clear();
+    draft.manual_scores = vec![CareManualScore {
+        scale_key: "base".into(),
+        score: 1,
+    }];
+    save_response(&f.pool, f.teacher, manual.id, draft.clone(), false)
+        .await
+        .unwrap();
+    let extra_round = create_round(
+        &f.pool,
+        f.admin,
+        CreateCareRound {
+            request_id: Uuid::now_v7(),
+            name: "Second synthetic round".into(),
+            purpose: "Fixture".into(),
+            instrument_version_ids: vec![v.id],
+            academic_term_id: f.term,
+            roster_date: f.date,
+            due_date: f.date + chrono::Duration::days(5),
+        },
+    )
+    .await
+    .unwrap();
+    let no_receiver = assignment(&f, &v, &extra_round, f.student).await;
+    // The explicit reviewer remains active but loses management. Read-only
+    // observers must not prevent notification of active school managers.
+    sqlx::query("DELETE FROM user_roles WHERE user_id=$1")
+        .bind(f.teacher.actor_id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let role:Uuid=sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES('CARE_OBSERVER','Synthetic observer','staff') RETURNING id").fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(role).bind(codes::STUDENT_CARE_SENSITIVE_READ_ASSIGNED).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+        .bind(f.teacher.actor_id)
+        .bind(role)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let own = access(f.student, &[codes::STUDENT_CARE_READ_OWN]);
+    let submitted = save_response(&f.pool, own, digital.id, response(1), true)
+        .await
+        .unwrap();
+    let receivers:Vec<Uuid>=sqlx::query_scalar("SELECT recipient_id FROM notification_dispatch_jobs WHERE dedup_key LIKE $1 ORDER BY recipient_id").bind(format!("care:urgent:{}:%",digital.id)).fetch_all(&f.pool).await.unwrap();
+    assert!(receivers.contains(&f.admin.actor_id));
+    assert!(receivers.contains(&f.teacher.actor_id));
+    let handoff = UpdateCareAssignmentReviewers {
+        request_id: Uuid::now_v7(),
+        row_version: submitted.assignment.row_version,
+        reviewer_user_ids: vec![f.other.actor_id],
+        reason: "Replace synthetic reviewer".into(),
+    };
+    let changed = update_assignment_reviewers(&f.pool, f.admin, digital.id, handoff.clone())
+        .await
+        .unwrap();
+    assert!(changed.urgent);
+    assert_eq!(changed.created_by, f.admin.actor_id);
+    assert_eq!(changed.instrument_version_id, v.id);
+    let routine = access(f.admin.actor_id, &[codes::STUDENT_CARE_MANAGE_SCHOOL]);
+    let replay = update_assignment_reviewers(&f.pool, routine, digital.id, handoff.clone())
+        .await
+        .unwrap();
+    assert!(!replay.urgent);
+    assert!(replay.acknowledged_at.is_none());
+    assert_eq!(replay.row_version, changed.row_version);
+    assert!(update_assignment_reviewers(
+        &f.pool,
+        f.teacher,
+        digital.id,
+        UpdateCareAssignmentReviewers {
+            request_id: Uuid::now_v7(),
+            row_version: changed.row_version,
+            ..handoff
+        }
+    )
+    .await
+    .is_err());
+    assert!(get_assignment(&f.pool, f.teacher, digital.id)
+        .await
+        .is_err());
+    let detail = get_assignment(&f.pool, f.other, digital.id).await.unwrap();
+    assert_eq!(detail.answers[0].option_key, "b");
+    assert_eq!(detail.results[0].score, 2);
+    update_assignment_reviewers(
+        &f.pool,
+        f.admin,
+        manual.id,
+        UpdateCareAssignmentReviewers {
+            request_id: Uuid::now_v7(),
+            row_version: 2,
+            reviewer_user_ids: vec![f.other.actor_id],
+            reason: "Replace manual reviewer".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(save_response(&f.pool, f.teacher, manual.id, draft, false)
+        .await
+        .is_err());
+    let jobs: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notification_dispatch_jobs WHERE dedup_key LIKE $1",
+    )
+    .bind(format!("care:reviewer-handoff:{}:%", digital.id))
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(jobs, 1);
+    // Historical receipt membership cannot authorize private fields after removal.
+    let mixed = access(
+        f.other.actor_id,
+        &[
+            codes::STUDENT_CARE_MANAGE_SCHOOL,
+            codes::STUDENT_CARE_SENSITIVE_MANAGE_ASSIGNED,
+        ],
+    );
+    let retained_request = UpdateCareAssignmentReviewers {
+        request_id: Uuid::now_v7(),
+        row_version: changed.row_version,
+        reviewer_user_ids: vec![f.other.actor_id],
+        reason: "Retain current reviewer".into(),
+    };
+    let retained =
+        update_assignment_reviewers(&f.pool, mixed, digital.id, retained_request.clone())
+            .await
+            .unwrap();
+    assert!(retained.urgent);
+    update_assignment_reviewers(
+        &f.pool,
+        f.admin,
+        digital.id,
+        UpdateCareAssignmentReviewers {
+            request_id: Uuid::now_v7(),
+            row_version: retained.row_version,
+            reviewer_user_ids: vec![f.admin.actor_id],
+            reason: "Remove previous reviewer".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(get_assignment(&f.pool, mixed, digital.id).await.is_err());
+    let safe_replay = update_assignment_reviewers(&f.pool, mixed, digital.id, retained_request)
+        .await
+        .unwrap();
+    assert!(!safe_replay.urgent);
+    assert!(safe_replay.acknowledged_at.is_none());
+    let mut saved_case_request = case_payload(&f, Some(digital.id));
+    saved_case_request.assigned_user_ids = vec![f.other.actor_id];
+    let saved_case = save_case(&f.pool, f.admin, None, saved_case_request.clone())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(f.other.actor_id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let replay = save_case(&f.pool, f.admin, None, saved_case_request)
+        .await
+        .unwrap();
+    assert_eq!(replay.case.id, saved_case.case.id);
+    sqlx::query("UPDATE users SET status='inactive' WHERE user_type='staff'")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let last = save_response(&f.pool, own, no_receiver.id, response(1), true)
+        .await
+        .unwrap();
+    assert!(last.assignment.urgent);
+    assert_eq!(last.assignment.status, CareAssignmentStatus::Submitted);
+    let jobs: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM notification_dispatch_jobs WHERE dedup_key LIKE $1",
+    )
+    .bind(format!("care:urgent:{}:%", no_receiver.id))
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(jobs, 0);
 }

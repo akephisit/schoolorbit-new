@@ -240,6 +240,7 @@ pub struct CareManualScore {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 pub struct CareAssignment {
+    pub created_by: Uuid,
     pub id: Uuid,
     pub round_id: Uuid,
     pub student_id: Uuid,
@@ -295,6 +296,15 @@ pub struct SaveCareResponse {
     pub answers: Vec<CareAnswer>,
     pub manual_scores: Vec<CareManualScore>,
     pub manual_note: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+pub struct UpdateCareAssignmentReviewers {
+    pub request_id: Uuid,
+    pub row_version: i64,
+    pub reviewer_user_ids: Vec<Uuid>,
+    pub reason: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

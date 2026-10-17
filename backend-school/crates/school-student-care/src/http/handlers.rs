@@ -355,3 +355,17 @@ pub async fn add_case_event(
     school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     Ok(Json(ApiResponse::ok(result)))
 }
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/reviewers",operation_id="student_care_update_assignment_reviewers",tag="student-care",params(("id"=Uuid,Path)),request_body=UpdateCareAssignmentReviewers,responses((status=200,body=ApiResponse<CareAssignment>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+pub async fn update_assignment_reviewers(
+    State(state): State<StudentCareHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(p): Json<UpdateCareAssignmentReviewers>,
+) -> Result<impl IntoResponse, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let a = CareAccess::new(&context.actor);
+    let result = services::update_assignment_reviewers(&context.tenant.pool, a, id, p).await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(result)))
+}

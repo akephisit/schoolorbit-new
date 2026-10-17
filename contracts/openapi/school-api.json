@@ -5887,6 +5887,10 @@
                   "null"
                 ]
               },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -5942,6 +5946,7 @@
               }
             },
             "required": [
+              "createdBy",
               "id",
               "roundId",
               "studentId",
@@ -20365,6 +20370,10 @@
                     "null"
                   ]
                 },
+                "createdBy": {
+                  "format": "uuid",
+                  "type": "string"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -20420,6 +20429,7 @@
                 }
               },
               "required": [
+                "createdBy",
                 "id",
                 "roundId",
                 "studentId",
@@ -30515,6 +30525,10 @@
               "null"
             ]
           },
+          "createdBy": {
+            "format": "uuid",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -30570,6 +30584,7 @@
           }
         },
         "required": [
+          "createdBy",
           "id",
           "roundId",
           "studentId",
@@ -60590,6 +60605,36 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateCareAssignmentReviewers": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reviewerUserIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requestId",
+          "rowVersion",
+          "reviewerUserIds",
+          "reason"
+        ],
         "type": "object"
       },
       "UpdateCareRound": {
@@ -101200,6 +101245,107 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_CareAssignmentDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "student-care"
+        ]
+      }
+    },
+    "/api/student-care/assignments/{id}/reviewers": {
+      "post": {
+        "operationId": "student_care_update_assignment_reviewers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCareAssignmentReviewers"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CareAssignment"
                 }
               }
             },

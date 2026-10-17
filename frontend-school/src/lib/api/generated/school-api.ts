@@ -6496,6 +6496,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/student-care/assignments/{id}/reviewers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['student_care_update_assignment_reviewers'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/student-care/assignments/{id}/submit': {
 		parameters: {
 			query?: never;
@@ -9123,6 +9139,8 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				acknowledgedAt?: string | null;
+				/** Format: uuid */
+				createdBy: string;
 				/** Format: uuid */
 				id: string;
 				instrumentName: string;
@@ -13029,6 +13047,8 @@ export interface components {
 				/** Format: date-time */
 				acknowledgedAt?: string | null;
 				/** Format: uuid */
+				createdBy: string;
+				/** Format: uuid */
 				id: string;
 				instrumentName: string;
 				/** Format: uuid */
@@ -15846,6 +15866,8 @@ export interface components {
 		CareAssignment: {
 			/** Format: date-time */
 			acknowledgedAt?: string | null;
+			/** Format: uuid */
+			createdBy: string;
 			/** Format: uuid */
 			id: string;
 			instrumentName: string;
@@ -24173,6 +24195,14 @@ export interface components {
 			description?: string | null;
 			name_en?: string | null;
 			name_th?: string | null;
+		};
+		UpdateCareAssignmentReviewers: {
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			reviewerUserIds: string[];
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		UpdateCareRound: {
 			/** Format: uuid */
@@ -53029,6 +53059,79 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_update_assignment_reviewers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCareAssignmentReviewers'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignment'];
 				};
 			};
 			400: {

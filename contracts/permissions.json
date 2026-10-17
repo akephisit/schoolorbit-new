@@ -1322,71 +1322,71 @@
       "module": "student_care",
       "action": "read",
       "scope": "own",
-      "name": "Student Care read own",
-      "description": "Student Care routine workflow"
+      "name": "ดูแบบประเมินที่ได้รับมอบหมายของตนเอง",
+      "description": "ดูแบบประเมินที่ได้รับมอบหมายของตนเอง"
     },
     {
       "module": "student_care",
       "action": "read",
       "scope": "assigned",
-      "name": "Student Care read assigned",
-      "description": "Student Care routine workflow"
+      "name": "ดูงานดูแลช่วยเหลือที่มอบหมาย",
+      "description": "ดูงานดูแลช่วยเหลือที่มอบหมาย"
     },
     {
       "module": "student_care",
       "action": "read",
       "scope": "school",
-      "name": "Student Care read school",
-      "description": "Student Care routine workflow"
+      "name": "ดูภาพรวมงานดูแลช่วยเหลือโรงเรียน",
+      "description": "ดูภาพรวมงานดูแลช่วยเหลือโรงเรียน"
     },
     {
       "module": "student_care",
       "action": "manage",
       "scope": "assigned",
-      "name": "Student Care manage assigned",
-      "description": "Student Care routine workflow"
+      "name": "จัดการงานดูแลช่วยเหลือที่มอบหมาย",
+      "description": "จัดการงานดูแลช่วยเหลือที่มอบหมาย"
     },
     {
       "module": "student_care",
       "action": "manage",
       "scope": "school",
-      "name": "Student Care manage school",
-      "description": "Student Care routine workflow"
+      "name": "จัดการรอบและงานดูแลช่วยเหลือโรงเรียน",
+      "description": "จัดการรอบและงานดูแลช่วยเหลือโรงเรียน"
     },
     {
       "module": "student_care_config",
       "action": "manage",
       "scope": "school",
-      "name": "Configure Student Care instrument versions",
-      "description": "Student Care routine workflow"
+      "name": "ตั้งค่ารุ่นแบบประเมินดูแลช่วยเหลือ",
+      "description": "ตั้งค่ารุ่นแบบประเมินดูแลช่วยเหลือ"
     },
     {
       "module": "student_care_sensitive",
       "action": "read",
       "scope": "assigned",
-      "name": "Student Care read assigned",
-      "description": "Confidential access requires explicit individual assignment"
+      "name": "ดูข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน",
+      "description": "ดูข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน"
     },
     {
       "module": "student_care_sensitive",
       "action": "read",
       "scope": "school",
-      "name": "Student Care read school",
-      "description": "Confidential access requires explicit individual assignment"
+      "name": "ดูข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
+      "description": "ดูข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
     },
     {
       "module": "student_care_sensitive",
       "action": "manage",
       "scope": "assigned",
-      "name": "Student Care manage assigned",
-      "description": "Confidential access requires explicit individual assignment"
+      "name": "จัดการข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน",
+      "description": "จัดการข้อมูลลับเฉพาะที่มอบหมายอย่างชัดเจน"
     },
     {
       "module": "student_care_sensitive",
       "action": "manage",
       "scope": "school",
-      "name": "Student Care manage school",
-      "description": "Confidential access requires explicit individual assignment"
+      "name": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
+      "description": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
     }
   ]
 }

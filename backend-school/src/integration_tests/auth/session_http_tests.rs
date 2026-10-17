@@ -1387,6 +1387,7 @@ mod protected_router {
         // Seed one accepted respondent assignment; HTTP below exercises actual
         // service authorization/draft persistence through the canonical session middleware.
         let assignment = CareAssignment {
+            created_by: routine,
             id: Uuid::now_v7(),
             round_id: round.id,
             student_id: student,

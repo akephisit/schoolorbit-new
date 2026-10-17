@@ -166,6 +166,7 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_student_care::http::handlers::update_assignment_reviewers,
         school_student_care::http::handlers::list_case_events,
         school_student_care::http::handlers::get_round,
         school_student_care::http::handlers::overview,
@@ -6600,6 +6601,7 @@ mod student_care_contract_tests {
             ("assignments/{id}/draft", vec!["put"]),
             ("assignments/{id}/submit", vec!["post"]),
             ("assignments/{id}/acknowledge", vec!["post"]),
+            ("assignments/{id}/reviewers", vec!["post"]),
             ("visits", vec!["get", "post"]),
             ("visits/{id}", vec!["get", "put"]),
             ("cases", vec!["get", "post"]),

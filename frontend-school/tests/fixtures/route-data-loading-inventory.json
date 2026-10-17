@@ -62,6 +62,16 @@
 			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
 		},
 		{
+			"route": "parent/student-care",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
 			"route": "parent/student/[id]",
 			"wave": "self-service",
 			"dataOwner": "route",
@@ -1146,6 +1156,196 @@
 			"notes": "Default tabs use local/browser state; notification status loads only when its tab opens."
 		},
 		{
+			"route": "staff/student-care",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/assignments",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/cases",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/cases/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/cases/[id]/edit",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/cases/new",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/library",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/library/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/library/new",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/rounds",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/rounds/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/rounds/[id]/assign",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/rounds/new",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/students/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/students/[id]/assessments",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor, exact resource scope, student path, URL-owned status and keyset cursor",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Complete student assessment history loads independently of the profile preview, visits and case regions; never applies own respondent filtering."
+		},
+		{
+			"route": "staff/student-care/visits",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/visits/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/visits/[id]/edit",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
+			"route": "staff/student-care/visits/new",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
 			"route": "staff/students",
 			"wave": "staff",
 			"dataOwner": "route",
@@ -1276,6 +1476,16 @@
 			"notes": "Direct loader shares one learner-scoped academic-context promise with selected self profile. Shallow canonical URL repair avoids duplicate reads; independent prerequisite/primary first and retained retry, consumed identity/URL sources and logout/disposal guards. Profile update stays explicit, failed save preserves draft and empty success rereads selected profile only."
 		},
 		{
+			"route": "student-care/assignments/[id]",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
+		},
+		{
 			"route": "student/activities",
 			"wave": "self-service",
 			"dataOwner": "route",
@@ -1354,6 +1564,16 @@
 			"status": "complete",
 			"backendOwner": "none",
 			"notes": "Default tabs use local/browser state; notification status loads only when its tab opens."
+		},
+		{
+			"route": "student/student-care",
+			"wave": "student-care",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and exact Student Care capability; dated academic term only for new-round/visit roster",
+			"status": "complete",
+			"backendOwner": "school-student-care",
+			"notes": "Route owns typed safe GET regions; form-only lookups are exact-permission gated; identity-keyed sensitive state and focused error retry."
 		},
 		{
 			"route": "student/timetable",

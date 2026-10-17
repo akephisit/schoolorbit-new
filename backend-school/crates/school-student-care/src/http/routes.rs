@@ -5,6 +5,10 @@ use axum::{
 };
 pub fn protected_routes() -> Router<StudentCareHttpState> {
     Router::new()
+        .route(
+            "/api/student-care/assignments/{id}/reviewers",
+            post(handlers::update_assignment_reviewers),
+        )
         .route("/api/student-care/overview", get(handlers::overview))
         .route(
             "/api/student-care/instruments",

@@ -11,7 +11,7 @@ use school_permissions::registry::codes;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{types::Json, FromRow, PgConnection, PgPool, Postgres, Transaction};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -85,7 +85,7 @@ async fn receipt<T: DeserializeOwned, P: Serialize>(
     }
 }
 async fn finish<T: Serialize, P: Serialize>(
-    mut tx: Tx<'_>,
+    tx: Tx<'_>,
     a: CareAccess,
     id: Uuid,
     operation: &str,
@@ -94,15 +94,36 @@ async fn finish<T: Serialize, P: Serialize>(
     resource: Uuid,
     revision: i64,
 ) -> Result<(), AppError> {
+    finish_with_detail(
+        tx, a, id, operation, payload, result, resource, revision, None,
+    )
+    .await
+}
+#[derive(Serialize, Deserialize)]
+struct CareCommandAuditDetail {
+    reason: String,
+}
+async fn finish_with_detail<T: Serialize, P: Serialize>(
+    mut tx: Tx<'_>,
+    a: CareAccess,
+    id: Uuid,
+    operation: &str,
+    payload: &P,
+    result: &T,
+    resource: Uuid,
+    revision: i64,
+    detail: Option<&CareCommandAuditDetail>,
+) -> Result<(), AppError> {
     let digest = hex::encode(Sha256::digest(
         serde_json::to_vec(payload).map_err(|_| internal())?,
     ));
     sqlx::query("INSERT INTO care_mutation_receipts(actor_id,request_id,operation,digest,outcome_ciphertext) VALUES($1,$2,$3,$4,$5)").bind(a.actor_id).bind(id).bind(operation).bind(digest).bind(encrypt(result)?).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO care_audit(actor_id,resource_id,action,revision) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO care_audit(actor_id,resource_id,action,revision,private_detail_ciphertext) VALUES($1,$2,$3,$4,$5)")
         .bind(a.actor_id)
         .bind(resource)
         .bind(operation)
         .bind(revision)
+        .bind(detail.map(encrypt).transpose()?)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -124,9 +145,17 @@ async fn active_staff(connection: &mut PgConnection, selected: &[Uuid]) -> Resul
         Ok(())
     }
 }
-async fn sensitive_staff(pool: &PgPool, selected: &[Uuid]) -> Result<(), AppError> {
-    let mut eligible = BTreeSet::new();
-    let mut managers = BTreeSet::new();
+struct EligibleCareStaff {
+    readers: BTreeSet<Uuid>,
+    managers: BTreeSet<Uuid>,
+    school_managers: BTreeSet<Uuid>,
+}
+async fn eligible_care_staff(c: &mut PgConnection) -> Result<EligibleCareStaff, AppError> {
+    let mut group = EligibleCareStaff {
+        readers: BTreeSet::new(),
+        managers: BTreeSet::new(),
+        school_managers: BTreeSet::new(),
+    };
     for permission in [
         codes::STUDENT_CARE_SENSITIVE_READ_ASSIGNED,
         codes::STUDENT_CARE_SENSITIVE_READ_SCHOOL,
@@ -134,20 +163,67 @@ async fn sensitive_staff(pool: &PgPool, selected: &[Uuid]) -> Result<(), AppErro
         codes::STUDENT_CARE_SENSITIVE_MANAGE_SCHOOL,
     ] {
         let found =
-            school_authorization::staff_users_with_all_permissions(pool, &[permission]).await?;
+            school_authorization::staff_users_with_all_permissions_on_connection(c, &[permission])
+                .await?;
         if permission == codes::STUDENT_CARE_SENSITIVE_MANAGE_ASSIGNED
             || permission == codes::STUDENT_CARE_SENSITIVE_MANAGE_SCHOOL
         {
-            managers.extend(found.iter().copied());
+            group.managers.extend(found.iter().copied());
         }
-        eligible.extend(found);
+        if permission == codes::STUDENT_CARE_SENSITIVE_MANAGE_SCHOOL {
+            group.school_managers.extend(found.iter().copied());
+        }
+        group.readers.extend(found);
     }
-    if selected.iter().all(|id| eligible.contains(id))
-        && selected.iter().any(|id| managers.contains(id))
+    Ok(group)
+}
+fn validate_care_staff(group: &EligibleCareStaff, selected: &[Uuid]) -> Result<(), AppError> {
+    if selected.iter().all(|id| group.readers.contains(id))
+        && selected.iter().any(|id| group.managers.contains(id))
     {
         Ok(())
     } else {
         Err(invalid("ผู้ดูแลทุกคนต้องมีสิทธิ์ข้อมูลลับ และอย่างน้อยหนึ่งคนต้องมีสิทธิ์จัดการ"))
+    }
+}
+async fn sensitive_staff(c: &mut PgConnection, selected: &[Uuid]) -> Result<(), AppError> {
+    let group = eligible_care_staff(c).await?;
+    validate_care_staff(&group, selected)
+}
+async fn urgent_recipients(
+    c: &mut PgConnection,
+    reviewers: &[Uuid],
+) -> Result<Vec<Uuid>, AppError> {
+    let group = eligible_care_staff(c).await?;
+    let mut selected: BTreeSet<_> = reviewers
+        .iter()
+        .filter(|id| group.readers.contains(id))
+        .copied()
+        .collect();
+    if !selected.iter().any(|id| group.managers.contains(id)) {
+        selected.extend(group.school_managers);
+    }
+    Ok(selected.into_iter().collect())
+}
+fn assignment_summary(mut item: CareAssignment, private_access: bool) -> CareAssignment {
+    if !private_access {
+        item.urgent = false;
+        item.acknowledged_at = None;
+    }
+    item
+}
+async fn current_assignment_private_access(
+    c: &mut PgConnection,
+    a: CareAccess,
+    current: &AssignmentRow,
+) -> Result<bool, AppError> {
+    if a.can_review(&current.reviewer_ids) {
+        return Ok(true);
+    }
+    match own_assignment(c, a, &current.document).await {
+        Ok(allowed) => Ok(allowed),
+        Err(AppError::NotFound(_)) => Ok(false),
+        Err(error) => Err(error),
     }
 }
 async fn notify(
@@ -521,6 +597,12 @@ async fn assignment_detail(
         purpose_acknowledged_at: row.purpose_acknowledged_at,
     })
 }
+#[derive(FromRow)]
+struct AssignmentSummaryRow {
+    document: Json<CareAssignment>,
+    reviewer_ids: Vec<Uuid>,
+    own_access: bool,
+}
 pub async fn assignments(
     pool: &PgPool,
     a: CareAccess,
@@ -528,17 +610,28 @@ pub async fn assignments(
 ) -> Result<Vec<CareAssignment>, AppError> {
     a.require_read()?;
     let limit = page(&q)?;
-    let rows=sqlx::query_scalar::<_,Json<CareAssignment>>("SELECT ca.document FROM care_assignments ca WHERE ($1::uuid IS NULL OR ca.id>$1) AND ($2::uuid IS NULL OR ca.round_id=$2) AND ($3::uuid IS NULL OR ca.student_id=$3) AND ($4::text IS NULL OR ca.document->>'status'=$4) AND (($5 AND ca.respondent_id=$6 AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM student_parents p JOIN users u ON u.id=p.parent_user_id AND u.status='active' WHERE p.parent_user_id=$6 AND p.student_user_id=ca.student_id))) OR $7 OR ($8 AND $6=ANY(ca.reviewer_ids)) OR $10 OR ($11 AND ca.created_by=$6)) AND ($12::uuid IS NULL OR ca.respondent_id=$12) ORDER BY ca.id LIMIT $9")
- .bind(q.after_id).bind(q.round_id).bind(q.student_id).bind(q.status).bind(a.own).bind(a.actor_id).bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(limit).bind(a.routine_school()).bind(a.routine_assigned()).bind(q.respondent_id).fetch_all(pool).await?;
+    const OWN:&str="($5 AND ca.respondent_id=$6 AND (ca.document->>'respondent'<>'guardian' OR EXISTS(SELECT 1 FROM student_parents p JOIN users parent ON parent.id=p.parent_user_id AND parent.status='active' AND parent.user_type='parent' JOIN users child ON child.id=p.student_user_id AND child.status='active' AND child.user_type='student' WHERE p.parent_user_id=$6 AND p.student_user_id=ca.student_id)))";
+    let query=format!("SELECT ca.document,ca.reviewer_ids,{OWN} AS own_access FROM care_assignments ca WHERE ($1::uuid IS NULL OR ca.id>$1) AND ($2::uuid IS NULL OR ca.round_id=$2) AND ($3::uuid IS NULL OR ca.student_id=$3) AND ($4::text IS NULL OR ca.document->>'status'=$4) AND ({OWN} OR $7 OR ($8 AND $6=ANY(ca.reviewer_ids)) OR $10 OR ($11 AND ca.created_by=$6)) AND ($12::uuid IS NULL OR ca.respondent_id=$12) ORDER BY ca.id LIMIT $9");
+    let rows: Vec<AssignmentSummaryRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(q.after_id)
+        .bind(q.round_id)
+        .bind(q.student_id)
+        .bind(q.status)
+        .bind(a.own)
+        .bind(a.actor_id)
+        .bind(a.sensitive_school())
+        .bind(a.sensitive_assigned())
+        .bind(limit)
+        .bind(a.routine_school())
+        .bind(a.routine_assigned())
+        .bind(q.respondent_id)
+        .fetch_all(pool)
+        .await?;
     Ok(rows
         .into_iter()
         .map(|r| {
-            let mut item = r.0;
-            if !a.can_review(&item.reviewer_user_ids) && !a.can_response(item.respondent_id) {
-                item.urgent = false;
-                item.acknowledged_at = None;
-            }
-            item
+            let private = a.can_review(&r.reviewer_ids) || r.own_access;
+            assignment_summary(r.document.0, private)
         })
         .collect())
 }
@@ -571,7 +664,6 @@ pub async fn create_assignments(
     {
         return Err(invalid("รายชื่อผู้ตอบซ้ำ"));
     }
-    sensitive_staff(pool, &reviewers).await?;
     let mut tx = pool.begin().await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     if let Some(v) = receipt(&mut tx, a, p.request_id, "assignments_create", &p).await? {
@@ -585,6 +677,7 @@ pub async fn create_assignments(
     {
         return Err(conflict());
     }
+    sensitive_staff(&mut tx, &reviewers).await?;
     active_staff(&mut tx, &reviewers).await?;
     let instrument = load_instrument(&mut tx, p.instrument_version_id).await?;
     let selected: Vec<_> = p.targets.iter().map(|t| t.student_id).collect();
@@ -596,6 +689,18 @@ pub async fn create_assignments(
             &selected,
         )
         .await?;
+    let births:Vec<(Uuid,Option<NaiveDate>)>=sqlx::query_as("SELECT id,date_of_birth FROM users WHERE id=ANY($1) AND user_type='student' AND status='active' ORDER BY id FOR SHARE").bind(&selected).fetch_all(&mut *tx).await?;
+    let births: BTreeMap<_, _> = births.into_iter().collect();
+    if instrument.definition.respondent == CareRespondent::Teacher {
+        let teachers: Vec<_> = p
+            .targets
+            .iter()
+            .map(|t| t.respondent_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        active_staff(&mut tx, &teachers).await?;
+    }
     let mut result = Vec::new();
     for target in &p.targets {
         let student = roster
@@ -605,7 +710,7 @@ pub async fn create_assignments(
         if !a.manage_school && !student.advisor_ids.contains(&a.actor_id) {
             return Err(policy::denied());
         }
-        let birth:Option<NaiveDate>=sqlx::query_scalar("SELECT date_of_birth FROM users WHERE id=$1 AND user_type='student' AND status='active' FOR SHARE").bind(student.id).fetch_optional(&mut *tx).await?.flatten();
+        let birth = births.get(&student.id).copied().flatten();
         let age = age_at(
             birth.ok_or_else(|| invalid("ต้องมีวันเกิดเพื่อยืนยันช่วงอายุแบบประเมิน"))?,
             round.roster_date,
@@ -620,10 +725,9 @@ pub async fn create_assignments(
                 }
             }
             CareRespondent::Teacher => {
-                if !student.advisor_ids.contains(&target.respondent_id) {
+                if !a.manage_school && !student.advisor_ids.contains(&target.respondent_id) {
                     return Err(invalid("ผู้ตอบครูต้องเป็นที่ปรึกษาตามรายชื่อ ณ วันที่เลือก"));
                 }
-                active_staff(&mut tx, &[target.respondent_id]).await?;
             }
             CareRespondent::Guardian => {
                 school_students::guardian_relationships::require_active_guardian_on_connection(
@@ -635,6 +739,7 @@ pub async fn create_assignments(
             }
         }
         let r = CareAssignment {
+            created_by: a.actor_id,
             id: Uuid::now_v7(),
             round_id: round.id,
             student_id: student.id,
@@ -650,9 +755,37 @@ pub async fn create_assignments(
             acknowledged_at: None,
             urgent: false,
         };
-        sqlx::query("INSERT INTO care_assignments(id,round_id,student_id,respondent_id,instrument_version_id,reviewer_ids,document,response_ciphertext,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)").bind(r.id).bind(r.round_id).bind(r.student_id).bind(r.respondent_id).bind(r.instrument_version_id).bind(&reviewers).bind(Json(&r)).bind(encrypt(&StoredResponse::default())?).bind(a.actor_id).execute(&mut *tx).await?;
         result.push(r);
     }
+    let ciphertexts = result
+        .iter()
+        .map(|_| encrypt(&StoredResponse::default()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut insert=sqlx::QueryBuilder::<Postgres>::new("INSERT INTO care_assignments(id,round_id,student_id,respondent_id,instrument_version_id,reviewer_ids,document,response_ciphertext,created_by) ");
+    insert.push_values(
+        result.iter().zip(ciphertexts.iter()),
+        |mut row, (r, cipher)| {
+            row.push_bind(r.id)
+                .push_bind(r.round_id)
+                .push_bind(r.student_id)
+                .push_bind(r.respondent_id)
+                .push_bind(r.instrument_version_id)
+                .push_bind(&reviewers)
+                .push_bind(Json(r))
+                .push_bind(cipher)
+                .push_bind(a.actor_id);
+        },
+    );
+    insert.build().execute(&mut *tx).await.map_err(|e| {
+        if e.as_database_error()
+            .is_some_and(|e| e.code().as_deref() == Some("23505"))
+        {
+            AppError::Conflict("ผู้ตอบมีงานแบบประเมินนี้ในรอบแล้ว".into())
+        } else {
+            AppError::from(e)
+        }
+    })?;
+    drop(insert);
     finish(
         tx,
         a,
@@ -764,10 +897,11 @@ pub async fn save_response(
     }
     sqlx::query("UPDATE care_assignments SET document=$2,response_ciphertext=$3,purpose_acknowledged_at=$4 WHERE id=$1").bind(id).bind(&row.document).bind(&row.response_ciphertext).bind(row.purpose_acknowledged_at).execute(&mut *tx).await?;
     if submit && urgent {
-        for reviewer in &row.reviewer_ids {
+        let recipients = urgent_recipients(&mut tx, &row.reviewer_ids).await?;
+        for reviewer in recipients {
             notify(
                 &mut tx,
-                *reviewer,
+                reviewer,
                 format!("care:urgent:{id}:{reviewer}"),
                 format!("/student-care/assignments/{id}"),
             )
@@ -844,7 +978,7 @@ pub async fn assignment_command(
         .bind(Json(&r))
         .execute(&mut *tx)
         .await?;
-    finish(
+    finish_with_detail(
         tx,
         a,
         p.request_id,
@@ -853,6 +987,9 @@ pub async fn assignment_command(
         &r,
         id,
         r.row_version,
+        Some(&CareCommandAuditDetail {
+            reason: p.reason.clone(),
+        }),
     )
     .await?;
     Ok(r)
@@ -1141,7 +1278,6 @@ pub async fn save_case(
     let assigned = ids(&p.assigned_user_ids, 30)?;
     scoring::text(&p.title, 200, true)?;
     scoring::text(&p.note, 5000, true)?;
-    sensitive_staff(pool, &assigned).await?;
     let operation = if id.is_some() {
         "case_update"
     } else {
@@ -1202,7 +1338,7 @@ pub async fn save_case(
             if row.document.student_id != p.student_id || !visit_read(a, &row.visitor_ids) {
                 return Err(policy::denied());
             }
-            authorized_source = true;
+            authorized_source |= row.visitor_ids.contains(&a.actor_id);
         }
         if !a.sensitive_manage_school && (!authorized_source || !assigned.contains(&a.actor_id)) {
             return Err(policy::denied());
@@ -1225,6 +1361,7 @@ pub async fn save_case(
             events: Vec::new(),
         }
     };
+    sensitive_staff(&mut tx, &assigned).await?;
     active_staff(&mut tx, &assigned).await?;
     let new_event = CareCaseEvent {
         id: Uuid::now_v7(),
@@ -1425,5 +1562,82 @@ pub async fn list_case_events(
     let result = read_case_events(&mut tx, id, q.after_id, limit).await?;
     audit_read(&mut tx, a, id).await?;
     tx.commit().await?;
+    Ok(result)
+}
+
+pub async fn update_assignment_reviewers(
+    pool: &PgPool,
+    a: CareAccess,
+    id: Uuid,
+    p: UpdateCareAssignmentReviewers,
+) -> Result<CareAssignment, AppError> {
+    if !a.manage_school && !a.sensitive_manage_school {
+        return Err(policy::denied());
+    }
+    let reviewers = ids(&p.reviewer_user_ids, 30)?;
+    scoring::text(&p.reason, 1000, true)?;
+    let mut tx = pool.begin().await?;
+    let mut row = load_assignment(&mut tx, id, true).await?;
+    if let Some(previous) =
+        receipt::<CareAssignment, _>(&mut tx, a, p.request_id, "assignment_reviewers", &(id, &p))
+            .await?
+    {
+        let private = current_assignment_private_access(&mut tx, a, &row).await?;
+        return Ok(assignment_summary(previous, private));
+    }
+    if row.document.row_version != p.row_version
+        || row.document.status == CareAssignmentStatus::Cancelled
+    {
+        return Err(conflict());
+    }
+    let eligible = eligible_care_staff(&mut tx).await?;
+    validate_care_staff(&eligible, &reviewers)?;
+    let newly_assigned: Vec<_> = reviewers
+        .iter()
+        .filter(|id| !row.reviewer_ids.contains(id))
+        .copied()
+        .collect();
+    row.document.row_version += 1;
+    row.document.reviewer_user_ids = reviewers.clone();
+    sqlx::query("UPDATE care_assignments SET reviewer_ids=$2,document=$3 WHERE id=$1")
+        .bind(id)
+        .bind(&reviewers)
+        .bind(&row.document)
+        .execute(&mut *tx)
+        .await?;
+    if row.document.status == CareAssignmentStatus::Submitted
+        && row.document.urgent
+        && row.document.acknowledged_at.is_none()
+    {
+        for recipient in newly_assigned {
+            notify(
+                &mut tx,
+                recipient,
+                format!(
+                    "care:reviewer-handoff:{id}:{}:{recipient}",
+                    row.document.row_version
+                ),
+                format!("/student-care/assignments/{id}"),
+            )
+            .await?;
+        }
+    }
+    row.reviewer_ids = reviewers;
+    let private = current_assignment_private_access(&mut tx, a, &row).await?;
+    let result = assignment_summary(row.document.0, private);
+    finish_with_detail(
+        tx,
+        a,
+        p.request_id,
+        "assignment_reviewers",
+        &(id, &p),
+        &result,
+        id,
+        result.row_version,
+        Some(&CareCommandAuditDetail {
+            reason: p.reason.clone(),
+        }),
+    )
+    .await?;
     Ok(result)
 }
