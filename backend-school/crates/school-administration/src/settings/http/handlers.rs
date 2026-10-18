@@ -15,7 +15,7 @@ use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_context;
 #[cfg(feature = "api-docs")]
-use school_file_platform::http_models::PublicFileFaviconPng;
+use school_file_platform::http_models::{PublicFileFaviconPng, PublicSchoolShareImagePng};
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
@@ -136,6 +136,65 @@ pub async fn get_public_favicon(
         png,
     )
         .into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/school/public/share-image", operation_id = "getPublicSchoolShareImage", tag = "school",
+    responses(
+        (status = 200, description = "Current school social banner, exactly 1200 by 630 pixels", content_type = "image/png", body = inline(PublicSchoolShareImagePng)),
+        (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
+        (status = 404, description = "School not found", body = ApiErrorResponse),
+        (status = 503, description = "Branding temporarily unavailable; retry after 30 seconds", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_public_share_image(
+    State(state): State<AdministrationHttpState>,
+    headers: HeaderMap,
+) -> Result<Response, Response> {
+    let tenant = tenant_context(&state.auth_runtime, &headers)
+        .await
+        .map_err(|error| share_image_error(error.into()))?;
+    let png = school_service::render_public_share_image(
+        &state.auth_runtime,
+        &state.file_platform,
+        &tenant,
+    )
+    .await
+    .map_err(|error| share_image_error(error.into()))?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=300"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::VARY, "Origin, X-School-Subdomain, Referer"),
+        ],
+        png,
+    )
+        .into_response())
+}
+
+fn share_image_error(error: AppError) -> Response {
+    let unavailable = error.status_code().is_server_error();
+    let mut response = if unavailable {
+        AppError::ServiceUnavailable("public_school_share_image_unavailable".into()).into_response()
+    } else {
+        error.into_response()
+    };
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        header::VARY,
+        axum::http::HeaderValue::from_static("Origin, X-School-Subdomain, Referer"),
+    );
+    if unavailable {
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            axum::http::HeaderValue::from_static("30"),
+        );
+    }
+    response
 }
 
 /// GET /api/school/settings — staff only (SETTINGS_READ_ALL)

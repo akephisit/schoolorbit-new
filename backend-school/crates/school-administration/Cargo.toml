@@ -13,6 +13,8 @@ api-docs = [
 ]
 
 [dependencies]
+bytes = { workspace = true }
+school-tenancy = { workspace = true }
 url = { workspace = true }
 unicode-normalization = { workspace = true }
 school-file-platform = { workspace = true }

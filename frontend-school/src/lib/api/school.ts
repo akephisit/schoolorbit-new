@@ -110,3 +110,59 @@ export async function getPublicSchoolFavicon(
 		throw new ApiClientError('รูปแบบไอคอนโรงเรียนไม่ถูกต้อง', 502);
 	return blob;
 }
+
+/** Only the configured backend may select this tenant's public social card. */
+export async function getPublicSchoolShareImage(options: ApiRequestOptions = {}): Promise<Blob> {
+	const requestFetch = options.requestFetch ?? globalThis.fetch;
+	const limit = 2 * 1024 * 1024;
+	return requireApiData(
+		await apiClient.getExternalBlob(`${BACKEND_URL}/api/school/public/share-image`, {
+			...options,
+			requestFetch: async (input, init) => {
+				const response = await requestFetch(input, { ...init, redirect: 'manual' });
+				if (!response.ok) {
+					await response.body?.cancel();
+					throw new ApiClientError('ไม่สามารถอ่านภาพแชร์โรงเรียนได้', response.status);
+				}
+				if (
+					response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() !==
+						'image/png' ||
+					Number(response.headers.get('content-length')) > limit ||
+					!response.body
+				) {
+					await response.body?.cancel();
+					throw new ApiClientError('รูปแบบภาพแชร์โรงเรียนไม่ถูกต้อง', 502);
+				}
+				const reader = response.body.getReader();
+				const chunks: Uint8Array<ArrayBuffer>[] = [];
+				let size = 0;
+				try {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+						size += value.byteLength;
+						if (size > limit) throw new ApiClientError('ภาพแชร์โรงเรียนมีขนาดใหญ่เกินไป', 502);
+						chunks.push(new Uint8Array(value));
+					}
+				} finally {
+					await reader.cancel();
+					reader.releaseLock();
+				}
+				const png = new Blob(chunks, { type: 'image/png' });
+				const header = new Uint8Array(await png.slice(0, 24).arrayBuffer());
+				const view = new DataView(header.buffer);
+				if (
+					header.length < 24 ||
+					![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header[index] === byte) ||
+					view.getUint32(12) !== 0x49484452 ||
+					view.getUint32(16) !== 1200 ||
+					view.getUint32(20) !== 630
+				) {
+					throw new ApiClientError('รูปแบบภาพแชร์โรงเรียนไม่ถูกต้อง', 502);
+				}
+				return new Response(png, { headers: { 'content-type': 'image/png' } });
+			}
+		}),
+		'ไม่สามารถอ่านภาพแชร์โรงเรียนได้'
+	);
+}

@@ -354,6 +354,49 @@ impl FilePlatform {
             .map_err(|_| FilePlatformError::InspectionRejected)?
     }
 
+    /// Render the current school's public social banner from original, inspected crest bytes.
+    /// The administration owner selects the current crest; this operation accepts no remote URL.
+    pub async fn public_school_share_image(
+        &self,
+        repository: &dyn FileRepository,
+        current_crest: Option<Uuid>,
+        school_name: String,
+        school_domain: String,
+    ) -> Result<Bytes, FilePlatformError> {
+        // Fail fast when full: waiting requests must not retain unbounded source images.
+        // The blocking task owns the permit even if its requesting future is cancelled.
+        static RENDERS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
+            std::sync::OnceLock::new();
+        let permit = RENDERS
+            .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| FilePlatformError::StorageUnavailable)?;
+        let source = if let Some(file_id) = current_crest {
+            let delivery = ready_delivery(repository, file_id).await?;
+            if delivery.file.visibility != FileVisibility::Public
+                || delivery.file.purpose != FilePurpose::SchoolLogo
+            {
+                return Err(FilePlatformError::VisibilityMismatch);
+            }
+            let object = delivery
+                .object
+                .ok_or(FilePlatformError::MetadataUnavailable)?;
+            let limit = purpose_definition(FilePurpose::SchoolLogo)?
+                .limits
+                .max_bytes;
+            Some(self.provider.get(&object, limit).await?)
+        } else {
+            None
+        };
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            crate::share_image::render_png(source.as_deref(), &school_name, &school_domain)
+        })
+        .await
+        .map_err(|_| FilePlatformError::InspectionRejected)?
+    }
+
     pub async fn metadata(
         &self,
         repository: &dyn FileRepository,
@@ -1272,6 +1315,109 @@ mod tests {
             {
                 let image = image::load_from_memory(&result.unwrap()).unwrap();
                 assert_eq!((image.width(), image.height()), (256, 256));
+            } else {
+                assert!(result.is_err());
+                assert_eq!(*provider.gets.lock().unwrap(), 0);
+            }
+        }
+        assert_eq!(*provider.gets.lock().unwrap(), 1);
+        assert!(provider.puts.lock().unwrap().is_empty());
+        assert_eq!(*provider.deletes.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn public_share_image_reads_only_ready_public_school_crests_and_never_writes() {
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        let service = platform(ScanOutcome::Clean, provider.clone());
+        let id = Uuid::new_v4();
+        let original = StoredObject::new(
+            original_object_key(
+                Uuid::new_v4(),
+                FilePurpose::SchoolLogo,
+                id,
+                1,
+                crate::platform_types::DetectedContent::Png,
+            )
+            .unwrap(),
+            "image/png",
+        );
+        assert_eq!(
+            service
+                .public_school_share_image(
+                    &repository,
+                    Some(id),
+                    "โรงเรียนทดสอบ".into(),
+                    "sample.example.test".into()
+                )
+                .await,
+            Err(FilePlatformError::NotFound)
+        );
+        for (status, visibility, purpose) in [
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Private,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Private,
+                FilePurpose::ProfileImage,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Public,
+                FilePurpose::SchoolBanner,
+            ),
+            (
+                FileLifecycleStatus::Processing,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Quarantined,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Deleted,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+            (
+                FileLifecycleStatus::Ready,
+                FileVisibility::Public,
+                FilePurpose::SchoolLogo,
+            ),
+        ] {
+            *repository.delivery.lock().unwrap() = Some(DeliveryRecord {
+                file: PlatformFile {
+                    id,
+                    owner_user_id: None,
+                    purpose,
+                    visibility,
+                    lifecycle_status: status,
+                    current_version: Some(1),
+                    display_filename: "crest.png".into(),
+                    detected_mime_type: "image/png".into(),
+                    byte_size: png().len() as i64,
+                },
+                object: Some(original.clone()),
+            });
+            let result = service
+                .public_school_share_image(
+                    &repository,
+                    Some(id),
+                    "โรงเรียนทดสอบ".into(),
+                    "sample.example.test".into(),
+                )
+                .await;
+            if status == FileLifecycleStatus::Ready
+                && visibility == FileVisibility::Public
+                && purpose == FilePurpose::SchoolLogo
+            {
+                let image = image::load_from_memory(&result.unwrap()).unwrap();
+                assert_eq!((image.width(), image.height()), (1200, 630));
             } else {
                 assert!(result.is_err());
                 assert_eq!(*provider.gets.lock().unwrap(), 0);

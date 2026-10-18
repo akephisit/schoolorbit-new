@@ -1,5 +1,9 @@
 pub mod public;
 
+use bytes::Bytes;
+use school_auth::runtime::AuthRuntime;
+use school_file_platform::{platform_service::FilePlatform, repository::SqlFileRepository};
+use school_tenancy::TenantContext;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -29,6 +33,39 @@ pub async fn get_settings_row(pool: &PgPool) -> Result<SchoolSettingsRow, AppErr
 
 pub async fn get_settings_response(pool: &PgPool) -> Result<SchoolSettingsResponse, AppError> {
     Ok(settings_response_from_row(get_settings_row(pool).await?))
+}
+
+/// Resolve only authoritative branding for the already resolved current tenant.
+pub async fn render_public_share_image(
+    runtime: &AuthRuntime,
+    platform: &FilePlatform,
+    tenant: &TenantContext,
+) -> Result<Bytes, AppError> {
+    let crest = get_settings_response(&tenant.pool)
+        .await
+        .map_err(|_| share_image_unavailable())?
+        .logo_file_id;
+    let name = runtime
+        .admin_client
+        .get_school_name(&tenant.subdomain)
+        .await
+        .map_err(|_| share_image_unavailable())?;
+    let domain = format!("{}.{}", tenant.subdomain, runtime.config.base_domain);
+    let repository = SqlFileRepository::new(tenant.pool.as_ref().clone());
+    platform
+        .public_school_share_image(&repository, crest, name, domain)
+        .await
+        .map_err(|error| {
+            tracing::warn!(
+                reason = error.log_safe_code(),
+                "Public school share image unavailable"
+            );
+            share_image_unavailable()
+        })
+}
+
+fn share_image_unavailable() -> AppError {
+    AppError::ServiceUnavailable("public_school_share_image_unavailable".into())
 }
 
 /// Atomically validates and attaches a ready school-logo file, returning the

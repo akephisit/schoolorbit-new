@@ -1,6 +1,6 @@
 const SITE_NAME = 'SchoolOrbit';
 const DEFAULT_DESCRIPTION = 'ระบบจัดการโรงเรียนแบบครบวงจร';
-const DEFAULT_IMAGE_PATH = '/app-icon/192.png';
+const DEFAULT_IMAGE_PATH = '/og-image.png';
 
 export const ROUTE_PREVIEW_MARKER = '<!-- schoolorbit-route-preview-meta -->';
 
@@ -138,6 +138,8 @@ function routePathSpecificity(routePath: string): number {
 function buildRoutePreviewTags(meta: RoutePreviewMeta, url: URL): string {
 	const title = `${meta.title} - ${SITE_NAME}`;
 	const imageUrl = absoluteUrl(meta.image, url);
+	const schoolCard =
+		new URL(imageUrl).origin === url.origin && new URL(imageUrl).pathname === DEFAULT_IMAGE_PATH;
 
 	return [
 		`<title>${escapeHtmlText(title)}</title>`,
@@ -148,10 +150,23 @@ function buildRoutePreviewTags(meta: RoutePreviewMeta, url: URL): string {
 		`<meta data-schoolorbit-route-preview property="og:title" content="${escapeHtmlAttribute(title)}" />`,
 		`<meta data-schoolorbit-route-preview property="og:description" content="${escapeHtmlAttribute(meta.description)}" />`,
 		`<meta data-schoolorbit-route-preview property="og:image" content="${escapeHtmlAttribute(imageUrl)}" />`,
-		`<meta data-schoolorbit-route-preview name="twitter:card" content="summary" />`,
+		...(schoolCard
+			? [
+					'<meta data-schoolorbit-route-preview property="og:image:width" content="1200" />',
+					'<meta data-schoolorbit-route-preview property="og:image:height" content="630" />',
+					'<meta data-schoolorbit-route-preview property="og:image:type" content="image/png" />',
+					'<meta data-schoolorbit-route-preview property="og:image:alt" content="ข้อมูลโรงเรียนและระบบจัดการโรงเรียนครบวงจร" />'
+				]
+			: []),
+		`<meta data-schoolorbit-route-preview name="twitter:card" content="${schoolCard ? 'summary_large_image' : 'summary'}" />`,
 		`<meta data-schoolorbit-route-preview name="twitter:title" content="${escapeHtmlAttribute(title)}" />`,
 		`<meta data-schoolorbit-route-preview name="twitter:description" content="${escapeHtmlAttribute(meta.description)}" />`,
-		`<meta data-schoolorbit-route-preview name="twitter:image" content="${escapeHtmlAttribute(imageUrl)}" />`
+		`<meta data-schoolorbit-route-preview name="twitter:image" content="${escapeHtmlAttribute(imageUrl)}" />`,
+		...(schoolCard
+			? [
+					'<meta data-schoolorbit-route-preview name="twitter:image:alt" content="ข้อมูลโรงเรียนและระบบจัดการโรงเรียนครบวงจร" />'
+				]
+			: [])
 	].join('\n\t');
 }
 
@@ -160,7 +175,7 @@ function removeManagedHeadTags(html: string): string {
 		.replace(/<title\b[^>]*>[\s\S]*?<\/title>\s*/gi, '')
 		.replace(/<meta\b[^>]*data-schoolorbit-route-preview[^>]*>\s*/gi, '')
 		.replace(
-			/<meta\b(?=[^>]*(?:property|name)=["'](?:og:type|og:site_name|og:locale|og:url|og:title|og:description|og:image|twitter:card|twitter:title|twitter:description|twitter:image)["'])[^>]*>\s*/gi,
+			/<meta\b(?=[^>]*(?:property|name)=["'](?:og:type|og:site_name|og:locale|og:url|og:title|og:description|og:image(?::(?:width|height|type|alt))?|twitter:card|twitter:title|twitter:description|twitter:image(?::alt)?)["'])[^>]*>\s*/gi,
 			''
 		);
 }
