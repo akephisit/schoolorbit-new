@@ -381,24 +381,16 @@
 
 			<div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
 				<section class="min-w-0 space-y-4" aria-label="เอกสาร" id="correspondence-document">
-					<Choice
-						id="document-revision"
-						label="ฉบับเอกสารที่แสดง"
-						bind:value={selectedRevision}
-						options={[
-							{ value: 'current', label: `ฉบับปัจจุบัน (${detail.document.revision})` },
-							...detail.revisions
-								.filter((revision) => revision.revision !== detail.document.revision)
-								.map((revision) => ({
-									value: String(revision.revision),
-									label: `ฉบับ ${revision.revision} · ${dateLabel(revision.createdAt)}`
-								}))
-						]}
-					/>
 					{#if viewingHistory && viewerDetail}<p
 							class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
 						>
-							กำลังอ่านเอกสารย้อนหลัง เลือกฉบับปัจจุบันเพื่อดำเนินการหนังสือ
+							กำลังอ่านเอกสารย้อนหลัง ไม่สามารถดำเนินการกับฉบับนี้
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onclick={() => (selectedRevision = 'current')}>กลับฉบับปัจจุบัน</Button
+							>
 						</p>
 						<DocumentViewer detail={viewerDetail} editable={false} />{:else}
 						<DocumentViewer
@@ -539,10 +531,7 @@
 							></Card.Root
 						>{/if}
 				</section>
-				<aside
-					class="order-first min-w-0 space-y-4 xl:order-last"
-					aria-label="ข้อมูลและการดำเนินการ"
-				>
+				<aside class="min-w-0 space-y-4" aria-label="ข้อมูลและการดำเนินการ">
 					<Card.Root data-testid="correspondence-current-step" id="correspondence-action"
 						><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
 							class="space-y-4"
@@ -900,9 +889,30 @@
 						<summary class="cursor-pointer text-sm font-medium"
 							>ประวัติฉบับเอกสาร ({detail.revisions.length})</summary
 						>
+						<Choice
+							id="document-revision"
+							label="ฉบับเอกสารที่แสดง"
+							bind:value={selectedRevision}
+							options={[
+								{ value: 'current', label: `ฉบับปัจจุบัน (${detail.document.revision})` },
+								...detail.revisions
+									.filter((revision) => revision.revision !== detail.document.revision)
+									.map((revision) => ({
+										value: String(revision.revision),
+										label: `ฉบับ ${revision.revision} · ${dateLabel(revision.createdAt)}`
+									}))
+							]}
+						/>
 						<ul class="mt-3 space-y-3 text-sm">
 							{#each detail.revisions as revision (revision.revision)}<li>
-									<p>ฉบับ {revision.revision} · {dateLabel(revision.createdAt)}</p>
+									<p>เอกสารฉบับ {revision.revision} · {dateLabel(revision.createdAt)}</p>
+									{#if revision.revision === 1 && !revision.originalFileId && !revision.content.trim() && !revision.annotations.length}
+										<p class="text-muted-foreground">
+											ฉบับร่างเริ่มต้นก่อนแนบไฟล์ ยังไม่มี PDF ต้นฉบับ
+										</p>
+									{:else if !revision.originalFileId}
+										<p class="text-muted-foreground">ฉบับร่างจากข้อความ ยังไม่มีไฟล์ต้นฉบับ</p>
+									{/if}
 									{#if revision.originalFileId}<Button
 											type="button"
 											variant="outline"

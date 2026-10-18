@@ -75,16 +75,6 @@
 	function progressFor(record: CorrespondenceSummary) {
 		return region.value?.progress.find((item) => item.correspondenceId === record.id);
 	}
-	function mainAction(record: CorrespondenceSummary): string {
-		const progress = progressFor(record);
-		return progress?.myAction
-			? actionLabels[progress.myAction]
-			: progress?.canRevise
-				? record.status === 'revision_requested'
-					? 'แก้ไขและส่งใหม่'
-					: 'เขียนต่อและส่ง'
-				: 'ดูรายละเอียด';
-	}
 </script>
 
 <PageShell title="ทะเบียนหนังสือ" description="รับ ส่ง และติดตามหนังสือกับผู้รับผิดชอบแต่ละขั้นตอน">
@@ -180,7 +170,7 @@
 						<Button
 							href={detailHref(record)}
 							variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
-							class="w-full">{mainAction(record)}</Button
+							class="w-full">เปิดอ่าน</Button
 						>
 					</article>{/each}
 			</div>
@@ -229,7 +219,7 @@
 										href={detailHref(record)}
 										size="sm"
 										variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
-										>{mainAction(record)}</Button
+										>เปิดอ่าน</Button
 									></Table.Cell
 								>
 							</Table.Row>{/each}
@@ -257,6 +247,12 @@
 
 {#snippet progressSummary(record: CorrespondenceSummary)}{@const progress = progressFor(record)}
 	<div class="space-y-1 text-sm">
+		{#if progress?.myAction}<p class="font-medium text-primary">
+				รอคุณ: {actionLabels[progress.myAction]}
+			</p>{/if}
+		{#if progress?.canRevise}<p class="font-medium text-primary">
+				{record.status === 'revision_requested' ? 'แก้ไขและส่งใหม่' : 'เขียนต่อและส่ง'}
+			</p>{/if}
 		{#if progress?.currentStepTitle}<p class="md:hidden">
 				{#if progress.currentStepIndex != null}ขั้น {progress.currentStepIndex +
 						1}/{progress.stepCount} ·

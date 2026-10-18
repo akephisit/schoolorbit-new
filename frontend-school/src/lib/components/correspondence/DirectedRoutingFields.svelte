@@ -35,11 +35,9 @@
 		options.routingSettings.find((item) => item.register === register)
 	);
 	let known = $state(untrack(() => options));
-	let purpose = $state(untrack(() => defaults?.defaultPurpose ?? 'execute'));
+	let purpose = $state(untrack(() => defaults?.defaultPurpose ?? 'acknowledge'));
 	let required = $state(true);
-	let allowOnwardAssignment = $state(
-		untrack(() => defaults?.defaultAllowOnwardAssignment ?? false)
-	);
+	let allowOnwardAssignment = $state(untrack(() => defaults?.defaultAllowOnwardAssignment ?? true));
 	function add(targets: ProcessRecipient[]) {
 		const keys = new Set(routing.recipients.map((item) => recipientKey(item.recipient)));
 		const additions = targets

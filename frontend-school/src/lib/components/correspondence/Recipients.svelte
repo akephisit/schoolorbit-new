@@ -68,7 +68,7 @@
 			if (searchRequest.isCurrent(ticket.revision)) searchLoading = false;
 		}
 	}
-	let kind = $state('user'),
+	let kind = $state('organization_unit'),
 		selected = $state<string[]>([]);
 	const choices = $derived(
 		kind === 'user'

@@ -19,7 +19,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
@@ -40,7 +40,8 @@
 		onplacement,
 		onplacementchange,
 		placementPaths = [],
-		placementFileId
+		placementFileId,
+		onrendered
 	}: {
 		detail: CorrespondenceDetail;
 		draft?: DocumentAnnotation[];
@@ -51,6 +52,7 @@
 		onplacementchange?: (placement: SignatureInput) => void;
 		placementPaths?: InkPath[];
 		placementFileId?: string;
+		onrendered?: (documentRevision: number) => void;
 	} = $props();
 	let canvas = $state<HTMLCanvasElement>();
 	let overlay: SVGSVGElement;
@@ -101,7 +103,8 @@
 		}
 	}
 	onDestroy(cleanup);
-	let viewedDocument = '';
+	let viewedDocument = '',
+		renderedDocument = '';
 	$effect.pre(() => {
 		const key = `${detail.record.id}:${detail.document.revision}`;
 		untrack(() => {
@@ -110,6 +113,8 @@
 				viewedDocument = key;
 				opened = false;
 				pageNumber = 1;
+				renderedDocument = '';
+				void openDocument();
 			}
 		});
 	});
@@ -119,7 +124,9 @@
 	$effect(() => {
 		const target = canvas,
 			current = pdf,
-			selected = pageNumber;
+			selected = pageNumber,
+			documentKey = viewedDocument,
+			documentRevision = detail.document.revision;
 		if (!target || !current) return;
 		const controller = new AbortController();
 		void Promise.all([
@@ -131,6 +138,14 @@
 					pageWidth = size.width;
 					pageHeight = size.height;
 					aspect = size.width / size.height;
+					if (
+						selected === 1 &&
+						documentKey === viewedDocument &&
+						renderedDocument !== documentKey
+					) {
+						renderedDocument = documentKey;
+						onrendered?.(documentRevision);
+					}
 				}
 			})
 			.catch((cause) => {
@@ -152,8 +167,8 @@
 				}),
 				loadAnnotationTextMeasure()
 			]);
-			measure = fontMeasure;
 			if (!request.isCurrent(ticket.revision)) return;
+			measure = fontMeasure;
 			if (blob.type.includes('pdf')) {
 				const { loadPdfPreview } = await import('#lib/files/document-preview.js');
 				const loaded = await loadPdfPreview(blob, ticket.signal);
@@ -297,9 +312,7 @@
 {#snippet workspace()}
 	<div class="space-y-3" data-testid="document-workspace">
 		<div class="flex flex-wrap items-center gap-2">
-			<LoadingButton type="button" {loading} variant="outline" onclick={openDocument}
-				>{opened ? 'เปิดเอกสารอีกครั้ง' : 'เปิดเอกสาร'}</LoadingButton
-			>{#if detail.document.originalFileId}<Button
+			{#if detail.document.originalFileId}<Button
 					type="button"
 					variant="ghost"
 					onclick={downloadOriginal}>ต้นฉบับ</Button
@@ -378,7 +391,15 @@
 						}}>เลิกทำหมายเหตุล่าสุด</Button
 					>{/if}
 			</div>{/if}
-		{#if error}<PageState variant="error" title={error} />{/if}
+		{#if error}<PageState
+				variant="error"
+				title={error}
+				actionLabel="ลองเปิดเอกสารอีกครั้ง"
+				onaction={openDocument}
+			/>{/if}
+		{#if loading}<div role="status" aria-label="กำลังเปิดเอกสาร">
+				<PageSkeleton variant="form" rows={4} />
+			</div>{/if}
 		<div class="overflow-auto rounded-xl border bg-muted/30 p-3 sm:p-5">
 			<div
 				class="relative mx-auto w-full max-w-3xl bg-white text-black shadow-sm"
@@ -392,7 +413,7 @@
 						class="block h-full w-full"
 						aria-label={`เอกสารหน้า ${pageNumber}`}
 					></canvas>{:else}<div class="p-8 text-sm text-muted-foreground">
-						กดเปิดเอกสารเพื่ออ่านและเขียนหมายเหตุ
+						{loading ? 'กำลังเตรียมหน้าเอกสาร' : 'ยังแสดงหน้าเอกสารไม่ได้ กรุณาลองเปิดอีกครั้ง'}
 					</div>{/if}
 
 				<svg
