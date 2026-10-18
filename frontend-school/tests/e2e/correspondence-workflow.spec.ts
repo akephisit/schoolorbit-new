@@ -353,8 +353,12 @@ test('reassignment A to B to A preserves completed snapshots and offers only pen
 	expect(errors).toEqual([]);
 });
 
-for (const delivery of ['delayed', 'ambiguous'] as const)
-	test(`same-revision accepted annotation reconciles ${delivery} response without losing draft or consent`, async ({
+for (const { delivery, editBeforeRefresh } of [
+	{ delivery: 'delayed', editBeforeRefresh: false },
+	{ delivery: 'ambiguous', editBeforeRefresh: false },
+	{ delivery: 'ambiguous', editBeforeRefresh: true }
+] as const)
+	test(`same-revision accepted annotation reconciles ${delivery} response ${editBeforeRefresh ? 'with explicit consent after draft edits' : 'without losing draft or consent'}`, async ({
 		page
 	}) => {
 		const errors: string[] = [];
@@ -374,15 +378,20 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 		await page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true }).fill('ความคิดเห็นที่ยังเก็บไว้');
 		await draw(page);
-		await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+		const confirmation = page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ });
+		await confirmation.check();
 		await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
 		await expect.poll(() => api.detail().record.revision).toBe(2);
+		const acceptedPayload = structuredClone(api.writes[0].payload);
 		if (delivery === 'ambiguous') {
 			await expect(
 				page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true })
 			).toBeVisible();
-			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
-			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			if (editBeforeRefresh) {
+				await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
+				await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+				await expect(confirmation).not.toBeChecked();
+			}
 			await page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true }).click();
 		} else {
 			await page.evaluate(async () => {
@@ -403,7 +412,10 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
 			'ความคิดเห็นที่ยังเก็บไว้'
 		);
-		await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
+		if (editBeforeRefresh) await expect(confirmation).not.toBeChecked();
+		else await expect(confirmation).toBeChecked();
+		expect(api.writes).toHaveLength(1);
+		expect(api.writes[0].payload).toEqual(acceptedPayload);
 		expect(errors).toEqual([]);
 		if (delivery === 'delayed') {
 			api.release();
@@ -412,28 +424,37 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
 			).toHaveCount(1);
 		} else {
-			await expect(
-				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
-			).toBeVisible();
-			await page.getByRole('button', { name: 'เลิกทำหมายเหตุล่าสุด', exact: true }).click();
+			if (editBeforeRefresh) {
+				await expect(
+					page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
+				).toBeVisible();
+				await confirmation.check();
+				await expect(confirmation).toBeChecked();
+				await page.getByRole('button', { name: 'เลิกทำหมายเหตุล่าสุด', exact: true }).click();
+				await expect(confirmation).not.toBeChecked();
+			}
 			await expect(
 				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
 			).toHaveCount(0);
 			await expect(
 				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
 			).toHaveCount(1);
-			await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
 			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
 			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			await expect(confirmation).not.toBeChecked();
 			await page
 				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
 				.click();
-			await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+			await confirmation.check();
+			expect(api.writes).toHaveLength(1);
 			await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
 			await expect(page.getByTestId('correspondence-action')).toHaveCount(0);
+			expect(api.writes).toHaveLength(2);
 			const next = api.writes.at(-1)!.payload as ProcessActionRequest;
 			const prior = api.writes[0].payload as ProcessActionRequest;
 			expect(next.expectedRevision).toBe(2);
+			expect(next.requestId).not.toBe(prior.requestId);
+			expect(api.writes[0].payload).toEqual(acceptedPayload);
 			const nextAnnotations = next.annotations ?? [];
 			const priorAnnotations = prior.annotations ?? [];
 			expect(priorAnnotations).toHaveLength(1);

@@ -1576,7 +1576,7 @@ E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-
 node --test tests/static/correspondence-*.test.mjs
 ```
 
-The five existing identity/realtime workflow cases named by that exclusion exercise development
+The identity/realtime workflow cases named by that exclusion exercise development
 module imports. Run them against a separate owned development server started with
 `PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
 
