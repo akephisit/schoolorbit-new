@@ -109,6 +109,7 @@ export async function mockCorrespondence(
 			createdAt: now
 		},
 		sourceLinks: [],
+		assignmentActions: [],
 		document,
 		revisions: [document],
 		instance:
@@ -389,6 +390,16 @@ export async function mockCorrespondence(
 						settings.narrowSearch && url.searchParams.get('search')
 							? []
 							: [{ organizationUnitId: id(806), code: 'HEAD', name: 'หัวหน้างาน' }],
+					decisionMakers: [
+						{ id: actor, displayName: 'ครูเจ้าของ ทดสอบ' },
+						{ id: firstStaff, displayName: 'ครูผู้รับคนที่สอง' }
+					],
+					reviewers: [
+						{ id: actor, displayName: 'ครูเจ้าของ ทดสอบ' },
+						{ id: firstStaff, displayName: 'ครูผู้รับคนที่สอง' }
+					],
+					routingSettings: [],
+					canManageRoutingSettings: true,
 					templates: settings.secondTemplate
 						? [
 								template,

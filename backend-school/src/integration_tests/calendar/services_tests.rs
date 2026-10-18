@@ -1409,6 +1409,9 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
         .execute(&pool)
         .await
         .unwrap();
+    let future_role=insert_user(&pool,"staff","Future role").await;
+    grant_calendar_role(&pool,future_role,&required).await;
+    sqlx::query("UPDATE user_roles SET started_at=CURRENT_DATE+1 WHERE user_id=$1").bind(future_role).execute(&pool).await.unwrap();
     let disabled = insert_user(&pool, "staff", "Disabled role").await;
     let role = grant_calendar_role(&pool, disabled, &required).await;
     sqlx::query("UPDATE roles SET is_active=false WHERE id=$1")
@@ -1421,13 +1424,16 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
     sqlx::query("INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=ANY($2)").bind(unit).bind(&required).execute(&pool).await.unwrap();
     let head = insert_user(&pool, "staff", "Unit head").await;
     let member = insert_user(&pool, "staff", "Unit member").await;
+    let future_member=insert_user(&pool,"staff","Future unit head").await;
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'head',CURRENT_DATE+1)").bind(future_member).bind(unit).execute(&pool).await.unwrap();
     for (user, position) in [(head, "head"), (member, "member")] {
         sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,$3)").bind(user).bind(unit).bind(position).execute(&pool).await.unwrap();
     }
     let delegated = insert_user(&pool, "staff", "Delegated manager").await;
     let expired = insert_user(&pool, "staff", "Expired delegation").await;
     let revoked = insert_user(&pool, "staff", "Revoked delegation").await;
-    for user in [delegated, expired, revoked] {
+    let future_delegate=insert_user(&pool,"staff","Future delegation").await;
+    for user in [delegated, expired, revoked,future_delegate] {
         sqlx::query("INSERT INTO organization_permission_delegations(from_user_id,to_user_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code=ANY($3)").bind(manager).bind(user).bind(&required).execute(&pool).await.unwrap();
     }
     sqlx::query("UPDATE organization_permission_delegations SET expires_at=NOW()-INTERVAL '1 hour' WHERE to_user_id=$1").bind(expired).execute(&pool).await.unwrap();
@@ -1438,6 +1444,7 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
     .execute(&pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE organization_permission_delegations SET started_at=NOW()+INTERVAL '1 day' WHERE to_user_id=$1").bind(future_delegate).execute(&pool).await.unwrap();
     let recipients = staff_users_with_all_permissions(&pool, &required)
         .await
         .unwrap();
@@ -1455,6 +1462,9 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
         delegated,
         expired,
         revoked,
+        future_role,
+        future_member,
+        future_delegate,
     ] {
         let actor = load_actor_context(user, "calendar-recipient-test", &pool, &cache)
             .await
@@ -1478,6 +1488,9 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
         member,
         expired,
         revoked,
+        future_role,
+        future_member,
+        future_delegate,
     ] {
         assert!(!recipients.contains(&denied));
     }

@@ -20,12 +20,16 @@
 		options,
 		disabled = false,
 		prefix = 'recipient',
+		directed = false,
+		onadd,
 		onlookups
 	}: {
 		recipients?: ProcessRecipient[];
 		options: CorrespondenceOptions;
 		disabled?: boolean;
 		prefix?: string;
+		directed?: boolean;
+		onadd?: (recipients: ProcessRecipient[]) => void;
 		onlookups?: (options: CorrespondenceOptions) => void;
 	} = $props();
 	let results = $state<CorrespondenceOptions | null>(null),
@@ -39,7 +43,11 @@
 		users: [],
 		organizations: [],
 		positions: [],
-		templates: []
+		templates: [],
+		decisionMakers: [],
+		reviewers: [],
+		routingSettings: [],
+		canManageRoutingSettings: false
 	});
 	const known = $derived(mergeRecipientLookups(options, cached));
 	async function search() {
@@ -87,6 +95,11 @@
 	}
 	function add() {
 		const additions = selected.map(recipientFor);
+		if (onadd) {
+			onadd(additions);
+			selected = [];
+			return;
+		}
 		const keys = new SvelteSet(recipients.map(recipientKey));
 		recipients = [
 			...recipients,
@@ -181,7 +194,8 @@
 		>
 	</div>
 	<p class="text-xs text-muted-foreground">
-		หน่วยงานหมายถึงสมาชิกในหน่วยงาน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก
+		{#if directed}หน่วยงานหมายถึงผู้รับผิดชอบหน่วยงานปัจจุบัน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก
+		{:else}หน่วยงานหมายถึงสมาชิกในหน่วยงาน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก{/if}
 		ระบบบันทึกรายชื่อจริงเมื่อส่งหนังสือ
 	</p>
 	<ul class="space-y-2" aria-label="ผู้รับที่เพิ่มแล้ว">

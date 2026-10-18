@@ -826,6 +826,7 @@ mod tests {
         ];
         let action = Uuid::now_v7();
         detail.history.push(ProcessHistoryEntry {
+            assignment_id: None,
             id: action,
             actor_id: Uuid::now_v7(),
             actor_name: "นายทดสอบ ใจดี".into(),

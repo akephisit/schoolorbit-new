@@ -9,6 +9,12 @@ export type CorrespondenceOptions = Schemas['CorrespondenceOptions'];
 export type CreateCorrespondenceRequest = Schemas['CreateCorrespondenceRequest'];
 export type ReviseCorrespondenceRequest = Schemas['ReviseCorrespondenceRequest'];
 export type SendCorrespondenceRequest = Schemas['SendCorrespondenceRequest'];
+export type DirectedSendCorrespondenceRequest = Schemas['DirectedSendCorrespondenceRequest'];
+export type DirectedRoutingRequest = Schemas['DirectedRoutingRequest'];
+export type DirectedRouteRecipient = Schemas['DirectedRouteRecipient'];
+export type CorrespondenceRoutingSettings = Schemas['CorrespondenceRoutingSettings'];
+export type SaveCorrespondenceRoutingSettingsRequest =
+	Schemas['SaveCorrespondenceRoutingSettingsRequest'];
 export type ProcessTemplate = Schemas['ProcessTemplate'];
 export type ProcessTemplateStep = Schemas['ProcessTemplateStep'];
 export type ProcessRecipient = Schemas['ProcessRecipient'];
@@ -52,11 +58,12 @@ export async function getCorrespondence(
 }
 export async function getCorrespondenceOptions(
 	search = '',
-	options: ApiRequestOptions = {}
+	options: ApiRequestOptions = {},
+	register?: CorrespondenceSummary['register']
 ): Promise<CorrespondenceOptions> {
 	return requireApiData(
 		await apiClient.get<CorrespondenceOptions>(
-			`/api/correspondence/options?${new URLSearchParams({ search })}`,
+			`/api/correspondence/options?${new URLSearchParams({ search, ...(register ? { register } : {}) })}`,
 			options
 		),
 		'โหลดตัวเลือกไม่สำเร็จ'
@@ -86,6 +93,37 @@ export async function sendCorrespondence(
 	return requireApiData(
 		await apiClient.post<CorrespondenceDetail>(`/api/correspondence/${id}/send`, payload),
 		'ส่งหนังสือไม่สำเร็จ'
+	);
+}
+export async function sendDirectedCorrespondence(
+	id: string,
+	payload: DirectedSendCorrespondenceRequest
+): Promise<CorrespondenceDetail> {
+	return requireApiData(
+		await apiClient.post<CorrespondenceDetail>(`/api/correspondence/${id}/directed-send`, payload),
+		'ส่งหนังสือให้ผู้พิจารณาสั่งการไม่สำเร็จ'
+	);
+}
+export async function getCorrespondenceRoutingSettings(
+	options: ApiRequestOptions = {}
+): Promise<CorrespondenceRoutingSettings[]> {
+	return requireApiData(
+		await apiClient.get<CorrespondenceRoutingSettings[]>(
+			'/api/correspondence/routing-settings',
+			options
+		),
+		'โหลดการตั้งค่าการสั่งการไม่สำเร็จ'
+	);
+}
+export async function saveCorrespondenceRoutingSettings(
+	payload: SaveCorrespondenceRoutingSettingsRequest
+): Promise<CorrespondenceRoutingSettings> {
+	return requireApiData(
+		await apiClient.put<CorrespondenceRoutingSettings>(
+			'/api/correspondence/routing-settings',
+			payload
+		),
+		'บันทึกการตั้งค่าการสั่งการไม่สำเร็จ'
 	);
 }
 export async function actOnCorrespondence(

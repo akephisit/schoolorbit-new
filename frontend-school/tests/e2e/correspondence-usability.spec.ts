@@ -14,6 +14,7 @@ async function fillDocument(page: Page) {
 }
 async function chooseRoute(page: Page) {
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
@@ -487,6 +488,7 @@ test('a selected position can be added after search no longer displays that posi
 	);
 	await fillDocument(page);
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
 	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
@@ -525,6 +527,7 @@ test('a selected position can be added after search no longer displays that posi
 async function chooseDetailRoute(page: Page) {
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ' }).click();
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
@@ -666,6 +669,7 @@ test('step deadline survives wizard backtracking, clears with its control and re
 		.click();
 	await expect(page.locator('#step-due-0')).toContainText('เลือกวันที่');
 	await chooseDate();
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'แม่แบบทางเลือก', exact: true }).click();
 	await expect(page.locator('#step-due-0')).toContainText('เลือกวันที่');

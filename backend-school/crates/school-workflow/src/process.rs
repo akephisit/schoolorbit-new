@@ -357,8 +357,9 @@ pub(crate) async fn start_core_in_transaction(
             return Err(stale());
         }
         old.steps = resolved_steps(tx, &template, &input.step_recipients).await?;
-        old.template_id = template.id;
-        old.template_version = template.version;
+        old.template_id = Some(template.id);
+        old.template_version = Some(template.version);
+        old.directed = None;
         old.status = ProcessStatus::Active;
         old.current_step = 0;
         old.revision += 1;
@@ -370,8 +371,8 @@ pub(crate) async fn start_core_in_transaction(
             source: input.source,
             title: input.title,
             action_path: input.action_path,
-            template_id: template.id,
-            template_version: template.version,
+            template_id: Some(template.id),
+            template_version: Some(template.version),
             revision: 1,
             status: ProcessStatus::Active,
             current_step: 0,
@@ -379,6 +380,7 @@ pub(crate) async fn start_core_in_transaction(
             created_by: actor.user_id,
             created_at: Utc::now(),
             due_at: input.due_at,
+            directed: None,
         }
     };
     sqlx::query("INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET template_id=excluded.template_id,template_version=excluded.template_version,revision=excluded.revision,definition=excluded.definition").bind(instance.id).bind(&instance.source.module_code).bind(&instance.source.resource_type).bind(instance.source.resource_id).bind(instance.template_id).bind(instance.template_version).bind(instance.revision).bind(Json(&instance)).bind(actor.user_id).execute(&mut **tx).await?;
@@ -531,6 +533,18 @@ pub(crate) async fn action_in_transaction(
         append_event(tx, actor, instance, request).await?;
         store(tx, instance).await?;
         return Ok(());
+    }
+    if instance.directed.is_some() {
+        crate::directed::action(tx, actor, instance, request).await?;
+        append_event(tx, actor, instance, request).await?;
+        store(tx, instance).await?;
+        return Ok(());
+    }
+    if request.assignment_id.is_some()
+        || request.routing.is_some()
+        || request.action == ProcessAction::Route
+    {
+        return Err(invalid("การส่งต่อแบบสั่งการใช้ได้เฉพาะกระบวนงานสั่งการ"));
     }
     if instance.status != ProcessStatus::Active {
         return Err(stale());

@@ -5,6 +5,8 @@
 		createCorrespondence,
 		getCorrespondence,
 		sendCorrespondence,
+		sendDirectedCorrespondence,
+		type DirectedSendCorrespondenceRequest,
 		type ProcessStepRecipients,
 		getCorrespondenceOptions,
 		type CorrespondenceOptions,
@@ -64,6 +66,8 @@
 		error = $state('');
 	let created = $state<CorrespondenceDetail | null>(null);
 	let routingOpened = $state(false);
+	let routingMode = $state('directed'),
+		firstUserId = $state('');
 	let stage = $state(1),
 		templateId = $state(''),
 		steps = $state<ProcessStepRecipients[]>([]),
@@ -81,6 +85,7 @@
 	const createIntent = new MutationIntent<CreateCorrespondenceRequest>();
 	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
 	const sendIntent = new MutationIntent<SendCorrespondenceRequest>();
+	const directedSendIntent = new MutationIntent<DirectedSendCorrespondenceRequest>();
 	let registrationLocked = $state(false),
 		sendingUncertain = $state(false);
 	let conflict = $state(false),
@@ -133,12 +138,13 @@
 	const routeTemplate = $derived(routeOptions?.templates.find((item) => item.id === templateId));
 	const dirty = $derived(
 		!finished &&
-			(!saved || !!templateId) &&
+			(!saved || !!templateId || !!firstUserId) &&
 			(registrationLocked ||
 				formBasis !== initialBasis ||
 				!!original ||
 				attachments.length > 0 ||
-				!!templateId)
+				!!templateId ||
+				!!firstUserId)
 	);
 	async function showInvalidSource(event: Event) {
 		event.preventDefault();
@@ -320,11 +326,16 @@
 			return;
 		}
 		if (
-			!routeTemplate ||
-			steps.length !== routeTemplate.steps.length ||
-			steps.some((step) => !step.recipients.length)
+			routingMode === 'directed'
+				? !firstUserId
+				: !routeTemplate ||
+					steps.length !== routeTemplate.steps.length ||
+					steps.some((step) => !step.recipients.length)
 		) {
-			error = 'เลือกแม่แบบและผู้รับให้ครบทุกขั้นตอน';
+			error =
+				routingMode === 'directed'
+					? 'เลือกผู้พิจารณาสั่งการคนแรก'
+					: 'เลือกแม่แบบและผู้รับให้ครบทุกขั้นตอน';
 			stage = 2;
 			return;
 		}
@@ -344,14 +355,25 @@
 				stepRecipients: steps,
 				dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
 			};
-			const payload = sendIntent.begin(body);
 			let result: CorrespondenceDetail;
 			try {
-				result = await sendCorrespondence(draft.record.id, payload);
+				result =
+					routingMode === 'directed'
+						? await sendDirectedCorrespondence(
+								draft.record.id,
+								directedSendIntent.begin({
+									expectedRevision: draft.record.revision,
+									firstRecipient: { kind: 'user', userId: firstUserId },
+									dueAt: body.dueAt
+								})
+							)
+						: await sendCorrespondence(draft.record.id, sendIntent.begin(body));
 				sendIntent.accepted();
+				directedSendIntent.accepted();
 			} catch (cause) {
 				sendIntent.rejected(cause);
-				sendingUncertain = sendIntent.unresolved;
+				directedSendIntent.rejected(cause);
+				sendingUncertain = sendIntent.unresolved || directedSendIntent.unresolved;
 				throw cause;
 			}
 			if (disposed) return;
@@ -632,6 +654,9 @@
 		</fieldset>
 		<section hidden={stage !== 2} class="space-y-4" aria-label="เส้นทางผู้รับ">
 			{#if routingOpened}<RoutePicker
+					bind:mode={routingMode}
+					bind:firstUserId
+					register={register as CreateCorrespondenceRequest['register']}
 					bind:templateId
 					bind:steps
 					bind:dueDate
@@ -652,10 +677,21 @@
 					<dt class="text-muted-foreground">ผู้ส่ง</dt>
 					<dd>{sender}</dd>
 					<dt class="text-muted-foreground">เส้นทาง</dt>
-					<dd>{routeTemplate?.title} · {steps.length} ขั้นตอน</dd>
+					<dd>
+						{routingMode === 'directed'
+							? 'พิจารณาและสั่งการตามหนังสือ'
+							: `${routeTemplate?.title} · ${steps.length} ขั้นตอน`}
+					</dd>
+					{#if routingMode === 'directed'}<dt class="text-muted-foreground">
+							ผู้พิจารณาสั่งการคนแรก
+						</dt>
+						<dd>
+							{routeOptions?.decisionMakers.find((user) => user.id === firstUserId)?.displayName}
+						</dd>{/if}
 				</dl>
 				<ol class="space-y-2 text-sm">
-					{#each routeTemplate?.steps ?? [] as step, index (index)}<li>
+					{#each (routingMode === 'template' ? routeTemplate?.steps : []) ?? [] as step, index (index)}<li
+						>
 							{index + 1}. {step.title} · เลือกผู้รับ {steps[index]?.recipients.length ?? 0} รายการ
 							<ul class="mt-1 list-inside list-disc">
 								{#each steps[index]?.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li

@@ -2,6 +2,8 @@
 	import { onDestroy, untrack } from 'svelte';
 	import {
 		sendCorrespondence,
+		sendDirectedCorrespondence,
+		type DirectedSendCorrespondenceRequest,
 		type CorrespondenceDetail,
 		type CorrespondenceOptions,
 		type SendCorrespondenceRequest,
@@ -26,6 +28,10 @@
 		onrefresh: () => void;
 		onpendingchange?: (pending: boolean) => void;
 	} = $props();
+	let mode = $state(
+			untrack(() => (detail.instance && !detail.instance.directed ? 'template' : 'directed'))
+		),
+		firstUserId = $state('');
 	let templateId = $state(''),
 		steps = $state<ProcessStepRecipients[]>([]),
 		dueDate = $state<string | undefined>();
@@ -35,9 +41,10 @@
 	let expectedRevision = $state(untrack(() => detail.record.revision));
 	let disposed = false;
 	const intent = new MutationIntent<SendCorrespondenceRequest>();
+	const directedIntent = new MutationIntent<DirectedSendCorrespondenceRequest>();
 	let uncertain = $state(false);
 	$effect(() => {
-		ondirtychange?.(!!templateId);
+		ondirtychange?.(!!templateId || !!firstUserId);
 	});
 	onDestroy(() => {
 		disposed = true;
@@ -45,29 +52,41 @@
 	const template = $derived(options?.templates.find((item) => item.id === templateId));
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (pending || !template) return;
+		if (pending || (mode === 'directed' ? !firstUserId : !template)) return;
 		error = '';
-		if (steps.some((step) => !step.recipients.length)) {
+		if (mode === 'template' && steps.some((step) => !step.recipients.length)) {
 			error = 'เลือกผู้รับให้ครบทุกขั้นตอน';
 			return;
 		}
 		pending = true;
 		onpendingchange?.(true);
 		try {
-			const result = await sendCorrespondence(
-				detail.record.id,
-				intent.begin({
-					expectedRevision,
-					templateId,
-					stepRecipients: steps,
-					dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
-				})
-			);
+			const result =
+				mode === 'directed'
+					? await sendDirectedCorrespondence(
+							detail.record.id,
+							directedIntent.begin({
+								expectedRevision,
+								firstRecipient: { kind: 'user', userId: firstUserId },
+								dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
+							})
+						)
+					: await sendCorrespondence(
+							detail.record.id,
+							intent.begin({
+								expectedRevision,
+								templateId,
+								stepRecipients: steps,
+								dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
+							})
+						);
 			intent.accepted();
+			directedIntent.accepted();
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			intent.rejected(cause);
-			uncertain = intent.unresolved;
+			directedIntent.rejected(cause);
+			uncertain = intent.unresolved || directedIntent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ส่งหนังสือไม่สำเร็จ';
 		} finally {
 			if (!disposed) {
@@ -101,6 +120,9 @@
 			ยังยืนยันผลการส่งไม่ได้ กดส่งอีกครั้งเพื่อตรวจผลด้วยข้อมูลผู้รับเดิม
 		</p>{/if}
 	<RoutePicker
+		bind:mode
+		bind:firstUserId
+		register={detail.record.register}
 		bind:templateId
 		bind:steps
 		bind:dueDate
@@ -112,6 +134,10 @@
 
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={!template}>ส่งหนังสือ</LoadingButton>
+		><LoadingButton
+			type="submit"
+			loading={pending}
+			disabled={mode === 'directed' ? !firstUserId : !template}>ส่งหนังสือ</LoadingButton
+		>
 	</div>
 </form>

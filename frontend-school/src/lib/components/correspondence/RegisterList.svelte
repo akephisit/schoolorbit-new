@@ -94,9 +94,10 @@
 				variant="outline">ลายมือชื่อของฉัน</Button
 			>{/if}
 		{#if $can.has(PERMISSIONS.PROCESS_MANAGE_SCHOOL)}<Button
-				href="/staff/correspondence/templates"
-				variant="outline">ตั้งค่าแม่แบบ</Button
-			>{/if}
+				href="/staff/correspondence/settings"
+				variant="outline">ตั้งค่าการสั่งการ</Button
+			>
+			<Button href="/staff/correspondence/templates" variant="outline">ตั้งค่าแม่แบบ</Button>{/if}
 		{#if $can.has(PERMISSIONS.CORRESPONDENCE_CREATE_OWN)}<Button href="/staff/correspondence/new"
 				>สร้างหนังสือ</Button
 			>{/if}
@@ -217,7 +218,9 @@
 								<Table.Cell class="min-w-40"
 									><Badge variant="outline">{statusLabels[record.status]}</Badge
 									>{#if progress?.currentStepTitle}<p class="mt-2 text-sm">
-											ขั้น {progress.currentStepIndex! + 1}/{progress.stepCount} · {progress.currentStepTitle}
+											{#if progress.currentStepIndex != null}ขั้น {progress.currentStepIndex +
+													1}/{progress.stepCount} ·
+											{/if}{progress.currentStepTitle}
 										</p>{/if}</Table.Cell
 								>
 								<Table.Cell class="min-w-44">{@render progressSummary(record)}</Table.Cell>
@@ -255,7 +258,9 @@
 {#snippet progressSummary(record: CorrespondenceSummary)}{@const progress = progressFor(record)}
 	<div class="space-y-1 text-sm">
 		{#if progress?.currentStepTitle}<p class="md:hidden">
-				ขั้น {progress.currentStepIndex! + 1}/{progress.stepCount} · {progress.currentStepTitle}
+				{#if progress.currentStepIndex != null}ขั้น {progress.currentStepIndex +
+						1}/{progress.stepCount} ·
+				{/if}{progress.currentStepTitle}
 			</p>{/if}
 		<p class="break-words">
 			{progress?.pendingRecipients.length
