@@ -5220,6 +5220,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/correspondence/{id}/directed-send': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['directed_send_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/correspondence/{id}/export': {
 		parameters: {
 			query?: never;
@@ -5293,6 +5309,22 @@ export interface paths {
 		};
 		get: operations['correspondence_options'];
 		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/correspondence/routing-settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['correspondence_routing_settings'];
+		put: operations['save_correspondence_routing_settings'];
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -9814,6 +9846,7 @@ export interface components {
 		};
 		ApiResponse_CorrespondenceDetail: {
 			data: {
+				assignmentActions: components['schemas']['DirectedAssignmentActions'][];
 				availableActions: components['schemas']['ProcessAction'][];
 				canAct: boolean;
 				canManage: boolean;
@@ -9841,10 +9874,29 @@ export interface components {
 		};
 		ApiResponse_CorrespondenceOptions: {
 			data: {
+				canManageRoutingSettings: boolean;
+				decisionMakers: components['schemas']['CorrespondenceUserOption'][];
 				organizations: components['schemas']['CorrespondenceOrganizationOption'][];
 				positions: components['schemas']['CorrespondencePositionOption'][];
+				reviewers: components['schemas']['CorrespondenceUserOption'][];
+				routingSettings: components['schemas']['CorrespondenceRoutingSettings'][];
 				templates: components['schemas']['ProcessTemplate'][];
 				users: components['schemas']['CorrespondenceUserOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CorrespondenceRoutingSettings: {
+			data: {
+				defaultAllowOnwardAssignment: boolean;
+				defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+				defaultPurpose: components['schemas']['DirectedPurpose'];
+				defaultRequireReview: boolean;
+				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+				register: components['schemas']['CorrespondenceRegister'];
+				/** Format: int64 */
+				revision: number;
 			};
 			message?: string;
 			success: boolean;
@@ -11269,6 +11321,7 @@ export interface components {
 				/** Format: uuid */
 				createdBy: string;
 				currentStep: number;
+				directed?: null | components['schemas']['DirectedProcess'];
 				/** Format: date-time */
 				dueAt?: string | null;
 				/** Format: uuid */
@@ -11279,9 +11332,9 @@ export interface components {
 				status: components['schemas']['ProcessStatus'];
 				steps: components['schemas']['ProcessRuntimeStep'][];
 				/** Format: uuid */
-				templateId: string;
+				templateId?: string | null;
 				/** Format: int64 */
-				templateVersion: number;
+				templateVersion?: number | null;
 				title: string;
 			};
 			message?: string;
@@ -13692,6 +13745,21 @@ export interface components {
 				showSafeArea: boolean;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CorrespondenceRoutingSettings: {
+			data: {
+				defaultAllowOnwardAssignment: boolean;
+				defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+				defaultPurpose: components['schemas']['DirectedPurpose'];
+				defaultRequireReview: boolean;
+				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+				register: components['schemas']['CorrespondenceRegister'];
+				/** Format: int64 */
+				revision: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -17278,6 +17346,7 @@ export interface components {
 			reason: string;
 		};
 		CorrespondenceDetail: {
+			assignmentActions: components['schemas']['DirectedAssignmentActions'][];
 			availableActions: components['schemas']['ProcessAction'][];
 			canAct: boolean;
 			canManage: boolean;
@@ -17351,8 +17420,12 @@ export interface components {
 		/** @enum {string} */
 		CorrespondenceListView: 'action_required' | 'sent' | 'drafts' | 'all';
 		CorrespondenceOptions: {
+			canManageRoutingSettings: boolean;
+			decisionMakers: components['schemas']['CorrespondenceUserOption'][];
 			organizations: components['schemas']['CorrespondenceOrganizationOption'][];
 			positions: components['schemas']['CorrespondencePositionOption'][];
+			reviewers: components['schemas']['CorrespondenceUserOption'][];
+			routingSettings: components['schemas']['CorrespondenceRoutingSettings'][];
 			templates: components['schemas']['ProcessTemplate'][];
 			users: components['schemas']['CorrespondenceUserOption'][];
 		};
@@ -17369,6 +17442,17 @@ export interface components {
 		};
 		/** @enum {string} */
 		CorrespondenceRegister: 'incoming' | 'outgoing' | 'internal';
+		CorrespondenceRoutingSettings: {
+			defaultAllowOnwardAssignment: boolean;
+			defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+			defaultPurpose: components['schemas']['DirectedPurpose'];
+			defaultRequireReview: boolean;
+			defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+			register: components['schemas']['CorrespondenceRegister'];
+			/** Format: int64 */
+			revision: number;
+		};
 		CorrespondenceSigningEvidence: {
 			/** Format: uuid */
 			actionId: string;
@@ -18812,6 +18896,65 @@ export interface components {
 			role: components['schemas']['LearningTeacherRole'];
 			/** Format: uuid */
 			teacherId: string;
+		};
+		DirectedAssignment: {
+			allowOnwardAssignment: boolean;
+			/** Format: uuid */
+			assignedBy: string;
+			/** Format: date-time */
+			completedAt?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date-time */
+			dueAt?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			parentId?: string | null;
+			purpose: components['schemas']['DirectedPurpose'];
+			recipient: components['schemas']['ProcessRecipientSnapshot'];
+			required: boolean;
+			reviewer?: null | components['schemas']['ProcessRecipientSnapshot'];
+			/** Format: uuid */
+			reviewWorkItemId?: string | null;
+			selector: components['schemas']['ProcessRecipient'];
+			status: components['schemas']['DirectedAssignmentStatus'];
+			/** Format: uuid */
+			workItemId?: string | null;
+		};
+		DirectedAssignmentActions: {
+			actions: components['schemas']['ProcessAction'][];
+			/** Format: uuid */
+			assignmentId: string;
+		};
+		/** @enum {string} */
+		DirectedAssignmentStatus: 'pending' | 'waiting_children' | 'waiting_review' | 'completed';
+		DirectedProcess: {
+			assignments: components['schemas']['DirectedAssignment'][];
+		};
+		/** @enum {string} */
+		DirectedPurpose: 'decide' | 'acknowledge' | 'execute';
+		DirectedRouteRecipient: {
+			allowOnwardAssignment?: boolean;
+			/** Format: date-time */
+			dueAt?: string | null;
+			purpose: components['schemas']['DirectedPurpose'];
+			recipient: components['schemas']['ProcessRecipient'];
+			required?: boolean;
+		};
+		DirectedRoutingRequest: {
+			recipients: components['schemas']['DirectedRouteRecipient'][];
+			requireReview?: boolean;
+			reviewer?: null | components['schemas']['ProcessRecipient'];
+		};
+		DirectedSendCorrespondenceRequest: {
+			/** Format: date-time */
+			dueAt?: string | null;
+			/** Format: int64 */
+			expectedRevision: number;
+			firstRecipient: components['schemas']['ProcessRecipient'];
+			/** Format: uuid */
+			requestId: string;
 		};
 		DiscardCurriculumDraftRequest: {
 			contentHash: string;
@@ -21038,10 +21181,13 @@ export interface components {
 			| 'return_for_revision'
 			| 'report'
 			| 'close'
-			| 'reassign';
+			| 'reassign'
+			| 'route';
 		ProcessActionRequest: {
 			action: components['schemas']['ProcessAction'];
 			annotations?: components['schemas']['DocumentAnnotation'][];
+			/** Format: uuid */
+			assignmentId?: string | null;
 			comment?: string | null;
 			evidenceFileIds?: string[];
 			/** Format: int64 */
@@ -21052,6 +21198,7 @@ export interface components {
 			reassignUserId?: string | null;
 			/** Format: uuid */
 			requestId: string;
+			routing?: null | components['schemas']['DirectedRoutingRequest'];
 			signature?: null | components['schemas']['SignatureInput'];
 		};
 		/** @enum {string} */
@@ -21062,6 +21209,9 @@ export interface components {
 			actorId: string;
 			actorName: string;
 			annotations: components['schemas']['DocumentAnnotation'][];
+			/** Format: uuid */
+			assignmentId?: string | null;
+			assignmentRecipientName?: string | null;
 			comment?: string | null;
 			/** Format: date-time */
 			createdAt: string;
@@ -21070,12 +21220,15 @@ export interface components {
 			evidenceFileIds: string[];
 			/** Format: uuid */
 			id: string;
+			reassignedFromName?: string | null;
 			/** Format: uuid */
 			reassignedFromUserId?: string | null;
+			reassignedToName?: string | null;
 			/** Format: uuid */
 			reassignedToUserId?: string | null;
 			/** Format: int64 */
 			revision: number;
+			routedRecipients?: components['schemas']['CorrespondenceUserOption'][];
 		};
 		ProcessInstance: {
 			actionPath: string;
@@ -21084,6 +21237,7 @@ export interface components {
 			/** Format: uuid */
 			createdBy: string;
 			currentStep: number;
+			directed?: null | components['schemas']['DirectedProcess'];
 			/** Format: date-time */
 			dueAt?: string | null;
 			/** Format: uuid */
@@ -21094,9 +21248,9 @@ export interface components {
 			status: components['schemas']['ProcessStatus'];
 			steps: components['schemas']['ProcessRuntimeStep'][];
 			/** Format: uuid */
-			templateId: string;
+			templateId?: string | null;
 			/** Format: int64 */
-			templateVersion: number;
+			templateVersion?: number | null;
 			title: string;
 		};
 		ProcessRecipient: {
@@ -22487,6 +22641,19 @@ export interface components {
 			/** Format: date */
 			visitedDate?: string | null;
 			visitorIds: string[];
+		};
+		SaveCorrespondenceRoutingSettingsRequest: {
+			defaultAllowOnwardAssignment?: boolean;
+			defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+			defaultPurpose: components['schemas']['DirectedPurpose'];
+			defaultRequireReview?: boolean;
+			defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+			/** Format: int64 */
+			expectedRevision: number;
+			register: components['schemas']['CorrespondenceRegister'];
+			/** Format: uuid */
+			requestId: string;
 		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
@@ -49242,6 +49409,55 @@ export interface operations {
 			};
 		};
 	};
+	directed_send_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DirectedSendCorrespondenceRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	export_correspondence: {
 		parameters: {
 			query?: never;
@@ -49391,6 +49607,7 @@ export interface operations {
 	correspondence_options: {
 		parameters: {
 			query?: {
+				register?: components['schemas']['CorrespondenceRegister'];
 				search?: string;
 			};
 			header?: never;
@@ -49405,6 +49622,80 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	correspondence_routing_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CorrespondenceRoutingSettings'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	save_correspondence_routing_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCorrespondenceRoutingSettingsRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceRoutingSettings'];
 				};
 			};
 			400: {

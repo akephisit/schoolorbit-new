@@ -38,6 +38,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { workStore } from '#lib/stores/work.js';
 	import { historyActionLabel } from '#lib/correspondence/drafts.js';
+	import { directedActionLabel } from '#lib/correspondence/directed.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
@@ -55,6 +56,7 @@
 		draftInitialized = false,
 		editBaseRevision = $state(0),
 		selectedAction = $state<ProcessAction | null>(null),
+		selectedAssignmentId = $state<string | undefined>(),
 		sending = $state(false),
 		signature = $state<SignatureInput | undefined>(),
 		error = $state(''),
@@ -151,6 +153,14 @@
 			detail?.availableActions.find((action) => action === 'close') ??
 			detail?.availableActions.find((action) => action === 'read')
 	);
+	const selectedAssignment = $derived(
+		detail?.instance?.directed?.assignments.find((item) => item.id === selectedAssignmentId)
+	);
+	const terminalCopyAction = $derived(
+		selectedAssignment?.required === false &&
+			!!detail &&
+			['completed', 'closed'].includes(detail.record.status)
+	);
 	const secondaryActions = $derived(
 		detail?.availableActions.filter((action) => action !== primaryAction) ?? []
 	);
@@ -172,9 +182,10 @@
 	);
 	function recipientName(userId?: string | null): string {
 		return (
-			detail?.instance?.steps
-				.flatMap((step) => step.recipients)
-				.find((recipient) => recipient.userId === userId)?.displayName ?? 'ผู้รับ'
+			[
+				...(detail?.instance?.steps.flatMap((step) => step.recipients) ?? []),
+				...(detail?.instance?.directed?.assignments.map((assignment) => assignment.recipient) ?? [])
+			].find((recipient) => recipient.userId === userId)?.displayName ?? 'ผู้รับ'
 		);
 	}
 	function refresh() {
@@ -184,7 +195,8 @@
 		actionPending = false;
 		sendPending = false;
 		const preserveAnnotations =
-			selectedAction !== null && ['read', 'close', 'reassign'].includes(selectedAction);
+			selectedAction !== null &&
+			(['read', 'close', 'reassign'].includes(selectedAction) || terminalCopyAction);
 		const current = region.value;
 		const latest =
 			current?.record.id === result.record.id && current.record.revision > result.record.revision
@@ -192,6 +204,7 @@
 				: result;
 		region.patch(latest);
 		selectedAction = null;
+		selectedAssignmentId = undefined;
 		sending = false;
 		if (!preserveAnnotations) annotations = [];
 		signature = undefined;
@@ -365,158 +378,7 @@
 						onaction={refresh}
 					/>
 				</div>{/if}
-			<Card.Root data-testid="correspondence-current-step" id="correspondence-action" class="mb-6"
-				><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
-					class="space-y-4"
-				>
-					{#if detail.instance}{@const current =
-							detail.instance.steps[detail.instance.currentStep]}{#if current}<div
-								class="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
-							>
-								<h3 class="font-medium">
-									{detail.instance.currentStep + 1}. {current.definition.title}
-								</h3>
-								<p class="text-sm text-muted-foreground">
-									{current.definition.completionPolicy === 'all'
-										? 'ผู้รับทุกคนต้องดำเนินการ'
-										: 'ผู้รับคนใดคนหนึ่งดำเนินการได้'}{current.dueAt
-										? ` · กำหนด ${dateLabel(current.dueAt)}`
-										: ''}
-								</p>
-								<ul class="space-y-2 text-sm" aria-label="ผู้รับขั้นตอนปัจจุบัน">
-									{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
-											class="flex justify-between gap-2"
-										>
-											<span class="break-words">{recipient.displayName}</span><span
-												class="shrink-0 text-muted-foreground"
-												>{recipient.completedAt
-													? 'ดำเนินการแล้ว'
-													: recipient.readAt
-														? 'อ่านแล้ว'
-														: 'รอดำเนินการ'}</span
-											>
-										</li>{/each}
-								</ul>
-							</div>{/if}{/if}
-					{#if detail.instance}<details class="rounded-lg border p-3" open>
-							<summary class="cursor-pointer text-sm font-medium"
-								>เส้นทางทั้งหมด ({detail.instance.steps.length} ขั้นตอน)</summary
-							>
-							<ol
-								class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
-								aria-label="ลำดับการดำเนินงาน"
-							>
-								{#each detail.instance.steps as step (step.stepIndex)}{@const current =
-										detail.instance.status === 'active' &&
-										step.stepIndex === detail.instance.currentStep}
-									<li
-										class="space-y-1 rounded-lg border p-3 text-sm"
-										class:border-primary={current}
-										aria-current={current ? 'step' : undefined}
-									>
-										<p class="font-medium">{step.stepIndex + 1}. {step.definition.title}</p>
-										<p class="text-muted-foreground">
-											{step.completedAt
-												? 'เสร็จแล้ว'
-												: current
-													? 'ขั้นตอนปัจจุบัน'
-													: detail.instance.status === 'revision_requested' &&
-														  step.stepIndex === detail.instance.currentStep
-														? 'พักรอแก้ไข'
-														: 'ยังไม่ถึงขั้นตอน'}
-										</p>
-										<p class="break-words">
-											{step.recipients.map((recipient) => recipient.displayName).join(', ')}
-										</p>
-										{#if step.dueAt}<p class="text-muted-foreground">
-												กำหนด {dateLabel(step.dueAt)}
-											</p>{/if}
-									</li>{/each}
-							</ol>
-						</details>{/if}
-					<fieldset disabled={viewingHistory} class="min-w-0 space-y-4">
-						{#if sending}<SendForm
-								onrefresh={refresh}
-								onpendingchange={(value) => {
-									sendPending = value;
-								}}
-								{detail}
-								oncomplete={complete}
-								ondirtychange={(value) => {
-									actionDirty = value;
-								}}
-								oncancel={() => {
-									sending = false;
-									actionDirty = false;
-								}}
-							/>{:else if selectedAction}<ActionForm
-								{detail}
-								action={selectedAction}
-								{annotations}
-								bind:signature
-								oncomplete={complete}
-								oncancel={() => {
-									selectedAction = null;
-									actionDirty = false;
-									signature = undefined;
-								}}
-								onrefresh={refresh}
-								ondirtychange={(value) => {
-									actionDirty = value;
-								}}
-								onpreviewchange={(paths, fileId) => {
-									placementPaths = paths;
-									placementFileId = fileId;
-								}}
-								onpendingchange={(value) => {
-									actionPending = value;
-								}}
-							/>{:else}
-							{#if canRevise}<Button
-									onclick={() => {
-										if (
-											annotations.length ||
-											metadataDirty ||
-											content !== detail.document.content ||
-											original ||
-											attachments.length
-										) {
-											error = 'บันทึกฉบับแก้ไขก่อนส่งหนังสือ';
-											return;
-										}
-										sending = true;
-									}}>เลือกผู้รับและส่งหนังสือ</Button
-								>{/if}
-							<div class="flex flex-wrap gap-2">
-								{#if primaryAction}<Button
-										onclick={() => {
-											selectedAction = primaryAction ?? null;
-										}}>{actionLabels[primaryAction]}</Button
-									>{/if}
-								{#if secondaryActions.length}<DropdownMenu.Root
-										><DropdownMenu.Trigger
-											class={buttonVariants({ variant: 'outline' })}
-											disabled={viewingHistory}>เพิ่มเติม</DropdownMenu.Trigger
-										><DropdownMenu.Content align="end">
-											{#each secondaryActions as action (action)}<DropdownMenu.Item
-													variant={action === 'reject' ? 'destructive' : 'default'}
-													onSelect={() => {
-														selectedAction = action;
-													}}>{actionLabels[action]}</DropdownMenu.Item
-												>{/each}
-										</DropdownMenu.Content></DropdownMenu.Root
-									>{/if}
-							</div>
 
-							{#if !canRevise && !detail.availableActions.length}<p
-									class="text-sm text-muted-foreground"
-								>
-									ยังไม่มีรายการที่ต้องดำเนินการสำหรับคุณ
-								</p>{/if}
-						{/if}
-					</fieldset>
-				</Card.Content></Card.Root
-			>
 			<div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
 				<section class="min-w-0 space-y-4" aria-label="เอกสาร" id="correspondence-document">
 					<Choice
@@ -544,9 +406,13 @@
 							bind:draft={annotations}
 							disabled={savePending || actionPending || sending}
 							editable={canRevise ||
-								detail.availableActions.some(
-									(action) => !['read', 'close', 'reassign'].includes(action)
-								)}
+								(!(
+									detail.instance?.directed &&
+									['completed', 'closed'].includes(detail.record.status)
+								) &&
+									detail.availableActions.some(
+										(action) => !['read', 'close', 'reassign'].includes(action)
+									))}
 							placement={signature}
 							{placementPaths}
 							{placementFileId}
@@ -673,7 +539,270 @@
 							></Card.Root
 						>{/if}
 				</section>
-				<aside class="min-w-0 space-y-4" aria-label="ข้อมูลและการดำเนินการ">
+				<aside
+					class="order-first min-w-0 space-y-4 xl:order-last"
+					aria-label="ข้อมูลและการดำเนินการ"
+				>
+					<Card.Root data-testid="correspondence-current-step" id="correspondence-action"
+						><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
+							class="space-y-4"
+						>
+							{#if detail.instance}{@const current =
+									detail.instance.steps[detail.instance.currentStep]}{#if current}<div
+										class="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
+									>
+										<h3 class="font-medium">
+											{detail.instance.currentStep + 1}. {current.definition.title}
+										</h3>
+										<p class="text-sm text-muted-foreground">
+											{current.definition.completionPolicy === 'all'
+												? 'ผู้รับทุกคนต้องดำเนินการ'
+												: 'ผู้รับคนใดคนหนึ่งดำเนินการได้'}{current.dueAt
+												? ` · กำหนด ${dateLabel(current.dueAt)}`
+												: ''}
+										</p>
+										<ul class="space-y-2 text-sm" aria-label="ผู้รับขั้นตอนปัจจุบัน">
+											{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
+													class="flex justify-between gap-2"
+												>
+													<span class="break-words">{recipient.displayName}</span><span
+														class="shrink-0 text-muted-foreground"
+														>{recipient.completedAt
+															? 'ดำเนินการแล้ว'
+															: recipient.readAt
+																? 'อ่านแล้ว'
+																: 'รอดำเนินการ'}</span
+													>
+												</li>{/each}
+										</ul>
+									</div>{/if}{/if}
+							{#if detail.instance && !detail.instance.directed}<details
+									class="rounded-lg border p-3"
+									open
+								>
+									<summary class="cursor-pointer text-sm font-medium"
+										>เส้นทางทั้งหมด ({detail.instance.steps.length} ขั้นตอน)</summary
+									>
+									<ol
+										class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+										aria-label="ลำดับการดำเนินงาน"
+									>
+										{#each detail.instance.steps as step (step.stepIndex)}{@const current =
+												detail.instance.status === 'active' &&
+												step.stepIndex === detail.instance.currentStep}
+											<li
+												class="space-y-1 rounded-lg border p-3 text-sm"
+												class:border-primary={current}
+												aria-current={current ? 'step' : undefined}
+											>
+												<p class="font-medium">{step.stepIndex + 1}. {step.definition.title}</p>
+												<p class="text-muted-foreground">
+													{step.completedAt
+														? 'เสร็จแล้ว'
+														: current
+															? 'ขั้นตอนปัจจุบัน'
+															: detail.instance.status === 'revision_requested' &&
+																  step.stepIndex === detail.instance.currentStep
+																? 'พักรอแก้ไข'
+																: 'ยังไม่ถึงขั้นตอน'}
+												</p>
+												<p class="break-words">
+													{step.recipients.map((recipient) => recipient.displayName).join(', ')}
+												</p>
+												{#if step.dueAt}<p class="text-muted-foreground">
+														กำหนด {dateLabel(step.dueAt)}
+													</p>{/if}
+											</li>{/each}
+									</ol>
+								</details>{/if}
+							{#if detail.instance?.directed}
+								<section class="space-y-3" aria-label="สถานะการมอบหมาย">
+									<p class="text-sm font-medium">
+										{detail.record.status === 'completed'
+											? 'ผู้รับที่จำเป็นและการตรวจทานครบแล้ว เรื่องดำเนินการเสร็จสิ้น ไม่ต้องส่งกลับตรวจรับ'
+											: detail.record.status === 'closed'
+												? 'ปิดเก็บเรื่องแล้ว รับทราบสำเนาได้ตามต้องการโดยไม่เปิดงานอีกครั้ง'
+												: detail.record.status === 'rejected'
+													? 'หนังสือไม่อนุมัติทั้งเรื่อง การดำเนินการของทุกสาขายุติแล้ว'
+													: detail.record.status === 'revision_requested'
+														? 'ส่งหนังสือทั้งเรื่องกลับแก้ไขแล้ว รอผู้ลงทะเบียนแก้ไขและส่งใหม่'
+														: 'ติดตามผู้รับแต่ละรายการ เรื่องจะเสร็จเมื่อผู้รับที่จำเป็นและการตรวจทานครบ'}
+									</p>
+									<ol class="space-y-3" aria-label="สาขาการดำเนินการ">
+										{#each detail.instance.directed.assignments as assignment (assignment.id)}
+											{@const parentAssignment = detail.instance.directed.assignments.find(
+												(item) => item.id === assignment.parentId
+											)}
+											{@const actions =
+												detail.assignmentActions.find((item) => item.assignmentId === assignment.id)
+													?.actions ?? []}
+											<li class="space-y-2 rounded-lg border p-3 text-sm">
+												<p class="break-words font-medium">
+													{assignment.recipient.displayName} · {assignment.purpose === 'decide'
+														? 'ผู้พิจารณาสั่งการ'
+														: !assignment.required
+															? 'สำเนาเพื่อทราบ'
+															: assignment.purpose === 'execute'
+																? 'ให้ดำเนินการ'
+																: 'ผู้รับหลักเพื่อทราบ'}
+												</p>
+												{#if parentAssignment}<p class="break-words text-muted-foreground">
+														มอบหมายจาก {parentAssignment.recipient.displayName}
+													</p>{/if}
+												<p>
+													{assignment.status === 'completed'
+														? 'งานรายการนี้เสร็จแล้ว'
+														: assignment.status === 'waiting_children'
+															? 'รอผู้รับที่จำเป็นดำเนินการ'
+															: assignment.status === 'waiting_review'
+																? 'รอผู้ตรวจทานตรวจผล'
+																: assignment.purpose === 'decide'
+																	? 'รอพิจารณาสั่งการ'
+																	: assignment.purpose === 'execute'
+																		? 'รอดำเนินการ'
+																		: 'รอรับทราบ'}
+												</p>
+												{#if assignment.reviewer}<p class="break-words">
+														ตรวจทานโดย {assignment.reviewer.displayName}
+													</p>{/if}
+												{#if assignment.dueAt}<p class="text-muted-foreground">
+														กำหนด {dateLabel(assignment.dueAt)}
+													</p>{/if}
+												{#if assignment.allowOnwardAssignment && assignment.required}<p
+														class="text-muted-foreground"
+													>
+														ผู้รับมอบหมายต่อได้
+													</p>{/if}
+												{#if actions.length && !selectedAction}<div class="flex flex-wrap gap-2">
+														{#each actions as action (action)}<Button
+																type="button"
+																size="sm"
+																variant={action === 'reject'
+																	? 'destructive'
+																	: ['read', 'reassign', 'report', 'return_for_revision'].includes(
+																				action
+																		  )
+																		? 'outline'
+																		: 'default'}
+																disabled={viewingHistory || actionPending}
+																onclick={() => {
+																	selectedAssignmentId = assignment.id;
+																	selectedAction = action;
+																}}>{directedActionLabel(action, assignment)}</Button
+															>{/each}
+													</div>{/if}
+											</li>
+										{/each}
+									</ol>
+								</section>
+							{/if}
+							{#if annotations.length && selectedAction && (['read', 'close', 'reassign'].includes(selectedAction) || terminalCopyAction)}<p
+									role="status"
+									class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
+								>
+									หมายเหตุบนเอกสารยังเป็นฉบับร่าง การดำเนินการนี้จะไม่ส่งหมายเหตุ
+									เก็บไว้เพื่อส่งพร้อมการดำเนินการที่รองรับ
+								</p>{/if}
+							<fieldset disabled={viewingHistory} class="min-w-0 space-y-4">
+								{#if sending}<SendForm
+										onrefresh={refresh}
+										onpendingchange={(value) => {
+											sendPending = value;
+										}}
+										{detail}
+										oncomplete={complete}
+										ondirtychange={(value) => {
+											actionDirty = value;
+										}}
+										oncancel={() => {
+											sending = false;
+											actionDirty = false;
+										}}
+									/>{:else if selectedAction}<ActionForm
+										{detail}
+										action={selectedAction}
+										assignmentId={selectedAssignmentId}
+										{annotations}
+										bind:signature
+										oncomplete={complete}
+										oncancel={() => {
+											selectedAction = null;
+											selectedAssignmentId = undefined;
+											actionDirty = false;
+											signature = undefined;
+										}}
+										onrefresh={refresh}
+										ondirtychange={(value) => {
+											actionDirty = value;
+										}}
+										onpreviewchange={(paths, fileId) => {
+											placementPaths = paths;
+											placementFileId = fileId;
+										}}
+										onpendingchange={(value) => {
+											actionPending = value;
+										}}
+									/>{:else}
+									{#if canRevise}<Button
+											onclick={() => {
+												if (
+													annotations.length ||
+													metadataDirty ||
+													content !== detail.document.content ||
+													original ||
+													attachments.length
+												) {
+													error = 'บันทึกฉบับแก้ไขก่อนส่งหนังสือ';
+													return;
+												}
+												sending = true;
+											}}>เลือกผู้รับและส่งหนังสือ</Button
+										>{/if}
+									{#if detail.instance?.directed && detail.availableActions.includes('close')}<div
+											class="space-y-2 border-t pt-3"
+										>
+											<p class="text-sm text-muted-foreground">
+												ปิดเก็บเรื่องได้ตามต้องการ การดำเนินการนี้เป็นงานจัดเก็บเพิ่มเติม
+											</p>
+											<Button
+												type="button"
+												variant="outline"
+												onclick={() => {
+													selectedAssignmentId = undefined;
+													selectedAction = 'close';
+												}}>ปิดเก็บเรื่อง (ไม่บังคับ)</Button
+											>
+										</div>{/if}
+									<div class="flex flex-wrap gap-2">
+										{#if primaryAction && !detail.instance?.directed}<Button
+												onclick={() => {
+													selectedAction = primaryAction ?? null;
+												}}>{actionLabels[primaryAction]}</Button
+											>{/if}
+										{#if secondaryActions.length && !detail.instance?.directed}<DropdownMenu.Root
+												><DropdownMenu.Trigger
+													class={buttonVariants({ variant: 'outline' })}
+													disabled={viewingHistory}>เพิ่มเติม</DropdownMenu.Trigger
+												><DropdownMenu.Content align="end">
+													{#each secondaryActions as action (action)}<DropdownMenu.Item
+															variant={action === 'reject' ? 'destructive' : 'default'}
+															onSelect={() => {
+																selectedAction = action;
+															}}>{actionLabels[action]}</DropdownMenu.Item
+														>{/each}
+												</DropdownMenu.Content></DropdownMenu.Root
+											>{/if}
+									</div>
+
+									{#if !canRevise && !detail.availableActions.length}<p
+											class="text-sm text-muted-foreground"
+										>
+											ยังไม่มีรายการที่ต้องดำเนินการสำหรับคุณ
+										</p>{/if}
+								{/if}
+							</fieldset>
+						</Card.Content></Card.Root
+					>
 					<Card.Root
 						><Card.Header><Card.Title>ข้อมูลหนังสือ</Card.Title></Card.Header><Card.Content
 							><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
@@ -735,9 +864,23 @@
 										</p>
 										<p class="text-muted-foreground">{dateLabel(entry.createdAt)}</p>
 										{#if entry.reassignedFromUserId && entry.reassignedToUserId}<p>
-												เปลี่ยนผู้รับจาก {recipientName(entry.reassignedFromUserId)} เป็น {recipientName(
-													entry.reassignedToUserId
-												)}
+												เปลี่ยนผู้รับจาก {entry.reassignedFromName ??
+													recipientName(entry.reassignedFromUserId)} เป็น {entry.reassignedToName ??
+													recipientName(entry.reassignedToUserId)}
+											</p>{/if}
+										{#if entry.assignmentId || entry.assignmentRecipientName}<p
+												class="text-muted-foreground"
+											>
+												รายการของ {entry.assignmentRecipientName ??
+													detail.instance?.directed?.assignments.find(
+														(item) => item.id === entry.assignmentId
+													)?.recipient.displayName ??
+													'ผู้รับ'}
+											</p>{/if}
+										{#if entry.routedRecipients?.length}<p class="break-words text-sm">
+												มอบหมายถึง {entry.routedRecipients
+													.map((recipient) => recipient.displayName)
+													.join(', ')}
 											</p>{/if}
 										{#if entry.comment}<p class="whitespace-pre-wrap break-words">
 												{entry.comment}

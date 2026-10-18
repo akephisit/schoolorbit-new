@@ -46,6 +46,7 @@ test('create and send starts the actual document workflow without a manual work 
 	await page.getByLabel('เนื้อหา / ข้อความประกอบ').fill('ขอให้ดำเนินการตามหนังสือ');
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	expect(api.count('/api/correspondence/options')).toBe(1);
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();

@@ -57,6 +57,7 @@ pub enum ProcessAction {
     Report,
     Close,
     Reassign,
+    Route,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -213,8 +214,8 @@ pub struct ProcessInstance {
     pub source: ProcessSource,
     pub title: String,
     pub action_path: String,
-    pub template_id: Uuid,
-    pub template_version: i64,
+    pub template_id: Option<Uuid>,
+    pub template_version: Option<i64>,
     pub revision: i64,
     pub status: ProcessStatus,
     pub current_step: usize,
@@ -222,6 +223,8 @@ pub struct ProcessInstance {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub due_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directed: Option<DirectedProcess>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -299,6 +302,10 @@ pub struct ProcessActionRequest {
     pub signature: Option<SignatureInput>,
     pub reassign_user_id: Option<Uuid>,
     pub reassign_from_user_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<DirectedRoutingRequest>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -415,7 +422,17 @@ pub struct ProcessHistoryEntry {
     pub actor_name: String,
     pub reassigned_from_user_id: Option<Uuid>,
     pub reassigned_to_user_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reassigned_from_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reassigned_to_name: Option<String>,
     pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_recipient_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routed_recipients: Vec<CorrespondenceUserOption>,
     pub document_revision: i64,
     pub annotations: Vec<DocumentAnnotation>,
     pub comment: Option<String>,
@@ -454,6 +471,7 @@ pub struct CorrespondenceDetail {
     pub can_manage: bool,
     pub can_act: bool,
     pub available_actions: Vec<ProcessAction>,
+    pub assignment_actions: Vec<DirectedAssignmentActions>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -542,6 +560,133 @@ pub struct CorrespondenceOptions {
     pub organizations: Vec<CorrespondenceOrganizationOption>,
     pub positions: Vec<CorrespondencePositionOption>,
     pub templates: Vec<ProcessTemplate>,
+    pub decision_makers: Vec<CorrespondenceUserOption>,
+    pub reviewers: Vec<CorrespondenceUserOption>,
+    pub routing_settings: Vec<CorrespondenceRoutingSettings>,
+    pub can_manage_routing_settings: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DirectedPurpose {
+    Decide,
+    Acknowledge,
+    Execute,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DirectedAssignmentStatus {
+    Pending,
+    WaitingChildren,
+    WaitingReview,
+    Completed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedSendCorrespondenceRequest {
+    pub request_id: Uuid,
+    pub expected_revision: i64,
+    pub first_recipient: ProcessRecipient,
+    pub due_at: Option<DateTime<Utc>>,
+}
+
+fn required_default() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedRouteRecipient {
+    pub recipient: ProcessRecipient,
+    pub purpose: DirectedPurpose,
+    #[serde(default = "required_default")]
+    pub required: bool,
+    #[serde(default)]
+    pub allow_onward_assignment: bool,
+    pub due_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedRoutingRequest {
+    pub recipients: Vec<DirectedRouteRecipient>,
+    #[serde(default)]
+    pub require_review: bool,
+    pub reviewer: Option<ProcessRecipient>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedAssignment {
+    pub id: Uuid,
+    pub assigned_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub parent_id: Option<Uuid>,
+    pub selector: ProcessRecipient,
+    pub recipient: ProcessRecipientSnapshot,
+    pub purpose: DirectedPurpose,
+    pub status: DirectedAssignmentStatus,
+    pub required: bool,
+    pub allow_onward_assignment: bool,
+    pub reviewer: Option<ProcessRecipientSnapshot>,
+    pub due_at: Option<DateTime<Utc>>,
+    pub work_item_id: Option<Uuid>,
+    pub review_work_item_id: Option<Uuid>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedProcess {
+    pub assignments: Vec<DirectedAssignment>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedAssignmentActions {
+    pub assignment_id: Uuid,
+    pub actions: Vec<ProcessAction>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceRoutingSettings {
+    pub register: CorrespondenceRegister,
+    pub revision: i64,
+    pub eligible_decision_makers: Vec<ProcessRecipient>,
+    pub default_first_recipient: Option<ProcessRecipient>,
+    pub default_purpose: DirectedPurpose,
+    pub default_require_review: bool,
+    pub default_reviewer: Option<ProcessRecipient>,
+    pub default_allow_onward_assignment: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCorrespondenceRoutingSettingsRequest {
+    pub request_id: Uuid,
+    pub expected_revision: i64,
+    pub register: CorrespondenceRegister,
+    pub eligible_decision_makers: Vec<ProcessRecipient>,
+    pub default_first_recipient: Option<ProcessRecipient>,
+    pub default_purpose: DirectedPurpose,
+    #[serde(default)]
+    pub default_require_review: bool,
+    pub default_reviewer: Option<ProcessRecipient>,
+    #[serde(default)]
+    pub default_allow_onward_assignment: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

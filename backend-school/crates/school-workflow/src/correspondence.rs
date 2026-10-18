@@ -1,7 +1,7 @@
 //! Correspondence records, source ACL and immutable document/action decisions.
 use crate::document_export::DocumentValidationPort;
 use crate::{
-    correspondence_files,
+    correspondence_files, directed,
     process::{self, denied, invalid, stale},
     process_models::*,
 };
@@ -30,6 +30,7 @@ pub struct CorrespondenceListQuery {
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct CorrespondenceOptionsQuery {
     pub search: Option<String>,
+    pub register: Option<CorrespondenceRegister>,
 }
 
 pub fn validate_annotations(values: &[DocumentAnnotation]) -> Result<(), AppError> {
@@ -156,7 +157,7 @@ pub async fn require_upload(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Re
     {
         return Ok(());
     }
-    let assigned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN process_instances i ON i.id=c.instance_id WHERE c.id=$1 AND i.definition->>'status'='active' AND EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'steps'->((i.definition->>'currentStep')::int)->'recipients') r WHERE (r->>'userId')::uuid=$2 AND r->>'completedAt' IS NULL))").bind(id).bind(actor.user_id).fetch_one(pool).await?;
+    let assigned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_records c JOIN process_instances i ON i.id=c.instance_id WHERE c.id=$1 AND i.definition->>'status'='active' AND (EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'steps'->((i.definition->>'currentStep')::int)->'recipients') r WHERE (r->>'userId')::uuid=$2 AND r->>'completedAt' IS NULL) OR EXISTS(SELECT 1 FROM jsonb_array_elements(i.definition->'directed'->'assignments') a WHERE (a->>'required')::boolean AND ((a->>'status'='pending' AND a->'recipient'->>'userId'=$2::text) OR (a->>'status'='waiting_review' AND a->'reviewer'->>'userId'=$2::text)))))").bind(id).bind(actor.user_id).fetch_one(pool).await?;
     if assigned && actor.has_permission(codes::CORRESPONDENCE_UPDATE_ASSIGNED) {
         Ok(())
     } else {
@@ -249,6 +250,13 @@ async fn add_document(
         .await?;
     Ok(())
 }
+#[derive(Default)]
+struct ActionHistoryContext {
+    assignment_id: Option<Uuid>,
+    assignment_recipient_name: Option<String>,
+    routed_recipients: Vec<CorrespondenceUserOption>,
+    reassignment_names: Option<(String, String)>,
+}
 async fn append_history(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
@@ -261,6 +269,7 @@ async fn append_history(
     annotations: Vec<DocumentAnnotation>,
     document_revision: i64,
     reassignment: Option<(Uuid, Uuid)>,
+    context: ActionHistoryContext,
 ) -> Result<Uuid, AppError> {
     let actor_name: String =
         sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
@@ -273,7 +282,12 @@ async fn append_history(
         actor_name,
         reassigned_from_user_id: reassignment.map(|r| r.0),
         reassigned_to_user_id: reassignment.map(|r| r.1),
+        reassigned_from_name: context.reassignment_names.as_ref().map(|n| n.0.clone()),
+        reassigned_to_name: context.reassignment_names.map(|n| n.1),
         action: action.into(),
+        assignment_id: context.assignment_id,
+        assignment_recipient_name: context.assignment_recipient_name,
+        routed_recipients: context.routed_recipients,
         comment,
         evidence_file_ids: evidence,
         annotations,
@@ -382,6 +396,7 @@ pub async fn create(
         vec![],
         1,
         None,
+        ActionHistoryContext::default(),
     )
     .await?;
     tx.commit().await?;
@@ -485,6 +500,7 @@ pub async fn revise(
         vec![],
         doc + 1,
         None,
+        ActionHistoryContext::default(),
     )
     .await?;
     tx.commit().await?;
@@ -511,10 +527,18 @@ impl process::ProcessSourcePort for CorrespondenceSource {
             && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN))
             || process::ProcessSourcePort::may_reassign_others(self, actor, instance)
             || (actor.has_permission(codes::CORRESPONDENCE_READ_ASSIGNED)
-                && instance
+                && (instance
                     .steps
                     .iter()
-                    .any(|s| s.recipients.iter().any(|r| r.user_id == actor.user_id)))
+                    .any(|s| s.recipients.iter().any(|r| r.user_id == actor.user_id))
+                    || instance.directed.as_ref().is_some_and(|g| {
+                        g.assignments.iter().any(|a| {
+                            a.recipient.user_id == actor.user_id
+                                || a.reviewer
+                                    .as_ref()
+                                    .is_some_and(|r| r.user_id == actor.user_id)
+                        })
+                    })))
         {
             Ok(())
         } else {
@@ -661,10 +685,83 @@ pub async fn send(
         vec![],
         doc,
         None,
+        ActionHistoryContext::default(),
     )
     .await?;
     tx.commit().await?;
     Ok(detail(pool, actor, id).await?)
+}
+pub async fn directed_send(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: DirectedSendCorrespondenceRequest,
+) -> Result<CorrespondenceDetail, AppError> {
+    require_read(pool, actor, id).await?;
+    let mut tx = pool.begin().await?;
+    if process::receipt(
+        &mut tx,
+        actor.user_id,
+        request.request_id,
+        "correspondence_directed_send",
+        id,
+        &request,
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return detail(pool, actor, id).await;
+    }
+    let (mut record, doc, _) = locked(&mut tx, id).await?;
+    require_author(actor, &record)?;
+    if record.revision != request.expected_revision
+        || !matches!(
+            record.status,
+            CorrespondenceStatus::Draft | CorrespondenceStatus::RevisionRequested
+        )
+    {
+        return Err(stale());
+    }
+    let instance = directed::start(&mut tx, actor, &record, &request).await?;
+    record.status = CorrespondenceStatus::InProgress;
+    record.revision += 1;
+    sqlx::query("UPDATE correspondence_records SET instance_id=$2 WHERE id=$1")
+        .bind(id)
+        .bind(instance.id)
+        .execute(&mut *tx)
+        .await?;
+    save_record(&mut tx, &record).await?;
+    let assignment_id = instance
+        .directed
+        .as_ref()
+        .and_then(|g| g.assignments.first())
+        .map(|a| a.id);
+    append_history(
+        &mut tx,
+        id,
+        Some(instance.id),
+        actor.user_id,
+        record.revision,
+        "directed_send",
+        None,
+        vec![],
+        vec![],
+        doc,
+        None,
+        ActionHistoryContext {
+            assignment_id,
+            assignment_recipient_name: instance
+                .directed
+                .as_ref()
+                .and_then(|g| g.assignments.first())
+                .map(|a| a.recipient.display_name.clone()),
+            ..Default::default()
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    detail(pool, actor, id).await
 }
 pub async fn act(
     pool: &PgPool,
@@ -854,6 +951,42 @@ async fn act_impl(
     } else {
         None
     };
+    let assignment_recipient_name = instance
+        .directed
+        .as_ref()
+        .and_then(|g| {
+            g.assignments
+                .iter()
+                .find(|a| Some(a.id) == request.assignment_id)
+        })
+        .and_then(|a| {
+            if a.status == DirectedAssignmentStatus::WaitingReview {
+                a.reviewer.as_ref()
+            } else {
+                Some(&a.recipient)
+            }
+        })
+        .map(|r| r.display_name.clone());
+    let directed_reassignment = if request.action == ProcessAction::Reassign {
+        instance
+            .directed
+            .as_ref()
+            .and_then(|g| {
+                g.assignments
+                    .iter()
+                    .find(|a| Some(a.id) == request.assignment_id)
+            })
+            .and_then(|a| {
+                let old = if a.status == DirectedAssignmentStatus::WaitingReview {
+                    a.reviewer.clone()
+                } else {
+                    Some(a.recipient.clone())
+                };
+                old.zip(request.reassign_user_id)
+            })
+    } else {
+        None
+    };
     process::action_in_transaction(
         &mut tx,
         actor,
@@ -873,6 +1006,25 @@ async fn act_impl(
         ProcessStatus::Rejected => CorrespondenceStatus::Rejected,
         ProcessStatus::Closed => CorrespondenceStatus::Closed,
     };
+    let reassignment_names = if let Some((old, _)) = &directed_reassignment {
+        let a = instance
+            .directed
+            .as_ref()
+            .and_then(|g| {
+                g.assignments
+                    .iter()
+                    .find(|a| Some(a.id) == request.assignment_id)
+            })
+            .ok_or_else(denied)?;
+        let new = if a.status == DirectedAssignmentStatus::WaitingReview {
+            a.reviewer.as_ref().ok_or_else(denied)?
+        } else {
+            &a.recipient
+        };
+        Some((old.display_name.clone(), new.display_name.clone()))
+    } else {
+        None
+    };
     let action_code = enum_code(request.action)?;
     let action_id = append_history(
         &mut tx,
@@ -885,7 +1037,9 @@ async fn act_impl(
         request.evidence_file_ids.clone(),
         request.annotations.clone(),
         doc,
-        if request.action == ProcessAction::Reassign {
+        if let Some((old, to)) = &directed_reassignment {
+            Some((old.user_id, *to))
+        } else if request.action == ProcessAction::Reassign {
             Some((
                 request.reassign_from_user_id.unwrap_or(actor.user_id),
                 request
@@ -894,6 +1048,25 @@ async fn act_impl(
             ))
         } else {
             None
+        },
+        ActionHistoryContext {
+            assignment_id: request.assignment_id,
+            assignment_recipient_name,
+            routed_recipients: if request.action == ProcessAction::Route {
+                instance.directed.as_ref().map_or_else(Vec::new, |g| {
+                    g.assignments
+                        .iter()
+                        .filter(|a| a.parent_id == request.assignment_id)
+                        .map(|a| CorrespondenceUserOption {
+                            id: a.recipient.user_id,
+                            display_name: a.recipient.display_name.clone(),
+                        })
+                        .collect()
+                })
+            } else {
+                vec![]
+            },
+            reassignment_names,
         },
     )
     .await?;
@@ -917,7 +1090,7 @@ async fn act_impl(
         };
         let prior_signatures:Vec<Json<CorrespondenceSigningEvidence>>=sqlx::query_scalar("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 AND document_revision=$2 ORDER BY created_at,id").bind(id).bind(doc).fetch_all(&mut *tx).await?;
         let signed_at = signing_time;
-        let signed_content_hash = process::payload_hash(&(
+        let signed_layers = (
             &document.content_hash,
             overlays.iter().map(|e| &e.0).collect::<Vec<_>>(),
             prior_signatures.iter().map(|s| &s.0).collect::<Vec<_>>(),
@@ -925,7 +1098,14 @@ async fn act_impl(
             signed_at,
             &signature,
             &signature_file_snapshot,
-        ))?;
+        );
+        // Fixed-template signature hashes retain their original payload exactly.
+        // Directed signatures additionally bind accepted actual recipients, grants and review gates.
+        let signed_content_hash = if let Some(directed) = &instance.directed {
+            process::payload_hash(&(signed_layers, directed))?
+        } else {
+            process::payload_hash(&signed_layers)?
+        };
         let evidence = CorrespondenceSigningEvidence {
             id: Uuid::now_v7(),
             signer_id: actor.user_id,
@@ -986,12 +1166,16 @@ WITH authorized AS MATERIALIZED (
 ), eligible AS MATERIALIZED (
     SELECT *,
         COALESCE((created_by=$2 AND $9 AND (summary->>'status'='revision_requested'
-            OR definition->>'status' IN ('completed','rejected')))
+            OR (definition->'directed' IS NULL AND definition->>'status' IN ('completed','rejected'))))
           OR (definition->>'status'='active' AND $10
-            AND (NOT COALESCE((current_step->'definition'->>'requiresSignature')::boolean, false)
-                 AND current_step->'definition'->>'kind'<>'sign' OR $11)
-            AND EXISTS (SELECT 1 FROM jsonb_array_elements(current_step->'recipients') r
-                WHERE r->>'userId'=$2::text AND r->>'completedAt' IS NULL)), false)
+            AND ((definition->'directed' IS NULL
+                AND (NOT COALESCE((current_step->'definition'->>'requiresSignature')::boolean, false)
+                     AND current_step->'definition'->>'kind'<>'sign' OR $11)
+                AND EXISTS (SELECT 1 FROM jsonb_array_elements(current_step->'recipients') r
+                    WHERE r->>'userId'=$2::text AND r->>'completedAt' IS NULL))
+              OR EXISTS (SELECT 1 FROM jsonb_array_elements(definition->'directed'->'assignments') a
+                  WHERE ((a->>'required')::boolean AND a->>'status'='pending' AND a->'recipient'->>'userId'=$2::text)
+                     OR (a->>'status'='waiting_review' AND a->'reviewer'->>'userId'=$2::text)))), false)
             AS action_required,
         created_by=$2 AND summary->>'status'<>'draft' AS sent,
         created_by=$2 AND summary->>'status'='draft' AS draft
@@ -1095,6 +1279,50 @@ fn list_progress(
     record: &CorrespondenceSummary,
     instance: Option<&ProcessInstance>,
 ) -> CorrespondenceListProgress {
+    if let Some((instance, graph)) = instance
+        .filter(|i| i.status == ProcessStatus::Active)
+        .and_then(|i| i.directed.as_ref().map(|g| (i, g)))
+    {
+        let pending_recipients = graph
+            .assignments
+            .iter()
+            .filter(|a| a.required)
+            .filter_map(|a| {
+                if a.status == DirectedAssignmentStatus::Pending {
+                    Some(&a.recipient)
+                } else if a.status == DirectedAssignmentStatus::WaitingReview {
+                    a.reviewer.as_ref()
+                } else {
+                    None
+                }
+            })
+            .map(|r| CorrespondenceUserOption {
+                id: r.user_id,
+                display_name: r.display_name.clone(),
+            })
+            .collect();
+        return CorrespondenceListProgress {
+            correspondence_id: record.id,
+            current_step_index: None,
+            step_count: graph.assignments.len(),
+            current_step_title: Some("ดำเนินการตามเส้นทางสั่งการ".into()),
+            pending_recipients,
+            due_at: instance.due_at,
+            my_action: directed::assignment_actions(actor, instance, false)
+                .into_iter()
+                .flat_map(|a| a.actions)
+                .find(|a| {
+                    matches!(
+                        a,
+                        ProcessAction::Route
+                            | ProcessAction::Acknowledge
+                            | ProcessAction::Execute
+                            | ProcessAction::Review
+                    )
+                }),
+            can_revise: can_revise(actor, record),
+        };
+    }
     let step = instance
         .filter(|i| i.status == ProcessStatus::Active)
         .and_then(|i| i.steps.get(i.current_step));
@@ -1140,6 +1368,26 @@ pub fn available_actions(
     let Some(instance) = instance else {
         return vec![];
     };
+    if instance.directed.is_some() {
+        let mut actions = vec![];
+        for branch in directed::assignment_actions(actor, instance, manager_reassign) {
+            for action in branch.actions {
+                if !actions.contains(&action) {
+                    actions.push(action);
+                }
+            }
+        }
+        if actor.user_id == record.created_by
+            && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN)
+            && matches!(
+                instance.status,
+                ProcessStatus::Completed | ProcessStatus::Rejected
+            )
+        {
+            actions.push(ProcessAction::Close);
+        }
+        return actions;
+    }
     if actor.user_id == record.created_by
         && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN)
         && matches!(
@@ -1220,14 +1468,13 @@ pub async fn detail(
     };
     let history=sqlx::query_scalar::<_,Json<ProcessHistoryEntry>>("SELECT entry FROM process_action_history WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
     let signatures=sqlx::query_scalar::<_,Json<CorrespondenceSigningEvidence>>("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
-    let actions = available_actions(
-        actor,
-        &record,
-        instance.as_ref(),
-        can_manage_record(pool, actor, &record).await?,
-    );
+    let manager_reassign = can_manage_record(pool, actor, &record).await?;
+    let actions = available_actions(actor, &record, instance.as_ref(), manager_reassign);
     let can_manage = can_revise(actor, &record);
     let can_act = !actions.is_empty();
+    let assignment_actions = instance.as_ref().map_or_else(Vec::new, |i| {
+        directed::assignment_actions(actor, i, manager_reassign)
+    });
     Ok(CorrespondenceDetail {
         record: record.0,
         source_links: source_links.0,
@@ -1239,6 +1486,7 @@ pub async fn detail(
         can_manage,
         can_act,
         available_actions: actions,
+        assignment_actions,
     })
 }
 pub async fn options(
@@ -1259,7 +1507,7 @@ pub async fn options(
     if search.len() > 200 {
         return Err(invalid("คำค้นยาวเกินกำหนด"));
     }
-    let users=sqlx::query_as::<_,(Uuid,String)>("SELECT id,display_name FROM user_display_names WHERE status='active' AND user_type='staff' AND ($1='' OR display_name ILIKE '%'||$1||'%') ORDER BY first_name,last_name,id LIMIT 200").bind(search).fetch_all(pool).await?.into_iter().map(|(id,display_name)|CorrespondenceUserOption{id,display_name}).collect();
+    let users=sqlx::query_as::<_,(Uuid,String)>("SELECT id,display_name FROM user_display_names WHERE status='active' AND user_type='staff' AND ($1='' OR display_name ILIKE '%'||$1||'%') ORDER BY first_name,last_name,id LIMIT 200").bind(&search).fetch_all(pool).await?.into_iter().map(|(id,display_name)|CorrespondenceUserOption{id,display_name}).collect();
     let organizations = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id,name FROM organization_units WHERE is_active ORDER BY name,id LIMIT 500",
     )
@@ -1269,11 +1517,21 @@ pub async fn options(
     .map(|(id, name)| CorrespondenceOrganizationOption { id, name })
     .collect();
     let positions=sqlx::query_as::<_,(Uuid,String,String)>("SELECT DISTINCT m.organization_unit_id,m.position_code,coalesce(m.position_title,m.position_code) FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.organization_unit_id,m.position_code LIMIT 1000").fetch_all(pool).await?.into_iter().map(|(organization_unit_id,code,name)|CorrespondencePositionOption{organization_unit_id,code,name}).collect();
+    let (decision_makers, reviewers) = directed::selection_options(
+        pool,
+        query.register.unwrap_or(CorrespondenceRegister::Incoming),
+        &search,
+    )
+    .await?;
     Ok(CorrespondenceOptions {
         users,
         organizations,
         positions,
         templates: process::list_templates(pool).await?,
+        reviewers,
+        decision_makers,
+        routing_settings: directed::settings(pool, actor).await?,
+        can_manage_routing_settings: actor.has_permission(codes::PROCESS_MANAGE_SCHOOL),
     })
 }
 pub async fn signatures(

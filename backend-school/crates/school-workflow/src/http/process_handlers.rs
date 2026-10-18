@@ -2,7 +2,7 @@
 use super::state::WorkflowHttpState;
 use crate::{
     correspondence::{self, CorrespondenceListQuery, CorrespondenceOptionsQuery},
-    process,
+    directed, process,
     process_models::*,
 };
 use axum::{
@@ -100,6 +100,43 @@ pub async fn send_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/directed-send",tag="correspondence",request_body=DirectedSendCorrespondenceRequest,params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+pub async fn directed_send_correspondence(
+    State(state): State<WorkflowHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DirectedSendCorrespondenceRequest>,
+) -> Result<Response, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result =
+        correspondence::directed_send(&context.tenant.pool, &context.actor, id, payload).await?;
+    state.notify_work_items_changed(&context.tenant.subdomain);
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(result)).into_response())
+}
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/routing-settings",tag="correspondence",responses((status=200,body=ApiResponse<Vec<CorrespondenceRoutingSettings>>),(status=403,body=ApiErrorResponse))))]
+pub async fn correspondence_routing_settings(
+    State(state): State<WorkflowHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        directed::settings(&context.tenant.pool, &context.actor).await?,
+    ))
+    .into_response())
+}
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/correspondence/routing-settings",tag="correspondence",request_body=SaveCorrespondenceRoutingSettingsRequest,responses((status=200,body=ApiResponse<CorrespondenceRoutingSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+pub async fn save_correspondence_routing_settings(
+    State(state): State<WorkflowHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<SaveCorrespondenceRoutingSettingsRequest>,
+) -> Result<Response, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        directed::save_settings(&context.tenant.pool, &context.actor, payload).await?,
+    ))
+    .into_response())
+}
 #[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/actions",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=ProcessActionRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn act_correspondence(
     State(state): State<WorkflowHttpState>,
@@ -275,6 +312,10 @@ pub fn routes() -> Router<WorkflowHttpState> {
         )
         .route("/correspondence/options", get(correspondence_options))
         .route(
+            "/correspondence/routing-settings",
+            get(correspondence_routing_settings).put(save_correspondence_routing_settings),
+        )
+        .route(
             "/correspondence/signatures",
             get(list_signature_assets).post(create_signature_asset),
         )
@@ -284,6 +325,10 @@ pub fn routes() -> Router<WorkflowHttpState> {
             post(revise_correspondence),
         )
         .route("/correspondence/{id}/send", post(send_correspondence))
+        .route(
+            "/correspondence/{id}/directed-send",
+            post(directed_send_correspondence),
+        )
         .route("/correspondence/{id}/actions", post(act_correspondence))
         .route("/correspondence/{id}/export", get(export_correspondence))
         .route("/correspondence/{id}/preview", get(preview_correspondence))

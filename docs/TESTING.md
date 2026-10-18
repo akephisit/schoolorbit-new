@@ -1538,3 +1538,29 @@ Run the generated API generation/check/tests after changing the list or revision
 correspondence browser fixtures should verify server-count tabs, creation/draft retention,
 failed-file retry, recipient selection, timeline/main action, direct signature placement and
 starter template copying at desktop and mobile sizes.
+
+Directed routing uses synthetic staff and document fixtures in
+`frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend
+with `PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run build`, start an
+owned production preview with `npm run preview -- --host 127.0.0.1 --port 4183 --strictPort`.
+Run from `frontend-school`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
+node --test tests/static/correspondence-*.test.mjs
+```
+
+The five existing identity/realtime workflow cases named by that exclusion exercise development
+module imports. Run them against a separate owned development server started with
+`PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/correspondence-workflow.spec.ts --grep 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=1
+```
+
+The browser fixtures check the first-decision-maker default and backtracking, exact replay after
+an accepted send response is lost, branch-specific instruction/annotation/signature payloads,
+copy-only actions, explicit and inherited review, first-assignee completion and per-register
+settings. The wizard covers narrow/desktop light/dark layouts; these intercepted APIs do not
+establish database authorization or deployed delivery. Retain the Workflow disposable database
+coverage for recipient resolution, graph completion, review constraints and replay safety.

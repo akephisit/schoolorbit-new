@@ -4,7 +4,11 @@ export function recipientKey(item: ProcessRecipient): string {
 }
 export function recipientLabel(item: ProcessRecipient, options: CorrespondenceOptions): string {
 	if (item.kind === 'user')
-		return options.users.find((user) => user.id === item.userId)?.displayName ?? 'บุคลากรที่เลือก';
+		return (
+			options.users.find((user) => user.id === item.userId)?.displayName ??
+			options.reviewers?.find((user) => user.id === item.userId)?.displayName ??
+			'บุคลากรที่เลือก'
+		);
 	const unit =
 		options.organizations.find((unit) => unit.id === item.organizationUnitId)?.name ??
 		'หน่วยงานที่เลือก';
@@ -25,6 +29,7 @@ export function mergeRecipientLookups(
 	return {
 		...current,
 		users: merge(current.users, added.users, (item) => item.id),
+		reviewers: merge(current.reviewers ?? [], added.reviewers ?? [], (item) => item.id),
 		organizations: merge(current.organizations, added.organizations, (item) => item.id),
 		positions: merge(
 			current.positions,

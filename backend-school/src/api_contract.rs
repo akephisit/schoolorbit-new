@@ -200,6 +200,9 @@ use utoipa::OpenApi;
         school_workflow::http::process_handlers::get_correspondence,
         school_workflow::http::process_handlers::revise_correspondence,
         school_workflow::http::process_handlers::send_correspondence,
+        school_workflow::http::process_handlers::directed_send_correspondence,
+        school_workflow::http::process_handlers::correspondence_routing_settings,
+        school_workflow::http::process_handlers::save_correspondence_routing_settings,
         school_workflow::http::process_handlers::act_correspondence,
         school_workflow::http::process_handlers::correspondence_options,
         school_workflow::http::process_handlers::list_signature_assets,
@@ -873,6 +876,16 @@ struct SchoolApiDoc;
     CorrespondenceOrganizationOption,
     CorrespondencePositionOption,
     CorrespondenceOptions,
+    DirectedPurpose,
+    DirectedAssignmentStatus,
+    DirectedSendCorrespondenceRequest,
+    DirectedRouteRecipient,
+    DirectedRoutingRequest,
+    DirectedAssignment,
+    DirectedProcess,
+    DirectedAssignmentActions,
+    CorrespondenceRoutingSettings,
+    SaveCorrespondenceRoutingSettingsRequest,
     CorrespondenceFileSnapshot,
 
         school_attendance::models::AttendanceReportQuery,
@@ -6655,6 +6668,9 @@ mod tests {
         for (path, method) in [
             ("/api/correspondence", "post"),
             ("/api/correspondence/{id}/actions", "post"),
+            ("/api/correspondence/{id}/directed-send", "post"),
+            ("/api/correspondence/routing-settings", "get"),
+            ("/api/correspondence/routing-settings", "put"),
             ("/api/correspondence/{id}/preview", "get"),
             ("/api/correspondence/{id}/export", "get"),
             ("/api/process/templates", "post"),
@@ -6704,9 +6720,20 @@ mod tests {
             "annotations",
             "signature",
             "reassignFromUserId",
+            "assignmentId",
+            "routing",
         ] {
             assert!(schemas["ProcessActionRequest"]["properties"][field].is_object());
         }
+        assert!(schemas["CorrespondenceDetail"]["properties"]["assignmentActions"].is_object());
+        for field in ["decisionMakers", "reviewers", "routingSettings"] {
+            assert!(schemas["CorrespondenceOptions"]["properties"][field].is_object());
+        }
+        assert!(schemas["SendCorrespondenceRequest"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "templateId"));
         for field in ["documentRevision", "contentHash", "method"] {
             assert!(schemas["SignatureInput"]["properties"][field].is_object());
         }

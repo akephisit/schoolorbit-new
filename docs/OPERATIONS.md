@@ -1586,7 +1586,38 @@ runtime recognizing the private `correspondence_document` and `correspondence_si
 File Platform purposes; recover with a forward release. Never edit the applied migration or
 manually remove attached files, signature images, process snapshots or action/signing history.
 
-Correspondence sends resolve every required recipient once, including future sequential steps.
+Migration 125 adds an explicit directed mode beside fixed-template processes and register-scoped
+routing settings. Existing records, template versions, book identities and immutable evidence
+remain intact. Deploy its backend, generated API contracts and frontend together. After a directed
+book is accepted, recovery requires a runtime supporting directed graphs; use a forward release.
+Do not downgrade to a runtime that assumes every process has a template and current sequential step.
+
+The clerk selects one first decision-maker. Without a configured first-recipient allowlist, any
+active staff account with correspondence assigned-read and assigned-update permissions is eligible;
+process managers can restrict that pool and set defaults separately for incoming, outgoing and
+internal registers. There is no mandatory director stage. An explicit acting person can be selected
+when their current effective permissions allow the work; position selection uses current dated
+organization assignments rather than inventing an acting-position identity. A unit selects its
+responsible lead; an ambiguous unit requires a specific person or position.
+
+Each accepted directed instruction freezes actual recipients and creates central work atomically
+with its annotations, signatures and history. Required branches wait for explicit acknowledgement
+or completion, and then any configured reviewer. Reading is separate. Copies create a notification and read participation, without a My Work assignment; they never block the
+book or grant assignment authority. Review defaults off, and a descendant cannot remove an
+ancestor's required review. Reviewer work is created only when its required branches finish;
+completed no-return branches finish the book automatically. The first decision-maker can also
+record a terminal consideration without forwarding. Optional Close remains archival. Copies may still record read/acknowledgement after completion or
+archival, without editing the finished document, reopening the book or creating required work.
+
+Existing school/exact-unit correspondence managers can recover a pending required recipient or
+activated reviewer through Reassign. This transfers the actual pending slot, preserving its parent,
+purpose, onward rights and all review obligations; manager visibility does not grant completion
+power. The transaction dismisses/closes old work and cancels its notification source before creating
+the replacement work. The first decision-maker replacement must respect the current configured
+eligible pool. Accepted old/new names and identities remain in immutable history. Reviewers enter
+read participation when accepted, while their work and notification wait until review is ready.
+
+Fixed-template correspondence sends resolve every required recipient once, including future sequential steps.
 A missing active required recipient refuses the send transaction without creating work or
 notification artifacts. Accepted membership snapshots remain valid across later staffing
 changes. Active steps project through canonical My Work and central notification dispatch;

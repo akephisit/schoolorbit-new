@@ -1006,6 +1006,16 @@
 			"notes": "Creation fields are local; exact creator route guard. Optional owner-unit lookup opens only from its action. Uploads begin only after a real draft resource exists. No primary reads."
 		},
 		{
+			"route": "staff/correspondence/settings",
+			"wave": "correspondence",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant and authenticated process manager; register-specific local drafts",
+			"status": "complete",
+			"backendOwner": "school-workflow",
+			"notes": "Exact process manager loader starts versioned routing settings and recipient options independently. Identity-tagged results, focused retries, per-register draft retention and typed mutation patches."
+		},
+		{
 			"route": "staff/correspondence/signatures",
 			"wave": "correspondence",
 			"dataOwner": "route",
