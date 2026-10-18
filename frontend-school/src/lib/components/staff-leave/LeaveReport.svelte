@@ -59,6 +59,7 @@
 </script>
 
 <PageShell
+	contentClass="space-y-4"
 	title="สรุปการใช้สิทธิ์"
 	description="คำขอที่เริ่มในช่วงวันที่เลือก · แสดงจำนวนทั้งคำขอที่อนุมัติและรอพิจารณา"
 	backHref="/staff/leave"
@@ -68,8 +69,10 @@
 				disabled={!region.value}
 				onclick={download}>ดาวน์โหลด CSV</Button
 			>{/if}{/snippet}
-	<form class="rounded-xl border bg-card p-3 sm:p-4" onsubmit={filter}>
-		<div class="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+	<form class="border-b pb-3" onsubmit={filter}>
+		<div
+			class="grid grid-cols-2 items-end gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+		>
 			<div class="space-y-2">
 				<Label for="usage-from">ตั้งแต่วันที่</Label><DatePicker
 					id="usage-from"
@@ -114,29 +117,62 @@
 			/>{/if}
 		{#if region.loading && !region.value}<div role="status" aria-label="กำลังโหลดสรุปการใช้สิทธิ์">
 				<TableSkeleton columns={6} />
-			</div>{:else if region.value?.items.length}<Table.Root
-				><Table.Header
-					><Table.Row
-						><Table.Head>บุคลากร</Table.Head><Table.Head>ประเภทคำขอ</Table.Head><Table.Head
-							>รอบปีเริ่ม</Table.Head
-						><Table.Head>อนุมัติแล้ว</Table.Head><Table.Head>รอพิจารณา</Table.Head><Table.Head
-							>สิทธิที่กำหนด</Table.Head
-						></Table.Row
-					></Table.Header
-				><Table.Body
-					>{#each region.value.items as item (`${item.userId}|${item.typeId}|${item.quotaYearStart}|${item.policyVersionId}`)}<Table.Row
-							><Table.Cell class="font-medium">{item.displayName}</Table.Cell><Table.Cell
-								>{item.typeName}</Table.Cell
-							><Table.Cell>{leaveDate(item.quotaYearStart)}</Table.Cell><Table.Cell
-								>{leaveAmount(item.approvedAmount, item.unit)}</Table.Cell
-							><Table.Cell>{leaveAmount(item.reservedAmount, item.unit)}</Table.Cell><Table.Cell
-								>{item.annualLimit == null
-									? 'ไม่กำหนด'
-									: leaveAmount(item.annualLimit, item.unit)}</Table.Cell
+			</div>{:else if region.value?.items.length}<div
+				class="hidden overflow-hidden rounded-lg border bg-card md:block"
+			>
+				<Table.Root
+					><Table.Header
+						><Table.Row
+							><Table.Head>บุคลากร</Table.Head><Table.Head>ประเภทคำขอ</Table.Head><Table.Head
+								>รอบปีเริ่ม</Table.Head
+							><Table.Head>อนุมัติแล้ว</Table.Head><Table.Head>รอพิจารณา</Table.Head><Table.Head
+								>สิทธิที่กำหนด</Table.Head
 							></Table.Row
-						>{/each}</Table.Body
-				></Table.Root
-			>{:else if !region.error}<PageState
+						></Table.Header
+					><Table.Body
+						>{#each region.value.items as item (`${item.userId}|${item.typeId}|${item.quotaYearStart}|${item.policyVersionId}`)}<Table.Row
+								><Table.Cell class="font-medium">{item.displayName}</Table.Cell><Table.Cell
+									>{item.typeName}</Table.Cell
+								><Table.Cell>{leaveDate(item.quotaYearStart)}</Table.Cell><Table.Cell
+									>{leaveAmount(item.approvedAmount, item.unit)}</Table.Cell
+								><Table.Cell>{leaveAmount(item.reservedAmount, item.unit)}</Table.Cell><Table.Cell
+									>{item.annualLimit == null
+										? 'ไม่กำหนด'
+										: leaveAmount(item.annualLimit, item.unit)}</Table.Cell
+								></Table.Row
+							>{/each}</Table.Body
+					></Table.Root
+				>
+			</div>
+			<ul
+				class="divide-y rounded-lg border bg-card md:hidden"
+				aria-label="สรุปการใช้สิทธิ์รายบุคลากร"
+			>
+				{#each region.value.items as item (`${item.userId}|${item.typeId}|${item.quotaYearStart}|${item.policyVersionId}`)}<li
+						class="space-y-2 p-3"
+					>
+						<div>
+							<p class="break-words font-medium">{item.displayName}</p>
+							<p class="text-sm">{item.typeName} · รอบปี {leaveDate(item.quotaYearStart)}</p>
+						</div>
+						<dl class="grid grid-cols-3 gap-2 text-sm">
+							<div>
+								<dt class="text-xs text-muted-foreground">อนุมัติแล้ว</dt>
+								<dd class="mt-1 font-medium">{leaveAmount(item.approvedAmount, item.unit)}</dd>
+							</div>
+							<div>
+								<dt class="text-xs text-muted-foreground">รอพิจารณา</dt>
+								<dd class="mt-1 font-medium">{leaveAmount(item.reservedAmount, item.unit)}</dd>
+							</div>
+							<div>
+								<dt class="text-xs text-muted-foreground">สิทธิที่กำหนด</dt>
+								<dd class="mt-1">
+									{item.annualLimit == null ? 'ไม่กำหนด' : leaveAmount(item.annualLimit, item.unit)}
+								</dd>
+							</div>
+						</dl>
+					</li>{/each}
+			</ul>{:else if !region.error}<PageState
 				title="ยังไม่มีการใช้สิทธิ์ในช่วงที่เลือก"
 				description="เลือกช่วงวันที่อื่นเพื่อดูรายการ"
 			/>{/if}

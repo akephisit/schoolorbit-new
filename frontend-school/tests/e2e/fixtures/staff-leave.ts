@@ -367,6 +367,7 @@ export async function mockLeave(
 				}
 				const saved = {
 					...input,
+					code: index >= 0 ? types[index].code : 'internal-generated-code',
 					id: index >= 0 ? types[index].id : id(712),
 					revision: index >= 0 ? types[index].revision + 1 : 1
 				};

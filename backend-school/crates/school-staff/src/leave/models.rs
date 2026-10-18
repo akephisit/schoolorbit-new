@@ -50,7 +50,8 @@ leave_enum!(LeaveProcessPurpose {
 pub struct SaveLeaveTypeRequest {
     pub request_id: Uuid,
     pub expected_revision: Option<i64>,
-    pub code: String,
+    /// Omit to generate an internal code on create or preserve it on update.
+    pub code: Option<String>,
     pub name: String,
     pub kind: LeaveKind,
     pub archived: bool,

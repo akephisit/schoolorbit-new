@@ -23,6 +23,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { ChevronDown, Plus } from '@lucide/svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Choice from './Choice.svelte';
 	import RequestEditor from './RequestEditor.svelte';
@@ -49,24 +51,34 @@
 </script>
 
 <PageShell
+	contentClass="space-y-4"
 	title={kind === 'exit' ? 'ขออนุญาตออกนอกโรงเรียน' : 'การลา'}
 	description="คำขอของคุณและรายการที่ได้รับสิทธิ์ให้พิจารณา"
 >
 	{#snippet actions()}
-		{#if $can.hasAny(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN, PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL)}<Button
-				href="/staff/leave/reports"
-				variant="outline">สรุปการใช้สิทธิ์</Button
-			>{/if}
-		{#if $can.has(PERMISSIONS.STAFF_LEAVE_MANAGE_SCHOOL)}<Button
-				href="/staff/leave/settings"
-				variant="outline">ตั้งค่าประเภทและนโยบาย</Button
-			>{/if}
+		{#if $can.hasAny(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN, PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL, PERMISSIONS.STAFF_LEAVE_MANAGE_SCHOOL)}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					>{#snippet child({ props })}<Button {...props} variant="outline"
+							>เครื่องมือ<ChevronDown class="size-4" /></Button
+						>{/snippet}</DropdownMenu.Trigger
+				>
+				<DropdownMenu.Content align="end">
+					{#if $can.hasAny(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN, PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL)}<DropdownMenu.Item
+							onclick={() => goto('/staff/leave/reports')}>สรุปการใช้สิทธิ์</DropdownMenu.Item
+						>{/if}
+					{#if $can.has(PERMISSIONS.STAFF_LEAVE_MANAGE_SCHOOL)}<DropdownMenu.Item
+							onclick={() => goto('/staff/leave/settings')}>ตั้งค่าประเภทและเกณฑ์</DropdownMenu.Item
+						>{/if}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button onclick={() => (creating = true)}
-				>สร้างคำขอ{leaveKindLabels[kind]}</Button
+				><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Button
 			>{/if}
 	{/snippet}
-	<div class="rounded-xl border bg-card p-3 sm:p-4">
-		<div class="w-full sm:w-64">
+	<div class="flex flex-wrap items-end justify-between gap-3 border-b pb-3">
+		<div class="w-full sm:w-56">
 			<Choice
 				id="leave-status-filter"
 				label="สถานะ"
@@ -91,50 +103,87 @@
 				<TableSkeleton columns={5} />
 			</div>
 		{:else if region.value?.items.length}
-			<Table.Root
-				><Table.Header
-					><Table.Row
-						><Table.Head>ประเภท / ผู้ขอ</Table.Head><Table.Head>ช่วงวันที่</Table.Head><Table.Head
-							>จำนวน</Table.Head
-						><Table.Head>สถานะ</Table.Head><Table.Head>รายละเอียด</Table.Head></Table.Row
-					></Table.Header
-				>
-				<Table.Body
-					>{#each region.value.items as request (request.id)}<Table.Row>
-							<Table.Cell
-								><p class="font-medium">{request.typeName}</p>
-								<p class="text-sm text-muted-foreground">{request.ownerName}</p></Table.Cell
+			<div class="hidden overflow-hidden rounded-lg border bg-card md:block">
+				<Table.Root
+					><Table.Header
+						><Table.Row
+							><Table.Head>ประเภท / ผู้ขอ</Table.Head><Table.Head>ช่วงวันที่</Table.Head><Table.Head
+								>จำนวน</Table.Head
+							><Table.Head>สถานะ</Table.Head><Table.Head>รายละเอียด</Table.Head></Table.Row
+						></Table.Header
+					>
+					<Table.Body
+						>{#each region.value.items as request (request.id)}<Table.Row>
+								<Table.Cell
+									><p class="font-medium">{request.typeName}</p>
+									<p class="text-sm text-muted-foreground">{request.ownerName}</p></Table.Cell
+								>
+								<Table.Cell
+									><p>
+										{leaveDate(request.startDate)}{request.endDate !== request.startDate
+											? ` – ${leaveDate(request.endDate)}`
+											: ''}
+									</p>
+									{#if request.startTime}<p class="text-sm text-muted-foreground">
+											{request.startTime.slice(0, 5)} – {request.endTime?.slice(0, 5)}
+										</p>{/if}</Table.Cell
+								>
+								<Table.Cell>{leaveAmount(request.amount, request.unit)}</Table.Cell>
+								<Table.Cell
+									><Badge
+										variant={leaveStatusVariant(request.status)}
+										class={leaveStatusClass(request.status)}
+										>{leaveStatusLabels[request.status]}</Badge
+									></Table.Cell
+								>
+								<Table.Cell
+									><Button
+										variant="outline"
+										size="sm"
+										href={`/staff/leave/requests/${request.id}?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
+										>เปิดคำขอ</Button
+									></Table.Cell
+								>
+							</Table.Row>{/each}</Table.Body
+					>
+				</Table.Root>
+			</div>
+			<ul class="divide-y rounded-lg border bg-card md:hidden" aria-label="รายการคำขอ">
+				{#each region.value.items as request (request.id)}
+					<li class="space-y-3 p-3">
+						<div class="flex items-start justify-between gap-2">
+							<div class="min-w-0">
+								<p class="break-words font-medium">{request.typeName}</p>
+								<p class="break-words text-sm text-muted-foreground">{request.ownerName}</p>
+							</div>
+							<Badge
+								variant={leaveStatusVariant(request.status)}
+								class={leaveStatusClass(request.status)}>{leaveStatusLabels[request.status]}</Badge
 							>
-							<Table.Cell
-								><p>
+						</div>
+						<div class="flex items-end justify-between gap-3">
+							<div class="text-sm">
+								<p>
 									{leaveDate(request.startDate)}{request.endDate !== request.startDate
 										? ` – ${leaveDate(request.endDate)}`
 										: ''}
 								</p>
-								{#if request.startTime}<p class="text-sm text-muted-foreground">
+								{#if request.startTime}<p class="text-muted-foreground">
 										{request.startTime.slice(0, 5)} – {request.endTime?.slice(0, 5)}
-									</p>{/if}</Table.Cell
+									</p>{/if}
+								<p class="mt-1 font-medium">{leaveAmount(request.amount, request.unit)}</p>
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								href={`/staff/leave/requests/${request.id}?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
+								>เปิดคำขอ</Button
 							>
-							<Table.Cell>{leaveAmount(request.amount, request.unit)}</Table.Cell>
-							<Table.Cell
-								><Badge
-									variant={leaveStatusVariant(request.status)}
-									class={leaveStatusClass(request.status)}
-									>{leaveStatusLabels[request.status]}</Badge
-								></Table.Cell
-							>
-							<Table.Cell
-								><Button
-									variant="outline"
-									size="sm"
-									href={`/staff/leave/requests/${request.id}?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
-									>เปิดคำขอ</Button
-								></Table.Cell
-							>
-						</Table.Row>{/each}</Table.Body
-				>
-			</Table.Root>
-			<div class="mt-4 flex items-center justify-between gap-3">
+						</div>
+					</li>
+				{/each}
+			</ul>
+			<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
 				<p class="text-sm text-muted-foreground">
 					รายการ {offset + 1} – {offset + region.value.items.length}
 				</p>

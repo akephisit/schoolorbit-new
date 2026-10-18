@@ -37,16 +37,17 @@ pub async fn save_type(
     input: SaveLeaveTypeRequest,
 ) -> Result<LeaveType, AppError> {
     actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    if input.code.is_empty()
-        || input.code.len() > 64
-        || !input
-            .code
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-        || input.name.trim().is_empty()
-        || input.name.chars().count() > 200
-    {
-        return Err(invalid("รหัสหรือชื่อประเภทคำขอไม่ถูกต้อง"));
+    if input.code.as_ref().is_some_and(|code| {
+        code.is_empty()
+            || code.len() > 64
+            || !code
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    }) {
+        return Err(invalid("รหัสประเภทคำขอไม่ถูกต้อง"));
+    }
+    if input.name.trim().is_empty() || input.name.chars().count() > 200 {
+        return Err(invalid("กรุณาระบุชื่อประเภทคำขอไม่เกิน 200 ตัวอักษร"));
     }
     let mut tx = pool.begin().await?;
     let rid = id.unwrap_or_else(Uuid::now_v7);
@@ -72,7 +73,7 @@ pub async fn save_type(
         tx.commit().await?;
         return Ok(old.0);
     }
-    let revision = if id.is_some() {
+    let (revision, code) = if id.is_some() {
         let old: Json<LeaveType> =
             sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1 FOR UPDATE")
                 .bind(rid)
@@ -82,16 +83,21 @@ pub async fn save_type(
         if input.expected_revision != Some(old.revision) {
             return Err(stale());
         }
-        if old.code != input.code || old.kind != input.kind {
+        if input.code.as_ref().is_some_and(|code| code != &old.code) || old.kind != input.kind {
             return Err(invalid("ไม่สามารถเปลี่ยนรหัสหรือกลุ่มคำขอ"));
         }
-        old.revision + 1
+        (old.revision + 1, old.code.clone())
     } else {
-        1
+        (
+            1,
+            input
+                .code
+                .unwrap_or_else(|| format!("type_{}", rid.simple())),
+        )
     };
     let item = LeaveType {
         id: rid,
-        code: input.code,
+        code,
         name: input.name,
         kind: input.kind,
         archived: input.archived,

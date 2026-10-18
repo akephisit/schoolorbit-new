@@ -191,7 +191,7 @@
 				description="ติดต่อผู้ดูแลให้ตั้งค่าประเภทและนโยบายของโรงเรียน"
 			/>{:else}
 			{#if options?.personnelType}<p class="text-sm text-muted-foreground">
-					ประเภทบุคลากรปัจจุบัน: {PERSONNEL_TYPE_LABELS[options.personnelType]} · ใช้ข้อมูลประวัติตามวันที่เริ่มคำขอ
+					{PERSONNEL_TYPE_LABELS[options.personnelType]} · ตรวจเกณฑ์ตามวันที่เริ่มคำขอ
 				</p>{/if}
 			<div>
 				<Choice
@@ -203,7 +203,7 @@
 					onchange={() => resolvePolicy()}
 				/>{#if errors.typeId}<p class="mt-1 text-sm text-destructive">{errors.typeId}</p>{/if}
 			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-2">
 					<Label for="leave-start-date">วันที่เริ่ม *</Label><DatePicker
 						id="leave-start-date"
@@ -225,36 +225,6 @@
 					/>{#if errors.endDate}<p class="text-sm text-destructive">{errors.endDate}</p>{/if}
 				</div>
 			</div>
-			<section aria-busy={policyLoading} data-testid="leave-effective-policy">
-				{#if policyLoading}<p role="status" class="text-sm text-muted-foreground">
-						กำลังตรวจสอบนโยบายตามวันที่เริ่ม...
-					</p>{:else if policyError}<PageState
-						variant="error"
-						title="ไม่มีนโยบายที่ใช้ได้กับคำขอนี้"
-						description={policyError}
-						actionLabel="ตรวจสอบอีกครั้ง"
-						onaction={resolvePolicy}
-					/>{:else if policy}
-					<div class="space-y-2 rounded-xl border border-primary/15 bg-primary/5 p-3 text-sm">
-						<p class="font-medium">นโยบายฉบับ {policy.version} · {leaveUnitLabels[policy.unit]}</p>
-						<p>อ้างอิง: {policy.sourceReference} · มีผล {leaveDate(policy.effectiveFrom)}</p>
-						<p>
-							{policy.countingMode === 'working_days'
-								? 'นับตามวันทำงานและวันยกเว้นที่โรงเรียนกำหนด'
-								: 'นับตามวันปฏิทิน'}{policy.evidenceRequired ? ' · ต้องแนบหลักฐานก่อนส่ง' : ''}
-						</p>
-						{#if policy.maxPerRequest != null}<p>
-								ไม่เกิน {leaveAmount(policy.maxPerRequest, policy.unit)} ต่อคำขอ
-							</p>{/if}{#if policy.annualLimit != null}<p>
-								สิทธิที่โรงเรียนกำหนด: {leaveAmount(policy.annualLimit, policy.unit)} ต่อรอบปี
-							</p>{/if}{#if policy.evidenceFromAmount != null && !policy.evidenceRequired}<p>
-								แนบหลักฐานเมื่อขอตั้งแต่ {leaveAmount(policy.evidenceFromAmount, policy.unit)}
-							</p>{/if}{#if policy.minimumNoticeDays != null}<p>
-								ยื่นล่วงหน้าอย่างน้อย {policy.minimumNoticeDays} วัน
-							</p>{/if}
-					</div>
-				{/if}
-			</section>
 			{#if policy?.unit === 'half_day'}<div class="space-y-2">
 					<Label>ช่วงวัน *</Label><ToggleGroup.Root
 						class="flex-wrap"
@@ -271,7 +241,7 @@
 						><ToggleGroup.Item value="afternoon">ครึ่งวันบ่าย</ToggleGroup.Item></ToggleGroup.Root
 					>
 				</div>{/if}
-			{#if policy?.unit === 'minute'}<div class="grid gap-4 sm:grid-cols-2">
+			{#if policy?.unit === 'minute'}<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-2">
 						<Label for="leave-start-time">เวลาเริ่ม *</Label><Input
 							id="leave-start-time"
@@ -289,10 +259,59 @@
 						/>{#if errors.endTime}<p class="text-sm text-destructive">{errors.endTime}</p>{/if}
 					</div>
 				</div>{/if}
+			<section aria-busy={policyLoading} data-testid="leave-effective-policy">
+				{#if policyLoading}<p role="status" class="text-sm text-muted-foreground">
+						กำลังตรวจสอบนโยบายตามวันที่เริ่ม...
+					</p>{:else if policyError}<PageState
+						variant="error"
+						title="ไม่มีนโยบายที่ใช้ได้กับคำขอนี้"
+						description={policyError}
+						actionLabel="ตรวจสอบอีกครั้ง"
+						onaction={resolvePolicy}
+					/>{:else if policy}
+					<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
+						<div class="flex flex-wrap items-center justify-between gap-1">
+							<p class="text-sm font-medium">นโยบายฉบับ {policy.version}</p>
+							<span class="text-muted-foreground"
+								>{leaveUnitLabels[policy.unit]} · {policy.countingMode === 'working_days'
+									? 'นับวันทำงานที่กำหนด'
+									: 'นับวันปฏิทิน'}</span
+							>
+						</div>
+						<dl class="flex flex-wrap gap-x-4 gap-y-1">
+							{#if policy.maxPerRequest != null}<div class="flex gap-1">
+									<dt class="text-muted-foreground">ต่อคำขอ</dt>
+									<dd>{leaveAmount(policy.maxPerRequest, policy.unit)}</dd>
+								</div>{/if}
+							{#if policy.annualLimit != null}<div class="flex gap-1">
+									<dt class="text-muted-foreground">ต่อรอบปี</dt>
+									<dd>{leaveAmount(policy.annualLimit, policy.unit)}</dd>
+								</div>{/if}
+							<div class="flex gap-1">
+								<dt class="text-muted-foreground">หลักฐาน</dt>
+								<dd>
+									{policy.evidenceRequired
+										? 'ต้องแนบก่อนส่ง'
+										: policy.evidenceFromAmount != null
+											? `แนบเมื่อขอตั้งแต่ ${leaveAmount(policy.evidenceFromAmount, policy.unit)}`
+											: 'แนบได้ตามจำเป็น'}
+								</dd>
+							</div>
+							{#if policy.minimumNoticeDays != null}<div class="flex gap-1">
+									<dt class="text-muted-foreground">ยื่นล่วงหน้า</dt>
+									<dd>{policy.minimumNoticeDays} วัน</dd>
+								</div>{/if}
+						</dl>
+						<p class="break-words border-t pt-2 text-muted-foreground">
+							{policy.sourceReference} · มีผล {leaveDate(policy.effectiveFrom)}
+						</p>
+					</div>
+				{/if}
+			</section>
 			<div class="space-y-2">
 				<Label for="leave-reason">เหตุผล *</Label><Textarea
 					id="leave-reason"
-					rows={4}
+					rows={3}
 					bind:value={draft.reason}
 					disabled={pending}
 					aria-invalid={!!errors.reason}
@@ -341,7 +360,7 @@
 				onrefresh?.();
 			}}
 		/>{/if}
-	<div class="flex flex-wrap justify-end gap-2">
+	<div class="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t bg-background pt-3">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
 		><LoadingButton
 			type="submit"

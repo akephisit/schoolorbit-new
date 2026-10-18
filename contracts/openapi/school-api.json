@@ -55963,7 +55963,11 @@
             "type": "boolean"
           },
           "code": {
-            "type": "string"
+            "description": "Omit to generate an internal code on create or preserve it on update.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "expectedRevision": {
             "format": "int64",
@@ -55985,7 +55989,6 @@
         },
         "required": [
           "requestId",
-          "code",
           "name",
           "kind",
           "archived"
