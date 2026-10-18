@@ -1547,7 +1547,9 @@ failed-file retry, recipient selection, timeline/main action, direct signature p
 starter template copying at desktop and mobile sizes.
 
 The renderer fixtures include bordered Thai text with four-point inner padding and cropped pages
-at all native rotations. Pure Workflow settings tests cover placeholder/format bounds, UUIDv7
+at all native rotations. Text fitting must satisfy both width and height, retain attached Thai marks,
+and refuse a box that cannot fit at the minimum size; frontend helpers also normalize tabs/CRLF.
+Pure Workflow settings tests cover placeholder/format bounds, UUIDv7
 template identities and pre-reader payload serialization. Frontend reading fixtures should report
 a read only after successful page rendering, retain retry/cancellation behavior, open the current
 revision automatically, focus invalid fields, and distinguish registration dates from insertion
@@ -1563,7 +1565,7 @@ owned production preview with `npm run preview -- --host 127.0.0.1 --port 4183 -
 Run from `frontend-school`:
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
+E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts tests/e2e/correspondence-reader.spec.ts tests/e2e/correspondence-text-stamps.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
 node --test tests/static/correspondence-*.test.mjs
 ```
 
