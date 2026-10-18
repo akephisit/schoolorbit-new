@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { House } from '@lucide/svelte';
 	import CareFilters from '#lib/components/student-care/CareFilters.svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import CareStatus from '#lib/components/student-care/CareStatus.svelte';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { can } from '#lib/stores/permissions.js';
 
@@ -11,7 +13,7 @@
 		careRoutineReadPermissions,
 		careManagePermissions
 	} from '#lib/features/student-care/access.js';
-	import { careLink, careDate, visitLabels } from '#lib/features/student-care/presentation.js';
+	import { careLink, careDate } from '#lib/features/student-care/presentation.js';
 	import CareRegion from '#lib/components/student-care/CareRegion.svelte';
 	import CareNavigation from '#lib/components/student-care/CareNavigation.svelte';
 	import CarePager from '#lib/components/student-care/CarePager.svelte';
@@ -21,6 +23,8 @@
 </script>
 
 <PageShell
+	backLabel="กลับภาพรวมการดูแล"
+	icon={House}
 	title="เยี่ยมบ้าน"
 	description="ทุกภาคเรียนในขอบเขตที่คุณรับผิดชอบ"
 	backHref={careLink('', data.term)}
@@ -38,20 +42,25 @@
 			retry={(signal) => careVisits(data.query, { signal })}
 			label="เยี่ยมบ้าน"
 			>{#snippet children(items)}{#if !items.length}<PageState
-						title="ยังไม่มีรายการ"
-						description="รายการที่อยู่ในสิทธิ์ของคุณจะแสดงที่นี่"
+						title={data.query.afterId || data.query.status
+							? 'ไม่พบรายการเยี่ยมบ้านในรายการนี้'
+							: 'ยังไม่มีรายการเยี่ยมบ้าน'}
+						description={data.query.afterId || data.query.status
+							? 'ลองล้างตัวกรองหรือกลับหน้าแรกเพื่อดูรายการอื่นในขอบเขตของคุณ'
+							: 'วางแผนเยี่ยมบ้านจากปุ่มด้านบนเมื่อคุณมีสิทธิ์ หรือสอบถามผู้รับผิดชอบเรื่องรายการที่ได้รับมอบหมาย'}
 					/>{:else}<ul class="divide-y rounded-xl border bg-card">
 						{#each items as item (item.id)}<li
 								class="flex flex-wrap items-center justify-between gap-3 p-4"
 							>
 								<div class="min-w-0 break-words space-y-1">
 									<p class="font-medium">{item.studentName}</p>
+									<CareStatus status={{ kind: 'visit', value: item.status }} />
 									<p class="text-sm text-muted-foreground">
-										{visitLabels[item.status]} · นัดหมาย {careDate(item.plannedDate)}
+										นัดหมาย {careDate(item.plannedDate)}
 									</p>
 								</div>
 								<Button variant="outline" href={careLink(`/visits/${item.id}`, data.term)}
-									>ดูรายละเอียด</Button
+									>ดูบันทึกเยี่ยมบ้าน</Button
 								>
 							</li>{/each}
 					</ul>{/if}<CarePager

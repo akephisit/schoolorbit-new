@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { Funnel, RotateCcw } from '@lucide/svelte';
+	import { careClearFilters } from '#lib/features/student-care/presentation.js';
 	import {
 		roundLabels,
 		visitLabels,
@@ -38,7 +40,11 @@
 	}
 </script>
 
-<form onsubmit={apply} class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4">
+<form
+	aria-label="ตัวกรองรายการ"
+	onsubmit={apply}
+	class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4"
+>
 	<CareSelect
 		id="care-filter-status"
 		label="สถานะ"
@@ -56,5 +62,11 @@
 				onValueChange={(value) => (due = value ?? '')}
 				clearable
 			/>
-		</div>{/if}<Button type="submit" variant="outline">ใช้ตัวกรอง</Button>
+		</div>{/if}<Button type="submit" variant="outline"
+		><Funnel aria-hidden="true" />ใช้ตัวกรอง</Button
+	>
+	{#if new URL(url).searchParams.has('status') || new URL(url).searchParams.has('followUpBefore')}<Button
+			href={careClearFilters(url)}
+			variant="ghost"><RotateCcw aria-hidden="true" />ล้างตัวกรอง</Button
+		>{/if}
 </form>

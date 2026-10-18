@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { HeartHandshake } from '@lucide/svelte';
 	import { careCaseSetup } from '#lib/features/student-care/case-setup.js';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -19,7 +20,11 @@
 	}
 </script>
 
-<PageShell title="เปิดการดูแลรายกรณี" backHref={careLink('/cases', data.term)}
+<PageShell
+	backLabel="กลับรายการดูแลรายกรณี"
+	icon={HeartHandshake}
+	title="เปิดการดูแลรายกรณี"
+	backHref={careLink('/cases', data.term)}
 	>{#key $careIdentity + data.sourceAssignmentId + data.sourceVisitId + data.term}<CareRegion
 			initial={data.initial}
 			permissions={careSensitiveManagePermissions}

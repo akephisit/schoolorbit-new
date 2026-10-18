@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ClipboardList } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 
@@ -14,7 +15,11 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="รายละเอียดรอบประเมิน" backHref={careLink('/rounds', data.term)}
+<PageShell
+	backLabel="กลับรอบประเมิน"
+	icon={ClipboardList}
+	title="รายละเอียดรอบประเมิน"
+	backHref={careLink('/rounds', data.term)}
 	>{#key $careIdentity + data.id}<CareRegion
 			initial={data.round}
 			permissions={careReadPermissions}

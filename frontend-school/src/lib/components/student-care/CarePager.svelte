@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { ArrowRight, ChevronsLeft } from '@lucide/svelte';
 	let {
 		url,
 		lastId,
@@ -23,6 +24,9 @@
 		aria-label="แบ่งหน้ารายการ"
 		class="flex justify-end gap-2"
 	>
-		{#if current.searchParams.has('afterId')}<Button href={first} variant="ghost">หน้าแรก</Button
-			>{/if}{#if count === limit && lastId}<Button href={next} variant="outline">ถัดไป</Button>{/if}
+		{#if current.searchParams.has('afterId')}<Button href={first} variant="ghost"
+				><ChevronsLeft aria-hidden="true" />หน้าแรก</Button
+			>{/if}{#if count === limit && lastId}<Button href={next} variant="outline"
+				>ถัดไป<ArrowRight aria-hidden="true" /></Button
+			>{/if}
 	</nav>{/if}

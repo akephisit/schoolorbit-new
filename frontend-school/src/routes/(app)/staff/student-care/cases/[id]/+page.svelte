@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { HeartHandshake } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 
@@ -11,7 +12,11 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="รายละเอียดการดูแล" backHref={careLink('/cases', data.term)}
+<PageShell
+	backLabel="กลับรายการดูแลรายกรณี"
+	icon={HeartHandshake}
+	title="รายละเอียดการดูแล"
+	backHref={careLink('/cases', data.term)}
 	>{#key $careIdentity + data.id}<CareRegion
 			initial={data.initial}
 			permissions={careSensitiveReadPermissions}

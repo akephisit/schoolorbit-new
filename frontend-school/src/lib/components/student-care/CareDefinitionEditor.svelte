@@ -1,4 +1,14 @@
 <script lang="ts">
+	import {
+		LibraryBig,
+		FileCheck,
+		ListChecks,
+		MessageSquareText,
+		Plus,
+		Save,
+		Upload,
+		Download
+	} from '@lucide/svelte';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
 	const mutation = new CareMutationIdentity();
 
@@ -18,6 +28,7 @@
 	} from '#lib/features/student-care/drafts.js';
 	import {
 		careLink,
+		careDefinitionIssue,
 		familyLabels,
 		respondentLabels
 	} from '#lib/features/student-care/presentation.js';
@@ -38,6 +49,7 @@
 	let pending = $state(false),
 		error = $state(''),
 		attempted = $state(false),
+		showReferences = $state(false),
 		json = $state(''),
 		showTransfer = $state(false);
 	const errors = $derived(attempted ? definitionErrors(definition) : []);
@@ -82,6 +94,7 @@
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		attempted = true;
+		if (errors.length) showReferences = true;
 		if (pending || errors.length || !$can.has(PERMISSIONS.STUDENT_CARE_CONFIG_MANAGE_SCHOOL))
 			return;
 		pending = true;
@@ -110,8 +123,37 @@
 </script>
 
 <form onsubmit={save} class="max-w-4xl space-y-5">
+	<nav aria-label="ส่วนของการตั้งค่าแบบประเมิน" class="flex flex-wrap gap-1">
+		<Button href="#care-editor-basic" variant="ghost" size="sm">1. ข้อมูลแบบประเมิน</Button><Button
+			href="#care-editor-rights"
+			variant="ghost"
+			size="sm">2. คำชี้แจงและแหล่งที่มา</Button
+		><Button href="#care-editor-scales" variant="ghost" size="sm">3. คะแนนและเกณฑ์</Button
+		>{#if definition.mode === 'digital' || definition.questions.length}<Button
+				href="#care-editor-questions"
+				variant="ghost"
+				size="sm">4. คำถามและตัวเลือก</Button
+			>{/if}
+	</nav>
+	{#if errors.length}<div
+			role="alert"
+			class="rounded-xl border border-destructive/30 bg-destructive/5 p-4"
+		>
+			<p class="font-medium text-destructive">ตรวจสอบการตั้งค่า</p>
+			<p class="mt-1 text-sm">
+				ยังไม่บันทึกข้อมูล กรุณาแก้ไขรายการต่อไปนี้ รหัสอ้างอิงในแต่ละส่วนเปิดไว้ให้ตรวจสอบแล้ว
+			</p>
+			<ul class="mt-2 list-inside list-disc text-sm">
+				{#each errors as message, i (i)}{@const issue = careDefinitionIssue(message)}
+					<li>
+						<a href={issue.href} class="underline underline-offset-4">{issue.label}</a>: {issue.message}
+					</li>{/each}
+			</ul>
+		</div>{/if}
 	<CareSection
-		title={initial ? 'สร้างรุ่นใหม่จากแบบเดิม' : 'ข้อมูลแบบประเมิน'}
+		title={initial ? '1. สร้างรุ่นใหม่จากแบบเดิม' : '1. ข้อมูลแบบประเมิน'}
+		icon={LibraryBig}
+		id="care-editor-basic"
 		description="แต่ละรุ่นเก็บถาวร รอบเดิมจะใช้รุ่นที่เลือกไว้"
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
@@ -192,6 +234,12 @@
 				if (value === 'manual_result' || value === 'digital') definition.mode = value;
 			}}
 		/>
+	</CareSection><CareSection
+		title="2. คำชี้แจง แหล่งที่มา และสิทธิ์ใช้งาน"
+		icon={FileCheck}
+		id="care-editor-rights"
+		description="ระบุคำชี้แจงที่ผู้ตอบจะเห็น และอ้างอิงเอกสารที่โรงเรียนได้รับอนุญาตให้ใช้"
+	>
 		<div class="space-y-2">
 			<Label for="care-instructions">คำชี้แจง</Label><Textarea
 				id="care-instructions"
@@ -229,54 +277,142 @@
 			</div>{/if}
 	</CareSection>
 	<CareSection
-		title="มาตรวัดและเกณฑ์แปลผล"
+		title="3. คะแนนและเกณฑ์แปลผล"
+		icon={ListChecks}
+		id="care-editor-scales"
 		description="ใช้เกณฑ์จากแหล่งอ้างอิงที่ได้รับอนุญาตเท่านั้น ช่วงคะแนนต้องต่อเนื่องและครอบคลุมคะแนนทั้งหมด"
 	>
 		{#each definition.scales as scale, i (i)}
+			{@const availableSources = definition.scales
+				.map((source, sourceIndex) => ({ source, sourceIndex }))
+				.filter(
+					({ source, sourceIndex }) =>
+						sourceIndex !== i && source.key !== scale.key && !source.sourceScaleKeys.length
+				)}
+			{@const invalidReferences = scale.sourceScaleKeys.filter(
+				(key) => !availableSources.some(({ source }) => source.key === key)
+			)}
 			<fieldset class="space-y-3 rounded-xl border p-3">
 				<legend class="px-1 text-sm font-semibold">มาตรวัด {i + 1}</legend>
 				<div class="grid gap-3 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for={`scale-key-${i}`}>รหัสมาตรวัด {i + 1}</Label><Input
-							id={`scale-key-${i}`}
-							bind:value={scale.key}
-						/>
-					</div>
 					<div class="space-y-2">
 						<Label for={`scale-label-${i}`}>ชื่อมาตรวัด {i + 1}</Label><Input
 							id={`scale-label-${i}`}
 							bind:value={scale.label}
 						/>
 					</div>
+					<details class="space-y-2 rounded-lg border border-dashed p-3" open={showReferences}>
+						<summary class="cursor-pointer text-sm text-muted-foreground"
+							>รหัสอ้างอิงมาตรวัด</summary
+						>
+						<div class="mt-3 space-y-2">
+							<Label for={`scale-key-${i}`}>รหัสมาตรวัด {i + 1}</Label><Input
+								id={`scale-key-${i}`}
+								bind:value={scale.key}
+							/>
+							<p class="text-xs text-muted-foreground">
+								ใช้เชื่อมโยงการตั้งค่า รหัสต้องไม่ซ้ำภายในกลุ่มเดียวกัน
+							</p>
+							<div class="mt-3 space-y-2">
+								<Label for={`scale-sources-${i}`}>รหัสมาตรวัดที่จะรวม {i + 1}</Label><Input
+									id={`scale-sources-${i}`}
+									value={scale.sourceScaleKeys.join(', ')}
+									oninput={(event) =>
+										(scale.sourceScaleKeys = event.currentTarget.value
+											.split(',')
+											.map((key) => key.trim())
+											.filter(Boolean))}
+								/>
+								<p class="text-xs text-muted-foreground">
+									คั่นรหัสด้วยจุลภาค ใช้แก้การเชื่อมโยงเมื่อมีการเปลี่ยนรหัสมาตรวัด
+								</p>
+							</div>
+						</div>
+					</details>
 				</div>
-				<div class="space-y-2">
-					<Label for={`scale-sources-${i}`}
-						>รหัสมาตรฐานที่จะรวม (คั่นด้วยจุลภาค เว้นว่างสำหรับมาตรฐาน)</Label
-					><Input
-						id={`scale-sources-${i}`}
-						value={scale.sourceScaleKeys.join(', ')}
-						oninput={(event) =>
-							(scale.sourceScaleKeys = event.currentTarget.value
-								.split(',')
-								.map((s) => s.trim())
-								.filter(Boolean))}
-					/>
-				</div>
+				<fieldset class="space-y-2 rounded-lg bg-muted/30 p-3">
+					<legend class="px-1 text-sm font-medium">รวมคะแนนจากมาตรวัดพื้นฐาน</legend>
+					<p class="text-xs text-muted-foreground">
+						เว้นว่างหากมาตรวัดนี้รับคะแนนจากคำถามโดยตรง เลือกได้เฉพาะมาตรวัดพื้นฐาน
+						ไม่สามารถเลือกตัวเองหรือมาตรวัดรวม
+					</p>
+					<div class="flex flex-wrap gap-x-4 gap-y-2">
+						{#each availableSources as { source, sourceIndex } (sourceIndex)}<div
+								class="flex items-center gap-2"
+							>
+								<Checkbox
+									id={`scale-source-${i}-${sourceIndex}`}
+									checked={scale.sourceScaleKeys.includes(source.key)}
+									onCheckedChange={(checked) =>
+										(scale.sourceScaleKeys = checked
+											? [...new Set([...scale.sourceScaleKeys, source.key])]
+											: scale.sourceScaleKeys.filter((key) => key !== source.key))}
+								/><Label for={`scale-source-${i}-${sourceIndex}`}
+									>{source.label || `มาตรวัด ${sourceIndex + 1}`}</Label
+								>
+							</div>{/each}
+					</div>
+					{#if !availableSources.length}<p class="text-sm text-muted-foreground">
+							ยังไม่มีมาตรวัดพื้นฐานอื่นให้เลือก เพิ่มมาตรวัดพื้นฐานก่อนหากต้องการคำนวณคะแนนรวม
+						</p>{/if}
+					{#if invalidReferences.length}<div
+							role="group"
+							aria-label="รหัสมาตรวัดที่ต้องแก้ไข"
+							class="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3"
+						>
+							<p class="text-sm font-medium">ตรวจสอบมาตรวัดที่เชื่อมโยง</p>
+							<p class="text-xs text-muted-foreground">
+								รหัสเดิมยังเก็บอยู่ เลือกนำออกหรือแก้รหัสในส่วนรหัสอ้างอิงมาตรวัดก่อนบันทึก
+							</p>
+							<ul class="space-y-2">
+								{#each invalidReferences as key, referenceIndex (referenceIndex)}
+									{@const referenced = definition.scales.find((candidate) => candidate.key === key)}
+									<li class="flex flex-wrap items-center justify-between gap-2">
+										<p class="min-w-0 break-words text-sm">
+											{key}: {key === scale.key
+												? 'ไม่สามารถรวมคะแนนจากตัวเอง'
+												: referenced?.sourceScaleKeys.length
+													? 'มาตรวัดรวมไม่สามารถใช้เป็นแหล่งคะแนน'
+													: 'ไม่พบมาตรวัดพื้นฐานตามรหัสนี้'}
+										</p>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											aria-label={`นำรหัสมาตรวัด ${key} ออกจากมาตรวัด ${i + 1}`}
+											onclick={() =>
+												(scale.sourceScaleKeys = scale.sourceScaleKeys.filter(
+													(reference) => reference !== key
+												))}>นำออก</Button
+										>
+									</li>
+								{/each}
+							</ul>
+						</div>{/if}
+				</fieldset>
 				{#each scale.bands as band, j (j)}<div
 						class="grid gap-3 rounded-lg bg-muted/40 p-3 sm:grid-cols-2"
 					>
-						<div class="space-y-2">
-							<Label for={`band-key-${i}-${j}`}>รหัสช่วง {i + 1}.{j + 1}</Label><Input
-								id={`band-key-${i}-${j}`}
-								bind:value={band.key}
-							/>
-						</div>
 						<div class="space-y-2">
 							<Label for={`band-label-${i}-${j}`}>ชื่อผลช่วง {i + 1}.{j + 1}</Label><Input
 								id={`band-label-${i}-${j}`}
 								bind:value={band.label}
 							/>
 						</div>
+						<details class="space-y-2 rounded-lg border border-dashed p-3" open={showReferences}>
+							<summary class="cursor-pointer text-sm text-muted-foreground"
+								>รหัสอ้างอิงช่วงคะแนน</summary
+							>
+							<div class="mt-3 space-y-2">
+								<Label for={`band-key-${i}-${j}`}>รหัสช่วง {i + 1}.{j + 1}</Label><Input
+									id={`band-key-${i}-${j}`}
+									bind:value={band.key}
+								/>
+								<p class="text-xs text-muted-foreground">
+									ใช้เชื่อมโยงการตั้งค่า รหัสต้องไม่ซ้ำภายในกลุ่มเดียวกัน
+								</p>
+							</div>
+						</details>
 						<div class="space-y-2">
 							<Label for={`band-min-${i}-${j}`}>คะแนนตั้งแต่ {i + 1}.{j + 1}</Label><Input
 								id={`band-min-${i}-${j}`}
@@ -321,23 +457,27 @@
 				</div>
 			</fieldset>
 		{/each}
-		<Button type="button" variant="outline" onclick={addScale}>เพิ่มมาตรวัด</Button>
+		<Button type="button" variant="outline" onclick={addScale}
+			><Plus aria-hidden="true" />เพิ่มมาตรวัด</Button
+		>
 	</CareSection>
 	{#if definition.mode === 'digital' || definition.questions.length}<CareSection
-			title="คำถามและตัวเลือก"
+			title="4. คำถามและตัวเลือก"
+			icon={MessageSquareText}
+			id="care-editor-questions"
 			description="คะแนนกลับทิศคำนวณจากคะแนนต่ำสุดและสูงสุดของตัวเลือก"
 		>
 			{#each definition.questions as question, i (i)}<fieldset
 					class="space-y-3 rounded-xl border p-3"
 				>
 					<legend class="px-1 text-sm font-semibold">ข้อ {i + 1}</legend>
+					<div class="space-y-2">
+						<Label for={`question-text-${i}`}>คำถามข้อ {i + 1}</Label><Textarea
+							id={`question-text-${i}`}
+							bind:value={question.text}
+						/>
+					</div>
 					<div class="grid gap-3 sm:grid-cols-2">
-						<div class="space-y-2">
-							<Label for={`question-key-${i}`}>รหัสข้อ {i + 1}</Label><Input
-								id={`question-key-${i}`}
-								bind:value={question.key}
-							/>
-						</div>
 						<CareSelect
 							id={`question-scale-${i}`}
 							label={`มาตรวัดข้อ ${i + 1}`}
@@ -347,13 +487,22 @@
 								.map((s) => ({ value: s.key, label: s.label || s.key }))}
 							onValueChange={(value) => (question.scaleKey = value)}
 						/>
+						<details class="space-y-2 rounded-lg border border-dashed p-3" open={showReferences}>
+							<summary class="cursor-pointer text-sm text-muted-foreground"
+								>รหัสอ้างอิงคำถาม</summary
+							>
+							<div class="mt-3 space-y-2">
+								<Label for={`question-key-${i}`}>รหัสข้อ {i + 1}</Label><Input
+									id={`question-key-${i}`}
+									bind:value={question.key}
+								/>
+								<p class="text-xs text-muted-foreground">
+									ใช้เชื่อมโยงการตั้งค่า รหัสต้องไม่ซ้ำภายในกลุ่มเดียวกัน
+								</p>
+							</div>
+						</details>
 					</div>
-					<div class="space-y-2">
-						<Label for={`question-text-${i}`}>คำถามข้อ {i + 1}</Label><Textarea
-							id={`question-text-${i}`}
-							bind:value={question.text}
-						/>
-					</div>
+
 					<div class="flex items-center gap-2">
 						<Checkbox id={`question-reverse-${i}`} bind:checked={question.reverse} /><Label
 							for={`question-reverse-${i}`}>กลับทิศคะแนนข้อ {i + 1}</Label
@@ -363,17 +512,25 @@
 							class="grid gap-3 rounded-lg bg-muted/40 p-3 sm:grid-cols-3"
 						>
 							<div class="space-y-2">
-								<Label for={`option-key-${i}-${j}`}>รหัสตัวเลือก {i + 1}.{j + 1}</Label><Input
-									id={`option-key-${i}-${j}`}
-									bind:value={option.key}
-								/>
-							</div>
-							<div class="space-y-2">
 								<Label for={`option-label-${i}-${j}`}>ข้อความตัวเลือก {i + 1}.{j + 1}</Label><Input
 									id={`option-label-${i}-${j}`}
 									bind:value={option.label}
 								/>
 							</div>
+							<details class="space-y-2 rounded-lg border border-dashed p-3" open={showReferences}>
+								<summary class="cursor-pointer text-sm text-muted-foreground"
+									>รหัสอ้างอิงตัวเลือก</summary
+								>
+								<div class="mt-3 space-y-2">
+									<Label for={`option-key-${i}-${j}`}>รหัสตัวเลือก {i + 1}.{j + 1}</Label><Input
+										id={`option-key-${i}-${j}`}
+										bind:value={option.key}
+									/>
+									<p class="text-xs text-muted-foreground">
+										ใช้เชื่อมโยงการตั้งค่า รหัสต้องไม่ซ้ำภายในกลุ่มเดียวกัน
+									</p>
+								</div>
+							</details>
 							<div class="space-y-2">
 								<Label for={`option-points-${i}-${j}`}>คะแนนตัวเลือก {i + 1}.{j + 1}</Label><Input
 									id={`option-points-${i}-${j}`}
@@ -406,7 +563,9 @@
 						>
 					</div>
 				</fieldset>{/each}
-			<Button type="button" variant="outline" onclick={addQuestion}>เพิ่มคำถาม</Button>
+			<Button type="button" variant="outline" onclick={addQuestion}
+				><Plus aria-hidden="true" />เพิ่มคำถาม</Button
+			>
 		</CareSection>{/if}
 	<details class="rounded-xl border bg-card p-4" open={showTransfer}>
 		<summary class="cursor-pointer text-sm font-medium">นำเข้า / ส่งออกการตั้งค่า</summary>
@@ -420,25 +579,26 @@
 				rows={8}
 			/>
 			<div class="flex gap-2">
-				<Button type="button" variant="outline" onclick={importDefinition}>นำเข้าการตั้งค่า</Button
-				><Button type="button" variant="outline" onclick={exportDefinition}>ส่งออกการตั้งค่า</Button
+				<Button type="button" variant="outline" onclick={importDefinition}
+					><Upload aria-hidden="true" />นำเข้าการตั้งค่า</Button
+				><Button type="button" variant="outline" onclick={exportDefinition}
+					><Download aria-hidden="true" />ส่งออกการตั้งค่า</Button
 				>
 			</div>
 		</div>
 	</details>
-	{#if errors.length}<div role="alert" class="rounded-xl border border-destructive/30 p-4">
-			<p class="font-medium text-destructive">ตรวจสอบการตั้งค่า</p>
-			<ul class="mt-2 list-inside list-disc text-sm">
-				{#each errors as message, i (i)}<li>{message}</li>{/each}
-			</ul>
-		</div>{/if}
+	{#if errors.length}<p class="text-sm text-destructive">
+			ยังมีข้อมูลที่ต้องแก้ไข <a href="#care-editor-basic" class="underline underline-offset-4"
+				>กลับไปตรวจสอบการตั้งค่าด้านบน</a
+			>
+		</p>{/if}
 	{#if error}<PageState variant="error" title="บันทึกแบบประเมินไม่ได้" description={error} />{/if}
 	<div class="flex justify-end gap-2">
 		<Button href={careLink('/library', term)} variant="outline">ยกเลิก</Button><LoadingButton
 			type="submit"
 			loading={pending}
 			disabled={!$can.has(PERMISSIONS.STUDENT_CARE_CONFIG_MANAGE_SCHOOL)}
-			>บันทึกรุ่นใหม่</LoadingButton
+			><Save aria-hidden="true" />บันทึกรุ่นใหม่</LoadingButton
 		>
 	</div>
 </form>

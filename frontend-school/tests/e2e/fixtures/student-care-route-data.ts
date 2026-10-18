@@ -20,8 +20,12 @@ import type {
 	SaveCareCase,
 	AddCareCaseEvent,
 	UpdateCareRound,
-	UpdateCareAssignmentReviewers
+	UpdateCareAssignmentReviewers,
+	CareStudentOption,
+	CareStaffOption
 } from '../../../src/lib/api/student-care';
+export const careLongStudentName = `นักเรียนสมมติ${'ชื่อยาวสำหรับตรวจสอบการจัดหน้า'.repeat(5)}`;
+export const careLongStaffName = `ครูสมมติ${'ชื่อยาวสำหรับตรวจสอบการจัดหน้า'.repeat(5)}`;
 export const careTerm = behaviorTerm,
 	careStudent = actor,
 	careVersionId = id(2000),
@@ -126,6 +130,9 @@ export async function mockStudentCare(
 		respondent?: CareRespondent;
 		manyAssignments?: boolean;
 		roundStatus?: CareRound['status'];
+		longNames?: boolean;
+		manyPeople?: boolean;
+		emptyLists?: boolean;
 	} = {}
 ) {
 	const permissions = options.permissions ?? [
@@ -138,6 +145,28 @@ export async function mockStudentCare(
 	];
 	await mockBehavior(page, { permissions, userType: options.userType });
 	const version = structuredClone(careVersion);
+	const studentName = options.longNames ? careLongStudentName : careAssignment.studentName;
+	const staff: CareStaffOption[] = [
+		{ id: actor, name: options.longNames ? careLongStaffName : 'ครูผู้รับผิดชอบ' },
+		{ id: id(2011), name: 'ครูผู้ติดตาม' },
+		...(options.manyPeople
+			? Array.from({ length: 30 }, (_, index) => ({
+					id: id(6000 + index),
+					name: `ครูสมมติ ${String(index + 3).padStart(2, '0')}`
+				}))
+			: [])
+	];
+	const students: CareStudentOption[] = Array.from(
+		{ length: options.manyPeople ? 51 : 1 },
+		(_, index) => ({
+			id: index === 0 ? careStudent : id(5000 + index),
+			name: index === 0 ? studentName : `นักเรียนสมมติ ${String(index + 1).padStart(2, '0')}`,
+			studentCode: String(index + 1).padStart(4, '0'),
+			homeroom: 'ม.1/1',
+			advisorIds: [actor],
+			guardianIds: [id(2012)]
+		})
+	);
 	if (options.respondent) version.definition.respondent = options.respondent;
 	if (options.manual) {
 		version.definition.mode = 'manual_result';
@@ -147,6 +176,7 @@ export async function mockStudentCare(
 	let detail: CareAssignmentDetail = {
 		assignment: {
 			...careAssignment,
+			studentName,
 			reviewerUserIds: options.unassigned ? [id(2999)] : [actor],
 			status: options.submitted ? 'submitted' : 'assigned',
 			submittedAt: options.submitted ? '2026-10-17T02:00:00Z' : null
@@ -179,7 +209,7 @@ export async function mockStudentCare(
 		visit: {
 			id: careVisitId,
 			studentId: careStudent,
-			studentName: 'นักเรียนทดสอบ หนึ่ง',
+			studentName,
 			academicTermId: careTerm,
 			plannedDate: '2026-10-17',
 			visitorIds: options.unassigned ? [id(2999)] : [actor],
@@ -209,7 +239,7 @@ export async function mockStudentCare(
 		case: {
 			id: careCaseId,
 			studentId: careStudent,
-			studentName: 'นักเรียนทดสอบ หนึ่ง',
+			studentName,
 			title: 'การดูแลสมมติ',
 			assignedUserIds: options.unassigned ? [id(2999)] : [actor],
 			status: 'open',
@@ -283,22 +313,21 @@ export async function mockStudentCare(
 				urgentUnacknowledgedCount: 0
 			});
 		}
-		if (path.endsWith('/staff'))
-			return reply(route, [
-				{ id: actor, name: 'ครูผู้รับผิดชอบ' },
-				{ id: id(2011), name: 'ครูผู้ติดตาม' }
-			]);
-		if (path.endsWith('/students'))
-			return reply(route, [
-				{
-					id: careStudent,
-					name: 'นักเรียนทดสอบ หนึ่ง',
-					studentCode: '0001',
-					homeroom: 'ม.1/1',
-					advisorIds: [actor],
-					guardianIds: [id(2012)]
-				}
-			]);
+		if (path.endsWith('/staff')) return reply(route, staff);
+		if (path.endsWith('/students')) {
+			const search = url.searchParams.get('search')?.trim() ?? '';
+			const after = url.searchParams.get('afterId');
+			return reply(
+				route,
+				students
+					.filter(
+						(student) =>
+							(!search || student.name.includes(search) || student.studentCode?.includes(search)) &&
+							(!after || student.id > after)
+					)
+					.slice(0, Number(url.searchParams.get('limit') ?? 50))
+			);
+		}
 		if (path.endsWith('/instruments')) {
 			if (method === 'POST') {
 				const payload: CreateCareInstrumentVersion = route.request().postDataJSON();
@@ -307,7 +336,7 @@ export async function mockStudentCare(
 				version.version = payload.expectedVersion ? payload.expectedVersion + 1 : 1;
 				return reply(route, version);
 			}
-			return reply(route, [version]);
+			return reply(route, options.emptyLists ? [] : [version]);
 		}
 		if (path.includes('/instruments/')) return reply(route, version);
 		if (path.endsWith('/rounds')) {
@@ -317,7 +346,7 @@ export async function mockStudentCare(
 				round = { ...round, ...payload };
 				return reply(route, round);
 			}
-			return reply(route, [round]);
+			return reply(route, options.emptyLists ? [] : [round]);
 		}
 		if (path.includes('/rounds/')) {
 			if (method === 'PUT') {
@@ -333,13 +362,15 @@ export async function mockStudentCare(
 				assignments.push(payload);
 				return reply(route, [detail.assignment]);
 			}
-			const rows = options.manyAssignments
-				? Array.from({ length: 51 }, (_, index) => ({
-						...detail.assignment,
-						id: id(4000 + index),
-						instrumentName: `แบบประเมินประวัติ ${index + 1}`
-					}))
-				: [detail.assignment];
+			const rows = options.emptyLists
+				? []
+				: options.manyAssignments
+					? Array.from({ length: 51 }, (_, index) => ({
+							...detail.assignment,
+							id: id(4000 + index),
+							instrumentName: `แบบประเมินประวัติ ${index + 1}`
+						}))
+					: [detail.assignment];
 			const after = url.searchParams.get('afterId');
 			return reply(
 				route,
@@ -424,7 +455,10 @@ export async function mockStudentCare(
 				};
 				return reply(route, visit);
 			}
-			return reply(route, path.endsWith('/visits') ? [visit.visit] : visit);
+			return reply(
+				route,
+				path.endsWith('/visits') ? (options.emptyLists ? [] : [visit.visit]) : visit
+			);
 		}
 		if (path.endsWith('/events')) {
 			if (method === 'GET') {
@@ -458,7 +492,10 @@ export async function mockStudentCare(
 				};
 				return reply(route, support);
 			}
-			return reply(route, path.endsWith('/cases') ? [support.case] : support);
+			return reply(
+				route,
+				path.endsWith('/cases') ? (options.emptyLists ? [] : [support.case]) : support
+			);
 		}
 		return reply(route, 'Unexpected synthetic endpoint', 404);
 	});

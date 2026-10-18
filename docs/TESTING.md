@@ -1373,16 +1373,21 @@ synthetic Chromium workflows against a ready local frontend:
 
 ```bash
 node --test tests/static/student-care-drafts.test.mjs tests/static/route-data-loading-inventory.test.mjs tests/static/route-data-loading-policy.test.mjs
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/student-care.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/student-care.spec.ts tests/e2e/student-care-usability.spec.ts --project=chromium --workers=1
 ```
 
 The browser fixtures use explicitly synthetic, nonclinical instruments. They exercise
 validated library configuration without instrument statuses, pinned round versions,
 respondent/reviewer assignment, server draft failure/retry/reopen and final submission,
 paper-score provenance, guardian restrictions, resource-specific mixed permissions,
-visit planning/completion, case sources and event history, and reviewer handoff without
-reading private responses. They also inspect narrow light/dark layouts and late-response
-disposal. Keep this evidence separate from publisher authorization, approved clinical
+visit planning/completion, case sources and event history, late-response disposal, and
+reviewer handoff without reading private responses. The usability suite checks rendered
+route regions, long names, accessible controls and navigation on narrow and desktop layouts.
+Light/dark fixtures use the application's `ui-preferences` theme setting and verify the
+rendered theme. Keyboard and emulated Chromium touch workflows cover picker selection,
+clearing and retention, with native page scrolling at both bounded-list boundaries.
+Representative screenshots include scrolled lower form regions. Keep this evidence separate
+from physical-device testing, publisher authorization, approved clinical
 content/interpretation and real-tenant staff/guardian acceptance. SDQ digital content must
 not be reproduced without prior publisher authorization; manual-result mode does not
 provide questionnaire content or invented norms. Follow `.rules` section 11 for generated

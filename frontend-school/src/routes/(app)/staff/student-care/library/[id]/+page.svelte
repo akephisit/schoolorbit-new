@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LibraryBig } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -15,7 +16,11 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="รายละเอียดแบบประเมิน" backHref={careLink('/library', data.term)}
+<PageShell
+	backLabel="กลับคลังแบบประเมิน"
+	icon={LibraryBig}
+	title="รายละเอียดแบบประเมิน"
+	backHref={careLink('/library', data.term)}
 	>{#snippet actions()}{#if $can.has(PERMISSIONS.STUDENT_CARE_CONFIG_MANAGE_SCHOOL)}<Button
 				href={`/staff/student-care/library/new?fromVersionId=${data.id}`}
 				>สร้างรุ่นใหม่จากรุ่นนี้</Button

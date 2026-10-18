@@ -16,6 +16,24 @@ async function readRepoFile(relativePath) {
 	return readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
+async function readPageShellDelegate(relativePath) {
+	return {
+		source: await readProjectFile(relativePath),
+		importPath: relativePath.replace(/^src\/lib\//, '#lib/')
+	};
+}
+
+function rendersPageShellDelegate(pageSource, componentName, delegate) {
+	const importedPath = pageSource.match(
+		new RegExp(`\\bimport\\s+${componentName}\\s+from\\s+['"]([^'"]+)['"]`)
+	)?.[1];
+	return (
+		importedPath === delegate.importPath &&
+		new RegExp(`<${componentName}\\b`).test(pageSource) &&
+		/<PageShell\b/.test(delegate.source)
+	);
+}
+
 async function listFiles(directory) {
 	const entries = await readdir(directory, { withFileTypes: true });
 	const files = [];
@@ -102,48 +120,91 @@ test('every protected app page renders the shared page shell', async () => {
 	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
 	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
 	const pageShellDelegates = new Map([
-		['CalendarViewer', await readProjectFile('src/lib/components/calendar/CalendarViewer.svelte')],
+		[
+			'CalendarViewer',
+			await readPageShellDelegate('src/lib/components/calendar/CalendarViewer.svelte')
+		],
 		[
 			'PromotionRunDetail',
-			await readProjectFile('src/lib/components/academic/lifecycle/PromotionRunDetail.svelte')
+			await readPageShellDelegate('src/lib/components/academic/lifecycle/PromotionRunDetail.svelte')
 		],
 		[
 			'SupervisionWorkspace',
-			await readProjectFile('src/lib/components/supervision/SupervisionWorkspace.svelte')
+			await readPageShellDelegate('src/lib/components/supervision/SupervisionWorkspace.svelte')
 		],
 		[
 			'CertificateRecipientWorkspace',
-			await readProjectFile('src/lib/components/certificates/CertificateRecipientWorkspace.svelte')
+			await readPageShellDelegate(
+				'src/lib/components/certificates/CertificateRecipientWorkspace.svelte'
+			)
 		],
 		[
 			'CertificateCampaignRequests',
-			await readProjectFile('src/lib/components/certificates/CertificateCampaignRequests.svelte')
+			await readPageShellDelegate(
+				'src/lib/components/certificates/CertificateCampaignRequests.svelte'
+			)
 		],
 		[
 			'CertificateIssueQueue',
-			await readProjectFile('src/lib/components/certificates/CertificateIssueQueue.svelte')
+			await readPageShellDelegate('src/lib/components/certificates/CertificateIssueQueue.svelte')
 		],
 		[
 			'CertificateIssueRequestReview',
-			await readProjectFile('src/lib/components/certificates/CertificateIssueRequestReview.svelte')
+			await readPageShellDelegate(
+				'src/lib/components/certificates/CertificateIssueRequestReview.svelte'
+			)
 		],
 		[
 			'MyCertificateList',
-			await readProjectFile('src/lib/components/certificates/MyCertificateList.svelte')
+			await readPageShellDelegate('src/lib/components/certificates/MyCertificateList.svelte')
 		],
 		[
 			'SelfRecordedAchievements',
-			await readProjectFile('src/lib/components/achievement/SelfRecordedAchievements.svelte')
-		]
+			await readPageShellDelegate('src/lib/components/achievement/SelfRecordedAchievements.svelte')
+		],
+		[
+			'RegisterList',
+			await readPageShellDelegate('src/lib/components/correspondence/RegisterList.svelte')
+		],
+		[
+			'CreateForm',
+			await readPageShellDelegate('src/lib/components/correspondence/CreateForm.svelte')
+		],
+		[
+			'DetailWorkspace',
+			await readPageShellDelegate('src/lib/components/correspondence/DetailWorkspace.svelte')
+		],
+		[
+			'SignatureLibrary',
+			await readPageShellDelegate('src/lib/components/correspondence/SignatureLibrary.svelte')
+		],
+		['Templates', await readPageShellDelegate('src/lib/components/correspondence/Templates.svelte')]
 	]);
+	assert.equal(
+		rendersPageShellDelegate(
+			"import CreateForm from '#lib/components/unrelated/CreateForm.svelte'; <CreateForm />",
+			'CreateForm',
+			pageShellDelegates.get('CreateForm')
+		),
+		false,
+		'A same-name component imported from another owner is not a verified PageShell delegate.'
+	);
+	assert.equal(
+		rendersPageShellDelegate(
+			"import CreateForm from '#lib/components/correspondence/CreateForm.svelte'; <CreateForm />",
+			'CreateForm',
+			{ ...pageShellDelegates.get('CreateForm'), source: '<form />' }
+		),
+		false,
+		'A recognized delegate must still render PageShell in its current source.'
+	);
 	const violations = [];
 
 	for (const file of pages) {
 		const source = await readFile(file, 'utf8');
 		if (/<PageShell\b/.test(source)) continue;
 		const verifiedDelegate = Array.from(pageShellDelegates.entries()).some(
-			([componentName, componentSource]) =>
-				new RegExp(`<${componentName}\\b`).test(source) && /<PageShell\b/.test(componentSource)
+			([componentName, delegate]) => rendersPageShellDelegate(source, componentName, delegate)
 		);
 		if (verifiedDelegate) continue;
 		violations.push(path.relative(projectRoot, file));

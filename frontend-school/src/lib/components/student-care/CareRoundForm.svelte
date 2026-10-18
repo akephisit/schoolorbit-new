@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ClipboardList, LibraryBig, Plus } from '@lucide/svelte';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
 	const mutation = new CareMutationIdentity();
 
@@ -107,7 +108,10 @@
 </script>
 
 <form onsubmit={save} class="max-w-3xl space-y-5">
-	<CareSection title="รายละเอียดรอบประเมิน"
+	<CareSection
+		title="1. รายละเอียดรอบประเมิน"
+		icon={ClipboardList}
+		description="ระบุเป้าหมายและช่วงเวลาของรอบ เพื่อให้ผู้ตอบเข้าใจว่าข้อมูลจะใช้เพื่ออะไร"
 		><div class="space-y-2">
 			<Label for="round-name">ชื่อรอบ *</Label><Input
 				id="round-name"
@@ -143,7 +147,8 @@
 			</div>
 		</div></CareSection
 	><CareSection
-		title="รุ่นแบบประเมินที่จะใช้"
+		title="2. เลือกรุ่นแบบประเมิน"
+		icon={LibraryBig}
 		description="รอบนี้จะใช้เฉพาะรุ่นที่เลือกไว้ แม้ภายหลังมีการสร้างรุ่นใหม่"
 	>
 		{#each instrumentPage as instrument (instrument.id)}<div
@@ -192,7 +197,7 @@
 		<Button variant="outline" href={careLink('/rounds', term)}>ยกเลิก</Button><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={!instruments.length}>สร้างรอบประเมิน</LoadingButton
+			disabled={!instruments.length}><Plus aria-hidden="true" />สร้างรอบประเมิน</LoadingButton
 		>
 	</div>
 </form>

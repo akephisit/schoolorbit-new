@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { House } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 
@@ -20,7 +21,11 @@
 	}
 </script>
 
-<PageShell title="วางแผนเยี่ยมบ้าน" backHref={careLink('/visits', data.term)}
+<PageShell
+	backLabel="กลับรายการเยี่ยมบ้าน"
+	icon={House}
+	title="วางแผนเยี่ยมบ้าน"
+	backHref={careLink('/visits', data.term)}
 	>{#if data.term}{#key $careIdentity + data.term}<CareRegion
 				initial={data.initial}
 				permissions={careManagePermissions}

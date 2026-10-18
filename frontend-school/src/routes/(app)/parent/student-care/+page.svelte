@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Inbox } from '@lucide/svelte';
 	import CareFilters from '#lib/components/student-care/CareFilters.svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -14,7 +15,10 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="แบบประเมินเพื่อการดูแล" description="แบบประเมินที่โรงเรียนมอบหมายให้คุณตอบ"
+<PageShell
+	icon={Inbox}
+	title="แบบประเมินสำหรับผู้ปกครอง"
+	description="แบบประเมินที่โรงเรียนมอบหมายให้คุณตอบเกี่ยวกับบุตรหลาน แสดงข้อมูลตามสิทธิ์ของคุณ"
 	>{#key data.url}<CareFilters
 			url={data.url}
 			kind="assignments"
@@ -22,7 +26,11 @@
 			initial={data.initial}
 			permissions={careReadPermissions}
 			retry={(signal) => ownCareAssignments(data.query, { signal })}
-			>{#snippet children(items)}<CareAssignmentList {items} /><CarePager
+			>{#snippet children(items)}<CareAssignmentList
+					{items}
+					audience="own"
+					filtered={!!data.query.status || !!data.query.afterId}
+				/><CarePager
 					url={data.url}
 					lastId={items.at(-1)?.id}
 					count={items.length}
