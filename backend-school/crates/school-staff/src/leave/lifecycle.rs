@@ -482,6 +482,8 @@ pub async fn act(
             signature: input.signature.as_ref().map(|s| s.input.clone()),
             reassign_user_id: None,
             reassign_from_user_id: None,
+            assignment_id: None,
+            routing: None,
         },
     )
     .await?;

@@ -157,6 +157,7 @@ export async function mockLeave(
 							actionPath: leaveDetailPath,
 							templateId: policy.templateId,
 							templateVersion: policy.version,
+							directed: null,
 							revision: request.revision,
 							status: active ? 'active' : 'completed',
 							currentStep,

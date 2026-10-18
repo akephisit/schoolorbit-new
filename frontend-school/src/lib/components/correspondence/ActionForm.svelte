@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import {
 		actOnCorrespondence,
@@ -11,6 +12,8 @@
 		type SignatureAsset,
 		type SignatureInput,
 		type DocumentAnnotation,
+		type ProcessActionRequest,
+		type DirectedRoutingRequest,
 		type CorrespondenceOptions
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
@@ -20,6 +23,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { actionLabels } from '#lib/correspondence/presentation.js';
+	import { directedActionLabel } from '#lib/correspondence/directed.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -29,9 +33,12 @@
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import SignaturePad from './SignaturePad.svelte';
 	import Choice from './Choice.svelte';
+	import DirectedRoutingFields from './DirectedRoutingFields.svelte';
+	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	let {
 		detail,
 		action,
+		assignmentId,
 		annotations,
 		signature = $bindable(),
 		oncomplete,
@@ -43,6 +50,7 @@
 	}: {
 		detail: CorrespondenceDetail;
 		action: ProcessAction;
+		assignmentId?: string;
 		annotations: DocumentAnnotation[];
 		signature?: SignatureInput;
 		oncomplete: (result: CorrespondenceDetail) => void;
@@ -69,8 +77,40 @@
 		reassignUserId = $state(''),
 		reassignFromUserId = $state(''),
 		options = $state<CorrespondenceOptions | null>(null);
+	const selectedAssignment = $derived(
+		detail.instance?.directed?.assignments.find((item) => item.id === assignmentId)
+	);
+	const inheritedReviewerNames = $derived.by(() => {
+		const assignments = detail.instance?.directed?.assignments ?? [];
+		const names: string[] = [];
+		const visited = new SvelteSet<string>();
+		let current = selectedAssignment;
+		while (current && !visited.has(current.id)) {
+			visited.add(current.id);
+			if (current.reviewer) names.push(current.reviewer.displayName);
+			current = assignments.find((item) => item.id === current?.parentId);
+		}
+		return [...new SvelteSet(names)];
+	});
+	let routing = $state<DirectedRoutingRequest>({
+		recipients: [],
+		requireReview: false,
+		reviewer: null
+	});
+	let optionsLoading = $state(false);
+	let routingInitialized = false;
+	const intent = new MutationIntent<ProcessActionRequest>();
+	const uploadedEvidence = new SvelteMap<File, string>();
+	let uncertain = $state(false);
 	const definition = $derived(detail.instance?.steps[detail.instance.currentStep]?.definition);
-	const requirements = $derived(actionRequirements(action, definition));
+	const terminalCopy = $derived(
+		selectedAssignment?.required === false && ['completed', 'closed'].includes(detail.record.status)
+	);
+	const requirements = $derived(
+		terminalCopy
+			? { acceptsEvidence: false, comment: false, evidence: false, signature: false }
+			: actionRequirements(action, definition)
+	);
 	const pendingRecipients = $derived(
 		detail.instance?.steps[detail.instance.currentStep]?.recipients.filter(
 			(recipient) => !recipient.completedAt
@@ -78,12 +118,23 @@
 	);
 	const recovery = $derived(
 		action === 'reassign' &&
+			!selectedAssignment &&
 			!pendingRecipients.some((recipient) => recipient.userId === $authStore.user?.id)
 	);
-	const commentRequired = $derived(requirements.comment || recovery);
+	const commentRequired = $derived(
+		requirements.comment ||
+			recovery ||
+			(action === 'review' &&
+				selectedAssignment?.purpose === 'decide' &&
+				selectedAssignment.status === 'pending')
+	);
 	const needsSignature = $derived(requirements.signature);
 	let includeSignature = $state(false);
 	const signing = $derived(needsSignature || includeSignature);
+	const actionLabel = $derived(
+		selectedAssignment ? directedActionLabel(action, selectedAssignment) : actionLabels[action]
+	);
+
 	let confirmationBasis = '';
 	$effect.pre(() => {
 		const basis = JSON.stringify([
@@ -103,7 +154,13 @@
 	});
 	$effect(() => {
 		ondirtychange?.(
-			!!comment || paths.length > 0 || !!assetId || evidence.length > 0 || !!reassignUserId
+			!!comment ||
+				paths.length > 0 ||
+				!!assetId ||
+				evidence.length > 0 ||
+				!!reassignUserId ||
+				routing.recipients.length > 0 ||
+				!!routing.requireReview
 		);
 	});
 	$effect(() => {
@@ -176,15 +233,35 @@
 		}
 	}
 	async function loadReassign() {
+		optionsLoading = true;
 		try {
-			const result = await getCorrespondenceOptions('', { signal: controller.signal });
-			if (!disposed) options = result;
+			const result = await getCorrespondenceOptions(
+				'',
+				{ signal: controller.signal },
+				detail.record.register
+			);
+			if (!disposed) {
+				options = result;
+				if (!routingInitialized && action === 'route') {
+					routingInitialized = true;
+					const defaults = result.routingSettings.find(
+						(item) => item.register === detail.record.register
+					);
+					routing = {
+						recipients: [],
+						requireReview: defaults?.defaultRequireReview ?? false,
+						reviewer: defaults?.defaultRequireReview ? defaults.defaultReviewer : null
+					};
+				}
+			}
 		} catch (cause) {
 			if (!disposed) error = cause instanceof Error ? cause.message : 'โหลดผู้รับไม่สำเร็จ';
+		} finally {
+			if (!disposed) optionsLoading = false;
 		}
 	}
 	$effect(() => {
-		if (action === 'reassign') void loadReassign();
+		if (action === 'reassign' || action === 'route') void loadReassign();
 	});
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -206,6 +283,14 @@
 			error = 'เลือกผู้รับผิดชอบ';
 			return;
 		}
+		if (
+			action === 'route' &&
+			(!routing.recipients.some((item) => item.required !== false) ||
+				(routing.requireReview && !routing.reviewer))
+		) {
+			error = 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ และเลือกผู้ตรวจทานหากกำหนดให้ตรวจทาน';
+			return;
+		}
 		if (signing) {
 			const invalid = validateSigningDraft(
 				signature,
@@ -225,9 +310,14 @@
 		try {
 			const evidenceFileIds: string[] = [];
 			for (const file of requirements.acceptsEvidence ? evidence : []) {
-				const uploaded = await uploadFile(file, 'correspondence_document', detail.record.id);
-				if (disposed) return;
-				evidenceFileIds.push(uploaded.id);
+				let fileId = uploadedEvidence.get(file);
+				if (!fileId) {
+					const uploaded = await uploadFile(file, 'correspondence_document', detail.record.id);
+					if (disposed) return;
+					fileId = uploaded.id;
+					uploadedEvidence.set(file, fileId);
+				}
+				evidenceFileIds.push(fileId);
 			}
 			const signingInput =
 				signing && signature
@@ -249,11 +339,12 @@
 						.flatMap((entry) => entry.annotations)
 				].map((annotation) => annotation.id)
 			);
-			const result = await actOnCorrespondence(detail.record.id, {
-				requestId: crypto.randomUUID(),
+			const body: Omit<ProcessActionRequest, 'requestId'> = {
+				assignmentId,
+				routing: action === 'route' ? routing : undefined,
 				expectedRevision,
 				action,
-				comment: action === 'read' ? undefined : comment.trim() || undefined,
+				comment: action === 'read' || terminalCopy ? undefined : comment.trim() || undefined,
 				evidenceFileIds,
 				signature: signingInput,
 				reassignUserId: reassignUserId || undefined,
@@ -261,9 +352,16 @@
 				annotations: requirements.acceptsEvidence
 					? annotations.filter((annotation) => !acceptedAnnotationIds.has(annotation.id))
 					: []
-			});
+			};
+			const result = await actOnCorrespondence(
+				detail.record.id,
+				detail.instance?.directed ? intent.begin(body) : { ...body, requestId: crypto.randomUUID() }
+			);
+			intent.accepted();
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
+			intent.rejected(cause);
+			uncertain = !!detail.instance?.directed && intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
 		} finally {
 			if (!disposed) {
@@ -275,7 +373,12 @@
 </script>
 
 <form class="space-y-4" onsubmit={submit} data-testid="correspondence-action">
-	<h3 class="font-semibold">{actionLabels[action]}</h3>
+	<h3 class="font-semibold">{actionLabel}</h3>
+	{#if selectedAssignment && ['reject', 'return_for_revision'].includes(action)}<p
+			class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
+		>
+			การดำเนินการนี้มีผลต่อหนังสือทั้งเรื่องและทุกสาขา กรุณาระบุเหตุผลก่อนยืนยัน
+		</p>{/if}
 	{#if error}<PageState
 			variant="error"
 			title={error}
@@ -302,167 +405,196 @@
 				}}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
 			>
 		</div>{/if}
-	{#if action !== 'read'}<div class="space-y-2">
-			<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label><Textarea
-				id="action-comment"
-				rows={4}
-				bind:value={comment}
-				disabled={pending}
-			/>
-		</div>{/if}
-	{#if action === 'reassign'}{#if recovery}<Choice
-				id="reassign-source"
-				label="ผู้รับเดิมที่ต้องเปลี่ยน"
-				bind:value={reassignFromUserId}
-				options={pendingRecipients.map((recipient) => ({
-					value: recipient.userId,
-					label: recipient.displayName
-				}))}
-				disabled={pending}
-			/>{/if}{#if options}<Choice
-				id="reassign-user"
-				label="ผู้รับผิดชอบใหม่"
-				bind:value={reassignUserId}
-				options={options.users
-					.filter((user) => !pendingRecipients.some((recipient) => recipient.userId === user.id))
-					.map((user) => ({ value: user.id, label: user.displayName }))}
-				searchable
-				disabled={pending}
-			/>{:else}<Button type="button" variant="outline" onclick={loadReassign}
-				>โหลดผู้รับผิดชอบ</Button
-			>{/if}{/if}
-	{#if requirements.acceptsEvidence}<div class="space-y-2">
-			<Label for="action-evidence">หลักฐานประกอบ{requirements.evidence ? ' *' : ''}</Label><Input
-				id="action-evidence"
-				type="file"
-				multiple
-				disabled={pending}
-				onchange={(event) => {
-					evidence = Array.from(event.currentTarget.files ?? []);
-				}}
-			/>
-		</div>{/if}
-	{#if action === 'approve' && !needsSignature && $can.has(PERMISSIONS.CORRESPONDENCE_SIGN_OWN)}<div
-			class="flex items-center gap-2"
-		>
-			<Checkbox id="action-sign" bind:checked={includeSignature} disabled={pending} /><Label
-				for="action-sign">ลงนามพร้อมอนุมัติ</Label
-			>
-		</div>{/if}
-	{#if signing && signature}
-		<div class="space-y-4 rounded-xl border bg-muted/20 p-3">
-			<div class="flex gap-2">
-				<Button
-					type="button"
-					variant={method === 'drawn' ? 'secondary' : 'outline'}
-					size="sm"
-					onclick={() => selectMethod('drawn')}>วาดใหม่</Button
-				><Button
-					type="button"
-					variant={method === 'image' ? 'secondary' : 'outline'}
-					size="sm"
-					onclick={() => selectMethod('image')}>เลือกลายมือชื่อที่บันทึก</Button
-				>
-			</div>
-			{#if method === 'drawn'}<SignaturePad
-					bind:paths
-					disabled={pending}
-					onimage={uploadImage}
-				/>{:else}
-				{#if assetsError}<PageState
-						variant="error"
-						title={assetsError}
-						actionLabel="ลองอีกครั้ง"
-						onaction={loadAssets}
-					/>{/if}
-				<Choice
-					id="signature-asset"
-					label="ลายมือชื่อของฉัน"
-					bind:value={assetId}
-					options={assets.map((asset) => ({ value: asset.id, label: asset.label }))}
-					disabled={pending || assetsLoading}
+	{#if uncertain}<p class="text-sm text-warning">
+			ยังยืนยันผลการดำเนินการไม่ได้ กดยืนยันอีกครั้งเพื่อตรวจผลด้วยคำขอเดิม
+		</p>{/if}
+	<fieldset disabled={pending || uncertain} class="min-w-0 space-y-4">
+		{#if action === 'route'}
+			{#if options}<DirectedRoutingFields
+					{options}
+					bind:routing
+					register={detail.record.register}
+					{inheritedReviewerNames}
+					disabled={pending || uncertain}
 				/>
-				{#if assets.find((asset) => asset.id === assetId)}{@const asset = assets.find(
-						(asset) => asset.id === assetId
-					)!}
-					<div class="rounded-md border bg-white p-3">
-						<PrivateFileImage
-							fileId={asset.fileId}
-							resourceId={$authStore.user?.id}
-							alt="ภาพลายมือชื่อที่เลือก"
-							class="h-24 w-full object-contain"
-						/>
-					</div>{/if}
-				<div class="space-y-2">
-					<Label for="action-signature-image">เพิ่มภาพลายมือชื่อ</Label><Input
-						id="action-signature-image"
-						type="file"
-						accept="image/png,image/jpeg,image/webp"
-						disabled={pending || imagePending}
-						onchange={(event) => {
-							const file = event.currentTarget.files?.[0];
-							if (file) void uploadImage(file);
-						}}
-					/>
-				</div>
-			{/if}
-			<Button
-				href={`${page.url.pathname}${page.url.search}#correspondence-document`}
-				variant="outline">วางและปรับขนาดบนเอกสาร</Button
+			{:else if optionsLoading}<p role="status" class="text-sm text-muted-foreground">
+					กำลังโหลดผู้รับคำสั่ง…
+				</p>
+			{:else}<Button type="button" variant="outline" onclick={loadReassign}
+					>โหลดผู้รับคำสั่งอีกครั้ง</Button
+				>{/if}
+		{/if}
+		{#if action !== 'read' && !terminalCopy}<div class="space-y-2">
+				<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label
+				><Textarea id="action-comment" rows={4} bind:value={comment} disabled={pending} />
+			</div>{/if}
+		{#if action === 'reassign'}{#if recovery}<Choice
+					id="reassign-source"
+					label="ผู้รับเดิมที่ต้องเปลี่ยน"
+					bind:value={reassignFromUserId}
+					options={pendingRecipients.map((recipient) => ({
+						value: recipient.userId,
+						label: recipient.displayName
+					}))}
+					disabled={pending}
+				/>{/if}{#if options}<Choice
+					id="reassign-user"
+					label="ผู้รับผิดชอบใหม่"
+					bind:value={reassignUserId}
+					options={(selectedAssignment ? options.reviewers : options.users)
+						.filter((user) =>
+							selectedAssignment
+								? user.id !==
+									(selectedAssignment.status === 'waiting_review'
+										? selectedAssignment.reviewer?.userId
+										: selectedAssignment.recipient.userId)
+								: !pendingRecipients.some((recipient) => recipient.userId === user.id)
+						)
+						.map((user) => ({ value: user.id, label: user.displayName }))}
+					searchable
+					disabled={pending}
+				/>{:else}<Button type="button" variant="outline" onclick={loadReassign}
+					>โหลดผู้รับผิดชอบ</Button
+				>{/if}{/if}
+		{#if requirements.acceptsEvidence}<div class="space-y-2">
+				<Label for="action-evidence">หลักฐานประกอบ{requirements.evidence ? ' *' : ''}</Label><Input
+					id="action-evidence"
+					type="file"
+					multiple
+					disabled={pending}
+					onchange={(event) => {
+						evidence = Array.from(event.currentTarget.files ?? []);
+					}}
+				/>
+			</div>{/if}
+		{#if (['approve', 'route'].includes(action) || (action === 'review' && selectedAssignment?.purpose === 'decide')) && !needsSignature && $can.has(PERMISSIONS.CORRESPONDENCE_SIGN_OWN)}<div
+				class="flex items-center gap-2"
 			>
-			<details>
-				<summary class="cursor-pointer text-sm font-medium"
-					>ปรับตำแหน่งละเอียด / ใช้แป้นพิมพ์</summary
+				<Checkbox id="action-sign" bind:checked={includeSignature} disabled={pending} /><Label
+					for="action-sign"
+					>{action === 'route'
+						? 'ลงนามพร้อมคำสั่ง'
+						: selectedAssignment?.purpose === 'decide'
+							? 'ลงนามพร้อมผลพิจารณา'
+							: 'ลงนามพร้อมอนุมัติ'}</Label
 				>
-				<div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-					{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย (%)', min: 0, max: 100, step: 1 }, { key: 'y', label: 'จากบน (%)', min: 0, max: 100, step: 1 }, { key: 'width', label: 'ความกว้าง (%)', min: 1, max: 100, step: 1 }, { key: 'height', label: 'ความสูง (%)', min: 1, max: 100, step: 1 }] as field (field.key)}<div
-							class="space-y-2"
-						>
-							<Label for={`placement-${field.key}`}>{field.label}</Label><Input
-								id={`placement-${field.key}`}
-								type="number"
-								min={field.min}
-								max={field.max}
-								step={field.key === 'page' ? 1 : 'any'}
-								value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
-									(field.key === 'page' ? 1 : 100)}
-								disabled={pending}
-								oninput={(event) => {
-									if (signature)
-										signature = {
-											...signature,
-											[field.key]:
-												Number(event.currentTarget.value) / (field.key === 'page' ? 1 : 100)
-										};
-									confirmed = false;
-								}}
-							/>
-						</div>{/each}
+			</div>{/if}
+		{#if signing && signature}
+			<div class="space-y-4 rounded-xl border bg-muted/20 p-3">
+				<div class="flex gap-2">
+					<Button
+						type="button"
+						variant={method === 'drawn' ? 'secondary' : 'outline'}
+						size="sm"
+						onclick={() => selectMethod('drawn')}>วาดใหม่</Button
+					><Button
+						type="button"
+						variant={method === 'image' ? 'secondary' : 'outline'}
+						size="sm"
+						onclick={() => selectMethod('image')}>เลือกลายมือชื่อที่บันทึก</Button
+					>
 				</div>
-			</details>
-			<p class="text-xs text-muted-foreground">
-				ปรับตำแหน่งและขนาดเป็นเปอร์เซ็นต์ของหน้า หรือแตะบนเอกสารเพื่อวางลายมือชื่อ
-			</p>
-			<div class="flex items-start gap-2">
-				<Checkbox
-					id="signature-confirm"
-					bind:checked={confirmed}
-					disabled={pending || imagePending}
-				/><Label for="signature-confirm" class="leading-relaxed"
-					>ยืนยันใช้ลายมือชื่อนี้กับเอกสารฉบับ {signature.documentRevision} และการ{actionLabels[
-						action
-					]}ครั้งนี้</Label
+				{#if method === 'drawn'}<SignaturePad
+						bind:paths
+						disabled={pending}
+						onimage={uploadImage}
+					/>{:else}
+					{#if assetsError}<PageState
+							variant="error"
+							title={assetsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadAssets}
+						/>{/if}
+					<Choice
+						id="signature-asset"
+						label="ลายมือชื่อของฉัน"
+						bind:value={assetId}
+						options={assets.map((asset) => ({ value: asset.id, label: asset.label }))}
+						disabled={pending || assetsLoading}
+					/>
+					{#if assets.find((asset) => asset.id === assetId)}{@const asset = assets.find(
+							(asset) => asset.id === assetId
+						)!}
+						<div class="rounded-md border bg-white p-3">
+							<PrivateFileImage
+								fileId={asset.fileId}
+								resourceId={$authStore.user?.id}
+								alt="ภาพลายมือชื่อที่เลือก"
+								class="h-24 w-full object-contain"
+							/>
+						</div>{/if}
+					<div class="space-y-2">
+						<Label for="action-signature-image">เพิ่มภาพลายมือชื่อ</Label><Input
+							id="action-signature-image"
+							type="file"
+							accept="image/png,image/jpeg,image/webp"
+							disabled={pending || imagePending}
+							onchange={(event) => {
+								const file = event.currentTarget.files?.[0];
+								if (file) void uploadImage(file);
+							}}
+						/>
+					</div>
+				{/if}
+				<Button
+					href={`${page.url.pathname}${page.url.search}#correspondence-document`}
+					variant="outline">วางและปรับขนาดบนเอกสาร</Button
 				>
+				<details>
+					<summary class="cursor-pointer text-sm font-medium"
+						>ปรับตำแหน่งละเอียด / ใช้แป้นพิมพ์</summary
+					>
+					<div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+						{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย (%)', min: 0, max: 100, step: 1 }, { key: 'y', label: 'จากบน (%)', min: 0, max: 100, step: 1 }, { key: 'width', label: 'ความกว้าง (%)', min: 1, max: 100, step: 1 }, { key: 'height', label: 'ความสูง (%)', min: 1, max: 100, step: 1 }] as field (field.key)}<div
+								class="space-y-2"
+							>
+								<Label for={`placement-${field.key}`}>{field.label}</Label><Input
+									id={`placement-${field.key}`}
+									type="number"
+									min={field.min}
+									max={field.max}
+									step={field.key === 'page' ? 1 : 'any'}
+									value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
+										(field.key === 'page' ? 1 : 100)}
+									disabled={pending}
+									oninput={(event) => {
+										if (signature)
+											signature = {
+												...signature,
+												[field.key]:
+													Number(event.currentTarget.value) / (field.key === 'page' ? 1 : 100)
+											};
+										confirmed = false;
+									}}
+								/>
+							</div>{/each}
+					</div>
+				</details>
+				<p class="text-xs text-muted-foreground">
+					ปรับตำแหน่งและขนาดเป็นเปอร์เซ็นต์ของหน้า หรือแตะบนเอกสารเพื่อวางลายมือชื่อ
+				</p>
+				<div class="flex items-start gap-2">
+					<Checkbox
+						id="signature-confirm"
+						bind:checked={confirmed}
+						disabled={pending || imagePending}
+					/><Label for="signature-confirm" class="leading-relaxed"
+						>ยืนยันใช้ลายมือชื่อนี้กับเอกสารฉบับ {signature.documentRevision} และการ{actionLabel}ครั้งนี้</Label
+					>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					ระบบบันทึกผู้ลงนาม เวลา และเอกสารที่ใช้ลงนาม เป็นหลักฐานลงลายมือชื่ออิเล็กทรอนิกส์
+				</p>
 			</div>
-			<p class="text-xs text-muted-foreground">
-				ระบบบันทึกผู้ลงนาม เวลา และเอกสารที่ใช้ลงนาม เป็นหลักฐานลงลายมือชื่ออิเล็กทรอนิกส์
-			</p>
-		</div>
-	{/if}
+		{/if}
+	</fieldset>
 	<div class="flex flex-wrap justify-end gap-2">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={imagePending}
-			>ยืนยัน{actionLabels[action]}</LoadingButton
+		><LoadingButton
+			type="submit"
+			loading={pending}
+			disabled={imagePending}
+			variant={action === 'reject' ? 'destructive' : 'default'}>ยืนยัน{actionLabel}</LoadingButton
 		>
 	</div>
 </form>

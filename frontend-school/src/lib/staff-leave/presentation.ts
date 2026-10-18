@@ -23,6 +23,7 @@ export const leaveStatusLabels: Record<LeaveStatus, string> = {
 	cancellation_pending: 'รออนุมัติยกเลิก'
 };
 export const leaveActionLabels: Record<ProcessAction, string> = {
+	route: 'ส่งต่อ',
 	read: 'รับทราบ',
 	acknowledge: 'รับทราบ',
 	review: 'ตรวจสอบผ่าน',

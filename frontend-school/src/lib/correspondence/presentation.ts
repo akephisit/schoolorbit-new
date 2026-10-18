@@ -19,6 +19,7 @@ export const statusLabels: Record<CorrespondenceSummary['status'], string> = {
 };
 export const actionLabels: Record<ProcessAction, string> = {
 	read: 'เปิดอ่าน',
+	route: 'พิจารณาสั่งการ',
 	acknowledge: 'รับทราบ',
 	review: 'เสนอความเห็น',
 	approve: 'อนุมัติ',

@@ -20,12 +20,16 @@
 		options,
 		disabled = false,
 		prefix = 'recipient',
+		directed = false,
+		onadd,
 		onlookups
 	}: {
 		recipients?: ProcessRecipient[];
 		options: CorrespondenceOptions;
 		disabled?: boolean;
 		prefix?: string;
+		directed?: boolean;
+		onadd?: (recipients: ProcessRecipient[]) => void;
 		onlookups?: (options: CorrespondenceOptions) => void;
 	} = $props();
 	let results = $state<CorrespondenceOptions | null>(null),
@@ -39,7 +43,11 @@
 		users: [],
 		organizations: [],
 		positions: [],
-		templates: []
+		templates: [],
+		decisionMakers: [],
+		reviewers: [],
+		routingSettings: [],
+		canManageRoutingSettings: false
 	});
 	const known = $derived(mergeRecipientLookups(options, cached));
 	async function search() {
@@ -64,7 +72,10 @@
 		selected = $state<string[]>([]);
 	const choices = $derived(
 		kind === 'user'
-			? visible.users.map((item) => ({ value: item.id, label: item.displayName }))
+			? (directed ? visible.reviewers : visible.users).map((item) => ({
+					value: item.id,
+					label: item.displayName
+				}))
 			: kind === 'organization_unit'
 				? visible.organizations.map((item) => ({ value: item.id, label: item.name }))
 				: visible.positions.map((item) => ({
@@ -87,6 +98,11 @@
 	}
 	function add() {
 		const additions = selected.map(recipientFor);
+		if (onadd) {
+			onadd(additions);
+			selected = [];
+			return;
+		}
 		const keys = new SvelteSet(recipients.map(recipientKey));
 		recipients = [
 			...recipients,
@@ -136,7 +152,11 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={search}
 		/>{/if}
-	<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
+	<div
+		class={directed
+			? 'grid gap-3'
+			: 'grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end'}
+	>
 		<Choice
 			id={`${prefix}-kind`}
 			label="กลุ่มผู้รับ"
@@ -181,7 +201,8 @@
 		>
 	</div>
 	<p class="text-xs text-muted-foreground">
-		หน่วยงานหมายถึงสมาชิกในหน่วยงาน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก
+		{#if directed}หน่วยงานหมายถึงผู้รับผิดชอบหน่วยงานปัจจุบัน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก
+		{:else}หน่วยงานหมายถึงสมาชิกในหน่วยงาน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก{/if}
 		ระบบบันทึกรายชื่อจริงเมื่อส่งหนังสือ
 	</p>
 	<ul class="space-y-2" aria-label="ผู้รับที่เพิ่มแล้ว">

@@ -111,7 +111,8 @@ const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
             JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             JOIN role_permissions rp ON r.id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
-            WHERE ur.ended_at IS NULL
+            WHERE ur.started_at <= CURRENT_DATE
+              AND (ur.ended_at IS NULL OR ur.ended_at > CURRENT_DATE)
 
             UNION
 
@@ -122,7 +123,8 @@ const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
             JOIN organization_permission_grants opg
               ON ou.id = opg.organization_unit_id
             JOIN permissions p ON opg.permission_id = p.id AND p.is_active = true
-            WHERE (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+            WHERE om.started_at <= CURRENT_DATE
+              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
               AND (opg.position_code IS NULL OR opg.position_code = om.position_code)
 
             UNION
@@ -132,7 +134,8 @@ const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
             LEFT JOIN organization_units delegated_ou
               ON delegated_ou.id = opd.organization_unit_id
             JOIN permissions p ON opd.permission_id = p.id AND p.is_active = true
-            WHERE opd.revoked_at IS NULL
+            WHERE opd.started_at <= NOW()
+              AND opd.revoked_at IS NULL
               AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
               AND (opd.organization_unit_id IS NULL OR delegated_ou.is_active = true)
         )

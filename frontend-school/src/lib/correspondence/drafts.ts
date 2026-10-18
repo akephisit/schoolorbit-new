@@ -54,6 +54,7 @@ export function historyActionLabel(action: string): string {
 				revise: 'บันทึกฉบับแก้ไข',
 				send: 'ส่งหนังสือ',
 				read: 'เปิดอ่าน',
+				route: 'พิจารณาสั่งการ',
 				acknowledge: 'รับทราบ',
 				review: 'เสนอความเห็น',
 				approve: 'อนุมัติ',

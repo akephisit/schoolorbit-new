@@ -7602,6 +7602,12 @@
         "properties": {
           "data": {
             "properties": {
+              "assignmentActions": {
+                "items": {
+                  "$ref": "#/components/schemas/DirectedAssignmentActions"
+                },
+                "type": "array"
+              },
               "availableActions": {
                 "items": {
                   "$ref": "#/components/schemas/ProcessAction"
@@ -7664,7 +7670,8 @@
               "signatures",
               "canManage",
               "canAct",
-              "availableActions"
+              "availableActions",
+              "assignmentActions"
             ],
             "type": "object"
           },
@@ -7732,6 +7739,15 @@
         "properties": {
           "data": {
             "properties": {
+              "canManageRoutingSettings": {
+                "type": "boolean"
+              },
+              "decisionMakers": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceUserOption"
+                },
+                "type": "array"
+              },
               "organizations": {
                 "items": {
                   "$ref": "#/components/schemas/CorrespondenceOrganizationOption"
@@ -7741,6 +7757,18 @@
               "positions": {
                 "items": {
                   "$ref": "#/components/schemas/CorrespondencePositionOption"
+                },
+                "type": "array"
+              },
+              "reviewers": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceUserOption"
+                },
+                "type": "array"
+              },
+              "routingSettings": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceRoutingSettings"
                 },
                 "type": "array"
               },
@@ -7761,7 +7789,81 @@
               "users",
               "organizations",
               "positions",
-              "templates"
+              "templates",
+              "decisionMakers",
+              "reviewers",
+              "routingSettings",
+              "canManageRoutingSettings"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CorrespondenceRoutingSettings": {
+        "properties": {
+          "data": {
+            "properties": {
+              "defaultAllowOnwardAssignment": {
+                "type": "boolean"
+              },
+              "defaultFirstRecipient": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessRecipient"
+                  }
+                ]
+              },
+              "defaultPurpose": {
+                "$ref": "#/components/schemas/DirectedPurpose"
+              },
+              "defaultRequireReview": {
+                "type": "boolean"
+              },
+              "defaultReviewer": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessRecipient"
+                  }
+                ]
+              },
+              "eligibleDecisionMakers": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessRecipient"
+                },
+                "type": "array"
+              },
+              "register": {
+                "$ref": "#/components/schemas/CorrespondenceRegister"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "register",
+              "revision",
+              "eligibleDecisionMakers",
+              "defaultPurpose",
+              "defaultRequireReview",
+              "defaultAllowOnwardAssignment"
             ],
             "type": "object"
           },
@@ -13405,6 +13507,16 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "directed": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DirectedProcess"
+                  }
+                ]
+              },
               "dueAt": {
                 "format": "date-time",
                 "type": [
@@ -13434,11 +13546,17 @@
               },
               "templateId": {
                 "format": "uuid",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "templateVersion": {
                 "format": "int64",
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "title": {
                 "type": "string"
@@ -13449,8 +13567,6 @@
               "source",
               "title",
               "actionPath",
-              "templateId",
-              "templateVersion",
               "revision",
               "status",
               "currentStep",
@@ -22415,6 +22531,79 @@
                 "createdAt",
                 "updatedAt",
                 "capabilities"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_CorrespondenceRoutingSettings": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "defaultAllowOnwardAssignment": {
+                  "type": "boolean"
+                },
+                "defaultFirstRecipient": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProcessRecipient"
+                    }
+                  ]
+                },
+                "defaultPurpose": {
+                  "$ref": "#/components/schemas/DirectedPurpose"
+                },
+                "defaultRequireReview": {
+                  "type": "boolean"
+                },
+                "defaultReviewer": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProcessRecipient"
+                    }
+                  ]
+                },
+                "eligibleDecisionMakers": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessRecipient"
+                  },
+                  "type": "array"
+                },
+                "register": {
+                  "$ref": "#/components/schemas/CorrespondenceRegister"
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "register",
+                "revision",
+                "eligibleDecisionMakers",
+                "defaultPurpose",
+                "defaultRequireReview",
+                "defaultAllowOnwardAssignment"
               ],
               "type": "object"
             },
@@ -35633,6 +35822,12 @@
       },
       "CorrespondenceDetail": {
         "properties": {
+          "assignmentActions": {
+            "items": {
+              "$ref": "#/components/schemas/DirectedAssignmentActions"
+            },
+            "type": "array"
+          },
           "availableActions": {
             "items": {
               "$ref": "#/components/schemas/ProcessAction"
@@ -35695,7 +35890,8 @@
           "signatures",
           "canManage",
           "canAct",
-          "availableActions"
+          "availableActions",
+          "assignmentActions"
         ],
         "type": "object"
       },
@@ -35939,6 +36135,15 @@
       },
       "CorrespondenceOptions": {
         "properties": {
+          "canManageRoutingSettings": {
+            "type": "boolean"
+          },
+          "decisionMakers": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
+          },
           "organizations": {
             "items": {
               "$ref": "#/components/schemas/CorrespondenceOrganizationOption"
@@ -35948,6 +36153,18 @@
           "positions": {
             "items": {
               "$ref": "#/components/schemas/CorrespondencePositionOption"
+            },
+            "type": "array"
+          },
+          "reviewers": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
+          },
+          "routingSettings": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceRoutingSettings"
             },
             "type": "array"
           },
@@ -35968,7 +36185,11 @@
           "users",
           "organizations",
           "positions",
-          "templates"
+          "templates",
+          "decisionMakers",
+          "reviewers",
+          "routingSettings",
+          "canManageRoutingSettings"
         ],
         "type": "object"
       },
@@ -36015,6 +36236,61 @@
           "internal"
         ],
         "type": "string"
+      },
+      "CorrespondenceRoutingSettings": {
+        "properties": {
+          "defaultAllowOnwardAssignment": {
+            "type": "boolean"
+          },
+          "defaultFirstRecipient": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipient"
+              }
+            ]
+          },
+          "defaultPurpose": {
+            "$ref": "#/components/schemas/DirectedPurpose"
+          },
+          "defaultRequireReview": {
+            "type": "boolean"
+          },
+          "defaultReviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipient"
+              }
+            ]
+          },
+          "eligibleDecisionMakers": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRecipient"
+            },
+            "type": "array"
+          },
+          "register": {
+            "$ref": "#/components/schemas/CorrespondenceRegister"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "register",
+          "revision",
+          "eligibleDecisionMakers",
+          "defaultPurpose",
+          "defaultRequireReview",
+          "defaultAllowOnwardAssignment"
+        ],
+        "type": "object"
       },
       "CorrespondenceSigningEvidence": {
         "properties": {
@@ -41411,6 +41687,230 @@
           "teacherId",
           "displayName",
           "role"
+        ],
+        "type": "object"
+      },
+      "DirectedAssignment": {
+        "properties": {
+          "allowOnwardAssignment": {
+            "type": "boolean"
+          },
+          "assignedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "parentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/DirectedPurpose"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/ProcessRecipientSnapshot"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "reviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipientSnapshot"
+              }
+            ]
+          },
+          "reviewWorkItemId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selector": {
+            "$ref": "#/components/schemas/ProcessRecipient"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DirectedAssignmentStatus"
+          },
+          "workItemId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "assignedBy",
+          "createdAt",
+          "selector",
+          "recipient",
+          "purpose",
+          "status",
+          "required",
+          "allowOnwardAssignment"
+        ],
+        "type": "object"
+      },
+      "DirectedAssignmentActions": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessAction"
+            },
+            "type": "array"
+          },
+          "assignmentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignmentId",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "DirectedAssignmentStatus": {
+        "enum": [
+          "pending",
+          "waiting_children",
+          "waiting_review",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "DirectedProcess": {
+        "properties": {
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/DirectedAssignment"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assignments"
+        ],
+        "type": "object"
+      },
+      "DirectedPurpose": {
+        "enum": [
+          "decide",
+          "acknowledge",
+          "execute"
+        ],
+        "type": "string"
+      },
+      "DirectedRouteRecipient": {
+        "properties": {
+          "allowOnwardAssignment": {
+            "type": "boolean"
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/DirectedPurpose"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/ProcessRecipient"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recipient",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "DirectedRoutingRequest": {
+        "properties": {
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/DirectedRouteRecipient"
+            },
+            "type": "array"
+          },
+          "requireReview": {
+            "type": "boolean"
+          },
+          "reviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipient"
+              }
+            ]
+          }
+        },
+        "required": [
+          "recipients"
+        ],
+        "type": "object"
+      },
+      "DirectedSendCorrespondenceRequest": {
+        "properties": {
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "firstRecipient": {
+            "$ref": "#/components/schemas/ProcessRecipient"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "firstRecipient"
         ],
         "type": "object"
       },
@@ -50025,7 +50525,8 @@
           "return_for_revision",
           "report",
           "close",
-          "reassign"
+          "reassign",
+          "route"
         ],
         "type": "string"
       },
@@ -50039,6 +50540,13 @@
               "$ref": "#/components/schemas/DocumentAnnotation"
             },
             "type": "array"
+          },
+          "assignmentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "comment": {
             "type": [
@@ -50074,6 +50582,16 @@
           "requestId": {
             "format": "uuid",
             "type": "string"
+          },
+          "routing": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DirectedRoutingRequest"
+              }
+            ]
           },
           "signature": {
             "oneOf": [
@@ -50118,6 +50636,19 @@
             },
             "type": "array"
           },
+          "assignmentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignmentRecipientName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "comment": {
             "type": [
               "string",
@@ -50143,8 +50674,20 @@
             "format": "uuid",
             "type": "string"
           },
+          "reassignedFromName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reassignedFromUserId": {
             "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reassignedToName": {
             "type": [
               "string",
               "null"
@@ -50160,6 +50703,12 @@
           "revision": {
             "format": "int64",
             "type": "integer"
+          },
+          "routedRecipients": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -50192,6 +50741,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "directed": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DirectedProcess"
+              }
+            ]
+          },
           "dueAt": {
             "format": "date-time",
             "type": [
@@ -50221,11 +50780,17 @@
           },
           "templateId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "templateVersion": {
             "format": "int64",
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -50236,8 +50801,6 @@
           "source",
           "title",
           "actionPath",
-          "templateId",
-          "templateVersion",
           "revision",
           "status",
           "currentStep",
@@ -55212,6 +55775,64 @@
           "strengths",
           "needs",
           "agreedActions"
+        ],
+        "type": "object"
+      },
+      "SaveCorrespondenceRoutingSettingsRequest": {
+        "properties": {
+          "defaultAllowOnwardAssignment": {
+            "type": "boolean"
+          },
+          "defaultFirstRecipient": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipient"
+              }
+            ]
+          },
+          "defaultPurpose": {
+            "$ref": "#/components/schemas/DirectedPurpose"
+          },
+          "defaultRequireReview": {
+            "type": "boolean"
+          },
+          "defaultReviewer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessRecipient"
+              }
+            ]
+          },
+          "eligibleDecisionMakers": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessRecipient"
+            },
+            "type": "array"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "register": {
+            "$ref": "#/components/schemas/CorrespondenceRegister"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "register",
+          "eligibleDecisionMakers",
+          "defaultPurpose"
         ],
         "type": "object"
       },
@@ -98609,6 +99230,77 @@
         ]
       }
     },
+    "/api/correspondence/{id}/directed-send": {
+      "post": {
+        "operationId": "directed_send_correspondence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectedSendCorrespondenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
     "/api/correspondence/{id}/export": {
       "get": {
         "operationId": "export_correspondence",
@@ -98827,6 +99519,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "register",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CorrespondenceRegister"
+            }
           }
         ],
         "responses": {
@@ -98835,6 +99535,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_CorrespondenceOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/routing-settings": {
+      "get": {
+        "operationId": "correspondence_routing_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CorrespondenceRoutingSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      },
+      "put": {
+        "operationId": "save_correspondence_routing_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCorrespondenceRoutingSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceRoutingSettings"
                 }
               }
             },
