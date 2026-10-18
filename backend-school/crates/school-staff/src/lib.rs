@@ -12,3 +12,5 @@ pub mod organization_access_policy;
 pub mod staff_access_policy;
 
 pub mod profile_cutover;
+
+pub mod leave;

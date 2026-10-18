@@ -178,7 +178,27 @@ test('every protected app page renders the shared page shell', async () => {
 			'SignatureLibrary',
 			await readPageShellDelegate('src/lib/components/correspondence/SignatureLibrary.svelte')
 		],
-		['Templates', await readPageShellDelegate('src/lib/components/correspondence/Templates.svelte')]
+		[
+			'RoutingSettings',
+			await readPageShellDelegate('src/lib/components/correspondence/RoutingSettings.svelte')
+		],
+		[
+			'Templates',
+			await readPageShellDelegate('src/lib/components/correspondence/Templates.svelte')
+		],
+		['LeaveList', await readPageShellDelegate('src/lib/components/staff-leave/LeaveList.svelte')],
+		[
+			'LeaveDetail',
+			await readPageShellDelegate('src/lib/components/staff-leave/LeaveDetail.svelte')
+		],
+		[
+			'LeaveSettings',
+			await readPageShellDelegate('src/lib/components/staff-leave/LeaveSettings.svelte')
+		],
+		[
+			'LeaveReport',
+			await readPageShellDelegate('src/lib/components/staff-leave/LeaveReport.svelte')
+		]
 	]);
 	assert.equal(
 		rendersPageShellDelegate(

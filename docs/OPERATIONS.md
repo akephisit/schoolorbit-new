@@ -1639,3 +1639,5 @@ revisions while retaining their metadata. Registration numbers, register years/k
 and ownership remain unchanged. A rollback needs matching frontend/backend contracts and must
 retain a runtime supporting the correspondence File Platform purposes described above; preserve
 all existing summaries, document revisions, process/action history and file/signature evidence.
+
+Staff leave uses additive tenant migration `126_staff_leave.sql` after directed routing 125. Configure category profiles, routing and policy source/effective dates before enabling staff submission. There are no seeded legal allowances or approval recipients. Before the first leave policy creates a source-owned process template, the schema is compatible with binaries that ignore the Staff tables; after policy/request activation, do not restore a binary lacking the source-template ownership guard. Preserve request/process/evidence history and recover by rolling forward to a compatible release. This feature adds no departure/return tracking or late-alert worker.

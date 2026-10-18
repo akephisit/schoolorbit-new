@@ -143,6 +143,25 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => PurposeDefinition {
+            domain_segment: "staff-leave",
+            purpose_segment: if purpose == FilePurpose::StaffLeaveEvidence {
+                "evidence"
+            } else {
+                "signature"
+            },
+            visibility: FileVisibility::Private,
+            allowed_content: if purpose == FilePurpose::StaffLeaveEvidence {
+                CORRESPONDENCE_CONTENT
+            } else {
+                IMAGE_CONTENT
+            },
+            limits: image_limits_with_pixels(10 * 1024 * 1024, 6000, 6000, 36_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::ExplicitOwningResource,
+        },
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
             PurposeDefinition {
                 domain_segment: "correspondence",
@@ -758,7 +777,7 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 21);
+        assert_eq!(FilePurpose::ALL.len(), 23);
     }
 
     #[test]
@@ -1023,5 +1042,32 @@ mod teaching_license_tests {
         assert!(document.allowed_content.contains(&DetectedContent::Pdf));
         assert!(document.allowed_content.contains(&DetectedContent::Webp));
         assert!(!signature.allowed_content.contains(&DetectedContent::Pdf));
+    }
+}
+
+#[cfg(test)]
+mod staff_leave_tests {
+    use super::*;
+    #[test]
+    fn staff_leave_evidence_and_signature_are_distinct_private_scanned_temporary_purposes() {
+        let evidence = purpose_definition(FilePurpose::StaffLeaveEvidence).unwrap();
+        let signature = purpose_definition(FilePurpose::StaffLeaveSignature).unwrap();
+        for definition in [evidence, signature] {
+            assert_eq!(definition.visibility, FileVisibility::Private);
+            assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+            assert_eq!(definition.retention_class, RetentionClass::Temporary);
+            assert_eq!(definition.limits.max_bytes, 10 * 1024 * 1024);
+            assert_eq!(definition.policy_key, PolicyKey::ExplicitOwningResource);
+        }
+        assert!(evidence.allowed_content.contains(&DetectedContent::Pdf));
+        assert!(!signature.allowed_content.contains(&DetectedContent::Pdf));
+        assert_eq!(
+            purpose_from_code("staff_leave_signature").unwrap(),
+            FilePurpose::StaffLeaveSignature
+        );
+        assert_eq!(
+            purpose_from_code("staff_leave_evidence").unwrap(),
+            FilePurpose::StaffLeaveEvidence
+        );
     }
 }

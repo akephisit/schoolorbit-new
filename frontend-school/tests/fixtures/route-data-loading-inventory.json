@@ -1046,6 +1046,16 @@
 			"notes": "Route-owned published staff schedule with term supersession, retained refresh, and focused retry; large school-wide result does not data-preload."
 		},
 		{
+			"route": "staff/exit-permissions",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff leave + school-workflow",
+			"notes": "Route-owned planned exit list; URL status and pagination with exact-permission lazy creation. No actual departure or return tracking."
+		},
+		{
 			"route": "staff/facility/buildings",
 			"wave": "staff",
 			"dataOwner": "route",
@@ -1064,6 +1074,46 @@
 			"status": "complete",
 			"backendOwner": "backend-school features",
 			"notes": "Direct exact-scope loader owns visible toggles; independent first/retained error/retry, cancellation and identity/disposal guard. Typed toggle patches only its feature. Owner SQL is one explicit-column SELECT with actor module filtering, no N+1."
+		},
+		{
+			"route": "staff/leave",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff leave + school-workflow",
+			"notes": "Route-owned request list; URL status and pagination, identity/filter keys dispose old regions; creation options and policy reads only after opening create workflow."
+		},
+		{
+			"route": "staff/leave/reports",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff leave + school-workflow",
+			"notes": "Download-permission route-owned scoped usage report; URL date/kind context, local retry and CSV export of already-authorized results only."
+		},
+		{
+			"route": "staff/leave/requests/[id]",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff leave + school-workflow",
+			"notes": "Route-owned authorized request detail/history; identity/id keys prevent stale detail, mutations patch typed detail and signatures/evidence use private Files operations."
+		},
+		{
+			"route": "staff/leave/settings",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff leave + school-workflow",
+			"notes": "Manage-only route-owned types; selected policy and routing directories are lazy workflows; immutable policy creation patches affected type revision."
 		},
 		{
 			"route": "staff/manage",
