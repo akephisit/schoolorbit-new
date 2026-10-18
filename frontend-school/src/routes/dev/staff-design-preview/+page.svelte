@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { appearanceStyle } from '#lib/design-preview/appearance.js';
+	import '#lib/design-preview/fonts.css';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -42,7 +46,10 @@
 		Wallet
 	} from '@lucide/svelte';
 
-	let dark = $state(false);
+	let { data }: PageProps = $props();
+	let dark = $state(untrack(() => data.mode === 'dark'));
+	const compactDensity = $derived(data.appearance.density === 'compact');
+	const previewStyle = $derived(appearanceStyle(data.appearance, dark ? 'dark' : 'light'));
 	let collapsed = $state(false);
 	let mobileOpen = $state(false);
 	let demoOpen = $state(false);
@@ -173,7 +180,14 @@
 	/>
 </svelte:head>
 
-<div class:dark class:collapsed class="design-preview" data-testid="staff-design-preview">
+<div
+	class:dark
+	class:collapsed
+	class="design-preview"
+	class:compact-density={compactDensity}
+	style={previewStyle}
+	data-testid="staff-design-preview"
+>
 	{#snippet navigation(compact: boolean)}
 		<div class="brand">
 			<span class="brand-mark"><GraduationCap class="size-6" /></span>
@@ -369,6 +383,7 @@
 		</header>
 		<main>
 			<PageShell
+				contentClass={compactDensity ? 'space-y-4' : 'space-y-6'}
 				title="หน้าหลักของฉัน"
 				description="งานที่ต้องติดตามและบริการของโรงเรียนที่คุณใช้งานได้"
 			>
@@ -506,78 +521,6 @@
 </div>
 
 <style>
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 400;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-thai-400.woff2) format('woff2');
-		unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 400;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-latin-400.woff2) format('woff2');
-		unicode-range:
-			U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-			U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 500;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-thai-500.woff2) format('woff2');
-		unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 500;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-latin-500.woff2) format('woff2');
-		unicode-range:
-			U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-			U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 600;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-thai-600.woff2) format('woff2');
-		unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 600;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-latin-600.woff2) format('woff2');
-		unicode-range:
-			U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-			U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 700;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-thai-700.woff2) format('woff2');
-		unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
-	}
-	@font-face {
-		font-family: 'Kanit Preview';
-		font-style: normal;
-		font-weight: 700;
-		font-display: swap;
-		src: url(/fonts/design-preview/kanit-latin-700.woff2) format('woff2');
-		unicode-range:
-			U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-			U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-	}
 	.design-preview {
 		--background: #f6f7f3;
 		--foreground: #203a37;
@@ -603,7 +546,7 @@
 		--destructive-surface: #fbecea;
 		--welcome: #e8f1e9;
 		--sidebar: #fcfdf9;
-		font-family: 'Kanit Preview', sans-serif;
+		font-family: var(--preview-font, 'Kanit Preview'), sans-serif;
 		color: var(--foreground);
 		background: var(--background);
 		min-height: 100vh;
@@ -1302,5 +1245,24 @@
 		.topbar {
 			align-items: flex-start;
 		}
+	}
+	.compact-density :global(.welcome-content) {
+		padding: 18px;
+	}
+	.compact-density :global(.summary-content) {
+		padding: 14px;
+	}
+	.compact-density :global(.service-header) {
+		padding: 12px 16px;
+	}
+	.compact-density :global(.service-content) {
+		padding: 12px 16px;
+		gap: 12px;
+	}
+	.compact-density :global(.overview-content) {
+		padding: 14px;
+	}
+	.compact-density .nav-workspace {
+		margin-top: 16px;
 	}
 </style>
