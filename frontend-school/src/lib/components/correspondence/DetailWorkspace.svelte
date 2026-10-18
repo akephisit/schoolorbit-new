@@ -1,10 +1,18 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+	import { page } from '$app/state';
+	import { authStore } from '#lib/stores/auth.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { buttonVariants } from '#lib/components/ui/button/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import UnsavedGuard from './UnsavedGuard.svelte';
 	import {
 		getCorrespondence,
 		reviseCorrespondence,
 		exportCorrespondence,
 		type CorrespondenceDetail,
+		type ReviseCorrespondenceRequest,
 		type DocumentAnnotation,
 		type ProcessAction,
 		type SignatureInput
@@ -31,6 +39,8 @@
 	import { workStore } from '#lib/stores/work.js';
 	import { historyActionLabel } from '#lib/correspondence/drafts.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
+	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
 	import DocumentViewer from './DocumentViewer.svelte';
 	import ActionForm from './ActionForm.svelte';
 	import SendForm from './SendForm.svelte';
@@ -53,6 +63,19 @@
 		exportPending = $state(false),
 		original = $state<File | null>(null),
 		attachments = $state<File[]>([]);
+	let metadata = $state({
+		title: '',
+		sender: '',
+		documentNumber: '',
+		documentDate: undefined as string | undefined,
+		urgency: 'normal' as CorrespondenceDetail['record']['urgency']
+	});
+	let actionDirty = $state(false),
+		sendPending = $state(false);
+	let placementPaths = $state<import('#lib/correspondence/geometry.js').InkPath[]>([]),
+		placementFileId = $state<string | undefined>();
+	const uploadedFiles = new SvelteMap<File, string>();
+	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
 	let disposed = false;
 	$effect.pre(() => {
 		const operation = source;
@@ -64,6 +87,13 @@
 			untrack(() => {
 				draftInitialized = true;
 				content = detail.document.content;
+				metadata = {
+					title: detail.record.title,
+					sender: detail.record.sender,
+					documentNumber: detail.record.documentNumber ?? '',
+					documentDate: detail.record.documentDate ?? undefined,
+					urgency: detail.record.urgency
+				};
 				editBaseRevision = detail.record.revision;
 			});
 		}
@@ -98,6 +128,48 @@
 	const canRevise = $derived(
 		!!detail?.canManage && ['draft', 'revision_requested'].includes(detail.record.status)
 	);
+	const canEditMetadata = $derived(
+		!!detail &&
+			canRevise &&
+			detail.record.status === 'draft' &&
+			!detail.instance &&
+			detail.record.createdBy === $authStore.user?.id
+	);
+	const metadataDirty = $derived(
+		!!detail &&
+			canEditMetadata &&
+			(metadata.title !== detail.record.title ||
+				metadata.sender !== detail.record.sender ||
+				metadata.documentNumber !== (detail.record.documentNumber ?? '') ||
+				metadata.documentDate !== (detail.record.documentDate ?? undefined) ||
+				metadata.urgency !== detail.record.urgency)
+	);
+	const primaryAction = $derived(
+		detail?.availableActions.find(
+			(action) => action === detail.instance?.steps[detail.instance.currentStep]?.definition.kind
+		) ??
+			detail?.availableActions.find((action) => action === 'close') ??
+			detail?.availableActions.find((action) => action === 'read')
+	);
+	const secondaryActions = $derived(
+		detail?.availableActions.filter((action) => action !== primaryAction) ?? []
+	);
+	const returnHref = $derived.by(() => {
+		const value = page.url.searchParams.get('returnTo');
+		return value &&
+			(value === '/staff/correspondence' || value.startsWith('/staff/correspondence?'))
+			? value
+			: '/staff/correspondence';
+	});
+	const dirty = $derived(
+		!!detail &&
+			(annotations.length > 0 ||
+				content !== detail.document.content ||
+				!!original ||
+				attachments.length > 0 ||
+				metadataDirty ||
+				actionDirty)
+	);
 	function recipientName(userId?: string | null): string {
 		return (
 			detail?.instance?.steps
@@ -110,6 +182,7 @@
 	}
 	function complete(result: CorrespondenceDetail) {
 		actionPending = false;
+		sendPending = false;
 		const preserveAnnotations =
 			selectedAction !== null && ['read', 'close', 'reassign'].includes(selectedAction);
 		const current = region.value;
@@ -124,38 +197,116 @@
 		signature = undefined;
 		editBaseRevision = latest.record.revision;
 		content = latest.document.content;
+		metadata = {
+			title: latest.record.title,
+			sender: latest.record.sender,
+			documentNumber: latest.record.documentNumber ?? '',
+			documentDate: latest.record.documentDate ?? undefined,
+			urgency: latest.record.urgency
+		};
+		actionDirty = false;
 	}
 	async function saveRevision() {
 		if (!detail || savePending) return;
+		if (canEditMetadata) {
+			const invalid = validateDocumentMetadata(metadata);
+			if (invalid) {
+				error = invalid;
+				return;
+			}
+		}
 		savePending = true;
 		error = '';
 		try {
-			let originalFileId = detail.document.originalFileId;
-			const attachmentFileIds = [...detail.document.attachmentFileIds];
+			let current = detail;
+			if (revisionIntent.unresolved) {
+				try {
+					current = await reviseCorrespondence(
+						id,
+						revisionIntent.begin({ expectedRevision: editBaseRevision, content })
+					);
+					revisionIntent.accepted();
+					if (disposed) return;
+					region.patch(current);
+					editBaseRevision = current.record.revision;
+					const acceptedIds = new SvelteSet(current.document.annotations.map((item) => item.id));
+					annotations = annotations.filter((item) => !acceptedIds.has(item.id));
+				} catch (cause) {
+					revisionIntent.rejected(cause);
+					throw cause;
+				}
+			}
+			let originalFileId = current.document.originalFileId;
+			const attachmentFileIds = [...current.document.attachmentFileIds];
 			if (original) {
-				const file = await uploadFile(original, 'correspondence_document', id);
-				if (disposed) return;
-				originalFileId = file.id;
+				let fileId = uploadedFiles.get(original);
+				if (!fileId) {
+					const file = await uploadFile(original, 'correspondence_document', id);
+					if (disposed) return;
+					fileId = file.id;
+					uploadedFiles.set(original, fileId);
+				}
+				originalFileId = fileId;
 			}
 			for (const attachment of attachments) {
-				const file = await uploadFile(attachment, 'correspondence_document', id);
-				if (disposed) return;
-				attachmentFileIds.push(file.id);
+				let fileId = uploadedFiles.get(attachment);
+				if (!fileId) {
+					const file = await uploadFile(attachment, 'correspondence_document', id);
+					if (disposed) return;
+					fileId = file.id;
+					uploadedFiles.set(attachment, fileId);
+				}
+				if (!attachmentFileIds.includes(fileId)) attachmentFileIds.push(fileId);
 			}
-			const result = await reviseCorrespondence(id, {
-				requestId: crypto.randomUUID(),
+			const body = {
 				expectedRevision: editBaseRevision,
 				content,
 				originalFileId,
 				attachmentFileIds,
-				annotations: [...detail.document.annotations, ...annotations]
-			});
+				annotations: [
+					...current.document.annotations,
+					...annotations.filter(
+						(item) => !current.document.annotations.some((saved) => saved.id === item.id)
+					)
+				],
+				metadata: canEditMetadata
+					? {
+							...metadata,
+							title: metadata.title.trim(),
+							sender: metadata.sender.trim(),
+							documentNumber: metadata.documentNumber || null,
+							documentDate: metadata.documentDate || null
+						}
+					: undefined
+			};
+			const unchanged =
+				body.content === current.document.content &&
+				(body.originalFileId ?? null) === (current.document.originalFileId ?? null) &&
+				JSON.stringify(body.attachmentFileIds) ===
+					JSON.stringify(current.document.attachmentFileIds) &&
+				JSON.stringify(body.annotations) === JSON.stringify(current.document.annotations) &&
+				(!body.metadata ||
+					(body.metadata.title === current.record.title &&
+						body.metadata.sender === current.record.sender &&
+						body.metadata.urgency === current.record.urgency &&
+						body.metadata.documentNumber === (current.record.documentNumber ?? null) &&
+						body.metadata.documentDate === (current.record.documentDate ?? null)));
+			if (unchanged) {
+				complete(current);
+				original = null;
+				attachments = [];
+				return;
+			}
+			const result = await reviseCorrespondence(id, revisionIntent.begin(body));
+			revisionIntent.accepted();
+
 			if (!disposed) {
 				complete(result);
 				original = null;
 				attachments = [];
 			}
 		} catch (cause) {
+			revisionIntent.rejected(cause);
 			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกฉบับแก้ไขไม่สำเร็จ';
 		} finally {
 			if (!disposed) savePending = false;
@@ -186,7 +337,7 @@
 
 <PageShell
 	title={detail?.record.title ?? 'รายละเอียดหนังสือ'}
-	backHref="/staff/correspondence"
+	backHref={returnHref}
 	description={detail
 		? `${registerLabels[detail.record.register]} · ${statusLabels[detail.record.status]}`
 		: undefined}
@@ -196,6 +347,7 @@
 				loading={exportPending}
 				onclick={downloadExport}>ดาวน์โหลด PDF พร้อมหลักฐาน</LoadingButton
 			>{/if}{/snippet}
+	<UnsavedGuard {dirty} pending={savePending || actionPending || sendPending} />
 	<section data-testid="correspondence-detail" aria-busy={region.loading}>
 		{#if region.error}<PageState
 				variant="error"
@@ -213,8 +365,160 @@
 						onaction={refresh}
 					/>
 				</div>{/if}
+			<Card.Root data-testid="correspondence-current-step" id="correspondence-action" class="mb-6"
+				><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
+					class="space-y-4"
+				>
+					{#if detail.instance}{@const current =
+							detail.instance.steps[detail.instance.currentStep]}{#if current}<div
+								class="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
+							>
+								<h3 class="font-medium">
+									{detail.instance.currentStep + 1}. {current.definition.title}
+								</h3>
+								<p class="text-sm text-muted-foreground">
+									{current.definition.completionPolicy === 'all'
+										? 'ผู้รับทุกคนต้องดำเนินการ'
+										: 'ผู้รับคนใดคนหนึ่งดำเนินการได้'}{current.dueAt
+										? ` · กำหนด ${dateLabel(current.dueAt)}`
+										: ''}
+								</p>
+								<ul class="space-y-2 text-sm" aria-label="ผู้รับขั้นตอนปัจจุบัน">
+									{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
+											class="flex justify-between gap-2"
+										>
+											<span class="break-words">{recipient.displayName}</span><span
+												class="shrink-0 text-muted-foreground"
+												>{recipient.completedAt
+													? 'ดำเนินการแล้ว'
+													: recipient.readAt
+														? 'อ่านแล้ว'
+														: 'รอดำเนินการ'}</span
+											>
+										</li>{/each}
+								</ul>
+							</div>{/if}{/if}
+					{#if detail.instance}<details class="rounded-lg border p-3" open>
+							<summary class="cursor-pointer text-sm font-medium"
+								>เส้นทางทั้งหมด ({detail.instance.steps.length} ขั้นตอน)</summary
+							>
+							<ol
+								class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+								aria-label="ลำดับการดำเนินงาน"
+							>
+								{#each detail.instance.steps as step (step.stepIndex)}{@const current =
+										detail.instance.status === 'active' &&
+										step.stepIndex === detail.instance.currentStep}
+									<li
+										class="space-y-1 rounded-lg border p-3 text-sm"
+										class:border-primary={current}
+										aria-current={current ? 'step' : undefined}
+									>
+										<p class="font-medium">{step.stepIndex + 1}. {step.definition.title}</p>
+										<p class="text-muted-foreground">
+											{step.completedAt
+												? 'เสร็จแล้ว'
+												: current
+													? 'ขั้นตอนปัจจุบัน'
+													: detail.instance.status === 'revision_requested' &&
+														  step.stepIndex === detail.instance.currentStep
+														? 'พักรอแก้ไข'
+														: 'ยังไม่ถึงขั้นตอน'}
+										</p>
+										<p class="break-words">
+											{step.recipients.map((recipient) => recipient.displayName).join(', ')}
+										</p>
+										{#if step.dueAt}<p class="text-muted-foreground">
+												กำหนด {dateLabel(step.dueAt)}
+											</p>{/if}
+									</li>{/each}
+							</ol>
+						</details>{/if}
+					<fieldset disabled={viewingHistory} class="min-w-0 space-y-4">
+						{#if sending}<SendForm
+								onrefresh={refresh}
+								onpendingchange={(value) => {
+									sendPending = value;
+								}}
+								{detail}
+								oncomplete={complete}
+								ondirtychange={(value) => {
+									actionDirty = value;
+								}}
+								oncancel={() => {
+									sending = false;
+									actionDirty = false;
+								}}
+							/>{:else if selectedAction}<ActionForm
+								{detail}
+								action={selectedAction}
+								{annotations}
+								bind:signature
+								oncomplete={complete}
+								oncancel={() => {
+									selectedAction = null;
+									actionDirty = false;
+									signature = undefined;
+								}}
+								onrefresh={refresh}
+								ondirtychange={(value) => {
+									actionDirty = value;
+								}}
+								onpreviewchange={(paths, fileId) => {
+									placementPaths = paths;
+									placementFileId = fileId;
+								}}
+								onpendingchange={(value) => {
+									actionPending = value;
+								}}
+							/>{:else}
+							{#if canRevise}<Button
+									onclick={() => {
+										if (
+											annotations.length ||
+											metadataDirty ||
+											content !== detail.document.content ||
+											original ||
+											attachments.length
+										) {
+											error = 'บันทึกฉบับแก้ไขก่อนส่งหนังสือ';
+											return;
+										}
+										sending = true;
+									}}>เลือกผู้รับและส่งหนังสือ</Button
+								>{/if}
+							<div class="flex flex-wrap gap-2">
+								{#if primaryAction}<Button
+										onclick={() => {
+											selectedAction = primaryAction ?? null;
+										}}>{actionLabels[primaryAction]}</Button
+									>{/if}
+								{#if secondaryActions.length}<DropdownMenu.Root
+										><DropdownMenu.Trigger
+											class={buttonVariants({ variant: 'outline' })}
+											disabled={viewingHistory}>เพิ่มเติม</DropdownMenu.Trigger
+										><DropdownMenu.Content align="end">
+											{#each secondaryActions as action (action)}<DropdownMenu.Item
+													variant={action === 'reject' ? 'destructive' : 'default'}
+													onSelect={() => {
+														selectedAction = action;
+													}}>{actionLabels[action]}</DropdownMenu.Item
+												>{/each}
+										</DropdownMenu.Content></DropdownMenu.Root
+									>{/if}
+							</div>
+
+							{#if !canRevise && !detail.availableActions.length}<p
+									class="text-sm text-muted-foreground"
+								>
+									ยังไม่มีรายการที่ต้องดำเนินการสำหรับคุณ
+								</p>{/if}
+						{/if}
+					</fieldset>
+				</Card.Content></Card.Root
+			>
 			<div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
-				<section class="min-w-0 space-y-4" aria-label="เอกสาร">
+				<section class="min-w-0 space-y-4" aria-label="เอกสาร" id="correspondence-document">
 					<Choice
 						id="document-revision"
 						label="ฉบับเอกสารที่แสดง"
@@ -244,6 +548,11 @@
 									(action) => !['read', 'close', 'reassign'].includes(action)
 								)}
 							placement={signature}
+							{placementPaths}
+							{placementFileId}
+							onplacementchange={(value) => {
+								signature = value;
+							}}
 							onplacement={(point, page) => {
 								if (signature)
 									signature = {
@@ -255,13 +564,63 @@
 							}}
 						/>
 					{/if}
+					<div class="flex justify-end">
+						<Button
+							href={`${page.url.pathname}${page.url.search}#correspondence-action`}
+							variant="outline">กลับไปการดำเนินการ</Button
+						>
+					</div>
 					{#if canRevise && !viewingHistory}<Card.Root
 							><Card.Header
 								><Card.Title>ฉบับร่างแก้ไข</Card.Title><Card.Description
 									>บันทึกเป็นฉบับใหม่เพื่อเก็บเอกสารและหลักฐานเดิม</Card.Description
 								></Card.Header
-							><Card.Content class="space-y-4"
-								><div class="space-y-2">
+							><Card.Content class="space-y-4">
+								{#if canEditMetadata}<div class="grid gap-4 sm:grid-cols-2">
+										<div class="space-y-2 sm:col-span-2">
+											<Label for="draft-title">เรื่อง *</Label><Input
+												id="draft-title"
+												bind:value={metadata.title}
+												disabled={savePending || sending}
+												required
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="draft-sender">ผู้ส่ง / หน่วยงานต้นทาง *</Label><Input
+												id="draft-sender"
+												bind:value={metadata.sender}
+												disabled={savePending || sending}
+												required
+											/>
+										</div>
+										<Choice
+											id="draft-urgency"
+											label="ความเร่งด่วน"
+											bind:value={metadata.urgency}
+											disabled={savePending || sending}
+											options={[
+												{ value: 'normal', label: 'ปกติ' },
+												{ value: 'urgent', label: 'ด่วน' },
+												{ value: 'very_urgent', label: 'ด่วนมาก' }
+											]}
+										/>
+										<div class="space-y-2">
+											<Label for="draft-number">เลขที่หนังสือต้นทาง</Label><Input
+												id="draft-number"
+												bind:value={metadata.documentNumber}
+												disabled={savePending || sending}
+											/>
+										</div>
+										<div class="space-y-2">
+											<Label for="draft-date">วันที่หนังสือ</Label><DatePicker
+												id="draft-date"
+												bind:value={metadata.documentDate}
+												disabled={savePending || sending}
+												clearable
+											/>
+										</div>
+									</div>{/if}
+								<div class="space-y-2">
 									<Label for="revision-content">เนื้อหาเอกสาร</Label><Textarea
 										id="revision-content"
 										bind:value={content}
@@ -352,98 +711,7 @@
 								</div>{/if}</Card.Content
 						></Card.Root
 					>
-					<Card.Root data-testid="correspondence-current-step"
-						><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
-							class="space-y-4"
-						>
-							{#if detail.instance}{@const current =
-									detail.instance.steps[detail.instance.currentStep]}{#if current}<div
-										class="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
-									>
-										<h3 class="font-medium">
-											{detail.instance.currentStep + 1}. {current.definition.title}
-										</h3>
-										<p class="text-sm text-muted-foreground">
-											{current.definition.completionPolicy === 'all'
-												? 'ผู้รับทุกคนต้องดำเนินการ'
-												: 'ผู้รับคนใดคนหนึ่งดำเนินการได้'}{current.dueAt
-												? ` · กำหนด ${dateLabel(current.dueAt)}`
-												: ''}
-										</p>
-										<ul class="space-y-2 text-sm">
-											{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
-													class="flex justify-between gap-2"
-												>
-													<span class="break-words">{recipient.displayName}</span><span
-														class="shrink-0 text-muted-foreground"
-														>{recipient.completedAt
-															? 'ดำเนินการแล้ว'
-															: recipient.readAt
-																? 'อ่านแล้ว'
-																: 'รอดำเนินการ'}</span
-													>
-												</li>{/each}
-										</ul>
-									</div>{/if}{/if}
-							<fieldset disabled={viewingHistory} class="min-w-0 space-y-4">
-								{#if sending}<SendForm
-										{detail}
-										oncomplete={complete}
-										oncancel={() => {
-											sending = false;
-										}}
-									/>{:else if selectedAction}<ActionForm
-										{detail}
-										action={selectedAction}
-										{annotations}
-										bind:signature
-										oncomplete={complete}
-										oncancel={() => {
-											selectedAction = null;
-											signature = undefined;
-										}}
-										onrefresh={refresh}
-										onpendingchange={(value) => {
-											actionPending = value;
-										}}
-									/>{:else}
-									{#if canRevise}<Button
-											onclick={() => {
-												if (
-													annotations.length ||
-													content !== detail.document.content ||
-													original ||
-													attachments.length
-												) {
-													error = 'บันทึกฉบับแก้ไขก่อนส่งหนังสือ';
-													return;
-												}
-												sending = true;
-											}}>เลือกผู้รับและส่งหนังสือ</Button
-										>{/if}
-									<div class="flex flex-wrap gap-2">
-										{#each detail.availableActions as action (action)}<Button
-												variant={action === 'reject'
-													? 'destructive'
-													: action === 'return_for_revision' ||
-														  action === 'reassign' ||
-														  action === 'read'
-														? 'outline'
-														: 'default'}
-												onclick={() => {
-													selectedAction = action;
-												}}>{actionLabels[action]}</Button
-											>{/each}
-									</div>
-									{#if !canRevise && !detail.availableActions.length}<p
-											class="text-sm text-muted-foreground"
-										>
-											ยังไม่มีรายการที่ต้องดำเนินการสำหรับคุณ
-										</p>{/if}
-								{/if}
-							</fieldset>
-						</Card.Content></Card.Root
-					>
+
 					{#if detail.signatures.length}<Card.Root
 							><Card.Header><Card.Title>หลักฐานลงนาม</Card.Title></Card.Header><Card.Content
 								><ul class="space-y-4 text-sm">

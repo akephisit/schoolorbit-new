@@ -89,6 +89,17 @@ pub enum CorrespondenceStatus {
     Closed,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CorrespondenceListView {
+    ActionRequired,
+    Sent,
+    Drafts,
+    #[default]
+    All,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -333,6 +344,19 @@ pub struct ReviseCorrespondenceRequest {
     pub attachment_file_ids: Vec<Uuid>,
     #[serde(default)]
     pub annotations: Vec<DocumentAnnotation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<CorrespondenceDraftMetadata>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceDraftMetadata {
+    pub title: String,
+    pub sender: String,
+    pub document_number: Option<String>,
+    pub document_date: Option<NaiveDate>,
+    pub urgency: CorrespondenceUrgency,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -438,6 +462,32 @@ pub struct CorrespondenceDetail {
 pub struct CorrespondenceList {
     pub items: Vec<CorrespondenceSummary>,
     pub next_cursor: Option<Uuid>,
+    pub counts: CorrespondenceListCounts,
+    pub progress: Vec<CorrespondenceListProgress>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceListCounts {
+    pub action_required: i64,
+    pub sent: i64,
+    pub drafts: i64,
+    pub all: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceListProgress {
+    pub correspondence_id: Uuid,
+    pub current_step_index: Option<usize>,
+    pub step_count: usize,
+    pub current_step_title: Option<String>,
+    pub pending_recipients: Vec<CorrespondenceUserOption>,
+    pub due_at: Option<DateTime<Utc>>,
+    pub my_action: Option<ProcessAction>,
+    pub can_revise: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

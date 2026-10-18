@@ -837,6 +837,7 @@ struct SchoolApiDoc;
     CorrespondenceRegister,
     CorrespondenceUrgency,
     CorrespondenceStatus,
+    CorrespondenceListView,
     DocumentAnnotationKind,
     SignatureMethod,
     ProcessRecipient,
@@ -856,6 +857,7 @@ struct SchoolApiDoc;
     CorrespondenceSourceLink,
     CreateCorrespondenceRequest,
     ReviseCorrespondenceRequest,
+    CorrespondenceDraftMetadata,
     SendCorrespondenceRequest,
     CorrespondenceDocumentRevision,
     CorrespondenceSummary,
@@ -863,6 +865,8 @@ struct SchoolApiDoc;
     CorrespondenceSigningEvidence,
     CorrespondenceDetail,
     CorrespondenceList,
+    CorrespondenceListCounts,
+    CorrespondenceListProgress,
     SignatureAsset,
     CreateSignatureAssetRequest,
     CorrespondenceUserOption,
@@ -6658,15 +6662,42 @@ mod tests {
             assert!(paths[path][method].is_object(), "{path}");
         }
         let list = &paths["/api/correspondence"]["get"]["parameters"];
-        for name in ["cursor", "limit", "register", "status", "search"] {
-            assert!(list.as_array().unwrap().iter().any(|p| p["name"] == name));
+        for name in ["cursor", "limit", "register", "status", "search", "view"] {
+            let parameter = list
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["name"] == name)
+                .unwrap();
+            assert_eq!(parameter["in"], "query", "{name}");
+            assert_eq!(parameter["required"], false, "{name}");
         }
+        let options_search = &paths["/api/correspondence/options"]["get"]["parameters"][0];
+        assert_eq!(options_search["name"], "search");
+        assert_eq!(options_search["in"], "query");
+        assert_eq!(options_search["required"], false);
         for status in ["400", "403", "409"] {
             assert!(
                 paths["/api/correspondence/{id}/actions"]["post"]["responses"][status].is_object()
             );
         }
         let schemas = &document["components"]["schemas"];
+        for field in ["items", "nextCursor", "counts", "progress"] {
+            assert!(schemas["CorrespondenceList"]["properties"][field].is_object());
+        }
+        assert_eq!(
+            schemas["CorrespondenceList"]["properties"]["items"]["items"]["$ref"],
+            "#/components/schemas/CorrespondenceSummary"
+        );
+        for field in ["actionRequired", "sent", "drafts", "all"] {
+            assert!(schemas["CorrespondenceListCounts"]["properties"][field].is_object());
+        }
+        assert!(schemas["ReviseCorrespondenceRequest"]["properties"]["metadata"].is_object());
+        assert!(!schemas["ReviseCorrespondenceRequest"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "metadata"));
         for field in [
             "expectedRevision",
             "requestId",

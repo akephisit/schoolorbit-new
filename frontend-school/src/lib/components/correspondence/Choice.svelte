@@ -9,7 +9,8 @@
 		options,
 		disabled = false,
 		placeholder = 'เลือก',
-		searchable = false
+		searchable = false,
+		onValueChange
 	}: {
 		id: string;
 		label: string;
@@ -18,6 +19,7 @@
 		disabled?: boolean;
 		placeholder?: string;
 		searchable?: boolean;
+		onValueChange?: (value: string) => void;
 	} = $props();
 	let search = $state('');
 	const filtered = $derived(
@@ -29,7 +31,7 @@
 
 <div class="min-w-0 space-y-2">
 	<Label for={id}>{label}</Label>
-	<Select.Root type="single" bind:value {disabled}>
+	<Select.Root type="single" bind:value {disabled} {onValueChange}>
 		<Select.Trigger {id} class="w-full"
 			><span class="truncate"
 				>{options.find((option) => option.value === value)?.label ?? placeholder}</span

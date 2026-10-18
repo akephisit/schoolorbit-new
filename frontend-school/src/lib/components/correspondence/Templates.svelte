@@ -12,9 +12,15 @@
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import {
+		templatePresets,
+		copyTemplateSeed,
+		type TemplateSeed
+	} from '#lib/correspondence/template-presets.js';
 	import TemplateEditor from './TemplateEditor.svelte';
 	let { source }: { source: Promise<RouteLoadResult<ProcessTemplate[]>> } = $props();
 	const region = new CorrespondenceRegion<ProcessTemplate[]>();
+	let seed = $state<TemplateSeed | undefined>();
 	let editing = $state(false),
 		selected = $state<ProcessTemplate | undefined>(),
 		options = $state<CorrespondenceOptions | null>(null),
@@ -31,9 +37,10 @@
 		controller.abort();
 		region.dispose();
 	});
-	async function open(template?: ProcessTemplate) {
+	async function open(template?: ProcessTemplate, initial?: TemplateSeed) {
 		editing = true;
 		selected = template;
+		seed = initial ? copyTemplateSeed(initial) : undefined;
 		await loadOptions();
 	}
 	async function loadOptions() {
@@ -58,6 +65,22 @@
 >
 	{#snippet actions()}<Button disabled={editing} onclick={() => open()}>สร้างแม่แบบ</Button
 		>{/snippet}
+	<section
+		class="mb-6 space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4"
+		aria-label="แม่แบบเริ่มต้น"
+	>
+		<h2 class="font-medium">เริ่มจากงานที่ใช้บ่อย</h2>
+		<p class="text-sm text-muted-foreground">
+			เลือกเพื่อปรับขั้นตอนและผู้รับก่อนบันทึก ยังไม่สร้างหรือเปิดใช้แม่แบบจนกว่าจะกดบันทึก
+		</p>
+		<div class="flex flex-wrap gap-2">
+			{#each templatePresets as preset (preset.title)}<Button
+					variant="outline"
+					disabled={editing}
+					onclick={() => open(undefined, preset)}>{preset.title}</Button
+				>{/each}
+		</div>
+	</section>
 	{#if editing}<Card.Root
 			><Card.Header><Card.Title>{selected ? 'แก้ไขแม่แบบ' : 'สร้างแม่แบบ'}</Card.Title></Card.Header
 			><Card.Content
@@ -67,8 +90,9 @@
 						actionLabel="ลองอีกครั้ง"
 						onaction={loadOptions}
 					/>{/if}{#if optionsLoading && !options}<PageSkeleton
-					/>{:else if options}{#key selected?.id ?? 'new'}<TemplateEditor
+					/>{:else if options}{#key selected?.id ?? seed?.title ?? 'new'}<TemplateEditor
 							template={selected}
+							{seed}
 							{options}
 							oncancel={() => {
 								editing = false;
@@ -104,6 +128,14 @@
 							</ol>
 							<Button disabled={editing} variant="outline" onclick={() => open(template)}
 								>แก้ไขแม่แบบ</Button
+							><Button
+								variant="ghost"
+								disabled={editing}
+								onclick={() =>
+									open(undefined, {
+										...copyTemplateSeed(template),
+										title: `${template.title} (สำเนา)`
+									})}>ทำสำเนาแม่แบบ</Button
 							></Card.Content
 						></Card.Root
 					>{/each}

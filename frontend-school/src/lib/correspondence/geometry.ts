@@ -70,3 +70,16 @@ export function hasInk(paths: InkPath[]): boolean {
 			)
 	);
 }
+
+/** A previously valid tiny placement may have less space than the normal resize minimum. */
+export function resizeWithinPage<T extends { x: number; y: number; width: number; height: number }>(
+	placement: T,
+	width: number,
+	height: number
+): T {
+	return {
+		...placement,
+		width: Math.min(1 - placement.x, Math.max(0.04, width)),
+		height: Math.min(1 - placement.y, Math.max(0.025, height))
+	};
+}
