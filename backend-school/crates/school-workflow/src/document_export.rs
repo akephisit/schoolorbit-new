@@ -438,7 +438,25 @@ fn annotation(
     ops.push(op("q", vec![]));
     match a.kind {
         DocumentAnnotationKind::Text => {
-            text_box(ops, a.text.as_deref().unwrap_or(""), x, y, w, h, &a.color)?
+            let padding = if a.border { 4.0 } else { 0.0 };
+            if w <= padding * 2.0 || h <= padding * 2.0 {
+                return Err(invalid("พื้นที่ข้อความเล็กเกินไป กรุณาขยายกรอบ"));
+            }
+            if a.border {
+                ops.push(op("RG", c.into_iter().map(num).collect()));
+                ops.push(op("w", vec![num(0.75)]));
+                ops.push(op("re", vec![num(x), num(y - h), num(w), num(h)]));
+                ops.push(op("S", vec![]));
+            }
+            text_box(
+                ops,
+                a.text.as_deref().unwrap_or(""),
+                x + padding,
+                y - padding,
+                w - padding * 2.0,
+                h - padding * 2.0,
+                &a.color,
+            )?
         }
         DocumentAnnotationKind::Ink => ink(ops, &a.strokes, x, y, w, h)?,
         DocumentAnnotationKind::Highlight => {
@@ -790,6 +808,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Text,
+                border: true,
                 page: 1,
                 x: 0.1,
                 y: 0.25,
@@ -802,6 +821,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Highlight,
+                border: false,
                 page: 1,
                 x: 0.1,
                 y: 0.4,
@@ -814,6 +834,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Circle,
+                border: false,
                 page: 1,
                 x: 0.7,
                 y: 0.2,
@@ -937,6 +958,80 @@ mod tests {
                 )
                 .unwrap();
             }
+        }
+    }
+    #[test]
+    fn bordered_text_uses_visual_page_box_and_four_point_padding_for_every_rotation() {
+        let mut detail = fixture_detail();
+        detail.document.annotations = vec![];
+        for rotation in [0, 90, 180, 270] {
+            let mut source = source_document(&detail.document, None).unwrap();
+            let page = source.get_pages()[&1];
+            let dictionary = source.get_object_mut(page).unwrap().as_dict_mut().unwrap();
+            dictionary.set(
+                "CropBox",
+                vec![20.into(), 30.into(), 575.into(), 812.into()],
+            );
+            dictionary.set("Rotate", rotation);
+            let g = geometry(&source, page).unwrap();
+            let mut a = DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Text,
+                page: 1,
+                x: 0.1,
+                y: 0.2,
+                width: 0.6,
+                height: 0.2,
+                text: Some("ทราบ น้ำ กิ".into()),
+                color: "#000000".into(),
+                border: true,
+                strokes: vec![],
+            };
+            let mut bordered = vec![];
+            annotation(&mut bordered, &a, g).unwrap();
+            let rectangle = &bordered
+                .iter()
+                .find(|op| op.operator == "re")
+                .unwrap()
+                .operands;
+            for (value, expected) in rectangle.iter().zip([
+                a.x * g.width,
+                (1.0 - a.y - a.height) * g.height,
+                a.width * g.width,
+                a.height * g.height,
+            ]) {
+                assert!((f64::from(value.as_float().unwrap()) - expected).abs() < 0.001);
+            }
+            a.border = false;
+            let mut plain = vec![];
+            annotation(&mut plain, &a, g).unwrap();
+            assert!(!plain.iter().any(|op| op.operator == "re"));
+            let bordered_origin = &bordered
+                .iter()
+                .find(|op| op.operator == "Tm")
+                .unwrap()
+                .operands;
+            let plain_origin = &plain
+                .iter()
+                .find(|op| op.operator == "Tm")
+                .unwrap()
+                .operands;
+            assert!(
+                (bordered_origin[4].as_float().unwrap()
+                    - plain_origin[4].as_float().unwrap()
+                    - 4.0)
+                    .abs()
+                    < 0.001
+            );
+            assert!(
+                (bordered_origin[5].as_float().unwrap() - plain_origin[5].as_float().unwrap()
+                    + 4.0)
+                    .abs()
+                    < 0.001
+            );
+            a.border = true;
+            a.width = 0.001;
+            assert!(annotation(&mut vec![], &a, g).is_err());
         }
     }
     #[test]

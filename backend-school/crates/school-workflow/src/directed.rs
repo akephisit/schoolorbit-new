@@ -25,10 +25,12 @@ fn defaults(register: CorrespondenceRegister) -> CorrespondenceRoutingSettings {
         revision: 0,
         eligible_decision_makers: vec![],
         default_first_recipient: None,
-        default_purpose: DirectedPurpose::Execute,
+        default_purpose: DirectedPurpose::Acknowledge,
         default_require_review: false,
         default_reviewer: None,
-        default_allow_onward_assignment: false,
+        default_allow_onward_assignment: true,
+        numbering: CorrespondenceNumberingSettings::default(),
+        text_stamp_templates: crate::correspondence_settings::default_stamp_templates(),
     }
 }
 fn require_settings_read(actor: &ActorContext) -> Result<(), AppError> {
@@ -67,7 +69,7 @@ pub async fn settings(
     })
     .collect())
 }
-async fn settings_in(
+pub(crate) async fn settings_in(
     tx: &mut Transaction<'_, Postgres>,
     register: CorrespondenceRegister,
 ) -> Result<CorrespondenceRoutingSettings, AppError> {
@@ -94,6 +96,12 @@ pub async fn save_settings(
     request: SaveCorrespondenceRoutingSettingsRequest,
 ) -> Result<CorrespondenceRoutingSettings, AppError> {
     actor.require_permission(codes::PROCESS_MANAGE_SCHOOL)?;
+    if let Some(numbering) = &request.numbering {
+        crate::correspondence_settings::validate_numbering(numbering)?;
+    }
+    if let Some(templates) = &request.text_stamp_templates {
+        crate::correspondence_settings::validate_templates(templates)?;
+    }
     if request.eligible_decision_makers.len() > 100
         || request.default_purpose == DirectedPurpose::Decide
         || request.default_require_review != request.default_reviewer.is_some()
@@ -150,6 +158,10 @@ pub async fn save_settings(
         default_require_review: request.default_require_review,
         default_reviewer: request.default_reviewer,
         default_allow_onward_assignment: request.default_allow_onward_assignment,
+        numbering: request.numbering.unwrap_or(current.numbering),
+        text_stamp_templates: request
+            .text_stamp_templates
+            .unwrap_or(current.text_stamp_templates),
     };
     if let Some(first) = &result.default_first_recipient {
         let person = resolve_one(&mut tx, first, &permitted).await?;
@@ -880,7 +892,7 @@ pub(crate) async fn action(
             } else {
                 &mut a.recipient
             };
-            recipient.read_at = Some(Utc::now());
+            recipient.read_at.get_or_insert_with(Utc::now);
             work::mark_process_assignment_in_transaction(tx, item, actor.user_id, false).await?;
         }
         ProcessAction::Route => {

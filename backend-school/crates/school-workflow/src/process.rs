@@ -407,6 +407,74 @@ pub(crate) async fn store(
         .await?;
     Ok(())
 }
+
+/// Source-owned viewing may project read participation; it never grants decision authority.
+pub(crate) async fn mark_read_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    instance: &mut ProcessInstance,
+    assignment: Option<Uuid>,
+) -> Result<bool, AppError> {
+    if !actor.has_permission(codes::CORRESPONDENCE_READ_ASSIGNED) {
+        return Ok(false);
+    }
+    let at = Utc::now();
+    let mut changed = false;
+    let mut items = Vec::new();
+    if let Some(graph) = &mut instance.directed {
+        for a in &mut graph.assignments {
+            if assignment.is_some_and(|id| id != a.id) {
+                continue;
+            }
+            let active = instance.status == ProcessStatus::Active;
+            let terminal_copy = matches!(
+                instance.status,
+                ProcessStatus::Completed | ProcessStatus::Closed
+            ) && !a.required;
+            if a.status == DirectedAssignmentStatus::Pending
+                && a.recipient.user_id == actor.user_id
+                && (active || terminal_copy)
+            {
+                if a.recipient.read_at.is_none() {
+                    a.recipient.read_at = Some(at);
+                    changed = true;
+                }
+                items.push(a.work_item_id);
+            }
+            if active && a.status == DirectedAssignmentStatus::WaitingReview {
+                if let Some(reviewer) = a.reviewer.as_mut().filter(|r| r.user_id == actor.user_id) {
+                    if reviewer.read_at.is_none() {
+                        reviewer.read_at = Some(at);
+                        changed = true;
+                    }
+                    items.push(a.review_work_item_id);
+                }
+            }
+        }
+    } else if instance.status == ProcessStatus::Active && assignment.is_none() {
+        if let Some(step) = instance.steps.get_mut(instance.current_step) {
+            for recipient in step
+                .recipients
+                .iter_mut()
+                .filter(|r| r.user_id == actor.user_id && r.completed_at.is_none())
+            {
+                if recipient.read_at.is_none() {
+                    recipient.read_at = Some(at);
+                    changed = true;
+                }
+                items.push(step.work_item_id);
+            }
+        }
+    }
+    for item in items {
+        crate::work::mark_process_read_in_transaction(tx, item, actor.user_id, at).await?;
+    }
+    if changed {
+        instance.revision += 1;
+        store(tx, instance).await?;
+    }
+    Ok(changed)
+}
 pub async fn completion_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     source: &ProcessSource,
@@ -583,7 +651,7 @@ pub(crate) async fn action_in_transaction(
         .position(|r| r.user_id == from && r.completed_at.is_none())
         .ok_or_else(denied)?;
     if request.action == ProcessAction::Read {
-        step.recipients[pos].read_at = Some(Utc::now());
+        step.recipients[pos].read_at.get_or_insert_with(Utc::now);
         crate::work::mark_process_assignment_in_transaction(
             tx,
             step.work_item_id,

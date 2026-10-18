@@ -62,6 +62,19 @@ pub async fn get_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/read",tag="correspondence",request_body=CorrespondenceReadRequest,params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CorrespondenceReadReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
+pub async fn read_correspondence(
+    State(state): State<WorkflowHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CorrespondenceReadRequest>,
+) -> Result<Response, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result = correspondence::read(&context.tenant.pool, &context.actor, id, payload).await?;
+    state.notify_work_items_changed(&context.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(result)).into_response())
+}
+
 #[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/revisions",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=ReviseCorrespondenceRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn revise_correspondence(
     State(state): State<WorkflowHttpState>,
@@ -168,7 +181,13 @@ pub async fn correspondence_options(
     Query(query): Query<CorrespondenceOptionsQuery>,
 ) -> Result<Response, HttpError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let result = correspondence::options(&context.tenant.pool, &context.actor, query).await?;
+    let mut result = correspondence::options(&context.tenant.pool, &context.actor, query).await?;
+    result.stamp_context.school_name = state
+        .auth_runtime
+        .admin_client
+        .get_school_name(&context.tenant.subdomain)
+        .await
+        .ok();
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
@@ -320,6 +339,7 @@ pub fn routes() -> Router<WorkflowHttpState> {
             get(list_signature_assets).post(create_signature_asset),
         )
         .route("/correspondence/{id}", get(get_correspondence))
+        .route("/correspondence/{id}/read", post(read_correspondence))
         .route(
             "/correspondence/{id}/revisions",
             post(revise_correspondence),

@@ -749,6 +749,16 @@ pub async fn mark_process_assignment_in_transaction(
     sqlx::query("UPDATE work_item_assignees SET status=CASE WHEN $3 THEN 'submitted' ELSE 'read' END,read_at=coalesce(read_at,now()),submitted_at=CASE WHEN $3 THEN now() ELSE submitted_at END WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read')").bind(item).bind(user).bind(completed).execute(&mut **tx).await?;
     Ok(())
 }
+pub(crate) async fn mark_process_read_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: Option<Uuid>,
+    user: Uuid,
+    at: DateTime<Utc>,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE work_item_assignees SET status='read',read_at=coalesce(read_at,$3) WHERE work_item_id=$1 AND user_id=$2 AND status IN ('assigned','read') AND (status<>'read' OR read_at IS NULL)")
+        .bind(item).bind(user).bind(at).execute(&mut **tx).await?;
+    Ok(())
+}
 pub async fn close_process_item_in_transaction(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     item: Option<Uuid>,

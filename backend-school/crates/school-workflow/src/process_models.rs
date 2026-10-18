@@ -266,6 +266,8 @@ pub struct DocumentAnnotation {
     pub height: f64,
     pub text: Option<String>,
     pub color: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub border: bool,
     #[serde(default)]
     pub strokes: Vec<InkStroke>,
 }
@@ -401,6 +403,8 @@ pub struct CorrespondenceSummary {
     pub register_number: i64,
     pub register_year: i32,
     pub register: CorrespondenceRegister,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub register_label: Option<String>,
     pub title: String,
     pub sender: String,
     pub document_number: Option<String>,
@@ -462,6 +466,8 @@ pub struct CorrespondenceSigningEvidence {
 #[serde(rename_all = "camelCase")]
 pub struct CorrespondenceDetail {
     pub record: CorrespondenceSummary,
+    #[serde(default)]
+    pub my_read_receipt: Option<CorrespondenceReadReceipt>,
     pub source_links: Vec<CorrespondenceSourceLink>,
     pub document: CorrespondenceDocumentRevision,
     pub revisions: Vec<CorrespondenceDocumentRevision>,
@@ -556,6 +562,7 @@ pub struct CorrespondencePositionOption {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CorrespondenceOptions {
+    pub stamp_context: CorrespondenceStampContext,
     pub users: Vec<CorrespondenceUserOption>,
     pub organizations: Vec<CorrespondenceOrganizationOption>,
     pub positions: Vec<CorrespondencePositionOption>,
@@ -670,6 +677,10 @@ pub struct CorrespondenceRoutingSettings {
     pub default_require_review: bool,
     pub default_reviewer: Option<ProcessRecipient>,
     pub default_allow_onward_assignment: bool,
+    #[serde(default)]
+    pub numbering: CorrespondenceNumberingSettings,
+    #[serde(default = "super::correspondence_settings::default_stamp_templates")]
+    pub text_stamp_templates: Vec<CorrespondenceTextStampTemplate>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -687,6 +698,67 @@ pub struct SaveCorrespondenceRoutingSettingsRequest {
     pub default_reviewer: Option<ProcessRecipient>,
     #[serde(default)]
     pub default_allow_onward_assignment: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numbering: Option<CorrespondenceNumberingSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_stamp_templates: Option<Vec<CorrespondenceTextStampTemplate>>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceReadRequest {
+    pub document_revision: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceReadReceipt {
+    pub correspondence_id: Uuid,
+    pub user_id: Uuid,
+    pub document_revision: i64,
+    pub first_read_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceStampContext {
+    pub school_name: Option<String>,
+    pub actor_display_name: String,
+    pub signer_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceNumberingSettings {
+    pub format: String,
+    pub minimum_digits: u8,
+}
+
+impl Default for CorrespondenceNumberingSettings {
+    fn default() -> Self {
+        Self {
+            format: "{number}/{year}".into(),
+            minimum_digits: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CorrespondenceTextStampTemplate {
+    pub id: Uuid,
+    pub name: String,
+    pub body: String,
+    pub border: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

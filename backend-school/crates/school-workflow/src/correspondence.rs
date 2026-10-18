@@ -364,6 +364,7 @@ pub async fn create(
         return detail(pool, actor, old).await;
     }
     let year = (Utc::now() + Duration::hours(7)).year() + 543;
+    let settings = directed::settings_in(&mut tx, request.register).await?;
     let kind = enum_code(request.register)?;
     let number:i64=sqlx::query_scalar("INSERT INTO correspondence_register_counters(register,year,last_number) VALUES($1,$2,1) ON CONFLICT(register,year) DO UPDATE SET last_number=correspondence_register_counters.last_number+1 RETURNING last_number").bind(&kind).bind(year).fetch_one(&mut *tx).await?;
     let record = CorrespondenceSummary {
@@ -371,6 +372,11 @@ pub async fn create(
         register_number: number,
         register_year: year,
         register: request.register,
+        register_label: Some(crate::correspondence_settings::register_label(
+            &settings.numbering,
+            number,
+            year,
+        )?),
         title: request.title,
         sender: request.sender,
         document_number: request.document_number,
@@ -772,6 +778,133 @@ pub async fn act(
 ) -> Result<CorrespondenceDetail, AppError> {
     act_impl(pool, actor, id, validator, request, false).await
 }
+
+async fn read_receipt_in(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    revision: i64,
+) -> Result<CorrespondenceReadReceipt, AppError> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2)")
+        .bind(id).bind(revision).fetch_one(&mut **tx).await?;
+    if !exists {
+        return Err(invalid("ไม่พบฉบับเอกสาร"));
+    }
+    sqlx::query("INSERT INTO correspondence_read_receipts(correspondence_id,user_id,document_revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind(id).bind(actor).bind(revision).execute(&mut **tx).await?;
+    Ok(sqlx::query_as("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor).fetch_one(&mut **tx).await?)
+}
+
+pub async fn read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: CorrespondenceReadRequest,
+) -> Result<CorrespondenceReadReceipt, AppError> {
+    require_read(pool, actor, id).await?;
+    let mut tx = pool.begin().await?;
+    let (_, _, instance_id) = locked(&mut tx, id).await?;
+    let receipt = read_receipt_in(&mut tx, actor.user_id, id, request.document_revision).await?;
+    if let Some(instance_id) = instance_id {
+        let mut instance = process::load_locked(&mut tx, instance_id).await?;
+        process::mark_read_in_transaction(&mut tx, actor, &mut instance, None).await?;
+    }
+    tx.commit().await?;
+    Ok(receipt)
+}
+
+async fn explicit_read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: &ProcessActionRequest,
+    instance_revision: bool,
+) -> Result<CorrespondenceDetail, AppError> {
+    let mut tx = pool.begin().await?;
+    let operation = if instance_revision {
+        "process_correspondence_action"
+    } else {
+        "correspondence_action"
+    };
+    if process::receipt(
+        &mut tx,
+        actor.user_id,
+        request.request_id,
+        operation,
+        id,
+        request,
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return detail(pool, actor, id).await;
+    }
+    let (record, revision, instance_id) = locked(&mut tx, id).await?;
+    let mut instance = process::load_locked(
+        &mut tx,
+        instance_id.ok_or_else(|| invalid("ยังไม่ได้ส่งหนังสือ"))?,
+    )
+    .await?;
+    actor.require_permission(codes::CORRESPONDENCE_READ_ASSIGNED)?;
+    let recorded = if instance.directed.is_some() {
+        let allowed = directed::assignment_actions(actor, &instance, false)
+            .iter()
+            .any(|a| {
+                Some(a.assignment_id) == request.assignment_id
+                    && a.actions.contains(&ProcessAction::Read)
+            });
+        if !allowed || request.routing.is_some() {
+            return Err(denied());
+        }
+        instance
+            .directed
+            .as_ref()
+            .and_then(|g| {
+                g.assignments
+                    .iter()
+                    .find(|a| Some(a.id) == request.assignment_id)
+            })
+            .and_then(|a| {
+                if a.status == DirectedAssignmentStatus::WaitingReview {
+                    a.reviewer.as_ref()
+                } else {
+                    Some(&a.recipient)
+                }
+            })
+            .is_some_and(|r| r.read_at.is_some())
+    } else {
+        if request.assignment_id.is_some()
+            || request.routing.is_some()
+            || !available_actions(actor, &record, Some(&instance), false)
+                .contains(&ProcessAction::Read)
+        {
+            return Err(denied());
+        }
+        instance
+            .steps
+            .get(instance.current_step)
+            .and_then(|s| {
+                s.recipients
+                    .iter()
+                    .find(|r| r.user_id == actor.user_id && r.completed_at.is_none())
+            })
+            .is_some_and(|r| r.read_at.is_some())
+    };
+    let expected = if instance_revision {
+        instance.revision
+    } else {
+        record.revision
+    };
+    if request.expected_revision != expected && !recorded {
+        return Err(stale());
+    }
+    read_receipt_in(&mut tx, actor.user_id, id, revision).await?;
+    process::mark_read_in_transaction(&mut tx, actor, &mut instance, request.assignment_id).await?;
+    tx.commit().await?;
+    detail(pool, actor, id).await
+}
 async fn act_impl(
     pool: &PgPool,
     actor: &ActorContext,
@@ -829,6 +962,9 @@ async fn act_impl(
     .await?
     {
         return detail(pool, actor, id).await;
+    }
+    if request.action == ProcessAction::Read {
+        return explicit_read(pool, actor, id, &request, instance_revision).await;
     }
     let before = detail(pool, actor, id).await?;
     let signing_time = Utc::now();
@@ -1152,6 +1288,7 @@ WITH authorized AS MATERIALIZED (
         OR c.summary->>'documentNumber' ILIKE '%'||$8||'%'
         OR c.summary->>'sender' ILIKE '%'||$8||'%'
         OR c.register_number::text ILIKE '%'||$8||'%'
+        OR c.summary->>'registerLabel' ILIKE '%'||$8||'%'
         OR c.register_year::text ILIKE '%'||$8||'%'
         OR c.register_number::text||'/'||c.register_year::text ILIKE '%'||$8||'%'
         OR EXISTS (SELECT 1 FROM correspondence_document_revisions d
@@ -1468,6 +1605,8 @@ pub async fn detail(
     };
     let history=sqlx::query_scalar::<_,Json<ProcessHistoryEntry>>("SELECT entry FROM process_action_history WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
     let signatures=sqlx::query_scalar::<_,Json<CorrespondenceSigningEvidence>>("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let my_read_receipt = sqlx::query_as::<_, CorrespondenceReadReceipt>("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor.user_id).fetch_optional(pool).await?;
     let manager_reassign = can_manage_record(pool, actor, &record).await?;
     let actions = available_actions(actor, &record, instance.as_ref(), manager_reassign);
     let can_manage = can_revise(actor, &record);
@@ -1477,6 +1616,7 @@ pub async fn detail(
     });
     Ok(CorrespondenceDetail {
         record: record.0,
+        my_read_receipt,
         source_links: source_links.0,
         document,
         revisions,
@@ -1524,6 +1664,7 @@ pub async fn options(
     )
     .await?;
     Ok(CorrespondenceOptions {
+        stamp_context: stamp_context(pool, actor.user_id).await?,
         users,
         organizations,
         positions,
@@ -1533,6 +1674,41 @@ pub async fn options(
         routing_settings: directed::settings(pool, actor).await?,
         can_manage_routing_settings: actor.has_permission(codes::PROCESS_MANAGE_SCHOOL),
     })
+}
+
+async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStampContext, AppError> {
+    let actor_display_name =
+        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
+            .bind(actor)
+            .fetch_one(pool)
+            .await?;
+    let position: Option<(String, Option<String>)> = sqlx::query_as("SELECT m.position_code,m.position_title FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=$1 AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.is_primary DESC,m.id LIMIT 1")
+        .bind(actor).fetch_optional(pool).await?;
+    let signer_title =
+        position.and_then(|(code, title)| stamp_position_title(&code, title.as_deref()));
+    Ok(CorrespondenceStampContext {
+        school_name: None,
+        actor_display_name,
+        signer_title,
+    })
+}
+
+fn stamp_position_title(code: &str, title: Option<&str>) -> Option<String> {
+    if let Some(title) = title.map(str::trim).filter(|value| !value.is_empty()) {
+        return Some(title.into());
+    }
+    Some(
+        match code {
+            "director" => "ผู้อำนวยการ",
+            "deputy_director" => "รองผู้อำนวยการ",
+            "head" => "หัวหน้า",
+            "deputy_head" => "รองหัวหน้า",
+            "coordinator" => "ผู้ประสานงาน",
+            "member" => "สมาชิก",
+            _ => return None,
+        }
+        .into(),
+    )
 }
 pub async fn signatures(
     pool: &PgPool,
@@ -1594,6 +1770,33 @@ pub async fn instance_detail(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stamp_titles_use_explicit_identity_or_known_thai_labels_without_role_codes() {
+        assert_eq!(
+            stamp_position_title("director", Some("  ผู้อำนวยการโรงเรียน  ")).as_deref(),
+            Some("ผู้อำนวยการโรงเรียน")
+        );
+        for (code, expected) in [
+            ("director", "ผู้อำนวยการ"),
+            ("deputy_director", "รองผู้อำนวยการ"),
+            ("head", "หัวหน้า"),
+            ("deputy_head", "รองหัวหน้า"),
+            ("coordinator", "ผู้ประสานงาน"),
+            ("member", "สมาชิก"),
+        ] {
+            assert_eq!(stamp_position_title(code, None).as_deref(), Some(expected));
+            assert_eq!(
+                stamp_position_title(code, Some("  ")).as_deref(),
+                Some(expected)
+            );
+        }
+        assert!(stamp_position_title("unknown_position", None).is_none());
+        assert!(stamp_position_title("DIRECTOR_RBAC", Some("")).is_none());
+        assert_eq!(
+            stamp_position_title("unknown_position", Some("ตำแหน่งที่กำหนดเอง")).as_deref(),
+            Some("ตำแหน่งที่กำหนดเอง")
+        );
+    }
     #[test]
     fn normalized_boxes_reject_nan_and_escape() {
         assert!(valid_box(1, 0.1, 0.2, 0.2, 0.2));
