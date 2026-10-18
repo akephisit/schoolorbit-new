@@ -269,7 +269,42 @@ const routes: CareRoute[] = [
 ];
 
 function feature(page: Page) {
-	return page.getByRole('heading', { level: 1 }).locator('xpath=ancestor::header/..');
+	return page
+		.getByRole('main')
+		.getByRole('heading', { level: 1 })
+		.locator('xpath=ancestor::header/..');
+}
+
+async function scrollableStudentList(page: Page) {
+	const checkbox = page
+		.getByRole('group', { name: 'นักเรียน *', exact: true })
+		.getByRole('checkbox')
+		.first();
+	const handle = await checkbox.evaluateHandle((element) => {
+		let ancestor = element.parentElement;
+		while (ancestor) {
+			if (
+				/auto|scroll/.test(getComputedStyle(ancestor).overflowY) &&
+				ancestor.scrollHeight > ancestor.clientHeight
+			)
+				return ancestor;
+			ancestor = ancestor.parentElement;
+		}
+		throw new Error('Expected a bounded, natively scrollable student list');
+	});
+	const pane = handle.asElement();
+	if (!pane) throw new Error('Scrollable student list is missing');
+	const outerScroll = () =>
+		pane.evaluate((element) => {
+			let total = 0;
+			let ancestor = element.parentElement;
+			while (ancestor) {
+				total += ancestor.scrollTop;
+				ancestor = ancestor.parentElement;
+			}
+			return total;
+		});
+	return { pane, outerScroll };
 }
 async function noDocumentOverflow(page: Page) {
 	await expect
@@ -310,7 +345,9 @@ for (const viewport of [
 					permissions: route.userType ? [PERMISSIONS.STUDENT_CARE_READ_OWN] : undefined
 				});
 				await page.goto(route.path);
-				await expect(page.getByRole('heading', { level: 1 })).toHaveText(route.title);
+				await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(
+					route.title
+				);
 				await expect(page.locator('html')).toHaveClass(
 					theme === 'dark' ? /dark/ : /^(?!.*\bdark\b)/
 				);
@@ -359,14 +396,18 @@ test('care navigation follows keyboard order and marks the destination current',
 	await page.keyboard.press('Tab');
 	await expect(nav.getByRole('link', { name: 'แบบประเมินของฉัน', exact: true })).toBeFocused();
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('แบบประเมินของฉัน');
+	await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(
+		'แบบประเมินของฉัน'
+	);
 	await expect(nav.getByRole('link', { name: 'แบบประเมินของฉัน', exact: true })).toHaveAttribute(
 		'aria-current',
 		'page'
 	);
 	await nav.getByRole('link', { name: 'คลังแบบประเมิน', exact: true }).focus();
 	await page.keyboard.press('Enter');
-	await expect(page.getByRole('heading', { level: 1 })).toHaveText('คลังแบบประเมิน');
+	await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(
+		'คลังแบบประเมิน'
+	);
 	await expect(nav.getByRole('link', { name: 'คลังแบบประเมิน', exact: true })).toHaveAttribute(
 		'aria-current',
 		'page'
@@ -442,34 +483,7 @@ for (const viewport of [
 		const api = await mockStudentCare(page, { manyPeople: true });
 		await page.setViewportSize(viewport);
 		await page.goto(carePath(`/rounds/${careRoundId}/assign`));
-		const checkbox = page
-			.getByRole('group', { name: 'นักเรียน *', exact: true })
-			.getByRole('checkbox')
-			.first();
-		const handle = await checkbox.evaluateHandle((element) => {
-			let ancestor = element.parentElement;
-			while (ancestor) {
-				if (
-					/auto|scroll/.test(getComputedStyle(ancestor).overflowY) &&
-					ancestor.scrollHeight > ancestor.clientHeight
-				)
-					return ancestor;
-				ancestor = ancestor.parentElement;
-			}
-			throw new Error('Expected a bounded, natively scrollable student list');
-		});
-		const pane = handle.asElement();
-		if (!pane) throw new Error('Scrollable student list is missing');
-		const outerScroll = () =>
-			pane.evaluate((element) => {
-				let total = 0;
-				let ancestor = element.parentElement;
-				while (ancestor) {
-					total += ancestor.scrollTop;
-					ancestor = ancestor.parentElement;
-				}
-				return total;
-			});
+		const { pane, outerScroll } = await scrollableStudentList(page);
 		await pane.evaluate((element) => {
 			element.scrollIntoView({ block: 'center' });
 			element.scrollTop = element.scrollHeight;
@@ -491,6 +505,67 @@ for (const viewport of [
 		expect(api.responses).toHaveLength(0);
 	});
 }
+
+test.describe('emulated mobile touch', () => {
+	test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
+	test('picker supports tap selection, clearing, retention and native touch scrolling at both boundaries', async ({
+		page,
+		context
+	}) => {
+		const api = await mockStudentCare(page, { manyPeople: true });
+		await page.goto(carePath(`/rounds/${careRoundId}/assign`));
+		const students = page.getByRole('group', { name: 'นักเรียน *', exact: true });
+		const first = students.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ });
+		await first.tap();
+		await expect(first).toBeChecked();
+		await students.getByRole('button', { name: 'นำ นักเรียนทดสอบ หนึ่ง ออก', exact: true }).tap();
+		await expect(first).not.toBeChecked();
+		await first.tap();
+		await students.getByLabel('ค้นหานักเรียน', { exact: true }).fill('0002');
+		await students.getByRole('button', { name: 'ค้นหา', exact: true }).tap();
+		const second = students.getByRole('checkbox', { name: /นักเรียนสมมติ 02/ });
+		await second.tap();
+		await expect(second).toBeChecked();
+		await expect(students.getByRole('button', { name: /^นำ .+ ออก$/ })).toHaveCount(2);
+		await students.getByLabel('ค้นหานักเรียน', { exact: true }).fill('');
+		await students.getByRole('button', { name: 'ค้นหา', exact: true }).tap();
+		await expect(first).toBeChecked();
+		await expect(second).toBeChecked();
+		const { pane, outerScroll } = await scrollableStudentList(page);
+		const session = await context.newCDPSession(page);
+		try {
+			for (const boundary of ['bottom', 'top'] as const) {
+				await pane.evaluate((element, edge) => {
+					element.scrollIntoView({ block: 'center' });
+					element.scrollTop = edge === 'bottom' ? element.scrollHeight : 0;
+				}, boundary);
+				const bounds = await pane.boundingBox();
+				if (!bounds) throw new Error('Touch scroll target is not rendered');
+				const before = await outerScroll();
+				if (boundary === 'top') expect(before).toBeGreaterThan(0);
+				await session.send('Input.synthesizeScrollGesture', {
+					x: bounds.x + bounds.width / 2,
+					y: bounds.y + bounds.height / 2,
+					yDistance: boundary === 'bottom' ? -350 : 350,
+					gestureSourceType: 'touch',
+					preventFling: true,
+					speed: 600
+				});
+				if (boundary === 'bottom') await expect.poll(outerScroll).toBeGreaterThan(before);
+				else await expect.poll(outerScroll).toBeLessThan(before);
+			}
+		} finally {
+			await session.detach();
+		}
+		await expect(first).toBeChecked();
+		await expect(second).toBeChecked();
+		expect(api.assignments).toHaveLength(0);
+		expect(api.responses).toHaveLength(0);
+		expect(api.visits).toHaveLength(0);
+		expect(api.cases).toHaveLength(0);
+		await noDocumentOverflow(page);
+	});
+});
 
 test('new case validation preserves the factual draft and selected student', async ({ page }) => {
 	const api = await mockStudentCare(page);
