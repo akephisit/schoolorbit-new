@@ -41,13 +41,13 @@ export interface SchoolHomeSeo {
 
 /** Public branding only; bump the template version when the card design changes. */
 function schoolShareImageUrl(info: PublicSchoolInfo | null, homeUrl: string): string {
-	const branding = `v1:${info?.schoolName?.trim() || ''}:${info?.logoFileId || ''}`;
+	const branding = `v2:${info?.schoolName?.trim() || ''}:${info?.logoFileId || ''}`;
 	let hash = 2166136261;
 	for (let index = 0; index < branding.length; index++) {
 		hash = Math.imul(hash ^ branding.charCodeAt(index), 16777619);
 	}
 	const image = new URL('/og-image.png', homeUrl);
-	image.searchParams.set('v', `1-${(hash >>> 0).toString(16)}`);
+	image.searchParams.set('v', `2-${(hash >>> 0).toString(16)}`);
 	return image.href;
 }
 

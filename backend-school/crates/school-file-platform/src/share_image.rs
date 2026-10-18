@@ -18,6 +18,25 @@ const REGULAR: &[u8] = include_bytes!("../assets/Kanit-Regular.ttf");
 const BOLD: &[u8] = include_bytes!("../assets/Kanit-SemiBold.ttf");
 const SUBTITLE: &str = "ระบบจัดการโรงเรียนครบวงจร";
 
+// Generated with OpenAI image generation for the school banner background (October 2026).
+// The campus is a generic illustration, not a photograph or depiction of the current school.
+const BACKGROUND: &[u8] = include_bytes!("../assets/school-share-background.png");
+
+fn background() -> Result<&'static RgbaImage, FilePlatformError> {
+    static IMAGE: OnceLock<Result<RgbaImage, FilePlatformError>> = OnceLock::new();
+    IMAGE
+        .get_or_init(|| {
+            let decoded = image::load_from_memory_with_format(BACKGROUND, ImageFormat::Png)
+                .map_err(|_| FilePlatformError::InspectionRejected)?;
+            let resized =
+                decoded.resize_exact(WIDTH, HEIGHT, image::imageops::FilterType::Lanczos3);
+            // The bundled design is opaque; make its fixed RGB base explicit for Pixmap compositing.
+            Ok(DynamicImage::ImageRgb8(resized.to_rgb8()).into_rgba8())
+        })
+        .as_ref()
+        .map_err(|error| *error)
+}
+
 fn font(bold: bool) -> Result<&'static rustybuzz::Face<'static>, FilePlatformError> {
     static REGULAR_FACE: OnceLock<Option<rustybuzz::Face<'static>>> = OnceLock::new();
     static BOLD_FACE: OnceLock<Option<rustybuzz::Face<'static>>> = OnceLock::new();
@@ -179,26 +198,6 @@ fn circle(canvas: &mut Pixmap, x: f32, y: f32, radius: f32, color: [u8; 4]) {
     }
 }
 
-fn curve(canvas: &mut Pixmap, points: [f32; 8], width: f32, color: [u8; 4]) {
-    let mut path = PathBuilder::new();
-    path.move_to(points[0], points[1]);
-    path.cubic_to(
-        points[2], points[3], points[4], points[5], points[6], points[7],
-    );
-    if let Some(path) = path.finish() {
-        canvas.stroke_path(
-            &path,
-            &paint(color),
-            &Stroke {
-                width,
-                ..Stroke::default()
-            },
-            Transform::identity(),
-            None,
-        );
-    }
-}
-
 /// Geometry matches the Admin Orbit mark, whose original Lucide ISC notice is bundled in assets.
 fn orbit_mark(canvas: &mut Pixmap, x: f32, y: f32, size: f32) {
     let scale = size / 40.0;
@@ -250,53 +249,7 @@ pub(crate) fn render_png(
         return Err(FilePlatformError::InspectionRejected);
     }
     let mut canvas = Pixmap::new(WIDTH, HEIGHT).ok_or(FilePlatformError::InspectionRejected)?;
-    canvas.fill(tiny_skia::Color::WHITE);
-    for y in 0..HEIGHT {
-        let t = y as f32 / HEIGHT as f32;
-        for x in 0..WIDTH {
-            let offset = ((y * WIDTH + x) * 4) as usize;
-            canvas.data_mut()[offset..offset + 4].copy_from_slice(&[
-                (252.0 - 14.0 * t) as u8,
-                (254.0 - 8.0 * t) as u8,
-                255,
-                255,
-            ]);
-        }
-    }
-    curve(
-        &mut canvas,
-        [-90.0, 510.0, 200.0, 100.0, 840.0, 620.0, 1300.0, 120.0],
-        2.0,
-        [190, 221, 239, 150],
-    );
-    curve(
-        &mut canvas,
-        [-100.0, 560.0, 250.0, 220.0, 780.0, 740.0, 1280.0, 220.0],
-        1.5,
-        [209, 231, 244, 180],
-    );
-    curve(
-        &mut canvas,
-        [1220.0, 280.0, 1080.0, 410.0, 1040.0, 550.0, 1250.0, 660.0],
-        2.5,
-        [139, 192, 223, 150],
-    );
-    curve(
-        &mut canvas,
-        [1260.0, 350.0, 1090.0, 465.0, 1100.0, 600.0, 1190.0, 680.0],
-        1.5,
-        [168, 208, 232, 170],
-    );
-    curve(
-        &mut canvas,
-        [-40.0, 620.0, 250.0, 510.0, 580.0, 700.0, 870.0, 650.0],
-        2.0,
-        [174, 210, 233, 160],
-    );
-    circle(&mut canvas, 120.0, 88.0, 5.0, [137, 191, 215, 160]);
-    circle(&mut canvas, 1110.0, 124.0, 7.0, [137, 191, 215, 120]);
-    circle(&mut canvas, 263.0, 306.0, 202.0, [227, 240, 249, 170]);
-    circle(&mut canvas, 263.0, 302.0, 190.0, [255, 255, 255, 255]);
+    canvas.data_mut().copy_from_slice(background()?.as_raw());
     if crest.is_none() {
         orbit_mark(&mut canvas, 123.0, 162.0, 280.0);
     }
@@ -405,6 +358,18 @@ mod tests {
     }
 
     #[test]
+    fn school_share_bundled_background_is_valid_opaque_and_bounded() {
+        let base = background().unwrap();
+        assert_eq!(base.dimensions(), (1200, 630));
+        assert!(base.pixels().all(|pixel| pixel.0[3] == 255));
+        let png = render_png(None, "โรงเรียนทดสอบ", "sample.example.test").unwrap();
+        assert!(png.len() <= 2 * 1024 * 1024);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (1200, 630));
+        assert!(image.pixels().all(|pixel| pixel.0[3] == 255));
+    }
+
+    #[test]
     fn school_share_banner_is_png_and_contains_whole_portrait_and_landscape_original() {
         for (width, height) in [(160, 320), (320, 160), (320, 320)] {
             let png = render_png(
@@ -416,6 +381,8 @@ mod tests {
             assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
             let image = image::load_from_memory(&png).unwrap().to_rgba8();
             assert_eq!(image.dimensions(), (1200, 630));
+            assert!(png.len() <= 2 * 1024 * 1024);
+            assert!(image.pixels().all(|pixel| pixel.0[3] == 255));
             let scale = 326.0 / width.max(height) as f32;
             let (w, h) = (
                 (width as f32 * scale).round() as u32,
