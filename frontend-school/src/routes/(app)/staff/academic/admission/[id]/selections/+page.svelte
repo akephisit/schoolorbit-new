@@ -1112,7 +1112,7 @@
 													{app.selectionRank}
 												</span>
 											</Table.Cell>
-											<Table.Cell class="font-mono text-xs"
+											<Table.Cell class="text-xs tabular-nums"
 												>{app.applicationNumber ?? '-'}</Table.Cell
 											>
 											<Table.Cell class="font-medium">
@@ -1269,7 +1269,7 @@
 												<Table.Cell class="text-center text-muted-foreground text-sm">
 													{app.selectionRank}
 												</Table.Cell>
-												<Table.Cell class="font-mono text-xs"
+												<Table.Cell class="text-xs tabular-nums"
 													>{app.applicationNumber ?? '-'}</Table.Cell
 												>
 												<Table.Cell class="font-medium">
@@ -1537,7 +1537,7 @@
 									{app.rankInRoom != null ? '#' + app.rankInRoom : '-'}
 								</Table.Cell>
 							{/if}
-							<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+							<Table.Cell class="text-xs tabular-nums">{app.applicationNumber ?? '-'}</Table.Cell>
 							<Table.Cell class="font-medium">{app.fullName}</Table.Cell>
 							<Table.Cell class="text-sm text-muted-foreground"
 								>{app.originalTrackName ?? '-'}</Table.Cell

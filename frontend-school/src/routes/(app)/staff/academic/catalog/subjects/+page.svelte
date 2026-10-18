@@ -394,7 +394,7 @@
 							<Label for="new-subject-code">เพิ่มรหัสรายวิชา</Label>
 							<Input
 								id="new-subject-code"
-								class="mt-1.5 font-mono uppercase"
+								class="mt-1.5 uppercase tabular-nums"
 								bind:value={code}
 								placeholder="เช่น ค21101"
 								required
@@ -456,7 +456,7 @@
 							<Table.Body>
 								{#each filteredSubjects as item (item.subject.id)}
 									<Table.Row>
-										<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono font-semibold">
+										<Table.Cell class="border-s-4 border-s-primary ps-5 font-semibold tabular-nums">
 											{item.subject.code}
 										</Table.Cell>
 										<Table.Cell class="max-w-[280px] whitespace-normal">
@@ -489,7 +489,7 @@
 										<Table.Cell class="max-w-[220px] whitespace-normal"
 											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
 										>
-										<Table.Cell class="text-end font-mono tabular-nums"
+										<Table.Cell class="text-end tabular-nums"
 											>{item.displayVersion?.credit ?? '—'}</Table.Cell
 										>
 										<Table.Cell>
@@ -541,7 +541,9 @@
 							>
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0">
-										<p class="font-mono text-sm font-semibold text-primary">{item.subject.code}</p>
+										<p class="text-sm font-semibold text-primary tabular-nums">
+											{item.subject.code}
+										</p>
 										<h2 class="mt-1 font-medium">
 											{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}
 										</h2>
@@ -563,15 +565,15 @@
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">หน่วยกิต</p>
-										<p class="font-mono">{item.displayVersion?.credit ?? '—'}</p>
+										<p class="tabular-nums">{item.displayVersion?.credit ?? '—'}</p>
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">คาบมาตรฐานต่อสัปดาห์</p>
-										<p class="font-mono">{item.displayVersion?.periodsPerWeek ?? '—'}</p>
+										<p class="tabular-nums">{item.displayVersion?.periodsPerWeek ?? '—'}</p>
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">ชั่วโมงรวมต่อภาคเรียน</p>
-										<p class="font-mono">{item.displayVersion?.hoursPerSemester ?? '—'}</p>
+										<p class="tabular-nums">{item.displayVersion?.hoursPerSemester ?? '—'}</p>
 									</div>
 									<div class="col-span-2">
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
@@ -622,7 +624,7 @@
 		<Sheet.Header class="pe-8 text-start">
 			<Sheet.Title class="flex items-center gap-2">
 				<BookOpen class="size-5 text-primary" />
-				<span class="font-mono">{selected?.subject.code ?? 'รายวิชา'}</span>
+				<span class="tabular-nums">{selected?.subject.code ?? 'รายวิชา'}</span>
 				{#if selected?.displayVersion}<span class="font-sans"
 						>· {selected.displayVersion.nameTh}</span
 					>{/if}

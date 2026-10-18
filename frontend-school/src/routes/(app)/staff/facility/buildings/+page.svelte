@@ -509,7 +509,7 @@
 								{:else if buildingsLoaded}
 									{#each buildings as b (b.id)}
 										<Table.Row>
-											<Table.Cell class="font-mono text-xs">{b.code || '-'}</Table.Cell>
+											<Table.Cell class="text-xs tabular-nums">{b.code || '-'}</Table.Cell>
 											<Table.Cell>
 												<div class="font-medium">{b.name_th}</div>
 												{#if b.name_en}<div class="text-xs text-muted-foreground">

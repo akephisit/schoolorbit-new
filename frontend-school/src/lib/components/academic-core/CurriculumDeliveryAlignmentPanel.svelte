@@ -137,7 +137,7 @@
 							<p class="mt-1 text-sm text-muted-foreground">{room.studyProgram.name}</p>
 						</div>
 						<div class="flex items-center gap-2">
-							<span class="font-mono text-sm tabular-nums">
+							<span class="text-sm tabular-nums">
 								{room.items.length} ตามหลักสูตร · {room.extraOfferings.length} เพิ่มเติม
 							</span>
 							<ChevronDown class="size-4 transition-transform group-open:rotate-180" />
@@ -149,7 +149,7 @@
 							<div class="rounded-xl border bg-background p-3">
 								<div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
 									<div>
-										<p class="font-mono text-xs font-semibold text-primary">{item.code}</p>
+										<p class="text-xs font-semibold text-primary tabular-nums">{item.code}</p>
 										<p class="font-medium">{item.name}</p>
 										{#if item.resourceKind === 'course'}
 											<p class="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
@@ -174,7 +174,7 @@
 							<div class="rounded-xl border border-sky-500/25 bg-sky-500/[0.045] p-3">
 								<div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
 									<div>
-										<p class="font-mono text-xs font-semibold text-sky-700 dark:text-sky-300">
+										<p class="text-xs font-semibold text-sky-700 dark:text-sky-300 tabular-nums">
 											{item.code}
 										</p>
 										<p class="font-medium">{item.name}</p>

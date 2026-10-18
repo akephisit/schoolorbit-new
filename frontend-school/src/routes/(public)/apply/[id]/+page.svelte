@@ -834,7 +834,7 @@
 									inputmode="numeric"
 									required
 									placeholder="X-XXXX-XXXXX-XX-X"
-									class="font-mono text-lg max-w-sm"
+									class="text-lg max-w-sm tabular-nums"
 								/>
 							</div>
 
@@ -1149,7 +1149,7 @@
 											id="fatherNationalId"
 											bind:value={fatherNationalId}
 											maxlength={13}
-											class="font-mono"
+											class="tabular-nums"
 										/>
 									</div>
 									<div class="space-y-2">
@@ -1207,7 +1207,7 @@
 											id="motherNationalId"
 											bind:value={motherNationalId}
 											maxlength={13}
-											class="font-mono"
+											class="tabular-nums"
 										/>
 									</div>
 									<div class="space-y-2">
@@ -1300,7 +1300,7 @@
 												id="guardianNationalId"
 												bind:value={guardianNationalId}
 												maxlength={13}
-												class="font-mono"
+												class="tabular-nums"
 											/>
 										</div>
 										<div class="space-y-2">

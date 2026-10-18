@@ -788,7 +788,9 @@
 									<Badge variant="outline">{offeringStatusLabel(offering.status)}</Badge>
 								</div>
 								<h2 class="mt-3 text-xl font-semibold tracking-tight">{offering.nameSnapshot}</h2>
-								<p class="mt-1 font-mono text-sm text-muted-foreground">{offering.codeSnapshot}</p>
+								<p class="mt-1 text-sm text-muted-foreground tabular-nums">
+									{offering.codeSnapshot}
+								</p>
 							</div>
 						</div>
 						<div class="grid grid-cols-3 gap-2 text-center">
@@ -823,7 +825,7 @@
 									{courseSnapshot ? 'ตามหลักสูตร' : 'ตามทะเบียนกิจกรรม'}
 								</p>
 								{#if courseSnapshot}
-									<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-foreground">
+									<p class="mt-1 text-lg font-semibold tabular-nums text-foreground">
 										{courseSnapshot.standardPeriodsPerWeek} คาบ/สัปดาห์
 									</p>
 									<p class="mt-0.5 text-xs text-muted-foreground">ค่ามาตรฐานของรหัสวิชา</p>
@@ -854,7 +856,7 @@
 										onaction={retryVersions}
 									/>
 								{:else}
-									<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
+									<p class="mt-1 text-lg font-semibold tabular-nums text-primary">
 										{selectedTimetableTarget
 											? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
 											: 'ยังไม่กำหนด'}

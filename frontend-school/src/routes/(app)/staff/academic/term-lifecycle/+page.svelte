@@ -272,7 +272,7 @@
 				<div class="border-b p-4">
 					<h2 id="readiness-title" class="font-semibold">ความพร้อมก่อนปิดภาคเรียน</h2>
 					<p class="mt-1 text-sm text-muted-foreground">
-						ผลสรุปล่าสุดครบ <span class="font-mono tabular-nums"
+						ผลสรุปล่าสุดครบ <span class="tabular-nums"
 							>{workspace.coverage.students.filter((student) => student.isCurrent).length} / {workspace
 								.coverage.students.length}</span
 						> คน

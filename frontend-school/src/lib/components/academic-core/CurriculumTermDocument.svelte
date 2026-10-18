@@ -58,7 +58,7 @@
 								</Table.Row>
 								{#each section.rows as row (row.id)}
 									<Table.Row>
-										<Table.Cell class="font-mono text-xs font-semibold">{row.code}</Table.Cell>
+										<Table.Cell class="text-xs font-semibold tabular-nums">{row.code}</Table.Cell>
 										<Table.Cell>
 											<div class="font-medium">{row.name}</div>
 											<Badge variant="secondary" class="mt-1 text-[10px]">

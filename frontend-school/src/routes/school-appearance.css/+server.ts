@@ -7,10 +7,19 @@ export const GET: RequestHandler = ({ fetch, url, request }) =>
 	appearanceStylesheet(
 		(signal) =>
 			getPublicSchoolAppearance({
-				...publicRequestFromOrigin(
-					(input, init) => fetch(input, { ...init, redirect: 'error', credentials: 'omit' }),
-					url.origin
-				),
+				...publicRequestFromOrigin(async (input, init) => {
+					// Workers support manual redirects; "error" fails before the request is sent.
+					const response = await fetch(input, {
+						...init,
+						redirect: 'manual',
+						credentials: 'omit'
+					});
+					if (response.status >= 300 && response.status < 400) {
+						await response.body?.cancel();
+						throw new Error('Appearance endpoint redirected');
+					}
+					return response;
+				}, url.origin),
 				signal
 			}),
 		request.headers.get('if-none-match')

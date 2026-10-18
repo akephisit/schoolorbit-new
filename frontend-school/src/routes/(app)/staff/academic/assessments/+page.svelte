@@ -672,7 +672,7 @@
 								<div class="space-y-3 px-5 py-4">
 									<div class="flex items-center justify-between gap-3">
 										<p class="font-medium">{phaseLabel(control.phaseCode)}</p>
-										<span class="font-mono text-xs text-muted-foreground"
+										<span class="text-xs text-muted-foreground tabular-nums"
 											>0{phaseCodes.indexOf(control.phaseCode) + 1}</span
 										>
 									</div>
@@ -1024,7 +1024,7 @@
 							<div class="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
 								<div class="flex items-center gap-3">
 									<span
-										class="flex size-7 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-semibold text-primary"
+										class="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary tabular-nums"
 										>0{index + 1}</span
 									>
 									<p class="font-medium">{phaseLabel(phase.phaseCode)}</p>

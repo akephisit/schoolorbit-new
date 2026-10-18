@@ -295,7 +295,7 @@
 								ผลรายปีและเรื่องที่ต้องตรวจ
 							</h2>
 							<p class="mt-1 text-sm text-muted-foreground">
-								ผลล่าสุดครบ <span class="font-mono tabular-nums"
+								ผลล่าสุดครบ <span class="tabular-nums"
 									>{readyCount} / {workspace.coverage.students.length}</span
 								> คน
 							</p>

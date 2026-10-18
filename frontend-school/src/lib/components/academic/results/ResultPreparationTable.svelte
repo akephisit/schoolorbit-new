@@ -84,7 +84,7 @@
 				{#each workspace.students as student (student.studentAcademicYearId)}
 					<Table.Row>
 						<Table.Cell class="font-medium">{student.displayName}</Table.Cell>
-						<Table.Cell class="text-right font-mono tabular-nums">
+						<Table.Cell class="text-right tabular-nums">
 							{student.calculatedScore}
 						</Table.Cell>
 						<Table.Cell class="text-center font-semibold">

@@ -400,7 +400,7 @@
 									onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 								/>
 								<span class="min-w-0">
-									<span class="block font-mono text-xs font-semibold text-primary"
+									<span class="block text-xs font-semibold text-primary tabular-nums"
 										>{option.code}</span
 									>
 									<span class="block text-sm">{option.name}</span>
@@ -459,7 +459,7 @@
 									{@const source = requirementSource(requirement.catalogVersionId)}
 									<Table.Row>
 										<Table.Cell>
-											<div class="font-mono text-xs font-semibold text-primary">
+											<div class="text-xs font-semibold text-primary tabular-nums">
 												{option?.code ?? source?.code}
 											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>

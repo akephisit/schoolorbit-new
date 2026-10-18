@@ -529,7 +529,7 @@
 							<div class="mb-2 flex items-center justify-between gap-3">
 								<div>
 									<h3 class="text-sm font-semibold">{dayLabel(day)}</h3>
-									<p class="font-mono text-xs text-muted-foreground">
+									<p class="text-xs text-muted-foreground tabular-nums">
 										{day.startTime.slice(0, 5)}-{day.endTime.slice(0, 5)}
 									</p>
 								</div>
@@ -552,7 +552,9 @@
 											style:min-width={`${minimumTrackWidth(day)}px`}
 										>
 											{#each timeSlots(day) as slot, index (slot)}
-												<div class="border-r px-1 py-2 font-mono text-[10px] text-muted-foreground">
+												<div
+													class="border-r px-1 py-2 text-[10px] text-muted-foreground tabular-nums"
+												>
 													{shouldRenderTimeLabel(slot, index) ? slot : ''}
 												</div>
 											{/each}
@@ -618,7 +620,7 @@
 														style:left={`${preview.leftPx}px`}
 														style:width={`${preview.widthPx}px`}
 													>
-														<div class="truncate font-mono">
+														<div class="truncate tabular-nums">
 															{preview.startTime}-{preview.endTime}
 														</div>
 														{#if preview.reason}
@@ -692,7 +694,7 @@
 				</div>
 				<div class="space-y-2">
 					<Label>สิ้นสุด</Label>
-					<div class="rounded-md border bg-muted px-3 py-2 font-mono text-sm">
+					<div class="rounded-md border bg-muted px-3 py-2 text-sm tabular-nums">
 						{selectedSession ? addMinutes(selectedStartTime, selectedSession.durationMinutes) : '-'}
 					</div>
 				</div>

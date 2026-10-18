@@ -423,7 +423,7 @@
 				</div>
 				<div class="space-y-2">
 					<Label>สิ้นสุด</Label>
-					<div class="rounded-md border bg-muted px-3 py-2 font-mono text-sm">
+					<div class="rounded-md border bg-muted px-3 py-2 text-sm tabular-nums">
 						{selectedItem ? addMinutes(selectedStartTime, selectedItem.durationMinutes) : '-'}
 					</div>
 				</div>

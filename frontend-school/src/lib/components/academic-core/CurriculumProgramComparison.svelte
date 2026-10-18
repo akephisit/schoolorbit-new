@@ -28,7 +28,7 @@
 					{#each comparison.programs as program (program.id)}
 						<Table.Head class="min-w-52 border-l align-top">
 							<div class="font-semibold text-foreground">{program.name}</div>
-							<div class="mt-0.5 font-mono text-xs font-normal text-muted-foreground">
+							<div class="mt-0.5 text-xs font-normal text-muted-foreground">
 								{program.isDefault ? 'แผนเริ่มต้น' : ''}
 							</div>
 						</Table.Head>
@@ -49,7 +49,7 @@
 					{#each rows as row (row.key)}
 						<Table.Row class={row.isDifferent ? 'bg-amber-50/60 dark:bg-amber-950/10' : ''}>
 							<Table.Cell class="align-top">
-								<div class="font-mono text-xs font-semibold text-primary">{row.code}</div>
+								<div class="text-xs font-semibold text-primary tabular-nums">{row.code}</div>
 								<div class="mt-1 font-medium">{row.name}</div>
 								{#if row.isDifferent}
 									<div class="mt-1 text-xs text-amber-700 dark:text-amber-400">

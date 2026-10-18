@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Plugin, type ViteDevServer } from 'vite';
+import { FONTS } from '../../src/lib/appearance/model.js';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const harnessPath = '/__certificate-public-verification-test';
@@ -83,7 +84,7 @@ function findStubModule(id: string): string | undefined {
 		const resolvedPath = path.resolve(
 			frontendRoot,
 			'src/lib',
-			stubId.slice('#lib//index.js'.length)
+			stubId.slice('#lib/'.length).replace(/\.js$/, '')
 		);
 		if (id === resolvedPath || id === `${resolvedPath}.ts` || id === `${resolvedPath}.svelte`) {
 			return stubId;
@@ -98,10 +99,11 @@ function harnessPlugin(): Plugin {
 		resolveId(id) {
 			if (id === virtualModuleId) return resolvedVirtualModuleId;
 			const stubId = findStubModule(id);
-			if (stubId) return `${stubPrefix}${stubId}`;
+			if (stubId) return `${stubPrefix}${encodeURIComponent(stubId)}`;
 		},
 		load(id) {
-			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
+			if (id.startsWith(stubPrefix))
+				return stubModules.get(decodeURIComponent(id.slice(stubPrefix.length)));
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
@@ -317,6 +319,72 @@ test('manual verification submits three fields and downloads only through the re
 	await expect
 		.poll(() => page.evaluate(() => window.certificatePublicHarness.downloads()))
 		.toEqual([{ byteLength: 4, filename: '2569-0042-000123-4.pdf' }]);
+});
+
+test('public registry numbers and recipient names inherit every school font', async ({ page }) => {
+	await page.goto(`${baseUrl}${harnessPath}?mode=manual`);
+	await page.addStyleTag({ url: `${baseUrl}/school-appearance-fonts.css` });
+	await completeManualVerification(page);
+	await expect(page.getByLabel('ภาพเกียรติบัตรที่ตรวจสอบแล้ว')).toBeVisible();
+	const client = await page.context().newCDPSession(page);
+	try {
+		await client.send('DOM.enable');
+		await client.send('CSS.enable');
+		for (const font of FONTS) {
+			await page.evaluate(async (family) => {
+				await Promise.all(
+					[400, 500, 600, 700].map((weight) =>
+						document.fonts.load(`${weight} 16px "${family}"`, 'ก SchoolOrbit 0123456789')
+					)
+				);
+				document.documentElement.style.setProperty(
+					'--school-font-family',
+					`"${family}", sans-serif`
+				);
+				await document.fonts.ready;
+			}, font.family);
+			for (const viewport of [
+				{ width: 1440, height: 900 },
+				{ width: 390, height: 844 }
+			]) {
+				await page.setViewportSize(viewport);
+				for (const selector of [
+					'.registry-rail strong',
+					'.certificate-number strong',
+					'.recipient h2'
+				]) {
+					const element = page.locator(selector);
+					await expect(element).toBeVisible();
+					await expect(element).toHaveCSS('font-family', `"${font.family}", sans-serif`);
+					const document = await client.send('DOM.getDocument');
+					const { nodeId } = await client.send('DOM.querySelector', {
+						nodeId: document.root.nodeId,
+						selector
+					});
+					const { fonts } = await client.send('CSS.getPlatformFontsForNode', { nodeId });
+					expect(fonts.length).toBeGreaterThan(0);
+					expect(fonts).toEqual(
+						fonts.map(() =>
+							expect.objectContaining({
+								isCustomFont: true,
+								familyName: expect.stringContaining(font.family.replace('School ', ''))
+							})
+						)
+					);
+				}
+			}
+		}
+		await expect(page.locator('.registry-rail strong')).toHaveCSS(
+			'font-variant-numeric',
+			'tabular-nums'
+		);
+		await expect(page.locator('.certificate-number strong')).toHaveCSS(
+			'font-variant-numeric',
+			'tabular-nums'
+		);
+	} finally {
+		await client.detach();
+	}
 });
 
 test('QR verification removes the proof fragment before the POST begins', async ({ page }) => {
