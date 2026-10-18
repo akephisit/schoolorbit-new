@@ -757,11 +757,11 @@
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
 								<div>
 									<p class="text-xs text-muted-foreground">เลขที่ใบสมัคร</p>
-									<p class="font-mono font-medium">{application.applicationNumber ?? '-'}</p>
+									<p class="font-medium tabular-nums">{application.applicationNumber ?? '-'}</p>
 								</div>
 								<div>
 									<p class="text-xs text-muted-foreground">เลขประจำตัวประชาชน</p>
-									<p class="font-mono font-medium">{application.nationalId}</p>
+									<p class="font-medium tabular-nums">{application.nationalId}</p>
 								</div>
 								<div>
 									<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
@@ -1203,9 +1203,12 @@
 									<div>
 										<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
 										{#if editMode}
-											<Input bind:value={editData.fatherNationalId} class="h-8 text-sm font-mono" />
+											<Input
+												bind:value={editData.fatherNationalId}
+												class="h-8 text-sm tabular-nums"
+											/>
 										{:else}
-											<p class="font-mono font-medium">{application.fatherNationalId || '-'}</p>
+											<p class="font-medium tabular-nums">{application.fatherNationalId || '-'}</p>
 										{/if}
 									</div>
 									<div>
@@ -1254,9 +1257,12 @@
 									<div>
 										<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
 										{#if editMode}
-											<Input bind:value={editData.motherNationalId} class="h-8 text-sm font-mono" />
+											<Input
+												bind:value={editData.motherNationalId}
+												class="h-8 text-sm tabular-nums"
+											/>
 										{:else}
-											<p class="font-mono font-medium">{application.motherNationalId || '-'}</p>
+											<p class="font-medium tabular-nums">{application.motherNationalId || '-'}</p>
 										{/if}
 									</div>
 									<div>
@@ -1316,10 +1322,12 @@
 										{#if editMode}
 											<Input
 												bind:value={editData.guardianNationalId}
-												class="h-8 text-sm font-mono"
+												class="h-8 text-sm tabular-nums"
 											/>
 										{:else}
-											<p class="font-mono font-medium">{application.guardianNationalId || '-'}</p>
+											<p class="font-medium tabular-nums">
+												{application.guardianNationalId || '-'}
+											</p>
 										{/if}
 									</div>
 									<div>

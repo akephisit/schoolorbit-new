@@ -125,7 +125,7 @@
 												<TableCell class="text-sm text-muted-foreground">
 													{formatDate(session.examDate)}
 												</TableCell>
-												<TableCell class="font-mono text-sm">
+												<TableCell class="text-sm tabular-nums">
 													{formatTime(session.startsAt)}-{formatTime(session.endsAt)}
 												</TableCell>
 												<TableCell class="font-medium whitespace-normal">

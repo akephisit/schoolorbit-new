@@ -399,7 +399,7 @@
 											{/if}
 										</Table.Cell>
 										<Table.Cell>
-											<p class="font-mono font-semibold tabular-nums text-foreground">
+											<p class="font-semibold tabular-nums text-foreground">
 												{certificate.certificateNumber}
 											</p>
 											{#if certificate.replacementForCertificateId}

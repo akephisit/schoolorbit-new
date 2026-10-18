@@ -377,7 +377,7 @@
 								<Table.Body>
 									{#each list as app (app.id)}
 										<Table.Row class={app.status === 'enrolled' ? 'opacity-60' : ''}>
-											<Table.Cell class="font-mono text-xs"
+											<Table.Cell class="text-xs tabular-nums"
 												>{app.applicationNumber ?? '-'}</Table.Cell
 											>
 											<Table.Cell>

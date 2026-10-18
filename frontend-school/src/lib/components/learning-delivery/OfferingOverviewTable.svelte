@@ -221,7 +221,7 @@
 										/>{/if}
 								</div>
 								<div class="min-w-0">
-									<p class="font-mono text-xs font-semibold text-primary">
+									<p class="text-xs font-semibold text-primary tabular-nums">
 										{item.offering.codeSnapshot}
 									</p>
 									<p class="font-medium">{item.offering.nameSnapshot}</p>
@@ -238,7 +238,7 @@
 						</Table.Cell>
 						<Table.Cell>{gradeSummary(item)}</Table.Cell>
 						<Table.Cell class="max-w-[220px] whitespace-normal">{programSummary(item)}</Table.Cell>
-						<Table.Cell class="text-center font-mono tabular-nums">{item.groupCount}</Table.Cell>
+						<Table.Cell class="text-center tabular-nums">{item.groupCount}</Table.Cell>
 						<Table.Cell class="text-center">
 							<span
 								class={item.groupsWithoutPrimaryTeacher > 0
@@ -249,7 +249,7 @@
 							</span>
 							<p class="text-[11px] text-muted-foreground">มอบหมาย {item.teacherAssignmentCount}</p>
 						</Table.Cell>
-						<Table.Cell class="text-center font-mono tabular-nums"
+						<Table.Cell class="text-center tabular-nums"
 							>{item.publishedRosterCount}/{item.groupCount}</Table.Cell
 						>
 						<Table.Cell>
@@ -286,7 +286,7 @@
 				<div class="w-full space-y-3">
 					<div class="flex items-start justify-between gap-3">
 						<div>
-							<p class="font-mono text-xs font-semibold text-primary">
+							<p class="text-xs font-semibold text-primary tabular-nums">
 								{item.offering.codeSnapshot}
 							</p>
 							<p class="font-medium">{item.offering.nameSnapshot}</p>

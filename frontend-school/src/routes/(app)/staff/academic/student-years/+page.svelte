@@ -344,7 +344,7 @@
 						{#each orderedStudentYears as record (record.id)}
 							{@const placement = activePlacement(record)}
 							<Table.Row>
-								<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono text-xs"
+								<Table.Cell class="border-s-4 border-s-primary ps-5 text-xs tabular-nums"
 									>{record.studentCode ?? 'ยังไม่มีรหัส'}</Table.Cell
 								>
 								<Table.Cell class="font-medium">{record.studentName}</Table.Cell>

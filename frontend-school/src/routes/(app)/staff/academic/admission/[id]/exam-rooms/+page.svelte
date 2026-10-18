@@ -1077,12 +1077,12 @@
 										<Table.Body>
 											{#each group.seats as seat (seat.applicationId)}
 												<Table.Row>
-													<Table.Cell class="font-mono text-sm"
+													<Table.Cell class="text-sm tabular-nums"
 														>{seat.examId ?? seat.applicationNumber ?? '—'}</Table.Cell
 													>
 													<Table.Cell class="text-center font-medium">{seat.seatNumber}</Table.Cell>
 													<Table.Cell>{seat.fullName}</Table.Cell>
-													<Table.Cell class="font-mono text-sm">{seat.nationalId}</Table.Cell>
+													<Table.Cell class="text-sm tabular-nums">{seat.nationalId}</Table.Cell>
 													<Table.Cell>
 														{#if seat.trackName}
 															<Badge variant="secondary">{seat.trackName}</Badge>

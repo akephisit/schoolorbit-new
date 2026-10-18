@@ -25,7 +25,7 @@ function appearancePrimitivesHarness(): Plugin {
 					return next();
 				response.setHeader('Content-Type', 'text/html; charset=utf-8');
 				response.end(
-					`<!doctype html><html lang="th"><head><link rel="stylesheet" href="/school-appearance.css"></head><body><div id="app"></div><script type="module" src="/@id/${entry}"></script></body></html>`
+					`<!doctype html><html lang="th"><head><link rel="stylesheet" href="/school-appearance.css"><link rel="stylesheet" href="/school-appearance-fonts.css"></head><body><div id="app"></div><script type="module" src="/@id/${entry}"></script></body></html>`
 				);
 			});
 		}

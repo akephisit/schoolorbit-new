@@ -588,6 +588,7 @@ student data or credentials. From `frontend-school`, run:
 
 ```bash
 node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts
+node --test tests/runtime/server-appearance-worker.test.mjs
 npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --workers=1
 ```
 
@@ -599,6 +600,12 @@ role/public pages, persisted settings, a fresh browser, SPA navigation, denied r
 and explicit conflict review. Install the pinned Playwright Chromium and its required host
 libraries before execution. Shared layout guards assert the density token owners; browser
 checks retain explicit utility overrides rather than requiring one fixed spacing value.
+The Workers fixture runs the real stylesheet handler under the Cloudflare runtime, checks fresh
+tenant settings on repeated reads and rejects redirects instead of silently accepting another
+origin. Browser font cases inspect actual custom glyph fonts for course codes, numbers, shared
+exam controls and notifications across all three school fonts, desktop/mobile layouts and SPA
+saves; a hard refresh of the saving document and a fresh browser both retain persisted settings.
+Technical monospace and KaTeX typography remain separate.
 
 `npm ci` installs the app toolchain (TypeScript 6) and the private `tools/api-contracts` workspace (TypeScript 5 required by `openapi-typescript`). The API generator resolves its CLI from that workspace; keep its peer dependency isolated when upgrading app tooling.
 

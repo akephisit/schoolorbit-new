@@ -406,7 +406,7 @@
 								{app.lastName}
 							</p>
 							<p class="text-sm text-gray-500">
-								ใบสมัคร: <span class="font-mono font-semibold">{app.applicationNumber}</span>
+								ใบสมัคร: <span class="font-semibold tabular-nums">{app.applicationNumber}</span>
 							</p>
 							<p class="text-sm text-gray-500">
 								สาย: {app.trackName ?? '-'} | รอบ: {app.roundName ?? '-'}

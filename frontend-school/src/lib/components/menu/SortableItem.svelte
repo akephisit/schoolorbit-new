@@ -88,7 +88,7 @@
 
 			<!-- Order Badge & Actions -->
 			<div class="flex items-center gap-2">
-				<Badge variant="outline" class="font-mono">#{item.display_order}</Badge>
+				<Badge variant="outline" class="tabular-nums">#{item.display_order}</Badge>
 
 				{#if item.is_active}
 					<Badge variant="default" class="gap-1">

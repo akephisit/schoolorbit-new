@@ -246,7 +246,7 @@
 											class="grid gap-3 px-3 py-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] sm:items-center"
 										>
 											<div
-												class="rounded-lg border bg-background px-2 py-1.5 text-center font-mono text-sm font-semibold tabular-nums"
+												class="rounded-lg border bg-background px-2 py-1.5 text-center text-sm font-semibold tabular-nums"
 											>
 												{font.fontWeight}
 											</div>

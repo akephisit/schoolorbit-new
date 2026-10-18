@@ -84,7 +84,7 @@
 					<Table.Cell class="text-center whitespace-normal">
 						{roomLabel(row.assignment)}
 					</Table.Cell>
-					<Table.Cell class="text-center font-mono whitespace-normal">
+					<Table.Cell class="text-center whitespace-normal tabular-nums">
 						{assignmentTimeRanges(row.assignment.sessions)}
 					</Table.Cell>
 					<Table.Cell class="whitespace-normal">
@@ -139,7 +139,7 @@
 						</div>
 						<div>
 							<span class="text-muted-foreground">เวลา:</span>
-							<span class="font-mono">{assignmentTimeRanges(row.assignment.sessions)}</span>
+							<span class="tabular-nums">{assignmentTimeRanges(row.assignment.sessions)}</span>
 						</div>
 						<div class="flex flex-wrap items-center gap-1.5">
 							<span class="mr-1 text-muted-foreground">กรรมการ:</span>

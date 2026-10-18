@@ -535,7 +535,7 @@
 								<Table.Body>
 									{#each displayedApps as app (app.id)}
 										<Table.Row>
-											<Table.Cell class="font-mono text-xs"
+											<Table.Cell class="text-xs tabular-nums"
 												>{app.applicationNumber ?? '-'}</Table.Cell
 											>
 											<Table.Cell>
