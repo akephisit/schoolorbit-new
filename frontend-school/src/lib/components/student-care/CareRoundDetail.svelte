@@ -11,6 +11,7 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import CareSection from './CareSection.svelte';
 	import CareSelect from './CareSelect.svelte';
+	import CareStatus from './CareStatus.svelte';
 	let { initial }: { initial: CareRound } = $props();
 	let round = $state(untrack(() => initial)),
 		status = $state<CareRoundStatus>(
@@ -65,8 +66,9 @@
 	}
 </script>
 
-<CareSection title={round.name} description={roundLabels[round.status]}
-	><p class="whitespace-pre-wrap text-sm">{round.purpose}</p>
+<CareSection title={round.name}
+	><CareStatus status={{ kind: 'round', value: round.status }} />
+	<p class="whitespace-pre-wrap text-sm">{round.purpose}</p>
 	<dl class="grid gap-3 text-sm sm:grid-cols-2">
 		<div>
 			<dt class="text-muted-foreground">วันที่อ้างอิงรายชื่อ</dt>

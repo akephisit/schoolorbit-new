@@ -22,11 +22,7 @@
 		responseError,
 		setCareAnswer
 	} from '#lib/features/student-care/drafts.js';
-	import {
-		careDate,
-		respondentLabels,
-		assignmentLabels
-	} from '#lib/features/student-care/presentation.js';
+	import { careDate, respondentLabels } from '#lib/features/student-care/presentation.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { authStore } from '#lib/stores/auth.js';
@@ -37,7 +33,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import CareStatus from './CareStatus.svelte';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import CareSection from './CareSection.svelte';
 	let { initial, round }: { initial: CareAssignmentDetail; round: CareRound } = $props();
@@ -144,8 +140,9 @@
 		description={`${detail.assignment.studentName} · ${respondentLabels[detail.assignment.respondent]} · รุ่น ${detail.instrument.version}`}
 	>
 		<div class="flex flex-wrap gap-2">
-			<Badge variant="outline">{assignmentLabels[detail.assignment.status]}</Badge
-			>{#if submitted}<span class="text-sm text-muted-foreground"
+			<CareStatus
+				status={{ kind: 'assignment', value: detail.assignment.status }}
+			/>{#if submitted}<span class="text-sm text-muted-foreground"
 					>ส่งเมื่อ {careDate(detail.assignment.submittedAt)}</span
 				>{/if}
 		</div>

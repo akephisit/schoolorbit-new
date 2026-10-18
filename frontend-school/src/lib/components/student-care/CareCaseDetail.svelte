@@ -24,7 +24,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import CareStatus from './CareStatus.svelte';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import CareSection from './CareSection.svelte';
 	import CareSelect from './CareSelect.svelte';
@@ -136,7 +136,7 @@
 
 <div class="max-w-4xl space-y-5">
 	<CareSection title={detail.case.title} description={detail.case.studentName}
-		><Badge variant="outline">{caseLabels[detail.case.status]}</Badge>
+		><CareStatus status={{ kind: 'case', value: detail.case.status }} />
 		<p class="text-sm text-muted-foreground">กำหนดติดตาม: {careDate(detail.case.nextFollowUp)}</p>
 		<div class="flex flex-wrap gap-2">
 			{#if canManage && detail.case.status !== 'closed'}<Button

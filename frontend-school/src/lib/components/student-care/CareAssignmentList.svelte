@@ -19,12 +19,8 @@
 		mayCancelCareAssignment
 	} from '#lib/features/student-care/access.js';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
-	import {
-		assignmentLabels,
-		respondentLabels,
-		careLink
-	} from '#lib/features/student-care/presentation.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { respondentLabels, careLink } from '#lib/features/student-care/presentation.js';
+	import CareStatus from './CareStatus.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -161,7 +157,7 @@
 					<p class="text-sm text-muted-foreground">
 						{item.studentName} · {respondentLabels[item.respondent]}
 					</p>
-					<Badge variant="outline">{assignmentLabels[item.status]}</Badge>
+					<CareStatus status={{ kind: 'assignment', value: item.status }} />
 				</div>
 				<div class="flex flex-wrap gap-2">
 					{#if $authStore.user?.user_type === 'staff'}<Button
