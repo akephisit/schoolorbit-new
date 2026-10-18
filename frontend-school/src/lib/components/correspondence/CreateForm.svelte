@@ -139,7 +139,7 @@
 	backHref="/staff/correspondence"
 	description="ลงทะเบียนฉบับร่าง แล้วเลือกผู้รับเพื่อส่งดำเนินการ"
 >
-	<form class="max-w-4xl space-y-6" onsubmit={submit}>
+	<form class="w-full min-w-0 space-y-6" onsubmit={submit}>
 		{#if error}<PageState
 				variant="error"
 				title={error}
