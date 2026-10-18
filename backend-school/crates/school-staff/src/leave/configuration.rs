@@ -97,7 +97,11 @@ pub async fn save_type(
         archived: input.archived,
         revision,
     };
-    sqlx::query("INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(if item.kind==LeaveKind::Leave{"leave"}else{"exit"}).bind(revision).bind(Json(&item)).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(if item.kind==LeaveKind::Leave{"leave"}else{"exit"}).bind(revision).bind(Json(&item)).execute(&mut *tx).await.map_err(|error|{
+        if error.as_database_error().is_some_and(|database|database.constraint()==Some("staff_leave_types_code_key")){
+            AppError::Conflict("รหัสประเภทคำขอนี้มีอยู่แล้ว กรุณาใช้รหัสอื่น".into())
+        }else{error.into()}
+    })?;
     tx.commit().await?;
     Ok(item)
 }

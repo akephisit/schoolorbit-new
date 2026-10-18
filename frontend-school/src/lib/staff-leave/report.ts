@@ -16,7 +16,7 @@ export function leaveCsvCell(value: string | number): string {
 }
 export function leaveUsageCsv(report: LeaveUsageReport): string {
 	const rows: Array<Array<string | number>> = [
-		['ช่วงรายงาน', report.from, report.to],
+		['คำขอที่เริ่มในช่วงวันที่', report.from, report.to],
 		['บุคลากร', 'ประเภทคำขอ', 'รอบปีเริ่ม', 'อนุมัติแล้ว', 'รอพิจารณา', 'สิทธิที่โรงเรียนกำหนด']
 	];
 	for (const item of report.items)

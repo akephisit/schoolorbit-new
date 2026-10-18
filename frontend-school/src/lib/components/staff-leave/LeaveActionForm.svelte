@@ -42,6 +42,16 @@
 	let method = $state<'drawn' | 'image'>('drawn'),
 		image = $state<File | null>(null),
 		imageFileId = $state<string | null>(null);
+	let previewUrl = $state('');
+	$effect(() => {
+		if (!image) {
+			previewUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(image);
+		previewUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
 	const intent = new LeaveMutationIntent();
 	let disposed = false;
 	const definition = $derived(detail.instance?.steps[detail.instance.currentStep]?.definition);
@@ -159,7 +169,9 @@
 		<div class="space-y-4 rounded-xl border bg-muted/20 p-3">
 			<p class="text-sm">ขั้นตอนนี้กำหนดให้ลงลายมือชื่อกับคำขอฉบับ {expectedRevision}</p>
 			<ToggleGroup.Root
+				class="flex-wrap"
 				type="single"
+				aria-label="วิธีลงลายมือชื่อ"
 				value={method}
 				onValueChange={(value) => {
 					if (value === 'drawn' || value === 'image') method = value;
@@ -181,7 +193,13 @@
 							image = event.currentTarget.files?.[0] ?? null;
 							imageFileId = null;
 						}}
-					/>{#if image}<p class="text-sm text-muted-foreground">{image.name}</p>{/if}
+					/>{#if image}<p class="text-sm text-muted-foreground">
+							{image.name}
+						</p>{/if}{#if previewUrl}<img
+							src={previewUrl}
+							alt="ภาพลายมือชื่อก่อนยืนยัน"
+							class="h-24 w-full rounded-md border bg-white object-contain"
+						/>{/if}
 				</div>{/if}
 			<div class="flex items-start gap-2">
 				<Checkbox id="leave-signature-consent" bind:checked={confirmed} disabled={pending} /><Label

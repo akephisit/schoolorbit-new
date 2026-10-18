@@ -65,8 +65,43 @@ pub(super) async fn preview_policy(
     let Some(kind) = category(tx, owner, date).await? else {
         return Ok(None);
     };
-    let row:Option<Json<LeavePolicyVersion>>=sqlx::query_scalar("SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional(&mut **tx).await?;
-    Ok(row.map(|p| (kind, p.0)))
+    Ok(policy_for_category(tx, type_id, kind, date)
+        .await?
+        .map(|p| (kind, p)))
+}
+async fn policy_for_category(
+    tx: &mut Transaction<'_, Postgres>,
+    type_id: Uuid,
+    kind: StaffPersonnelType,
+    date: NaiveDate,
+) -> Result<Option<LeavePolicyVersion>, AppError> {
+    Ok(sqlx::query_scalar::<_,Json<LeavePolicyVersion>>("SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional(&mut **tx).await?.map(|p|p.0))
+}
+/// Withdrawal authority follows today's configured route for the original category;
+/// the approved request's amount, policy and fiscal allocation remain untouched.
+pub(super) async fn cancellation_route(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &Record,
+) -> Result<LeavePolicyVersion, AppError> {
+    sqlx::query("SELECT id FROM staff_leave_types WHERE id=$1 FOR SHARE")
+        .bind(request.document.type_id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let category = request
+        .document
+        .personnel_type
+        .ok_or_else(|| invalid("ไม่พบประเภทบุคลากรที่บันทึกเมื่ออนุมัติคำขอ"))?;
+    let today = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    if let Some(profile) =
+        policy_for_category(tx, request.document.type_id, category, today).await?
+    {
+        return Ok(profile);
+    }
+    pinned_policy(tx, request.policy_id)
+        .await?
+        .ok_or_else(|| invalid("ไม่พบเกณฑ์ต้นฉบับสำหรับเส้นทางยกเลิก"))
 }
 pub(super) async fn resolve_policy(
     tx: &mut Transaction<'_, Postgres>,

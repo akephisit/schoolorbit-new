@@ -363,4 +363,7 @@ export async function navigate(page: Page, href: string) {
 		document.body.append(link);
 	}, href);
 	await page.getByRole('link', { name: 'test navigation' }).click();
+	await page
+		.getByRole('link', { name: 'test navigation', exact: true })
+		.evaluateAll((links) => links.forEach((link) => link.remove()));
 }

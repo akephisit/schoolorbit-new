@@ -12,6 +12,7 @@
 		leaveKindLabels,
 		leaveAmount,
 		leaveStatusLabels,
+		leaveStatusClass,
 		leaveStatusVariant
 	} from '#lib/staff-leave/presentation.js';
 	import { leaveListDestination, leavePageSize } from '#lib/staff-leave/filters.js';
@@ -116,7 +117,9 @@
 							>
 							<Table.Cell>{leaveAmount(request.amount, request.unit)}</Table.Cell>
 							<Table.Cell
-								><Badge variant={leaveStatusVariant(request.status)}
+								><Badge
+									variant={leaveStatusVariant(request.status)}
+									class={leaveStatusClass(request.status)}
 									>{leaveStatusLabels[request.status]}</Badge
 								></Table.Cell
 							>

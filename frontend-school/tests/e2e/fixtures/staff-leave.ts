@@ -74,7 +74,7 @@ export async function mockLeave(
 		steps: [
 			{
 				title: 'หัวหน้าฝ่ายตรวจสอบ',
-				kind: 'review',
+				kind: 'approve',
 				completionPolicy: 'all',
 				recipients: [{ kind: 'user', userId: firstStaff }],
 				requiresSignature: options.requireSignature ?? false,
@@ -108,13 +108,14 @@ export async function mockLeave(
 		reason: 'เข้ารับการตรวจรักษา',
 		createdAt: now
 	};
-	let purpose: LeaveRequestDetail['processPurpose'] = 'request';
+	let purpose: LeaveRequestDetail['processPurpose'] =
+		options.status === 'cancellation_pending' ? 'cancellation' : 'request';
 	const history: LeaveRequestDetail['history'] = [
 		{
 			id: id(730),
 			actorId: request.ownerId,
 			actorName: request.ownerName,
-			action: 'create',
+			action: 'created',
 			revision: 1,
 			comment: null,
 			signature: null,
@@ -141,9 +142,7 @@ export async function mockLeave(
 				['draft', 'returned', 'submitted', 'approved'].includes(request.status),
 			canAct: options.role === 'reviewer' && active,
 			availableActions:
-				options.role === 'reviewer' && active
-					? ['review', 'approve', 'reject', 'return_for_revision']
-					: [],
+				options.role === 'reviewer' && active ? ['approve', 'reject', 'return_for_revision'] : [],
 			instance:
 				active || request.status === 'approved'
 					? {
@@ -186,6 +185,8 @@ export async function mockLeave(
 	};
 	const counts = new Map<string, number>(),
 		writes: Array<{ path: string; method: string; payload: Record<string, unknown> }> = [];
+	const uploads: Array<{ purpose: string; resourceId: string }> = [],
+		fileReads: Array<{ path: string; resourceId: string | null }> = [];
 	let release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
 	let failedRead = false,
@@ -209,16 +210,33 @@ export async function mockLeave(
 			personnelType: 'contract_employee'
 		};
 		evidenceFileIds = period.evidenceFileIds ?? [];
+		if (type.kind === 'exit')
+			policy = {
+				...policy,
+				typeId: exitTypeId,
+				unit: 'minute',
+				countingMode: 'calendar_days',
+				maxPerRequest: 120,
+				annualLimit: null,
+				evidenceFromAmount: null
+			};
 	}
 	await page.route(
-		(url) => url.pathname.startsWith(base) || url.pathname === '/api/files',
+		(url) => url.pathname.startsWith(base) || url.pathname.startsWith('/api/files'),
 		async (route) => {
 			const http = route.request(),
 				url = new URL(http.url()),
 				path = url.pathname,
 				method = http.method();
 			if (method === 'GET') counts.set(path, (counts.get(path) ?? 0) + 1);
-			else if (path !== '/api/files') writes.push({ path, method, payload: http.postDataJSON() });
+			else if (path.startsWith(base)) writes.push({ path, method, payload: http.postDataJSON() });
+			if (path.startsWith('/api/files/') && path.endsWith('/download')) {
+				fileReads.push({ path, resourceId: url.searchParams.get('resource_id') });
+				return reply(route, {
+					url: `${url.origin}/synthetic-leave-signature.png`,
+					expiresAt: '2026-10-19T00:00:00Z'
+				});
+			}
 			const region =
 				method !== 'GET'
 					? 'mutation'
@@ -238,8 +256,9 @@ export async function mockLeave(
 				failedRead = true;
 				return reply(route, `บริการ ${region} ไม่พร้อม`, 503);
 			}
-			if (method !== 'GET' && options.failMutation && !failedMutation) {
+			if (method !== 'GET' && path.startsWith(base) && options.failMutation && !failedMutation) {
 				failedMutation = true;
+				if (options.failMutation === 409) request.revision++;
 				return reply(
 					route,
 					options.failMutation === 409
@@ -331,8 +350,14 @@ export async function mockLeave(
 					});
 				return reply(route, detail());
 			}
-			if (path === '/api/files')
+			if (path === '/api/files') {
+				const payload = http.postDataBuffer()?.toString() ?? '';
+				uploads.push({
+					purpose: payload.match(/name="purpose"\r\n\r\n([^\r\n]+)/)?.[1] ?? '',
+					resourceId: payload.match(/name="resource_id"\r\n\r\n([^\r\n]+)/)?.[1] ?? ''
+				});
 				return reply(route, { id: id(760), name: 'หลักฐานทดสอบ.png', status: 'ready' });
+			}
 			if (path === `${base}/types` || /^\/api\/staff-leave\/types\/[^/]+$/.test(path)) {
 				const input = http.postDataJSON();
 				const index = types.findIndex((type) => path.endsWith(type.id));
@@ -371,18 +396,20 @@ export async function mockLeave(
 			if (path.endsWith('/actions')) {
 				const input = http.postDataJSON() as LeaveActionRequest;
 				request.status =
-					input.action === 'reject'
-						? 'rejected'
-						: input.action === 'return_for_revision'
-							? 'returned'
-							: purpose === 'cancellation'
-								? 'cancelled'
-								: 'approved';
+					purpose === 'cancellation' && ['reject', 'return_for_revision'].includes(input.action)
+						? 'approved'
+						: input.action === 'reject'
+							? 'rejected'
+							: input.action === 'return_for_revision'
+								? 'returned'
+								: purpose === 'cancellation'
+									? 'cancelled'
+									: 'approved';
 				history.push({
 					id: id(731 + history.length),
 					actorId: actor,
 					actorName: 'ครูผู้พิจารณา ทดสอบ',
-					action: input.action,
+					action: `${purpose === 'cancellation' ? 'cancellation_' : ''}${input.action}`,
 					revision: request.revision,
 					comment: input.comment ?? null,
 					signature: input.signature ?? null,
@@ -394,9 +421,20 @@ export async function mockLeave(
 			return reply(route, detail());
 		}
 	);
+	await page.route('**/synthetic-leave-signature.png', (route) =>
+		route.fulfill({
+			contentType: 'image/png',
+			body: Buffer.from(
+				'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+				'base64'
+			)
+		})
+	);
 	return {
 		release,
 		writes,
+		uploads,
+		fileReads,
 		count: (path: string) => counts.get(path) ?? 0,
 		detail,
 		setStatus: (status: LeaveRequestDetail['request']['status']) => (request.status = status),

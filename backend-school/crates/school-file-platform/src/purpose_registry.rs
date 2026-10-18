@@ -777,7 +777,7 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 21);
+        assert_eq!(FilePurpose::ALL.len(), 23);
     }
 
     #[test]

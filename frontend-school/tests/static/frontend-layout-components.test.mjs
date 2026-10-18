@@ -179,6 +179,10 @@ test('every protected app page renders the shared page shell', async () => {
 			await readPageShellDelegate('src/lib/components/correspondence/SignatureLibrary.svelte')
 		],
 		[
+			'RoutingSettings',
+			await readPageShellDelegate('src/lib/components/correspondence/RoutingSettings.svelte')
+		],
+		[
 			'Templates',
 			await readPageShellDelegate('src/lib/components/correspondence/Templates.svelte')
 		],

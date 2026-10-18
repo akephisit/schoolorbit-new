@@ -767,3 +767,363 @@ async fn leave_disabled_or_missing_profiles_never_hide_stored_drafts_or_change_p
     .unwrap();
     assert_eq!(cancelled.request.status, LeaveStatus::Cancelled);
 }
+
+#[tokio::test]
+async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_unused_delete() {
+    let (pool, owner, admin, _) = fixture("leave_type_lifecycle").await;
+    let input = SaveLeaveTypeRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: None,
+        code: "unused".into(),
+        name: "ประเภทที่ยังไม่ใช้".into(),
+        kind: LeaveKind::Leave,
+        archived: false,
+    };
+    let unused = service::save_type(&pool, &admin, None, input.clone())
+        .await
+        .unwrap();
+    let mut duplicate = input;
+    duplicate.request_id = Uuid::now_v7();
+    assert!(matches!(
+        service::save_type(&pool, &admin, None, duplicate).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    let deletion = LeaveMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: unused.revision,
+    };
+    service::delete_type(&pool, &admin, unused.id, deletion.clone())
+        .await
+        .unwrap();
+    service::delete_type(&pool, &admin, unused.id, deletion)
+        .await
+        .unwrap();
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM staff_leave_types WHERE id=$1")
+        .bind(unused.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
+    let (t, p) = typ(&pool, &admin, "used_type", LeaveUnit::Day, None).await;
+    let draft = create(&pool, &owner, t.id, 1).await;
+    let archived = service::save_type(
+        &pool,
+        &admin,
+        Some(t.id),
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: Some(p.type_revision),
+            code: t.code.clone(),
+            name: "ชื่อประเภทที่แก้ไข".into(),
+            kind: t.kind,
+            archived: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: period(t.id, 2)
+        }
+    )
+    .await
+    .is_err());
+    assert!(service::submit(
+        &pool,
+        &owner,
+        draft.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: 1
+        }
+    )
+    .await
+    .is_err());
+    let original = service::detail(&pool, &owner, draft.request.id)
+        .await
+        .unwrap();
+    assert_eq!(original.request.type_name, t.name);
+    assert_eq!(original.request.revision, 1);
+    let restored = service::save_type(
+        &pool,
+        &admin,
+        Some(t.id),
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: Some(archived.revision),
+            code: t.code.clone(),
+            name: archived.name.clone(),
+            kind: t.kind,
+            archived: false,
+        },
+    )
+    .await
+    .unwrap();
+    let active = submit(&pool, &owner, &draft).await;
+    assert_eq!(active.request.type_name, t.name);
+    let later = create(&pool, &owner, t.id, 2).await;
+    assert_eq!(later.request.type_name, restored.name);
+    assert!(service::delete_type(
+        &pool,
+        &admin,
+        t.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: restored.revision
+        }
+    )
+    .await
+    .is_err());
+    let revision_name:String=sqlx::query_scalar("SELECT document->>'typeName' FROM staff_leave_revisions WHERE request_id=$1 AND revision=1").bind(draft.request.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(revision_name, t.name);
+}
+
+#[tokio::test]
+async fn leave_list_unions_owned_and_assigned_records_before_pagination() {
+    let (pool, owner, admin, other) = fixture("leave_list_union").await;
+    let (t, p) = typ(&pool, &admin, "union", LeaveUnit::Day, None).await;
+    let own = create(&pool, &owner, t.id, 1).await;
+    service::save_policy(
+        &pool,
+        &admin,
+        t.id,
+        policy(p.type_revision, owner.user_id, LeaveUnit::Day, None),
+    )
+    .await
+    .unwrap();
+    let assigned = create(&pool, &other, t.id, 2).await;
+    submit(&pool, &other, &assigned).await;
+    let page = service::list(&pool, &owner, LeaveListQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 2);
+    assert!(page.items.iter().any(|r| r.id == own.request.id));
+    assert!(page.items.iter().any(|r| r.id == assigned.request.id));
+    let first = service::list(
+        &pool,
+        &owner,
+        LeaveListQuery {
+            limit: Some(1),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(first.has_more);
+    let second = service::list(
+        &pool,
+        &owner,
+        LeaveListQuery {
+            limit: Some(1),
+            offset: Some(1),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!second.has_more);
+    assert_ne!(first.items[0].id, second.items[0].id);
+    let denied = ActorContext {
+        user_id: admin.user_id,
+        permissions: vec![
+            codes::STAFF_LEAVE_READ_OWN.into(),
+            codes::STAFF_LEAVE_READ_ASSIGNED.into(),
+        ],
+    };
+    assert!(service::list(&pool, &denied, LeaveListQuery::default())
+        .await
+        .unwrap()
+        .items
+        .is_empty());
+}
+
+#[tokio::test]
+async fn leave_cancellation_uses_current_routing_for_frozen_category_without_rewriting_approved_basis(
+) {
+    let (pool, owner, original, mut replacement) = fixture("leave_cancel_current_route").await;
+    replacement.permissions.extend([
+        codes::STAFF_LEAVE_MANAGE_SCHOOL.into(),
+        codes::STAFF_LEAVE_READ_SCHOOL.into(),
+    ]);
+    let (t, original_policy) =
+        typ(&pool, &original, "cancel_current", LeaveUnit::Day, Some(2)).await;
+    let draft = create(&pool, &owner, t.id, 1).await;
+    let submitted = submit(&pool, &owner, &draft).await;
+    let approved = service::act(
+        &pool,
+        &original,
+        draft.request.id,
+        action(&submitted, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(original.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let cancellation = CancelLeaveRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: approved.request.revision,
+        reason: "ถอนวันลาที่อนุมัติแล้ว".into(),
+    };
+    assert!(
+        matches!(service::cancel(&pool,&owner,draft.request.id,cancellation.clone()).await,Err(school_errors::AppError::ValidationError(message)) if message.contains("ผู้ดูแล"))
+    );
+    let mut current = policy(
+        original_policy.type_revision,
+        replacement.user_id,
+        LeaveUnit::Day,
+        Some(1),
+    );
+    current.effective_from = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    current.enabled = false;
+    let current = service::save_policy(&pool, &replacement, t.id, current)
+        .await
+        .unwrap();
+    service::save_type(
+        &pool,
+        &replacement,
+        Some(t.id),
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: Some(current.type_revision),
+            code: t.code.clone(),
+            name: t.name.clone(),
+            kind: t.kind,
+            archived: true,
+        },
+    )
+    .await
+    .unwrap();
+    // A later correction to current career must not erase the category accepted with this request.
+    sqlx::query("INSERT INTO staff_career_history(user_id,kind,personnel_type,effective_date,source) VALUES($1,'personnel_type','government_employee',$2,'staff_entry')").bind(owner.user_id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).execute(&pool).await.unwrap();
+    let pending = service::cancel(&pool, &owner, draft.request.id, cancellation)
+        .await
+        .unwrap();
+    assert_eq!(pending.request.status, LeaveStatus::CancellationPending);
+    assert_eq!(pending.policy.as_ref().unwrap().id, original_policy.id);
+    assert_eq!(
+        pending.instance.as_ref().unwrap().template_id,
+        Some(current.template_id)
+    );
+    assert_eq!(pending.request.amount, approved.request.amount);
+    assert_eq!(
+        pending.request.personnel_type,
+        Some(StaffPersonnelType::CivilServant)
+    );
+    assert_eq!(
+        pending.instance.as_ref().unwrap().steps[0].recipients[0].user_id,
+        replacement.user_id
+    );
+    let report = service::usage(
+        &pool,
+        &owner,
+        LeaveUsageQuery {
+            from: date(1),
+            to: date(30),
+            kind: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.items[0].approved_amount, 1);
+    assert_eq!(report.items[0].policy_version_id, original_policy.id);
+    let finished = service::act(
+        &pool,
+        &replacement,
+        draft.request.id,
+        action(&pending, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    assert_eq!(finished.request.status, LeaveStatus::Cancelled);
+    assert!(service::usage(
+        &pool,
+        &owner,
+        LeaveUsageQuery {
+            from: date(1),
+            to: date(30),
+            kind: None
+        }
+    )
+    .await
+    .unwrap()
+    .items
+    .is_empty());
+}
+
+#[tokio::test]
+async fn leave_future_approved_request_uses_pinned_cancellation_route_until_a_current_profile_exists(
+) {
+    let (pool, owner, admin, _) = fixture("leave_cancel_future_route").await;
+    let t = service::save_type(
+        &pool,
+        &admin,
+        None,
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: None,
+            code: "future_only".into(),
+            name: "เกณฑ์ในอนาคต".into(),
+            kind: LeaveKind::Leave,
+            archived: false,
+        },
+    )
+    .await
+    .unwrap();
+    let future = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive()
+        + chrono::Duration::days(30);
+    let mut input = policy(t.revision, admin.user_id, LeaveUnit::Day, None);
+    input.effective_from = future;
+    let p = service::save_policy(&pool, &admin, t.id, input)
+        .await
+        .unwrap();
+    let mut input = period(t.id, 1);
+    input.start_date = future;
+    input.end_date = future;
+    let draft = service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: input,
+        },
+    )
+    .await
+    .unwrap();
+    let submitted = submit(&pool, &owner, &draft).await;
+    let approved = service::act(
+        &pool,
+        &admin,
+        draft.request.id,
+        action(&submitted, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    let pending = service::cancel(
+        &pool,
+        &owner,
+        draft.request.id,
+        CancelLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: approved.request.revision,
+            reason: "เปลี่ยนแผนในอนาคต".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.request.status, LeaveStatus::CancellationPending);
+    assert_eq!(pending.policy.as_ref().unwrap().id, p.id);
+    assert_eq!(
+        pending.instance.as_ref().unwrap().template_id,
+        Some(p.template_id)
+    );
+}

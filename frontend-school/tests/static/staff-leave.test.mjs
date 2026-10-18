@@ -15,7 +15,7 @@ import {
 	leaveListDestination,
 	safeLeaveReturn
 } from '../../src/lib/staff-leave/filters.ts';
-import { leaveAmount } from '../../src/lib/staff-leave/presentation.ts';
+import { leaveAmount, leaveHistoryLabel } from '../../src/lib/staff-leave/presentation.ts';
 import { LeaveMutationIntent } from '../../src/lib/staff-leave/mutation-intent.ts';
 
 const presentation = ts.transpileModule(
@@ -35,6 +35,8 @@ const { leaveCsvCell, leaveUsageCsv, validReportDate } = await import(
 
 test('half-day granularity displays days and preserves the shared wire allowance', () => {
 	assert.equal(leaveAmount(3, 'half_day'), '1.5 วัน');
+	assert.equal(leaveHistoryLabel('created'), 'สร้างฉบับร่าง');
+	assert.equal(leaveHistoryLabel('cancellation_approve'), 'อนุมัติการยกเลิกคำขอ');
 	assert.equal(displayedPolicyLimit(5, 'half_day'), '2.5');
 	assert.equal(policyLimitInput('2.5', 'half_day'), 5);
 	assert.equal(policyLimitInput('', 'half_day'), null);

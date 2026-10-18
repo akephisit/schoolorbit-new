@@ -66,7 +66,9 @@
 	</div>
 	<div class="space-y-2">
 		<Label>กลุ่มคำขอ *</Label><ToggleGroup.Root
+			class="flex-wrap"
 			type="single"
+			aria-label="กลุ่มคำขอ"
 			value={kind}
 			onValueChange={(value) => {
 				if (value === 'leave' || value === 'exit') kind = value;

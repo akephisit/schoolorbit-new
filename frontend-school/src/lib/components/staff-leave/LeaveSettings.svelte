@@ -91,7 +91,13 @@
 			archived: !type.archived
 		};
 		try {
-			const result = await saveLeaveType({ requestId: intent.for(basis), ...basis }, type.id);
+			const result = await saveLeaveType(
+				{
+					requestId: intent.for({ operation: 'archive-type', typeId: type.id, ...basis }),
+					...basis
+				},
+				type.id
+			);
 			if (!disposed) patch(result);
 		} catch (cause) {
 			if (!disposed) error = cause instanceof Error ? cause.message : 'เปลี่ยนสถานะไม่สำเร็จ';
@@ -106,7 +112,10 @@
 		const target = deleting,
 			basis = { expectedRevision: target.revision };
 		try {
-			await deleteLeaveType(target.id, { requestId: intent.for(basis), ...basis });
+			await deleteLeaveType(target.id, {
+				requestId: intent.for({ operation: 'delete-type', typeId: target.id, ...basis }),
+				...basis
+			});
 			if (!disposed) {
 				region.patch((region.value ?? []).filter((value) => value.id !== target.id));
 				if (selected?.id === target.id) {

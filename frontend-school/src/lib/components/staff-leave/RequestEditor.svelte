@@ -11,6 +11,7 @@
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
 	import { uploadFile } from '#lib/api/files.js';
+	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import {
@@ -33,12 +34,14 @@
 		kind,
 		detail,
 		oncancel,
-		onsaved
+		onsaved,
+		onrefresh
 	}: {
 		kind: LeaveKind;
 		detail?: LeaveRequestDetail;
 		oncancel: () => void;
 		onsaved: (detail: LeaveRequestDetail) => void;
+		onrefresh?: () => void;
 	} = $props();
 	let draft = $state<LeaveDraft>(untrack(() => leaveDraft(detail)));
 	let options = $state<LeavePersonalOptions | null>(null),
@@ -51,6 +54,19 @@
 		error = $state(''),
 		pending = $state(false);
 	let files = $state<File[]>([]);
+	let expectedRevision = $state(untrack(() => detail?.request.revision ?? 0));
+	let conflict = $state(false);
+	let requestedReconciliation = false;
+	const stale = $derived(!!detail && expectedRevision !== detail.request.revision);
+	$effect.pre(() => {
+		void detail;
+		untrack(() => {
+			if (requestedReconciliation) {
+				requestedReconciliation = false;
+				conflict = false;
+			}
+		});
+	});
 	const policyRequest = new LatestRequest(),
 		intent = new LeaveMutationIntent(),
 		controller = new AbortController();
@@ -110,6 +126,7 @@
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		if (pending) return;
+		if (stale || conflict) return;
 		errors = leaveDraftErrors(draft, policy);
 		error = '';
 		if (Object.keys(errors).length || !policy) {
@@ -127,18 +144,21 @@
 				}
 			}
 			const period = leavePeriodInput(draft, policy.unit);
-			const basis = detail ? { expectedRevision: detail.request.revision, period } : { period };
+			const basis = detail ? { expectedRevision, period } : { period };
 			const requestId = intent.for(basis);
 			const result = detail
 				? await updateLeaveRequest(detail.request.id, {
 						requestId,
-						expectedRevision: detail.request.revision,
+						expectedRevision,
 						period
 					})
 				: await createLeaveRequest({ requestId, period });
 			if (!disposed) onsaved(result);
 		} catch (cause) {
-			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกคำขอไม่สำเร็จ';
+			if (!disposed) {
+				error = cause instanceof Error ? cause.message : 'บันทึกคำขอไม่สำเร็จ';
+				conflict = cause instanceof ApiClientError && cause.status === 409;
+			}
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -146,6 +166,18 @@
 </script>
 
 <form onsubmit={save} class="space-y-4" data-testid="leave-request-editor">
+	{#if stale}<div class="space-y-2 rounded-md border p-3 text-sm">
+			<p>คำขอมีการเปลี่ยนแปลง ตรวจสอบข้อมูลล่าสุดก่อนบันทึกฉบับร่างที่แก้ไข</p>
+			<Button
+				type="button"
+				variant="outline"
+				onclick={() => {
+					if (detail) expectedRevision = detail.request.revision;
+					conflict = false;
+					error = '';
+				}}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
+			>
+		</div>{/if}
 	{#if optionsError}<PageState
 			variant="error"
 			title="โหลดประเภทคำขอไม่สำเร็จ"
@@ -225,7 +257,9 @@
 			</section>
 			{#if policy?.unit === 'half_day'}<div class="space-y-2">
 					<Label>ช่วงวัน *</Label><ToggleGroup.Root
+						class="flex-wrap"
 						type="single"
+						aria-label="ช่วงวัน"
 						value={draft.dayPortion}
 						onValueChange={(value) => {
 							if (value === 'full_day' || value === 'morning' || value === 'afternoon')
@@ -297,13 +331,23 @@
 				</div>{/if}
 		{/if}
 	{/if}
-	{#if error}<PageState variant="error" title="บันทึกคำขอไม่สำเร็จ" description={error} />{/if}
+	{#if error}<PageState
+			variant="error"
+			title="บันทึกคำขอไม่สำเร็จ"
+			description={error}
+			actionLabel={onrefresh ? 'ตรวจสอบข้อมูลล่าสุด' : undefined}
+			onaction={() => {
+				requestedReconciliation = true;
+				onrefresh?.();
+			}}
+		/>{/if}
 	<div class="flex flex-wrap justify-end gap-2">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
 		><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={!policy || policyLoading || !typeChoices.length}>บันทึกฉบับร่าง</LoadingButton
+			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
+			>บันทึกฉบับร่าง</LoadingButton
 		>
 	</div>
 </form>

@@ -4,8 +4,10 @@ import {
 	leaveDetailPath,
 	leaveId,
 	secondLeaveId,
-	leaveTypeId
+	leaveTypeId,
+	exitTypeId
 } from './fixtures/staff-leave';
+import { actor } from './fixtures/staff-home-route-data';
 import { navigate } from './fixtures/supervision-route-data';
 import { revalidatePage } from './fixtures/page-revalidation';
 import { PERMISSIONS } from '../../src/lib/permissions/registry.generated';
@@ -51,16 +53,31 @@ test('reader loads list without create, routing or signature reads and keeps URL
 	await expect(page).toHaveURL(/offset=20/);
 });
 
-test('initial loading, retry and background failure preserve usable request list', async ({
-	page
-}) => {
+test('initial loading and background failure preserve usable request list', async ({ page }) => {
 	const api = await mockLeave(page, { hold: 'requests' });
 	await page.goto('/staff/leave');
 	await expect(page.getByRole('status', { name: 'กำลังโหลดคำขอ' })).toBeVisible();
 	api.release();
 	await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
+	let failed = false;
+	await page.route(
+		(url) => url.pathname === '/api/staff-leave/requests',
+		async (route) => {
+			if (failed) return route.fallback();
+			failed = true;
+			return route.fulfill({
+				status: 503,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: false, error: 'รายการปรับปรุงยังไม่พร้อม' })
+			});
+		}
+	);
 	await revalidatePage(page);
 	await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
+	await expect(page.getByTestId('leave-requests')).toContainText('รายการปรับปรุงยังไม่พร้อม');
+	await expect(page.getByRole('status', { name: 'กำลังโหลดคำขอ' })).toHaveCount(0);
+	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
+	await expect(page.getByTestId('leave-requests')).not.toContainText('รายการปรับปรุงยังไม่พร้อม');
 });
 test('failed initial list retries only its region', async ({ page }) => {
 	const api = await mockLeave(page, { fail: 'requests' });
@@ -242,7 +259,10 @@ for (const theme of ['light', 'dark'] as const)
 	for (const width of [390, 1440]) {
 		test(`detail print content and responsive ${theme} ${width}`, async ({ page }, testInfo) => {
 			await page.setViewportSize({ width, height: 900 });
-			await page.addInitScript((theme) => localStorage.setItem('ui-preferences', JSON.stringify({ theme })), theme);
+			await page.addInitScript(
+				(theme) => localStorage.setItem('ui-preferences', JSON.stringify({ theme })),
+				theme
+			);
 			await mockLeave(page, { role: 'reviewer', status: 'submitted' });
 			await page.goto(leaveDetailPath);
 			await expect(page.getByTestId('leave-detail')).toContainText('คำสั่งโรงเรียนทดสอบ');
@@ -257,5 +277,271 @@ for (const theme of ['light', 'dark'] as const)
 			await expect(page.locator('#staff-leave-print')).toContainText('ประวัติการดำเนินการ');
 			await expect(page.locator('#staff-leave-print')).not.toContainText(leaveTypeId);
 			await expect(page.locator('#staff-leave-print')).toContainText('ครูหัวหน้าฝ่าย ทดสอบ');
+			await expect(page.getByText('ผู้ขอ', { exact: true })).toHaveCSS('color', 'rgb(0, 0, 0)');
+			await expect(page.getByRole('button', { name: 'พิมพ์คำขอ' })).toBeHidden();
+			await page.screenshot({
+				path: testInfo.outputPath(`leave-print-${theme}-${width}.png`),
+				fullPage: true
+			});
+			if (width === 1440 && theme === 'dark')
+				await page.pdf({
+					path: testInfo.outputPath('leave-print.pdf'),
+					format: 'A4',
+					printBackground: false
+				});
 		});
 	}
+
+test('stale draft reconciles only detail and requires accepting latest revision while preserving text', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { failMutation: 409 });
+	await page.goto(leaveDetailPath);
+	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('เหตุผลที่เก็บไว้หลังข้อมูลเก่า');
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await page
+		.getByTestId('leave-request-editor')
+		.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด' })
+		.click();
+	await expect(page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง' })).toBeVisible();
+	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue(
+		'เหตุผลที่เก็บไว้หลังข้อมูลเก่า'
+	);
+	await page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง' }).click();
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('เหตุผลที่เก็บไว้หลังข้อมูลเก่า');
+	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(2);
+	expect(api.count('/api/staff-leave/options')).toBe(1);
+	expect(api.writes[1].payload.expectedRevision).toBe(2);
+	expect(api.writes[1].payload.requestId).not.toBe(api.writes[0].payload.requestId);
+});
+
+test('stale signed action preserves strokes and requires consent again on latest revision', async ({
+	page
+}) => {
+	const api = await mockLeave(page, {
+		role: 'reviewer',
+		status: 'submitted',
+		requireSignature: true,
+		failMutation: 409
+	});
+	await page.goto(leaveDetailPath);
+	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+	await draw(page);
+	await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+	await page.getByRole('button', { name: 'ยืนยันอนุมัติ' }).click();
+	await page
+		.getByTestId('leave-action-form')
+		.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด' })
+		.click();
+	await page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง' }).click();
+	await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).not.toBeChecked();
+	await expect(page.getByTestId('signature-pad').locator('path')).toHaveCount(1);
+	await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+	await page.getByRole('button', { name: 'ยืนยันอนุมัติ' }).click();
+	expect(api.writes.at(-1)!.payload.signature).toMatchObject({ input: { documentRevision: 2 } });
+	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(2);
+});
+
+test('type deletion scopes retry keys to resource while identical failed delete retries same key', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { failMutation: 503 });
+	await page.goto('/staff/leave/settings');
+	await page.getByRole('button', { name: 'ลบ ลาป่วย', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันลบประเภท' }).click();
+	await expect(page.getByRole('alertdialog')).toContainText('บริการไม่พร้อม');
+	await page.getByRole('button', { name: 'ยืนยันลบประเภท' }).click();
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
+	await page.getByRole('button', { name: 'ลบ ออกนอกโรงเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันลบประเภท' }).click();
+	await expect(page.getByTestId('leave-types')).toContainText('ยังไม่มีประเภทคำขอ');
+	expect(api.writes[0].payload.requestId).toBe(api.writes[1].payload.requestId);
+	expect(api.writes[2].payload.requestId).not.toBe(api.writes[1].payload.requestId);
+	expect(api.writes[1].payload).toMatchObject({ expectedRevision: 1 });
+	expect(api.writes[2].path).toContain(exitTypeId);
+	expect(api.writes[2].payload).not.toHaveProperty('typeId');
+});
+
+const syntheticPng = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+	'base64'
+);
+test('keyboard image alternative previews signature and history reads it in request context', async ({
+	page
+}) => {
+	const api = await mockLeave(page, {
+		role: 'reviewer',
+		status: 'submitted',
+		requireSignature: true
+	});
+	await page.goto(leaveDetailPath);
+	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+	const method = page.getByRole('radio', { name: 'อัปโหลดภาพลายมือชื่อ', exact: true });
+	await method.focus();
+	await page.keyboard.press('Space');
+	await page
+		.locator('#leave-signature-image')
+		.setInputFiles({ name: 'signature.png', mimeType: 'image/png', buffer: syntheticPng });
+	await expect(page.getByRole('img', { name: 'ภาพลายมือชื่อก่อนยืนยัน' })).toBeVisible();
+	const consent = page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ });
+	await consent.focus();
+	await page.keyboard.press('Space');
+	await page.getByRole('button', { name: 'ยืนยันอนุมัติ' }).click();
+	await expect(page.getByRole('img', { name: 'ลายมือชื่อ ครูผู้พิจารณา ทดสอบ' })).toBeVisible();
+	expect(api.uploads).toEqual([{ purpose: 'staff_leave_signature', resourceId: actor }]);
+	expect(api.fileReads[0].resourceId).toBe(leaveId);
+	expect(api.writes.at(-1)!.payload.signature).toMatchObject({
+		consent: true,
+		imageFileId: expect.any(String),
+		input: { method: 'image', strokes: [], assetId: null }
+	});
+});
+
+test('evidence upload is lazy and stays linked after save then can be removed from new draft', async ({
+	page
+}) => {
+	const api = await mockLeave(page);
+	await page.goto(leaveDetailPath);
+	expect(api.uploads).toHaveLength(0);
+	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
+	await page
+		.locator('#leave-evidence')
+		.setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: syntheticPng });
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลดหลักฐาน 1' })).toBeVisible();
+	expect(api.uploads).toEqual([{ purpose: 'staff_leave_evidence', resourceId: leaveId }]);
+	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('button', { name: 'นำออกจากฉบับร่าง' }).click();
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลดหลักฐาน 1' })).toHaveCount(0);
+	expect(api.writes.at(-1)!.payload.period).toMatchObject({ evidenceFileIds: [] });
+});
+
+for (const theme of ['light', 'dark'] as const)
+	for (const width of [390, 1440]) {
+		test(`list editor settings and report responsive ${theme} ${width}`, async ({
+			page
+		}, testInfo) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.addInitScript(
+				(theme) => localStorage.setItem('ui-preferences', JSON.stringify({ theme })),
+				theme
+			);
+			const api = await mockLeave(page);
+			await page.goto('/staff/leave');
+			await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
+			await page.screenshot({ path: testInfo.outputPath(`list-${theme}-${width}.png`) });
+			await page.getByRole('button', { name: 'สร้างคำขอการลา' }).click();
+			await page.locator('#leave-type').click();
+			await page.getByRole('option', { name: 'ลาป่วย', exact: true }).click();
+			await chooseDate(page, 'leave-start-date');
+			await expect(page.getByTestId('leave-effective-policy')).toContainText('คำสั่งโรงเรียนทดสอบ');
+			await page.screenshot({ path: testInfo.outputPath(`editor-${theme}-${width}.png`) });
+			await page
+				.getByTestId('leave-request-editor')
+				.getByRole('button', { name: 'ยกเลิก', exact: true })
+				.click();
+			await navigate(page, '/staff/leave/settings');
+			await page.getByRole('button', { name: 'ดูนโยบาย ลาป่วย', exact: true }).click();
+			await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้' }).click();
+			await expect(page.getByTestId('leave-policy-editor')).toContainText('ครูหัวหน้าฝ่าย ทดสอบ');
+			await page.screenshot({ path: testInfo.outputPath(`policy-${theme}-${width}.png`) });
+			await page.getByRole('button', { name: 'บันทึกนโยบายฉบับใหม่' }).scrollIntoViewIfNeeded();
+			await page.screenshot({ path: testInfo.outputPath(`policy-steps-${theme}-${width}.png`) });
+			await page
+				.getByTestId('leave-policy-editor')
+				.getByRole('button', { name: 'ยกเลิก', exact: true })
+				.click();
+			await navigate(page, '/staff/leave/reports');
+			await expect(page.getByTestId('leave-usage')).toContainText('1.5 วัน');
+			await expect(page.getByText(/คำขอที่เริ่มในช่วงวันที่เลือก/)).toBeVisible();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+			await page.screenshot({ path: testInfo.outputPath(`report-${theme}-${width}.png`) });
+			expect(api.writes).toHaveLength(0);
+		});
+	}
+
+test('school type create and rename patch the list while preserving immutable code', async ({
+	page
+}) => {
+	const api = await mockLeave(page);
+	await page.goto('/staff/leave/settings');
+	await page.getByRole('button', { name: 'เพิ่มประเภทคำขอ' }).click();
+	await page.locator('#leave-type-code').fill('school-local');
+	await page.locator('#leave-type-name').fill('ลาตามนโยบายโรงเรียน');
+	await page.getByRole('button', { name: 'บันทึกประเภท', exact: true }).click();
+	await expect(page.getByTestId('leave-types')).toContainText('ลาตามนโยบายโรงเรียน');
+	await page.getByRole('button', { name: 'แก้ไข ลาตามนโยบายโรงเรียน', exact: true }).click();
+	await expect(page.locator('#leave-type-code')).toBeDisabled();
+	await page.locator('#leave-type-name').fill('ลาตามประกาศโรงเรียน');
+	await page.getByRole('button', { name: 'บันทึกประเภท', exact: true }).click();
+	await expect(page.getByTestId('leave-types')).toContainText('ลาตามประกาศโรงเรียน');
+	expect(api.count('/api/staff-leave/types')).toBe(1);
+	expect(api.writes.at(-1)!.payload.code).toBe('school-local');
+});
+
+test('exit menu uses planned times and the editable school-local minute profile', async ({
+	page
+}) => {
+	const api = await mockLeave(page);
+	await page.goto('/staff/exit-permissions');
+	await expect(page.getByTestId('leave-requests')).toContainText('90 นาที');
+	await page.getByRole('button', { name: 'สร้างคำขอออกนอกโรงเรียน' }).click();
+	await page.locator('#leave-type').click();
+	await page.getByRole('option', { name: 'ออกนอกโรงเรียน', exact: true }).click();
+	await chooseDate(page, 'leave-start-date');
+	await expect(page.getByTestId('leave-effective-policy')).toContainText('120 นาที');
+	await page.locator('#leave-start-time').fill('09:00');
+	await page.locator('#leave-end-time').fill('10:30');
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('ประสานงานราชการตามกำหนด');
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('90 นาที');
+	expect(api.writes[0].payload.period).toMatchObject({
+		typeId: exitTypeId,
+		startTime: '09:00:00',
+		endTime: '10:30:00',
+		dayPortion: 'full_day'
+	});
+	await expect(page.getByText(/กลับเข้าโรงเรียน|มาสาย|เกินเวลา/)).toHaveCount(0);
+});
+
+for (const action of ['ส่งกลับแก้ไข', 'ไม่อนุมัติ'])
+	test(`reviewer ${action} needs a reason without a signature`, async ({ page }) => {
+		const api = await mockLeave(page, {
+			role: 'reviewer',
+			status: 'submitted',
+			requireSignature: true
+		});
+		await page.goto(leaveDetailPath);
+		await page.getByRole('button', { name: action, exact: true }).click();
+		await page.getByRole('button', { name: `ยืนยัน${action}`, exact: true }).click();
+		await expect(page.getByTestId('leave-action-form')).toContainText('กรอกความคิดเห็น / เหตุผล');
+		expect(api.writes).toHaveLength(0);
+		await page
+			.getByLabel('ความคิดเห็น / เหตุผล *', { exact: true })
+			.fill('กรุณาตรวจสอบข้อมูลประกอบ');
+		await page.getByRole('button', { name: `ยืนยัน${action}`, exact: true }).click();
+		await expect(page.getByTestId('leave-detail')).toContainText(
+			action === 'ส่งกลับแก้ไข' ? 'ส่งกลับแก้ไข' : 'ไม่อนุมัติ'
+		);
+		expect(api.writes.at(-1)!.payload.signature).toBeNull();
+	});
+
+test('approved cancellation uses its current workflow and keeps original policy basis visible', async ({
+	page
+}) => {
+	await mockLeave(page, { role: 'reviewer', status: 'cancellation_pending' });
+	await page.goto(leaveDetailPath);
+	await expect(page.getByTestId('leave-detail')).toContainText('เกณฑ์ของคำขอเดิม');
+	await expect(page.getByTestId('leave-detail')).toContainText('ขั้นตอนพิจารณาการยกเลิก');
+	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันอนุมัติ' }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('ยกเลิกแล้ว');
+	await expect(page.getByTestId('leave-detail')).toContainText('อนุมัติการยกเลิกคำขอ');
+});

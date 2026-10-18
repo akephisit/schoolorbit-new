@@ -36,6 +36,27 @@ export const leaveActionLabels: Record<ProcessAction, string> = {
 	close: 'ปิดรายการ',
 	reassign: 'เปลี่ยนผู้ดำเนินการ'
 };
+export function leaveHistoryLabel(action: string): string {
+	const labels: Record<string, string> = {
+		created: 'สร้างฉบับร่าง',
+		updated: 'แก้ไขฉบับร่าง',
+		submitted: 'ส่งพิจารณา',
+		withdrawn: 'ถอนคำขอ',
+		cancellation_requested: 'ขอยกเลิกคำขอ'
+	};
+	if (labels[action]) return labels[action];
+	if (action.startsWith('cancellation_'))
+		return `${leaveHistoryLabel(action.slice(13))}การยกเลิกคำขอ`;
+	return (
+		Object.entries(leaveActionLabels).find(([key]) => key === action)?.[1] ?? 'บันทึกการเปลี่ยนแปลง'
+	);
+}
+export function leaveStatusClass(status: LeaveStatus): string {
+	if (status === 'approved') return 'border-success/25 bg-success/10 text-success';
+	if (status === 'returned' || status === 'cancellation_pending')
+		return 'border-warning/25 bg-warning/10 text-warning';
+	return '';
+}
 export function leaveStatusVariant(status: LeaveStatus): BadgeVariant {
 	if (status === 'approved') return 'default';
 	if (status === 'rejected') return 'destructive';

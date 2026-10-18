@@ -14,6 +14,8 @@
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import {
 		leaveActionLabels,
+		leaveHistoryLabel,
+		leaveStatusClass,
 		leaveHome,
 		leaveAmount,
 		leaveDate,
@@ -187,6 +189,7 @@
 						><div class="flex flex-wrap items-center justify-between gap-3">
 							<Card.Title>{detail.request.typeName}</Card.Title><Badge
 								variant={leaveStatusVariant(detail.request.status)}
+								class={leaveStatusClass(detail.request.status)}
 								>{leaveStatusLabels[detail.request.status]}</Badge
 							>
 						</div></Card.Header
@@ -234,7 +237,13 @@
 					></Card.Root
 				>
 				{#if detail.policy}<Card.Root
-						><Card.Header><Card.Title>นโยบายที่ใช้กับคำขอ</Card.Title></Card.Header><Card.Content
+						><Card.Header
+							><Card.Title
+								>{detail.processPurpose === 'cancellation'
+									? 'เกณฑ์ของคำขอเดิม'
+									: 'นโยบายที่ใช้กับคำขอ'}</Card.Title
+							></Card.Header
+						><Card.Content
 							><dl class="grid gap-4 sm:grid-cols-2">
 								<div>
 									<dt class="text-sm text-muted-foreground">แหล่งอ้างอิง</dt>
@@ -255,7 +264,11 @@
 								<div>
 									<dt class="text-sm text-muted-foreground">หลักฐาน</dt>
 									<dd>
-										{detail.policy.evidenceRequired ? 'ต้องมีหลักฐานประกอบ' : 'แนบได้ตามความจำเป็น'}
+										{detail.policy.evidenceRequired
+											? 'ต้องมีหลักฐานประกอบทุกคำขอ'
+											: detail.policy.evidenceFromAmount != null
+												? `ต้องแนบตั้งแต่ ${leaveAmount(detail.policy.evidenceFromAmount, detail.policy.unit)}`
+												: 'แนบได้ตามความจำเป็น'}
 									</dd>
 								</div>
 								{#if detail.policy.maxPerRequest != null}<div>
@@ -272,7 +285,7 @@
 						><Card.Header
 							><Card.Title
 								>{detail.processPurpose === 'cancellation'
-									? 'ขั้นตอนพิจารณายกเลิก'
+									? 'ขั้นตอนพิจารณาการยกเลิก'
 									: 'ขั้นตอนพิจารณา'}</Card.Title
 							></Card.Header
 						><Card.Content
@@ -352,15 +365,7 @@
 										class="space-y-2 border-b pb-4 last:border-0 last:pb-0"
 									>
 										<p class="font-medium">
-											{leaveActionLabels[entry.action as ProcessAction] ??
-												{
-													create: 'สร้างฉบับร่าง',
-													update: 'แก้ไขฉบับร่าง',
-													submit: 'ส่งพิจารณา',
-													cancel: 'ยกเลิกคำขอ',
-													cancellation_requested: 'ขอยกเลิกคำขอ'
-												}[entry.action] ??
-												'บันทึกการเปลี่ยนแปลง'}
+											{leaveHistoryLabel(entry.action)}
 										</p>
 										<p class="text-sm text-muted-foreground">
 											{entry.actorName} · {leaveDateTime(entry.createdAt)} · ฉบับ {entry.revision}
@@ -373,7 +378,7 @@
 												</p>
 												{#if entry.signature.imageFileId}<PrivateFileImage
 														fileId={entry.signature.imageFileId}
-														resourceId={entry.actorId}
+														resourceId={detail.request.id}
 														alt={`ลายมือชื่อ ${entry.actorName}`}
 														class="h-24 w-56 object-contain"
 													/>{:else}<svg
@@ -412,6 +417,7 @@
 		>{#if editing && detail?.canEdit && creator}<RequestEditor
 				kind={detail.request.kind}
 				{detail}
+				onrefresh={refreshed}
 				oncancel={() => (editing = false)}
 				onsaved={(result) => {
 					region.patch(result);
@@ -434,7 +440,13 @@
 			></Dialog.Header
 		>
 		<form onsubmit={cancel} class="space-y-4">
-			{#if error}<PageState variant="error" title="ยกเลิกคำขอไม่สำเร็จ" description={error} />{/if}
+			{#if error}<PageState
+					variant="error"
+					title="ยกเลิกคำขอไม่สำเร็จ"
+					description={error}
+					actionLabel="ตรวจสอบข้อมูลล่าสุด"
+					onaction={refreshed}
+				/>{/if}
 			<div class="space-y-2">
 				<Label for="leave-cancel-reason">เหตุผลการยกเลิก *</Label><Textarea
 					id="leave-cancel-reason"
@@ -471,6 +483,11 @@
 		}
 		#staff-leave-print {
 			width: 100%;
+		}
+		#staff-leave-print :global(*) {
+			color: black !important;
+			background-color: white !important;
+			box-shadow: none !important;
 		}
 	}
 </style>

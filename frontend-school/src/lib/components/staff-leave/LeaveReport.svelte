@@ -60,7 +60,7 @@
 
 <PageShell
 	title="สรุปการใช้สิทธิ์"
-	description="จำนวนที่อนุมัติแล้วและจำนวนที่สำรองระหว่างรอพิจารณา"
+	description="คำขอที่เริ่มในช่วงวันที่เลือก · แสดงจำนวนทั้งคำขอที่อนุมัติและรอพิจารณา"
 	backHref="/staff/leave"
 >
 	{#snippet actions()}{#if allowed}<Button

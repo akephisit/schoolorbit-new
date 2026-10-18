@@ -282,7 +282,15 @@ async fn start(
             due_at: None,
         },
     )
-    .await?;
+    .await
+    .map_err(|error| match error {
+        AppError::ValidationError(message) if purpose == LeaveProcessPurpose::Cancellation => {
+            invalid(&format!(
+                "เส้นทางยกเลิกไม่พร้อมใช้งาน กรุณาให้ผู้ดูแลปรับเกณฑ์ปัจจุบัน: {message}"
+            ))
+        }
+        other => other,
+    })?;
     if i.steps.iter().any(|s| {
         s.recipients
             .iter()
@@ -561,8 +569,14 @@ pub async fn cancel(
         r.cancellation_id = Some(attempt);
         r.document.status = LeaveStatus::CancellationPending;
         r.document.revision += 1;
-        r.content_hash =
-            process::payload_hash(&(&r.content_hash, &input.reason, attempt, r.document.revision))?;
+        let p = cancellation_route(&mut tx, &r).await?;
+        r.content_hash = process::payload_hash(&(
+            &r.content_hash,
+            &input.reason,
+            attempt,
+            r.document.revision,
+            &p,
+        ))?;
         sqlx::query(
             "UPDATE staff_leave_requests SET status='cancellation_pending',document=$2 WHERE id=$1",
         )
@@ -570,9 +584,6 @@ pub async fn cancel(
         .bind(&r.document)
         .execute(&mut *tx)
         .await?;
-        let p = pinned_policy(&mut tx, r.policy_id)
-            .await?
-            .ok_or_else(|| invalid("ไม่พบเกณฑ์เดิม"))?;
         start(
             &mut tx,
             actor,
