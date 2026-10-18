@@ -374,29 +374,38 @@ for (const recoverReviewer of [false, true])
 		await expect(page.getByRole('button', { name: 'ดำเนินการแล้ว', exact: true })).toHaveCount(0);
 	});
 
-test('a completed book permits optional copied acknowledgement without evidence or reopening work', async ({
-	page
-}) => {
-	const api = await mockDirectedCorrespondence(page, { scenario: 'copy', terminalCopy: true });
-	await page.goto(detailPath);
-	await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
-	await expect(page.getByRole('radio', { name: 'ข้อความ', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
-	await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveCount(0);
-	await expect(page.getByLabel('หลักฐานประกอบ', { exact: true })).toHaveCount(0);
-	await expect(page.getByTestId('signature-pad')).toHaveCount(0);
-	await page.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true }).click();
-	await expect.poll(() => api.actions.length).toBe(1);
-	expect(api.actions[0]).toMatchObject({
-		assignmentId,
-		action: 'acknowledge',
-		annotations: [],
-		evidenceFileIds: []
+for (const terminalCopy of ['completed', 'closed'] as const)
+	test(`a ${terminalCopy} book permits optional copied acknowledgement without evidence or reopening work`, async ({
+		page
+	}) => {
+		const api = await mockDirectedCorrespondence(page, { scenario: 'copy', terminalCopy });
+		await page.goto(detailPath);
+		await expect(page.getByRole('region', { name: 'สถานะการมอบหมาย' })).toContainText(
+			terminalCopy === 'closed'
+				? 'ปิดเก็บเรื่องแล้ว รับทราบสำเนาได้ตามต้องการโดยไม่เปิดงานอีกครั้ง'
+				: 'เรื่องดำเนินการเสร็จสิ้น ไม่ต้องส่งกลับตรวจรับ'
+		);
+		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+		await expect(
+			page.getByRole('button', { name: 'เปิดเอกสารอีกครั้ง', exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('radio', { name: 'ข้อความ', exact: true })).toHaveCount(0);
+		await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
+		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveCount(0);
+		await expect(page.getByLabel('หลักฐานประกอบ', { exact: true })).toHaveCount(0);
+		await expect(page.getByTestId('signature-pad')).toHaveCount(0);
+		await page.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true }).click();
+		await expect.poll(() => api.actions.length).toBe(1);
+		expect(api.actions[0]).toMatchObject({
+			assignmentId,
+			action: 'acknowledge',
+			annotations: [],
+			evidenceFileIds: []
+		});
+		expect(api.actions[0].comment).toBeUndefined();
+		expect(api.actions[0].signature).toBeUndefined();
+		expect(api.detail().record.status).toBe(terminalCopy);
 	});
-	expect(api.actions[0].comment).toBeUndefined();
-	expect(api.actions[0].signature).toBeUndefined();
-	expect(api.detail().record.status).toBe('completed');
-});
 
 test('a root decision-maker assignment waiting for its reviewer is labelled as review of results', async ({
 	page
@@ -425,3 +434,15 @@ test('accepted branch and routed recipient names remain readable after resend re
 	).toBeVisible();
 	await expect(page.getByText('คำสั่งก่อนส่งกลับแก้ไข', { exact: true })).toBeVisible();
 });
+
+for (const [bookStatus, text] of [
+	['rejected', 'หนังสือไม่อนุมัติทั้งเรื่อง การดำเนินการของทุกสาขายุติแล้ว'],
+	['revision_requested', 'ส่งหนังสือทั้งเรื่องกลับแก้ไขแล้ว รอผู้ลงทะเบียนแก้ไขและส่งใหม่']
+] as const)
+	test(`directed ${bookStatus} overview states the whole-book outcome`, async ({ page }) => {
+		await mockDirectedCorrespondence(page, { scenario: 'decide', bookStatus });
+		await page.goto(detailPath);
+		const status = page.getByRole('region', { name: 'สถานะการมอบหมาย' });
+		await expect(status).toContainText(text);
+		await expect(status).not.toContainText('เรื่องจะเสร็จเมื่อ');
+	});

@@ -22,7 +22,8 @@ export async function mockDirectedCorrespondence(
 		abortSend?: boolean;
 		recommended?: boolean;
 		recoverReviewer?: boolean;
-		terminalCopy?: boolean;
+		terminalCopy?: 'completed' | 'closed';
+		bookStatus?: 'rejected' | 'revision_requested';
 		historicalContext?: boolean;
 		permissions?: string[];
 	} = {}
@@ -247,10 +248,18 @@ export async function mockDirectedCorrespondence(
 	if (config.terminalCopy && detail.instance)
 		detail = {
 			...detail,
-			record: { ...detail.record, status: 'completed' },
+			record: { ...detail.record, status: config.terminalCopy },
 			availableActions: ['read', 'acknowledge'],
 			assignmentActions: [{ assignmentId, actions: ['read', 'acknowledge'] }],
 			instance: { ...detail.instance, status: 'completed' }
+		};
+	if (config.bookStatus && detail.instance)
+		detail = {
+			...detail,
+			record: { ...detail.record, status: config.bookStatus },
+			availableActions: [],
+			assignmentActions: [],
+			instance: { ...detail.instance, status: config.bookStatus }
 		};
 	if (config.scenario === 'recovery' && detail.instance?.directed) {
 		detail = {
@@ -393,11 +402,12 @@ export async function mockDirectedCorrespondence(
 					...detail.record,
 					revision: detail.record.revision + 1,
 					status:
-						action.action === 'route' ||
+						config.terminalCopy ??
+						(action.action === 'route' ||
 						action.action === 'reassign' ||
 						config.scenario === 'branches'
 							? 'in_progress'
-							: 'completed'
+							: 'completed')
 				},
 				availableActions: [],
 				assignmentActions: [],
