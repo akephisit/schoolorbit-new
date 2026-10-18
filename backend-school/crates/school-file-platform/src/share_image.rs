@@ -12,6 +12,13 @@ use crate::{
 
 const WIDTH: u32 = 1200;
 const HEIGHT: u32 = 630;
+// Measured white-disc edges in the resized background: x27..444, y60..474.
+const CREST_CENTER_X: u32 = 236;
+const CREST_CENTER_Y: u32 = 267;
+const CREST_FRAME_SIZE: u32 = 326;
+const CREST_FRAME_LEFT: u32 = CREST_CENTER_X - CREST_FRAME_SIZE / 2;
+const CREST_FRAME_TOP: u32 = CREST_CENTER_Y - CREST_FRAME_SIZE / 2;
+const FALLBACK_MARK_SIZE: f32 = 280.0;
 const INK: [u8; 4] = [22, 46, 70, 255];
 const TEAL: [u8; 4] = [35, 124, 155, 255];
 const REGULAR: &[u8] = include_bytes!("../assets/Kanit-Regular.ttf");
@@ -251,7 +258,12 @@ pub(crate) fn render_png(
     let mut canvas = Pixmap::new(WIDTH, HEIGHT).ok_or(FilePlatformError::InspectionRejected)?;
     canvas.data_mut().copy_from_slice(background()?.as_raw());
     if crest.is_none() {
-        orbit_mark(&mut canvas, 123.0, 162.0, 280.0);
+        orbit_mark(
+            &mut canvas,
+            CREST_CENTER_X as f32 - FALLBACK_MARK_SIZE / 2.0,
+            CREST_CENTER_Y as f32 - FALLBACK_MARK_SIZE / 2.0,
+            FALLBACK_MARK_SIZE,
+        );
     }
     let display_name = school_display_name(name);
     let missing_name = display_name.is_empty();
@@ -317,13 +329,17 @@ pub(crate) fn render_png(
         let decoded = ImageProcessor::decode_inspected_image(&inspected)
             .map_err(|_| FilePlatformError::InspectionRejected)?;
         let contained = decoded
-            .resize(326, 326, image::imageops::FilterType::Lanczos3)
+            .resize(
+                CREST_FRAME_SIZE,
+                CREST_FRAME_SIZE,
+                image::imageops::FilterType::Lanczos3,
+            )
             .to_rgba8();
         image::imageops::overlay(
             &mut image,
             &contained,
-            100 + i64::from((326 - contained.width()) / 2),
-            139 + i64::from((326 - contained.height()) / 2),
+            i64::from(CREST_FRAME_LEFT + (CREST_FRAME_SIZE - contained.width()) / 2),
+            i64::from(CREST_FRAME_TOP + (CREST_FRAME_SIZE - contained.height()) / 2),
         );
     }
     let mut encoded = Cursor::new(Vec::new());
@@ -375,7 +391,7 @@ mod tests {
     #[test]
     fn school_share_partial_alpha_crest_blends_over_background_and_stays_opaque() {
         let foreground = [210_u8, 35, 75];
-        let source = RgbaImage::from_fn(326, 326, |x, _| {
+        let source = RgbaImage::from_fn(CREST_FRAME_SIZE, CREST_FRAME_SIZE, |x, _| {
             Rgba([foreground[0], foreground[1], foreground[2], (x % 256) as u8])
         });
         let mut source_png = Cursor::new(Vec::new());
@@ -393,7 +409,10 @@ mod tests {
         assert!(rendered.pixels().all(|pixel| pixel.0[3] == 255));
         assert_eq!(decoded.color(), image::ColorType::Rgb8);
         for alpha in 0..=255_u32 {
-            let (x, y) = (100 + alpha, 219);
+            let (x, y) = (
+                CREST_FRAME_LEFT + alpha,
+                CREST_FRAME_TOP + CREST_FRAME_SIZE / 4,
+            );
             let background = background().unwrap().get_pixel(x, y).0;
             let actual = rendered.get_pixel(x, y).0;
             for channel in 0..3 {
@@ -430,12 +449,15 @@ mod tests {
             assert_eq!(image.dimensions(), (1200, 630));
             assert!(png.len() <= 2 * 1024 * 1024);
             assert!(image.pixels().all(|pixel| pixel.0[3] == 255));
-            let scale = 326.0 / width.max(height) as f32;
+            let scale = CREST_FRAME_SIZE as f32 / width.max(height) as f32;
             let (w, h) = (
                 (width as f32 * scale).round() as u32,
                 (height as f32 * scale).round() as u32,
             );
-            let (left, top) = (100 + (326 - w) / 2, 139 + (326 - h) / 2);
+            let (left, top) = (
+                CREST_FRAME_LEFT + (CREST_FRAME_SIZE - w) / 2,
+                CREST_FRAME_TOP + (CREST_FRAME_SIZE - h) / 2,
+            );
             // All four original corners remain visible, including wide and tall sources.
             for (x, y, expected) in [
                 (left + 4, top + 4, [240, 40, 40, 255]),
