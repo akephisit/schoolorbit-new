@@ -593,7 +593,8 @@ npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --wor
 
 The focused suite covers the canonical contrast/CSS serializer, per-document tenant reads,
 ETag revalidation, bounded failure, stale font preparation, same-revision font retry,
-delayed CSS/fonts before first paint, blocked bootstrap fail-open, personal mode,
+delayed CSS/fonts before first paint, an unused stalled legacy bootstrap URL, independent
+CSS fail-open when the inline bootstrap cannot execute, personal mode,
 role/public pages, persisted settings, a fresh browser, SPA navigation, denied reads/writes
 and explicit conflict review. Install the pinned Playwright Chromium and its required host
 libraries before execution. Shared layout guards assert the density token owners; browser

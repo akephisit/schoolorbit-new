@@ -177,16 +177,74 @@ test('font timeout selects a stable system fallback and late fonts never swap th
 	expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toBe(before);
 });
 
-test('a blocked bootstrap fails open within four seconds with fixed system typography', async ({
+test('the document needs no downloadable bootstrap when its legacy URL stalls', async ({
 	page
 }) => {
-	await page.route('**/school-appearance-bootstrap.js', (route) => route.abort());
+	let requests = 0;
+	let release = () => {};
+	const held = new Promise<void>((done) => {
+		release = done;
+	});
+	await page.route('**/school-appearance-bootstrap.js', async (route) => {
+		requests++;
+		await held;
+		await route.continue();
+	});
+	await capturePaints(page, 'dark');
+	try {
+		await gotoDocument(page, `${fixture.baseUrl}/login`, { waitUntil: 'domcontentloaded' });
+		await ready(page);
+		await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
+		await expect(page.locator('#school-appearance-bootstrap')).toHaveCount(1);
+		expect(await page.locator('#school-appearance-bootstrap').getAttribute('src')).toBeNull();
+		expect(requests).toBe(0);
+		await page.evaluate(async () => {
+			await document.fonts.ready;
+			await new Promise(requestAnimationFrame);
+		});
+		const frames = await paints(page);
+		expect(frames.length).toBeGreaterThan(0);
+		expect(
+			frames.every(
+				(frame) =>
+					frame.palette === 'purple' &&
+					frame.font.includes('School Noto Sans Thai') &&
+					frame.loaded &&
+					!frame.dark
+			)
+		).toBe(true);
+		expect(requests).toBe(0);
+	} finally {
+		release();
+	}
+});
+
+test('the independent CSS watchdog reveals stable system typography if only the inline bootstrap cannot execute', async ({
+	page
+}) => {
+	await page.route(
+		(url) => url.pathname === '/login',
+		async (route) => {
+			if (!route.request().isNavigationRequest()) return route.continue();
+			const response = await route.fetch();
+			const html = await response.text();
+			const stripped = html.replace(
+				/<script id="school-appearance-bootstrap">[\s\S]*?<\/script>/,
+				''
+			);
+			expect(stripped).not.toBe(html);
+			await route.fulfill({ response, body: stripped });
+		}
+	);
 	await gotoDocument(page, `${fixture.baseUrl}/login`, { waitUntil: 'domcontentloaded' });
 	await ready(page);
+	await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
+	await expect(page.locator('#school-appearance-bootstrap')).toHaveCount(0);
 	expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain(
 		'system-ui'
 	);
 	await page.evaluate(async () => {
+		await document.fonts.load('600 16px "School Noto Sans Thai"', 'ก SchoolOrbit');
 		await document.fonts.ready;
 		const consumer = document.createElement('div');
 		consumer.dataset.fontConsumer = 'true';

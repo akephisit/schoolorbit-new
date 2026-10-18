@@ -1660,8 +1660,9 @@ applied migration checksums during recovery. No production migration is part of 
 Each document blocks first paint on the same-origin `/school-appearance.css` read. Its private
 ETag response revalidates with the backend; failed or timed-out reads return uncached stable
 defaults for that document. UI font faces use self-hosted `/fonts/ui/` assets and the existing built-in Sarabun files. The initial font gate
-waits up to three seconds before selecting a fixed system fallback; an independent CSS deadline
-reveals readable system text if the bootstrap script is blocked. Delayed font completion never
+uses an inline classic bootstrap in `app.html`, with no script download that can stall body
+parsing. It waits up to three seconds before selecting a fixed system fallback; an independent
+CSS deadline reveals readable system text if the inline bootstrap cannot execute. Delayed font completion never
 replaces that initial fallback. No shared process cache or SPA-route appearance fetch is used.
 
 After a save, font preparation precedes atomic CSS replacement. A font failure after database
