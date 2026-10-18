@@ -417,10 +417,14 @@ release or open maintenance. Check the user unit with
 `systemctl --user is-enabled podman-restart.service`; use the normal Pipeline for
 failed or pending release recovery.
 
-The School backend build pulls its Rust and Debian bases from the Docker Official Images mirror
-on Amazon ECR Public, pinned by index digest. These digests match the Docker Hub originals and
-avoid anonymous Docker Hub pull limits. Disposable PostgreSQL and Nginx verification images use
-the same official mirror, and actionlint uses Google's Docker Hub cache; all keep verified upstream
+The School backend build pulls its official Rust and Debian bases from Docker Hub, pinned by
+index digest. The registry location changed after repeated Amazon ECR Public pulls failed with
+`toomanyrequests: Data limit exceeded`; both Docker Hub index responses were verified against the
+existing digests, with Linux AMD64 manifests present. This preserves the exact base content,
+versions and build settings. Docker Hub has its own pull limits; a future registry failure requires
+checking that registry's availability and authentication. Admin's base-image sources are unchanged.
+Disposable PostgreSQL and Nginx verification images still use the Docker Official Images mirror
+on Amazon ECR Public, and actionlint uses Google's Docker Hub cache; all keep verified upstream
 digests. Update tags and digests together when upgrading bases or verification images.
 
 Selected backend services use immutable digests, canonical rootless Podman topology, readiness,
