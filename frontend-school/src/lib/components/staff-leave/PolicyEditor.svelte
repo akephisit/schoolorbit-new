@@ -16,6 +16,7 @@
 		leavePolicyDraft,
 		newLeavePolicyStep
 	} from '#lib/staff-leave/drafts.js';
+	import { leaveDate } from '#lib/staff-leave/presentation.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import { LoadingButton, PageState, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -378,7 +379,7 @@
 					{#each excludedDates as date (date)}<div
 							class="flex items-center justify-between gap-2 rounded-md border p-2"
 						>
-							<span class="text-sm">{date}</span><Button
+							<span class="text-sm">{leaveDate(date)}</span><Button
 								type="button"
 								variant="ghost"
 								size="sm"

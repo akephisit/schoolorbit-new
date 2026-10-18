@@ -90,11 +90,6 @@
 				]}
 			/>
 		</div>
-		<p class="text-sm text-muted-foreground">
-			{query.status
-				? leaveStatusLabels[query.status as keyof typeof leaveStatusLabels]
-				: 'ทุกสถานะ'} · เรียงตามรายการล่าสุด
-		</p>
 	</div>
 	<section data-testid="leave-requests" aria-busy={region.loading}>
 		{#if region.error}<PageState
@@ -220,8 +215,8 @@
 <Dialog.Root bind:open={creating}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
 		><Dialog.Header
-			><Dialog.Title><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Dialog.Title
-			><Dialog.Description>บันทึกฉบับร่างก่อนแนบหลักฐานและส่งพิจารณา</Dialog.Description
+			><Dialog.Title>สร้างคำขอ{leaveKindLabels[kind]}</Dialog.Title><Dialog.Description
+				>บันทึกฉบับร่างก่อนแนบหลักฐานและส่งพิจารณา</Dialog.Description
 			></Dialog.Header
 		>
 		{#if creating && $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<RequestEditor

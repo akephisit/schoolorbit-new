@@ -202,6 +202,7 @@ test('settings clone preserves criteria and patches type revision before later a
 	await page.goto('/staff/leave/settings');
 	expect(api.count('/api/staff-leave/routing-options')).toBe(0);
 	await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+	await expect(page.getByTestId('leave-policies')).toContainText('ต้องแนบตั้งแต่ 3 วัน');
 	await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้', exact: true }).click();
 	await expect(page.locator('#policy-source')).toHaveValue('คำสั่งโรงเรียนทดสอบ 1/2569');
 	await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
@@ -219,6 +220,7 @@ test('settings clone preserves criteria and patches type revision before later a
 	await page.getByRole('button', { name: 'จัดการประเภท ลาป่วย', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'เก็บถาวร ลาป่วย', exact: true }).click();
 	expect(api.writes.at(-1)!.payload.expectedRevision).toBe(2);
+	expect(api.writes.at(-1)!.payload).not.toHaveProperty('code');
 });
 
 test('report exports only loaded scoped rows with spreadsheet formula escaping', async ({
@@ -268,8 +270,22 @@ for (const theme of ['light', 'dark'] as const)
 				(theme) => localStorage.setItem('ui-preferences', JSON.stringify({ theme })),
 				theme
 			);
-			await mockLeave(page, { role: 'reviewer', status: 'submitted' });
+			const signedPrint = width === 1440 && theme === 'dark';
+			await mockLeave(page, {
+				role: 'reviewer',
+				status: 'submitted',
+				requireSignature: signedPrint
+			});
 			await page.goto(leaveDetailPath);
+			if (signedPrint) {
+				await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+				await draw(page);
+				await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+				await page.getByRole('button', { name: 'ยืนยันอนุมัติ', exact: true }).click();
+				await expect(
+					page.getByRole('img', { name: 'ลายมือชื่อ ครูผู้พิจารณา ทดสอบ' })
+				).toBeVisible();
+			}
 			await expect(page.getByTestId('leave-detail')).toContainText('คำสั่งโรงเรียนทดสอบ');
 			expect(
 				await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
@@ -454,14 +470,39 @@ for (const theme of ['light', 'dark'] as const)
 				.click();
 			await navigate(page, '/staff/leave/settings');
 			await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+			await page.screenshot({ path: testInfo.outputPath(`settings-${theme}-${width}.png`) });
+			await page.getByRole('button', { name: 'เพิ่มประเภทคำขอ', exact: true }).click();
+			await expect(page.getByTestId('leave-type-form')).not.toContainText('รหัส');
+			await page.screenshot({ path: testInfo.outputPath(`type-form-${theme}-${width}.png`) });
+			await page
+				.getByTestId('leave-type-form')
+				.getByRole('button', { name: 'ยกเลิก', exact: true })
+				.click();
 			await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้' }).click();
 			await expect(page.locator('#policy-source')).toHaveValue('คำสั่งโรงเรียนทดสอบ 1/2569');
 			await page.screenshot({ path: testInfo.outputPath(`policy-${theme}-${width}.png`) });
+			await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+			await page.screenshot({ path: testInfo.outputPath(`policy-limits-${theme}-${width}.png`) });
+			await page.getByRole('tab', { name: 'หลักฐาน', exact: true }).click();
+			await page.screenshot({ path: testInfo.outputPath(`policy-evidence-${theme}-${width}.png`) });
 			await page.getByRole('tab', { name: 'ผู้พิจารณา', exact: true }).click();
 			await expect(page.getByTestId('leave-policy-editor')).toContainText('ครูหัวหน้าฝ่าย ทดสอบ');
 			await page.screenshot({ path: testInfo.outputPath(`policy-steps-${theme}-${width}.png`) });
 			await page
 				.getByTestId('leave-policy-editor')
+				.getByRole('button', { name: 'ยกเลิก', exact: true })
+				.click();
+			await navigate(page, '/staff/exit-permissions');
+			await expect(page.getByTestId('leave-requests')).toContainText('90 นาที');
+			await page.screenshot({ path: testInfo.outputPath(`exit-list-${theme}-${width}.png`) });
+			await page.getByRole('button', { name: 'สร้างคำขอออกนอกโรงเรียน', exact: true }).click();
+			await page.locator('#leave-type').click();
+			await page.getByRole('option', { name: 'ออกนอกโรงเรียน', exact: true }).click();
+			await chooseDate(page, 'leave-start-date');
+			await expect(page.locator('#leave-start-time')).toBeVisible();
+			await page.screenshot({ path: testInfo.outputPath(`exit-editor-${theme}-${width}.png`) });
+			await page
+				.getByTestId('leave-request-editor')
 				.getByRole('button', { name: 'ยกเลิก', exact: true })
 				.click();
 			await navigate(page, '/staff/leave/reports');
@@ -640,4 +681,25 @@ test('empty list and report distinguish filtered emptiness without invented usag
 	await navigate(page, '/staff/leave/reports');
 	await expect(page.getByTestId('leave-usage')).toContainText('ยังไม่มีการใช้สิทธิ์ในช่วงที่เลือก');
 	await expect(page.getByTestId('leave-usage').getByRole('table')).toHaveCount(0);
+});
+
+test('pending submit disables repeated mutations and keeps the request summary visible', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { hold: 'mutation' });
+	await page.goto(leaveDetailPath);
+	await expect(page.getByTestId('leave-detail')).toContainText('เข้ารับการตรวจรักษา');
+	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
+	try {
+		await expect(
+			page.getByRole('button', { name: 'กำลังดำเนินการ...', exact: true })
+		).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'แก้ไขฉบับร่าง', exact: true })).toBeDisabled();
+		await expect(page.getByTestId('leave-detail')).toContainText('เข้ารับการตรวจรักษา');
+		expect(api.writes.filter((write) => write.path.endsWith('/submit'))).toHaveLength(1);
+	} finally {
+		api.release();
+	}
+	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
+	expect(api.writes.filter((write) => write.path.endsWith('/submit'))).toHaveLength(1);
 });

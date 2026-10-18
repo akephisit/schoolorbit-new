@@ -26,7 +26,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { MoreHorizontal } from '@lucide/svelte';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { ChevronDown, MoreHorizontal } from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
@@ -41,6 +42,7 @@
 		selected = $state<LeaveType | null>(null),
 		policies = $state<LeavePolicyVersion[]>([]);
 	let policySeed = $state<LeavePolicyVersion | undefined>();
+	let expandedPolicies = $state<string[]>([]);
 	let policiesLoading = $state(false),
 		policiesError = $state(''),
 		policyOpen = $state(false),
@@ -66,13 +68,19 @@
 	async function select(type: LeaveType) {
 		const changed = selected?.id !== type.id;
 		selected = type;
-		if (changed) policies = [];
+		if (changed) {
+			policies = [];
+			expandedPolicies = [];
+		}
 		policiesError = '';
 		policiesLoading = true;
 		const ticket = request.begin();
 		try {
 			const result = await listLeavePolicies(type.id, { signal: ticket.signal });
-			if (request.isCurrent(ticket.revision) && !disposed) policies = result;
+			if (request.isCurrent(ticket.revision) && !disposed) {
+				policies = result;
+				if (changed) expandedPolicies = result[0] ? [result[0].id] : [];
+			}
 		} catch (cause) {
 			if (request.isCurrent(ticket.revision) && !disposed)
 				policiesError = cause instanceof Error ? cause.message : 'โหลดนโยบายไม่สำเร็จ';
@@ -171,9 +179,10 @@
 									? 'bg-primary/5'
 									: ''}"
 							>
-								<button
+								<Button
 									type="button"
-									class="min-w-0 flex-1 rounded-md px-2 py-2 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+									variant="ghost"
+									class="h-auto min-w-0 flex-1 flex-col items-start gap-0 px-2 py-2 text-left whitespace-normal"
 									aria-pressed={selected?.id === type.id}
 									aria-label={`ดูเกณฑ์ ${type.name}`}
 									onclick={() => select(type)}
@@ -182,7 +191,7 @@
 										>{leaveKindLabels[type.kind]}{#if type.archived}<Badge variant="outline"
 												>เก็บถาวร</Badge
 											>{:else}<span>เปิดใช้งาน</span>{/if}</span
-									></button
+									></Button
 								>
 								{#if allowed}<DropdownMenu.Root
 										><DropdownMenu.Trigger
@@ -248,52 +257,72 @@
 					/>{/if}{#if policiesLoading && !policies.length}<PageSkeleton
 						variant="detail"
 					/>{:else if policies.length}<div class="space-y-3">
-						{#each policies as policy, index (policy.id)}<details
-								open={index === 0}
+						{#each policies as policy (policy.id)}<Collapsible.Root
+								open={expandedPolicies.includes(policy.id)}
+								onOpenChange={(open) =>
+									(expandedPolicies = open
+										? [...expandedPolicies, policy.id]
+										: expandedPolicies.filter((id) => id !== policy.id))}
 								class="rounded-lg border bg-card"
 							>
-								<summary class="cursor-pointer p-3 text-sm"
-									><span class="font-medium"
-										>ฉบับ {policy.version} · มีผล {leaveDate(policy.effectiveFrom)}</span
-									><span class="mt-1 block text-muted-foreground"
-										>{policy.personnelTypes
-											.map((value) => PERSONNEL_TYPE_LABELS[value])
-											.join(' · ')}</span
-									><span class="mt-1 block"
-										>ต่อคำขอ {policy.maxPerRequest == null
-											? 'ไม่กำหนด'
-											: leaveAmount(policy.maxPerRequest, policy.unit)} · ต่อรอบปี {policy.annualLimit ==
-										null
-											? 'ไม่กำหนด'
-											: leaveAmount(policy.annualLimit, policy.unit)} · {policy.steps.length} ขั้นตอน</span
-									>{#if !policy.enabled}<Badge variant="outline" class="mt-2"
-											>งดรับคำขอสำหรับกลุ่มนี้</Badge
-										>{/if}</summary
-								><Card.Root class="gap-3 rounded-none border-0 border-t py-3 shadow-none"
-									><Card.Content class="space-y-2 px-3 text-sm"
-										><p class="break-words">อ้างอิง: {policy.sourceReference}</p>
-										<p>
-											นับ{policy.countingMode === 'working_days' ? 'วันทำงานที่กำหนด' : 'วันปฏิทิน'} ·
-											{policy.evidenceRequired ? 'ต้องแนบหลักฐาน' : 'หลักฐานตามความจำเป็น'}
-										</p>
-										<ol class="space-y-1">
-											{#each policy.steps as step, index (index)}<li>
-													{index + 1}. {step.title}{step.requiresSignature
-														? ' · ใช้ลายมือชื่อ'
-														: ''}
-												</li>{/each}
-										</ol>
-										{#if allowed && !selected.archived}<Button
-												type="button"
-												variant="outline"
-												onclick={() => {
-													policySeed = policy;
-													policyOpen = true;
-												}}>สร้างฉบับใหม่จากฉบับนี้</Button
-											>{/if}</Card.Content
-									></Card.Root
-								>
-							</details>{/each}
+								<Collapsible.Trigger
+									>{#snippet child({ props })}<Button
+											{...props}
+											variant="ghost"
+											class="group h-auto w-full flex-col items-start gap-0 rounded-lg p-3 text-left whitespace-normal"
+											aria-label={`เกณฑ์ฉบับ ${policy.version} มีผล ${leaveDate(policy.effectiveFrom)}`}
+											><span class="flex w-full items-center justify-between gap-2 font-medium"
+												>ฉบับ {policy.version} · มีผล {leaveDate(policy.effectiveFrom)}<ChevronDown
+													class="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180"
+												/></span
+											><span class="mt-1 block text-muted-foreground"
+												>{policy.personnelTypes
+													.map((value) => PERSONNEL_TYPE_LABELS[value])
+													.join(' · ')}</span
+											><span class="mt-1 block"
+												>ต่อคำขอ {policy.maxPerRequest == null
+													? 'ไม่กำหนด'
+													: leaveAmount(policy.maxPerRequest, policy.unit)} · ต่อรอบปี {policy.annualLimit ==
+												null
+													? 'ไม่กำหนด'
+													: leaveAmount(policy.annualLimit, policy.unit)} · {policy.steps.length} ขั้นตอน</span
+											>{#if !policy.enabled}<Badge variant="outline" class="mt-2"
+													>งดรับคำขอสำหรับกลุ่มนี้</Badge
+												>{/if}</Button
+										>{/snippet}</Collapsible.Trigger
+								><Collapsible.Content
+									><Card.Root class="gap-3 rounded-none border-0 border-t py-3 shadow-none"
+										><Card.Content class="space-y-2 px-3 text-sm"
+											><p class="break-words">อ้างอิง: {policy.sourceReference}</p>
+											<p>
+												นับ{policy.countingMode === 'working_days'
+													? 'วันทำงานที่กำหนด'
+													: 'วันปฏิทิน'} ·
+												{policy.evidenceRequired
+													? 'ต้องแนบหลักฐานทุกคำขอ'
+													: policy.evidenceFromAmount != null
+														? `ต้องแนบตั้งแต่ ${leaveAmount(policy.evidenceFromAmount, policy.unit)}`
+														: 'หลักฐานตามความจำเป็น'}
+											</p>
+											<ol class="space-y-1">
+												{#each policy.steps as step, index (index)}<li>
+														{index + 1}. {step.title}{step.requiresSignature
+															? ' · ใช้ลายมือชื่อ'
+															: ''}
+													</li>{/each}
+											</ol>
+											{#if allowed && !selected.archived}<Button
+													type="button"
+													variant="outline"
+													onclick={() => {
+														policySeed = policy;
+														policyOpen = true;
+													}}>สร้างฉบับใหม่จากฉบับนี้</Button
+												>{/if}</Card.Content
+										></Card.Root
+									>
+								</Collapsible.Content></Collapsible.Root
+							>{/each}
 					</div>{:else if !policiesError}<PageState
 						title="ยังไม่มีนโยบายสำหรับประเภทนี้"
 						description="กำหนดประเภทบุคลากร วันที่มีผล และผู้พิจารณาก่อนเปิดรับคำขอ"
@@ -332,6 +361,7 @@
 				oncancel={() => (policyOpen = false)}
 				onsaved={(policy) => {
 					policies = [policy, ...policies];
+					expandedPolicies = [policy.id];
 					if (selected) patch({ ...selected, revision: policy.typeRevision });
 					policyOpen = false;
 				}}
