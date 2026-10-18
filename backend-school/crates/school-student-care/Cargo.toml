@@ -1,0 +1,36 @@
+[package]
+name = "school-student-care"
+version = { workspace = true }
+edition = { workspace = true }
+
+[features]
+api-docs = ["school-http/api-docs", "school-auth/api-docs", "dep:utoipa"]
+
+[dependencies]
+axum = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+utoipa = { workspace = true, optional = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+school-academic-core = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-authorization = { workspace = true }
+school-crypto = { workspace = true }
+school-errors = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+school-permissions = { workspace = true }
+school-students = { workspace = true }
+
+[dev-dependencies]
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

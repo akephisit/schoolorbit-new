@@ -6624,6 +6624,310 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/student-care/assignments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_assignments'];
+		put?: never;
+		post: operations['student_care_create_assignments'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_get_assignment'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}/acknowledge': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['student_care_acknowledge_assignment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}/cancel': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['student_care_cancel_assignment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}/draft': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['student_care_save_draft'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}/reviewers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['student_care_update_assignment_reviewers'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/assignments/{id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['student_care_submit_response'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/cases': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_cases'];
+		put?: never;
+		post: operations['student_care_create_case'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/cases/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_get_case'];
+		put: operations['student_care_update_case'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/cases/{id}/events': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_case_events'];
+		put?: never;
+		post: operations['student_care_add_case_event'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/instruments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_instruments'];
+		put?: never;
+		post: operations['student_care_create_instrument'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/instruments/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_get_instrument'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/overview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_overview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/rounds': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_rounds'];
+		put?: never;
+		post: operations['student_care_create_round'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/rounds/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_get_round'];
+		put: operations['student_care_update_round'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/staff': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_staff'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_students'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/visits': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_list_visits'];
+		put?: never;
+		post: operations['student_care_create_visit'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/student-care/visits/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['student_care_get_visit'];
+		put: operations['student_care_update_visit'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/student/profile': {
 		parameters: {
 			query?: never;
@@ -7938,6 +8242,17 @@ export interface components {
 			/** Format: int32 */
 			versionNo: number;
 		};
+		AddCareCaseEvent: {
+			kind: components['schemas']['CareEventKind'];
+			/** Format: date */
+			nextFollowUp?: string | null;
+			note: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['CareCaseStatus'];
+		};
 		AddDatedRosterMembershipRequest: {
 			/** Format: int64 */
 			groupRowVersion: number;
@@ -9024,6 +9339,130 @@ export interface components {
 			data: {
 				gradeLevels: components['schemas']['CalendarGradeOption'][];
 				homerooms: components['schemas']['CalendarHomeroomOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareAssignment: {
+			data: {
+				/** Format: date-time */
+				acknowledgedAt?: string | null;
+				/** Format: uuid */
+				createdBy: string;
+				/** Format: uuid */
+				id: string;
+				instrumentName: string;
+				/** Format: uuid */
+				instrumentVersionId: string;
+				respondent: components['schemas']['CareRespondent'];
+				/** Format: uuid */
+				respondentId: string;
+				reviewerUserIds: string[];
+				/** Format: uuid */
+				roundId: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['CareAssignmentStatus'];
+				/** Format: uuid */
+				studentId: string;
+				studentName: string;
+				/** Format: date-time */
+				submittedAt?: string | null;
+				urgent: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareAssignmentDetail: {
+			data: {
+				answers: components['schemas']['CareAnswer'][];
+				assignment: components['schemas']['CareAssignment'];
+				instrument: components['schemas']['CareInstrumentVersion'];
+				manualNote?: string | null;
+				manualScores: components['schemas']['CareManualScore'][];
+				purpose: string;
+				/** Format: date-time */
+				purposeAcknowledgedAt?: string | null;
+				results: components['schemas']['CareScaleResult'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareCaseDetail: {
+			data: {
+				case: components['schemas']['CareCase'];
+				events: components['schemas']['CareCaseEvent'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareInstrumentVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				definition: components['schemas']['CareInstrumentDefinition'];
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instrumentId: string;
+				/** Format: int32 */
+				version: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareOverview: {
+			data: {
+				/** Format: int64 */
+				assignedCount: number;
+				/** Format: int64 */
+				followUpDueCount: number;
+				/** Format: int64 */
+				openCaseCount: number;
+				/** Format: int64 */
+				pendingVisitCount: number;
+				/** Format: int64 */
+				submittedCount: number;
+				/** Format: int64 */
+				urgentUnacknowledgedCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareRound: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				dueDate: string;
+				/** Format: uuid */
+				id: string;
+				instrumentVersionIds: string[];
+				name: string;
+				purpose: string;
+				/** Format: date */
+				rosterDate: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['CareRoundStatus'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CareVisitRecord: {
+			data: {
+				agreedActions: string;
+				contactPerson: string;
+				factualObservations: string;
+				needs: string;
+				/** Format: date */
+				nextFollowUp?: string | null;
+				strengths: string;
+				visit: components['schemas']['CareVisit'];
+				/** Format: date */
+				visitedDate?: string | null;
 			};
 			message?: string;
 			success: boolean;
@@ -12903,6 +13342,154 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_CareAssignment: {
+			data: {
+				/** Format: date-time */
+				acknowledgedAt?: string | null;
+				/** Format: uuid */
+				createdBy: string;
+				/** Format: uuid */
+				id: string;
+				instrumentName: string;
+				/** Format: uuid */
+				instrumentVersionId: string;
+				respondent: components['schemas']['CareRespondent'];
+				/** Format: uuid */
+				respondentId: string;
+				reviewerUserIds: string[];
+				/** Format: uuid */
+				roundId: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['CareAssignmentStatus'];
+				/** Format: uuid */
+				studentId: string;
+				studentName: string;
+				/** Format: date-time */
+				submittedAt?: string | null;
+				urgent: boolean;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareCase: {
+			data: {
+				assignedUserIds: string[];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: date */
+				nextFollowUp?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				sourceAssignmentId?: string | null;
+				/** Format: uuid */
+				sourceVisitId?: string | null;
+				status: components['schemas']['CareCaseStatus'];
+				/** Format: uuid */
+				studentId: string;
+				studentName: string;
+				title: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareCaseEvent: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy: string;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['CareEventKind'];
+				note: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareInstrumentVersion: {
+			data: {
+				/** Format: date-time */
+				createdAt: string;
+				definition: components['schemas']['CareInstrumentDefinition'];
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				instrumentId: string;
+				/** Format: int32 */
+				version: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareRound: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				dueDate: string;
+				/** Format: uuid */
+				id: string;
+				instrumentVersionIds: string[];
+				name: string;
+				purpose: string;
+				/** Format: date */
+				rosterDate: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['CareRoundStatus'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareStaffOption: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareStudentOption: {
+			data: {
+				advisorIds: string[];
+				guardianIds: string[];
+				homeroom: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				studentCode?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CareVisit: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: date-time */
+				completedAt?: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: date */
+				plannedDate: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['CareVisitStatus'];
+				/** Format: uuid */
+				studentId: string;
+				studentName: string;
+				visitorIds: string[];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_CatalogActivity: {
 			data: {
 				activityType: string;
@@ -15601,6 +16188,257 @@ export interface components {
 			| 'duplicate_candidate';
 		/** @enum {string} */
 		CandidateValidationStatus: 'ready' | 'needs_review' | 'invalid';
+		CareAnswer: {
+			optionKey: string;
+			questionKey: string;
+		};
+		CareAssignment: {
+			/** Format: date-time */
+			acknowledgedAt?: string | null;
+			/** Format: uuid */
+			createdBy: string;
+			/** Format: uuid */
+			id: string;
+			instrumentName: string;
+			/** Format: uuid */
+			instrumentVersionId: string;
+			respondent: components['schemas']['CareRespondent'];
+			/** Format: uuid */
+			respondentId: string;
+			reviewerUserIds: string[];
+			/** Format: uuid */
+			roundId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['CareAssignmentStatus'];
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
+			/** Format: date-time */
+			submittedAt?: string | null;
+			urgent: boolean;
+		};
+		CareAssignmentDetail: {
+			answers: components['schemas']['CareAnswer'][];
+			assignment: components['schemas']['CareAssignment'];
+			instrument: components['schemas']['CareInstrumentVersion'];
+			manualNote?: string | null;
+			manualScores: components['schemas']['CareManualScore'][];
+			purpose: string;
+			/** Format: date-time */
+			purposeAcknowledgedAt?: string | null;
+			results: components['schemas']['CareScaleResult'][];
+		};
+		/** @enum {string} */
+		CareAssignmentStatus: 'assigned' | 'in_progress' | 'submitted' | 'cancelled';
+		CareAssignmentTarget: {
+			/** Format: uuid */
+			respondentId: string;
+			/** Format: uuid */
+			studentId: string;
+		};
+		CareBand: {
+			key: string;
+			label: string;
+			/** Format: int32 */
+			maximum: number;
+			/** Format: int32 */
+			minimum: number;
+			urgent: boolean;
+		};
+		CareCase: {
+			assignedUserIds: string[];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			nextFollowUp?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			sourceAssignmentId?: string | null;
+			/** Format: uuid */
+			sourceVisitId?: string | null;
+			status: components['schemas']['CareCaseStatus'];
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
+			title: string;
+		};
+		CareCaseDetail: {
+			case: components['schemas']['CareCase'];
+			events: components['schemas']['CareCaseEvent'][];
+		};
+		CareCaseEvent: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['CareEventKind'];
+			note: string;
+		};
+		/** @enum {string} */
+		CareCaseStatus: 'open' | 'monitoring' | 'closed';
+		/** @enum {string} */
+		CareEventKind:
+			'note' | 'contact' | 'referral' | 'follow_up' | 'acknowledgement' | 'closure' | 'reopened';
+		/** @enum {string} */
+		CareFamily: 'sdq' | 'eq' | 'depression' | 'other';
+		CareInstrumentDefinition: {
+			digitalRightsConfirmed: boolean;
+			family: components['schemas']['CareFamily'];
+			instructions: string;
+			language: string;
+			licenseNote: string;
+			/** Format: int32 */
+			maximumAge: number;
+			/** Format: int32 */
+			minimumAge: number;
+			mode: components['schemas']['CareInstrumentMode'];
+			name: string;
+			questions: components['schemas']['CareQuestion'][];
+			respondent: components['schemas']['CareRespondent'];
+			scales: components['schemas']['CareScale'][];
+			source: string;
+			variant: string;
+		};
+		/** @enum {string} */
+		CareInstrumentMode: 'digital' | 'manual_result';
+		CareInstrumentVersion: {
+			/** Format: date-time */
+			createdAt: string;
+			definition: components['schemas']['CareInstrumentDefinition'];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			instrumentId: string;
+			/** Format: int32 */
+			version: number;
+		};
+		CareManualScore: {
+			scaleKey: string;
+			/** Format: int32 */
+			score: number;
+		};
+		CareOption: {
+			key: string;
+			label: string;
+			/** Format: int32 */
+			points: number;
+			urgent: boolean;
+		};
+		CareOverview: {
+			/** Format: int64 */
+			assignedCount: number;
+			/** Format: int64 */
+			followUpDueCount: number;
+			/** Format: int64 */
+			openCaseCount: number;
+			/** Format: int64 */
+			pendingVisitCount: number;
+			/** Format: int64 */
+			submittedCount: number;
+			/** Format: int64 */
+			urgentUnacknowledgedCount: number;
+		};
+		CareQuestion: {
+			key: string;
+			options: components['schemas']['CareOption'][];
+			reverse: boolean;
+			scaleKey: string;
+			text: string;
+		};
+		/** @enum {string} */
+		CareRespondent: 'self_report' | 'teacher' | 'guardian';
+		CareRevisionCommand: {
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		CareRound: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			dueDate: string;
+			/** Format: uuid */
+			id: string;
+			instrumentVersionIds: string[];
+			name: string;
+			purpose: string;
+			/** Format: date */
+			rosterDate: string;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['CareRoundStatus'];
+		};
+		/** @enum {string} */
+		CareRoundStatus: 'open' | 'closed' | 'cancelled';
+		CareScale: {
+			bands: components['schemas']['CareBand'][];
+			key: string;
+			label: string;
+			sourceScaleKeys: string[];
+		};
+		CareScaleResult: {
+			bandKey: string;
+			bandLabel: string;
+			scaleKey: string;
+			/** Format: int32 */
+			score: number;
+			urgent: boolean;
+		};
+		CareStaffOption: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		CareStudentOption: {
+			advisorIds: string[];
+			guardianIds: string[];
+			homeroom: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			studentCode?: string | null;
+		};
+		CareVisit: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: date-time */
+			completedAt?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			plannedDate: string;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['CareVisitStatus'];
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
+			visitorIds: string[];
+		};
+		CareVisitRecord: {
+			agreedActions: string;
+			contactPerson: string;
+			factualObservations: string;
+			needs: string;
+			/** Format: date */
+			nextFollowUp?: string | null;
+			strengths: string;
+			visit: components['schemas']['CareVisit'];
+			/** Format: date */
+			visitedDate?: string | null;
+		};
+		/** @enum {string} */
+		CareVisitStatus: 'planned' | 'completed' | 'cancelled';
 		CatalogActivity: {
 			activityType: string;
 			/** Format: date-time */
@@ -16794,6 +17632,38 @@ export interface components {
 			startDate: string;
 			startTime?: string | null;
 			title: string;
+		};
+		CreateCareAssignments: {
+			/** Format: uuid */
+			instrumentVersionId: string;
+			/** Format: uuid */
+			requestId: string;
+			reviewerUserIds: string[];
+			/** Format: uuid */
+			roundId: string;
+			targets: components['schemas']['CareAssignmentTarget'][];
+		};
+		CreateCareInstrumentVersion: {
+			definition: components['schemas']['CareInstrumentDefinition'];
+			/** Format: int32 */
+			expectedVersion?: number | null;
+			/** Format: uuid */
+			instrumentId?: string | null;
+			/** Format: uuid */
+			requestId: string;
+		};
+		CreateCareRound: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: date */
+			dueDate: string;
+			instrumentVersionIds: string[];
+			name: string;
+			purpose: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: date */
+			rosterDate: string;
 		};
 		CreateCatalogActivityRequest: {
 			activityType: string;
@@ -21568,6 +22438,56 @@ export interface components {
 		SaveBehaviorSettings: {
 			settings: components['schemas']['BehaviorSettings'];
 		};
+		SaveCareCase: {
+			assignedUserIds: string[];
+			/** Format: date */
+			nextFollowUp?: string | null;
+			note: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			/** Format: uuid */
+			sourceAssignmentId?: string | null;
+			/** Format: uuid */
+			sourceVisitId?: string | null;
+			/** Format: uuid */
+			studentId: string;
+			title: string;
+		};
+		SaveCareResponse: {
+			acknowledgePurpose: boolean;
+			answers: components['schemas']['CareAnswer'][];
+			manualNote?: string | null;
+			manualScores: components['schemas']['CareManualScore'][];
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		SaveCareVisit: {
+			/** Format: uuid */
+			academicTermId: string;
+			agreedActions: string;
+			contactPerson: string;
+			factualObservations: string;
+			needs: string;
+			/** Format: date */
+			nextFollowUp?: string | null;
+			/** Format: date */
+			plannedDate: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			status: components['schemas']['CareVisitStatus'];
+			strengths: string;
+			/** Format: uuid */
+			studentId: string;
+			/** Format: date */
+			visitedDate?: string | null;
+			visitorIds: string[];
+		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
 		};
@@ -24021,6 +24941,21 @@ export interface components {
 			description?: string | null;
 			name_en?: string | null;
 			name_th?: string | null;
+		};
+		UpdateCareAssignmentReviewers: {
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			reviewerUserIds: string[];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		UpdateCareRound: {
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			status: components['schemas']['CareRoundStatus'];
 		};
 		UpdateCatalogActivityRequest: {
 			activityType: string;
@@ -53188,6 +54123,2022 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_assignments: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareAssignment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_create_assignments: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCareAssignments'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareAssignment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_get_assignment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_acknowledge_assignment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CareRevisionCommand'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_cancel_assignment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CareRevisionCommand'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_save_draft: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareResponse'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_update_assignment_reviewers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCareAssignmentReviewers'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_submit_response: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareResponse'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_cases: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareCase'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_create_case: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareCase'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_get_case: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_update_case: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareCase'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_case_events: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareCaseEvent'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_add_case_event: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AddCareCaseEvent'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_instruments: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareInstrumentVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_create_instrument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCareInstrumentVersion'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareInstrumentVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_get_instrument: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareInstrumentVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_overview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareOverview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_rounds: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareRound'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_create_round: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCareRound'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareRound'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_get_round: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareRound'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_update_round: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateCareRound'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareRound'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_staff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareStaffOption'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_students: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				afterId?: string;
+				date: string;
+				limit?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareStudentOption'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_list_visits: {
+		parameters: {
+			query?: {
+				afterId?: string;
+				followUpBefore?: string;
+				limit?: number;
+				respondentId?: string;
+				roundId?: string;
+				status?: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CareVisit'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_create_visit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareVisit'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_get_visit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	student_care_update_visit: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveCareVisit'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/school-student-care",
     "crates/school-files-http",
     "crates/school-administration",
     "crates/school-attendance",
@@ -46,6 +47,7 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-student-care = { path = "crates/school-student-care" }
 rustybuzz = "0.20.1"
 school-files-http = { path = "crates/school-files-http" }
 school-administration = { path = "crates/school-administration" }
@@ -143,6 +145,7 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-student-care/api-docs",
     "school-workflow/api-docs",
     "school-files-http/api-docs",
     "school-administration/api-docs",
@@ -174,6 +177,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-student-care = { workspace = true }
 school-files-http = { workspace = true }
 school-administration = { workspace = true }
 axum = { workspace = true }

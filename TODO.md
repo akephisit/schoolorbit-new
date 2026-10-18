@@ -171,7 +171,8 @@ Complete discovery with representative government, private, and international sc
   - Present authoritative timetable, attendance, results, behavior, announcements, documents, acknowledgement, and communication using scoped access.
 
 - [ ] **SCH-004: Student welfare, safeguarding, and health.**
-  - Add interventions, confidential support cases, health information, support plans, home visits, ownership, escalation, and retention on top of the behavior-score history. Counselling and help follow-up remain deferred.
+  - Discover broader safeguarding, health-record, specialist intervention and external-service integration requirements beyond the separate Student Care assessment, home-visit and assigned support-case workflows.
+  - Define school-approved retention, deletion, legal-hold and safeguarding escalation policies before adding their lifecycle automation; retain the confidential resource boundaries between Student Care and Behavior scores.
 
 - [ ] **SCH-005: Fees and school finance.**
   - Discover invoices, receipts, scholarships, discounts, refunds, reconciliation, approval, audit, and accounting export requirements before implementation.

@@ -383,3 +383,31 @@ test('menu synchronization rejects an invalid success response', async (t) => {
 		/Backend did not confirm menu synchronization/
 	);
 });
+
+test('the real Student Care menu routes scan with exact generated capability alternatives', async () => {
+	const { scanRoutes } = await import('../../scripts/menu-helpers.ts');
+	const { PERMISSIONS } = await import('../../src/lib/permissions/registry.generated.ts');
+	const routes = await scanRoutes(projectRoot);
+	const staff = routes.find((route) => route.path === '/staff/student-care');
+	assert.ok(staff);
+	assert.equal(staff.user_type, 'staff');
+	const expected = [
+		PERMISSIONS.STUDENT_CARE_READ_ASSIGNED,
+		PERMISSIONS.STUDENT_CARE_READ_SCHOOL,
+		PERMISSIONS.STUDENT_CARE_MANAGE_ASSIGNED,
+		PERMISSIONS.STUDENT_CARE_MANAGE_SCHOOL,
+		PERMISSIONS.STUDENT_CARE_READ_OWN,
+		PERMISSIONS.STUDENT_CARE_CONFIG_MANAGE_SCHOOL,
+		PERMISSIONS.STUDENT_CARE_SENSITIVE_READ_ASSIGNED,
+		PERMISSIONS.STUDENT_CARE_SENSITIVE_READ_SCHOOL,
+		PERMISSIONS.STUDENT_CARE_SENSITIVE_MANAGE_ASSIGNED,
+		PERMISSIONS.STUDENT_CARE_SENSITIVE_MANAGE_SCHOOL
+	];
+	assert.deepEqual(staff.permission.split('|').sort(), expected.sort());
+	for (const role of ['student', 'parent']) {
+		const own = routes.find((route) => route.path === `/${role}/student-care`);
+		assert.ok(own);
+		assert.equal(own.user_type, role);
+		assert.equal(own.permission, PERMISSIONS.STUDENT_CARE_READ_OWN);
+	}
+});

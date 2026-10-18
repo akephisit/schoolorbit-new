@@ -847,6 +847,7 @@ dependencies = [
  "school-permissions",
  "school-question-bank",
  "school-staff",
+ "school-student-care",
  "school-students",
  "school-supervision",
  "school-tenancy",
@@ -4726,6 +4727,34 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-student-care"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "chrono-tz",
+ "hex",
+ "school-academic-core",
+ "school-auth",
+ "school-auth-http",
+ "school-authorization",
+ "school-crypto",
+ "school-errors",
+ "school-http",
+ "school-notifications",
+ "school-permissions",
+ "school-students",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "tokio",
  "utoipa",
  "uuid",
 ]

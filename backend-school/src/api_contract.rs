@@ -167,6 +167,34 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_student_care::http::handlers::update_assignment_reviewers,
+        school_student_care::http::handlers::list_case_events,
+        school_student_care::http::handlers::get_round,
+        school_student_care::http::handlers::overview,
+        school_student_care::http::handlers::list_instruments,
+        school_student_care::http::handlers::get_instrument,
+        school_student_care::http::handlers::create_instrument,
+        school_student_care::http::handlers::list_rounds,
+        school_student_care::http::handlers::create_round,
+        school_student_care::http::handlers::update_round,
+        school_student_care::http::handlers::list_students,
+        school_student_care::http::handlers::list_staff,
+        school_student_care::http::handlers::list_assignments,
+        school_student_care::http::handlers::create_assignments,
+        school_student_care::http::handlers::get_assignment,
+        school_student_care::http::handlers::save_draft,
+        school_student_care::http::handlers::submit_response,
+        school_student_care::http::handlers::cancel_assignment,
+        school_student_care::http::handlers::acknowledge_assignment,
+        school_student_care::http::handlers::list_visits,
+        school_student_care::http::handlers::create_visit,
+        school_student_care::http::handlers::get_visit,
+        school_student_care::http::handlers::update_visit,
+        school_student_care::http::handlers::list_cases,
+        school_student_care::http::handlers::create_case,
+        school_student_care::http::handlers::get_case,
+        school_student_care::http::handlers::update_case,
+        school_student_care::http::handlers::add_case_event,
         school_workflow::http::process_handlers::list_correspondence,
         school_workflow::http::process_handlers::create_correspondence,
         school_workflow::http::process_handlers::get_correspondence,
@@ -6686,5 +6714,67 @@ mod tests {
             paths["/api/process/instances"]["post"].is_null(),
             "browser callers cannot invent another domain's source"
         );
+    }
+}
+
+#[cfg(test)]
+mod student_care_contract_tests {
+    #[test]
+    fn student_care_contract_is_typed_independent_and_has_no_instrument_status() {
+        let document = super::school_api_value().unwrap();
+        for (path, methods) in [
+            ("overview", vec!["get"]),
+            ("instruments", vec!["get", "post"]),
+            ("rounds", vec!["get", "post"]),
+            ("rounds/{id}", vec!["get", "put"]),
+            ("assignments", vec!["get", "post"]),
+            ("assignments/{id}", vec!["get"]),
+            ("assignments/{id}/draft", vec!["put"]),
+            ("assignments/{id}/submit", vec!["post"]),
+            ("assignments/{id}/acknowledge", vec!["post"]),
+            ("assignments/{id}/reviewers", vec!["post"]),
+            ("visits", vec!["get", "post"]),
+            ("visits/{id}", vec!["get", "put"]),
+            ("cases", vec!["get", "post"]),
+            ("cases/{id}", vec!["get", "put"]),
+            ("cases/{id}/events", vec!["get", "post"]),
+        ] {
+            for method in methods {
+                let op = &document["paths"][format!("/api/student-care/{path}")][method];
+                assert!(op["operationId"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("student_care_"));
+                for status in ["200", "400", "401", "403", "404", "409", "422"] {
+                    assert!(op["responses"][status].is_object());
+                }
+            }
+        }
+        let schemas = &document["components"]["schemas"];
+        for name in [
+            "CareInstrumentDefinition",
+            "CareInstrumentVersion",
+            "CreateCareInstrumentVersion",
+        ] {
+            assert!(schemas[name]["properties"]["status"].is_null());
+        }
+        for (name, field) in [
+            ("CareScale", "sourceScaleKeys"),
+            ("CareAssignment", "reviewerUserIds"),
+            ("CareRound", "instrumentVersionIds"),
+            ("SaveCareResponse", "acknowledgePurpose"),
+            ("CareOverview", "followUpDueCount"),
+        ] {
+            assert!(
+                schemas[name]["properties"][field].is_object(),
+                "{name}.{field}"
+            );
+        }
+        let q = &document["paths"]["/api/student-care/assignments"]["get"]["parameters"];
+        assert!(q
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "respondentId"));
     }
 }
