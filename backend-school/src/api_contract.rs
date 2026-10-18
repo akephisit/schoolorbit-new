@@ -2482,6 +2482,68 @@ mod tests {
     }
 
     #[test]
+    fn documents_staff_leave_typed_scope_and_content_bound_mutations() {
+        let document = school_api_value().expect("staff leave contract serializes");
+        for (path, method, operation) in [
+            (
+                "/api/staff-leave/requests",
+                "post",
+                "createStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/submit",
+                "post",
+                "submitStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/actions",
+                "post",
+                "actStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/cancel",
+                "post",
+                "cancelStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/types/{id}/effective-policy",
+                "get",
+                "getStaffLeaveEffectivePolicy",
+            ),
+            ("/api/staff-leave/usage", "get", "getStaffLeaveUsage"),
+        ] {
+            assert_eq!(document["paths"][path][method]["operationId"], operation);
+            for status in ["401", "403", "409"] {
+                assert_eq!(
+                    document["paths"][path][method]["responses"][status]["content"]
+                        ["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse"
+                );
+            }
+        }
+        let schemas = &document["components"]["schemas"];
+        assert!(schemas["LeavePeriodInput"]["properties"]
+            .get("amount")
+            .is_none());
+        assert!(schemas["LeavePeriodInput"]["properties"]
+            .get("ownerId")
+            .is_none());
+        assert!(schemas["LeaveActionRequest"]["properties"]
+            .get("expectedProcessRevision")
+            .is_some());
+        assert!(required(&schemas["LeaveSignatureConsent"]).contains(&"consent"));
+        assert!(schemas["SaveLeavePolicyRequest"]["properties"]
+            .get("enabled")
+            .is_some());
+        assert_eq!(
+            document["paths"]["/api/staff-leave/types/{id}"]["delete"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        assert!(document["paths"].get("/api/process/instances").is_none());
+    }
+
+    #[test]
     fn documents_current_user_operation_and_envelopes() {
         let document = school_api_value().expect("document should serialize");
         let operation = &document["paths"]["/api/auth/me"]["get"];

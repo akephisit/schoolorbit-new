@@ -681,3 +681,89 @@ async fn leave_source_templates_cannot_be_edited_by_generic_template_manager_and
     .unwrap();
     assert_eq!(n, 1);
 }
+
+#[tokio::test]
+async fn leave_disabled_or_missing_profiles_never_hide_stored_drafts_or_change_pinned_work() {
+    let (pool, owner, admin, _) = fixture("leave_disabled_profiles").await;
+    let (t, p) = typ(&pool, &admin, "disable", LeaveUnit::Day, None).await;
+    let draft = create(&pool, &owner, t.id, 2).await;
+    let active = create(&pool, &owner, t.id, 1).await;
+    let active = submit(&pool, &owner, &active).await;
+    let mut disabled = policy(p.type_revision, admin.user_id, LeaveUnit::Day, None);
+    disabled.enabled = false;
+    service::save_policy(&pool, &admin, t.id, disabled)
+        .await
+        .unwrap();
+    let read = service::detail(&pool, &owner, draft.request.id)
+        .await
+        .unwrap();
+    assert!(!read.can_submit);
+    assert!(!read.policy.unwrap().enabled);
+    assert!(read.can_cancel);
+    let mut input = period(t.id, 2);
+    input.reason = "แก้ไขเหตุผลระหว่างปิดรับ".into();
+    let edited = service::update(
+        &pool,
+        &owner,
+        draft.request.id,
+        UpdateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: 1,
+            period: input,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!edited.can_submit);
+    assert!(service::submit(
+        &pool,
+        &owner,
+        draft.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: edited.request.revision
+        }
+    )
+    .await
+    .is_err());
+    assert!(service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: period(t.id, 3)
+        }
+    )
+    .await
+    .is_err());
+    let approved = service::act(
+        &pool,
+        &admin,
+        active.request.id,
+        action(&active, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    assert_eq!(approved.request.status, LeaveStatus::Approved);
+    assert_eq!(approved.policy.unwrap().id, p.id);
+    sqlx::query("INSERT INTO staff_career_history(user_id,kind,personnel_type,effective_date,source) VALUES($1,'personnel_type','government_employee','2026-11-01','staff_entry')").bind(owner.user_id).execute(&pool).await.unwrap();
+    let missing = service::detail(&pool, &owner, draft.request.id)
+        .await
+        .unwrap();
+    assert!(missing.policy.is_none());
+    assert!(!missing.can_submit);
+    assert!(missing.can_cancel);
+    let cancelled = service::cancel(
+        &pool,
+        &owner,
+        draft.request.id,
+        CancelLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: missing.request.revision,
+            reason: "ถอนร่างระหว่างแก้ไขประเภทบุคลากร".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cancelled.request.status, LeaveStatus::Cancelled);
+}

@@ -1472,3 +1472,64 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod staff_leave_tests {
+    use super::*;
+    #[tokio::test]
+    async fn staff_leave_signature_upload_requires_the_acting_signer_and_exact_capability() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://synthetic@127.0.0.1/synthetic")
+            .unwrap();
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::STAFF_LEAVE_UPDATE_ASSIGNED.into()],
+        };
+        assert_eq!(
+            authorize_create(
+                &pool,
+                &actor,
+                FilePurpose::StaffLeaveSignature,
+                Some(actor.user_id)
+            )
+            .await
+            .unwrap(),
+            actor.user_id
+        );
+        assert!(authorize_create(
+            &pool,
+            &actor,
+            FilePurpose::StaffLeaveSignature,
+            Some(Uuid::new_v4())
+        )
+        .await
+        .is_err());
+        let denied = ActorContext {
+            user_id: actor.user_id,
+            permissions: vec![],
+        };
+        assert!(authorize_create(
+            &pool,
+            &denied,
+            FilePurpose::StaffLeaveSignature,
+            Some(actor.user_id)
+        )
+        .await
+        .is_err());
+        for purpose in [
+            FilePurpose::StaffLeaveSignature,
+            FilePurpose::StaffLeaveEvidence,
+        ] {
+            for action in [
+                FilePolicyAction::Create,
+                FilePolicyAction::Read,
+                FilePolicyAction::Delete,
+            ] {
+                assert_eq!(
+                    simple_file_access(&actor, purpose, action, Some(actor.user_id), None),
+                    None
+                );
+            }
+        }
+    }
+}

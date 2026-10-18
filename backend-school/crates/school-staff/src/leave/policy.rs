@@ -122,6 +122,8 @@ pub fn amount(period: &LeavePeriodInput, policy: &LeavePolicyVersion) -> Result<
             if period.start_date != period.end_date
                 || period.day_portion != LeaveDayPortion::FullDay
                 || end <= start
+                || start.nanosecond() != 0
+                || end.nanosecond() != 0
                 || start.second() != 0
                 || end.second() != 0
                 || !is_day(period.start_date)

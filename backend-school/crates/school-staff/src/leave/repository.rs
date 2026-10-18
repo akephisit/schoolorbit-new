@@ -56,20 +56,27 @@ pub(super) async fn category(
         .map(|v| v.parse().map_err(|_| invalid("ประเภทบุคลากรไม่ถูกต้อง")))
         .transpose()
 }
+pub(super) async fn preview_policy(
+    tx: &mut Transaction<'_, Postgres>,
+    owner: Uuid,
+    type_id: Uuid,
+    date: NaiveDate,
+) -> Result<Option<(StaffPersonnelType, LeavePolicyVersion)>, AppError> {
+    let Some(kind) = category(tx, owner, date).await? else {
+        return Ok(None);
+    };
+    let row:Option<Json<LeavePolicyVersion>>=sqlx::query_scalar("SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional(&mut **tx).await?;
+    Ok(row.map(|p| (kind, p.0)))
+}
 pub(super) async fn resolve_policy(
     tx: &mut Transaction<'_, Postgres>,
     owner: Uuid,
     type_id: Uuid,
     date: NaiveDate,
 ) -> Result<(StaffPersonnelType, LeavePolicyVersion), AppError> {
-    let kind = category(tx, owner, date)
+    preview_policy(tx, owner, type_id, date)
         .await?
-        .ok_or_else(|| invalid("กรุณาบันทึกประเภทบุคลากรในประวัติการทำงานก่อนส่งคำขอ"))?;
-    let p:Json<LeavePolicyVersion>=sqlx::query_scalar("SELECT p.document FROM staff_leave_policies p JOIN staff_leave_policy_categories c ON c.policy_id=p.id WHERE c.type_id=$1 AND c.personnel_type=$2 AND c.effective_from<=$3 ORDER BY p.effective_from DESC,p.version DESC LIMIT 1").bind(type_id).bind(kind.as_str()).bind(date).fetch_optional(&mut **tx).await?.ok_or_else(||invalid("ยังไม่มีเกณฑ์ที่มีผลสำหรับประเภทบุคลากรและวันที่นี้"))?;
-    if !p.enabled {
-        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
-    }
-    Ok((kind, p.0))
+        .ok_or_else(|| invalid("กรุณาตรวจประเภทบุคลากรและเกณฑ์ที่มีผลสำหรับวันที่นี้ก่อนยื่นคำขอ"))
 }
 pub(super) async fn pinned_policy(
     tx: &mut Transaction<'_, Postgres>,
@@ -182,7 +189,10 @@ mod tests {
         let id = Uuid::new_v4();
         let a = ActorContext {
             user_id: id,
-            permissions: vec![codes::STAFF_LEAVE_CREATE_OWN.into()],
+            permissions: vec![
+                codes::STAFF_LEAVE_CREATE_OWN.into(),
+                codes::STAFF_LEAVE_READ_OWN.into(),
+            ],
         };
         let mut r = Record {
             document: Json(LeaveRequestSummary {

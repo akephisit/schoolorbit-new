@@ -78,16 +78,14 @@ pub async fn detail(
         r.document.status,
         LeaveStatus::Draft | LeaveStatus::Returned
     ) {
-        Some(
-            resolve_policy(
-                &mut tx,
-                r.document.owner_id,
-                r.document.type_id,
-                r.document.start_date,
-            )
-            .await?
-            .1,
+        preview_policy(
+            &mut tx,
+            r.document.owner_id,
+            r.document.type_id,
+            r.document.start_date,
         )
+        .await?
+        .map(|(_, p)| p)
     } else {
         pinned_policy(&mut tx, r.policy_id).await?
     };
@@ -141,7 +139,7 @@ pub async fn detail(
             LeaveProcessPurpose::Request
         },
         can_edit,
-        can_submit: can_edit,
+        can_submit: can_edit && policy.as_ref().is_some_and(|p| p.enabled),
         can_act,
         can_cancel: own
             && matches!(
@@ -213,7 +211,10 @@ pub async fn usage(
             "exit"
         }
     });
-    let items=sqlx::query_scalar::<_,Json<LeaveUsageItem>>("SELECT jsonb_build_object('userId',r.owner_id,'displayName',max(r.document->>'ownerName'),'typeId',r.type_id,'typeName',max(r.document->>'typeName'),'unit',max(r.document->>'unit'),'quotaYearStart',r.quota_year_start,'approvedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status IN ('approved','cancellation_pending')),0),'reservedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status='submitted'),0),'annualLimit',(array_agg(p.document ORDER BY p.version DESC))[1]->'annualLimit','policyVersionId',(array_agg(p.id ORDER BY p.version DESC))[1]) FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4 AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending') GROUP BY r.owner_id,r.type_id,r.quota_year_start ORDER BY r.owner_id,r.type_id,r.quota_year_start LIMIT 5000").bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let items:Vec<LeaveUsageItem>=sqlx::query_scalar::<_,Json<LeaveUsageItem>>("SELECT jsonb_build_object('userId',r.owner_id,'displayName',max(r.document->>'ownerName'),'typeId',r.type_id,'typeName',max(r.document->>'typeName'),'unit',max(r.document->>'unit'),'quotaYearStart',r.quota_year_start,'approvedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status IN ('approved','cancellation_pending')),0),'reservedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status='submitted'),0),'annualLimit',(array_agg(p.document ORDER BY p.version DESC))[1]->'annualLimit','policyVersionId',(array_agg(p.id ORDER BY p.version DESC))[1]) FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4 AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending') GROUP BY r.owner_id,r.type_id,r.quota_year_start ORDER BY r.owner_id,r.type_id,r.quota_year_start LIMIT 5001").bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    if items.len() > 5000 {
+        return Err(invalid("รายงานมีรายการมากเกินไป กรุณาลดช่วงวันที่"));
+    }
     Ok(LeaveUsageReport {
         items,
         from: q.from,

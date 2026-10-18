@@ -43,6 +43,9 @@ pub async fn create(
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
     let (cat, p) = resolve_policy(&mut tx, actor.user_id, typ.id, input.period.start_date).await?;
+    if !p.enabled {
+        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
+    }
     let quantity = amount(&input.period, &p)?;
     let s = LeaveRequestSummary {
         id,
@@ -333,6 +336,9 @@ pub async fn submit(
         r.document.start_date,
     )
     .await?;
+    if !p.enabled {
+        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
+    }
     let quantity = amount(&period_from(&r), &p)?;
     if (p.evidence_required || p.evidence_from_amount.is_some_and(|n| quantity >= n))
         && r.evidence_file_ids.is_empty()

@@ -1044,3 +1044,30 @@ mod teaching_license_tests {
         assert!(!signature.allowed_content.contains(&DetectedContent::Pdf));
     }
 }
+
+#[cfg(test)]
+mod staff_leave_tests {
+    use super::*;
+    #[test]
+    fn staff_leave_evidence_and_signature_are_distinct_private_scanned_temporary_purposes() {
+        let evidence = purpose_definition(FilePurpose::StaffLeaveEvidence).unwrap();
+        let signature = purpose_definition(FilePurpose::StaffLeaveSignature).unwrap();
+        for definition in [evidence, signature] {
+            assert_eq!(definition.visibility, FileVisibility::Private);
+            assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+            assert_eq!(definition.retention_class, RetentionClass::Temporary);
+            assert_eq!(definition.limits.max_bytes, 10 * 1024 * 1024);
+            assert_eq!(definition.policy_key, PolicyKey::ExplicitOwningResource);
+        }
+        assert!(evidence.allowed_content.contains(&DetectedContent::Pdf));
+        assert!(!signature.allowed_content.contains(&DetectedContent::Pdf));
+        assert_eq!(
+            purpose_from_code("staff_leave_signature").unwrap(),
+            FilePurpose::StaffLeaveSignature
+        );
+        assert_eq!(
+            purpose_from_code("staff_leave_evidence").unwrap(),
+            FilePurpose::StaffLeaveEvidence
+        );
+    }
+}
