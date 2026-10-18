@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
+	import { ColorPicker } from '#lib/components/ui/color-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import {
 		Card,
@@ -55,6 +55,7 @@
 		saveLabel?: string;
 		onsave: () => void;
 	} = $props();
+	const uid = $props.id();
 	let mode = $state<PreviewMode>('light');
 	let device = $state<'desktop' | 'mobile'>('desktop');
 	let colorText = $state(untrack(() => palettePrimary(draft)));
@@ -100,9 +101,11 @@
 		generation++;
 	});
 	function changePalette(value: string) {
+		if (disabled || readonly || saving) return;
 		if (isPalette(value)) draft = { ...draft, palette: value, primary: null };
 	}
 	function changePrimary(value: string) {
+		if (disabled || readonly || saving) return;
 		colorText = value;
 		if (isHexColor(value)) draft = { ...draft, primary: value.toLowerCase() };
 	}
@@ -120,7 +123,7 @@
 			<Card class="gap-0 py-0">
 				<CardHeader class="section-header"
 					><Palette class="size-5 text-primary" />
-					<div>
+					<div class="section-copy">
 						<CardTitle>สีประจำโรงเรียน</CardTitle><CardDescription
 							>ใช้กับปุ่ม เมนู และจุดเน้นในระบบ</CardDescription
 						>
@@ -135,14 +138,14 @@
 					>
 						{#each PALETTES as palette (palette.value)}
 							<Label
-								for={`palette-${palette.value}`}
+								for={`${uid}-palette-${palette.value}`}
 								class={`palette-option ${draft.palette === palette.value ? 'selected' : ''}`}
 							>
 								<span class="swatch" style:background={palette.primary}
 									>{#if draft.palette === palette.value}<Check class="size-4" />{/if}</span
 								>
 								<span>{palette.label}</span><RadioGroup.Item
-									id={`palette-${palette.value}`}
+									id={`${uid}-palette-${palette.value}`}
 									value={palette.value}
 									class="sr-only"
 								/>
@@ -150,37 +153,27 @@
 						{/each}
 					</RadioGroup.Root>
 					<div class="field">
-						<Label for="custom-primary">ปรับสีหลักเพิ่มเติม</Label>
-						<div class="flex gap-2">
-							<Input
-								type="color"
-								aria-label="เลือกสีหลัก"
-								value={palettePrimary(draft)}
-								oninput={(event) => changePrimary(event.currentTarget.value)}
-								class="w-12 p-1"
-							/>
-							<Input
-								id="custom-primary"
-								value={colorText}
-								oninput={(event) => changePrimary(event.currentTarget.value)}
-								aria-invalid={!!colorError}
-								aria-describedby="color-help"
-								spellcheck={false}
-								maxlength={32}
-							/>
-						</div>
+						<Label for={`${uid}-custom-primary`}>ปรับสีหลักเพิ่มเติม</Label>
+						<ColorPicker
+							id={`${uid}-custom-primary`}
+							value={palettePrimary(draft)}
+							text={colorText}
+							disabled={disabled || readonly || saving}
+							invalid={!!colorError}
+							describedby={`${uid}-color-help`}
+							onTextChange={changePrimary}
+						/>
 						<p
-							id="color-help"
+							id={`${uid}-color-help`}
 							class="text-xs text-muted-foreground"
 							class:error-text={!!colorError}
 						>
-							{colorError || 'สีที่เลือกจะปรับให้อ่านง่ายเมื่อจำเป็น'}
+							{colorError || 'ใช้รหัสสี HEX 6 หลัก · ปุ่มใช้สีที่เลือก'}
 						</p>
 					</div>
 					<p class="contrast-note">
 						<ShieldCheck class="size-4 shrink-0" /><span
-							>{tokens.adjusted ? 'ปรับความเข้มเพื่อให้อ่านง่าย' : 'สีหลักพร้อมใช้งาน'} · สีที่ใช้จริง
-							<code>{tokens.primary.toUpperCase()}</code></span
+							>ปุ่มและพื้นสีใช้ <code>{tokens.primaryFill.toUpperCase()}</code> · ตัวอักษรและไอคอนปรับให้อ่านง่าย</span
 						>
 					</p>
 				</CardContent>
@@ -188,7 +181,7 @@
 			<Card class="gap-0 py-0">
 				<CardHeader class="section-header"
 					><Type class="size-5 text-primary" />
-					<div>
+					<div class="section-copy">
 						<CardTitle>ตัวอักษรและระยะห่าง</CardTitle><CardDescription
 							>รองรับภาษาไทยและภาษาอังกฤษ</CardDescription
 						>
@@ -196,7 +189,7 @@
 				>
 				<CardContent class="fields">
 					<div class="field">
-						<Label for="school-font">ฟอนต์ของโรงเรียน</Label><Select.Root
+						<Label for={`${uid}-school-font`}>ฟอนต์ของโรงเรียน</Label><Select.Root
 							type="single"
 							value={draft.font}
 							disabled={disabled || readonly || saving}
@@ -204,7 +197,7 @@
 								if (isFont(value)) draft = { ...draft, font: value };
 							}}
 						>
-							<Select.Trigger id="school-font" aria-label="ฟอนต์ของโรงเรียน" class="w-full"
+							<Select.Trigger id={`${uid}-school-font`} aria-label="ฟอนต์ของโรงเรียน" class="w-full"
 								>{FONTS.find((font) => font.value === draft.font)?.label}</Select.Trigger
 							>
 							<Select.Content
@@ -215,19 +208,19 @@
 						</Select.Root>
 					</div>
 					<div class="field">
-						<Label id="density-label">ระยะห่างของเนื้อหา</Label><RadioGroup.Root
+						<Label id={`${uid}-density-label`}>ระยะห่างของเนื้อหา</Label><RadioGroup.Root
 							value={draft.density}
 							onValueChange={(value) => {
 								if (isDensity(value)) draft = { ...draft, density: value };
 							}}
-							aria-labelledby="density-label"
+							aria-labelledby={`${uid}-density-label`}
 							class="density-options"
 						>
-							<Label for="comfortable" class="density-option"
-								><RadioGroup.Item id="comfortable" value="comfortable" />สบายตา</Label
+							<Label for={`${uid}-comfortable`} class="density-option"
+								><RadioGroup.Item id={`${uid}-comfortable`} value="comfortable" />สบายตา</Label
 							>
-							<Label for="compact" class="density-option"
-								><RadioGroup.Item id="compact" value="compact" />กระชับ</Label
+							<Label for={`${uid}-compact`} class="density-option"
+								><RadioGroup.Item id={`${uid}-compact`} value="compact" />กระชับ</Label
 							>
 						</RadioGroup.Root>
 					</div>
@@ -321,6 +314,12 @@
 	}
 	.editor-grid :global(.fields) {
 		padding: 1.25rem;
+		display: grid;
+		gap: 1.25rem;
+	}
+	.section-copy {
+		display: grid;
+		gap: 0.375rem;
 	}
 	.field {
 		display: grid;

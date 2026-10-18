@@ -6,6 +6,7 @@
 	import ExamSessionBlock from '#lib/components/academic/exam-schedule/ExamSessionBlock.svelte';
 	import type { ExamSession } from '#lib/api/examSchedule.js';
 	import { Toaster, toast } from 'svelte-sonner';
+	import { Check } from '@lucide/svelte';
 	import { Card } from '#lib/components/ui/card/index.js';
 
 	const id = '61000000-0000-4000-8000-000000000001';
@@ -51,7 +52,11 @@
 	<code class="font-mono" data-testid="technical-code">const total = 123;</code>
 	<MathContent latex="x^2 + 1" />
 	<p class="font-sans" data-testid="font-sans-consumer">แบบอักษรของโรงเรียน</p>
-	<Button data-testid="primary-button">บันทึก</Button>
+	<Button data-testid="primary-button"><Check data-testid="primary-button-icon" />บันทึก</Button>
+	<Badge data-testid="primary-badge" href="#example">สีโรงเรียน</Badge>
+	<Button variant="link" data-testid="primary-link">ลิงก์โรงเรียน</Button>
+	<Check class="text-primary" data-testid="primary-icon" />
+	<Card><p class="text-primary" data-testid="primary-card-text">ข้อความบนการ์ด</p></Card>
 	<Button data-testid="destructive-button" variant="destructive">ลบ</Button>
 	<Badge data-testid="destructive-badge" variant="destructive" href="#example">เกินกำหนด</Badge>
 	<Table

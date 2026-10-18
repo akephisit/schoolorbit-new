@@ -37,6 +37,24 @@ async function gotoDocument(page: Page, url: string, options?: Parameters<Page['
 	expect(response?.status(), `Document ${url} must render successfully`).toBe(200);
 }
 
+async function settleAnimations(page: Page) {
+	await page.evaluate(() => new Promise(requestAnimationFrame));
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					document
+						.getAnimations()
+						.filter(
+							(animation) =>
+								animation.playState === 'running' &&
+								animation.effect?.getComputedTiming().iterations !== Infinity
+						).length
+			)
+		)
+		.toBe(0);
+}
+
 const privatePath = '/api/school/settings/appearance';
 
 async function mockSession(
@@ -343,7 +361,7 @@ test('system dark preference applies initially and public-to-app SPA navigation 
 	await expect(page.locator('html')).toHaveClass(/dark/);
 	await navigate(page, '/staff/school-settings/appearance');
 	await expect(page.getByTestId('school-appearance-settings')).toBeVisible();
-	await expect(page.locator('#custom-primary')).toBeVisible();
+	await expect(page.getByLabel('ปรับสีหลักเพิ่มเติม')).toBeVisible();
 	const frames = (await paints(page)).filter((frame) => frame.path.startsWith('/staff'));
 	expect(frames.length).toBeGreaterThan(0);
 	expect(
@@ -643,7 +661,8 @@ test('a blocked appearance stylesheet preserves readable defaults and does not b
 test('actual primary and destructive primitives retain readable text in both modes and hover states', async ({
 	page
 }) => {
-	for (const primary of [null, '#ffffff', '#ffff00']) {
+	test.setTimeout(60_000);
+	for (const primary of [null, '#ffffff', '#000000', '#ffff00', '#dbeafe', '#fce7f3']) {
 		fixture.set({
 			...fixture.saved,
 			appearance: { ...fixture.saved.appearance, primary },
@@ -661,7 +680,43 @@ test('actual primary and destructive primitives retain readable text in both mod
 				(value) => document.documentElement.classList.toggle('dark', value),
 				dark
 			);
-			for (const testId of ['primary-button', 'destructive-button', 'destructive-badge']) {
+			await page.evaluate(async () => {
+				void getComputedStyle(document.body).color;
+				await Promise.all(document.getAnimations().map((animation) => animation.finished));
+			});
+			const inkChecks = await page.evaluate(() => {
+				const color = (id: string) =>
+					getComputedStyle(document.querySelector(`[data-testid="${id}"]`)!);
+				return ['primary-link', 'primary-icon', 'primary-card-text'].map((id) => ({
+					id,
+					foreground: color(id).color,
+					background:
+						id === 'primary-card-text'
+							? getComputedStyle(
+									document.querySelector('[data-testid="primary-card-text"]')!.parentElement!
+								).backgroundColor
+							: getComputedStyle(document.body).backgroundColor
+				}));
+			});
+			for (const check of inkChecks) {
+				const toHex = (rgb: string) =>
+					'#' +
+					rgb
+						.match(/\d+/g)!
+						.slice(0, 3)
+						.map((channel) => Number(channel).toString(16).padStart(2, '0'))
+						.join('');
+				expect(
+					contrastRatio(toHex(check.foreground), toHex(check.background)),
+					`${check.id} ${primary} ${dark} ${JSON.stringify(check)}`
+				).toBeGreaterThanOrEqual(4.5);
+			}
+			for (const testId of [
+				'primary-button',
+				'primary-badge',
+				'destructive-button',
+				'destructive-badge'
+			]) {
 				const element = page.getByTestId(testId);
 				for (const hovered of [false, true]) {
 					if (hovered) await element.hover();
@@ -689,8 +744,18 @@ test('actual primary and destructive primitives retain readable text in both mod
 						const background = hex();
 						context.fillStyle = css.color;
 						context.fillRect(0, 0, 1, 1);
-						return { foreground: hex(), background };
+						const foreground = hex();
+						context.fillStyle = css.borderColor;
+						context.fillRect(0, 0, 1, 1);
+						const border = hex();
+						context.fillStyle = surface;
+						context.fillRect(0, 0, 1, 1);
+						return { foreground, background, border, surface: hex() };
 					});
+					if (testId.startsWith('primary-')) {
+						if (!hovered && primary) expect(colors.background).toBe(primary);
+						expect(contrastRatio(colors.border, colors.surface)).toBeGreaterThanOrEqual(3);
+					}
 					expect(
 						contrastRatio(colors.foreground, colors.background),
 						`${testId} ${dark ? 'dark' : 'light'} ${hovered ? 'hover' : 'rest'} ${primary}`
@@ -883,5 +948,191 @@ for (const [index, font] of FONTS.entries()) {
 		);
 		await expect(page.getByTestId('technical-code')).toHaveCSS('font-family', /monospace/);
 		await expect(page.locator('.katex .mathnormal').first()).toHaveCSS('font-family', /KaTeX_Math/);
+	});
+}
+
+test('color picker supports keyboard RGB, pale presets, invalid drafts, disabled saves and exact persisted reloads', async ({
+	page
+}) => {
+	test.setTimeout(60_000);
+	const api = await mockSession(page);
+	await gotoDocument(page, `${fixture.baseUrl}/staff/school-settings/appearance`);
+	const input = page.getByLabel('ปรับสีหลักเพิ่มเติม');
+	const trigger = page.getByRole('button', { name: 'เลือกสีหลัก', exact: true });
+	const save = page.getByRole('button', { name: 'บันทึกรูปแบบโรงเรียน', exact: true });
+	await trigger.focus();
+	await trigger.press('Enter');
+	const picker = page.getByRole('dialog', { name: 'เลือกสีหลัก', exact: true });
+	await expect(picker).toBeVisible();
+	await picker.getByRole('button', { name: 'ฟ้าอ่อน #DBEAFE', exact: true }).click();
+	await expect(input).toHaveValue('#dbeafe');
+	const red = picker.getByRole('slider', { name: 'แดง', exact: true });
+	await red.focus();
+	await red.press('Home');
+	await expect(input).toHaveValue('#00eafe');
+	await red.press('End');
+	await expect(input).toHaveValue('#ffeafe');
+	await red.press('ArrowLeft');
+	await expect(input).toHaveValue('#feeafe');
+	await expect(red).toHaveAttribute('aria-valuenow', '254');
+	await red.press('Escape');
+	await expect(picker).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+	await input.fill('#db');
+	await expect(input).toHaveAttribute('aria-invalid', 'true');
+	await expect(save).toBeDisabled();
+	await input.press('Enter');
+	expect(api.writes).toHaveLength(0);
+	await trigger.click();
+	await picker.getByRole('button', { name: 'ฟ้าอ่อน #DBEAFE', exact: true }).click();
+	await picker.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
+	await expect(input).toHaveAttribute('aria-invalid', 'false');
+	await expect(save).toBeEnabled();
+	const preview = page.getByTestId('staff-design-preview');
+	await expect(preview.getByRole('button', { name: 'เปิดงานของฉัน', exact: true })).toHaveCSS(
+		'background-color',
+		'rgb(219, 234, 254)'
+	);
+	let release = () => {};
+	const held = new Promise<void>((done) => {
+		release = done;
+	});
+	await page.route(
+		(url) => url.pathname === privatePath,
+		async (route) => {
+			if (route.request().method() === 'PATCH') await held;
+			await route.fallback();
+		}
+	);
+	await trigger.click();
+	await page
+		.locator('form.settings-column')
+		.evaluate((form) => (form as HTMLFormElement).requestSubmit());
+	try {
+		await expect(trigger).toBeDisabled();
+		await expect(input).toBeDisabled();
+		await expect(
+			picker.getByRole('button', { name: 'ฟ้าอ่อน #DBEAFE', exact: true })
+		).toBeDisabled();
+		const disabledRed = picker.getByRole('slider', { name: 'แดง', exact: true });
+		await expect(disabledRed).toHaveAttribute('aria-disabled', 'true');
+		await disabledRed.press('ArrowRight');
+		await expect(input).toHaveValue('#dbeafe');
+		await page.keyboard.press('Escape');
+	} finally {
+		release();
+	}
+	await expect(page.getByText('บันทึกรูปแบบของทั้งโรงเรียนแล้ว', { exact: true })).toBeVisible();
+	expect(api.writes).toEqual([
+		{ appearance: { ...fixture.saved.appearance, primary: '#dbeafe' }, expectedRevision: 8 }
+	]);
+	expect(fixture.saved.appearance.primary).toBe('#dbeafe');
+	for (const dark of [false, true]) {
+		await page.evaluate((value) => document.documentElement.classList.toggle('dark', value), dark);
+		expect(
+			await page.evaluate(() =>
+				getComputedStyle(document.documentElement).getPropertyValue('--primary-fill').trim()
+			)
+		).toBe('#dbeafe');
+	}
+	const savedCss = await (
+		await page.request.get(`${fixture.baseUrl}/school-appearance.css`)
+	).text();
+	await page.reload();
+	await expect(input).toHaveValue('#dbeafe');
+	expect(await (await page.request.get(`${fixture.baseUrl}/school-appearance.css`)).text()).toBe(
+		savedCss
+	);
+	expect(
+		await page.evaluate(() =>
+			getComputedStyle(document.documentElement).getPropertyValue('--primary-fill').trim()
+		)
+	).toBe('#dbeafe');
+	await mockSession(page, ['settings.read.all']);
+	await page.reload();
+	await expect(input).toBeDisabled();
+	await expect(trigger).toBeDisabled();
+	await expect(save).toHaveCount(0);
+});
+
+for (const font of FONTS) {
+	test(`appearance spacing stays clear with ${font.label} at 1218px and mobile in both densities and themes`, async ({
+		page
+	}, testInfo) => {
+		test.setTimeout(90_000);
+		await mockSession(page);
+		for (const density of ['comfortable', 'compact'] as const) {
+			fixture.set({
+				...fixture.saved,
+				appearance: { ...fixture.saved.appearance, font: font.value, density, primary: '#dbeafe' }
+			});
+			await gotoDocument(page, `${fixture.baseUrl}/staff/school-settings/appearance`);
+			await expect(page.getByTestId('school-appearance-settings')).toBeVisible();
+			await expect(page.getByText('พรีวิวพร้อมแล้ว', { exact: true })).toBeVisible();
+			for (const dark of [false, true]) {
+				await page.evaluate(
+					(value) => document.documentElement.classList.toggle('dark', value),
+					dark
+				);
+				await page
+					.getByRole('button', { name: dark ? 'พรีวิวมืด' : 'พรีวิวสว่าง', exact: true })
+					.click();
+				for (const width of [1218, 390]) {
+					await page.setViewportSize({ width, height: width === 1218 ? 888 : 844 });
+					await settleAnimations(page);
+					const geometry = await page.locator('.settings-column').evaluate((column) => {
+						const bounds = (element: Element) => element.getBoundingClientRect();
+						const fieldGaps = Array.from(column.querySelectorAll('.fields')).flatMap((fields) =>
+							Array.from(fields.children)
+								.slice(1)
+								.map((field, index) => bounds(field).top - bounds(fields.children[index]).bottom)
+						);
+						const headingGaps = Array.from(column.querySelectorAll('.section-copy')).map(
+							(copy) => bounds(copy.children[1]).top - bounds(copy.children[0]).bottom
+						);
+						return {
+							fieldGaps,
+							headingGaps,
+							rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+							overflow: document.documentElement.scrollWidth > innerWidth
+						};
+					});
+					expect(geometry.fieldGaps.length).toBe(3);
+					for (const gap of geometry.fieldGaps)
+						expect(gap).toBeGreaterThanOrEqual(geometry.rem * 1.25 - 0.5);
+					for (const gap of geometry.headingGaps)
+						expect(gap).toBeGreaterThanOrEqual(geometry.rem * 0.375 - 0.5);
+					expect(geometry.overflow).toBe(false);
+					if (font.value === 'noto' && density === 'comfortable') {
+						await page
+							.getByRole('heading', { level: 1, name: 'รูปแบบและตัวอักษร', exact: true })
+							.scrollIntoViewIfNeeded();
+						await page.screenshot({
+							path: testInfo.outputPath(`appearance-pale-${width}-${dark ? 'dark' : 'light'}.png`),
+							fullPage: true
+						});
+						const trigger = page.getByRole('button', { name: 'เลือกสีหลัก', exact: true });
+						await trigger.click();
+						const picker = page.getByRole('dialog', { name: 'เลือกสีหลัก', exact: true });
+						await expect(picker).toHaveCSS('opacity', '1');
+						await settleAnimations(page);
+						const panelBackground = await picker.evaluate(
+							(element) => getComputedStyle(element).backgroundColor
+						);
+						expect(panelBackground).not.toBe('rgba(0, 0, 0, 0)');
+						const box = await picker.boundingBox();
+						expect(box!.x).toBeGreaterThanOrEqual(0);
+						expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+						await page.screenshot({
+							path: testInfo.outputPath(
+								`appearance-picker-${width}-${dark ? 'dark' : 'light'}.png`
+							),
+							fullPage: true
+						});
+						await page.keyboard.press('Escape');
+					}
+				}
+			}
+		}
 	});
 }
