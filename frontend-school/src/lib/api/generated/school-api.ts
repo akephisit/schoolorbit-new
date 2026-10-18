@@ -6478,6 +6478,198 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff-leave/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeaveRequests'];
+		put?: never;
+		post: operations['createStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveRequest'];
+		put: operations['updateStaffLeaveRequest'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['actStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/cancel': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['cancelStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/routing-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveRoutingOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/types': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeaveTypes'];
+		put?: never;
+		post: operations['createStaffLeaveType'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/types/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateStaffLeaveType'];
+		post?: never;
+		delete: operations['deleteStaffLeaveType'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/types/{id}/effective-policy': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveEffectivePolicy'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/types/{id}/policies': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeavePolicies'];
+		put?: never;
+		post: operations['createStaffLeavePolicy'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/usage': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveUsage'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff/{id}': {
 		parameters: {
 			query?: never;
@@ -11034,6 +11226,113 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_LeavePersonalOptions: {
+			data: {
+				personnelType?: null | components['schemas']['StaffPersonnelType'];
+				types: components['schemas']['LeaveType'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeavePolicyVersion: {
+			data: {
+				/** Format: int64 */
+				annualLimit?: number | null;
+				countingMode: components['schemas']['LeaveCountingMode'];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				effectiveFrom: string;
+				enabled: boolean;
+				/** Format: int64 */
+				evidenceFromAmount?: number | null;
+				evidenceRequired: boolean;
+				excludedDates: string[];
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				maxPerRequest?: number | null;
+				/** Format: int32 */
+				minimumNoticeDays?: number | null;
+				personnelTypes: components['schemas']['StaffPersonnelType'][];
+				/** Format: int32 */
+				quotaYearStartMonth: number;
+				sourceReference: string;
+				steps: components['schemas']['ProcessTemplateStep'][];
+				/** Format: uuid */
+				templateId: string;
+				/** Format: uuid */
+				typeId: string;
+				/** Format: int64 */
+				typeRevision: number;
+				unit: components['schemas']['LeaveUnit'];
+				/** Format: int64 */
+				version: number;
+				workingWeekdays: number[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveRequestDetail: {
+			data: {
+				availableActions: components['schemas']['ProcessAction'][];
+				canAct: boolean;
+				canCancel: boolean;
+				canEdit: boolean;
+				canSubmit: boolean;
+				contentHash: string;
+				evidenceFileIds: string[];
+				history: components['schemas']['LeaveHistoryEntry'][];
+				instance?: null | components['schemas']['ProcessInstance'];
+				policy?: null | components['schemas']['LeavePolicyVersion'];
+				processPurpose: components['schemas']['LeaveProcessPurpose'];
+				request: components['schemas']['LeaveRequestSummary'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveRequestPage: {
+			data: {
+				hasMore: boolean;
+				items: components['schemas']['LeaveRequestSummary'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveRoutingOptions: {
+			data: {
+				organizations: components['schemas']['LeaveRoutingOrganization'][];
+				positions: components['schemas']['LeaveRoutingPosition'][];
+				users: components['schemas']['LeaveRoutingUser'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveType: {
+			data: {
+				archived: boolean;
+				code: string;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['LeaveKind'];
+				name: string;
+				/** Format: int64 */
+				revision: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveUsageReport: {
+			data: {
+				/** Format: date */
+				from: string;
+				items: components['schemas']['LeaveUsageItem'][];
+				/** Format: date */
+				to: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ListNotificationsResponse: {
 			data: {
 				items: components['schemas']['Notification'][];
@@ -14325,6 +14624,59 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_LeavePolicyVersion: {
+			data: {
+				/** Format: int64 */
+				annualLimit?: number | null;
+				countingMode: components['schemas']['LeaveCountingMode'];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: date */
+				effectiveFrom: string;
+				enabled: boolean;
+				/** Format: int64 */
+				evidenceFromAmount?: number | null;
+				evidenceRequired: boolean;
+				excludedDates: string[];
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				maxPerRequest?: number | null;
+				/** Format: int32 */
+				minimumNoticeDays?: number | null;
+				personnelTypes: components['schemas']['StaffPersonnelType'][];
+				/** Format: int32 */
+				quotaYearStartMonth: number;
+				sourceReference: string;
+				steps: components['schemas']['ProcessTemplateStep'][];
+				/** Format: uuid */
+				templateId: string;
+				/** Format: uuid */
+				typeId: string;
+				/** Format: int64 */
+				typeRevision: number;
+				unit: components['schemas']['LeaveUnit'];
+				/** Format: int64 */
+				version: number;
+				workingWeekdays: number[];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LeaveType: {
+			data: {
+				archived: boolean;
+				code: string;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['LeaveKind'];
+				name: string;
+				/** Format: int64 */
+				revision: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_LookupItem: {
 			data: {
 				code?: string;
@@ -16154,6 +16506,13 @@ export interface components {
 			/** Format: uuid */
 			requestId: string;
 		};
+		CancelLeaveRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+		};
 		CancelObservationRequest: {
 			reason?: string | null;
 		};
@@ -17790,6 +18149,11 @@ export interface components {
 					/** @enum {string} */
 					kind: 'activity';
 			  });
+		CreateLeaveRequest: {
+			period: components['schemas']['LeavePeriodInput'];
+			/** Format: uuid */
+			requestId: string;
+		};
 		CreateManualExternalCandidateRequest: {
 			activityItem?: string | null;
 			awardOrRole?: string | null;
@@ -19502,6 +19866,8 @@ export interface components {
 		};
 		/** @enum {string} */
 		FilePurpose:
+			| 'staff_leave_evidence'
+			| 'staff_leave_signature'
 			| 'correspondence_document'
 			| 'correspondence_signature'
 			| 'teaching_license'
@@ -20454,6 +20820,228 @@ export interface components {
 		};
 		/** @enum {string} */
 		LearningTeacherRole: 'primary' | 'secondary' | 'assistant';
+		LeaveActionRequest: {
+			action: components['schemas']['ProcessAction'];
+			comment?: string | null;
+			/** Format: int64 */
+			expectedProcessRevision: number;
+			/** Format: int64 */
+			expectedRevision: number;
+			purpose: components['schemas']['LeaveProcessPurpose'];
+			/** Format: uuid */
+			requestId: string;
+			signature?: null | components['schemas']['LeaveSignatureConsent'];
+		};
+		/** @enum {string} */
+		LeaveCountingMode: 'calendar_days' | 'working_days';
+		/** @enum {string} */
+		LeaveDayPortion: 'full_day' | 'morning' | 'afternoon';
+		LeaveFileSnapshot: {
+			checksum: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: uuid */
+			versionId: string;
+		};
+		LeaveHistoryEntry: {
+			action: string;
+			/** Format: uuid */
+			actorId: string;
+			actorName: string;
+			comment?: string | null;
+			contentHash: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			revision: number;
+			signature?: null | components['schemas']['LeaveSignatureConsent'];
+		};
+		/** @enum {string} */
+		LeaveKind: 'leave' | 'exit';
+		LeaveMutationRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+		};
+		LeavePeriodInput: {
+			dayPortion: components['schemas']['LeaveDayPortion'];
+			/** Format: date */
+			endDate: string;
+			endTime?: string | null;
+			evidenceFileIds?: string[];
+			reason: string;
+			/** Format: date */
+			startDate: string;
+			startTime?: string | null;
+			/** Format: uuid */
+			typeId: string;
+		};
+		LeavePersonalOptions: {
+			personnelType?: null | components['schemas']['StaffPersonnelType'];
+			types: components['schemas']['LeaveType'][];
+		};
+		LeavePolicyVersion: {
+			/** Format: int64 */
+			annualLimit?: number | null;
+			countingMode: components['schemas']['LeaveCountingMode'];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			effectiveFrom: string;
+			enabled: boolean;
+			/** Format: int64 */
+			evidenceFromAmount?: number | null;
+			evidenceRequired: boolean;
+			excludedDates: string[];
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			maxPerRequest?: number | null;
+			/** Format: int32 */
+			minimumNoticeDays?: number | null;
+			personnelTypes: components['schemas']['StaffPersonnelType'][];
+			/** Format: int32 */
+			quotaYearStartMonth: number;
+			sourceReference: string;
+			steps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: uuid */
+			templateId: string;
+			/** Format: uuid */
+			typeId: string;
+			/** Format: int64 */
+			typeRevision: number;
+			unit: components['schemas']['LeaveUnit'];
+			/** Format: int64 */
+			version: number;
+			workingWeekdays: number[];
+		};
+		/** @enum {string} */
+		LeaveProcessPurpose: 'request' | 'cancellation';
+		LeaveRequestDetail: {
+			availableActions: components['schemas']['ProcessAction'][];
+			canAct: boolean;
+			canCancel: boolean;
+			canEdit: boolean;
+			canSubmit: boolean;
+			contentHash: string;
+			evidenceFileIds: string[];
+			history: components['schemas']['LeaveHistoryEntry'][];
+			instance?: null | components['schemas']['ProcessInstance'];
+			policy?: null | components['schemas']['LeavePolicyVersion'];
+			processPurpose: components['schemas']['LeaveProcessPurpose'];
+			request: components['schemas']['LeaveRequestSummary'];
+		};
+		LeaveRequestPage: {
+			hasMore: boolean;
+			items: components['schemas']['LeaveRequestSummary'][];
+		};
+		LeaveRequestSummary: {
+			/** Format: int64 */
+			amount: number;
+			/** Format: date-time */
+			createdAt: string;
+			dayPortion: components['schemas']['LeaveDayPortion'];
+			/** Format: date */
+			endDate: string;
+			endTime?: string | null;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['LeaveKind'];
+			/** Format: uuid */
+			ownerId: string;
+			ownerName: string;
+			personnelType?: null | components['schemas']['StaffPersonnelType'];
+			/** Format: uuid */
+			policyVersionId?: string | null;
+			reason: string;
+			/** Format: int64 */
+			revision: number;
+			/** Format: date */
+			startDate: string;
+			startTime?: string | null;
+			status: components['schemas']['LeaveStatus'];
+			/** Format: uuid */
+			typeId: string;
+			typeName: string;
+			unit: components['schemas']['LeaveUnit'];
+		};
+		LeaveRoutingOptions: {
+			organizations: components['schemas']['LeaveRoutingOrganization'][];
+			positions: components['schemas']['LeaveRoutingPosition'][];
+			users: components['schemas']['LeaveRoutingUser'][];
+		};
+		LeaveRoutingOrganization: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		LeaveRoutingPosition: {
+			code: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+		};
+		LeaveRoutingUser: {
+			displayName: string;
+			/** Format: uuid */
+			id: string;
+		};
+		LeaveSignatureConsent: {
+			consent: boolean;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			input: components['schemas']['SignatureInput'];
+		};
+		/** @enum {string} */
+		LeaveStatus:
+			| 'draft'
+			| 'submitted'
+			| 'returned'
+			| 'approved'
+			| 'rejected'
+			| 'cancelled'
+			| 'cancellation_pending';
+		LeaveType: {
+			archived: boolean;
+			code: string;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['LeaveKind'];
+			name: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		/** @enum {string} */
+		LeaveUnit: 'day' | 'half_day' | 'minute';
+		LeaveUsageItem: {
+			/** Format: int64 */
+			annualLimit?: number | null;
+			/** Format: int64 */
+			approvedAmount: number;
+			displayName: string;
+			/** Format: uuid */
+			policyVersionId: string;
+			/** Format: date */
+			quotaYearStart: string;
+			/** Format: int64 */
+			reservedAmount: number;
+			/** Format: uuid */
+			typeId: string;
+			typeName: string;
+			unit: components['schemas']['LeaveUnit'];
+			/** Format: uuid */
+			userId: string;
+		};
+		LeaveUsageReport: {
+			/** Format: date */
+			from: string;
+			items: components['schemas']['LeaveUsageItem'][];
+			/** Format: date */
+			to: string;
+		};
 		LessonSnapshot: {
 			classroomLabel?: string | null;
 			/** Format: date-time */
@@ -22490,6 +23078,44 @@ export interface components {
 		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
+		};
+		SaveLeavePolicyRequest: {
+			/** Format: int64 */
+			annualLimit?: number | null;
+			countingMode: components['schemas']['LeaveCountingMode'];
+			/** Format: date */
+			effectiveFrom: string;
+			enabled: boolean;
+			/** Format: int64 */
+			evidenceFromAmount?: number | null;
+			evidenceRequired: boolean;
+			excludedDates: string[];
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: int64 */
+			maxPerRequest?: number | null;
+			/** Format: int32 */
+			minimumNoticeDays?: number | null;
+			personnelTypes: components['schemas']['StaffPersonnelType'][];
+			/** Format: int32 */
+			quotaYearStartMonth: number;
+			/** Format: uuid */
+			requestId: string;
+			sourceReference: string;
+			steps: components['schemas']['ProcessTemplateStep'][];
+			unit: components['schemas']['LeaveUnit'];
+			/** @description ISO weekdays 1=Monday through 7=Sunday. Required for working_days. */
+			workingWeekdays: number[];
+		};
+		SaveLeaveTypeRequest: {
+			archived: boolean;
+			code: string;
+			/** Format: int64 */
+			expectedRevision?: number | null;
+			kind: components['schemas']['LeaveKind'];
+			name: string;
+			/** Format: uuid */
+			requestId: string;
 		};
 		SaveProcessTemplateRequest: {
 			active: boolean;
@@ -25073,6 +25699,13 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			targets: components['schemas']['OfferingTargetInput'][];
+		};
+		UpdateLeaveRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			period: components['schemas']['LeavePeriodInput'];
+			/** Format: uuid */
+			requestId: string;
 		};
 		UpdateMemberRequest: {
 			is_primary?: boolean | null;
@@ -53488,6 +54121,1093 @@ export interface operations {
 			};
 			/** @description Staff creation permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeavePersonalOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffLeaveRequests: {
+		parameters: {
+			query?: {
+				includeArchived?: boolean;
+				kind?: components['schemas']['LeaveKind'];
+				limit?: number;
+				offset?: number;
+				status?: components['schemas']['LeaveStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateLeaveRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateLeaveRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	actStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	cancelStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CancelLeaveRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitStaffLeaveRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveMutationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveRoutingOptions: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRoutingOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffLeaveTypes: {
+		parameters: {
+			query?: {
+				includeArchived?: boolean;
+				kind?: components['schemas']['LeaveKind'];
+				limit?: number;
+				offset?: number;
+				status?: components['schemas']['LeaveStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LeaveType'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStaffLeaveType: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveLeaveTypeRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveType'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateStaffLeaveType: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveLeaveTypeRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveType'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteStaffLeaveType: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveMutationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveEffectivePolicy: {
+		parameters: {
+			query: {
+				startDate: string;
+			};
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeavePolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffLeavePolicies: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LeavePolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createStaffLeavePolicy: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveLeavePolicyRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeavePolicyVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveUsage: {
+		parameters: {
+			query: {
+				from: string;
+				kind?: components['schemas']['LeaveKind'];
+				to: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveUsageReport'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

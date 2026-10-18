@@ -133,6 +133,7 @@ use school_staff::http::handlers::organization_members::{
     AddMemberRequest, ListMembersQuery, UpdateMemberRequest,
 };
 use school_staff::http::handlers::staff::StaffListData;
+use school_staff::leave::models::*;
 use school_staff::models::{
     AdvisorHomeroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
     CreateStaffInfoRequest, CreateStaffRequest, DelegationItem, OrganizationAssignment,
@@ -167,6 +168,24 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_staff::leave::http::list_types,
+        school_staff::leave::http::create_type,
+        school_staff::leave::http::update_type,
+        school_staff::leave::http::delete_type,
+        school_staff::leave::http::list_policies,
+        school_staff::leave::http::create_policy,
+        school_staff::leave::http::effective_policy,
+        school_staff::leave::http::options,
+        school_staff::leave::http::routing_options,
+        school_staff::leave::http::list_requests,
+        school_staff::leave::http::create_request,
+        school_staff::leave::http::get_request,
+        school_staff::leave::http::update_request,
+        school_staff::leave::http::submit_request,
+        school_staff::leave::http::act_request,
+        school_staff::leave::http::cancel_request,
+        school_staff::leave::http::usage,
+
         school_student_care::http::handlers::update_assignment_reviewers,
         school_student_care::http::handlers::list_case_events,
         school_student_care::http::handlers::get_round,
@@ -829,6 +848,36 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    LeaveKind,
+    LeaveUnit,
+    LeaveCountingMode,
+    LeaveDayPortion,
+    LeaveStatus,
+    LeaveProcessPurpose,
+    SaveLeaveTypeRequest,
+    LeaveType,
+    SaveLeavePolicyRequest,
+    LeavePolicyVersion,
+    LeavePeriodInput,
+    CreateLeaveRequest,
+    UpdateLeaveRequest,
+    LeaveMutationRequest,
+    CancelLeaveRequest,
+    LeaveSignatureConsent,
+    LeaveActionRequest,
+    LeaveRequestSummary,
+    LeaveHistoryEntry,
+    LeaveRequestDetail,
+    LeaveRequestPage,
+    LeaveUsageItem,
+    LeaveUsageReport,
+    LeavePersonalOptions,
+    LeaveRoutingUser,
+    LeaveRoutingOrganization,
+    LeaveRoutingPosition,
+    LeaveRoutingOptions,
+    LeaveFileSnapshot,
+
     ProcessStepKind,
     ProcessCompletionPolicy,
     ProcessRecipientKind,

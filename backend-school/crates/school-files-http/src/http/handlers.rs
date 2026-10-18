@@ -161,6 +161,16 @@ async fn record_upload_relation_or_request_cleanup(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let relation_result = match purpose {
+        FilePurpose::StaffLeaveEvidence => Some(
+            school_staff::leave::files::record_upload(
+                repository.pool(),
+                actor_user_id,
+                resource_id.ok_or_else(|| AppError::BadRequest("ต้องระบุคำขอ".into()))?,
+                file_id,
+            )
+            .await,
+        ),
+
         FilePurpose::CorrespondenceDocument => Some(
             school_workflow::correspondence_files::record_upload(
                 repository.pool(),
@@ -346,6 +356,16 @@ pub async fn delete_file(
         .await
         .map_err(map_platform_error)?;
     let domain_delete_guard = match file.purpose {
+        FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => Some(
+            school_staff::leave::files::delete_guard(
+                &context.tenant.pool,
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
+
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => Some(
             school_workflow::correspondence_files::delete_guard(
                 &context.tenant.pool,

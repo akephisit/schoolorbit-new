@@ -4709,6 +4709,7 @@ dependencies = [
 name = "school-staff"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "bcrypt",
  "chrono",
@@ -4720,8 +4721,10 @@ dependencies = [
  "school-errors",
  "school-file-platform",
  "school-http",
+ "school-notifications",
  "school-permissions",
  "school-test-db",
+ "school-workflow",
  "serde",
  "serde_json",
  "sqlx",

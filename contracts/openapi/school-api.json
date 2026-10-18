@@ -12117,6 +12117,442 @@
         ],
         "type": "object"
       },
+      "ApiResponse_LeavePersonalOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "personnelType": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StaffPersonnelType"
+                  }
+                ]
+              },
+              "types": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveType"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "types"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeavePolicyVersion": {
+        "properties": {
+          "data": {
+            "properties": {
+              "annualLimit": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "countingMode": {
+                "$ref": "#/components/schemas/LeaveCountingMode"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "evidenceFromAmount": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "evidenceRequired": {
+                "type": "boolean"
+              },
+              "excludedDates": {
+                "items": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxPerRequest": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "minimumNoticeDays": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "personnelTypes": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffPersonnelType"
+                },
+                "type": "array"
+              },
+              "quotaYearStartMonth": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "sourceReference": {
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplateStep"
+                },
+                "type": "array"
+              },
+              "templateId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "typeId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "typeRevision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unit": {
+                "$ref": "#/components/schemas/LeaveUnit"
+              },
+              "version": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "workingWeekdays": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "typeId",
+              "version",
+              "typeRevision",
+              "effectiveFrom",
+              "sourceReference",
+              "enabled",
+              "personnelTypes",
+              "unit",
+              "countingMode",
+              "workingWeekdays",
+              "excludedDates",
+              "quotaYearStartMonth",
+              "evidenceRequired",
+              "steps",
+              "templateId",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveRequestDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "availableActions": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessAction"
+                },
+                "type": "array"
+              },
+              "canAct": {
+                "type": "boolean"
+              },
+              "canCancel": {
+                "type": "boolean"
+              },
+              "canEdit": {
+                "type": "boolean"
+              },
+              "canSubmit": {
+                "type": "boolean"
+              },
+              "contentHash": {
+                "type": "string"
+              },
+              "evidenceFileIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "history": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveHistoryEntry"
+                },
+                "type": "array"
+              },
+              "instance": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessInstance"
+                  }
+                ]
+              },
+              "policy": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LeavePolicyVersion"
+                  }
+                ]
+              },
+              "processPurpose": {
+                "$ref": "#/components/schemas/LeaveProcessPurpose"
+              },
+              "request": {
+                "$ref": "#/components/schemas/LeaveRequestSummary"
+              }
+            },
+            "required": [
+              "request",
+              "processPurpose",
+              "history",
+              "evidenceFileIds",
+              "contentHash",
+              "canEdit",
+              "canSubmit",
+              "canAct",
+              "canCancel",
+              "availableActions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveRequestPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveRequestSummary"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "hasMore"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveRoutingOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "organizations": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveRoutingOrganization"
+                },
+                "type": "array"
+              },
+              "positions": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveRoutingPosition"
+                },
+                "type": "array"
+              },
+              "users": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveRoutingUser"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "users",
+              "organizations",
+              "positions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveType": {
+        "properties": {
+          "data": {
+            "properties": {
+              "archived": {
+                "type": "boolean"
+              },
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/LeaveKind"
+              },
+              "name": {
+                "type": "string"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "kind",
+              "archived",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveUsageReport": {
+        "properties": {
+          "data": {
+            "properties": {
+              "from": {
+                "format": "date",
+                "type": "string"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveUsageItem"
+                },
+                "type": "array"
+              },
+              "to": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "items",
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ListNotificationsResponse": {
         "properties": {
           "data": {
@@ -24225,6 +24661,202 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_LeavePolicyVersion": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "annualLimit": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "countingMode": {
+                  "$ref": "#/components/schemas/LeaveCountingMode"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "evidenceFromAmount": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "evidenceRequired": {
+                  "type": "boolean"
+                },
+                "excludedDates": {
+                  "items": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxPerRequest": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "minimumNoticeDays": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "personnelTypes": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffPersonnelType"
+                  },
+                  "type": "array"
+                },
+                "quotaYearStartMonth": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "sourceReference": {
+                  "type": "string"
+                },
+                "steps": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessTemplateStep"
+                  },
+                  "type": "array"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "typeId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "typeRevision": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "unit": {
+                  "$ref": "#/components/schemas/LeaveUnit"
+                },
+                "version": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "workingWeekdays": {
+                  "items": {
+                    "format": "int32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "typeId",
+                "version",
+                "typeRevision",
+                "effectiveFrom",
+                "sourceReference",
+                "enabled",
+                "personnelTypes",
+                "unit",
+                "countingMode",
+                "workingWeekdays",
+                "excludedDates",
+                "quotaYearStartMonth",
+                "evidenceRequired",
+                "steps",
+                "templateId",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_LeaveType": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "archived": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/LeaveKind"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "kind",
+                "archived",
+                "revision"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_LookupItem": {
         "properties": {
           "data": {
@@ -30908,6 +31540,28 @@
         ],
         "type": "object"
       },
+      "CancelLeaveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "reason"
+        ],
+        "type": "object"
+      },
       "CancelObservationRequest": {
         "properties": {
           "reason": {
@@ -36921,6 +37575,23 @@
             ]
           }
         ]
+      },
+      "CreateLeaveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/LeavePeriodInput"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "period"
+        ],
+        "type": "object"
       },
       "CreateManualExternalCandidateRequest": {
         "additionalProperties": false,
@@ -43089,6 +43760,8 @@
       },
       "FilePurpose": {
         "enum": [
+          "staff_leave_evidence",
+          "staff_leave_signature",
           "correspondence_document",
           "correspondence_signature",
           "teaching_license",
@@ -46446,6 +47119,812 @@
           "assistant"
         ],
         "type": "string"
+      },
+      "LeaveActionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ProcessAction"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedProcessRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/LeaveProcessPurpose"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "signature": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LeaveSignatureConsent"
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "expectedProcessRevision",
+          "purpose",
+          "action"
+        ],
+        "type": "object"
+      },
+      "LeaveCountingMode": {
+        "enum": [
+          "calendar_days",
+          "working_days"
+        ],
+        "type": "string"
+      },
+      "LeaveDayPortion": {
+        "enum": [
+          "full_day",
+          "morning",
+          "afternoon"
+        ],
+        "type": "string"
+      },
+      "LeaveFileSnapshot": {
+        "properties": {
+          "checksum": {
+            "type": "string"
+          },
+          "fileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "versionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileId",
+          "versionId",
+          "checksum"
+        ],
+        "type": "object"
+      },
+      "LeaveHistoryEntry": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "actorName": {
+            "type": "string"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "signature": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LeaveSignatureConsent"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorName",
+          "action",
+          "revision",
+          "contentHash",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "LeaveKind": {
+        "enum": [
+          "leave",
+          "exit"
+        ],
+        "type": "string"
+      },
+      "LeaveMutationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "LeavePeriodInput": {
+        "additionalProperties": false,
+        "properties": {
+          "dayPortion": {
+            "$ref": "#/components/schemas/LeaveDayPortion"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidenceFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "typeId",
+          "startDate",
+          "endDate",
+          "dayPortion",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "LeavePersonalOptions": {
+        "properties": {
+          "personnelType": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffPersonnelType"
+              }
+            ]
+          },
+          "types": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveType"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "types"
+        ],
+        "type": "object"
+      },
+      "LeavePolicyVersion": {
+        "properties": {
+          "annualLimit": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "countingMode": {
+            "$ref": "#/components/schemas/LeaveCountingMode"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "evidenceFromAmount": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "evidenceRequired": {
+            "type": "boolean"
+          },
+          "excludedDates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "maxPerRequest": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "minimumNoticeDays": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "personnelTypes": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPersonnelType"
+            },
+            "type": "array"
+          },
+          "quotaYearStartMonth": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sourceReference": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/LeaveUnit"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workingWeekdays": {
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "typeId",
+          "version",
+          "typeRevision",
+          "effectiveFrom",
+          "sourceReference",
+          "enabled",
+          "personnelTypes",
+          "unit",
+          "countingMode",
+          "workingWeekdays",
+          "excludedDates",
+          "quotaYearStartMonth",
+          "evidenceRequired",
+          "steps",
+          "templateId",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "LeaveProcessPurpose": {
+        "enum": [
+          "request",
+          "cancellation"
+        ],
+        "type": "string"
+      },
+      "LeaveRequestDetail": {
+        "properties": {
+          "availableActions": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessAction"
+            },
+            "type": "array"
+          },
+          "canAct": {
+            "type": "boolean"
+          },
+          "canCancel": {
+            "type": "boolean"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canSubmit": {
+            "type": "boolean"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "evidenceFileIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveHistoryEntry"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessInstance"
+              }
+            ]
+          },
+          "policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LeavePolicyVersion"
+              }
+            ]
+          },
+          "processPurpose": {
+            "$ref": "#/components/schemas/LeaveProcessPurpose"
+          },
+          "request": {
+            "$ref": "#/components/schemas/LeaveRequestSummary"
+          }
+        },
+        "required": [
+          "request",
+          "processPurpose",
+          "history",
+          "evidenceFileIds",
+          "contentHash",
+          "canEdit",
+          "canSubmit",
+          "canAct",
+          "canCancel",
+          "availableActions"
+        ],
+        "type": "object"
+      },
+      "LeaveRequestPage": {
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRequestSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "LeaveRequestSummary": {
+        "properties": {
+          "amount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dayPortion": {
+            "$ref": "#/components/schemas/LeaveDayPortion"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeaveKind"
+          },
+          "ownerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "personnelType": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffPersonnelType"
+              }
+            ]
+          },
+          "policyVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/LeaveStatus"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeName": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/LeaveUnit"
+          }
+        },
+        "required": [
+          "id",
+          "typeId",
+          "typeName",
+          "kind",
+          "ownerId",
+          "ownerName",
+          "status",
+          "revision",
+          "startDate",
+          "endDate",
+          "dayPortion",
+          "amount",
+          "unit",
+          "reason",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "LeaveRoutingOptions": {
+        "properties": {
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRoutingOrganization"
+            },
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRoutingPosition"
+            },
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRoutingUser"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "organizations",
+          "positions"
+        ],
+        "type": "object"
+      },
+      "LeaveRoutingOrganization": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "LeaveRoutingPosition": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationUnitId",
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "LeaveRoutingUser": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "LeaveSignatureConsent": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "type": "boolean"
+          },
+          "imageFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input": {
+            "$ref": "#/components/schemas/SignatureInput"
+          }
+        },
+        "required": [
+          "consent",
+          "input"
+        ],
+        "type": "object"
+      },
+      "LeaveStatus": {
+        "enum": [
+          "draft",
+          "submitted",
+          "returned",
+          "approved",
+          "rejected",
+          "cancelled",
+          "cancellation_pending"
+        ],
+        "type": "string"
+      },
+      "LeaveType": {
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeaveKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "kind",
+          "archived",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "LeaveUnit": {
+        "enum": [
+          "day",
+          "half_day",
+          "minute"
+        ],
+        "type": "string"
+      },
+      "LeaveUsageItem": {
+        "properties": {
+          "annualLimit": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "approvedAmount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "policyVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quotaYearStart": {
+            "format": "date",
+            "type": "string"
+          },
+          "reservedAmount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "typeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "typeName": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/LeaveUnit"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "displayName",
+          "typeId",
+          "typeName",
+          "unit",
+          "quotaYearStart",
+          "approvedAmount",
+          "reservedAmount",
+          "policyVersionId"
+        ],
+        "type": "object"
+      },
+      "LeaveUsageReport": {
+        "properties": {
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveUsageItem"
+            },
+            "type": "array"
+          },
+          "to": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "from",
+          "to"
+        ],
+        "type": "object"
       },
       "LessonSnapshot": {
         "properties": {
@@ -53745,6 +55224,151 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "SaveLeavePolicyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annualLimit": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "countingMode": {
+            "$ref": "#/components/schemas/LeaveCountingMode"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "evidenceFromAmount": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "evidenceRequired": {
+            "type": "boolean"
+          },
+          "excludedDates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "maxPerRequest": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "minimumNoticeDays": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "personnelTypes": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPersonnelType"
+            },
+            "type": "array"
+          },
+          "quotaYearStartMonth": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceReference": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/LeaveUnit"
+          },
+          "workingWeekdays": {
+            "description": "ISO weekdays 1=Monday through 7=Sunday. Required for working_days.",
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "effectiveFrom",
+          "sourceReference",
+          "enabled",
+          "personnelTypes",
+          "unit",
+          "countingMode",
+          "workingWeekdays",
+          "excludedDates",
+          "quotaYearStartMonth",
+          "evidenceRequired",
+          "steps"
+        ],
+        "type": "object"
+      },
+      "SaveLeaveTypeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeaveKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "code",
+          "name",
+          "kind",
+          "archived"
+        ],
         "type": "object"
       },
       "SaveProcessTemplateRequest": {
@@ -63107,6 +64731,28 @@
         "required": [
           "rowVersion",
           "targets"
+        ],
+        "type": "object"
+      },
+      "UpdateLeaveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "period": {
+            "$ref": "#/components/schemas/LeavePeriodInput"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "period"
         ],
         "type": "object"
       },
@@ -102793,6 +104439,1521 @@
         },
         "tags": [
           "staff"
+        ]
+      }
+    },
+    "/api/staff-leave/options": {
+      "get": {
+        "operationId": "getStaffLeaveOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeavePersonalOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests": {
+      "get": {
+        "operationId": "listStaffLeaveRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LeaveKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LeaveStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeArchived",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "post": {
+        "operationId": "createStaffLeaveRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}": {
+      "get": {
+        "operationId": "getStaffLeaveRequest",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "put": {
+        "operationId": "updateStaffLeaveRequest",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLeaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/actions": {
+      "post": {
+        "operationId": "actStaffLeaveRequest",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/cancel": {
+      "post": {
+        "operationId": "cancelStaffLeaveRequest",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelLeaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/submit": {
+      "post": {
+        "operationId": "submitStaffLeaveRequest",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/routing-options": {
+      "get": {
+        "operationId": "getStaffLeaveRoutingOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRoutingOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/types": {
+      "get": {
+        "operationId": "listStaffLeaveTypes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LeaveKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LeaveStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeArchived",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LeaveType"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "post": {
+        "operationId": "createStaffLeaveType",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLeaveTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveType"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/types/{id}": {
+      "delete": {
+        "operationId": "deleteStaffLeaveType",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "put": {
+        "operationId": "updateStaffLeaveType",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLeaveTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveType"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/types/{id}/effective-policy": {
+      "get": {
+        "operationId": "getStaffLeaveEffectivePolicy",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startDate",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeavePolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/types/{id}/policies": {
+      "get": {
+        "operationId": "listStaffLeavePolicies",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LeavePolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "post": {
+        "operationId": "createStaffLeavePolicy",
+        "parameters": [
+          {
+            "description": "Staff leave resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLeavePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeavePolicyVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/usage": {
+      "get": {
+        "operationId": "getStaffLeaveUsage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LeaveKind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveUsageReport"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "staff-leave"
         ]
       }
     },

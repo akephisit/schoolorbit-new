@@ -80,3 +80,5 @@ See `.env.example` for names. Keep the session HMAC, encryption, and blind-index
 - [Development rules](../.rules) — feature, permission, API, migration, and security workflow
 - [Testing](../docs/TESTING.md)
 - [Operations](../docs/OPERATIONS.md)
+
+Staff leave and planned school-exit requests live in `school-staff::leave`, with policy profiles resolved from effective Staff career classification. The domain uses Workflow provider operations for assignments, notifications and source-bound approvals; private evidence and signer images use dedicated File Platform purposes. School-configured limits are not statutory entitlements. Runtime configuration is available through the leave settings API; no legal quotas or approval recipients are seeded.

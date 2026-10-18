@@ -63,7 +63,9 @@ pub fn simple_file_access(
                 }
             }
         }
-        FilePurpose::CorrespondenceDocument
+        FilePurpose::StaffLeaveEvidence
+        | FilePurpose::StaffLeaveSignature
+        | FilePurpose::CorrespondenceDocument
         | FilePurpose::CorrespondenceSignature
         | FilePurpose::TeachingLicense
         | FilePurpose::AchievementImage
@@ -112,6 +114,10 @@ pub async fn authorize_create(
     resource_id: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     match purpose {
+        FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
+            school_staff::leave::files::authorize_create(pool, actor, purpose, resource_id).await
+        }
+
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
             school_workflow::correspondence_files::authorize_create(
                 pool,
@@ -218,6 +224,11 @@ pub async fn authorize_existing(
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     match file.purpose {
+        FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
+            school_staff::leave::files::authorize_existing(pool, actor, file, action, resource_id)
+                .await
+        }
+
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
             school_workflow::correspondence_files::authorize_existing(
                 pool,

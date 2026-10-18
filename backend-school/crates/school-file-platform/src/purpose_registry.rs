@@ -143,6 +143,25 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => PurposeDefinition {
+            domain_segment: "staff-leave",
+            purpose_segment: if purpose == FilePurpose::StaffLeaveEvidence {
+                "evidence"
+            } else {
+                "signature"
+            },
+            visibility: FileVisibility::Private,
+            allowed_content: if purpose == FilePurpose::StaffLeaveEvidence {
+                CORRESPONDENCE_CONTENT
+            } else {
+                IMAGE_CONTENT
+            },
+            limits: image_limits_with_pixels(10 * 1024 * 1024, 6000, 6000, 36_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::ExplicitOwningResource,
+        },
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
             PurposeDefinition {
                 domain_segment: "correspondence",

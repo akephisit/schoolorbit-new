@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "c19899c1c505d446fabb380f90374583cb07842b5e841b7dd57d03737a3eb491",
+  "contract_sha256": "793e32312416fde0e643c08ad943d5387a6afb655ce8d602abe87de699e06b40",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",

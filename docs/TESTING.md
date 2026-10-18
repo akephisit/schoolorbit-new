@@ -1538,3 +1538,5 @@ Run the generated API generation/check/tests after changing the list or revision
 correspondence browser fixtures should verify server-count tabs, creation/draft retention,
 failed-file retry, recipient selection, timeline/main action, direct signature placement and
 starter template copying at desktop and mobile sizes.
+
+Staff leave and planned school exit use `./scripts/test_backend_school.sh --package school-staff leave -- --nocapture` for the focused policy and isolated lifecycle/authorization/ledger fixtures. Signature consent and revision binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`. Policies count school-configured calendar or working dates; half-day granularity represents a full counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement is seeded by these fixtures.
