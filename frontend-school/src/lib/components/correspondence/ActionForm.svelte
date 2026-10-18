@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import {
 		actOnCorrespondence,
@@ -23,6 +23,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { actionLabels } from '#lib/correspondence/presentation.js';
+	import { directedActionLabel } from '#lib/correspondence/directed.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -99,9 +100,17 @@
 	let optionsLoading = $state(false);
 	let routingInitialized = false;
 	const intent = new MutationIntent<ProcessActionRequest>();
+	const uploadedEvidence = new SvelteMap<File, string>();
 	let uncertain = $state(false);
 	const definition = $derived(detail.instance?.steps[detail.instance.currentStep]?.definition);
-	const requirements = $derived(actionRequirements(action, definition));
+	const terminalCopy = $derived(
+		selectedAssignment?.required === false && ['completed', 'closed'].includes(detail.record.status)
+	);
+	const requirements = $derived(
+		terminalCopy
+			? { acceptsEvidence: false, comment: false, evidence: false, signature: false }
+			: actionRequirements(action, definition)
+	);
 	const pendingRecipients = $derived(
 		detail.instance?.steps[detail.instance.currentStep]?.recipients.filter(
 			(recipient) => !recipient.completedAt
@@ -109,23 +118,23 @@
 	);
 	const recovery = $derived(
 		action === 'reassign' &&
+			!selectedAssignment &&
 			!pendingRecipients.some((recipient) => recipient.userId === $authStore.user?.id)
 	);
 	const commentRequired = $derived(
 		requirements.comment ||
 			recovery ||
-			(action === 'review' && selectedAssignment?.purpose === 'decide')
+			(action === 'review' &&
+				selectedAssignment?.purpose === 'decide' &&
+				selectedAssignment.status === 'pending')
 	);
 	const needsSignature = $derived(requirements.signature);
 	let includeSignature = $state(false);
 	const signing = $derived(needsSignature || includeSignature);
 	const actionLabel = $derived(
-		action === 'review' && selectedAssignment
-			? selectedAssignment.purpose === 'decide'
-				? 'พิจารณาเสร็จและจบเรื่อง'
-				: 'ตรวจทานผล'
-			: actionLabels[action]
+		selectedAssignment ? directedActionLabel(action, selectedAssignment) : actionLabels[action]
 	);
+
 	let confirmationBasis = '';
 	$effect.pre(() => {
 		const basis = JSON.stringify([
@@ -276,9 +285,10 @@
 		}
 		if (
 			action === 'route' &&
-			(!routing.recipients.length || (routing.requireReview && !routing.reviewer))
+			(!routing.recipients.some((item) => item.required !== false) ||
+				(routing.requireReview && !routing.reviewer))
 		) {
-			error = 'เพิ่มผู้รับคำสั่งและเลือกผู้ตรวจทานให้ครบ';
+			error = 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ และเลือกผู้ตรวจทานหากกำหนดให้ตรวจทาน';
 			return;
 		}
 		if (signing) {
@@ -300,9 +310,14 @@
 		try {
 			const evidenceFileIds: string[] = [];
 			for (const file of requirements.acceptsEvidence ? evidence : []) {
-				const uploaded = await uploadFile(file, 'correspondence_document', detail.record.id);
-				if (disposed) return;
-				evidenceFileIds.push(uploaded.id);
+				let fileId = uploadedEvidence.get(file);
+				if (!fileId) {
+					const uploaded = await uploadFile(file, 'correspondence_document', detail.record.id);
+					if (disposed) return;
+					fileId = uploaded.id;
+					uploadedEvidence.set(file, fileId);
+				}
+				evidenceFileIds.push(fileId);
 			}
 			const signingInput =
 				signing && signature
@@ -324,28 +339,29 @@
 						.flatMap((entry) => entry.annotations)
 				].map((annotation) => annotation.id)
 			);
+			const body: Omit<ProcessActionRequest, 'requestId'> = {
+				assignmentId,
+				routing: action === 'route' ? routing : undefined,
+				expectedRevision,
+				action,
+				comment: action === 'read' || terminalCopy ? undefined : comment.trim() || undefined,
+				evidenceFileIds,
+				signature: signingInput,
+				reassignUserId: reassignUserId || undefined,
+				reassignFromUserId: recovery ? reassignFromUserId : undefined,
+				annotations: requirements.acceptsEvidence
+					? annotations.filter((annotation) => !acceptedAnnotationIds.has(annotation.id))
+					: []
+			};
 			const result = await actOnCorrespondence(
 				detail.record.id,
-				intent.begin({
-					assignmentId,
-					routing: action === 'route' ? routing : undefined,
-					expectedRevision,
-					action,
-					comment: action === 'read' ? undefined : comment.trim() || undefined,
-					evidenceFileIds,
-					signature: signingInput,
-					reassignUserId: reassignUserId || undefined,
-					reassignFromUserId: recovery ? reassignFromUserId : undefined,
-					annotations: requirements.acceptsEvidence
-						? annotations.filter((annotation) => !acceptedAnnotationIds.has(annotation.id))
-						: []
-				})
+				detail.instance?.directed ? intent.begin(body) : { ...body, requestId: crypto.randomUUID() }
 			);
 			intent.accepted();
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			intent.rejected(cause);
-			uncertain = intent.unresolved;
+			uncertain = !!detail.instance?.directed && intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
 		} finally {
 			if (!disposed) {
@@ -358,6 +374,11 @@
 
 <form class="space-y-4" onsubmit={submit} data-testid="correspondence-action">
 	<h3 class="font-semibold">{actionLabel}</h3>
+	{#if selectedAssignment && ['reject', 'return_for_revision'].includes(action)}<p
+			class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
+		>
+			การดำเนินการนี้มีผลต่อหนังสือทั้งเรื่องและทุกสาขา กรุณาระบุเหตุผลก่อนยืนยัน
+		</p>{/if}
 	{#if error}<PageState
 			variant="error"
 			title={error}
@@ -403,7 +424,7 @@
 					>โหลดผู้รับคำสั่งอีกครั้ง</Button
 				>{/if}
 		{/if}
-		{#if action !== 'read'}<div class="space-y-2">
+		{#if action !== 'read' && !terminalCopy}<div class="space-y-2">
 				<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label
 				><Textarea id="action-comment" rows={4} bind:value={comment} disabled={pending} />
 			</div>{/if}
@@ -420,8 +441,15 @@
 					id="reassign-user"
 					label="ผู้รับผิดชอบใหม่"
 					bind:value={reassignUserId}
-					options={options.users
-						.filter((user) => !pendingRecipients.some((recipient) => recipient.userId === user.id))
+					options={(selectedAssignment ? options.reviewers : options.users)
+						.filter((user) =>
+							selectedAssignment
+								? user.id !==
+									(selectedAssignment.status === 'waiting_review'
+										? selectedAssignment.reviewer?.userId
+										: selectedAssignment.recipient.userId)
+								: !pendingRecipients.some((recipient) => recipient.userId === user.id)
+						)
 						.map((user) => ({ value: user.id, label: user.displayName }))}
 					searchable
 					disabled={pending}
@@ -562,8 +590,11 @@
 	</fieldset>
 	<div class="flex flex-wrap justify-end gap-2">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={imagePending}
-			>ยืนยัน{actionLabel}</LoadingButton
+		><LoadingButton
+			type="submit"
+			loading={pending}
+			disabled={imagePending}
+			variant={action === 'reject' ? 'destructive' : 'default'}>ยืนยัน{actionLabel}</LoadingButton
 		>
 	</div>
 </form>

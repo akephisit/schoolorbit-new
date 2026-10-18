@@ -1602,11 +1602,20 @@ responsible lead; an ambiguous unit requires a specific person or position.
 
 Each accepted directed instruction freezes actual recipients and creates central work atomically
 with its annotations, signatures and history. Required branches wait for explicit acknowledgement
-or completion, and then any configured reviewer. Reading is separate. Copies never block the
+or completion, and then any configured reviewer. Reading is separate. Copies create a notification and read participation, without a My Work assignment; they never block the
 book or grant assignment authority. Review defaults off, and a descendant cannot remove an
 ancestor's required review. Reviewer work is created only when its required branches finish;
 completed no-return branches finish the book automatically. The first decision-maker can also
-record a terminal consideration without forwarding. Optional Close remains archival.
+record a terminal consideration without forwarding. Optional Close remains archival. Copies may still record read/acknowledgement after completion or
+archival, without editing the finished document, reopening the book or creating required work.
+
+Existing school/exact-unit correspondence managers can recover a pending required recipient or
+activated reviewer through Reassign. This transfers the actual pending slot, preserving its parent,
+purpose, onward rights and all review obligations; manager visibility does not grant completion
+power. The transaction dismisses/closes old work and cancels its notification source before creating
+the replacement work. The first decision-maker replacement must respect the current configured
+eligible pool. Accepted old/new names and identities remain in immutable history. Reviewers enter
+read participation when accepted, while their work and notification wait until review is ready.
 
 Fixed-template correspondence sends resolve every required recipient once, including future sequential steps.
 A missing active required recipient refuses the send transaction without creating work or

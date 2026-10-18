@@ -111,7 +111,8 @@ const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
             JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             JOIN role_permissions rp ON r.id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
-            WHERE ur.started_at <= CURRENT_DATE AND ur.ended_at IS NULL
+            WHERE ur.started_at <= CURRENT_DATE
+              AND (ur.ended_at IS NULL OR ur.ended_at > CURRENT_DATE)
 
             UNION
 

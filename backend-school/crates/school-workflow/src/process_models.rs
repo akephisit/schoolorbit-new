@@ -422,9 +422,17 @@ pub struct ProcessHistoryEntry {
     pub actor_name: String,
     pub reassigned_from_user_id: Option<Uuid>,
     pub reassigned_to_user_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reassigned_from_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reassigned_to_name: Option<String>,
     pub action: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignment_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_recipient_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routed_recipients: Vec<CorrespondenceUserOption>,
     pub document_revision: i64,
     pub annotations: Vec<DocumentAnnotation>,
     pub comment: Option<String>,

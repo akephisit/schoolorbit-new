@@ -2368,6 +2368,16 @@ async fn directed_default_finishes_required_leaves_not_reads_or_copies() {
         .history
         .iter()
         .any(|h| h.action == "route" && h.assignment_id == route.assignment_id));
+    assert!(graph(&routed)
+        .assignments
+        .iter()
+        .find(|a| !a.required)
+        .unwrap()
+        .work_item_id
+        .is_none());
+    assert_eq!(inbox(&pool, &creator).await.counts.action_required, 0);
+    let copy_work:i64=sqlx::query_scalar("SELECT count(*) FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id WHERE w.source_resource_id=$1 AND a.user_id=$2").bind(routed.record.id).bind(creator.user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(copy_work, 0);
     let leaf = assignment_for(&routed, staff.user_id);
     let read = directed_act(&pool, &staff, &routed, ProcessAction::Read, leaf).await;
     assert_eq!(read.record.status, CorrespondenceStatus::InProgress);
@@ -2397,6 +2407,13 @@ async fn directed_default_finishes_required_leaves_not_reads_or_copies() {
     assert_eq!(list.items.len(), 1);
     let completed = directed_act(&pool, &staff, &read, ProcessAction::Execute, leaf).await;
     assert_eq!(completed.record.status, CorrespondenceStatus::Completed);
+    assert_eq!(inbox(&pool, &creator).await.counts.action_required, 0);
+    let creator_completed = correspondence::detail(&pool, &creator, completed.record.id)
+        .await
+        .unwrap();
+    assert!(creator_completed
+        .available_actions
+        .contains(&ProcessAction::Close));
     assert_eq!(
         graph(&completed).assignments[0].status,
         DirectedAssignmentStatus::Completed
@@ -2552,9 +2569,24 @@ async fn directed_copies_managers_and_wrong_branch_cannot_route_or_discharge_req
     let staff_detail = correspondence::detail(&pool, &staff, routed.record.id)
         .await
         .unwrap();
-    assert!(!staff_detail
-        .available_actions
-        .contains(&ProcessAction::Route));
+    for forbidden in [
+        ProcessAction::Report,
+        ProcessAction::Route,
+        ProcessAction::Reject,
+        ProcessAction::ReturnForRevision,
+        ProcessAction::Execute,
+        ProcessAction::Review,
+    ] {
+        assert!(!staff_detail.available_actions.contains(&forbidden));
+        let mut denied = action(routed.record.revision, forbidden);
+        denied.assignment_id = Some(assignment_for(&routed, staff.user_id));
+        denied.comment = Some("must refuse copy authority".into());
+        assert!(
+            correspondence::act(&pool, &staff, routed.record.id, &MemoryValidator, denied)
+                .await
+                .is_err()
+        );
+    }
     let forged = routing_action(
         &routed,
         staff.user_id,
@@ -2587,7 +2619,11 @@ async fn directed_copies_managers_and_wrong_branch_cannot_route_or_discharge_req
     let detail = correspondence::detail(&pool, &manager, routed.record.id)
         .await
         .unwrap();
-    assert!(detail.assignment_actions.is_empty());
+    assert!(detail
+        .assignment_actions
+        .iter()
+        .all(|a| a.actions == vec![ProcessAction::Reassign]));
+    assert!(!detail.assignment_actions.is_empty());
     assert!(!detail.available_actions.contains(&ProcessAction::Route));
 }
 
@@ -2886,42 +2922,1141 @@ fn old_action_payloads_and_process_json_remain_compatible() {
 
 #[tokio::test]
 async fn directed_effective_authority_starts_at_current_role_membership_and_delegation_dates() {
-    use school_authorization::{load_actor_context,staff_users_with_all_permissions,PermissionCache};
-    let (pool,role,member,delegate)=fixture("directed_authority_dates").await;
-    grant_directed_authority(&pool,&[&role]).await;
-    let unit=Uuid::now_v7();
-    sqlx::query("INSERT INTO organization_units(id,code,name) VALUES($1,$2,'Directed authority test')").bind(unit).bind(unit.to_string()).execute(&pool).await.unwrap();
-    let permissions=[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED];
+    use school_authorization::{
+        load_actor_context, staff_users_with_all_permissions, PermissionCache,
+    };
+    let (pool, role, member, delegate) = fixture("directed_authority_dates").await;
+    grant_directed_authority(&pool, &[&role]).await;
+    let unit = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO organization_units(id,code,name) VALUES($1,$2,'Directed authority test')",
+    )
+    .bind(unit)
+    .bind(unit.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let permissions = [
+        codes::CORRESPONDENCE_READ_ASSIGNED,
+        codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+    ];
     sqlx::query("INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=ANY($2)").bind(unit).bind(&permissions).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'head',CURRENT_DATE+1)").bind(member.user_id).bind(unit).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO organization_permission_delegations(from_user_id,to_user_id,permission_id,started_at) SELECT $1,$2,id,now()+interval '1 day' FROM permissions WHERE code=ANY($3)").bind(role.user_id).bind(delegate.user_id).bind(&permissions).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE user_roles SET started_at=CURRENT_DATE+1 WHERE user_id=$1").bind(role.user_id).execute(&pool).await.unwrap();
-    let denied=staff_users_with_all_permissions(&pool,&permissions).await.unwrap();
-    for user in [role.user_id,member.user_id,delegate.user_id] {
+    sqlx::query("UPDATE user_roles SET started_at=CURRENT_DATE+1 WHERE user_id=$1")
+        .bind(role.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let denied = staff_users_with_all_permissions(&pool, &permissions)
+        .await
+        .unwrap();
+    for user in [role.user_id, member.user_id, delegate.user_id] {
         assert!(!denied.contains(&user));
-        let actor=load_actor_context(user,"directed-date-fixture",&pool,&PermissionCache::new()).await.unwrap();
+        let actor = load_actor_context(
+            user,
+            "directed-date-fixture",
+            &pool,
+            &PermissionCache::new(),
+        )
+        .await
+        .unwrap();
         assert!(!actor.has_all_permissions(&permissions));
     }
-    sqlx::query("UPDATE user_roles SET started_at=CURRENT_DATE WHERE user_id=$1").bind(role.user_id).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE WHERE user_id=$1").bind(member.user_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE user_roles SET started_at=CURRENT_DATE WHERE user_id=$1")
+        .bind(role.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE WHERE user_id=$1")
+        .bind(member.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE organization_permission_delegations SET started_at=now()-interval '1 minute' WHERE to_user_id=$1").bind(delegate.user_id).execute(&pool).await.unwrap();
-    let allowed=staff_users_with_all_permissions(&pool,&permissions).await.unwrap();
-    for user in [role.user_id,member.user_id,delegate.user_id] {
+    let allowed = staff_users_with_all_permissions(&pool, &permissions)
+        .await
+        .unwrap();
+    for user in [role.user_id, member.user_id, delegate.user_id] {
         assert!(allowed.contains(&user));
-        let actor=load_actor_context(user,"directed-date-fixture",&pool,&PermissionCache::new()).await.unwrap();assert!(actor.has_all_permissions(&permissions));
+        let actor = load_actor_context(
+            user,
+            "directed-date-fixture",
+            &pool,
+            &PermissionCache::new(),
+        )
+        .await
+        .unwrap();
+        assert!(actor.has_all_permissions(&permissions));
     }
-    let record=correspondence::create(&pool,&role,&MemoryValidator,create_request()).await.unwrap();
-    let selector=ProcessRecipient{kind:ProcessRecipientKind::OrganizationPosition,user_id:None,organization_unit_id:Some(unit),position_code:Some("head".into())};
-    let selected=correspondence::directed_send(&pool,&role,record.record.id,DirectedSendCorrespondenceRequest{request_id:Uuid::now_v7(),expected_revision:record.record.revision,first_recipient:selector,due_at:None}).await.unwrap();assert_eq!(graph(&selected).assignments[0].recipient.user_id,member.user_id);
+    sqlx::query("UPDATE user_roles SET ended_at=CURRENT_DATE+1 WHERE user_id=$1")
+        .bind(role.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(staff_users_with_all_permissions(&pool, &permissions)
+        .await
+        .unwrap()
+        .contains(&role.user_id));
+    assert!(load_actor_context(
+        role.user_id,
+        "directed-future-end",
+        &pool,
+        &PermissionCache::new()
+    )
+    .await
+    .unwrap()
+    .has_all_permissions(&permissions));
+    sqlx::query("UPDATE user_roles SET ended_at=CURRENT_DATE WHERE user_id=$1")
+        .bind(role.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(!staff_users_with_all_permissions(&pool, &permissions)
+        .await
+        .unwrap()
+        .contains(&role.user_id));
+    assert!(!load_actor_context(
+        role.user_id,
+        "directed-current-end",
+        &pool,
+        &PermissionCache::new()
+    )
+    .await
+    .unwrap()
+    .has_all_permissions(&permissions));
+    sqlx::query("UPDATE user_roles SET ended_at=NULL WHERE user_id=$1")
+        .bind(role.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let record = correspondence::create(&pool, &role, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM role_permissions WHERE role_id=(SELECT id FROM roles WHERE code='TEACHER') AND permission_id=(SELECT id FROM permissions WHERE code=$1)").bind(codes::CORRESPONDENCE_READ_ASSIGNED).execute(&pool).await.unwrap();
+    assert!(!staff_users_with_all_permissions(&pool, &permissions)
+        .await
+        .unwrap()
+        .contains(&role.user_id));
+    assert!(correspondence::directed_send(
+        &pool,
+        &role,
+        record.record.id,
+        DirectedSendCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: record.record.revision,
+            first_recipient: recipient(role.user_id),
+            due_at: None
+        }
+    )
+    .await
+    .is_err());
+    let selector = ProcessRecipient {
+        kind: ProcessRecipientKind::OrganizationPosition,
+        user_id: None,
+        organization_unit_id: Some(unit),
+        position_code: Some("head".into()),
+    };
+    let selected = correspondence::directed_send(
+        &pool,
+        &role,
+        record.record.id,
+        DirectedSendCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: record.record.revision,
+            first_recipient: selector,
+            due_at: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        graph(&selected).assignments[0].recipient.user_id,
+        member.user_id
+    );
 }
 
 #[tokio::test]
 async fn directed_ancestor_reviewer_cannot_become_its_descendant_executor() {
-    let (pool,reviewer,first,head)=fixture("directed_review_cycle").await;
-    grant_directed_authority(&pool,&[&reviewer,&first,&head]).await;
-    let started=directed_start(&pool,&reviewer,&first).await;
-    let routed=correspondence::act(&pool,&first,started.record.id,&MemoryValidator,routing_action(&started,first.user_id,vec![routed_target(head.user_id,DirectedPurpose::Execute,true,true)],Some(reviewer.user_id))).await.unwrap();
-    let cycle=routing_action(&routed,head.user_id,vec![routed_target(reviewer.user_id,DirectedPurpose::Execute,true,false)],None);
-    assert!(correspondence::act(&pool,&head,routed.record.id,&MemoryValidator,cycle).await.is_err());
-    assert_eq!(correspondence::detail(&pool,&head,routed.record.id).await.unwrap().record.revision,routed.record.revision);
+    let (pool, reviewer, first, head) = fixture("directed_review_cycle").await;
+    grant_directed_authority(&pool, &[&reviewer, &first, &head]).await;
+    let started = directed_start(&pool, &reviewer, &first).await;
+    let routed = correspondence::act(
+        &pool,
+        &first,
+        started.record.id,
+        &MemoryValidator,
+        routing_action(
+            &started,
+            first.user_id,
+            vec![routed_target(
+                head.user_id,
+                DirectedPurpose::Execute,
+                true,
+                true,
+            )],
+            Some(reviewer.user_id),
+        ),
+    )
+    .await
+    .unwrap();
+    let cycle = routing_action(
+        &routed,
+        head.user_id,
+        vec![routed_target(
+            reviewer.user_id,
+            DirectedPurpose::Execute,
+            true,
+            false,
+        )],
+        None,
+    );
+    assert!(
+        correspondence::act(&pool, &head, routed.record.id, &MemoryValidator, cycle)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        correspondence::detail(&pool, &head, routed.record.id)
+            .await
+            .unwrap()
+            .record
+            .revision,
+        routed.record.revision
+    );
+}
+
+#[tokio::test]
+async fn directed_parallel_branches_for_same_person_are_distinct_and_complete_all_required_work() {
+    let (pool, left, first, right) = fixture("directed_parallel_branches").await;
+    let mut staff = left.clone();
+    staff.user_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,'synthetic','Shared','Executor','staff','active')").bind(staff.user_id).bind(staff.user_id.to_string()).execute(&pool).await.unwrap();
+    grant_directed_authority(&pool, &[&left, &first, &right, &staff]).await;
+    let started = directed_start(&pool, &left, &first).await;
+    let routed = correspondence::act(
+        &pool,
+        &first,
+        started.record.id,
+        &MemoryValidator,
+        routing_action(
+            &started,
+            first.user_id,
+            vec![
+                routed_target(left.user_id, DirectedPurpose::Execute, true, true),
+                routed_target(right.user_id, DirectedPurpose::Execute, true, true),
+            ],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let first_branch = correspondence::act(
+        &pool,
+        &left,
+        routed.record.id,
+        &MemoryValidator,
+        routing_action(
+            &routed,
+            left.user_id,
+            vec![routed_target(
+                staff.user_id,
+                DirectedPurpose::Execute,
+                true,
+                false,
+            )],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let second_branch = correspondence::act(
+        &pool,
+        &right,
+        routed.record.id,
+        &MemoryValidator,
+        routing_action(
+            &first_branch,
+            right.user_id,
+            vec![routed_target(
+                staff.user_id,
+                DirectedPurpose::Acknowledge,
+                true,
+                false,
+            )],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let staff_detail = correspondence::detail(&pool, &staff, second_branch.record.id)
+        .await
+        .unwrap();
+    assert_eq!(staff_detail.assignment_actions.len(), 2);
+    let execute = graph(&staff_detail)
+        .assignments
+        .iter()
+        .find(|a| a.recipient.user_id == staff.user_id && a.purpose == DirectedPurpose::Execute)
+        .unwrap()
+        .id;
+    let acknowledge = graph(&staff_detail)
+        .assignments
+        .iter()
+        .find(|a| a.recipient.user_id == staff.user_id && a.purpose == DirectedPurpose::Acknowledge)
+        .unwrap()
+        .id;
+    let mut a = action(staff_detail.record.revision, ProcessAction::Execute);
+    a.assignment_id = Some(execute);
+    let mut b = action(staff_detail.record.revision, ProcessAction::Acknowledge);
+    b.assignment_id = Some(acknowledge);
+    let (one, two) = tokio::join!(
+        correspondence::act(
+            &pool,
+            &staff,
+            staff_detail.record.id,
+            &MemoryValidator,
+            a.clone()
+        ),
+        correspondence::act(
+            &pool,
+            &staff,
+            staff_detail.record.id,
+            &MemoryValidator,
+            b.clone()
+        )
+    );
+    assert_ne!(one.is_ok(), two.is_ok());
+    let (accepted, mut pending) = if one.is_ok() { (a, b) } else { (b, a) };
+    let replay = correspondence::act(
+        &pool,
+        &staff,
+        staff_detail.record.id,
+        &MemoryValidator,
+        accepted.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay.record.status, CorrespondenceStatus::InProgress);
+    let remaining = correspondence::detail(&pool, &staff, staff_detail.record.id)
+        .await
+        .unwrap();
+    assert_eq!(remaining.assignment_actions.len(), 1);
+    pending.expected_revision = remaining.record.revision;
+    let completed = correspondence::act(
+        &pool,
+        &staff,
+        remaining.record.id,
+        &MemoryValidator,
+        pending,
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.record.status, CorrespondenceStatus::Completed);
+    assert!(graph(&completed)
+        .assignments
+        .iter()
+        .all(|a| a.status == DirectedAssignmentStatus::Completed));
+    assert!(completed
+        .history
+        .iter()
+        .any(|h| h.assignment_id == Some(execute) && h.action == "execute"));
+    assert!(completed
+        .history
+        .iter()
+        .any(|h| h.assignment_id == Some(acknowledge) && h.action == "acknowledge"));
+    let replay_after = correspondence::act(
+        &pool,
+        &staff,
+        completed.record.id,
+        &MemoryValidator,
+        accepted,
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay_after.history.len(), completed.history.len());
+}
+
+#[tokio::test]
+async fn directed_unit_targets_responsible_lead_and_ambiguous_selection_requires_explicit_position()
+{
+    let (pool, creator, first, head) = fixture("directed_unit_selectors").await;
+    grant_directed_authority(&pool, &[&creator, &first, &head]).await;
+    let unit = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO organization_units(id,code,name) VALUES($1,$2,'Directed selector test')",
+    )
+    .bind(unit)
+    .bind(unit.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (user, position) in [(creator.user_id, "member"), (head.user_id, "head")] {
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,$3)").bind(user).bind(unit).bind(position).execute(&pool).await.unwrap();
+    }
+    let started = directed_start(&pool, &creator, &first).await;
+    let selector = ProcessRecipient {
+        kind: ProcessRecipientKind::OrganizationUnit,
+        user_id: None,
+        organization_unit_id: Some(unit),
+        position_code: None,
+    };
+    let mut admin = creator.clone();
+    admin.permissions.push(codes::PROCESS_MANAGE_SCHOOL.into());
+    school_workflow::directed::save_settings(
+        &pool,
+        &admin,
+        SaveCorrespondenceRoutingSettingsRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: 0,
+            register: CorrespondenceRegister::Outgoing,
+            eligible_decision_makers: vec![selector.clone()],
+            default_first_recipient: Some(recipient(head.user_id)),
+            default_purpose: DirectedPurpose::Execute,
+            default_require_review: false,
+            default_reviewer: None,
+            default_allow_onward_assignment: false,
+        },
+    )
+    .await
+    .unwrap();
+    let scoped = correspondence::options(
+        &pool,
+        &creator,
+        correspondence::CorrespondenceOptionsQuery {
+            search: None,
+            register: Some(CorrespondenceRegister::Outgoing),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(scoped.decision_makers.len(), 1);
+    assert_eq!(scoped.decision_makers[0].id, head.user_id);
+    let mut route = routing_action(
+        &started,
+        first.user_id,
+        vec![routed_target(
+            head.user_id,
+            DirectedPurpose::Execute,
+            true,
+            false,
+        )],
+        None,
+    );
+    route.routing.as_mut().unwrap().recipients[0].recipient = selector.clone();
+    let selected = correspondence::act(&pool, &first, started.record.id, &MemoryValidator, route)
+        .await
+        .unwrap();
+    assert_eq!(graph(&selected).assignments.len(), 2);
+    assert_eq!(
+        graph(&selected).assignments[1].recipient.user_id,
+        head.user_id
+    );
+    sqlx::query("UPDATE organization_members SET position_code='head' WHERE user_id=$1 AND organization_unit_id=$2").bind(creator.user_id).bind(unit).execute(&pool).await.unwrap();
+    let other = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    assert!(correspondence::directed_send(
+        &pool,
+        &creator,
+        other.record.id,
+        DirectedSendCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: other.record.revision,
+            first_recipient: selector.clone(),
+            due_at: None
+        }
+    )
+    .await
+    .is_err());
+    let second = directed_start(&pool, &creator, &first).await;
+    let mut ambiguous = routing_action(
+        &second,
+        first.user_id,
+        vec![routed_target(
+            head.user_id,
+            DirectedPurpose::Execute,
+            true,
+            false,
+        )],
+        None,
+    );
+    ambiguous.routing.as_mut().unwrap().recipients[0].recipient = selector;
+    assert!(correspondence::act(
+        &pool,
+        &first,
+        second.record.id,
+        &MemoryValidator,
+        ambiguous.clone()
+    )
+    .await
+    .is_err());
+    ambiguous.request_id = Uuid::now_v7();
+    let target = &mut ambiguous.routing.as_mut().unwrap().recipients[0].recipient;
+    target.kind = ProcessRecipientKind::OrganizationPosition;
+    target.position_code = Some("head".into());
+    let explicit =
+        correspondence::act(&pool, &first, second.record.id, &MemoryValidator, ambiguous)
+            .await
+            .unwrap();
+    assert_eq!(graph(&explicit).assignments.len(), 3);
+}
+
+#[tokio::test]
+async fn directed_signed_instructions_bind_resolved_graph_and_replay_atomically() {
+    let (pool, creator, first, staff) = fixture("directed_signed_route").await;
+    grant_directed_authority(&pool, &[&creator, &first, &staff]).await;
+    let started = directed_start(&pool, &creator, &first).await;
+    let mut request = routing_action(
+        &started,
+        first.user_id,
+        vec![routed_target(
+            staff.user_id,
+            DirectedPurpose::Execute,
+            true,
+            false,
+        )],
+        None,
+    );
+    request.annotations.push(DocumentAnnotation {
+        id: Uuid::now_v7(),
+        kind: DocumentAnnotationKind::Text,
+        page: 1,
+        x: 0.1,
+        y: 0.1,
+        width: 0.4,
+        height: 0.1,
+        text: Some("สั่งการตามหนังสือ".into()),
+        color: "#111111".into(),
+        strokes: vec![],
+    });
+    request.signature = Some(SignatureInput {
+        method: SignatureMethod::Drawn,
+        asset_id: None,
+        strokes: vec![InkStroke {
+            points: vec![InkPoint { x: 0.1, y: 0.1 }, InkPoint { x: 0.8, y: 0.8 }],
+            width: 0.01,
+            color: "#111111".into(),
+        }],
+        page: 1,
+        x: 0.1,
+        y: 0.3,
+        width: 0.3,
+        height: 0.1,
+        document_revision: started.document.revision,
+        content_hash: started.document.content_hash.clone(),
+    });
+    let mut invalid = request.clone();
+    invalid.routing.as_mut().unwrap().recipients[0].recipient = recipient(Uuid::now_v7());
+    assert!(
+        correspondence::act(&pool, &first, started.record.id, &MemoryValidator, invalid)
+            .await
+            .is_err()
+    );
+    let before = correspondence::detail(&pool, &creator, started.record.id)
+        .await
+        .unwrap();
+    assert_eq!(before.history.len(), started.history.len());
+    assert!(before.signatures.is_empty());
+    assert_eq!(graph(&before).assignments.len(), 1);
+    let signed = correspondence::act(
+        &pool,
+        &first,
+        started.record.id,
+        &MemoryValidator,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    let evidence = &signed.signatures[0];
+    let layers = (
+        &signed.document.content_hash,
+        signed.history.iter().collect::<Vec<_>>(),
+        Vec::<&CorrespondenceSigningEvidence>::new(),
+        first.user_id,
+        evidence.signed_at,
+        &evidence.signature,
+        &evidence.signature_file_snapshot,
+    );
+    assert_eq!(
+        evidence.signed_content_hash,
+        process::payload_hash(&(&layers, graph(&signed))).unwrap()
+    );
+    let mut changed = graph(&signed).clone();
+    changed.assignments[1].recipient.user_id = creator.user_id;
+    assert_ne!(
+        evidence.signed_content_hash,
+        process::payload_hash(&(&layers, &changed)).unwrap()
+    );
+    let replay = correspondence::act(&pool, &first, signed.record.id, &MemoryValidator, request)
+        .await
+        .unwrap();
+    assert_eq!(replay.signatures.len(), 1);
+    assert_eq!(
+        replay.signatures[0].signed_content_hash,
+        evidence.signed_content_hash
+    );
+    assert_eq!(replay.history.len(), signed.history.len());
+}
+
+fn recovery_request(
+    detail: &CorrespondenceDetail,
+    assignment: Uuid,
+    target: Uuid,
+) -> ProcessActionRequest {
+    let mut request = action(detail.record.revision, ProcessAction::Reassign);
+    request.assignment_id = Some(assignment);
+    request.reassign_user_id = Some(target);
+    request.comment = Some("เปลี่ยนผู้รับเพื่อให้ดำเนินงานต่อได้".into());
+    request
+}
+async fn assert_recovered_work(pool: &PgPool, old: Uuid, user: Uuid) {
+    let (status,assignment):(String,String)=sqlx::query_as("SELECT w.status,a.status FROM work_items w JOIN work_item_assignees a ON a.work_item_id=w.id WHERE w.id=$1 AND a.user_id=$2").bind(old).bind(user).fetch_one(pool).await.unwrap();
+    assert_eq!(status, "closed");
+    assert_eq!(assignment, "dismissed");
+    let active:i64=sqlx::query_scalar("SELECT count(*) FROM process_notification_sources WHERE work_item_id=$1 AND cancelled_at IS NULL").bind(old).fetch_one(pool).await.unwrap();
+    assert_eq!(active, 0);
+}
+
+#[tokio::test]
+async fn directed_manager_recovers_first_and_leaf_without_completion_authority_or_policy_bypass() {
+    let (pool, creator, old, replacement) = fixture("directed_recovery_slots").await;
+    grant_directed_authority(&pool, &[&creator, &old, &replacement]).await;
+    let manager = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![codes::CORRESPONDENCE_MANAGE_SCHOOL.into()],
+    };
+    let admin = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![codes::PROCESS_MANAGE_SCHOOL.into()],
+    };
+    let profile = SaveCorrespondenceRoutingSettingsRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: 0,
+        register: CorrespondenceRegister::Incoming,
+        eligible_decision_makers: vec![recipient(old.user_id)],
+        default_first_recipient: Some(recipient(old.user_id)),
+        default_purpose: DirectedPurpose::Execute,
+        default_require_review: false,
+        default_reviewer: None,
+        default_allow_onward_assignment: false,
+    };
+    school_workflow::directed::save_settings(&pool, &admin, profile.clone())
+        .await
+        .unwrap();
+    let started = directed_start(&pool, &creator, &old).await;
+    let root = graph(&started).assignments[0].id;
+    let old_item = graph(&started).assignments[0].work_item_id.unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(old.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let detail = correspondence::detail(&pool, &manager, started.record.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        detail.assignment_actions[0].actions,
+        vec![ProcessAction::Reassign]
+    );
+    let request = recovery_request(&detail, root, replacement.user_id);
+    let reader = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![codes::CORRESPONDENCE_READ_SCHOOL.into()],
+    };
+    assert!(correspondence::act(
+        &pool,
+        &reader,
+        started.record.id,
+        &MemoryValidator,
+        request.clone()
+    )
+    .await
+    .is_err());
+    let mut fake_complete = action(detail.record.revision, ProcessAction::Review);
+    fake_complete.assignment_id = Some(root);
+    fake_complete.comment = Some("manager cannot act for recipient".into());
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        started.record.id,
+        &MemoryValidator,
+        fake_complete
+    )
+    .await
+    .is_err());
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        started.record.id,
+        &MemoryValidator,
+        request.clone()
+    )
+    .await
+    .is_err());
+    let mut profile = profile;
+    profile.request_id = Uuid::now_v7();
+    profile.expected_revision = 1;
+    profile.eligible_decision_makers = vec![recipient(replacement.user_id)];
+    profile.default_first_recipient = Some(recipient(replacement.user_id));
+    school_workflow::directed::save_settings(&pool, &admin, profile)
+        .await
+        .unwrap();
+    let recovered = correspondence::act(
+        &pool,
+        &manager,
+        started.record.id,
+        &MemoryValidator,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    let a = &graph(&recovered).assignments[0];
+    assert_eq!(a.recipient.user_id, replacement.user_id);
+    assert_eq!(a.recipient.reassigned_from, Some(old.user_id));
+    assert_eq!(a.purpose, DirectedPurpose::Decide);
+    assert!(a.required && a.allow_onward_assignment);
+    assert_eq!(a.status, DirectedAssignmentStatus::Pending);
+    let history = recovered.history.last().unwrap();
+    assert_eq!(history.actor_id, creator.user_id);
+    assert_eq!(history.reassigned_from_user_id, Some(old.user_id));
+    assert_eq!(history.reassigned_to_user_id, Some(replacement.user_id));
+    assert_eq!(
+        history.reassigned_from_name.as_deref(),
+        Some(
+            graph(&started).assignments[0]
+                .recipient
+                .display_name
+                .as_str()
+        )
+    );
+    assert_eq!(
+        history.reassigned_to_name.as_deref(),
+        Some(a.recipient.display_name.as_str())
+    );
+    assert_recovered_work(&pool, old_item, old.user_id).await;
+    let replay = correspondence::act(
+        &pool,
+        &manager,
+        started.record.id,
+        &MemoryValidator,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay.history.len(), recovered.history.len());
+    let mut stale = request.clone();
+    stale.request_id = Uuid::now_v7();
+    assert!(
+        correspondence::act(&pool, &manager, started.record.id, &MemoryValidator, stale)
+            .await
+            .is_err()
+    );
+    let mut changed = request;
+    changed.comment = Some("different recovery".into());
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        started.record.id,
+        &MemoryValidator,
+        changed
+    )
+    .await
+    .is_err());
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(old.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let routed = correspondence::act(
+        &pool,
+        &replacement,
+        recovered.record.id,
+        &MemoryValidator,
+        routing_action(
+            &recovered,
+            replacement.user_id,
+            vec![routed_target(
+                old.user_id,
+                DirectedPurpose::Execute,
+                true,
+                true,
+            )],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let leaf = assignment_for(&routed, old.user_id);
+    let old_item = graph(&routed)
+        .assignments
+        .iter()
+        .find(|a| a.id == leaf)
+        .unwrap()
+        .work_item_id
+        .unwrap();
+    sqlx::query("DELETE FROM user_roles WHERE user_id=$1")
+        .bind(old.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut cycle = recovery_request(&routed, leaf, replacement.user_id);
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        routed.record.id,
+        &MemoryValidator,
+        cycle.clone()
+    )
+    .await
+    .is_err());
+    cycle.request_id = Uuid::now_v7();
+    cycle.assignment_id = Some(Uuid::now_v7());
+    cycle.reassign_user_id = Some(creator.user_id);
+    assert!(
+        correspondence::act(&pool, &manager, routed.record.id, &MemoryValidator, cycle)
+            .await
+            .is_err()
+    );
+    let leaf_recovered = correspondence::act(
+        &pool,
+        &manager,
+        routed.record.id,
+        &MemoryValidator,
+        recovery_request(&routed, leaf, creator.user_id),
+    )
+    .await
+    .unwrap();
+    let a = graph(&leaf_recovered)
+        .assignments
+        .iter()
+        .find(|a| a.id == leaf)
+        .unwrap();
+    assert_eq!(a.parent_id, Some(root));
+    assert_eq!(a.purpose, DirectedPurpose::Execute);
+    assert!(a.allow_onward_assignment && a.required);
+    assert_eq!(a.recipient.reassigned_from, Some(old.user_id));
+    assert_recovered_work(&pool, old_item, old.user_id).await;
+    let completed = directed_act(
+        &pool,
+        &creator,
+        &leaf_recovered,
+        ProcessAction::Execute,
+        leaf,
+    )
+    .await;
+    assert_eq!(completed.record.status, CorrespondenceStatus::Completed);
+}
+
+#[tokio::test]
+async fn directed_reviewer_is_retained_before_ready_and_manager_recovery_excludes_completed_executor_subtree(
+) {
+    let (pool, teacher, first, head) = fixture("directed_reviewer_recovery").await;
+    let mut reviewer = teacher.clone();
+    reviewer.user_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,'synthetic','Review','Authority','staff','active')").bind(reviewer.user_id).bind(reviewer.user_id.to_string()).execute(&pool).await.unwrap();
+    grant_directed_authority(&pool, &[&teacher, &first, &head, &reviewer]).await;
+    let manager = ActorContext {
+        user_id: teacher.user_id,
+        permissions: vec![codes::CORRESPONDENCE_MANAGE_SCHOOL.into()],
+    };
+    let started = directed_start(&pool, &teacher, &first).await;
+    let routed = correspondence::act(
+        &pool,
+        &first,
+        started.record.id,
+        &MemoryValidator,
+        routing_action(
+            &started,
+            first.user_id,
+            vec![routed_target(
+                head.user_id,
+                DirectedPurpose::Execute,
+                true,
+                true,
+            )],
+            Some(reviewer.user_id),
+        ),
+    )
+    .await
+    .unwrap();
+    let root = graph(&routed).assignments[0].id;
+    let early = correspondence::detail(&pool, &reviewer, routed.record.id)
+        .await
+        .unwrap();
+    assert!(early.assignment_actions.is_empty());
+    assert!(graph(&early).assignments[0].review_work_item_id.is_none());
+    sqlx::query("DELETE FROM user_roles WHERE user_id=$1")
+        .bind(reviewer.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(sqlx::query("DELETE FROM users WHERE id=$1")
+        .bind(reviewer.user_id)
+        .execute(&pool)
+        .await
+        .is_err());
+    grant_directed_authority(&pool, &[&reviewer]).await;
+    let early_jobs:i64=sqlx::query_scalar("SELECT count(*) FROM process_notification_sources WHERE instance_id=$1 AND recipient_id=$2").bind(routed.instance.as_ref().unwrap().id).bind(reviewer.user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(early_jobs, 0);
+    let delegated = correspondence::act(
+        &pool,
+        &head,
+        routed.record.id,
+        &MemoryValidator,
+        routing_action(
+            &routed,
+            head.user_id,
+            vec![routed_target(
+                teacher.user_id,
+                DirectedPurpose::Execute,
+                true,
+                false,
+            )],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let leaf = assignment_for(&delegated, teacher.user_id);
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        delegated.record.id,
+        &MemoryValidator,
+        recovery_request(&delegated, leaf, reviewer.user_id)
+    )
+    .await
+    .is_err());
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(reviewer.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ready = directed_act(
+        &pool,
+        &teacher,
+        &delegated,
+        ProcessAction::Execute,
+        assignment_for(&delegated, teacher.user_id),
+    )
+    .await;
+    let old_item = graph(&ready).assignments[0].review_work_item_id.unwrap();
+    assert_eq!(
+        graph(&ready).assignments[0].status,
+        DirectedAssignmentStatus::WaitingReview
+    );
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        ready.record.id,
+        &MemoryValidator,
+        recovery_request(&ready, root, teacher.user_id)
+    )
+    .await
+    .is_err());
+    let recovered = correspondence::act(
+        &pool,
+        &manager,
+        ready.record.id,
+        &MemoryValidator,
+        recovery_request(&ready, root, first.user_id),
+    )
+    .await
+    .unwrap();
+    let a = &graph(&recovered).assignments[0];
+    assert_eq!(a.reviewer.as_ref().unwrap().user_id, first.user_id);
+    assert_eq!(
+        a.reviewer.as_ref().unwrap().reassigned_from,
+        Some(reviewer.user_id)
+    );
+    assert_eq!(a.status, DirectedAssignmentStatus::WaitingReview);
+    assert_eq!(a.recipient.user_id, first.user_id);
+    assert_ne!(a.review_work_item_id, Some(old_item));
+    assert_recovered_work(&pool, old_item, reviewer.user_id).await;
+    let history = recovered.history.last().unwrap();
+    assert_eq!(history.reassigned_from_user_id, Some(reviewer.user_id));
+    assert_ne!(history.reassigned_from_user_id, Some(manager.user_id));
+    assert_eq!(history.reassigned_to_user_id, Some(first.user_id));
+    let completed = directed_act(&pool, &first, &recovered, ProcessAction::Review, root).await;
+    assert_eq!(completed.record.status, CorrespondenceStatus::Completed);
+}
+
+#[tokio::test]
+async fn directed_terminal_copies_can_read_and_acknowledge_without_reopening_or_writing_document() {
+    let (pool, copy, first, staff) = fixture("directed_terminal_copy").await;
+    grant_directed_authority(&pool, &[&copy, &first, &staff]).await;
+    for archive in [false, true] {
+        let started = directed_start(&pool, &copy, &first).await;
+        let routed = correspondence::act(
+            &pool,
+            &first,
+            started.record.id,
+            &MemoryValidator,
+            routing_action(
+                &started,
+                first.user_id,
+                vec![
+                    routed_target(staff.user_id, DirectedPurpose::Execute, true, false),
+                    routed_target(copy.user_id, DirectedPurpose::Acknowledge, false, false),
+                ],
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        let copy_id = assignment_for(&routed, copy.user_id);
+        let completed = directed_act(
+            &pool,
+            &staff,
+            &routed,
+            ProcessAction::Execute,
+            assignment_for(&routed, staff.user_id),
+        )
+        .await;
+        let terminal = if archive {
+            correspondence::act(
+                &pool,
+                &copy,
+                completed.record.id,
+                &MemoryValidator,
+                action(completed.record.revision, ProcessAction::Close),
+            )
+            .await
+            .unwrap()
+        } else {
+            completed
+        };
+        let detail = correspondence::detail(&pool, &copy, terminal.record.id)
+            .await
+            .unwrap();
+        let actions = &detail
+            .assignment_actions
+            .iter()
+            .find(|a| a.assignment_id == copy_id)
+            .unwrap()
+            .actions;
+        assert_eq!(
+            actions,
+            &vec![ProcessAction::Read, ProcessAction::Acknowledge]
+        );
+        let mut write = action(detail.record.revision, ProcessAction::Acknowledge);
+        write.assignment_id = Some(copy_id);
+        write.comment = Some("not permitted on completed copy".into());
+        assert!(
+            correspondence::act(&pool, &copy, detail.record.id, &MemoryValidator, write)
+                .await
+                .is_err()
+        );
+        let read = directed_act(&pool, &copy, &detail, ProcessAction::Read, copy_id).await;
+        assert_eq!(read.record.status, terminal.record.status);
+        let ack = directed_act(&pool, &copy, &read, ProcessAction::Acknowledge, copy_id).await;
+        assert_eq!(ack.record.status, terminal.record.status);
+        assert_eq!(ack.document.content_hash, terminal.document.content_hash);
+        assert!(graph(&ack)
+            .assignments
+            .iter()
+            .find(|a| a.id == copy_id)
+            .unwrap()
+            .completed_at
+            .is_some());
+        assert_eq!(inbox(&pool, &copy).await.counts.action_required, 0);
+        let active: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM work_items WHERE source_resource_id=$1 AND status='active'",
+        )
+        .bind(ack.record.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active, 0);
+    }
+}
+
+#[tokio::test]
+async fn directed_history_keeps_accepted_branch_names_and_actual_targets_after_return_and_resend() {
+    let (pool, creator, first, staff) = fixture("directed_history_resend").await;
+    grant_directed_authority(&pool, &[&creator, &first, &staff]).await;
+    let started = directed_start(&pool, &creator, &first).await;
+    let first_name = graph(&started).assignments[0]
+        .recipient
+        .display_name
+        .clone();
+    let routed = correspondence::act(
+        &pool,
+        &first,
+        started.record.id,
+        &MemoryValidator,
+        routing_action(
+            &started,
+            first.user_id,
+            vec![routed_target(
+                staff.user_id,
+                DirectedPurpose::Execute,
+                true,
+                false,
+            )],
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let leaf = assignment_for(&routed, staff.user_id);
+    let old_staff = graph(&routed)
+        .assignments
+        .iter()
+        .find(|a| a.id == leaf)
+        .unwrap()
+        .recipient
+        .display_name
+        .clone();
+    let mut request = action(routed.record.revision, ProcessAction::ReturnForRevision);
+    request.assignment_id = Some(leaf);
+    request.comment = Some("ปรับหนังสือและเสนอใหม่".into());
+    let returned = correspondence::act(&pool, &staff, routed.record.id, &MemoryValidator, request)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET first_name='Changed name' WHERE id=ANY($1)")
+        .bind(vec![first.user_id, staff.user_id])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resent = correspondence::directed_send(
+        &pool,
+        &creator,
+        returned.record.id,
+        DirectedSendCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: returned.record.revision,
+            first_recipient: recipient(creator.user_id),
+            due_at: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(graph(&resent).assignments.len(), 1);
+    assert_eq!(
+        graph(&resent).assignments[0].recipient.user_id,
+        creator.user_id
+    );
+    let route = resent.history.iter().find(|h| h.action == "route").unwrap();
+    assert_eq!(
+        route.assignment_recipient_name.as_deref(),
+        Some(first_name.as_str())
+    );
+    assert_eq!(route.routed_recipients.len(), 1);
+    assert_eq!(route.routed_recipients[0].id, staff.user_id);
+    assert_eq!(route.routed_recipients[0].display_name, old_staff);
+    let returned = resent
+        .history
+        .iter()
+        .find(|h| h.action == "return_for_revision")
+        .unwrap();
+    assert_eq!(
+        returned.assignment_recipient_name.as_deref(),
+        Some(old_staff.as_str())
+    );
+    assert_eq!(
+        resent.record.register_number,
+        started.record.register_number
+    );
+    assert_eq!(resent.document.content_hash, started.document.content_hash);
 }

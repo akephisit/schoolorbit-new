@@ -10,16 +10,20 @@ import type {
 	SaveCorrespondenceRoutingSettingsRequest
 } from '../../../src/lib/api/correspondence';
 const now = '2026-10-18T08:00:00Z';
-export const assignmentId = id(901),
+export const parentAssignmentId = id(906),
+	assignmentId = id(901),
 	childAssignmentId = id(902);
 export async function mockDirectedCorrespondence(
 	page: Page,
 	config: {
-		scenario?: 'draft' | 'decide' | 'execute' | 'copy' | 'review';
+		scenario?: 'draft' | 'decide' | 'execute' | 'copy' | 'review' | 'branches' | 'recovery';
 		inheritedReview?: boolean;
 		failAction?: boolean;
 		abortSend?: boolean;
 		recommended?: boolean;
+		recoverReviewer?: boolean;
+		terminalCopy?: boolean;
+		historicalContext?: boolean;
 		permissions?: string[];
 	} = {}
 ) {
@@ -43,6 +47,7 @@ export async function mockDirectedCorrespondence(
 			reassignedFrom: null
 		}
 	];
+	const backupReviewer = { ...snapshots[0], userId: id(908), displayName: 'ครูสำรอง ทดสอบ' };
 	const settings: CorrespondenceRoutingSettings[] = (
 		['incoming', 'outgoing', 'internal'] as const
 	).map((register) => ({
@@ -56,11 +61,18 @@ export async function mockDirectedCorrespondence(
 		defaultAllowOnwardAssignment: false
 	}));
 	const options: CorrespondenceOptions = {
-		users: snapshots.map((item) => ({ id: item.userId, displayName: item.displayName })),
+		users: [
+			{ id: id(908), displayName: 'ครูสำรอง ทดสอบ' },
+			...snapshots.map((item) => ({ id: item.userId, displayName: item.displayName })),
+			{ id: id(907), displayName: 'บุคลากรอ่านอย่างเดียว' }
+		],
 		organizations: [{ id: id(806), name: 'งานบริหารทั่วไป' }],
 		positions: [{ organizationUnitId: id(806), code: 'HEAD', name: 'หัวหน้างาน' }],
 		decisionMakers: [{ id: firstStaff, displayName: snapshots[1].displayName }],
-		reviewers: snapshots.map((item) => ({ id: item.userId, displayName: item.displayName })),
+		reviewers: [
+			...snapshots.map((item) => ({ id: item.userId, displayName: item.displayName })),
+			{ id: id(908), displayName: 'ครูสำรอง ทดสอบ' }
+		],
 		templates: [],
 		routingSettings: settings,
 		canManageRoutingSettings: true
@@ -124,8 +136,11 @@ export async function mockDirectedCorrespondence(
 							status: config.scenario === 'review' ? 'waiting_review' : 'pending',
 							required: !copied,
 							allowOnwardAssignment: !copied,
-							reviewer:
-								config.inheritedReview || config.scenario === 'review' ? snapshots[1] : null,
+							reviewer: config.inheritedReview
+								? backupReviewer
+								: config.scenario === 'review'
+									? snapshots[1]
+									: null,
 							dueAt: null,
 							workItemId: null,
 							reviewWorkItemId: null,
@@ -147,12 +162,163 @@ export async function mockDirectedCorrespondence(
 					? 'acknowledge'
 					: 'decide'
 		);
+	if (config.inheritedReview && detail.instance?.directed) {
+		const current = detail.instance.directed.assignments[0];
+		const ancestor = {
+			...current,
+			id: parentAssignmentId,
+			parentId: null,
+			recipient: { ...snapshots[0], userId: id(909), displayName: 'ผู้สั่งการก่อนหน้า' },
+			purpose: 'decide' as const,
+			status: 'waiting_children' as const,
+			reviewer: backupReviewer
+		};
+		detail = {
+			...detail,
+			availableActions: ['route', 'execute'],
+			assignmentActions: [{ assignmentId, actions: ['route', 'execute'] }],
+			instance: {
+				...detail.instance,
+				directed: {
+					assignments: [
+						ancestor,
+						{ ...current, parentId: parentAssignmentId, purpose: 'execute', reviewer: null }
+					]
+				}
+			}
+		};
+	}
+	if (config.scenario === 'review' && detail.instance?.directed) {
+		const current = detail.instance.directed.assignments[0];
+		detail = {
+			...detail,
+			availableActions: ['review'],
+			assignmentActions: [{ assignmentId, actions: ['review'] }],
+			instance: {
+				...detail.instance,
+				directed: {
+					assignments: [
+						{
+							...current,
+							recipient: snapshots[1],
+							purpose: 'decide',
+							status: 'waiting_review',
+							reviewer: snapshots[0]
+						},
+						{
+							...current,
+							id: childAssignmentId,
+							parentId: assignmentId,
+							recipient: { ...snapshots[0], userId: id(909), displayName: 'ผู้ดำเนินการ' },
+							purpose: 'execute',
+							status: 'completed',
+							allowOnwardAssignment: false,
+							reviewer: null,
+							completedAt: now
+						}
+					]
+				}
+			}
+		};
+	}
+	if (config.historicalContext) {
+		detail = {
+			...detail,
+			record: { ...detail.record, revision: 5 },
+			history: [
+				{
+					id: id(999),
+					assignmentId: id(998),
+					assignmentRecipientName: 'หัวหน้างานเดิม ณ วันสั่งการ',
+					routedRecipients: [{ id: firstStaff, displayName: 'ผู้รับคำสั่งเดิม ณ วันส่ง' }],
+					actorId: firstStaff,
+					actorName: 'ผู้สั่งการเดิม',
+					action: 'route',
+					comment: 'คำสั่งก่อนส่งกลับแก้ไข',
+					documentRevision: 1,
+					annotations: [],
+					evidenceFileIds: [],
+					revision: 2,
+					createdAt: now
+				}
+			]
+		};
+	}
+	if (config.terminalCopy && detail.instance)
+		detail = {
+			...detail,
+			record: { ...detail.record, status: 'completed' },
+			availableActions: ['read', 'acknowledge'],
+			assignmentActions: [{ assignmentId, actions: ['read', 'acknowledge'] }],
+			instance: { ...detail.instance, status: 'completed' }
+		};
+	if (config.scenario === 'recovery' && detail.instance?.directed) {
+		detail = {
+			...detail,
+			canManage: true,
+			availableActions: ['reassign'],
+			assignmentActions: [{ assignmentId, actions: ['reassign'] }],
+			instance: {
+				...detail.instance,
+				directed: {
+					assignments: detail.instance.directed.assignments.map((item) => ({
+						...item,
+						purpose: 'execute',
+						recipient: snapshots[1],
+						status: config.recoverReviewer ? 'waiting_review' : 'pending',
+						reviewer: config.recoverReviewer ? snapshots[0] : item.reviewer
+					}))
+				}
+			}
+		};
+	}
+	if (config.scenario === 'branches' && detail.instance?.directed) {
+		const root = detail.instance.directed.assignments[0];
+		detail = {
+			...detail,
+			availableActions: ['execute'],
+			assignmentActions: [{ assignmentId: childAssignmentId, actions: ['execute'] }],
+			instance: {
+				...detail.instance,
+				directed: {
+					assignments: [
+						{ ...root, status: 'waiting_children' },
+						{
+							...root,
+							id: childAssignmentId,
+							parentId: root.id,
+							purpose: 'execute',
+							allowOnwardAssignment: false
+						},
+						{
+							...root,
+							id: id(903),
+							parentId: root.id,
+							purpose: 'execute',
+							recipient: snapshots[1],
+							allowOnwardAssignment: false
+						},
+						{
+							...root,
+							id: id(905),
+							parentId: root.id,
+							purpose: 'acknowledge',
+							recipient: snapshots[1],
+							required: false,
+							allowOnwardAssignment: false
+						}
+					]
+				}
+			}
+		};
+	}
 	const sends: DirectedSendCorrespondenceRequest[] = [],
 		actions: ProcessActionRequest[] = [],
 		settingsWrites: SaveCorrespondenceRoutingSettingsRequest[] = [];
 	let sendAccepted: CorrespondenceDetail | undefined;
 	await page.route(
 		(url) =>
+			(url.pathname === '/api/correspondence' && url.searchParams.has('limit')) ||
 			url.pathname === '/api/correspondence/options' ||
 			url.pathname === '/api/correspondence/routing-settings' ||
 			url.pathname === `${detailPath.replace('/staff', '/api')}` ||
@@ -169,6 +335,24 @@ export async function mockDirectedCorrespondence(
 					body: JSON.stringify(
 						status < 400 ? { success: true, data } : { success: false, error: data }
 					)
+				});
+			if (path === '/api/correspondence' && req.method() === 'GET')
+				return reply({
+					items: [detail.record],
+					counts: { actionRequired: 1, sent: 1, drafts: 0, all: 1 },
+					nextCursor: null,
+					progress: [
+						{
+							correspondenceId,
+							currentStepIndex: null,
+							stepCount: detail.instance?.directed?.assignments.length ?? 0,
+							currentStepTitle: 'กำลังดำเนินการตามการสั่งการ',
+							pendingRecipients: [{ id: actor, displayName: snapshots[0].displayName }],
+							dueAt: null,
+							myAction: 'execute',
+							canRevise: false
+						}
+					]
 				});
 			if (path === '/api/correspondence/options') return reply(options);
 			if (path === '/api/correspondence/routing-settings') {
@@ -208,7 +392,12 @@ export async function mockDirectedCorrespondence(
 				record: {
 					...detail.record,
 					revision: detail.record.revision + 1,
-					status: action.action === 'route' ? 'in_progress' : 'completed'
+					status:
+						action.action === 'route' ||
+						action.action === 'reassign' ||
+						config.scenario === 'branches'
+							? 'in_progress'
+							: 'completed'
 				},
 				availableActions: [],
 				assignmentActions: [],
@@ -217,9 +406,20 @@ export async function mockDirectedCorrespondence(
 					{
 						id: id(930 + actions.length),
 						assignmentId: action.assignmentId,
+						assignmentRecipientName:
+							action.action === 'reassign' ? 'ครูเดิม ณ วันมอบหมาย' : snapshots[0].displayName,
+						routedRecipients:
+							action.action === 'route'
+								? [{ id: firstStaff, displayName: snapshots[1].displayName }]
+								: [],
 						actorId: actor,
 						actorName: snapshots[0].displayName,
 						action: action.action,
+						reassignedFromUserId:
+							action.action === 'reassign' ? (config.recoverReviewer ? actor : firstStaff) : null,
+						reassignedToUserId: action.reassignUserId ?? null,
+						reassignedFromName: action.action === 'reassign' ? 'ครูเดิม ณ วันมอบหมาย' : null,
+						reassignedToName: action.action === 'reassign' ? 'ครูสำรอง ณ วันมอบหมาย' : null,
 						comment: action.comment,
 						documentRevision: detail.document.revision,
 						annotations: action.annotations ?? [],
@@ -232,7 +432,16 @@ export async function mockDirectedCorrespondence(
 			if (detail.instance?.directed)
 				detail.instance.directed.assignments = detail.instance.directed.assignments.map((item) => ({
 					...item,
-					status: action.action === 'route' ? 'waiting_children' : 'completed'
+					status:
+						config.scenario === 'branches'
+							? item.id === action.assignmentId
+								? 'completed'
+								: item.status
+							: action.action === 'reassign'
+								? 'pending'
+								: action.action === 'route'
+									? 'waiting_children'
+									: 'completed'
 				}));
 			return reply(detail);
 		}

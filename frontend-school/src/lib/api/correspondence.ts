@@ -11,6 +11,7 @@ export type ReviseCorrespondenceRequest = Schemas['ReviseCorrespondenceRequest']
 export type SendCorrespondenceRequest = Schemas['SendCorrespondenceRequest'];
 export type DirectedSendCorrespondenceRequest = Schemas['DirectedSendCorrespondenceRequest'];
 export type DirectedRoutingRequest = Schemas['DirectedRoutingRequest'];
+export type DirectedAssignment = Schemas['DirectedAssignment'];
 export type DirectedRouteRecipient = Schemas['DirectedRouteRecipient'];
 export type CorrespondenceRoutingSettings = Schemas['CorrespondenceRoutingSettings'];
 export type SaveCorrespondenceRoutingSettingsRequest =

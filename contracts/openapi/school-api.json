@@ -49164,6 +49164,12 @@
               "null"
             ]
           },
+          "assignmentRecipientName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "comment": {
             "type": [
               "string",
@@ -49189,8 +49195,20 @@
             "format": "uuid",
             "type": "string"
           },
+          "reassignedFromName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reassignedFromUserId": {
             "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reassignedToName": {
             "type": [
               "string",
               "null"
@@ -49206,6 +49224,12 @@
           "revision": {
             "format": "int64",
             "type": "integer"
+          },
+          "routedRecipients": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
           }
         },
         "required": [

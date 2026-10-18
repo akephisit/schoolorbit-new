@@ -1546,8 +1546,16 @@ owned production preview with `npm run preview -- --host 127.0.0.1 --port 4183 -
 Run from `frontend-school`:
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts --project=chromium --workers=2
+E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
 node --test tests/static/correspondence-*.test.mjs
+```
+
+The five existing identity/realtime workflow cases named by that exclusion exercise development
+module imports. Run them against a separate owned development server started with
+`PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/correspondence-workflow.spec.ts --grep 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=1
 ```
 
 The browser fixtures check the first-decision-maker default and backtracking, exact replay after

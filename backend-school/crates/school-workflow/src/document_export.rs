@@ -780,7 +780,7 @@ mod tests {
         serde_json::from_value(serde_json::json!({
    "record":{"id":Uuid::now_v7(),"registerNumber":1,"registerYear":2569,"register":"internal","title":"บันทึกข้อความ ทดสอบระบบ","sender":"Synthetic school","documentNumber":"TEST-1","documentDate":null,"urgency":"normal","organizationUnitId":null,"revision":3,"status":"completed","createdBy":Uuid::now_v7(),"createdAt":"2026-10-18T00:00:00Z"},
    "sourceLinks":[],"document":{"revision":1,"content":"บันทึกข้อความ\nเรื่อง ทดสอบการจัดวางภาษาไทย\nผู้อนุมัติ กำหนดให้ดำเนินการ น้ำ กิ กี่ กุ กู้ กำ", "originalFileId":null,"attachmentFileIds":[],"annotations":[],"contentHash":"synthetic","fileSnapshots":[],"createdBy":Uuid::now_v7(),"createdAt":"2026-10-18T00:00:00Z"},
-   "revisions":[],"instance":null,"history":[],"signatures":[],"canManage":false,"canAct":false,"availableActions":[]
+   "revisions":[],"instance":null,"history":[],"signatures":[],"canManage":false,"canAct":false,"availableActions":[],"assignmentActions":[]
   })).unwrap()
     }
     #[test]
@@ -826,6 +826,10 @@ mod tests {
         ];
         let action = Uuid::now_v7();
         detail.history.push(ProcessHistoryEntry {
+            assignment_recipient_name: None,
+            routed_recipients: vec![],
+            reassigned_from_name: None,
+            reassigned_to_name: None,
             assignment_id: None,
             id: action,
             actor_id: Uuid::now_v7(),

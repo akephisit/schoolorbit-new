@@ -21211,6 +21211,7 @@ export interface components {
 			annotations: components['schemas']['DocumentAnnotation'][];
 			/** Format: uuid */
 			assignmentId?: string | null;
+			assignmentRecipientName?: string | null;
 			comment?: string | null;
 			/** Format: date-time */
 			createdAt: string;
@@ -21219,12 +21220,15 @@ export interface components {
 			evidenceFileIds: string[];
 			/** Format: uuid */
 			id: string;
+			reassignedFromName?: string | null;
 			/** Format: uuid */
 			reassignedFromUserId?: string | null;
+			reassignedToName?: string | null;
 			/** Format: uuid */
 			reassignedToUserId?: string | null;
 			/** Format: int64 */
 			revision: number;
+			routedRecipients?: components['schemas']['CorrespondenceUserOption'][];
 		};
 		ProcessInstance: {
 			actionPath: string;

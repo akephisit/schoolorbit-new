@@ -72,7 +72,10 @@
 		selected = $state<string[]>([]);
 	const choices = $derived(
 		kind === 'user'
-			? visible.users.map((item) => ({ value: item.id, label: item.displayName }))
+			? (directed ? visible.reviewers : visible.users).map((item) => ({
+					value: item.id,
+					label: item.displayName
+				}))
 			: kind === 'organization_unit'
 				? visible.organizations.map((item) => ({ value: item.id, label: item.name }))
 				: visible.positions.map((item) => ({
@@ -149,7 +152,11 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={search}
 		/>{/if}
-	<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
+	<div
+		class={directed
+			? 'grid gap-3'
+			: 'grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end'}
+	>
 		<Choice
 			id={`${prefix}-kind`}
 			label="กลุ่มผู้รับ"

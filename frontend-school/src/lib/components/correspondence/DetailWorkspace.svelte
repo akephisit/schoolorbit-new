@@ -38,6 +38,7 @@
 	import { can } from '#lib/stores/permissions.js';
 	import { workStore } from '#lib/stores/work.js';
 	import { historyActionLabel } from '#lib/correspondence/drafts.js';
+	import { directedActionLabel } from '#lib/correspondence/directed.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
@@ -152,6 +153,14 @@
 			detail?.availableActions.find((action) => action === 'close') ??
 			detail?.availableActions.find((action) => action === 'read')
 	);
+	const selectedAssignment = $derived(
+		detail?.instance?.directed?.assignments.find((item) => item.id === selectedAssignmentId)
+	);
+	const terminalCopyAction = $derived(
+		selectedAssignment?.required === false &&
+			!!detail &&
+			['completed', 'closed'].includes(detail.record.status)
+	);
 	const secondaryActions = $derived(
 		detail?.availableActions.filter((action) => action !== primaryAction) ?? []
 	);
@@ -186,7 +195,8 @@
 		actionPending = false;
 		sendPending = false;
 		const preserveAnnotations =
-			selectedAction !== null && ['read', 'close', 'reassign'].includes(selectedAction);
+			selectedAction !== null &&
+			(['read', 'close', 'reassign'].includes(selectedAction) || terminalCopyAction);
 		const current = region.value;
 		const latest =
 			current?.record.id === result.record.id && current.record.revision > result.record.revision
@@ -396,9 +406,13 @@
 							bind:draft={annotations}
 							disabled={savePending || actionPending || sending}
 							editable={canRevise ||
-								detail.availableActions.some(
-									(action) => !['read', 'close', 'reassign'].includes(action)
-								)}
+								(!(
+									detail.instance?.directed &&
+									['completed', 'closed'].includes(detail.record.status)
+								) &&
+									detail.availableActions.some(
+										(action) => !['read', 'close', 'reassign'].includes(action)
+									))}
 							placement={signature}
 							{placementPaths}
 							{placementFileId}
@@ -605,7 +619,7 @@
 								<section class="space-y-3" aria-label="สถานะการมอบหมาย">
 									<p class="text-sm font-medium">
 										{detail.record.status === 'completed'
-											? 'ผู้รับที่จำเป็นและการตรวจทานครบแล้ว เรื่องดำเนินการเสร็จสิ้น'
+											? 'ผู้รับที่จำเป็นและการตรวจทานครบแล้ว เรื่องดำเนินการเสร็จสิ้น ไม่ต้องส่งกลับตรวจรับ'
 											: 'ติดตามผู้รับแต่ละรายการ เรื่องจะเสร็จเมื่อผู้รับที่จำเป็นและการตรวจทานครบ'}
 									</p>
 									<ol class="space-y-3" aria-label="สาขาการดำเนินการ">
@@ -624,7 +638,7 @@
 															? 'สำเนาเพื่อทราบ'
 															: assignment.purpose === 'execute'
 																? 'ให้ดำเนินการ'
-																: 'เพื่อทราบ'}
+																: 'ผู้รับหลักเพื่อทราบ'}
 												</p>
 												{#if parentAssignment}<p class="break-words text-muted-foreground">
 														มอบหมายจาก {parentAssignment.recipient.displayName}
@@ -657,19 +671,18 @@
 														{#each actions as action (action)}<Button
 																type="button"
 																size="sm"
-																variant={action === 'read' ? 'outline' : 'default'}
+																variant={action === 'reject'
+																	? 'destructive'
+																	: ['read', 'reassign', 'report', 'return_for_revision'].includes(
+																				action
+																		  )
+																		? 'outline'
+																		: 'default'}
 																disabled={viewingHistory || actionPending}
 																onclick={() => {
 																	selectedAssignmentId = assignment.id;
 																	selectedAction = action;
-																}}
-																>{action === 'review'
-																	? assignment.purpose === 'decide'
-																		? 'พิจารณาเสร็จและจบเรื่อง'
-																		: assignment.status === 'waiting_review'
-																			? 'ตรวจทานผล'
-																			: actionLabels[action]
-																	: actionLabels[action]}</Button
+																}}>{directedActionLabel(action, assignment)}</Button
 															>{/each}
 													</div>{/if}
 											</li>
@@ -677,7 +690,7 @@
 									</ol>
 								</section>
 							{/if}
-							{#if annotations.length && selectedAction && ['read', 'close', 'reassign'].includes(selectedAction)}<p
+							{#if annotations.length && selectedAction && (['read', 'close', 'reassign'].includes(selectedAction) || terminalCopyAction)}<p
 									role="status"
 									class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
 								>
@@ -739,6 +752,21 @@
 												sending = true;
 											}}>เลือกผู้รับและส่งหนังสือ</Button
 										>{/if}
+									{#if detail.instance?.directed && detail.availableActions.includes('close')}<div
+											class="space-y-2 border-t pt-3"
+										>
+											<p class="text-sm text-muted-foreground">
+												ปิดเก็บเรื่องได้ตามต้องการ การดำเนินการนี้เป็นงานจัดเก็บเพิ่มเติม
+											</p>
+											<Button
+												type="button"
+												variant="outline"
+												onclick={() => {
+													selectedAssignmentId = undefined;
+													selectedAction = 'close';
+												}}>ปิดเก็บเรื่อง (ไม่บังคับ)</Button
+											>
+										</div>{/if}
 									<div class="flex flex-wrap gap-2">
 										{#if primaryAction && !detail.instance?.directed}<Button
 												onclick={() => {
@@ -830,14 +858,23 @@
 										</p>
 										<p class="text-muted-foreground">{dateLabel(entry.createdAt)}</p>
 										{#if entry.reassignedFromUserId && entry.reassignedToUserId}<p>
-												เปลี่ยนผู้รับจาก {recipientName(entry.reassignedFromUserId)} เป็น {recipientName(
-													entry.reassignedToUserId
-												)}
+												เปลี่ยนผู้รับจาก {entry.reassignedFromName ??
+													recipientName(entry.reassignedFromUserId)} เป็น {entry.reassignedToName ??
+													recipientName(entry.reassignedToUserId)}
 											</p>{/if}
-										{#if entry.assignmentId}<p class="text-muted-foreground">
-												รายการของ {detail.instance?.directed?.assignments.find(
-													(item) => item.id === entry.assignmentId
-												)?.recipient.displayName ?? 'ผู้รับ'}
+										{#if entry.assignmentId || entry.assignmentRecipientName}<p
+												class="text-muted-foreground"
+											>
+												รายการของ {entry.assignmentRecipientName ??
+													detail.instance?.directed?.assignments.find(
+														(item) => item.id === entry.assignmentId
+													)?.recipient.displayName ??
+													'ผู้รับ'}
+											</p>{/if}
+										{#if entry.routedRecipients?.length}<p class="break-words text-sm">
+												มอบหมายถึง {entry.routedRecipients
+													.map((recipient) => recipient.displayName)
+													.join(', ')}
 											</p>{/if}
 										{#if entry.comment}<p class="whitespace-pre-wrap break-words">
 												{entry.comment}

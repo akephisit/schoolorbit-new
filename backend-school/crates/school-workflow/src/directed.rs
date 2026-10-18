@@ -71,6 +71,13 @@ async fn settings_in(
     tx: &mut Transaction<'_, Postgres>,
     register: CorrespondenceRegister,
 ) -> Result<CorrespondenceRoutingSettings, AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))")
+        .bind(format!(
+            "correspondence-settings:{}",
+            register_code(register)
+        ))
+        .execute(&mut **tx)
+        .await?;
     Ok(
         sqlx::query_scalar::<_, Json<CorrespondenceRoutingSettings>>(
             "SELECT definition FROM correspondence_routing_settings WHERE register=$1 FOR SHARE",
@@ -123,9 +130,16 @@ pub async fn save_settings(
     if current.revision != request.expected_revision {
         return Err(stale());
     }
-    let permitted=staff_users_with_all_permissions_on_connection(&mut tx,&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED]).await?;
+    let permitted = staff_users_with_all_permissions_on_connection(
+        &mut tx,
+        &[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ],
+    )
+    .await?;
     if let Some(reviewer) = &request.default_reviewer {
-        resolve_one(&mut tx, reviewer,&permitted).await?;
+        resolve_one(&mut tx, reviewer, &permitted).await?;
     }
     let result = CorrespondenceRoutingSettings {
         register: request.register,
@@ -138,8 +152,8 @@ pub async fn save_settings(
         default_allow_onward_assignment: request.default_allow_onward_assignment,
     };
     if let Some(first) = &result.default_first_recipient {
-        let person = resolve_one(&mut tx, first,&permitted).await?;
-        if !eligible_ids(&mut tx, &result,&permitted)
+        let person = resolve_one(&mut tx, first, &permitted).await?;
+        if !eligible_ids(&mut tx, &result, &permitted)
             .await?
             .contains(&person.user_id)
         {
@@ -155,15 +169,33 @@ pub async fn save_settings(
 /// Resolve real current staff, using Authorization's effective role/unit/delegation owner.
 /// Unit selection means its responsible lead; ambiguous units require an explicit position/person.
 async fn resolve_many(
-    tx:&mut Transaction<'_,Postgres>,selectors:&[ProcessRecipient],eligible:&[Uuid],
-)->Result<Vec<Vec<ProcessRecipientSnapshot>>,AppError>{
-    for selector in selectors {process::validate_recipient(selector)?;}
+    tx: &mut Transaction<'_, Postgres>,
+    selectors: &[ProcessRecipient],
+    eligible: &[Uuid],
+) -> Result<Vec<Vec<ProcessRecipientSnapshot>>, AppError> {
+    for selector in selectors {
+        process::validate_recipient(selector)?;
+    }
     let rows:Vec<(i64,Uuid,String)>=sqlx::query_as("WITH selectors AS (SELECT value,ordinality::bigint-1 AS idx FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY) SELECT DISTINCT s.idx,u.id,u.display_name FROM selectors s JOIN user_display_names u ON u.id=ANY($2) AND ((s.value->>'kind'='user' AND u.id=(s.value->>'userId')::uuid) OR (s.value->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s.value->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s.value->>'kind'='organization_position' AND m.position_code=s.value->>'positionCode') OR (s.value->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')))))) ORDER BY s.idx,u.id")
         .bind(Json(selectors)).bind(eligible).fetch_all(&mut **tx).await?;
-    let mut result=vec![vec![];selectors.len()];
-    for (index,user_id,display_name) in rows {result[index as usize].push(ProcessRecipientSnapshot{user_id,display_name,completed_at:None,read_at:None,reassigned_from:None});}
-    for (index,people) in result.iter().enumerate(){
-        if people.is_empty() || people.len()>100 || (selectors[index].kind==ProcessRecipientKind::OrganizationUnit && people.len()!=1) {return Err(invalid("ผู้รับไม่พร้อมใช้งาน ไม่มีสิทธิ์ดำเนินการ หรือหน่วยงานมีผู้รับผิดชอบหลายคน กรุณาเลือกบุคคลหรือตำแหน่งให้ชัดเจน"));}
+    let mut result = vec![vec![]; selectors.len()];
+    for (index, user_id, display_name) in rows {
+        result[index as usize].push(ProcessRecipientSnapshot {
+            user_id,
+            display_name,
+            completed_at: None,
+            read_at: None,
+            reassigned_from: None,
+        });
+    }
+    for (index, people) in result.iter().enumerate() {
+        if people.is_empty()
+            || people.len() > 100
+            || (selectors[index].kind == ProcessRecipientKind::OrganizationUnit
+                && people.len() != 1)
+        {
+            return Err(invalid("ผู้รับไม่พร้อมใช้งาน ไม่มีสิทธิ์ดำเนินการ หรือหน่วยงานมีผู้รับผิดชอบหลายคน กรุณาเลือกบุคคลหรือตำแหน่งให้ชัดเจน"));
+        }
     }
     Ok(result)
 }
@@ -172,7 +204,10 @@ async fn resolve_one(
     selector: &ProcessRecipient,
     eligible: &[Uuid],
 ) -> Result<ProcessRecipientSnapshot, AppError> {
-    let mut people=resolve_many(tx,std::slice::from_ref(selector),eligible).await?.pop().ok_or_else(||invalid("ไม่พบผู้รับ"))?;
+    let mut people = resolve_many(tx, std::slice::from_ref(selector), eligible)
+        .await?
+        .pop()
+        .ok_or_else(|| invalid("ไม่พบผู้รับ"))?;
     if people.len() != 1 {
         return Err(invalid("กรุณาเลือกผู้พิจารณาหรือผู้ตรวจทานเพียงหนึ่งคน"));
     }
@@ -183,23 +218,44 @@ async fn eligible_ids(
     profile: &CorrespondenceRoutingSettings,
     permitted: &[Uuid],
 ) -> Result<BTreeSet<Uuid>, AppError> {
-    if profile.eligible_decision_makers.is_empty(){return Ok(permitted.iter().copied().collect());}
-    let mut ids=BTreeSet::new();
+    if profile.eligible_decision_makers.is_empty() {
+        return Ok(permitted.iter().copied().collect());
+    }
+    let mut ids = BTreeSet::new();
     // Unavailable configured positions do not hide unrelated eligible staff.
-    let rows:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT u.id FROM users u CROSS JOIN jsonb_array_elements($1::jsonb) s WHERE u.id=ANY($2) AND ((s->>'kind'='user' AND u.id=(s->>'userId')::uuid) OR (s->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND (s->>'kind'='organization_unit' OR m.position_code=s->>'positionCode')))) ORDER BY u.id")
+    let rows:Vec<Uuid>=sqlx::query_scalar("SELECT DISTINCT u.id FROM users u CROSS JOIN jsonb_array_elements($1::jsonb) s WHERE u.id=ANY($2) AND ((s->>'kind'='user' AND u.id=(s->>'userId')::uuid) OR (s->>'kind' IN ('organization_unit','organization_position') AND EXISTS(SELECT 1 FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=u.id AND m.organization_unit_id=(s->>'organizationUnitId')::uuid AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND ((s->>'kind'='organization_unit' AND m.position_code IN ('director','deputy_director','head','deputy_head','coordinator')) OR (s->>'kind'='organization_position' AND m.position_code=s->>'positionCode'))))) ORDER BY u.id")
         .bind(Json(&profile.eligible_decision_makers)).bind(permitted).fetch_all(&mut **tx).await?;
     ids.extend(rows);
     Ok(ids)
 }
-pub async fn selection_options(pool:&PgPool,register:CorrespondenceRegister,search:&str)->Result<(Vec<CorrespondenceUserOption>,Vec<CorrespondenceUserOption>),AppError>{
-    let mut tx=pool.begin().await?;
-    let profile=settings_in(&mut tx,register).await?;
-    let permitted=staff_users_with_all_permissions_on_connection(&mut tx,&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED]).await?;
-    let first=eligible_ids(&mut tx,&profile,&permitted).await?;
+pub async fn selection_options(
+    pool: &PgPool,
+    register: CorrespondenceRegister,
+    search: &str,
+) -> Result<(Vec<CorrespondenceUserOption>, Vec<CorrespondenceUserOption>), AppError> {
+    let mut tx = pool.begin().await?;
+    let profile = settings_in(&mut tx, register).await?;
+    let permitted = staff_users_with_all_permissions_on_connection(
+        &mut tx,
+        &[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ],
+    )
+    .await?;
+    let first = eligible_ids(&mut tx, &profile, &permitted).await?;
     let people:Vec<(Uuid,String)>=sqlx::query_as("SELECT id,display_name FROM user_display_names WHERE id=ANY($1) AND ($2='' OR display_name ILIKE '%'||$2||'%') ORDER BY first_name,last_name,id LIMIT 500").bind(permitted).bind(search).fetch_all(&mut *tx).await?;
-    let reviewers:Vec<_>=people.into_iter().map(|(id,display_name)|CorrespondenceUserOption{id,display_name}).collect();
-    let decision_makers=reviewers.iter().filter(|p|first.contains(&p.id)).cloned().collect();
-    tx.commit().await?;Ok((decision_makers,reviewers))
+    let reviewers: Vec<_> = people
+        .into_iter()
+        .map(|(id, display_name)| CorrespondenceUserOption { id, display_name })
+        .collect();
+    let decision_makers = reviewers
+        .iter()
+        .filter(|p| first.contains(&p.id))
+        .cloned()
+        .collect();
+    tx.commit().await?;
+    Ok((decision_makers, reviewers))
 }
 
 pub(crate) async fn start(
@@ -209,9 +265,16 @@ pub(crate) async fn start(
     request: &DirectedSendCorrespondenceRequest,
 ) -> Result<ProcessInstance, AppError> {
     let profile = settings_in(tx, record.register).await?;
-    let permitted=staff_users_with_all_permissions_on_connection(&mut **tx,&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED]).await?;
-    let recipient = resolve_one(tx, &request.first_recipient,&permitted).await?;
-    if !eligible_ids(tx, &profile,&permitted)
+    let permitted = staff_users_with_all_permissions_on_connection(
+        &mut **tx,
+        &[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ],
+    )
+    .await?;
+    let recipient = resolve_one(tx, &request.first_recipient, &permitted).await?;
+    if !eligible_ids(tx, &profile, &permitted)
         .await?
         .contains(&recipient.user_id)
     {
@@ -304,6 +367,12 @@ async fn activate(
             DirectedPurpose::Execute => "ดำเนินการตามสั่งการ",
         }
     };
+    if !assignment.required && !review {
+        sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute(&mut **tx).await?;
+        let identity = format!("directed:{}:copy", assignment.id);
+        process::notify_in_transaction(tx, instance, user, title, &identity, None).await?;
+        return Ok(());
+    }
     let window = Uuid::now_v7();
     let item = Uuid::now_v7();
     sqlx::query("INSERT INTO workflow_windows(id,module_code,workflow_code,title,managed_by_permission,status,created_by,due_at) VALUES($1,'correspondence','process_directed',$2,$3,'open',$4,$5)").bind(window).bind(title).bind(codes::PROCESS_MANAGE_SCHOOL).bind(instance.created_by).bind(assignment.due_at.or(instance.due_at)).execute(&mut **tx).await?;
@@ -343,13 +412,16 @@ async fn activate(
 pub fn assignment_actions(
     actor: &ActorContext,
     instance: &ProcessInstance,
+    manager_reassign: bool,
 ) -> Vec<DirectedAssignmentActions> {
-    if instance.status != ProcessStatus::Active {
-        return vec![];
-    }
     let Some(graph) = &instance.directed else {
         return vec![];
     };
+    let active = instance.status == ProcessStatus::Active;
+    let terminal_copy = matches!(
+        instance.status,
+        ProcessStatus::Completed | ProcessStatus::Closed
+    );
     graph
         .assignments
         .iter()
@@ -361,34 +433,46 @@ pub fn assignment_actions(
                 && a.reviewer
                     .as_ref()
                     .is_some_and(|r| r.user_id == actor.user_id);
-            if !pending && !reviewing {
-                return None;
-            }
-            if actor.has_permission(codes::CORRESPONDENCE_READ_ASSIGNED) {
-                actions.push(ProcessAction::Read);
-            }
-            if actor.has_permission(codes::CORRESPONDENCE_UPDATE_ASSIGNED) {
-                if reviewing {
-                    actions.extend([
-                        ProcessAction::Review,
-                        ProcessAction::Report,
-                        ProcessAction::Reject,
-                        ProcessAction::ReturnForRevision,
-                    ]);
-                } else {
-                    actions.push(ProcessAction::Report);
-                    if a.required {
-                        actions.extend([ProcessAction::Reject, ProcessAction::ReturnForRevision]);
-                        if a.allow_onward_assignment {
-                            actions.push(ProcessAction::Route);
+            if (active && (pending || reviewing)) || (terminal_copy && pending && !a.required) {
+                if actor.has_permission(codes::CORRESPONDENCE_READ_ASSIGNED) {
+                    actions.push(ProcessAction::Read);
+                }
+                if actor.has_permission(codes::CORRESPONDENCE_UPDATE_ASSIGNED) {
+                    if reviewing {
+                        actions.extend([
+                            ProcessAction::Review,
+                            ProcessAction::Report,
+                            ProcessAction::Reject,
+                            ProcessAction::ReturnForRevision,
+                        ]);
+                    } else {
+                        if a.required {
+                            actions.extend([
+                                ProcessAction::Report,
+                                ProcessAction::Reject,
+                                ProcessAction::ReturnForRevision,
+                            ]);
+                            if a.allow_onward_assignment {
+                                actions.push(ProcessAction::Route);
+                            }
                         }
-                    }
-                    match a.purpose {
-                        DirectedPurpose::Acknowledge => actions.push(ProcessAction::Acknowledge),
-                        DirectedPurpose::Execute => actions.push(ProcessAction::Execute),
-                        DirectedPurpose::Decide => actions.push(ProcessAction::Review),
+                        actions.push(match a.purpose {
+                            DirectedPurpose::Acknowledge => ProcessAction::Acknowledge,
+                            DirectedPurpose::Execute => ProcessAction::Execute,
+                            DirectedPurpose::Decide => ProcessAction::Review,
+                        });
                     }
                 }
+            }
+            if active
+                && manager_reassign
+                && a.required
+                && matches!(
+                    a.status,
+                    DirectedAssignmentStatus::Pending | DirectedAssignmentStatus::WaitingReview
+                )
+            {
+                actions.push(ProcessAction::Reassign);
             }
             if actions.is_empty() {
                 None
@@ -463,14 +547,35 @@ async fn route(
             return Err(invalid("มอบหมายต่อได้ไม่เกิน 30 ระดับ"));
         }
     }
-    let permitted=staff_users_with_all_permissions_on_connection(&mut **tx,&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED]).await?;
-    let mut selectors:Vec<_>=routing.recipients.iter().map(|t|t.recipient.clone()).collect();
-    if let Some(reviewer)=&routing.reviewer{selectors.push(reviewer.clone());}
-    let mut resolved=resolve_many(tx,&selectors,&permitted).await?;
-    let reviewer=if routing.reviewer.is_some(){let mut people=resolved.pop().ok_or_else(||invalid("ไม่พบผู้ตรวจทาน"))?;if people.len()!=1{return Err(invalid("กรุณาเลือกผู้ตรวจทานหนึ่งคน"));}people.pop()}else{None};
+    let permitted = staff_users_with_all_permissions_on_connection(
+        &mut **tx,
+        &[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ],
+    )
+    .await?;
+    let mut selectors: Vec<_> = routing
+        .recipients
+        .iter()
+        .map(|t| t.recipient.clone())
+        .collect();
+    if let Some(reviewer) = &routing.reviewer {
+        selectors.push(reviewer.clone());
+    }
+    let mut resolved = resolve_many(tx, &selectors, &permitted).await?;
+    let reviewer = if routing.reviewer.is_some() {
+        let mut people = resolved.pop().ok_or_else(|| invalid("ไม่พบผู้ตรวจทาน"))?;
+        if people.len() != 1 {
+            return Err(invalid("กรุณาเลือกผู้ตรวจทานหนึ่งคน"));
+        }
+        people.pop()
+    } else {
+        None
+    };
     let mut children = vec![];
     let mut seen = BTreeSet::new();
-    for (target,people) in routing.recipients.iter().zip(resolved) {
+    for (target, people) in routing.recipients.iter().zip(resolved) {
         for recipient in people {
             if forbidden.contains(&recipient.user_id)
                 || !seen.insert(recipient.user_id)
@@ -509,10 +614,14 @@ async fn route(
     work::close_process_item_in_transaction(tx, old_item).await?;
     let graph = graph_mut(instance)?;
     // The review belongs to this parent's immutable routing decision. Descendants cannot replace it.
+    let reviewer_id = reviewer.as_ref().map(|r| r.user_id);
     graph.assignments[index].reviewer = reviewer;
     graph.assignments[index].status = DirectedAssignmentStatus::WaitingChildren;
     let start = graph.assignments.len();
     graph.assignments.extend(children);
+    if let Some(user) = reviewer_id {
+        sqlx::query("INSERT INTO process_participants(instance_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING").bind(instance.id).bind(user).execute(&mut **tx).await?;
+    }
     for child in start..graph_mut(instance)?.assignments.len() {
         activate(tx, instance, child, false).await?;
     }
@@ -573,22 +682,165 @@ async fn advance(
     }
     Ok(())
 }
+fn descendants(graph: &DirectedProcess, id: Uuid) -> BTreeSet<Uuid> {
+    let mut ids = BTreeSet::from([id]);
+    loop {
+        let old = ids.len();
+        for a in &graph.assignments {
+            if a.parent_id.is_some_and(|p| ids.contains(&p)) {
+                ids.insert(a.id);
+            }
+        }
+        if ids.len() == old {
+            break;
+        }
+    }
+    ids.remove(&id);
+    ids
+}
+async fn reassign(
+    tx: &mut Transaction<'_, Postgres>,
+    instance: &mut ProcessInstance,
+    index: usize,
+    request: &ProcessActionRequest,
+) -> Result<(), AppError> {
+    if request
+        .comment
+        .as_deref()
+        .is_none_or(|c| c.trim().is_empty())
+        || request.reassign_from_user_id.is_some()
+    {
+        return Err(invalid("กรุณาระบุเหตุผลการเปลี่ยนผู้รับ โดยระบบจะระบุผู้รับเดิมจากงาน"));
+    }
+    let target = request
+        .reassign_user_id
+        .ok_or_else(|| invalid("กรุณาระบุผู้รับใหม่"))?;
+    let permitted = staff_users_with_all_permissions_on_connection(
+        &mut **tx,
+        &[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ],
+    )
+    .await?;
+    let selector = ProcessRecipient {
+        kind: ProcessRecipientKind::User,
+        user_id: Some(target),
+        organization_unit_id: None,
+        position_code: None,
+    };
+    let mut replacement = resolve_one(tx, &selector, &permitted).await?;
+    let graph = instance
+        .directed
+        .as_ref()
+        .ok_or_else(|| invalid("ไม่พบกระบวนงาน"))?;
+    let a = &graph.assignments[index];
+    let reviewing = a.status == DirectedAssignmentStatus::WaitingReview;
+    let old = if reviewing {
+        a.reviewer.as_ref().ok_or_else(denied)?.user_id
+    } else {
+        a.recipient.user_id
+    };
+    if target == old {
+        return Err(invalid("ผู้รับใหม่ต้องต่างจากผู้รับเดิม"));
+    }
+    if reviewing {
+        let children = descendants(graph, a.id);
+        if graph
+            .assignments
+            .iter()
+            .any(|child| children.contains(&child.id) && child.recipient.user_id == target)
+        {
+            return Err(invalid("ผู้ตรวจทานไม่สามารถตรวจผลการดำเนินการของตนเอง"));
+        }
+    } else {
+        let mut parent = a.parent_id;
+        while let Some(id) = parent {
+            let ancestor = graph
+                .assignments
+                .iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| invalid("เส้นทางมอบหมายไม่ถูกต้อง"))?;
+            if ancestor.recipient.user_id == target
+                || ancestor
+                    .reviewer
+                    .as_ref()
+                    .is_some_and(|r| r.user_id == target)
+            {
+                return Err(invalid("ผู้รับใหม่เป็นผู้มอบหมายเดิมหรือผู้ตรวจทานของงาน"));
+            }
+            parent = ancestor.parent_id;
+        }
+        if a.parent_id.is_none() && a.purpose == DirectedPurpose::Decide {
+            let register: String =
+                sqlx::query_scalar("SELECT register_kind FROM correspondence_records WHERE id=$1")
+                    .bind(instance.source.resource_id)
+                    .fetch_one(&mut **tx)
+                    .await?;
+            let register = match register.as_str() {
+                "incoming" => CorrespondenceRegister::Incoming,
+                "outgoing" => CorrespondenceRegister::Outgoing,
+                "internal" => CorrespondenceRegister::Internal,
+                _ => return Err(invalid("ทะเบียนหนังสือไม่ถูกต้อง")),
+            };
+            let profile = settings_in(tx, register).await?;
+            if !eligible_ids(tx, &profile, &permitted)
+                .await?
+                .contains(&target)
+            {
+                return Err(invalid("ผู้พิจารณาคนแรกไม่อยู่ในรายชื่อที่โรงเรียนกำหนด"));
+            }
+        }
+    }
+    let item = if reviewing {
+        a.review_work_item_id
+    } else {
+        a.work_item_id
+    };
+    sqlx::query("UPDATE process_notification_sources SET cancelled_at=now() WHERE work_item_id=$1 AND recipient_id=$2 AND cancelled_at IS NULL").bind(item).bind(old).execute(&mut **tx).await?;
+    sqlx::query(
+        "UPDATE work_item_assignees SET status='dismissed' WHERE work_item_id=$1 AND user_id=$2",
+    )
+    .bind(item)
+    .bind(old)
+    .execute(&mut **tx)
+    .await?;
+    work::close_process_item_in_transaction(tx, item).await?;
+    replacement.reassigned_from = Some(old);
+    let a = &mut graph_mut(instance)?.assignments[index];
+    if reviewing {
+        a.reviewer = Some(replacement);
+        a.review_work_item_id = None;
+    } else {
+        a.recipient = replacement;
+        a.selector = selector;
+        a.work_item_id = None;
+    }
+    activate(tx, instance, index, reviewing).await?;
+    Ok(())
+}
+
 pub(crate) async fn action(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
     instance: &mut ProcessInstance,
     request: &ProcessActionRequest,
+    manager_reassign: bool,
 ) -> Result<(), AppError> {
     if instance.revision != request.expected_revision {
         return Err(stale());
     }
-    if instance.status != ProcessStatus::Active {
+    let terminal_copy = matches!(
+        instance.status,
+        ProcessStatus::Completed | ProcessStatus::Closed
+    );
+    if instance.status != ProcessStatus::Active && !terminal_copy {
         return Err(stale());
     }
     let id = request
         .assignment_id
         .ok_or_else(|| invalid("กรุณาระบุงานที่ต้องการดำเนินการ"))?;
-    if !assignment_actions(actor, instance)
+    if !assignment_actions(actor, instance, manager_reassign)
         .iter()
         .any(|a| a.assignment_id == id && a.actions.contains(&request.action))
     {
@@ -602,6 +854,16 @@ pub(crate) async fn action(
         .iter()
         .position(|a| a.id == id)
         .ok_or_else(denied)?;
+    if terminal_copy
+        && (request.comment.is_some()
+            || !request.annotations.is_empty()
+            || request.signature.is_some()
+            || !request.evidence_file_ids.is_empty()
+            || request.reassign_user_id.is_some()
+            || request.reassign_from_user_id.is_some())
+    {
+        return Err(invalid("สำเนาของเรื่องที่จบแล้วรับเฉพาะการอ่านหรือรับทราบ"));
+    }
     let reviewing =
         graph_mut(instance)?.assignments[index].status == DirectedAssignmentStatus::WaitingReview;
     let item = if reviewing {
@@ -610,6 +872,7 @@ pub(crate) async fn action(
         graph_mut(instance)?.assignments[index].work_item_id
     };
     match request.action {
+        ProcessAction::Reassign => reassign(tx, instance, index, request).await?,
         ProcessAction::Read => {
             let a = &mut graph_mut(instance)?.assignments[index];
             let recipient = if reviewing {
@@ -693,15 +956,19 @@ pub(crate) async fn action(
             }
             work::mark_process_assignment_in_transaction(tx, item, actor.user_id, true).await?;
             work::close_process_item_in_transaction(tx, item).await?;
-            advance(tx, instance).await?;
+            if !terminal_copy {
+                advance(tx, instance).await?;
+            }
         }
         _ => return Err(denied()),
     }
     instance.revision += 1;
-    if matches!(
-        instance.status,
-        ProcessStatus::Completed | ProcessStatus::Rejected | ProcessStatus::RevisionRequested
-    ) {
+    if !terminal_copy
+        && matches!(
+            instance.status,
+            ProcessStatus::Completed | ProcessStatus::Rejected | ProcessStatus::RevisionRequested
+        )
+    {
         process::notify_in_transaction(
             tx,
             instance,

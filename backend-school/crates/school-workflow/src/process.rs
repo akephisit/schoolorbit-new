@@ -535,7 +535,14 @@ pub(crate) async fn action_in_transaction(
         return Ok(());
     }
     if instance.directed.is_some() {
-        crate::directed::action(tx, actor, instance, request).await?;
+        crate::directed::action(
+            tx,
+            actor,
+            instance,
+            request,
+            source_port.may_reassign_others(actor, instance),
+        )
+        .await?;
         append_event(tx, actor, instance, request).await?;
         store(tx, instance).await?;
         return Ok(());
