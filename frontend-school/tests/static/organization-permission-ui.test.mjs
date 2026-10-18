@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { organizationPositionOptions } from '../../src/lib/features/staff/organization-positions.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
@@ -76,16 +77,13 @@ test('organization members section exposes full school position set', async () =
 		'src/lib/components/staff/OrganizationMembersSection.svelte'
 	);
 
-	for (const position of [
-		'director',
-		'deputy_director',
-		'head',
-		'deputy_head',
-		'coordinator',
-		'member'
-	]) {
-		assert.match(source, new RegExp(`value:\\s*['"]${position}['"]`));
-	}
+	assert.deepEqual(
+		organizationPositionOptions.map((position) => position.value),
+		['director', 'deputy_director', 'head', 'deputy_head', 'coordinator', 'member']
+	);
+	assert.match(source, /organizationPositionOptions as positionOptions/);
+	assert.match(source, /from '#lib\/features\/staff\/organization-positions\.js'/);
+	assert.match(source, /#each positionOptions as position/);
 
 	assert.match(source, /groupedMembers/);
 	assert.match(source, /activeMemberCount/);
