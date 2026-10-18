@@ -47,10 +47,41 @@ pub fn validate_annotations(values: &[DocumentAnnotation]) -> Result<(), AppErro
             return Err(invalid("ตำแหน่งหรือข้อความกำกับไม่ถูกต้อง"));
         }
         validate_strokes(&a.strokes)?;
+        if a.text_layout_version.is_some_and(|version| version != 1)
+            || (a.border && a.text_layout_version != Some(1))
+            || (a.kind != DocumentAnnotationKind::Text
+                && (a.border || a.text_layout_version.is_some()))
+        {
+            return Err(invalid("รุ่นการจัดวางข้อความกำกับไม่ถูกต้อง"));
+        }
         if a.kind == DocumentAnnotationKind::Text
             && a.text.as_deref().is_none_or(|s| s.trim().is_empty())
         {
             return Err(invalid("กรุณาระบุข้อความกำกับ"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_new_text_annotations(
+    values: &[DocumentAnnotation],
+    accepted: &[DocumentAnnotation],
+) -> Result<(), AppError> {
+    for value in values
+        .iter()
+        .filter(|value| value.kind == DocumentAnnotationKind::Text)
+    {
+        if value.text_layout_version == Some(1) {
+            continue;
+        }
+        let previous = accepted
+            .iter()
+            .find(|old| old.id == value.id && old.text_layout_version.is_none());
+        if value.text_layout_version.is_some()
+            || previous.map(process::payload_hash).transpose()?
+                != Some(process::payload_hash(value)?)
+        {
+            return Err(invalid("ข้อความกำกับใหม่หรือที่แก้ไขต้องใช้การจัดวางรุ่น 1"));
         }
     }
     Ok(())
@@ -335,6 +366,7 @@ pub async fn create(
         let old:Uuid=sqlx::query_scalar("SELECT resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor.user_id).bind(request.request_id).fetch_one(pool).await?;
         return detail(pool, actor, old).await;
     }
+    validate_new_text_annotations(&request.annotations, &[])?;
     if request.original_file_id.is_some() || !request.attachment_file_ids.is_empty() {
         return Err(invalid("สร้างฉบับร่างก่อนอัปโหลดเอกสารสำหรับหนังสือนี้"));
     }
@@ -364,6 +396,7 @@ pub async fn create(
         return detail(pool, actor, old).await;
     }
     let year = (Utc::now() + Duration::hours(7)).year() + 543;
+    let settings = directed::settings_in(&mut tx, request.register).await?;
     let kind = enum_code(request.register)?;
     let number:i64=sqlx::query_scalar("INSERT INTO correspondence_register_counters(register,year,last_number) VALUES($1,$2,1) ON CONFLICT(register,year) DO UPDATE SET last_number=correspondence_register_counters.last_number+1 RETURNING last_number").bind(&kind).bind(year).fetch_one(&mut *tx).await?;
     let record = CorrespondenceSummary {
@@ -371,6 +404,11 @@ pub async fn create(
         register_number: number,
         register_year: year,
         register: request.register,
+        register_label: Some(crate::correspondence_settings::register_label(
+            &settings.numbering,
+            number,
+            year,
+        )?),
         title: request.title,
         sender: request.sender,
         document_number: request.document_number,
@@ -425,6 +463,7 @@ pub async fn revise(
     }
     let before = detail(pool, actor, id).await?;
     require_author(actor, &before.record)?;
+    validate_new_text_annotations(&request.annotations, &before.document.annotations)?;
     if let Some(metadata) = &request.metadata {
         validate_metadata(
             &metadata.title,
@@ -770,7 +809,176 @@ pub async fn act(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
 ) -> Result<CorrespondenceDetail, AppError> {
+    Ok(act_with_changes(pool, actor, id, validator, request)
+        .await?
+        .value)
+}
+
+/// Post-commit projection effects are returned by the persistence owner, never guessed by HTTP.
+pub struct WorkflowMutation<T> {
+    pub value: T,
+    pub work_changed: bool,
+}
+
+pub async fn act_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    validator: &dyn DocumentValidationPort,
+    request: ProcessActionRequest,
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
     act_impl(pool, actor, id, validator, request, false).await
+}
+
+async fn read_receipt_in(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    revision: i64,
+) -> Result<CorrespondenceReadReceipt, AppError> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM correspondence_document_revisions WHERE correspondence_id=$1 AND revision=$2)")
+        .bind(id).bind(revision).fetch_one(&mut **tx).await?;
+    if !exists {
+        return Err(invalid("ไม่พบฉบับเอกสาร"));
+    }
+    sqlx::query("INSERT INTO correspondence_read_receipts(correspondence_id,user_id,document_revision) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind(id).bind(actor).bind(revision).execute(&mut **tx).await?;
+    Ok(sqlx::query_as("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor).fetch_one(&mut **tx).await?)
+}
+
+pub async fn read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: CorrespondenceReadRequest,
+) -> Result<CorrespondenceReadReceipt, AppError> {
+    Ok(read_with_changes(pool, actor, id, request).await?.value)
+}
+
+pub async fn read_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: CorrespondenceReadRequest,
+) -> Result<WorkflowMutation<CorrespondenceReadReceipt>, AppError> {
+    require_read(pool, actor, id).await?;
+    let mut tx = pool.begin().await?;
+    let (_, current_revision, instance_id) = locked(&mut tx, id).await?;
+    let receipt = read_receipt_in(&mut tx, actor.user_id, id, request.document_revision).await?;
+    let work_changed = if let Some(instance_id) =
+        instance_id.filter(|_| request.document_revision == current_revision)
+    {
+        let mut instance = process::load_locked(&mut tx, instance_id).await?;
+        process::mark_read_in_transaction(&mut tx, actor, &mut instance, None).await?
+    } else {
+        false
+    };
+    tx.commit().await?;
+    Ok(WorkflowMutation {
+        value: receipt,
+        work_changed,
+    })
+}
+
+async fn explicit_read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: &ProcessActionRequest,
+    instance_revision: bool,
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
+    let mut tx = pool.begin().await?;
+    let operation = if instance_revision {
+        "process_correspondence_action"
+    } else {
+        "correspondence_action"
+    };
+    if process::receipt(
+        &mut tx,
+        actor.user_id,
+        request.request_id,
+        operation,
+        id,
+        request,
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
+    }
+    let (record, revision, instance_id) = locked(&mut tx, id).await?;
+    let mut instance = process::load_locked(
+        &mut tx,
+        instance_id.ok_or_else(|| invalid("ยังไม่ได้ส่งหนังสือ"))?,
+    )
+    .await?;
+    actor.require_permission(codes::CORRESPONDENCE_READ_ASSIGNED)?;
+    let recorded = if instance.directed.is_some() {
+        let allowed = directed::assignment_actions(actor, &instance, false)
+            .iter()
+            .any(|a| {
+                Some(a.assignment_id) == request.assignment_id
+                    && a.actions.contains(&ProcessAction::Read)
+            });
+        if !allowed || request.routing.is_some() {
+            return Err(denied());
+        }
+        instance
+            .directed
+            .as_ref()
+            .and_then(|g| {
+                g.assignments
+                    .iter()
+                    .find(|a| Some(a.id) == request.assignment_id)
+            })
+            .and_then(|a| {
+                if a.status == DirectedAssignmentStatus::WaitingReview {
+                    a.reviewer.as_ref()
+                } else {
+                    Some(&a.recipient)
+                }
+            })
+            .is_some_and(|r| r.read_at.is_some())
+    } else {
+        if request.assignment_id.is_some()
+            || request.routing.is_some()
+            || !available_actions(actor, &record, Some(&instance), false)
+                .contains(&ProcessAction::Read)
+        {
+            return Err(denied());
+        }
+        instance
+            .steps
+            .get(instance.current_step)
+            .and_then(|s| {
+                s.recipients
+                    .iter()
+                    .find(|r| r.user_id == actor.user_id && r.completed_at.is_none())
+            })
+            .is_some_and(|r| r.read_at.is_some())
+    };
+    let expected = if instance_revision {
+        instance.revision
+    } else {
+        record.revision
+    };
+    if request.expected_revision != expected && !recorded {
+        return Err(stale());
+    }
+    read_receipt_in(&mut tx, actor.user_id, id, revision).await?;
+    let work_changed =
+        process::mark_read_in_transaction(&mut tx, actor, &mut instance, request.assignment_id)
+            .await?;
+    tx.commit().await?;
+    Ok(WorkflowMutation {
+        value: detail(pool, actor, id).await?,
+        work_changed,
+    })
 }
 async fn act_impl(
     pool: &PgPool,
@@ -779,7 +987,7 @@ async fn act_impl(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
     instance_revision: bool,
-) -> Result<CorrespondenceDetail, AppError> {
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
     require_read(pool, actor, id).await?;
     validate_annotations(&request.annotations)?;
     if request.action == ProcessAction::Read
@@ -828,7 +1036,14 @@ async fn act_impl(
     )
     .await?
     {
-        return detail(pool, actor, id).await;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
+    }
+    validate_new_text_annotations(&request.annotations, &[])?;
+    if request.action == ProcessAction::Read {
+        return explicit_read(pool, actor, id, &request, instance_revision).await;
     }
     let before = detail(pool, actor, id).await?;
     let signing_time = Utc::now();
@@ -878,7 +1093,10 @@ async fn act_impl(
     .is_some()
     {
         tx.commit().await?;
-        return detail(pool, actor, id).await;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
     }
     let (mut record, doc, instance_id) = locked(&mut tx, id).await?;
     if !instance_revision && record.revision != request.expected_revision {
@@ -1122,7 +1340,10 @@ async fn act_impl(
     }
     save_record(&mut tx, &record).await?;
     tx.commit().await?;
-    detail(pool, actor, id).await
+    Ok(WorkflowMutation {
+        value: detail(pool, actor, id).await?,
+        work_changed: true,
+    })
 }
 #[derive(sqlx::FromRow)]
 struct CorrespondenceListRow {
@@ -1152,6 +1373,7 @@ WITH authorized AS MATERIALIZED (
         OR c.summary->>'documentNumber' ILIKE '%'||$8||'%'
         OR c.summary->>'sender' ILIKE '%'||$8||'%'
         OR c.register_number::text ILIKE '%'||$8||'%'
+        OR c.summary->>'registerLabel' ILIKE '%'||$8||'%'
         OR c.register_year::text ILIKE '%'||$8||'%'
         OR c.register_number::text||'/'||c.register_year::text ILIKE '%'||$8||'%'
         OR EXISTS (SELECT 1 FROM correspondence_document_revisions d
@@ -1468,6 +1690,8 @@ pub async fn detail(
     };
     let history=sqlx::query_scalar::<_,Json<ProcessHistoryEntry>>("SELECT entry FROM process_action_history WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
     let signatures=sqlx::query_scalar::<_,Json<CorrespondenceSigningEvidence>>("SELECT evidence FROM correspondence_signing_evidence WHERE correspondence_id=$1 ORDER BY created_at,id").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect();
+    let my_read_receipt = sqlx::query_as::<_, CorrespondenceReadReceipt>("SELECT correspondence_id,user_id,document_revision,first_read_at FROM correspondence_read_receipts WHERE correspondence_id=$1 AND user_id=$2")
+        .bind(id).bind(actor.user_id).fetch_optional(pool).await?;
     let manager_reassign = can_manage_record(pool, actor, &record).await?;
     let actions = available_actions(actor, &record, instance.as_ref(), manager_reassign);
     let can_manage = can_revise(actor, &record);
@@ -1477,6 +1701,7 @@ pub async fn detail(
     });
     Ok(CorrespondenceDetail {
         record: record.0,
+        my_read_receipt,
         source_links: source_links.0,
         document,
         revisions,
@@ -1524,6 +1749,7 @@ pub async fn options(
     )
     .await?;
     Ok(CorrespondenceOptions {
+        stamp_context: stamp_context(pool, actor.user_id).await?,
         users,
         organizations,
         positions,
@@ -1533,6 +1759,41 @@ pub async fn options(
         routing_settings: directed::settings(pool, actor).await?,
         can_manage_routing_settings: actor.has_permission(codes::PROCESS_MANAGE_SCHOOL),
     })
+}
+
+async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStampContext, AppError> {
+    let actor_display_name =
+        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
+            .bind(actor)
+            .fetch_one(pool)
+            .await?;
+    let position: Option<(String, Option<String>)> = sqlx::query_as("SELECT m.position_code,m.position_title FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=$1 AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.is_primary DESC,m.id LIMIT 1")
+        .bind(actor).fetch_optional(pool).await?;
+    let signer_title =
+        position.and_then(|(code, title)| stamp_position_title(&code, title.as_deref()));
+    Ok(CorrespondenceStampContext {
+        school_name: None,
+        actor_display_name,
+        signer_title,
+    })
+}
+
+fn stamp_position_title(code: &str, title: Option<&str>) -> Option<String> {
+    if let Some(title) = title.map(str::trim).filter(|value| !value.is_empty()) {
+        return Some(title.into());
+    }
+    Some(
+        match code {
+            "director" => "ผู้อำนวยการ",
+            "deputy_director" => "รองผู้อำนวยการ",
+            "head" => "หัวหน้า",
+            "deputy_head" => "รองหัวหน้า",
+            "coordinator" => "ผู้ประสานงาน",
+            "member" => "สมาชิก",
+            _ => return None,
+        }
+        .into(),
+    )
 }
 pub async fn signatures(
     pool: &PgPool,
@@ -1595,6 +1856,68 @@ pub async fn instance_detail(
 mod tests {
     use super::*;
     #[test]
+    fn fresh_text_layout_requires_version_one_but_unchanged_accepted_legacy_is_preserved() {
+        let legacy = DocumentAnnotation {
+            id: Uuid::now_v7(),
+            kind: DocumentAnnotationKind::Text,
+            page: 1,
+            x: 0.1,
+            y: 0.1,
+            width: 0.001,
+            height: 0.2,
+            text: Some("ก".into()),
+            color: "#000000".into(),
+            border: false,
+            text_layout_version: None,
+            strokes: vec![],
+        };
+        validate_annotations(std::slice::from_ref(&legacy)).unwrap();
+        assert!(validate_new_text_annotations(std::slice::from_ref(&legacy), &[]).is_err());
+        validate_new_text_annotations(std::slice::from_ref(&legacy), std::slice::from_ref(&legacy))
+            .unwrap();
+        let mut edited = legacy.clone();
+        edited.text = Some("แก้ไข".into());
+        assert!(validate_new_text_annotations(
+            std::slice::from_ref(&edited),
+            std::slice::from_ref(&legacy)
+        )
+        .is_err());
+        edited.text_layout_version = Some(1);
+        validate_new_text_annotations(std::slice::from_ref(&edited), &[]).unwrap();
+        edited.text_layout_version = Some(2);
+        assert!(validate_annotations(std::slice::from_ref(&edited)).is_err());
+        edited.text_layout_version = None;
+        edited.border = true;
+        assert!(validate_annotations(&[edited]).is_err());
+    }
+    #[test]
+    fn stamp_titles_use_explicit_identity_or_known_thai_labels_without_role_codes() {
+        assert_eq!(
+            stamp_position_title("director", Some("  ผู้อำนวยการโรงเรียน  ")).as_deref(),
+            Some("ผู้อำนวยการโรงเรียน")
+        );
+        for (code, expected) in [
+            ("director", "ผู้อำนวยการ"),
+            ("deputy_director", "รองผู้อำนวยการ"),
+            ("head", "หัวหน้า"),
+            ("deputy_head", "รองหัวหน้า"),
+            ("coordinator", "ผู้ประสานงาน"),
+            ("member", "สมาชิก"),
+        ] {
+            assert_eq!(stamp_position_title(code, None).as_deref(), Some(expected));
+            assert_eq!(
+                stamp_position_title(code, Some("  ")).as_deref(),
+                Some(expected)
+            );
+        }
+        assert!(stamp_position_title("unknown_position", None).is_none());
+        assert!(stamp_position_title("DIRECTOR_RBAC", Some("")).is_none());
+        assert_eq!(
+            stamp_position_title("unknown_position", Some("ตำแหน่งที่กำหนดเอง")).as_deref(),
+            Some("ตำแหน่งที่กำหนดเอง")
+        );
+    }
+    #[test]
     fn normalized_boxes_reject_nan_and_escape() {
         assert!(valid_box(1, 0.1, 0.2, 0.2, 0.2));
         assert!(!valid_box(0, 0.1, 0.2, 0.2, 0.2));
@@ -1647,8 +1970,22 @@ pub async fn act_instance(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
 ) -> Result<ProcessInstance, AppError> {
+    Ok(
+        act_instance_with_changes(pool, actor, id, validator, request)
+            .await?
+            .value,
+    )
+}
+
+pub async fn act_instance_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    validator: &dyn DocumentValidationPort,
+    request: ProcessActionRequest,
+) -> Result<WorkflowMutation<ProcessInstance>, AppError> {
     let instance = instance_detail(pool, actor, id).await?;
-    act_impl(
+    let result = act_impl(
         pool,
         actor,
         instance.source.resource_id,
@@ -1656,9 +1993,11 @@ pub async fn act_instance(
         request,
         true,
     )
-    .await?
-    .instance
-    .ok_or_else(denied)
+    .await?;
+    Ok(WorkflowMutation {
+        value: result.value.instance.ok_or_else(denied)?,
+        work_changed: result.work_changed,
+    })
 }
 
 async fn signing_identity(

@@ -18,7 +18,7 @@
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import type { InkPath } from '#lib/correspondence/geometry.js';
+	import { hasInk, type InkPath } from '#lib/correspondence/geometry.js';
 	import { actionRequirements, validateSigningDraft } from '#lib/correspondence/drafts.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -33,6 +33,11 @@
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import SignaturePad from './SignaturePad.svelte';
 	import Choice from './Choice.svelte';
+	import FieldError from './FieldError.svelte';
+	import {
+		focusCorrespondenceField,
+		type CorrespondenceFieldErrors
+	} from '#lib/correspondence/validation.js';
 	import DirectedRoutingFields from './DirectedRoutingFields.svelte';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	let {
@@ -40,6 +45,7 @@
 		action,
 		assignmentId,
 		annotations,
+		documentReady,
 		signature = $bindable(),
 		oncomplete,
 		oncancel,
@@ -52,6 +58,7 @@
 		action: ProcessAction;
 		assignmentId?: string;
 		annotations: DocumentAnnotation[];
+		documentReady: boolean;
 		signature?: SignatureInput;
 		oncomplete: (result: CorrespondenceDetail) => void;
 		oncancel: () => void;
@@ -60,6 +67,12 @@
 		ondirtychange?: (dirty: boolean) => void;
 		onpreviewchange?: (paths: InkPath[], fileId?: string) => void;
 	} = $props();
+	let fieldErrors = $state<CorrespondenceFieldErrors>({});
+	function invalidField(id: string, message: string) {
+		fieldErrors = { [id]: message };
+		error = message;
+		void focusCorrespondenceField(id);
+	}
 	const initialRevision = untrack(() => detail.record.revision);
 	let expectedRevision = $state(initialRevision),
 		comment = $state(''),
@@ -138,6 +151,7 @@
 	let confirmationBasis = '';
 	$effect.pre(() => {
 		const basis = JSON.stringify([
+			annotations,
 			signature,
 			method,
 			assetId,
@@ -232,21 +246,15 @@
 			if (!disposed) imagePending = false;
 		}
 	}
-	async function loadReassign() {
+	async function loadReassign(context = detail.record.register) {
 		optionsLoading = true;
 		try {
-			const result = await getCorrespondenceOptions(
-				'',
-				{ signal: controller.signal },
-				detail.record.register
-			);
+			const result = await getCorrespondenceOptions('', { signal: controller.signal }, context);
 			if (!disposed) {
 				options = result;
 				if (!routingInitialized && action === 'route') {
 					routingInitialized = true;
-					const defaults = result.routingSettings.find(
-						(item) => item.register === detail.record.register
-					);
+					const defaults = result.routingSettings.find((item) => item.register === context);
 					routing = {
 						recipients: [],
 						requireReview: defaults?.defaultRequireReview ?? false,
@@ -260,49 +268,77 @@
 			if (!disposed) optionsLoading = false;
 		}
 	}
+	let optionsContext = '';
 	$effect(() => {
-		if (action === 'reassign' || action === 'route') void loadReassign();
+		const register = detail.record.register,
+			context = `${action}:${register}`;
+		untrack(() => {
+			if (optionsContext === context) return;
+			optionsContext = context;
+			if (action === 'reassign' || action === 'route') void loadReassign(register);
+		});
 	});
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (pending) return;
 		error = '';
-		if (commentRequired && !comment.trim()) {
-			error = 'กรอกความคิดเห็น / เหตุผล';
-			return;
-		}
-		if (requirements.evidence && !evidence.length) {
-			error = 'แนบหลักฐานประกอบการดำเนินการ';
-			return;
-		}
-		if (recovery && !reassignFromUserId) {
-			error = 'เลือกผู้รับเดิมที่ต้องเปลี่ยน';
-			return;
-		}
-		if (action === 'reassign' && !reassignUserId) {
-			error = 'เลือกผู้รับผิดชอบ';
-			return;
-		}
-		if (
-			action === 'route' &&
-			(!routing.recipients.some((item) => item.required !== false) ||
-				(routing.requireReview && !routing.reviewer))
-		) {
-			error = 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ และเลือกผู้ตรวจทานหากกำหนดให้ตรวจทาน';
-			return;
-		}
-		if (signing) {
-			const invalid = validateSigningDraft(
-				signature,
-				paths,
-				method,
-				assetId,
-				confirmed,
-				detail.document.revision
-			);
-			if (invalid) {
-				error = invalid;
+		fieldErrors = {};
+		if (!intent.unresolved) {
+			if (commentRequired && !comment.trim()) {
+				invalidField('action-comment', 'กรอกความคิดเห็น / เหตุผล');
 				return;
+			}
+			if (requirements.evidence && !evidence.length) {
+				invalidField('action-evidence', 'แนบหลักฐานประกอบการดำเนินการ');
+				return;
+			}
+			if (recovery && !reassignFromUserId) {
+				invalidField('reassign-source', 'เลือกผู้รับเดิมที่ต้องเปลี่ยน');
+				return;
+			}
+			if (action === 'reassign' && !reassignUserId) {
+				invalidField('reassign-user', 'เลือกผู้รับผิดชอบ');
+				return;
+			}
+			if (
+				action === 'route' &&
+				(!routing.recipients.some((item) => item.required !== false) ||
+					(routing.requireReview && !routing.reviewer))
+			) {
+				invalidField(
+					!routing.recipients.some((item) => item.required !== false)
+						? 'directed-target-recipients'
+						: 'directed-reviewer',
+					!routing.recipients.some((item) => item.required !== false)
+						? 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ'
+						: 'เลือกผู้ตรวจทาน'
+				);
+				return;
+			}
+			if (signing) {
+				if (!documentReady) {
+					invalidField('signature-input', 'รอเปิดเอกสารให้เรียบร้อยก่อนลงนาม');
+					return;
+				}
+				const invalid = validateSigningDraft(
+					signature,
+					paths,
+					method,
+					assetId,
+					confirmed,
+					detail.document.revision
+				);
+				if (invalid) {
+					invalidField(
+						!signature || (method === 'drawn' ? !hasInk(paths) : !assetId)
+							? 'signature-input'
+							: !confirmed
+								? 'signature-confirm'
+								: 'placement-page',
+						invalid
+					);
+					return;
+				}
 			}
 		}
 		pending = true;
@@ -355,13 +391,15 @@
 			};
 			const result = await actOnCorrespondence(
 				detail.record.id,
-				detail.instance?.directed ? intent.begin(body) : { ...body, requestId: crypto.randomUUID() }
+				detail.instance?.directed || intent.unresolved
+					? intent.begin(body)
+					: { ...body, requestId: crypto.randomUUID() }
 			);
 			intent.accepted();
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			intent.rejected(cause);
-			uncertain = !!detail.instance?.directed && intent.unresolved;
+			uncertain = intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
 		} finally {
 			if (!disposed) {
@@ -411,6 +449,7 @@
 	<fieldset disabled={pending || uncertain} class="min-w-0 space-y-4">
 		{#if action === 'route'}
 			{#if options}<DirectedRoutingFields
+					{fieldErrors}
 					{options}
 					bind:routing
 					register={detail.record.register}
@@ -420,16 +459,24 @@
 			{:else if optionsLoading}<p role="status" class="text-sm text-muted-foreground">
 					กำลังโหลดผู้รับคำสั่ง…
 				</p>
-			{:else}<Button type="button" variant="outline" onclick={loadReassign}
+			{:else}<Button type="button" variant="outline" onclick={() => loadReassign()}
 					>โหลดผู้รับคำสั่งอีกครั้ง</Button
 				>{/if}
 		{/if}
 		{#if action !== 'read' && !terminalCopy}<div class="space-y-2">
 				<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label
-				><Textarea id="action-comment" rows={4} bind:value={comment} disabled={pending} />
+				><Textarea
+					id="action-comment"
+					aria-invalid={!!fieldErrors['action-comment']}
+					aria-describedby={fieldErrors['action-comment'] ? 'action-comment-error' : undefined}
+					rows={4}
+					bind:value={comment}
+					disabled={pending}
+				/><FieldError id="action-comment-error" message={fieldErrors['action-comment']} />
 			</div>{/if}
 		{#if action === 'reassign'}{#if recovery}<Choice
 					id="reassign-source"
+					error={fieldErrors['reassign-source']}
 					label="ผู้รับเดิมที่ต้องเปลี่ยน"
 					bind:value={reassignFromUserId}
 					options={pendingRecipients.map((recipient) => ({
@@ -439,6 +486,7 @@
 					disabled={pending}
 				/>{/if}{#if options}<Choice
 					id="reassign-user"
+					error={fieldErrors['reassign-user']}
 					label="ผู้รับผิดชอบใหม่"
 					bind:value={reassignUserId}
 					options={(selectedAssignment ? options.reviewers : options.users)
@@ -453,19 +501,21 @@
 						.map((user) => ({ value: user.id, label: user.displayName }))}
 					searchable
 					disabled={pending}
-				/>{:else}<Button type="button" variant="outline" onclick={loadReassign}
+				/>{:else}<Button type="button" variant="outline" onclick={() => loadReassign()}
 					>โหลดผู้รับผิดชอบ</Button
 				>{/if}{/if}
 		{#if requirements.acceptsEvidence}<div class="space-y-2">
 				<Label for="action-evidence">หลักฐานประกอบ{requirements.evidence ? ' *' : ''}</Label><Input
 					id="action-evidence"
+					aria-invalid={!!fieldErrors['action-evidence']}
+					aria-describedby={fieldErrors['action-evidence'] ? 'action-evidence-error' : undefined}
 					type="file"
 					multiple
 					disabled={pending}
 					onchange={(event) => {
 						evidence = Array.from(event.currentTarget.files ?? []);
 					}}
-				/>
+				/><FieldError id="action-evidence-error" message={fieldErrors['action-evidence']} />
 			</div>{/if}
 		{#if (['approve', 'route'].includes(action) || (action === 'review' && selectedAssignment?.purpose === 'decide')) && !needsSignature && $can.has(PERMISSIONS.CORRESPONDENCE_SIGN_OWN)}<div
 				class="flex items-center gap-2"
@@ -480,7 +530,19 @@
 				>
 			</div>{/if}
 		{#if signing && signature}
-			<div class="space-y-4 rounded-xl border bg-muted/20 p-3">
+			{#if !documentReady && !uncertain}<p role="status" class="text-sm text-muted-foreground">
+					กำลังเปิดเอกสารก่อนลงนาม หากเปิดไม่สำเร็จ ให้ลองเปิดอีกครั้งในส่วนเอกสาร
+				</p>{/if}
+			<div
+				hidden={!documentReady && !uncertain}
+				id="signature-input"
+				role="group"
+				aria-label="ลายมือชื่อ"
+				tabindex="-1"
+				aria-describedby={fieldErrors['signature-input'] ? 'signature-input-error' : undefined}
+				class="space-y-4 rounded-xl border bg-muted/20 p-3"
+			>
+				<FieldError id="signature-input-error" message={fieldErrors['signature-input']} />
 				<div class="flex gap-2">
 					<Button
 						type="button"
@@ -507,6 +569,7 @@
 						/>{/if}
 					<Choice
 						id="signature-asset"
+						error={fieldErrors['signature-asset']}
 						label="ลายมือชื่อของฉัน"
 						bind:value={assetId}
 						options={assets.map((asset) => ({ value: asset.id, label: asset.label }))}
@@ -550,6 +613,10 @@
 							>
 								<Label for={`placement-${field.key}`}>{field.label}</Label><Input
 									id={`placement-${field.key}`}
+									aria-invalid={!!fieldErrors[`placement-${field.key}`]}
+									aria-describedby={fieldErrors[`placement-${field.key}`]
+										? `placement-${field.key}-error`
+										: undefined}
 									type="number"
 									min={field.min}
 									max={field.max}
@@ -566,6 +633,9 @@
 											};
 										confirmed = false;
 									}}
+								/><FieldError
+									id={`placement-${field.key}-error`}
+									message={fieldErrors[`placement-${field.key}`]}
 								/>
 							</div>{/each}
 					</div>
@@ -576,12 +646,17 @@
 				<div class="flex items-start gap-2">
 					<Checkbox
 						id="signature-confirm"
+						aria-invalid={!!fieldErrors['signature-confirm']}
+						aria-describedby={fieldErrors['signature-confirm']
+							? 'signature-confirm-error'
+							: undefined}
 						bind:checked={confirmed}
 						disabled={pending || imagePending}
 					/><Label for="signature-confirm" class="leading-relaxed"
 						>ยืนยันใช้ลายมือชื่อนี้กับเอกสารฉบับ {signature.documentRevision} และการ{actionLabel}ครั้งนี้</Label
 					>
 				</div>
+				<FieldError id="signature-confirm-error" message={fieldErrors['signature-confirm']} />
 				<p class="text-xs text-muted-foreground">
 					ระบบบันทึกผู้ลงนาม เวลา และเอกสารที่ใช้ลงนาม เป็นหลักฐานลงลายมือชื่ออิเล็กทรอนิกส์
 				</p>
@@ -593,7 +668,7 @@
 		><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={imagePending}
+			disabled={imagePending || (signing && !documentReady && !uncertain)}
 			variant={action === 'reject' ? 'destructive' : 'default'}>ยืนยัน{actionLabel}</LoadingButton
 		>
 	</div>

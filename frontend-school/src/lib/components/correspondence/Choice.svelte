@@ -2,6 +2,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import FieldError from './FieldError.svelte';
 	let {
 		id,
 		label,
@@ -10,6 +11,7 @@
 		disabled = false,
 		placeholder = 'เลือก',
 		searchable = false,
+		error,
 		onValueChange
 	}: {
 		id: string;
@@ -19,6 +21,7 @@
 		disabled?: boolean;
 		placeholder?: string;
 		searchable?: boolean;
+		error?: string;
 		onValueChange?: (value: string) => void;
 	} = $props();
 	let search = $state('');
@@ -32,7 +35,11 @@
 <div class="min-w-0 space-y-2">
 	<Label for={id}>{label}</Label>
 	<Select.Root type="single" bind:value {disabled} {onValueChange}>
-		<Select.Trigger {id} class="w-full"
+		<Select.Trigger
+			{id}
+			class="w-full"
+			aria-invalid={!!error}
+			aria-describedby={error ? `${id}-error` : undefined}
 			><span class="truncate"
 				>{options.find((option) => option.value === value)?.label ?? placeholder}</span
 			></Select.Trigger
@@ -49,4 +56,5 @@
 				</p>{/if}
 		</Select.Content>
 	</Select.Root>
+	<FieldError id={`${id}-error`} message={error} />
 </div>

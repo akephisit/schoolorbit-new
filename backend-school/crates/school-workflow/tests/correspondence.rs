@@ -4,6 +4,1101 @@ use school_workflow::{correspondence, process, process_models::*, work};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+fn text_annotation(version: Option<u8>, width: f64) -> DocumentAnnotation {
+    DocumentAnnotation {
+        id: Uuid::now_v7(),
+        kind: DocumentAnnotationKind::Text,
+        page: 1,
+        x: 0.1,
+        y: 0.1,
+        width,
+        height: 0.2,
+        text: Some("กิ่".into()),
+        color: "#000000".into(),
+        border: false,
+        text_layout_version: version,
+        strokes: vec![],
+    }
+}
+
+// Sanitized pre-upgrade rows: neither border nor textLayoutVersion existed in their payloads.
+async fn accepted_legacy_text_book(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> (CreateCorrespondenceRequest, CorrespondenceDetail) {
+    let mut request = create_request();
+    request.annotations = vec![text_annotation(None, 0.001)];
+    let id = Uuid::now_v7();
+    let now = chrono::Utc::now();
+    let year: i32 = sqlx::query_scalar(
+        "SELECT extract(year FROM now() AT TIME ZONE 'Asia/Bangkok')::integer+543",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let snapshots: Vec<CorrespondenceFileSnapshot> = vec![];
+    let hash = process::payload_hash(&(
+        1_i64,
+        &request.content,
+        &request.original_file_id,
+        &request.attachment_file_ids,
+        &request.annotations,
+        &snapshots,
+    ))
+    .unwrap();
+    let summary = serde_json::json!({"id":id,"registerNumber":1,"registerYear":year,"register":"incoming","title":request.title,"sender":request.sender,"documentNumber":request.document_number,"documentDate":request.document_date,"urgency":request.urgency,"organizationUnitId":null,"revision":1,"status":"draft","createdBy":actor.user_id,"createdAt":now});
+    let document = serde_json::json!({"revision":1,"content":request.content,"originalFileId":null,"attachmentFileIds":[],"annotations":request.annotations,"contentHash":hash,"fileSnapshots":[],"createdBy":actor.user_id,"createdAt":now});
+    let actor_name: String =
+        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
+            .bind(actor.user_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let history_id = Uuid::now_v7();
+    let history = serde_json::json!({"id":history_id,"actorId":actor.user_id,"actorName":actor_name,"action":"create","documentRevision":1,"annotations":[],"comment":null,"evidenceFileIds":[],"createdAt":now,"revision":1});
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO correspondence_register_counters(register,year,last_number) VALUES('incoming',$1,1)").bind(year).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO correspondence_records(id,revision,created_by,summary,source_links,current_document_revision,register_number,register_year,register_kind) VALUES($1,1,$2,$3,'[]',1,1,$4,'incoming')")
+        .bind(id).bind(actor.user_id).bind(summary).bind(year).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO correspondence_document_revisions(correspondence_id,revision,document,created_by) VALUES($1,1,$2,$3)")
+        .bind(id).bind(document).bind(actor.user_id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO process_action_history(id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4)")
+        .bind(history_id).bind(id).bind(actor.user_id).bind(history).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,'correspondence_create',$3,$4)")
+        .bind(actor.user_id).bind(request.request_id).bind(process::payload_hash(&("correspondence_create", &request)).unwrap()).bind(id).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    (
+        request,
+        correspondence::detail(pool, actor, id).await.unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn legacy_text_create_replay_and_unchanged_revision_carryforward_preserve_old_rendering() {
+    let (pool, creator, _, _) = fixture("text_layout_legacy_revision").await;
+    let (old_create, legacy) = accepted_legacy_text_book(&pool, &creator).await;
+    let replayed = correspondence::create(&pool, &creator, &MemoryValidator, old_create)
+        .await
+        .unwrap();
+    assert_eq!(replayed.record.id, legacy.record.id);
+    assert_eq!(replayed.document.content_hash, legacy.document.content_hash);
+    let old_revision = ReviseCorrespondenceRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: legacy.record.revision,
+        content: "Changed body, unchanged accepted text".into(),
+        original_file_id: None,
+        attachment_file_ids: vec![],
+        annotations: legacy.document.annotations.clone(),
+        metadata: None,
+    };
+    let carried = correspondence::revise(
+        &pool,
+        &creator,
+        legacy.record.id,
+        &MemoryValidator,
+        old_revision.clone(),
+    )
+    .await
+    .unwrap();
+    assert!(carried.document.annotations[0]
+        .text_layout_version
+        .is_none());
+    assert_eq!(carried.document.annotations[0].width, 0.001);
+    let mut edited = old_revision.clone();
+    edited.request_id = Uuid::now_v7();
+    edited.expected_revision = carried.record.revision;
+    edited.annotations[0].text = Some("Edited text".into());
+    assert!(correspondence::revise(
+        &pool,
+        &creator,
+        legacy.record.id,
+        &MemoryValidator,
+        edited.clone()
+    )
+    .await
+    .is_err());
+    edited.annotations[0].text_layout_version = Some(1);
+    assert!(correspondence::revise(
+        &pool,
+        &creator,
+        legacy.record.id,
+        &MemoryValidator,
+        edited.clone()
+    )
+    .await
+    .is_err());
+    edited.annotations[0].width = 0.5;
+    let current =
+        correspondence::revise(&pool, &creator, legacy.record.id, &MemoryValidator, edited)
+            .await
+            .unwrap();
+    assert_eq!(current.document.annotations[0].text_layout_version, Some(1));
+    // The accepted old request must replay even though its legacy box is no longer current.
+    let replay = correspondence::revise(
+        &pool,
+        &creator,
+        legacy.record.id,
+        &MemoryValidator,
+        old_revision,
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay.record.revision, current.record.revision);
+    assert_eq!(replay.document.content_hash, current.document.content_hash);
+    let original = replay
+        .revisions
+        .iter()
+        .find(|document| document.revision == 1)
+        .unwrap();
+    assert_eq!(original.content_hash, legacy.document.content_hash);
+    assert!(original.annotations[0].text_layout_version.is_none());
+}
+
+#[tokio::test]
+async fn legacy_action_replay_and_subsequent_signing_preserve_narrow_accepted_evidence() {
+    let (pool, creator, reader, _) = fixture("text_layout_legacy_action").await;
+    let (_, legacy) = accepted_legacy_text_book(&pool, &creator).await;
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Approve,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &legacy, route.id).await;
+    let mut old_request = action(sent.record.revision, ProcessAction::Report);
+    old_request.comment = Some("Accepted before layout versioning".into());
+    old_request.annotations = vec![text_annotation(None, 0.001)];
+    let now = chrono::Utc::now();
+    let mut old_history = sent.history.last().unwrap().clone();
+    old_history.id = Uuid::now_v7();
+    old_history.action = "report".into();
+    old_history.actor_id = reader.user_id;
+    old_history.actor_name =
+        sqlx::query_scalar("SELECT display_name FROM user_display_names WHERE id=$1")
+            .bind(reader.user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    old_history.annotations = old_request.annotations.clone();
+    old_history.comment = old_request.comment.clone();
+    old_history.created_at = now;
+    old_history.revision += 1;
+    let mut record = sent.record.clone();
+    record.revision += 1;
+    let mut instance = sent.instance.unwrap();
+    instance.revision += 1;
+    let event = process::ProcessActionEvent {
+        id: Uuid::now_v7(),
+        instance_id: instance.id,
+        actor_id: reader.user_id,
+        request_id: old_request.request_id,
+        revision: instance.revision,
+        action: old_request.clone(),
+        created_at: now,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("UPDATE correspondence_records SET revision=$2,summary=$3 WHERE id=$1")
+        .bind(record.id)
+        .bind(record.revision)
+        .bind(sqlx::types::Json(&record))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE process_instances SET revision=$2,definition=$3 WHERE id=$1")
+        .bind(instance.id)
+        .bind(instance.revision)
+        .bind(sqlx::types::Json(&instance))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO process_instance_revisions(instance_id,revision,definition) VALUES($1,$2,$3)",
+    )
+    .bind(instance.id)
+    .bind(instance.revision)
+    .bind(sqlx::types::Json(&instance))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO process_action_events(id,instance_id,actor_id,request_id,revision,event) VALUES($1,$2,$3,$4,$5,$6)").bind(event.id).bind(instance.id).bind(reader.user_id).bind(old_request.request_id).bind(instance.revision).bind(sqlx::types::Json(event)).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO process_action_history(id,instance_id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4,$5)").bind(old_history.id).bind(instance.id).bind(record.id).bind(reader.user_id).bind(sqlx::types::Json(&old_history)).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO workflow_mutation_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,'correspondence_action',$3,$4)")
+        .bind(reader.user_id).bind(old_request.request_id).bind(process::payload_hash(&("correspondence_action", record.id, &old_request)).unwrap()).bind(record.id).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let replay = correspondence::act(
+        &pool,
+        &reader,
+        record.id,
+        &MemoryValidator,
+        old_request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay.record.revision, record.revision);
+    assert_eq!(replay.history.last().unwrap().id, old_history.id);
+    let mut approve = action(record.revision, ProcessAction::Approve);
+    approve.signature = Some(SignatureInput {
+        method: SignatureMethod::Drawn,
+        asset_id: None,
+        strokes: vec![InkStroke {
+            points: vec![InkPoint { x: 0.0, y: 0.0 }, InkPoint { x: 1.0, y: 1.0 }],
+            width: 0.01,
+            color: "#000000".into(),
+        }],
+        page: 1,
+        x: 0.5,
+        y: 0.6,
+        width: 0.2,
+        height: 0.1,
+        document_revision: 1,
+        content_hash: legacy.document.content_hash.clone(),
+    });
+    let signed = correspondence::act(&pool, &reader, record.id, &MemoryValidator, approve)
+        .await
+        .unwrap();
+    assert_eq!(signed.record.status, CorrespondenceStatus::Completed);
+    assert_eq!(signed.signatures.len(), 1);
+    assert!(signed.document.annotations[0].text_layout_version.is_none());
+    assert_eq!(signed.document.content_hash, legacy.document.content_hash);
+    let retained: serde_json::Value =
+        sqlx::query_scalar("SELECT entry FROM process_action_history WHERE id=$1")
+            .bind(old_history.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(retained, serde_json::to_value(old_history).unwrap());
+    assert_eq!(
+        correspondence::act(&pool, &reader, record.id, &MemoryValidator, old_request)
+            .await
+            .unwrap()
+            .record
+            .status,
+        CorrespondenceStatus::Completed
+    );
+}
+
+#[tokio::test]
+async fn fresh_text_requires_known_strict_layout_before_create_or_action_acceptance() {
+    let (pool, creator, reader, _) = fixture("text_layout_fresh_acceptance").await;
+    for version in [None, Some(0), Some(2)] {
+        let mut request = create_request();
+        request.annotations = vec![text_annotation(version, 0.5)];
+        assert!(
+            correspondence::create(&pool, &creator, &MemoryValidator, request)
+                .await
+                .is_err()
+        );
+    }
+    let mut request = create_request();
+    request.annotations = vec![text_annotation(Some(1), 0.001)];
+    assert!(
+        correspondence::create(&pool, &creator, &MemoryValidator, request.clone())
+            .await
+            .is_err()
+    );
+    request.annotations[0].width = 0.5;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, request)
+        .await
+        .unwrap();
+    assert_eq!(draft.record.register_number, 1);
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Approve,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &draft, route.id).await;
+    for version in [None, Some(0), Some(2)] {
+        let mut request = action(sent.record.revision, ProcessAction::Report);
+        request.comment = Some("New annotation".into());
+        request.annotations = vec![text_annotation(version, 0.5)];
+        assert!(
+            correspondence::act(&pool, &reader, sent.record.id, &MemoryValidator, request)
+                .await
+                .is_err()
+        );
+    }
+    let mut request = action(sent.record.revision, ProcessAction::Report);
+    request.comment = Some("New strict annotation".into());
+    request.annotations = vec![text_annotation(Some(1), 0.001)];
+    assert!(correspondence::act(
+        &pool,
+        &reader,
+        sent.record.id,
+        &MemoryValidator,
+        request.clone()
+    )
+    .await
+    .is_err());
+    request.annotations[0].width = 0.5;
+    let accepted = correspondence::act(&pool, &reader, sent.record.id, &MemoryValidator, request)
+        .await
+        .unwrap();
+    assert_eq!(accepted.record.revision, sent.record.revision + 1);
+    assert_eq!(
+        accepted.history.last().unwrap().annotations[0].text_layout_version,
+        Some(1)
+    );
+}
+
+#[tokio::test]
+async fn first_document_read_is_concurrent_idempotent_and_separate_from_acknowledgement() {
+    let (pool, creator, reader, outsider) = fixture("reader_receipt_race").await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &draft, route.id).await;
+    let instance_id = sent.instance.as_ref().unwrap().id;
+    let before_snapshots: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM process_instance_revisions WHERE instance_id=$1")
+            .bind(instance_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let before_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM process_action_events WHERE instance_id=$1")
+            .bind(instance_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let request = CorrespondenceReadRequest {
+        document_revision: sent.document.revision,
+    };
+    assert!(
+        correspondence::read(&pool, &outsider, draft.record.id, request.clone())
+            .await
+            .is_err()
+    );
+    assert!(correspondence::read(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 999
+        }
+    )
+    .await
+    .is_err());
+    let (first, second) = tokio::join!(
+        correspondence::read_with_changes(&pool, &reader, draft.record.id, request.clone()),
+        correspondence::read_with_changes(&pool, &reader, draft.record.id, request.clone())
+    );
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_ne!(first.work_changed, second.work_changed);
+    let first = first.value;
+    let second = second.value;
+    assert_eq!(first.first_read_at, second.first_read_at);
+    assert_eq!(first.document_revision, sent.document.revision);
+    let viewed = correspondence::detail(&pool, &reader, draft.record.id)
+        .await
+        .unwrap();
+    assert_eq!(viewed.record.revision, sent.record.revision);
+    assert_eq!(viewed.history.len(), sent.history.len());
+    assert_eq!(viewed.record.status, CorrespondenceStatus::InProgress);
+    assert!(viewed.instance.as_ref().unwrap().steps[0].recipients[0]
+        .completed_at
+        .is_none());
+    let read_at = viewed.instance.as_ref().unwrap().steps[0].recipients[0]
+        .read_at
+        .unwrap();
+    let work_read: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT a.read_at FROM work_item_assignees a JOIN work_items w ON w.id=a.work_item_id WHERE w.source_resource_id=$1 AND a.user_id=$2")
+        .bind(draft.record.id).bind(reader.user_id).fetch_one(&pool).await.unwrap();
+    // PostgreSQL timestamps store microseconds; JSON snapshots retain chrono nanoseconds.
+    assert_eq!(work_read.timestamp_micros(), read_at.timestamp_micros());
+    let explicit = action(sent.record.revision, ProcessAction::Read);
+    let accepted = correspondence::act_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        &MemoryValidator,
+        explicit.clone(),
+    )
+    .await
+    .unwrap();
+    assert!(!accepted.work_changed);
+    let repeated = correspondence::act_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        &MemoryValidator,
+        explicit,
+    )
+    .await
+    .unwrap();
+    assert!(!repeated.work_changed);
+    let after = repeated.value;
+    assert_eq!(after.history.len(), sent.history.len());
+    assert_eq!(after.record.revision, sent.record.revision);
+    assert_eq!(
+        after.my_read_receipt.unwrap().first_read_at,
+        first.first_read_at
+    );
+    let snapshots: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM process_instance_revisions WHERE instance_id=$1")
+            .bind(instance_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM process_action_events WHERE instance_id=$1")
+            .bind(instance_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(snapshots, before_snapshots + 1);
+    assert_eq!(events, before_events);
+    // A stale My Work projection is repaired without fabricating a new process revision.
+    sqlx::query("UPDATE work_item_assignees SET status='assigned',read_at=NULL WHERE user_id=$1")
+        .bind(reader.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        correspondence::read_with_changes(&pool, &reader, draft.record.id, request.clone())
+            .await
+            .unwrap()
+            .work_changed
+    );
+    assert!(
+        !correspondence::read_with_changes(&pool, &reader, draft.record.id, request.clone())
+            .await
+            .unwrap()
+            .work_changed
+    );
+    let repaired_snapshots: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM process_instance_revisions WHERE instance_id=$1")
+            .bind(instance_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(repaired_snapshots, snapshots);
+    let repaired_work_read: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT a.read_at FROM work_item_assignees a JOIN work_items w ON w.id=a.work_item_id WHERE w.source_resource_id=$1 AND a.user_id=$2")
+        .bind(draft.record.id).bind(reader.user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        repaired_work_read.timestamp_micros(),
+        read_at.timestamp_micros()
+    );
+    let mut manager = outsider.clone();
+    manager.permissions = vec![codes::CORRESPONDENCE_READ_SCHOOL.into()];
+    let manager_read = correspondence::read_with_changes(&pool, &manager, draft.record.id, request)
+        .await
+        .unwrap();
+    assert!(!manager_read.work_changed);
+    assert!(correspondence::act(
+        &pool,
+        &manager,
+        draft.record.id,
+        &MemoryValidator,
+        action(sent.record.revision, ProcessAction::Read)
+    )
+    .await
+    .is_err());
+    let acknowledged = correspondence::act(
+        &pool,
+        &reader,
+        draft.record.id,
+        &MemoryValidator,
+        action(sent.record.revision, ProcessAction::Acknowledge),
+    )
+    .await
+    .unwrap();
+    assert_eq!(acknowledged.record.status, CorrespondenceStatus::Completed);
+    assert!(acknowledged.instance.unwrap().steps[0].recipients[0]
+        .completed_at
+        .is_some());
+}
+
+#[tokio::test]
+async fn first_read_keeps_the_first_rendered_revision_after_a_later_draft_revision() {
+    let (pool, creator, _, _) = fixture("reader_revision_identity").await;
+    let first = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let receipt = correspondence::read(
+        &pool,
+        &creator,
+        first.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let revised = correspondence::revise(
+        &pool,
+        &creator,
+        first.record.id,
+        &MemoryValidator,
+        ReviseCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: first.record.revision,
+            content: "Later source".into(),
+            original_file_id: None,
+            attachment_file_ids: vec![],
+            annotations: vec![],
+            metadata: None,
+        },
+    )
+    .await
+    .unwrap();
+    let repeated = correspondence::read(
+        &pool,
+        &creator,
+        first.record.id,
+        CorrespondenceReadRequest {
+            document_revision: revised.document.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(receipt.first_read_at, repeated.first_read_at);
+    assert_eq!(repeated.document_revision, 1);
+    assert_eq!(revised.document.revision, 2);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM correspondence_read_receipts WHERE correspondence_id=$1",
+    )
+    .bind(first.record.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    assert!(sqlx::query(
+        "UPDATE correspondence_read_receipts SET first_read_at=now() WHERE correspondence_id=$1"
+    )
+    .bind(first.record.id)
+    .execute(&pool)
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+async fn existing_book_read_receipt_does_not_pre_read_a_newly_activated_assignment() {
+    let (pool, creator, reader, _) = fixture("reader_new_active_slot").await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let route = template(
+        &pool,
+        &creator,
+        vec![
+            step(
+                ProcessStepKind::Acknowledge,
+                ProcessCompletionPolicy::All,
+                &[reader.user_id],
+            ),
+            step(
+                ProcessStepKind::Acknowledge,
+                ProcessCompletionPolicy::All,
+                &[reader.user_id],
+            ),
+        ],
+    )
+    .await;
+    let sent = send(&pool, &creator, &draft, route.id).await;
+    assert_eq!(sent.instance.as_ref().unwrap().current_step, 0);
+    let first = correspondence::read_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(first.work_changed);
+    let viewed = correspondence::detail(&pool, &reader, draft.record.id)
+        .await
+        .unwrap();
+    assert!(viewed.instance.as_ref().unwrap().steps[1].recipients[0]
+        .read_at
+        .is_none());
+    let advanced = correspondence::act(
+        &pool,
+        &reader,
+        draft.record.id,
+        &MemoryValidator,
+        action(viewed.record.revision, ProcessAction::Acknowledge),
+    )
+    .await
+    .unwrap();
+    assert_eq!(advanced.instance.as_ref().unwrap().current_step, 1);
+    assert!(advanced.instance.as_ref().unwrap().steps[1].recipients[0]
+        .read_at
+        .is_none());
+    let new_slot_read_started = chrono::Utc::now();
+    let next = correspondence::read_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(next.work_changed);
+    assert_eq!(first.value.first_read_at, next.value.first_read_at);
+    assert_eq!(first.value.document_revision, next.value.document_revision);
+    let projected = correspondence::detail(&pool, &reader, draft.record.id)
+        .await
+        .unwrap();
+    let second_slot = &projected.instance.as_ref().unwrap().steps[1].recipients[0];
+    assert!(second_slot.read_at.unwrap() >= new_slot_read_started);
+    assert!(second_slot.completed_at.is_none());
+    assert_eq!(projected.record.status, CorrespondenceStatus::InProgress);
+    let repeat = correspondence::read_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!repeat.work_changed);
+    assert_eq!(repeat.value.first_read_at, first.value.first_read_at);
+}
+
+#[tokio::test]
+async fn historical_render_receipt_does_not_mark_the_current_document_assignment_read() {
+    let (pool, creator, reader, _) = fixture("reader_historical_projection").await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let current = correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        ReviseCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: draft.record.revision,
+            content: "Current document source".into(),
+            original_file_id: None,
+            attachment_file_ids: vec![],
+            annotations: vec![],
+            metadata: None,
+        },
+    )
+    .await
+    .unwrap();
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &current, route.id).await;
+    let historical = correspondence::read_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!historical.work_changed);
+    assert_eq!(historical.value.document_revision, 1);
+    let before = correspondence::detail(&pool, &reader, draft.record.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        before.instance.as_ref().unwrap().revision,
+        sent.instance.as_ref().unwrap().revision
+    );
+    assert!(before.instance.as_ref().unwrap().steps[0].recipients[0]
+        .read_at
+        .is_none());
+    let work_read: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar("SELECT a.read_at FROM work_item_assignees a JOIN work_items w ON w.id=a.work_item_id WHERE w.source_resource_id=$1 AND a.user_id=$2")
+        .bind(draft.record.id).bind(reader.user_id).fetch_one(&pool).await.unwrap();
+    assert!(work_read.is_none());
+    let current_read_started = chrono::Utc::now();
+    let current_read = correspondence::read_with_changes(
+        &pool,
+        &reader,
+        draft.record.id,
+        CorrespondenceReadRequest {
+            document_revision: current.document.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(current_read.work_changed);
+    assert_eq!(
+        current_read.value.first_read_at,
+        historical.value.first_read_at
+    );
+    assert_eq!(current_read.value.document_revision, 1);
+    let projected = correspondence::detail(&pool, &reader, draft.record.id)
+        .await
+        .unwrap();
+    let recipient = &projected.instance.as_ref().unwrap().steps[0].recipients[0];
+    assert!(recipient.read_at.unwrap() >= current_read_started);
+    assert!(recipient.completed_at.is_none());
+    assert_eq!(projected.record.status, CorrespondenceStatus::InProgress);
+    assert!(
+        !correspondence::read_with_changes(
+            &pool,
+            &reader,
+            draft.record.id,
+            CorrespondenceReadRequest {
+                document_revision: 1
+            }
+        )
+        .await
+        .unwrap()
+        .work_changed
+    );
+}
+
+#[tokio::test]
+async fn register_presentation_settings_preserve_numbers_profiles_and_accepted_labels() {
+    let (pool, creator, _, _) = fixture("register_presentation").await;
+    let before = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    // A pre-feature summary has no display snapshot and must stay that way.
+    sqlx::query("UPDATE correspondence_records SET summary=summary-'registerLabel' WHERE id=$1")
+        .bind(before.record.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let defaults = school_workflow::directed::settings(&pool, &creator)
+        .await
+        .unwrap();
+    assert!(defaults
+        .iter()
+        .all(|s| s.default_purpose == DirectedPurpose::Acknowledge
+            && s.default_allow_onward_assignment));
+    let mut admin = creator.clone();
+    admin.permissions.push(codes::PROCESS_MANAGE_SCHOOL.into());
+    let request = SaveCorrespondenceRoutingSettingsRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: 0,
+        register: CorrespondenceRegister::Incoming,
+        eligible_decision_makers: vec![],
+        default_first_recipient: None,
+        default_purpose: DirectedPurpose::Execute,
+        default_require_review: false,
+        default_reviewer: None,
+        default_allow_onward_assignment: false,
+        numbering: Some(CorrespondenceNumberingSettings {
+            format: "รับ-{number}/{year}".into(),
+            minimum_digits: 4,
+        }),
+        text_stamp_templates: Some(vec![CorrespondenceTextStampTemplate {
+            id: Uuid::now_v7(),
+            name: "Receipt".into(),
+            body: "{schoolName}\n{registerNumber}\n{registeredDate} {registeredTime}".into(),
+            border: true,
+        }]),
+    };
+    assert!(
+        school_workflow::directed::save_settings(&pool, &creator, request.clone())
+            .await
+            .is_err()
+    );
+    let saved = school_workflow::directed::save_settings(&pool, &admin, request.clone())
+        .await
+        .unwrap();
+    let second = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    assert_eq!(
+        second.record.register_number,
+        before.record.register_number + 1
+    );
+    assert_eq!(second.record.register_year, before.record.register_year);
+    let label = format!(
+        "รับ-{:04}/{}",
+        second.record.register_number, second.record.register_year
+    );
+    assert_eq!(
+        second.record.register_label.as_deref(),
+        Some(label.as_str())
+    );
+    let replay = school_workflow::directed::save_settings(&pool, &admin, request)
+        .await
+        .unwrap();
+    assert_eq!(replay.revision, saved.revision);
+    let mut legacy_edit = SaveCorrespondenceRoutingSettingsRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: saved.revision,
+        register: CorrespondenceRegister::Incoming,
+        eligible_decision_makers: vec![],
+        default_first_recipient: None,
+        default_purpose: DirectedPurpose::Execute,
+        default_require_review: false,
+        default_reviewer: None,
+        default_allow_onward_assignment: false,
+        numbering: None,
+        text_stamp_templates: None,
+    };
+    let preserved = school_workflow::directed::save_settings(&pool, &admin, legacy_edit.clone())
+        .await
+        .unwrap();
+    assert_eq!(preserved.numbering.format, saved.numbering.format);
+    assert_eq!(
+        preserved.text_stamp_templates[0].id,
+        saved.text_stamp_templates[0].id
+    );
+    assert!(!preserved.default_allow_onward_assignment);
+    legacy_edit.request_id = Uuid::now_v7();
+    legacy_edit.expected_revision = preserved.revision;
+    legacy_edit.numbering = Some(CorrespondenceNumberingSettings {
+        format: "ใหม่-{number}".into(),
+        minimum_digits: 1,
+    });
+    school_workflow::directed::save_settings(&pool, &admin, legacy_edit)
+        .await
+        .unwrap();
+    assert_eq!(
+        correspondence::detail(&pool, &creator, before.record.id)
+            .await
+            .unwrap()
+            .record
+            .register_label,
+        None
+    );
+    assert_eq!(
+        correspondence::detail(&pool, &creator, second.record.id)
+            .await
+            .unwrap()
+            .record
+            .register_label
+            .as_deref(),
+        Some(label.as_str())
+    );
+    for search in [
+        label,
+        format!(
+            "{}/{}",
+            second.record.register_number, second.record.register_year
+        ),
+    ] {
+        let mut query = list_query(CorrespondenceListView::All);
+        query.search = Some(search);
+        let page = correspondence::list(&pool, &creator, query).await.unwrap();
+        assert!(page.items.iter().any(|r| r.id == second.record.id));
+    }
+}
+
+async fn insert_legacy_read(
+    pool: &PgPool,
+    detail: &CorrespondenceDetail,
+    reader: &ActorContext,
+    revision: i64,
+    time: &str,
+) -> Uuid {
+    let mut entry = detail.history.last().unwrap().clone();
+    entry.id = Uuid::now_v7();
+    entry.actor_id = reader.user_id;
+    entry.action = "read".into();
+    entry.document_revision = revision;
+    entry.created_at = time.parse().unwrap();
+    sqlx::query("INSERT INTO process_action_history(id,instance_id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4,$5)")
+        .bind(entry.id).bind(detail.instance.as_ref().unwrap().id).bind(detail.record.id).bind(reader.user_id).bind(sqlx::types::Json(&entry)).execute(pool).await.unwrap();
+    entry.id
+}
+
+#[tokio::test]
+async fn reader_migration_backfills_earliest_immutable_read_without_rewriting_audit() {
+    let (pool, creator, reader, _) = fixture("reader_migration_valid").await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &draft, route.id).await;
+    insert_legacy_read(&pool, &sent, &reader, 1, "2026-10-18T02:00:00Z").await;
+    insert_legacy_read(&pool, &sent, &reader, 1, "2026-10-18T03:00:00Z").await;
+    let audit: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT entry FROM process_action_history ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    sqlx::query("DROP TABLE correspondence_read_receipts")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/128_correspondence_reader_templates.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let read = correspondence::detail(&pool, &reader, sent.record.id)
+        .await
+        .unwrap()
+        .my_read_receipt
+        .unwrap();
+    assert_eq!(read.first_read_at.to_rfc3339(), "2026-10-18T02:00:00+00:00");
+    let after: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT entry FROM process_action_history ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(audit, after);
+}
+
+#[tokio::test]
+async fn reader_migration_refuses_unmappable_and_ambiguous_reads_with_preserved_audit() {
+    for (name, ambiguous) in [
+        ("reader_migration_missing_doc", false),
+        ("reader_migration_ambiguous", true),
+    ] {
+        let (pool, creator, reader, _) = fixture(name).await;
+        let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+            .await
+            .unwrap();
+        let revised = correspondence::revise(
+            &pool,
+            &creator,
+            draft.record.id,
+            &MemoryValidator,
+            ReviseCorrespondenceRequest {
+                request_id: Uuid::now_v7(),
+                expected_revision: draft.record.revision,
+                content: "Second source".into(),
+                original_file_id: None,
+                attachment_file_ids: vec![],
+                annotations: vec![],
+                metadata: None,
+            },
+        )
+        .await
+        .unwrap();
+        let route = template(
+            &pool,
+            &creator,
+            vec![step(
+                ProcessStepKind::Acknowledge,
+                ProcessCompletionPolicy::All,
+                &[reader.user_id],
+            )],
+        )
+        .await;
+        let sent = send(&pool, &creator, &revised, route.id).await;
+        insert_legacy_read(
+            &pool,
+            &sent,
+            &reader,
+            if ambiguous { 1 } else { 999 },
+            "2026-10-18T02:00:00Z",
+        )
+        .await;
+        if ambiguous {
+            insert_legacy_read(&pool, &sent, &reader, 2, "2026-10-18T02:00:00Z").await;
+        }
+        let audit: Vec<serde_json::Value> =
+            sqlx::query_scalar("SELECT entry FROM process_action_history ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        sqlx::query("DROP TABLE correspondence_read_receipts")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = sqlx::raw_sql(include_str!(
+            "../../../migrations/128_correspondence_reader_templates.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("CORRESPONDENCE_READ_BACKFILL_BLOCKED"));
+        let after: Vec<serde_json::Value> =
+            sqlx::query_scalar("SELECT entry FROM process_action_history ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(audit, after);
+    }
+}
+
+#[tokio::test]
+async fn reader_migration_refuses_relative_timestamps_in_immutable_read_evidence() {
+    let (pool, creator, reader, _) = fixture("reader_migration_relative_time").await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let route = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::All,
+            &[reader.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &draft, route.id).await;
+    let id = Uuid::now_v7();
+    let mut entry = serde_json::to_value(sent.history.last().unwrap()).unwrap();
+    entry["id"] = serde_json::json!(id);
+    entry["actorId"] = serde_json::json!(reader.user_id);
+    entry["action"] = serde_json::json!("read");
+    entry["createdAt"] = serde_json::json!("today");
+    sqlx::query("INSERT INTO process_action_history(id,instance_id,correspondence_id,actor_id,entry) VALUES($1,$2,$3,$4,$5)")
+        .bind(id).bind(sent.instance.unwrap().id).bind(draft.record.id).bind(reader.user_id).bind(&entry).execute(&pool).await.unwrap();
+    sqlx::query("DROP TABLE correspondence_read_receipts")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let error = sqlx::raw_sql(include_str!(
+        "../../../migrations/128_correspondence_reader_templates.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("CORRESPONDENCE_READ_BACKFILL_BLOCKED invalid_rows=1"));
+    let retained: serde_json::Value =
+        sqlx::query_scalar("SELECT entry FROM process_action_history WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(entry, retained);
+}
+
 async fn fixture(name: &str) -> (PgPool, ActorContext, ActorContext, ActorContext) {
     fixture_with_connections(name, 5).await
 }
@@ -465,6 +1560,8 @@ async fn signatures_bind_document_and_action_layer_and_read_cannot_write() {
     let annotation = DocumentAnnotation {
         id: Uuid::now_v7(),
         kind: DocumentAnnotationKind::Text,
+        text_layout_version: Some(1),
+        border: false,
         page: 1,
         x: 0.1,
         y: 0.1,
@@ -1081,6 +2178,8 @@ async fn invalid_source_pages_and_glyphs_fail_before_acceptance() {
     request.annotations.push(DocumentAnnotation {
         id: Uuid::now_v7(),
         kind: DocumentAnnotationKind::Text,
+        text_layout_version: Some(1),
+        border: false,
         page: 99,
         x: 0.1,
         y: 0.1,
@@ -1545,6 +2644,8 @@ async fn accepted_annotation_ids_are_unique_across_base_and_history_but_replay_s
     let base = DocumentAnnotation {
         id: Uuid::now_v7(),
         kind: DocumentAnnotationKind::Text,
+        text_layout_version: Some(1),
+        border: false,
         page: 1,
         x: 0.1,
         y: 0.1,
@@ -2779,6 +3880,8 @@ async fn directed_settings_restrict_first_assignee_independent_of_reviewer_and_p
     let mut admin = creator.clone();
     admin.permissions.push(codes::PROCESS_MANAGE_SCHOOL.into());
     let request = SaveCorrespondenceRoutingSettingsRequest {
+        numbering: None,
+        text_stamp_templates: None,
         request_id: Uuid::now_v7(),
         expected_revision: 0,
         register: CorrespondenceRegister::Incoming,
@@ -3306,6 +4409,8 @@ async fn directed_unit_targets_responsible_lead_and_ambiguous_selection_requires
         &pool,
         &admin,
         SaveCorrespondenceRoutingSettingsRequest {
+            numbering: None,
+            text_stamp_templates: None,
             request_id: Uuid::now_v7(),
             expected_revision: 0,
             register: CorrespondenceRegister::Outgoing,
@@ -3420,6 +4525,8 @@ async fn directed_signed_instructions_bind_resolved_graph_and_replay_atomically(
     request.annotations.push(DocumentAnnotation {
         id: Uuid::now_v7(),
         kind: DocumentAnnotationKind::Text,
+        text_layout_version: Some(1),
+        border: false,
         page: 1,
         x: 0.1,
         y: 0.1,
@@ -3530,6 +4637,8 @@ async fn directed_manager_recovers_first_and_leaf_without_completion_authority_o
         permissions: vec![codes::PROCESS_MANAGE_SCHOOL.into()],
     };
     let profile = SaveCorrespondenceRoutingSettingsRequest {
+        numbering: None,
+        text_stamp_templates: None,
         request_id: Uuid::now_v7(),
         expected_revision: 0,
         register: CorrespondenceRegister::Incoming,

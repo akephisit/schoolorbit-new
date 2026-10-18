@@ -7,6 +7,7 @@ pub mod http;
 
 pub mod correspondence;
 pub mod correspondence_files;
+pub mod correspondence_settings;
 pub mod directed;
 pub mod document_export;
 pub mod process;

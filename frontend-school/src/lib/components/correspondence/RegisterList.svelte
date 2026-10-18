@@ -14,6 +14,7 @@
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
 	import {
 		actionLabels,
+		correspondenceRegisterLabel,
 		registerLabels,
 		statusLabels,
 		dateLabel
@@ -74,16 +75,6 @@
 	}
 	function progressFor(record: CorrespondenceSummary) {
 		return region.value?.progress.find((item) => item.correspondenceId === record.id);
-	}
-	function mainAction(record: CorrespondenceSummary): string {
-		const progress = progressFor(record);
-		return progress?.myAction
-			? actionLabels[progress.myAction]
-			: progress?.canRevise
-				? record.status === 'revision_requested'
-					? 'แก้ไขและส่งใหม่'
-					: 'เขียนต่อและส่ง'
-				: 'ดูรายละเอียด';
 	}
 </script>
 
@@ -168,7 +159,7 @@
 							><Badge variant="outline">{statusLabels[record.status]}</Badge>
 						</div>
 						<p class="text-sm">
-							{registerLabels[record.register]} · เลขทะเบียน {record.registerNumber}/{record.registerYear}
+							{registerLabels[record.register]} · เลขทะเบียน {correspondenceRegisterLabel(record)}
 						</p>
 						<p class="text-sm text-muted-foreground">
 							เลขที่ต้นทาง {record.documentNumber ?? '—'} · {record.sender}
@@ -180,7 +171,7 @@
 						<Button
 							href={detailHref(record)}
 							variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
-							class="w-full">{mainAction(record)}</Button
+							class="w-full">เปิดอ่าน</Button
 						>
 					</article>{/each}
 			</div>
@@ -209,7 +200,7 @@
 								<Table.Cell class="min-w-40"
 									><p>
 										{registerLabels[record.register]}
-										{record.registerNumber}/{record.registerYear}
+										{correspondenceRegisterLabel(record)}
 									</p>
 									<p class="mt-1 text-sm text-muted-foreground">
 										ต้นทาง {record.documentNumber ?? '—'}
@@ -229,7 +220,7 @@
 										href={detailHref(record)}
 										size="sm"
 										variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
-										>{mainAction(record)}</Button
+										>เปิดอ่าน</Button
 									></Table.Cell
 								>
 							</Table.Row>{/each}
@@ -257,6 +248,12 @@
 
 {#snippet progressSummary(record: CorrespondenceSummary)}{@const progress = progressFor(record)}
 	<div class="space-y-1 text-sm">
+		{#if progress?.myAction}<p class="font-medium text-primary">
+				รอคุณ: {actionLabels[progress.myAction]}
+			</p>{/if}
+		{#if progress?.canRevise}<p class="font-medium text-primary">
+				{record.status === 'revision_requested' ? 'แก้ไขและส่งใหม่' : 'เขียนต่อและส่ง'}
+			</p>{/if}
 		{#if progress?.currentStepTitle}<p class="md:hidden">
 				{#if progress.currentStepIndex != null}ขั้น {progress.currentStepIndex +
 						1}/{progress.stepCount} ·

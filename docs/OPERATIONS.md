@@ -1641,6 +1641,38 @@ and ownership remain unchanged. A rollback needs matching frontend/backend contr
 retain a runtime supporting the correspondence File Platform purposes described above; preserve
 all existing summaries, document revisions, process/action history and file/signature evidence.
 
+Migration 128 adds first-read receipts unique to each book/person. It backfills the earliest valid
+immutable explicit Read and refuses migration with aggregate `CORRESPONDENCE_READ_BACKFILL_BLOCKED`
+findings if historical identities/revisions/timestamps are unmappable or the earliest revision is
+ambiguous. Keep maintenance active, preserve the audit, and reconcile through an owned forward
+migration; do not delete evidence, skip the gate, or fabricate a later first read. Deploy matching
+backend, generated contracts and frontend together. GET/detail/preview do not record reading;
+the authorized read POST records the first successfully rendered revision and may update applicable
+process/My Work read projections only for the locked current document revision, without acknowledging
+or completing work. Historical renders retain honest first-book evidence without marking newer
+content read, and newly activated slots receive their own current read timestamp. Repeated reads preserve
+the original receipt and create no duplicate history, snapshots, or work-change broadcasts.
+
+Register profiles now store number formatting and reusable text stamps. Numeric reservations and
+register years keep their existing owner; new books freeze their formatted label and old books
+retain their original labels/numbers. Text stamps freeze editable concrete content and normalized
+placement into accepted annotations; bordered text uses the same padded geometry in preview/export.
+Creating a resource-bound draft before upload can leave an initial no-file document revision;
+attaching an uploaded PDF adds a revision that references its file identity, while sending changes
+workflow state without uploading another PDF. Source previews and exports read/verify originals
+and compose bytes on demand without persisting a generated PDF. This describes code behavior, not
+measured storage or compute usage. After these fields or read receipts are accepted, recover by
+rolling forward; older runtimes may drop new JSON fields when rewriting summaries or profiles.
+
+Accepted text annotations without `textLayoutVersion` keep their original height-only fitting;
+do not rewrite or infer their layout from UUIDs, dates, or document revisions. New/edited text
+requires version 1, which fits both width and height; a bordered text box also requires version 1.
+An exactly unchanged accepted legacy base annotation may carry forward into a document revision,
+and accepted old mutation requests still replay before new-submission checks. Signature captions
+retain their existing layout. Deploy the matching generated contracts/frontend/backend together;
+after accepting versioned text, recover forward with a runtime that preserves these semantics.
+No SQL migration rewrites historical annotations or signing evidence for this rendering change.
+
 Staff leave uses additive tenant migration `126_staff_leave.sql` after directed routing 125. Configure category profiles, routing and policy source/effective dates before enabling staff submission. There are no seeded legal allowances or approval recipients. Before the first leave policy creates a source-owned process template, the schema is compatible with binaries that ignore the Staff tables; after policy/request activation, do not restore a binary lacking the source-template ownership guard. Preserve request/process/evidence history and recover by rolling forward to a compatible release. This feature adds no departure/return tracking or late-alert worker.
 
 ## School appearance loading and recovery

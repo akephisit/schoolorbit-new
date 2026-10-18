@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+	openAnnotationTools,
 	mockCorrespondence,
 	detailPath,
 	correspondenceId,
@@ -31,7 +32,7 @@ async function draw(page: Page) {
 	await page.mouse.up();
 }
 async function openSource(page: Page) {
-	await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+	await expect(page.locator('canvas')).toBeVisible();
 	await expect(page.getByRole('img', { name: 'ชั้นหมายเหตุบนเอกสาร' })).toBeVisible();
 	await expect(page.locator('canvas')).toHaveAttribute('width', /\d+/);
 }
@@ -49,6 +50,8 @@ test('create and send starts the actual document workflow without a manual work 
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
@@ -76,7 +79,9 @@ test('reader opens detail without manager, signature or recipient option reads',
 	await expect(page.getByTestId('correspondence-detail')).toContainText('ครูผู้รับคนที่สอง');
 	expect(api.count('/api/correspondence/options')).toBe(0);
 	expect(api.count('/api/correspondence/signatures')).toBe(0);
-	expect(api.count(`/api/correspondence/${correspondenceId}/preview`)).toBe(0);
+	await expect(page.locator('canvas')).toBeVisible();
+	await expect.poll(() => api.readRequests.length).toBe(1);
+	expect(api.count(`/api/correspondence/${correspondenceId}/preview`)).toBe(1);
 	await expect(page.getByTestId('correspondence-detail')).not.toContainText(correspondenceId);
 });
 
@@ -87,6 +92,7 @@ for (const status of [503, 409])
 		const api = await mockCorrespondence(page, { failAction: status });
 		await page.goto(detailPath);
 		await openSource(page);
+		await openAnnotationTools(page);
 		await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 		await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('โปรดดำเนินการภายในวันศุกร์');
 		await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -108,7 +114,7 @@ for (const status of [503, 409])
 			await expect(
 				page.getByText('รายการมีการเปลี่ยนแปลง กรุณาตรวจเอกสารและขั้นตอนล่าสุด')
 			).toBeVisible();
-			await expect(page.getByRole('button', { name: 'เปิดเอกสาร', exact: true })).toBeVisible();
+			await expect(page.locator('canvas')).toBeVisible();
 			await openSource(page);
 			await page
 				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
@@ -347,8 +353,12 @@ test('reassignment A to B to A preserves completed snapshots and offers only pen
 	expect(errors).toEqual([]);
 });
 
-for (const delivery of ['delayed', 'ambiguous'] as const)
-	test(`same-revision accepted annotation reconciles ${delivery} response without losing draft or consent`, async ({
+for (const { delivery, editBeforeRefresh } of [
+	{ delivery: 'delayed', editBeforeRefresh: false },
+	{ delivery: 'ambiguous', editBeforeRefresh: false },
+	{ delivery: 'ambiguous', editBeforeRefresh: true }
+] as const)
+	test(`same-revision accepted annotation reconciles ${delivery} response ${editBeforeRefresh ? 'with explicit consent after draft edits' : 'without losing draft or consent'}`, async ({
 		page
 	}) => {
 		const errors: string[] = [];
@@ -361,21 +371,27 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 		});
 		await page.goto(detailPath);
 		await openSource(page);
+		await openAnnotationTools(page);
 		await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 		await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุที่เซิร์ฟเวอร์รับแล้ว');
 		await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
 		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 		await page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true }).fill('ความคิดเห็นที่ยังเก็บไว้');
 		await draw(page);
-		await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+		const confirmation = page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ });
+		await confirmation.check();
 		await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
 		await expect.poll(() => api.detail().record.revision).toBe(2);
+		const acceptedPayload = structuredClone(api.writes[0].payload);
 		if (delivery === 'ambiguous') {
 			await expect(
 				page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true })
 			).toBeVisible();
-			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
-			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			if (editBeforeRefresh) {
+				await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
+				await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+				await expect(confirmation).not.toBeChecked();
+			}
 			await page.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true }).click();
 		} else {
 			await page.evaluate(async () => {
@@ -396,7 +412,10 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
 			'ความคิดเห็นที่ยังเก็บไว้'
 		);
-		await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
+		if (editBeforeRefresh) await expect(confirmation).not.toBeChecked();
+		else await expect(confirmation).toBeChecked();
+		expect(api.writes).toHaveLength(1);
+		expect(api.writes[0].payload).toEqual(acceptedPayload);
 		expect(errors).toEqual([]);
 		if (delivery === 'delayed') {
 			api.release();
@@ -405,28 +424,37 @@ for (const delivery of ['delayed', 'ambiguous'] as const)
 				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
 			).toHaveCount(1);
 		} else {
-			await expect(
-				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
-			).toBeVisible();
-			await page.getByRole('button', { name: 'เลิกทำหมายเหตุล่าสุด', exact: true }).click();
+			if (editBeforeRefresh) {
+				await expect(
+					page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
+				).toBeVisible();
+				await confirmation.check();
+				await expect(confirmation).toBeChecked();
+				await page.getByRole('button', { name: 'เลิกทำหมายเหตุล่าสุด', exact: true }).click();
+				await expect(confirmation).not.toBeChecked();
+			}
 			await expect(
 				page.locator('svg text').filter({ hasText: 'ร่างอื่นที่ยังไม่ยืนยัน' })
 			).toHaveCount(0);
 			await expect(
 				page.locator('svg text').filter({ hasText: 'หมายเหตุที่เซิร์ฟเวอร์รับแล้ว' })
 			).toHaveCount(1);
-			await expect(page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeChecked();
 			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างอื่นที่ยังไม่ยืนยัน');
 			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
+			await expect(confirmation).not.toBeChecked();
 			await page
 				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
 				.click();
-			await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+			await confirmation.check();
+			expect(api.writes).toHaveLength(1);
 			await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
 			await expect(page.getByTestId('correspondence-action')).toHaveCount(0);
+			expect(api.writes).toHaveLength(2);
 			const next = api.writes.at(-1)!.payload as ProcessActionRequest;
 			const prior = api.writes[0].payload as ProcessActionRequest;
 			expect(next.expectedRevision).toBe(2);
+			expect(next.requestId).not.toBe(prior.requestId);
+			expect(api.writes[0].payload).toEqual(acceptedPayload);
 			const nextAnnotations = next.annotations ?? [];
 			const priorAnnotations = prior.annotations ?? [];
 			expect(priorAnnotations).toHaveLength(1);
@@ -449,6 +477,7 @@ test('accepted signing request freezes related marks while preserving independen
 	const api = await mockCorrespondence(page, { holdAction: true });
 	await page.goto(detailPath);
 	await openSource(page);
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุที่ยืนยัน');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -474,6 +503,7 @@ test('delayed accepted action preserves a newer rendered document and clears its
 	const api = await mockCorrespondence(page, { mode: 'acknowledge', holdActionResponse: true });
 	await page.goto(detailPath);
 	await openSource(page);
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุที่รับทราบฉบับเดิม');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -486,6 +516,7 @@ test('delayed accepted action preserves a newer rendered document and clears its
 		const { workStore } = await import(/* @vite-ignore */ modulePath);
 		await workStore.refreshSilently();
 	});
+	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
 	await expect(page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' })).toContainText(
 		'ฉบับปัจจุบัน (2)'
 	);
@@ -569,6 +600,7 @@ for (const rotation of [90, 270])
 			return { width: canvas.width, height: canvas.height };
 		});
 		expect(dimensions.width).toBeGreaterThan(dimensions.height);
+		await openAnnotationTools(page);
 		await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 		await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ตรวจสอบ');
 		await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -587,20 +619,28 @@ test('read stays distinct from signing and preserves an unsaved annotation draft
 	page
 }) => {
 	const api = await mockCorrespondence(page);
+	let releaseRead = () => {};
+	const pending = new Promise<void>((resolve) => (releaseRead = resolve));
+	await page.route('**/api/correspondence/*/read', async (route) => {
+		await pending;
+		await route.fallback();
+	});
 	await page.goto(detailPath);
 	await openSource(page);
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุยังไม่ยืนยัน');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
-	await chooseAction(page, 'เปิดอ่าน');
+	releaseRead();
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เปิดอ่าน', exact: true })).toHaveCount(0);
 	await expect(page.getByTestId('signature-pad')).toHaveCount(0);
 	await expect(page.getByLabel('หลักฐานประกอบ', { exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'ยืนยันเปิดอ่าน', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'ลงนาม', exact: true })).toBeVisible();
 	await expect(page.locator('svg text').filter({ hasText: 'หมายเหตุยังไม่ยืนยัน' })).toBeVisible();
-	const payload = api.writes.at(-1)!.payload as ProcessActionRequest;
-	expect(payload.annotations).toEqual([]);
-	expect(payload.signature).toBeUndefined();
+	expect(api.readRequests).toEqual([{ documentRevision: 1 }]);
+	expect(api.writes).toHaveLength(0);
+	expect(api.detail().signatures).toHaveLength(0);
 	expect(
 		api.detail().instance?.steps[0].recipients.every((recipient) => !recipient.completedAt)
 	).toBe(true);
@@ -613,6 +653,7 @@ test('historical revision selection keeps current drafts and filters immutable a
 	api.addCommittedAnnotation('หมายเหตุฉบับเก่า');
 	await page.goto(detailPath);
 	await openSource(page);
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ร่างจากฉบับเดิม');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -630,11 +671,12 @@ test('historical revision selection keeps current drafts and filters immutable a
 	await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
 		'เก็บข้อความในฟอร์ม'
 	);
+	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
 	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' }).click();
 	await page.getByRole('option', { name: /ฉบับ 1 ·/ }).click();
 	await openSource(page);
 	await expect(
-		page.getByText('กำลังอ่านเอกสารย้อนหลัง เลือกฉบับปัจจุบันเพื่อดำเนินการหนังสือ')
+		page.getByText('กำลังอ่านเอกสารย้อนหลัง ไม่สามารถดำเนินการกับฉบับนี้')
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
 	await expect(page.locator('svg text').filter({ hasText: 'หมายเหตุฉบับเก่า' })).toBeVisible();
@@ -696,6 +738,7 @@ for (const theme of ['light', 'dark'])
 			await mockCorrespondence(page);
 			await page.goto(detailPath);
 			await openSource(page);
+			await openAnnotationTools(page);
 			await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 			await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('ดำเนินการตามหนังสือ');
 			await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();

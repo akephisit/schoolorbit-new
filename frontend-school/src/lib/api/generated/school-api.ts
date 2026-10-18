@@ -5268,6 +5268,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/correspondence/{id}/read': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['read_correspondence'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/correspondence/{id}/revisions': {
 		parameters: {
 			query?: never;
@@ -10093,6 +10109,7 @@ export interface components {
 				document: components['schemas']['CorrespondenceDocumentRevision'];
 				history: components['schemas']['ProcessHistoryEntry'][];
 				instance?: null | components['schemas']['ProcessInstance'];
+				myReadReceipt?: null | components['schemas']['CorrespondenceReadReceipt'];
 				record: components['schemas']['CorrespondenceSummary'];
 				revisions: components['schemas']['CorrespondenceDocumentRevision'][];
 				signatures: components['schemas']['CorrespondenceSigningEvidence'][];
@@ -10120,8 +10137,23 @@ export interface components {
 				positions: components['schemas']['CorrespondencePositionOption'][];
 				reviewers: components['schemas']['CorrespondenceUserOption'][];
 				routingSettings: components['schemas']['CorrespondenceRoutingSettings'][];
+				stampContext: components['schemas']['CorrespondenceStampContext'];
 				templates: components['schemas']['ProcessTemplate'][];
 				users: components['schemas']['CorrespondenceUserOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CorrespondenceReadReceipt: {
+			data: {
+				/** Format: uuid */
+				correspondenceId: string;
+				/** Format: int64 */
+				documentRevision: number;
+				/** Format: date-time */
+				firstReadAt: string;
+				/** Format: uuid */
+				userId: string;
 			};
 			message?: string;
 			success: boolean;
@@ -10134,9 +10166,11 @@ export interface components {
 				defaultRequireReview: boolean;
 				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
 				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+				numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 				register: components['schemas']['CorrespondenceRegister'];
 				/** Format: int64 */
 				revision: number;
+				textStampTemplates?: components['schemas']['CorrespondenceTextStampTemplate'][];
 			};
 			message?: string;
 			success: boolean;
@@ -14113,9 +14147,11 @@ export interface components {
 				defaultRequireReview: boolean;
 				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
 				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+				numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 				register: components['schemas']['CorrespondenceRegister'];
 				/** Format: int64 */
 				revision: number;
+				textStampTemplates?: components['schemas']['CorrespondenceTextStampTemplate'][];
 			}[];
 			message?: string;
 			success: boolean;
@@ -17769,6 +17805,7 @@ export interface components {
 			document: components['schemas']['CorrespondenceDocumentRevision'];
 			history: components['schemas']['ProcessHistoryEntry'][];
 			instance?: null | components['schemas']['ProcessInstance'];
+			myReadReceipt?: null | components['schemas']['CorrespondenceReadReceipt'];
 			record: components['schemas']['CorrespondenceSummary'];
 			revisions: components['schemas']['CorrespondenceDocumentRevision'][];
 			signatures: components['schemas']['CorrespondenceSigningEvidence'][];
@@ -17835,6 +17872,11 @@ export interface components {
 		};
 		/** @enum {string} */
 		CorrespondenceListView: 'action_required' | 'sent' | 'drafts' | 'all';
+		CorrespondenceNumberingSettings: {
+			format: string;
+			/** Format: int32 */
+			minimumDigits: number;
+		};
 		CorrespondenceOptions: {
 			canManageRoutingSettings: boolean;
 			decisionMakers: components['schemas']['CorrespondenceUserOption'][];
@@ -17842,6 +17884,7 @@ export interface components {
 			positions: components['schemas']['CorrespondencePositionOption'][];
 			reviewers: components['schemas']['CorrespondenceUserOption'][];
 			routingSettings: components['schemas']['CorrespondenceRoutingSettings'][];
+			stampContext: components['schemas']['CorrespondenceStampContext'];
 			templates: components['schemas']['ProcessTemplate'][];
 			users: components['schemas']['CorrespondenceUserOption'][];
 		};
@@ -17856,6 +17899,20 @@ export interface components {
 			/** Format: uuid */
 			organizationUnitId: string;
 		};
+		CorrespondenceReadReceipt: {
+			/** Format: uuid */
+			correspondenceId: string;
+			/** Format: int64 */
+			documentRevision: number;
+			/** Format: date-time */
+			firstReadAt: string;
+			/** Format: uuid */
+			userId: string;
+		};
+		CorrespondenceReadRequest: {
+			/** Format: int64 */
+			documentRevision: number;
+		};
 		/** @enum {string} */
 		CorrespondenceRegister: 'incoming' | 'outgoing' | 'internal';
 		CorrespondenceRoutingSettings: {
@@ -17865,9 +17922,11 @@ export interface components {
 			defaultRequireReview: boolean;
 			defaultReviewer?: null | components['schemas']['ProcessRecipient'];
 			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
+			numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 			register: components['schemas']['CorrespondenceRegister'];
 			/** Format: int64 */
 			revision: number;
+			textStampTemplates?: components['schemas']['CorrespondenceTextStampTemplate'][];
 		};
 		CorrespondenceSigningEvidence: {
 			/** Format: uuid */
@@ -17890,6 +17949,11 @@ export interface components {
 			label: string;
 			url: string;
 		};
+		CorrespondenceStampContext: {
+			actorDisplayName: string;
+			schoolName?: string | null;
+			signerTitle?: string | null;
+		};
 		/** @enum {string} */
 		CorrespondenceStatus:
 			'draft' | 'in_progress' | 'revision_requested' | 'completed' | 'rejected' | 'closed';
@@ -17906,6 +17970,7 @@ export interface components {
 			/** Format: uuid */
 			organizationUnitId?: string | null;
 			register: components['schemas']['CorrespondenceRegister'];
+			registerLabel?: string | null;
 			/** Format: int64 */
 			registerNumber: number;
 			/** Format: int32 */
@@ -17916,6 +17981,13 @@ export interface components {
 			status: components['schemas']['CorrespondenceStatus'];
 			title: string;
 			urgency: components['schemas']['CorrespondenceUrgency'];
+		};
+		CorrespondenceTextStampTemplate: {
+			body: string;
+			border: boolean;
+			/** Format: uuid */
+			id: string;
+			name: string;
 		};
 		/** @enum {string} */
 		CorrespondenceUrgency: 'normal' | 'urgent' | 'very_urgent';
@@ -19385,6 +19457,7 @@ export interface components {
 			rowVersion: number;
 		};
 		DocumentAnnotation: {
+			border?: boolean;
 			color: string;
 			/** Format: double */
 			height: number;
@@ -19395,6 +19468,8 @@ export interface components {
 			page: number;
 			strokes?: components['schemas']['InkStroke'][];
 			text?: string | null;
+			/** Format: int32 */
+			textLayoutVersion?: number | null;
 			/** Format: double */
 			width: number;
 			/** Format: double */
@@ -23296,9 +23371,11 @@ export interface components {
 			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
 			/** Format: int64 */
 			expectedRevision: number;
+			numbering?: null | components['schemas']['CorrespondenceNumberingSettings'];
 			register: components['schemas']['CorrespondenceRegister'];
 			/** Format: uuid */
 			requestId: string;
+			textStampTemplates?: components['schemas']['CorrespondenceTextStampTemplate'][] | null;
 		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
@@ -50213,6 +50290,47 @@ export interface operations {
 				};
 				content: {
 					'application/pdf': unknown;
+				};
+			};
+		};
+	};
+	read_correspondence: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CorrespondenceReadRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CorrespondenceReadReceipt'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};

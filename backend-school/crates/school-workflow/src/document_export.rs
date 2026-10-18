@@ -255,11 +255,19 @@ fn text_box(
     w: f64,
     h: f64,
     color: &str,
+    strict_width: bool,
 ) -> Result<(), AppError> {
     let mut size = 14.0;
     loop {
         let lines = wrap(value, w, size)?;
-        if lines.len() as f64 * size * 1.3 <= h {
+        let mut fits_width = true;
+        for line in lines.iter().filter(|_| strict_width) {
+            if text_width(line, size)? > w {
+                fits_width = false;
+                break;
+            }
+        }
+        if fits_width && lines.len() as f64 * size * 1.3 <= h {
             for (index, line) in lines.iter().enumerate() {
                 text(
                     ops,
@@ -438,7 +446,31 @@ fn annotation(
     ops.push(op("q", vec![]));
     match a.kind {
         DocumentAnnotationKind::Text => {
-            text_box(ops, a.text.as_deref().unwrap_or(""), x, y, w, h, &a.color)?
+            let strict_width = match a.text_layout_version {
+                None if !a.border => false,
+                Some(1) => true,
+                _ => return Err(invalid("รุ่นการจัดวางข้อความกำกับไม่ถูกต้อง")),
+            };
+            let padding = if a.border { 4.0 } else { 0.0 };
+            if w <= padding * 2.0 || h <= padding * 2.0 {
+                return Err(invalid("พื้นที่ข้อความเล็กเกินไป กรุณาขยายกรอบ"));
+            }
+            if a.border {
+                ops.push(op("RG", c.into_iter().map(num).collect()));
+                ops.push(op("w", vec![num(0.75)]));
+                ops.push(op("re", vec![num(x), num(y - h), num(w), num(h)]));
+                ops.push(op("S", vec![]));
+            }
+            text_box(
+                ops,
+                a.text.as_deref().unwrap_or(""),
+                x + padding,
+                y - padding,
+                w - padding * 2.0,
+                h - padding * 2.0,
+                &a.color,
+                strict_width,
+            )?
         }
         DocumentAnnotationKind::Ink => ink(ops, &a.strokes, x, y, w, h)?,
         DocumentAnnotationKind::Highlight => {
@@ -790,6 +822,8 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
+                border: true,
                 page: 1,
                 x: 0.1,
                 y: 0.25,
@@ -802,6 +836,8 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Highlight,
+                text_layout_version: None,
+                border: false,
                 page: 1,
                 x: 0.1,
                 y: 0.4,
@@ -814,6 +850,8 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Circle,
+                text_layout_version: None,
+                border: false,
                 page: 1,
                 x: 0.7,
                 y: 0.2,
@@ -940,6 +978,187 @@ mod tests {
         }
     }
     #[test]
+    fn bordered_text_uses_visual_page_box_and_four_point_padding_for_every_rotation() {
+        let mut detail = fixture_detail();
+        detail.document.annotations = vec![];
+        for rotation in [0, 90, 180, 270] {
+            let mut source = source_document(&detail.document, None).unwrap();
+            let page = source.get_pages()[&1];
+            let dictionary = source.get_object_mut(page).unwrap().as_dict_mut().unwrap();
+            dictionary.set(
+                "CropBox",
+                vec![20.into(), 30.into(), 575.into(), 812.into()],
+            );
+            dictionary.set("Rotate", rotation);
+            let g = geometry(&source, page).unwrap();
+            let mut a = DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
+                page: 1,
+                x: 0.1,
+                y: 0.2,
+                width: 0.6,
+                height: 0.2,
+                text: Some("ทราบ น้ำ กิ".into()),
+                color: "#000000".into(),
+                border: true,
+                strokes: vec![],
+            };
+            let mut bordered = vec![];
+            annotation(&mut bordered, &a, g).unwrap();
+            let rectangle = &bordered
+                .iter()
+                .find(|op| op.operator == "re")
+                .unwrap()
+                .operands;
+            for (value, expected) in rectangle.iter().zip([
+                a.x * g.width,
+                (1.0 - a.y - a.height) * g.height,
+                a.width * g.width,
+                a.height * g.height,
+            ]) {
+                assert!((f64::from(value.as_float().unwrap()) - expected).abs() < 0.001);
+            }
+            a.border = false;
+            let mut plain = vec![];
+            annotation(&mut plain, &a, g).unwrap();
+            assert!(!plain.iter().any(|op| op.operator == "re"));
+            let bordered_origin = &bordered
+                .iter()
+                .find(|op| op.operator == "Tm")
+                .unwrap()
+                .operands;
+            let plain_origin = &plain
+                .iter()
+                .find(|op| op.operator == "Tm")
+                .unwrap()
+                .operands;
+            assert!(
+                (bordered_origin[4].as_float().unwrap()
+                    - plain_origin[4].as_float().unwrap()
+                    - 4.0)
+                    .abs()
+                    < 0.001
+            );
+            assert!(
+                (bordered_origin[5].as_float().unwrap() - plain_origin[5].as_float().unwrap()
+                    + 4.0)
+                    .abs()
+                    < 0.001
+            );
+            a.border = true;
+            a.width = 0.001;
+            assert!(annotation(&mut vec![], &a, g).is_err());
+        }
+    }
+    #[test]
+    fn bordered_text_shrinks_wide_thai_clusters_and_refuses_below_minimum_size() {
+        let geometry = Geometry {
+            width: 1000.0,
+            height: 1000.0,
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        };
+        for value in ["ก", "กิ่"] {
+            let available = text_width(value, 8.0).unwrap() + 0.001;
+            let mut a = DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
+                page: 1,
+                x: 0.1,
+                y: 0.1,
+                width: (available + 8.0) / geometry.width,
+                height: 0.1,
+                text: Some(value.into()),
+                color: "#000000".into(),
+                border: true,
+                strokes: vec![],
+            };
+            assert!(text_width(value, 14.0).unwrap() > available);
+            let mut operations = vec![];
+            annotation(&mut operations, &a, geometry).unwrap();
+            let size = f64::from(
+                operations
+                    .iter()
+                    .find(|op| op.operator == "Tf")
+                    .unwrap()
+                    .operands[1]
+                    .as_float()
+                    .unwrap(),
+            );
+            assert!((5.0..=8.0).contains(&size));
+            assert!(text_width(value, size).unwrap() <= available);
+            assert_eq!(wrap(value, available, size).unwrap(), vec![value]);
+            // A nine-point frame has just one point of content width after its padding.
+            assert!(text_width(value, 5.0).unwrap() > 1.0);
+            a.width = 9.0 / geometry.width;
+            let mut too_narrow = vec![];
+            assert!(annotation(&mut too_narrow, &a, geometry).is_err());
+            assert!(!too_narrow.iter().any(|op| op.operator == "Tf"));
+        }
+    }
+    #[test]
+    fn legacy_narrow_text_keeps_its_accepted_rendering_during_export_and_later_signing() {
+        let mut detail = fixture_detail();
+        let mut legacy = DocumentAnnotation {
+            id: Uuid::now_v7(),
+            kind: DocumentAnnotationKind::Text,
+            page: 1,
+            x: 0.1,
+            y: 0.1,
+            width: 0.001,
+            height: 0.2,
+            text: Some("กิ่".into()),
+            color: "#000000".into(),
+            border: false,
+            text_layout_version: None,
+            strokes: vec![],
+        };
+        detail.document.annotations = vec![legacy.clone()];
+        let source = source_document(&detail.document, None).unwrap();
+        let geometry = geometry(&source, source.get_pages()[&1]).unwrap();
+        let mut old_operations = vec![];
+        annotation(&mut old_operations, &legacy, geometry).unwrap();
+        assert_eq!(
+            old_operations
+                .iter()
+                .find(|operation| operation.operator == "Tf")
+                .unwrap()
+                .operands[1]
+                .as_float()
+                .unwrap(),
+            14.0
+        );
+        let exported = compose(source, &detail, &BTreeMap::new()).unwrap();
+        assert_eq!(Document::load_mem(&exported).unwrap().get_pages().len(), 1);
+        let signature = SignatureInput {
+            method: SignatureMethod::Drawn,
+            asset_id: None,
+            strokes: vec![],
+            page: 1,
+            x: 0.5,
+            y: 0.6,
+            width: 0.2,
+            height: 0.1,
+            document_revision: 1,
+            content_hash: detail.document.content_hash.clone(),
+        };
+        validate_document_bytes(
+            &detail.document,
+            None,
+            &[],
+            Some(&signature),
+            "ผู้ลงนาม ทดสอบ",
+        )
+        .unwrap();
+        legacy.text_layout_version = Some(1);
+        detail.document.annotations = vec![legacy.clone()];
+        assert!(validate_document_bytes(&detail.document, None, &[], None, "").is_err());
+        legacy.text_layout_version = Some(2);
+        assert!(annotation(&mut vec![], &legacy, geometry).is_err());
+    }
+    #[test]
     fn signer_caption_uses_bangkok_buddhist_date_and_wraps_long_identity() {
         let mut detail = fixture_detail();
         let name = "นายชื่อยาวทดสอบ".repeat(12);
@@ -1059,7 +1278,7 @@ fn signature_caption(
     let top = ((1.0 - signature.y - signature.height) * geometry.height - 2.0)
         .max(48.0)
         .min(geometry.height);
-    text_box(operations, label, left, top, width, 48.0, "#333333")
+    text_box(operations, label, left, top, width, 48.0, "#333333", false)
 }
 pub(crate) fn signing_label(
     name: &str,

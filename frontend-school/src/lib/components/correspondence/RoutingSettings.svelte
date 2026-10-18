@@ -21,6 +21,14 @@
 	import Choice from './Choice.svelte';
 	import Recipients from './Recipients.svelte';
 	import UnsavedGuard from './UnsavedGuard.svelte';
+	import RegisterNumberingFields from './RegisterNumberingFields.svelte';
+	import TextStampTemplates from './TextStampTemplates.svelte';
+	import { numberingError, stampTemplateErrors } from '#lib/correspondence/text-stamps.js';
+	import {
+		focusCorrespondenceField,
+		type CorrespondenceFieldErrors
+	} from '#lib/correspondence/validation.js';
+	let fieldErrors = $state<CorrespondenceFieldErrors>({});
 	let {
 		source,
 		optionsSource
@@ -74,8 +82,27 @@
 		if (!row || pending) return;
 		error = '';
 		message = '';
-		if (row.defaultRequireReview && !row.defaultReviewer) {
-			error = 'เลือกผู้ตรวจทานเริ่มต้น';
+		fieldErrors = {};
+		const numbering = row.numbering ?? { format: '{number}/{year}', minimumDigits: 1 };
+		const invalidNumbering = numberingError(numbering);
+		if (invalidNumbering)
+			fieldErrors[
+				Number.isInteger(numbering.minimumDigits) &&
+				numbering.minimumDigits >= 1 &&
+				numbering.minimumDigits <= 8
+					? 'numbering-format'
+					: 'numbering-minimum-digits'
+			] = invalidNumbering;
+		for (const template of row.textStampTemplates ?? []) {
+			for (const [field, message] of Object.entries(stampTemplateErrors(template)))
+				fieldErrors[`stamp-template-${template.id}-${field}`] = message;
+		}
+		if (row.defaultRequireReview && !row.defaultReviewer)
+			fieldErrors['routing-default-reviewer'] = 'เลือกผู้ตรวจทานเริ่มต้น';
+		const first = Object.entries(fieldErrors)[0];
+		if (first) {
+			error = first[1] ?? 'ตรวจสอบข้อมูลที่จำเป็น';
+			void focusCorrespondenceField(first[0]);
 			return;
 		}
 		pending = true;
@@ -84,6 +111,8 @@
 				intent.begin({
 					expectedRevision: row.revision,
 					register: row.register,
+					numbering: row.numbering,
+					textStampTemplates: row.textStampTemplates,
 					eligibleDecisionMakers: row.eligibleDecisionMakers,
 					defaultFirstRecipient: row.defaultFirstRecipient,
 					defaultPurpose: row.defaultPurpose,
@@ -115,9 +144,9 @@
 </script>
 
 <PageShell
-	title="ตั้งค่าการสั่งการสารบรรณ"
+	title="ตั้งค่าสารบรรณ"
 	backHref="/staff/correspondence"
-	description="กำหนดผู้พิจารณาและค่าเริ่มต้นแยกตามประเภททะเบียน"
+	description="รูปแบบเลขทะเบียน แม่แบบข้อความ และค่าเริ่มต้นแยกตามประเภทหนังสือ"
 >
 	<UnsavedGuard {dirty} {pending} />
 	<section
@@ -189,6 +218,26 @@
 					</div>{/if}
 				<fieldset disabled={pending || uncertain} class="min-w-0 space-y-4">
 					<Card.Root
+						><Card.Content class="space-y-5"
+							><RegisterNumberingFields
+								value={row.numbering ?? { format: '{number}/{year}', minimumDigits: 1 }}
+								onchange={(numbering) => update({ numbering })}
+								errors={fieldErrors}
+								disabled={pending || uncertain}
+							/>
+							<div class="border-t pt-5">
+								<TextStampTemplates
+									bind:templates={
+										() => row.textStampTemplates ?? [],
+										(textStampTemplates) => update({ textStampTemplates })
+									}
+									errors={fieldErrors}
+									disabled={pending || uncertain}
+								/>
+							</div></Card.Content
+						></Card.Root
+					>
+					<Card.Root
 						><Card.Header
 							><Card.Title>ผู้มีสิทธิพิจารณา {registerLabels[register]}</Card.Title></Card.Header
 						><Card.Content class="space-y-4">
@@ -259,6 +308,7 @@
 							</div>
 							{#if row.defaultRequireReview}<Choice
 									id="routing-default-reviewer"
+									error={fieldErrors['routing-default-reviewer']}
 									label="ผู้ตรวจทานเริ่มต้น *"
 									value={row.defaultReviewer?.userId ?? ''}
 									onValueChange={(value) =>

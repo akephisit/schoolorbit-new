@@ -7639,6 +7639,16 @@
                   }
                 ]
               },
+              "myReadReceipt": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CorrespondenceReadReceipt"
+                  }
+                ]
+              },
               "record": {
                 "$ref": "#/components/schemas/CorrespondenceSummary"
               },
@@ -7772,6 +7782,9 @@
                 },
                 "type": "array"
               },
+              "stampContext": {
+                "$ref": "#/components/schemas/CorrespondenceStampContext"
+              },
               "templates": {
                 "items": {
                   "$ref": "#/components/schemas/ProcessTemplate"
@@ -7786,6 +7799,7 @@
               }
             },
             "required": [
+              "stampContext",
               "users",
               "organizations",
               "positions",
@@ -7794,6 +7808,48 @@
               "reviewers",
               "routingSettings",
               "canManageRoutingSettings"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CorrespondenceReadReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "correspondenceId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "documentRevision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "firstReadAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "correspondenceId",
+              "userId",
+              "documentRevision",
+              "firstReadAt"
             ],
             "type": "object"
           },
@@ -7849,12 +7905,21 @@
                 },
                 "type": "array"
               },
+              "numbering": {
+                "$ref": "#/components/schemas/CorrespondenceNumberingSettings"
+              },
               "register": {
                 "$ref": "#/components/schemas/CorrespondenceRegister"
               },
               "revision": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "textStampTemplates": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceTextStampTemplate"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -22622,12 +22687,21 @@
                   },
                   "type": "array"
                 },
+                "numbering": {
+                  "$ref": "#/components/schemas/CorrespondenceNumberingSettings"
+                },
                 "register": {
                   "$ref": "#/components/schemas/CorrespondenceRegister"
                 },
                 "revision": {
                   "format": "int64",
                   "type": "integer"
+                },
+                "textStampTemplates": {
+                  "items": {
+                    "$ref": "#/components/schemas/CorrespondenceTextStampTemplate"
+                  },
+                  "type": "array"
                 }
               },
               "required": [
@@ -35892,6 +35966,16 @@
               }
             ]
           },
+          "myReadReceipt": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CorrespondenceReadReceipt"
+              }
+            ]
+          },
           "record": {
             "$ref": "#/components/schemas/CorrespondenceSummary"
           },
@@ -36166,6 +36250,23 @@
         ],
         "type": "string"
       },
+      "CorrespondenceNumberingSettings": {
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "minimumDigits": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "minimumDigits"
+        ],
+        "type": "object"
+      },
       "CorrespondenceOptions": {
         "properties": {
           "canManageRoutingSettings": {
@@ -36201,6 +36302,9 @@
             },
             "type": "array"
           },
+          "stampContext": {
+            "$ref": "#/components/schemas/CorrespondenceStampContext"
+          },
           "templates": {
             "items": {
               "$ref": "#/components/schemas/ProcessTemplate"
@@ -36215,6 +36319,7 @@
           }
         },
         "required": [
+          "stampContext",
           "users",
           "organizations",
           "positions",
@@ -36259,6 +36364,45 @@
           "organizationUnitId",
           "code",
           "name"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceReadReceipt": {
+        "properties": {
+          "correspondenceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "documentRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "firstReadAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "correspondenceId",
+          "userId",
+          "documentRevision",
+          "firstReadAt"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceReadRequest": {
+        "properties": {
+          "documentRevision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "documentRevision"
         ],
         "type": "object"
       },
@@ -36307,12 +36451,21 @@
             },
             "type": "array"
           },
+          "numbering": {
+            "$ref": "#/components/schemas/CorrespondenceNumberingSettings"
+          },
           "register": {
             "$ref": "#/components/schemas/CorrespondenceRegister"
           },
           "revision": {
             "format": "int64",
             "type": "integer"
+          },
+          "textStampTemplates": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceTextStampTemplate"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -36402,6 +36555,29 @@
         ],
         "type": "object"
       },
+      "CorrespondenceStampContext": {
+        "properties": {
+          "actorDisplayName": {
+            "type": "string"
+          },
+          "schoolName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signerTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "actorDisplayName"
+        ],
+        "type": "object"
+      },
       "CorrespondenceStatus": {
         "enum": [
           "draft",
@@ -36450,6 +36626,12 @@
           "register": {
             "$ref": "#/components/schemas/CorrespondenceRegister"
           },
+          "registerLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "registerNumber": {
             "format": "int64",
             "type": "integer"
@@ -36487,6 +36669,30 @@
           "status",
           "createdBy",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceTextStampTemplate": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "border": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "body",
+          "border"
         ],
         "type": "object"
       },
@@ -41971,6 +42177,9 @@
       },
       "DocumentAnnotation": {
         "properties": {
+          "border": {
+            "type": "boolean"
+          },
           "color": {
             "type": "string"
           },
@@ -41999,6 +42208,14 @@
           "text": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "textLayoutVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -55852,12 +56069,31 @@
             "format": "int64",
             "type": "integer"
           },
+          "numbering": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CorrespondenceNumberingSettings"
+              }
+            ]
+          },
           "register": {
             "$ref": "#/components/schemas/CorrespondenceRegister"
           },
           "requestId": {
             "format": "uuid",
             "type": "string"
+          },
+          "textStampTemplates": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceTextStampTemplate"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -99480,6 +99716,67 @@
               "application/pdf": {}
             },
             "description": "Canonical source-only PDF"
+          }
+        },
+        "tags": [
+          "correspondence"
+        ]
+      }
+    },
+    "/api/correspondence/{id}/read": {
+      "post": {
+        "operationId": "read_correspondence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrespondenceReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CorrespondenceReadReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "tags": [

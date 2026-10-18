@@ -7,7 +7,7 @@ import {
 	parentAssignmentId,
 	childAssignmentId
 } from './fixtures/correspondence-directed';
-import { correspondenceId, detailPath } from './fixtures/correspondence';
+import { openAnnotationTools, correspondenceId, detailPath } from './fixtures/correspondence';
 import { actor, firstStaff } from './fixtures/staff-home-route-data';
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ baseURL }) => {
@@ -38,6 +38,7 @@ async function choosePerson(page: Page, label: string, name: string) {
 	await page.getByRole('option', { name, exact: true }).click();
 }
 async function addRequiredRecipient(page: Page) {
+	await choosePerson(page, 'กลุ่มผู้รับ', 'บุคลากร');
 	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 }
@@ -50,6 +51,32 @@ async function draw(page: Page) {
 	await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 8 });
 	await page.mouse.up();
 }
+test('detail directed send replays an accepted lost response with the exact first recipient', async ({
+	page
+}) => {
+	const api = await mockDirectedCorrespondence(page, { scenario: 'draft', abortSend: true });
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ', exact: true }).click();
+	const form = page.getByTestId('correspondence-send');
+	await choosePerson(page, 'ผู้พิจารณาสั่งการคนแรก *', 'ครูผู้รับคนที่สอง');
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toContainText('ยังยืนยันผลการส่งไม่ได้');
+	const first = structuredClone(api.sends[0]);
+	const accepted = structuredClone(api.detail());
+	expect(first.requestId).toBeTruthy();
+	expect(first.firstRecipient).toEqual({ kind: 'user', userId: firstStaff });
+	await expect(form.locator('#send-first-decisionmaker')).toBeDisabled();
+	await expect(form.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true })).toBeDisabled();
+	await expect(form.locator('#send-due')).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ส่งหนังสือ', exact: true })).toBeEnabled();
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toHaveCount(0);
+	expect(api.sends).toHaveLength(2);
+	expect(api.sends[1]).toEqual(first);
+	expect(api.detail()).toEqual(accepted);
+});
+
 for (const width of [390, 1440])
 	for (const dark of [false, true])
 		test(`directed wizard ${width}px ${dark ? 'dark' : 'light'} defaults to one decision maker and retains backtracking`, async ({
@@ -118,7 +145,8 @@ test('instructions, drawing and signature submit once with branch recipients and
 	});
 	await page.goto(detailPath);
 	await expect(page.getByRole('list', { name: 'สาขาการดำเนินการ' })).toContainText('รอดำเนินการ');
-	await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+	await expect(page.locator('canvas')).toBeVisible();
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('โปรดดำเนินการภายในวันศุกร์');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -310,7 +338,7 @@ test('mobile instructions keep recipient type and review controls readable and r
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'พิจารณาสั่งการ', exact: true }).click();
 	const kind = page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true });
-	await expect(kind).toContainText('บุคลากร');
+	await expect(kind).toContainText('หน่วยงาน');
 	await expect(kind).toBeVisible();
 	await expect(
 		page.getByRole('checkbox', { name: 'บุคลากรอ่านอย่างเดียว', exact: true })
@@ -385,10 +413,8 @@ for (const terminalCopy of ['completed', 'closed'] as const)
 				? 'ปิดเก็บเรื่องแล้ว รับทราบสำเนาได้ตามต้องการโดยไม่เปิดงานอีกครั้ง'
 				: 'เรื่องดำเนินการเสร็จสิ้น ไม่ต้องส่งกลับตรวจรับ'
 		);
-		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
-		await expect(
-			page.getByRole('button', { name: 'เปิดเอกสารอีกครั้ง', exact: true })
-		).toBeVisible();
+		await expect(page.locator('canvas')).toBeVisible();
+		await expect(page.locator('canvas')).toBeVisible();
 		await expect(page.getByRole('radio', { name: 'ข้อความ', exact: true })).toHaveCount(0);
 		await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
 		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveCount(0);

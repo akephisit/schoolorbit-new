@@ -307,7 +307,9 @@
 										<StateIcon class="h-3 w-3" />
 										{stateLabel(item.state)}
 									</Badge>
-									<Badge variant="outline">{item.moduleCode}</Badge>
+									<Badge variant="outline"
+										>{item.moduleCode === 'correspondence' ? 'งานสารบรรณ' : item.moduleCode}</Badge
+									>
 									{#if item.metadata.sourceLabel}
 										<span class="text-xs text-muted-foreground">{item.metadata.sourceLabel}</span>
 									{/if}

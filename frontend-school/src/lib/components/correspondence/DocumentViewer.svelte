@@ -19,15 +19,22 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import SignaturePlacement from './SignaturePlacement.svelte';
 	import type { InkPath } from '#lib/correspondence/geometry.js';
 	import AnnotationText from './AnnotationText.svelte';
+	import TextAnnotationPlacement from './TextAnnotationPlacement.svelte';
+	import TextStampPicker from './TextStampPicker.svelte';
+	import FieldError from './FieldError.svelte';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { correspondenceUuidV7 } from '#lib/correspondence/uuid-v7.js';
+	import { focusCorrespondenceField } from '#lib/correspondence/validation.js';
 	import {
-		fitAnnotationText,
+		fitAnnotationBox,
 		loadAnnotationTextMeasure,
 		type TextMeasure
 	} from '#lib/correspondence/text-layout.js';
@@ -40,7 +47,9 @@
 		onplacement,
 		onplacementchange,
 		placementPaths = [],
-		placementFileId
+		placementFileId,
+		onrendered,
+		readContext = ''
 	}: {
 		detail: CorrespondenceDetail;
 		draft?: DocumentAnnotation[];
@@ -51,6 +60,8 @@
 		onplacementchange?: (placement: SignatureInput) => void;
 		placementPaths?: InkPath[];
 		placementFileId?: string;
+		onrendered?: (document: { correspondenceId: string; documentRevision: number } | null) => void;
+		readContext?: string;
 	} = $props();
 	let canvas = $state<HTMLCanvasElement>();
 	let overlay: SVGSVGElement;
@@ -65,6 +76,20 @@
 		pageHeight = $state(842);
 	let measure = $state<TextMeasure>((text, size) => text.length * size * 0.5);
 	let rotation = $state<PageRotation>(0);
+	let selectedTextId = $state(''),
+		annotationError = $state(''),
+		editTextOpen = $state(false),
+		editText = $state(''),
+		editBorder = $state(false);
+	const selectedText = $derived(
+		draft.find(
+			(annotation) =>
+				annotation.id === selectedTextId &&
+				annotation.kind === 'text' &&
+				annotation.page === pageNumber
+		)
+	);
+	let toolsOpen = $state(false);
 	let tool = $state('view'),
 		text = $state(''),
 		drawing = $state<PagePoint[]>([]),
@@ -73,7 +98,10 @@
 	$effect.pre(() => {
 		const enabled = !!placement;
 		untrack(() => {
-			if (enabled && tool === 'view') tool = 'placement';
+			if (enabled) {
+				toolsOpen = true;
+				if (tool === 'view') tool = 'placement';
+			}
 		});
 	});
 	const request = new LatestRequest();
@@ -94,14 +122,18 @@
 	});
 	const pageCount = $derived(pdf?.pageCount ?? 1);
 	function cleanup() {
+		renderedDocument = '';
+		onrendered?.(null);
 		request.abort();
+		opened = false;
 		if (pdf) {
 			void pdf.dispose();
 			pdf = null;
 		}
 	}
 	onDestroy(cleanup);
-	let viewedDocument = '';
+	let viewedDocument = '',
+		renderedDocument = '';
 	$effect.pre(() => {
 		const key = `${detail.record.id}:${detail.document.revision}`;
 		untrack(() => {
@@ -110,6 +142,7 @@
 				viewedDocument = key;
 				opened = false;
 				pageNumber = 1;
+				void openDocument();
 			}
 		});
 	});
@@ -119,7 +152,11 @@
 	$effect(() => {
 		const target = canvas,
 			current = pdf,
-			selected = pageNumber;
+			selected = pageNumber,
+			documentKey = viewedDocument,
+			readKey = `${viewedDocument}:${readContext}`,
+			documentRevision = detail.document.revision,
+			correspondenceId = detail.record.id;
 		if (!target || !current) return;
 		const controller = new AbortController();
 		void Promise.all([
@@ -131,6 +168,10 @@
 					pageWidth = size.width;
 					pageHeight = size.height;
 					aspect = size.width / size.height;
+					if (selected === 1 && documentKey === viewedDocument && renderedDocument !== readKey) {
+						renderedDocument = readKey;
+						onrendered?.({ correspondenceId, documentRevision });
+					}
 				}
 			})
 			.catch((cause) => {
@@ -152,8 +193,8 @@
 				}),
 				loadAnnotationTextMeasure()
 			]);
-			measure = fontMeasure;
 			if (!request.isCurrent(ticket.revision)) return;
+			measure = fontMeasure;
 			if (blob.type.includes('pdf')) {
 				const { loadPdfPreview } = await import('#lib/files/document-preview.js');
 				const loaded = await loadPdfPreview(blob, ticket.signal);
@@ -172,36 +213,75 @@
 			if (request.isCurrent(ticket.revision)) loading = false;
 		}
 	}
+	function textBoxError(annotation: DocumentAnnotation): string | null {
+		if (!(annotation.text ?? '').trim() || [...(annotation.text ?? '')].length > 5000)
+			return 'ระบุข้อความไม่เกิน 5,000 ตัวอักษร';
+		return fitAnnotationBox(
+			annotation.text ?? '',
+			annotation.width * pageWidth,
+			annotation.height * pageHeight,
+			measure,
+			annotation.border ?? false
+		).overflow
+			? 'ข้อความยาวเกินกรอบ กรุณาขยายกรอบหรือลดข้อความ'
+			: null;
+	}
+	function changeTextBox(annotation: DocumentAnnotation) {
+		if (disabled || !opened) return;
+		const invalid = textBoxError(annotation);
+		annotationError = invalid ?? '';
+		if (!invalid) draft = draft.map((item) => (item.id === annotation.id ? annotation : item));
+	}
+	function insertTextBox(
+		value: string,
+		border: boolean,
+		point: PagePoint,
+		width: number,
+		height: number
+	): string | null {
+		if (disabled || !opened) return 'รอเปิดเอกสารก่อนวางข้อความ';
+		const annotation: DocumentAnnotation = {
+			id: correspondenceUuidV7(),
+			kind: 'text',
+			textLayoutVersion: 1,
+			page: pageNumber,
+			x: point.x,
+			y: point.y,
+			width: Math.min(width, 1 - point.x),
+			height: Math.min(height, 1 - point.y),
+			text: value,
+			color: '#111827',
+			strokes: [],
+			...(border ? { border: true } : {})
+		};
+		const invalid = textBoxError(annotation);
+		if (invalid) return invalid;
+		draft = [...draft, annotation];
+		selectedTextId = annotation.id;
+		annotationError = '';
+		return null;
+	}
 	function addText(point: PagePoint = { x: 0.1, y: 0.1 }) {
-		if (!text.trim() || !opened || disabled) return;
-		if (
-			fitAnnotationText(
-				text,
-				Math.min(0.6, 1 - point.x) * pageWidth,
-				Math.min(0.08, 1 - point.y) * pageHeight,
-				measure
-			).overflow
-		) {
-			error = 'ข้อความยาวเกินพื้นที่หมายเหตุ กรุณาลดข้อความหรือวางตำแหน่งใหม่';
+		if (!text.trim()) return;
+		annotationError = insertTextBox(text.trim(), false, point, 0.6, 0.08) ?? '';
+		if (!annotationError) text = '';
+	}
+	function saveText(event: SubmitEvent) {
+		event.preventDefault();
+		if (!selectedText || disabled) return;
+		const annotation = {
+			...selectedText,
+			textLayoutVersion: 1,
+			text: editText.trim(),
+			border: editBorder ? true : undefined
+		};
+		annotationError = textBoxError(annotation) ?? '';
+		if (annotationError) {
+			void focusCorrespondenceField('edit-annotation-text');
 			return;
 		}
-		error = '';
-		draft = [
-			...draft,
-			{
-				id: crypto.randomUUID(),
-				kind: 'text',
-				page: pageNumber,
-				x: point.x,
-				y: point.y,
-				width: Math.min(0.6, 1 - point.x),
-				height: Math.min(0.08, 1 - point.y),
-				text: text.trim(),
-				color: '#111827',
-				strokes: []
-			}
-		];
-		text = '';
+		changeTextBox(annotation);
+		editTextOpen = false;
 	}
 	function begin(event: PointerEvent) {
 		if (
@@ -250,7 +330,7 @@
 			draft = [
 				...draft,
 				{
-					id: crypto.randomUUID(),
+					id: correspondenceUuidV7(),
 					kind: 'ink',
 					page: pageNumber,
 					x: 0,
@@ -265,7 +345,7 @@
 			draft = [
 				...draft,
 				{
-					id: crypto.randomUUID(),
+					id: correspondenceUuidV7(),
 					kind: tool === 'circle' ? 'circle' : 'highlight',
 					page: pageNumber,
 					x,
@@ -297,9 +377,7 @@
 {#snippet workspace()}
 	<div class="space-y-3" data-testid="document-workspace">
 		<div class="flex flex-wrap items-center gap-2">
-			<LoadingButton type="button" {loading} variant="outline" onclick={openDocument}
-				>{opened ? 'เปิดเอกสารอีกครั้ง' : 'เปิดเอกสาร'}</LoadingButton
-			>{#if detail.document.originalFileId}<Button
+			{#if detail.document.originalFileId}<Button
 					type="button"
 					variant="ghost"
 					onclick={downloadOriginal}>ต้นฉบับ</Button
@@ -330,7 +408,18 @@
 				}}>{fullscreen ? 'กลับสู่รายละเอียด' : 'เต็มหน้าจอ'}</Button
 			>
 		</div>
-		{#if editable && opened}<div class="space-y-3 rounded-xl border bg-card p-3">
+		{#if editable && opened}<details
+				bind:open={toolsOpen}
+				class="space-y-3 rounded-xl border bg-card p-3"
+				data-testid="annotation-tools"
+			>
+				<summary class="cursor-pointer text-sm font-medium">เขียนข้อความ / ทำหมายเหตุ</summary>
+				<TextStampPicker
+					documentRevision={detail.document.revision}
+					record={detail.record}
+					{disabled}
+					oninsert={(value, border) => insertTextBox(value, border, { x: 0.1, y: 0.1 }, 0.55, 0.22)}
+				/>
 				<ToggleGroup.Root
 					type="single"
 					value={tool}
@@ -350,7 +439,7 @@
 							<Label for="annotation-text">ข้อความกำกับ</Label><Input
 								id="annotation-text"
 								bind:value={text}
-								maxlength={2000}
+								maxlength={5000}
 								{disabled}
 							/>
 						</div>
@@ -363,6 +452,37 @@
 					</div>
 					<p class="text-sm text-muted-foreground">
 						คลิกบนหน้าเพื่อวางข้อความ หรือกดเพิ่มข้อความเพื่อวางมุมบน
+					</p>{/if}
+				{#if selectedText}<div class="flex flex-wrap items-center gap-2">
+						<span class="text-sm font-medium">กรอบข้อความที่เลือก</span><Button
+							type="button"
+							variant="outline"
+							size="sm"
+							{disabled}
+							onclick={() => {
+								editText = selectedText.text ?? '';
+								editBorder = selectedText.border ?? false;
+								annotationError = '';
+								editTextOpen = true;
+							}}>แก้ไขข้อความ</Button
+						><Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							{disabled}
+							onclick={() => {
+								draft = draft.filter((item) => item.id !== selectedTextId);
+								selectedTextId = '';
+							}}>ลบกรอบข้อความ</Button
+						><Button type="button" variant="ghost" size="sm" onclick={() => (selectedTextId = '')}
+							>เสร็จสิ้นการจัดวาง</Button
+						>
+					</div>
+					<p class="text-xs text-muted-foreground">
+						ลากกรอบเพื่อย้าย หรือลากมุมเพื่อปรับขนาด ใช้ Tab และปุ่มลูกศรได้
+					</p>{/if}
+				{#if annotationError && !editTextOpen}<p role="alert" class="text-sm text-destructive">
+						{annotationError}
 					</p>{/if}
 				{#if tool === 'placement'}<p class="text-sm text-muted-foreground">
 						แตะเพื่อวาง ลากกรอบเพื่อเลื่อน หรือลากมุมเพื่อปรับขนาด ใช้ Tab
@@ -377,8 +497,16 @@
 							if (!disabled) draft = draft.slice(0, -1);
 						}}>เลิกทำหมายเหตุล่าสุด</Button
 					>{/if}
+			</details>{/if}
+		{#if error}<PageState
+				variant="error"
+				title={error}
+				actionLabel="ลองเปิดเอกสารอีกครั้ง"
+				onaction={openDocument}
+			/>{/if}
+		{#if loading}<div role="status" aria-label="กำลังเปิดเอกสาร">
+				<PageSkeleton variant="form" rows={4} />
 			</div>{/if}
-		{#if error}<PageState variant="error" title={error} />{/if}
 		<div class="overflow-auto rounded-xl border bg-muted/30 p-3 sm:p-5">
 			<div
 				class="relative mx-auto w-full max-w-3xl bg-white text-black shadow-sm"
@@ -392,7 +520,7 @@
 						class="block h-full w-full"
 						aria-label={`เอกสารหน้า ${pageNumber}`}
 					></canvas>{:else}<div class="p-8 text-sm text-muted-foreground">
-						กดเปิดเอกสารเพื่ออ่านและเขียนหมายเหตุ
+						{loading ? 'กำลังเตรียมหน้าเอกสาร' : 'ยังแสดงหน้าเอกสารไม่ได้ กรุณาลองเปิดอีกครั้ง'}
 					</div>{/if}
 
 				<svg
@@ -420,6 +548,8 @@
 								width={annotation.width * pageWidth}
 								height={annotation.height * pageHeight}
 								color={annotation.color}
+								border={annotation.border ?? false}
+								textLayoutVersion={annotation.textLayoutVersion}
 								{measure}
 							/>
 						{:else if annotation.kind === 'ink'}<g
@@ -465,6 +595,15 @@
 							stroke-linejoin="round"
 						/>{/if}
 				</svg>
+				{#each (opened && editable ? draft : []).filter((annotation) => annotation.kind === 'text' && annotation.page === pageNumber) as annotation (annotation.id)}<TextAnnotationPlacement
+						{annotation}
+						{rotation}
+						{disabled}
+						bounds={() => overlay.getBoundingClientRect()}
+						selected={selectedTextId === annotation.id}
+						onselect={() => (selectedTextId = annotation.id)}
+						onchange={changeTextBox}
+					/>{/each}
 				{#if opened && placement && placement.page === pageNumber && onplacementchange}<SignaturePlacement
 						{placement}
 						{rotation}
@@ -538,5 +677,38 @@
 				>อ่านเอกสารและเขียนหมายเหตุ แล้วกลับสู่แผงดำเนินการเพื่อยืนยัน</Dialog.Description
 			></Dialog.Header
 		>{#if fullscreen}{@render workspace()}{/if}</Dialog.Content
+	></Dialog.Root
+>
+
+<Dialog.Root bind:open={editTextOpen}
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
+		><Dialog.Header
+			><Dialog.Title>แก้ไขข้อความบนเอกสาร</Dialog.Title><Dialog.Description
+				>การแก้ไขนี้ยังเป็นฉบับร่างจนกว่าจะยืนยันการดำเนินการ</Dialog.Description
+			></Dialog.Header
+		>
+		<form class="space-y-4" onsubmit={saveText}>
+			<div class="space-y-2">
+				<Label for="edit-annotation-text">ข้อความ *</Label><Textarea
+					id="edit-annotation-text"
+					class="field-sizing-fixed max-h-[35dvh] overflow-y-auto"
+					bind:value={editText}
+					rows={7}
+					{disabled}
+					aria-invalid={!!annotationError}
+					aria-describedby={annotationError ? 'edit-annotation-text-error' : undefined}
+				/><FieldError id="edit-annotation-text-error" message={annotationError} />
+			</div>
+			<div class="flex items-center gap-2">
+				<Checkbox id="edit-annotation-border" bind:checked={editBorder} {disabled} /><Label
+					for="edit-annotation-border">แสดงกรอบข้อความ</Label
+				>
+			</div>
+			<div class="flex justify-end gap-2">
+				<Button type="button" variant="outline" onclick={() => (editTextOpen = false)}
+					>ยกเลิก</Button
+				><Button type="submit" {disabled}>ใช้ข้อความนี้</Button>
+			</div>
+		</form></Dialog.Content
 	></Dialog.Root
 >

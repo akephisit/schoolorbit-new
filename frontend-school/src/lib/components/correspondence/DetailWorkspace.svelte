@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { authStore } from '#lib/stores/auth.js';
@@ -9,6 +10,7 @@
 	import UnsavedGuard from './UnsavedGuard.svelte';
 	import {
 		getCorrespondence,
+		recordCorrespondenceRead,
 		reviseCorrespondence,
 		exportCorrespondence,
 		type CorrespondenceDetail,
@@ -22,6 +24,7 @@
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
 	import {
 		actionLabels,
+		correspondenceRegisterLabel,
 		registerLabels,
 		statusLabels,
 		dateLabel,
@@ -78,6 +81,51 @@
 		placementFileId = $state<string | undefined>();
 	const uploadedFiles = new SvelteMap<File, string>();
 	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
+	let readError = $state(''),
+		renderedDocument = $state<{ correspondenceId: string; documentRevision: number } | null>(null);
+	const readRequest = new LatestRequest();
+	async function recordRenderedRead(
+		document: { correspondenceId: string; documentRevision: number } | null
+	) {
+		if (disposed) return;
+		if (!document) {
+			renderedDocument = null;
+			readError = '';
+			readRequest.abort();
+			return;
+		}
+		const { correspondenceId, documentRevision } = document;
+		const current = region.value,
+			actorId = $authStore.user?.id;
+		if (
+			!current ||
+			!actorId ||
+			current.record.id !== correspondenceId ||
+			current.document.revision !== documentRevision
+		)
+			return;
+		renderedDocument = document;
+		const ticket = readRequest.begin();
+		readError = '';
+		try {
+			const receipt = await recordCorrespondenceRead(
+				current.record.id,
+				{ documentRevision },
+				{ signal: ticket.signal }
+			);
+			if (
+				!readRequest.isCurrent(ticket.revision) ||
+				disposed ||
+				$authStore.user?.id !== actorId ||
+				region.value?.record.id !== receipt.correspondenceId
+			)
+				return;
+			region.patch({ ...region.value, myReadReceipt: receipt });
+		} catch (cause) {
+			if (readRequest.isCurrent(ticket.revision) && !disposed && !isAbortError(cause))
+				readError = cause instanceof Error ? cause.message : 'บันทึกการเปิดอ่านไม่สำเร็จ';
+		}
+	}
 	let disposed = false;
 	$effect.pre(() => {
 		const operation = source;
@@ -103,6 +151,7 @@
 	onDestroy(() => {
 		disposed = true;
 		region.dispose();
+		readRequest.abort();
 	});
 	let observedWorkRevision = $workStore.revision;
 	$effect.pre(() => {
@@ -116,6 +165,24 @@
 	});
 	let selectedRevision = $state('current');
 	const detail = $derived(region.value);
+	// Server-assigned slot identity, excluding mutable read timestamps and workflow revisions.
+	const readContext = $derived.by(() => {
+		const instance = detail?.instance,
+			actorId = $authStore.user?.id;
+		const slots = instance?.directed?.assignments
+			.filter(
+				(assignment) =>
+					assignment.recipient.userId === actorId || assignment.reviewer?.userId === actorId
+			)
+			.map((assignment) => [
+				assignment.id,
+				assignment.status === 'waiting_review' && assignment.reviewer?.userId === actorId
+					? 'reviewer'
+					: 'recipient'
+			])
+			.sort((a, b) => a[0].localeCompare(b[0]));
+		return JSON.stringify([actorId, instance?.id, instance?.currentStep, slots]);
+	});
 	const selectedDocument = $derived(
 		selectedRevision === 'current'
 			? detail?.document
@@ -126,6 +193,12 @@
 	);
 	const viewerDetail = $derived(
 		detail && selectedDocument ? { ...detail, document: selectedDocument } : detail
+	);
+	const documentReady = $derived(
+		!viewingHistory &&
+			!!detail &&
+			renderedDocument?.correspondenceId === detail.record.id &&
+			renderedDocument.documentRevision === detail.document.revision
 	);
 	const canRevise = $derived(
 		!!detail?.canManage && ['draft', 'revision_requested'].includes(detail.record.status)
@@ -146,13 +219,17 @@
 				metadata.documentDate !== (detail.record.documentDate ?? undefined) ||
 				metadata.urgency !== detail.record.urgency)
 	);
-	const primaryAction = $derived(
-		detail?.availableActions.find(
-			(action) => action === detail.instance?.steps[detail.instance.currentStep]?.definition.kind
-		) ??
-			detail?.availableActions.find((action) => action === 'close') ??
-			detail?.availableActions.find((action) => action === 'read')
+	const actionableActions = $derived(
+		detail?.availableActions.filter((action) => action !== 'read') ?? []
 	);
+	const primaryAction = $derived.by(() => {
+		const instance = detail?.instance;
+		const kind = instance?.steps[instance.currentStep]?.definition.kind;
+		return (
+			actionableActions.find((action) => action === kind) ??
+			actionableActions.find((action) => action === 'close')
+		);
+	});
 	const selectedAssignment = $derived(
 		detail?.instance?.directed?.assignments.find((item) => item.id === selectedAssignmentId)
 	);
@@ -161,9 +238,7 @@
 			!!detail &&
 			['completed', 'closed'].includes(detail.record.status)
 	);
-	const secondaryActions = $derived(
-		detail?.availableActions.filter((action) => action !== primaryAction) ?? []
-	);
+	const secondaryActions = $derived(actionableActions.filter((action) => action !== primaryAction));
 	const returnHref = $derived.by(() => {
 		const value = page.url.searchParams.get('returnTo');
 		return value &&
@@ -381,27 +456,28 @@
 
 			<div class="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)]">
 				<section class="min-w-0 space-y-4" aria-label="เอกสาร" id="correspondence-document">
-					<Choice
-						id="document-revision"
-						label="ฉบับเอกสารที่แสดง"
-						bind:value={selectedRevision}
-						options={[
-							{ value: 'current', label: `ฉบับปัจจุบัน (${detail.document.revision})` },
-							...detail.revisions
-								.filter((revision) => revision.revision !== detail.document.revision)
-								.map((revision) => ({
-									value: String(revision.revision),
-									label: `ฉบับ ${revision.revision} · ${dateLabel(revision.createdAt)}`
-								}))
-						]}
-					/>
+					<div class="flex justify-end xl:hidden">
+						<Button
+							href={`${page.url.pathname}${page.url.search}#correspondence-action`}
+							variant="outline"
+							size="sm">ไปยังการดำเนินการ</Button
+						>
+					</div>
 					{#if viewingHistory && viewerDetail}<p
 							class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
 						>
-							กำลังอ่านเอกสารย้อนหลัง เลือกฉบับปัจจุบันเพื่อดำเนินการหนังสือ
+							กำลังอ่านเอกสารย้อนหลัง ไม่สามารถดำเนินการกับฉบับนี้
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onclick={() => (selectedRevision = 'current')}>กลับฉบับปัจจุบัน</Button
+							>
 						</p>
 						<DocumentViewer detail={viewerDetail} editable={false} />{:else}
 						<DocumentViewer
+							onrendered={recordRenderedRead}
+							{readContext}
 							{detail}
 							bind:draft={annotations}
 							disabled={savePending || actionPending || sending}
@@ -413,7 +489,7 @@
 									detail.availableActions.some(
 										(action) => !['read', 'close', 'reassign'].includes(action)
 									))}
-							placement={signature}
+							placement={documentReady ? signature : undefined}
 							{placementPaths}
 							{placementFileId}
 							onplacementchange={(value) => {
@@ -430,6 +506,21 @@
 							}}
 						/>
 					{/if}
+					{#if detail.myReadReceipt}<p
+							class="text-sm text-muted-foreground"
+							data-testid="correspondence-read-receipt"
+						>
+							เปิดอ่านครั้งแรก {dateLabel(detail.myReadReceipt.firstReadAt)}
+						</p>{/if}
+					{#if readError}<PageState
+							variant="error"
+							title={readError}
+							description="อ่านเอกสารต่อได้ การรับทราบยังต้องยืนยันแยกต่างหาก"
+							actionLabel="ลองบันทึกการเปิดอ่านอีกครั้ง"
+							onaction={() => {
+								if (renderedDocument) void recordRenderedRead(renderedDocument);
+							}}
+						/>{/if}
 					<div class="flex justify-end">
 						<Button
 							href={`${page.url.pathname}${page.url.search}#correspondence-action`}
@@ -539,10 +630,7 @@
 							></Card.Root
 						>{/if}
 				</section>
-				<aside
-					class="order-first min-w-0 space-y-4 xl:order-last"
-					aria-label="ข้อมูลและการดำเนินการ"
-				>
+				<aside class="min-w-0 space-y-4" aria-label="ข้อมูลและการดำเนินการ">
 					<Card.Root data-testid="correspondence-current-step" id="correspondence-action"
 						><Card.Header><Card.Title>การดำเนินการ</Card.Title></Card.Header><Card.Content
 							class="space-y-4"
@@ -634,8 +722,9 @@
 												(item) => item.id === assignment.parentId
 											)}
 											{@const actions =
-												detail.assignmentActions.find((item) => item.assignmentId === assignment.id)
-													?.actions ?? []}
+												detail.assignmentActions
+													.find((item) => item.assignmentId === assignment.id)
+													?.actions.filter((action) => action !== 'read') ?? []}
 											<li class="space-y-2 rounded-lg border p-3 text-sm">
 												<p class="break-words font-medium">
 													{assignment.recipient.displayName} · {assignment.purpose === 'decide'
@@ -721,6 +810,7 @@
 									/>{:else if selectedAction}<ActionForm
 										{detail}
 										action={selectedAction}
+										{documentReady}
 										assignmentId={selectedAssignmentId}
 										{annotations}
 										bind:signature
@@ -794,7 +884,7 @@
 											>{/if}
 									</div>
 
-									{#if !canRevise && !detail.availableActions.length}<p
+									{#if !canRevise && !actionableActions.length}<p
 											class="text-sm text-muted-foreground"
 										>
 											ยังไม่มีรายการที่ต้องดำเนินการสำหรับคุณ
@@ -809,7 +899,7 @@
 								<dt class="text-muted-foreground">ทะเบียน</dt>
 								<dd>
 									{registerLabels[detail.record.register]}
-									{detail.record.registerNumber}/{detail.record.registerYear}
+									{correspondenceRegisterLabel(detail.record)}
 								</dd>
 								<dt class="text-muted-foreground">เลขที่ต้นทาง</dt>
 								<dd class="break-words">{detail.record.documentNumber ?? '—'}</dd>
@@ -900,9 +990,30 @@
 						<summary class="cursor-pointer text-sm font-medium"
 							>ประวัติฉบับเอกสาร ({detail.revisions.length})</summary
 						>
+						<Choice
+							id="document-revision"
+							label="ฉบับเอกสารที่แสดง"
+							bind:value={selectedRevision}
+							options={[
+								{ value: 'current', label: `ฉบับปัจจุบัน (${detail.document.revision})` },
+								...detail.revisions
+									.filter((revision) => revision.revision !== detail.document.revision)
+									.map((revision) => ({
+										value: String(revision.revision),
+										label: `ฉบับ ${revision.revision} · ${dateLabel(revision.createdAt)}`
+									}))
+							]}
+						/>
 						<ul class="mt-3 space-y-3 text-sm">
 							{#each detail.revisions as revision (revision.revision)}<li>
-									<p>ฉบับ {revision.revision} · {dateLabel(revision.createdAt)}</p>
+									<p>เอกสารฉบับ {revision.revision} · {dateLabel(revision.createdAt)}</p>
+									{#if revision.revision === 1 && !revision.originalFileId && !revision.content.trim() && !revision.annotations.length}
+										<p class="text-muted-foreground">
+											ฉบับร่างเริ่มต้นก่อนแนบไฟล์ ยังไม่มี PDF ต้นฉบับ
+										</p>
+									{:else if !revision.originalFileId}
+										<p class="text-muted-foreground">ฉบับร่างจากข้อความ ยังไม่มีไฟล์ต้นฉบับ</p>
+									{/if}
 									{#if revision.originalFileId}<Button
 											type="button"
 											variant="outline"

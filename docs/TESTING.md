@@ -1567,7 +1567,12 @@ counts beyond the first 30 items, authorization before aggregation/pagination, i
 and cursor filtering, register-number/year search, current/future/all/any/reassigned recipients,
 frozen names/deadlines and action/signature permissions. It also verifies draft metadata
 validation, atomic revisions, author-only access, returned-record denial and old idempotency
-payload preservation:
+payload preservation. It also covers concurrent first-render read receipts, original revision/time
+preservation, read-versus-acknowledgment authority, newly activated slot timestamps, historical/current
+render projection boundaries, no-op projection effects, explicit-read replay,
+formatted-label search and preserved numbering/profile snapshots. Synthetic migration 128 cases
+backfill the earliest valid immutable Read and refuse missing-document or ambiguous first-read
+evidence without changing audit rows:
 
 ```bash
 ./scripts/test_backend_school.sh --package school-workflow --test correspondence -- --test-threads=2
@@ -1578,6 +1583,23 @@ correspondence browser fixtures should verify server-count tabs, creation/draft 
 failed-file retry, recipient selection, timeline/main action, direct signature placement and
 starter template copying at desktop and mobile sizes.
 
+The renderer fixtures include bordered Thai text with four-point inner padding and cropped pages
+at all native rotations. Text fitting must satisfy both width and height, retain attached Thai marks,
+and refuse a box that cannot fit at the minimum size; frontend helpers also normalize tabs/CRLF.
+Pure Workflow settings tests cover placeholder/format bounds, UUIDv7
+template identities and pre-reader payload serialization. Frontend reading fixtures should report
+a read only after successful page rendering, retain retry/cancellation behavior, open the current
+revision automatically, focus invalid fields, and distinguish registration dates from insertion
+dates when expanding editable stamp text. These synthetic checks do not measure production
+database size, rendering capacity, or prove that a human read the content.
+
+Text annotation layout is versioned: missing `textLayoutVersion` preserves accepted legacy
+height-only fitting, while version 1 enforces width and height. The pure renderer cases preserve
+legacy narrow-glyph export and later signing validation, and reject new strict boxes that cannot
+fit at 5pt. Disposable correspondence cases cover old create/action/revision replay, unchanged
+legacy base-annotation carryforward, subsequent signing, and rejection of missing/unknown new
+versions or edited unversioned text. Omitted legacy fields must keep old payload hashes intact.
+
 Staff leave and planned school exit use `./scripts/test_backend_school.sh --package school-staff leave -- --nocapture` for the focused policy and isolated lifecycle/authorization/ledger fixtures. Signature consent and revision binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`. Policies count school-configured calendar or working dates; half-day granularity represents a full counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement is seeded by these fixtures.
 
 Directed routing uses synthetic staff and document fixtures in
@@ -1587,11 +1609,11 @@ owned production preview with `npm run preview -- --host 127.0.0.1 --port 4183 -
 Run from `frontend-school`:
 
 ```bash
-E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
+E2E_BASE_URL=http://127.0.0.1:4183 npx playwright test tests/e2e/correspondence-directed.spec.ts tests/e2e/correspondence-workflow.spec.ts tests/e2e/correspondence-usability.spec.ts tests/e2e/correspondence-reader.spec.ts tests/e2e/correspondence-text-stamps.spec.ts --grep-invert 'revoked identity|same-revision accepted annotation reconciles|delayed accepted action preserves|historical revision selection' --project=chromium --workers=2
 node --test tests/static/correspondence-*.test.mjs
 ```
 
-The five existing identity/realtime workflow cases named by that exclusion exercise development
+The identity/realtime workflow cases named by that exclusion exercise development
 module imports. Run them against a separate owned development server started with
 `PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run dev -- --host 127.0.0.1 --port 4173 --strictPort`:
 

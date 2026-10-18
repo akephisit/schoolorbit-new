@@ -18,28 +18,29 @@
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import Recipients from './Recipients.svelte';
 	import Choice from './Choice.svelte';
+	import type { CorrespondenceFieldErrors } from '#lib/correspondence/validation.js';
 	let {
 		options,
 		routing = $bindable(),
 		register,
 		inheritedReviewerNames = [],
-		disabled = false
+		disabled = false,
+		fieldErrors = {}
 	}: {
 		options: CorrespondenceOptions;
 		routing: DirectedRoutingRequest;
 		register: CorrespondenceDetail['record']['register'];
 		inheritedReviewerNames?: string[];
 		disabled?: boolean;
+		fieldErrors?: CorrespondenceFieldErrors;
 	} = $props();
 	const defaults = untrack(() =>
 		options.routingSettings.find((item) => item.register === register)
 	);
 	let known = $state(untrack(() => options));
-	let purpose = $state(untrack(() => defaults?.defaultPurpose ?? 'execute'));
+	let purpose = $state(untrack(() => defaults?.defaultPurpose ?? 'acknowledge'));
 	let required = $state(true);
-	let allowOnwardAssignment = $state(
-		untrack(() => defaults?.defaultAllowOnwardAssignment ?? false)
-	);
+	let allowOnwardAssignment = $state(untrack(() => defaults?.defaultAllowOnwardAssignment ?? true));
 	function add(targets: ProcessRecipient[]) {
 		const keys = new Set(routing.recipients.map((item) => recipientKey(item.recipient)));
 		const additions = targets
@@ -93,6 +94,7 @@
 		directed
 		{disabled}
 		prefix="directed-target"
+		error={fieldErrors['directed-target-recipients']}
 	/>
 	<ol class="space-y-3" aria-label="รายการมอบหมาย">
 		{#each routing.recipients as item, index (index)}
@@ -164,6 +166,7 @@
 		</div>
 		{#if routing.requireReview}<Choice
 				id="directed-reviewer"
+				error={fieldErrors['directed-reviewer']}
 				label="ผู้ตรวจทาน *"
 				value={routing.reviewer?.userId ?? ''}
 				onValueChange={(value) => {

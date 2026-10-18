@@ -17,7 +17,7 @@
 		type CreateCorrespondenceRequest
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
-	import { registerLabels } from '#lib/correspondence/presentation.js';
+	import { registerLabels, correspondenceRegisterLabel } from '#lib/correspondence/presentation.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -27,10 +27,15 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
-	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
+	import { documentMetadataErrors } from '#lib/correspondence/metadata.js';
 	import { recipientLabel } from '#lib/correspondence/recipients.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import Choice from './Choice.svelte';
+	import FieldError from './FieldError.svelte';
+	import {
+		focusCorrespondenceField,
+		type CorrespondenceFieldErrors
+	} from '#lib/correspondence/validation.js';
 	import RoutePicker from './RoutePicker.svelte';
 	import UnsavedGuard from './UnsavedGuard.svelte';
 	let register = $state('incoming'),
@@ -64,6 +69,7 @@
 		attachments = $state<File[]>([]);
 	let pending = $state(false),
 		error = $state('');
+	let fieldErrors = $state<CorrespondenceFieldErrors>({});
 	let created = $state<CorrespondenceDetail | null>(null);
 	let routingOpened = $state(false);
 	let routingMode = $state('directed'),
@@ -161,26 +167,33 @@
 		ownerController.abort();
 	});
 	function validate(): boolean {
-		const invalid = validateDocumentMetadata({ title, sender, documentNumber });
-		if (invalid) {
-			error = invalid;
-			stage = 1;
-			metadataExpanded = true;
-			return false;
+		const metadataErrors = documentMetadataErrors({ title, sender, documentNumber });
+		fieldErrors = Object.fromEntries(
+			Object.entries(metadataErrors).map(([key, message]) => [
+				key === 'documentNumber' ? 'create-number' : `create-${key}`,
+				message
+			])
+		);
+		for (const [index, link] of sourceLinks.entries()) {
+			if (!link.label.trim()) fieldErrors[`source-label-${index}`] = 'ระบุชื่อแหล่งที่มา';
+			try {
+				if (!['http:', 'https:'].includes(new URL(link.url).protocol)) throw new Error('protocol');
+			} catch {
+				fieldErrors[`source-url-${index}`] = 'ระบุลิงก์แบบ https:// หรือ http://';
+			}
 		}
-
-		if (
-			sourceLinks.some((link) => {
-				try {
-					return !['http:', 'https:'].includes(new URL(link.url).protocol) || !link.label.trim();
-				} catch {
-					return true;
-				}
-			})
-		) {
-			error = 'ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://';
-			sourcesExpanded = true;
+		const first = Object.entries(fieldErrors)[0];
+		if (first) {
+			error = first[1] ?? 'ตรวจสอบข้อมูลที่จำเป็น';
 			stage = 1;
+			if (fieldErrors['create-number']) metadataExpanded = true;
+			if (
+				sourceLinks.some(
+					(_, index) => fieldErrors[`source-label-${index}`] || fieldErrors[`source-url-${index}`]
+				)
+			)
+				sourcesExpanded = true;
+			void focusCorrespondenceField(first[0]);
 			return false;
 		}
 		return true;
@@ -299,7 +312,7 @@
 		return created;
 	}
 	async function saveDraft() {
-		if (pending || conflict) return;
+		if (pending || conflict || !validate()) return;
 		pending = true;
 		error = '';
 		try {
@@ -337,6 +350,14 @@
 					? 'เลือกผู้พิจารณาสั่งการคนแรก'
 					: 'เลือกแม่แบบและผู้รับให้ครบทุกขั้นตอน';
 			stage = 2;
+			const id =
+				routingMode === 'directed'
+					? 'send-first-decisionmaker'
+					: !routeTemplate
+						? 'send-template'
+						: `send-step-${steps.findIndex((step) => !step.recipients.length)}-recipients`;
+			fieldErrors = { [id]: error };
+			void focusCorrespondenceField(id);
 			return;
 		}
 		if (stage === 2) {
@@ -418,7 +439,7 @@
 			>
 		{/each}
 	</nav>
-	<form class="w-full min-w-0 space-y-6" onsubmit={submit}>
+	<form novalidate class="w-full min-w-0 space-y-6" onsubmit={submit}>
 		{#if error}<PageState
 				variant="error"
 				title={error}
@@ -461,7 +482,7 @@
 				role="status"
 			>
 				<p>
-					เลขทะเบียน {created.record.registerNumber}/{created.record.registerYear} · {finished
+					เลขทะเบียน {correspondenceRegisterLabel(created.record)} · {finished
 						? 'ส่งหนังสือแล้ว'
 						: saved
 							? 'บันทึกฉบับร่างแล้ว ยังไม่ได้ส่ง'
@@ -501,18 +522,22 @@
 					<div class="space-y-2 sm:col-span-2">
 						<Label for="create-title">เรื่อง *</Label><Input
 							id="create-title"
+							aria-invalid={!!fieldErrors['create-title']}
+							aria-describedby={fieldErrors['create-title'] ? 'create-title-error' : undefined}
 							bind:value={title}
 							required
 							disabled={pending}
-						/>
+						/><FieldError id="create-title-error" message={fieldErrors['create-title']} />
 					</div>
 					<div class="space-y-2">
 						<Label for="create-sender">ผู้ส่ง / หน่วยงานต้นทาง *</Label><Input
 							id="create-sender"
+							aria-invalid={!!fieldErrors['create-sender']}
+							aria-describedby={fieldErrors['create-sender'] ? 'create-sender-error' : undefined}
 							bind:value={sender}
 							required
 							disabled={pending}
-						/>
+						/><FieldError id="create-sender-error" message={fieldErrors['create-sender']} />
 					</div>
 					<details bind:open={metadataExpanded} class="space-y-4 sm:col-span-2">
 						<summary class="cursor-pointer text-sm font-medium"
@@ -522,9 +547,13 @@
 							<div class="space-y-2">
 								<Label for="create-number">เลขที่หนังสือต้นทาง</Label><Input
 									id="create-number"
+									aria-invalid={!!fieldErrors['create-number']}
+									aria-describedby={fieldErrors['create-number']
+										? 'create-number-error'
+										: undefined}
 									bind:value={documentNumber}
 									disabled={pending}
-								/>
+								/><FieldError id="create-number-error" message={fieldErrors['create-number']} />
 							</div>
 							<div class="space-y-2">
 								<Label for="create-date">วันที่หนังสือ</Label><DatePicker
@@ -617,17 +646,31 @@
 									<div class="space-y-2">
 										<Label for={`source-label-${index}`}>ชื่อแหล่งที่มา {index + 1}</Label><Input
 											id={`source-label-${index}`}
+											aria-invalid={!!fieldErrors[`source-label-${index}`]}
+											aria-describedby={fieldErrors[`source-label-${index}`]
+												? `source-label-${index}-error`
+												: undefined}
 											bind:value={link.label}
 											disabled={pending || registrationLocked}
+										/><FieldError
+											id={`source-label-${index}-error`}
+											message={fieldErrors[`source-label-${index}`]}
 										/>
 									</div>
 									<div class="space-y-2">
 										<Label for={`source-url-${index}`}>ลิงก์ {index + 1}</Label><Input
 											id={`source-url-${index}`}
+											aria-invalid={!!fieldErrors[`source-url-${index}`]}
+											aria-describedby={fieldErrors[`source-url-${index}`]
+												? `source-url-${index}-error`
+												: undefined}
 											type="url"
 											oninvalid={showInvalidSource}
 											bind:value={link.url}
 											disabled={pending || registrationLocked}
+										/><FieldError
+											id={`source-url-${index}-error`}
+											message={fieldErrors[`source-url-${index}`]}
 										/>
 									</div>
 									<Button
@@ -654,6 +697,7 @@
 		</fieldset>
 		<section hidden={stage !== 2} class="space-y-4" aria-label="เส้นทางผู้รับ">
 			{#if routingOpened}<RoutePicker
+					{fieldErrors}
 					bind:mode={routingMode}
 					bind:firstUserId
 					register={register as CreateCorrespondenceRequest['register']}

@@ -6,6 +6,11 @@ export type CorrespondenceDetail = Schemas['CorrespondenceDetail'];
 export type CorrespondenceSummary = Schemas['CorrespondenceSummary'];
 export type CorrespondenceList = Schemas['CorrespondenceList'];
 export type CorrespondenceOptions = Schemas['CorrespondenceOptions'];
+export type CorrespondenceReadReceipt = Schemas['CorrespondenceReadReceipt'];
+export type CorrespondenceReadRequest = Schemas['CorrespondenceReadRequest'];
+export type CorrespondenceNumberingSettings = Schemas['CorrespondenceNumberingSettings'];
+export type CorrespondenceTextStampTemplate = Schemas['CorrespondenceTextStampTemplate'];
+export type CorrespondenceStampContext = Schemas['CorrespondenceStampContext'];
 export type CreateCorrespondenceRequest = Schemas['CreateCorrespondenceRequest'];
 export type ReviseCorrespondenceRequest = Schemas['ReviseCorrespondenceRequest'];
 export type SendCorrespondenceRequest = Schemas['SendCorrespondenceRequest'];
@@ -55,6 +60,20 @@ export async function getCorrespondence(
 	return requireApiData(
 		await apiClient.get<CorrespondenceDetail>(`/api/correspondence/${id}`, options),
 		'โหลดหนังสือไม่สำเร็จ'
+	);
+}
+export async function recordCorrespondenceRead(
+	id: string,
+	payload: CorrespondenceReadRequest,
+	options: ApiRequestOptions = {}
+): Promise<CorrespondenceReadReceipt> {
+	return requireApiData(
+		await apiClient.post<CorrespondenceReadReceipt>(
+			`/api/correspondence/${id}/read`,
+			payload,
+			options
+		),
+		'บันทึกการเปิดอ่านไม่สำเร็จ'
 	);
 }
 export async function getCorrespondenceOptions(
