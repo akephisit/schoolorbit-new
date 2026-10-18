@@ -1516,8 +1516,7 @@ icons on their browser/OS schedule; opening the updated app or reinstalling it
 refreshes platforms that retain the previous installation icon. Missing/deleted crests fall back to the platform icon;
 unavailable services return uncached 503 with Retry-After. Successful icons may be
 cached for five minutes. The favicon resolver allows up to fifteen seconds for
-a cold PNG response; this anonymous image request does not block homepage HTML. School titles use `ชื่อโรงเรียน - SchoolOrbit`, with
-matching Open Graph titles and School logo metadata. Google chooses its final
+a cold PNG response; this anonymous image request does not block homepage HTML. School titles use `ชื่อโรงเรียน - ระบบจัดการโรงเรียนครบวงจร` with matching Open Graph titles. School structured data retains the square `/favicon.png` logo. Social previews use the separate anonymous `/og-image.png` proxy for the current-school 1200×630 PNG banner from `/api/school/public/share-image`; the banner keeps the platform design if no public crest is configured. Homepage image URLs carry a stable public-branding/template version so name or crest changes produce a new advertised URL. The proxy always serves current branding regardless of query parameters, omits cookies, rejects redirects, bounds PNG bytes and allows fifteen seconds independently of HTML rendering. Successful responses cache for five minutes per host; genuine failures return uncached 503 with Retry-After. Bump the frontend template version in `school-public/seo.ts` when the banner design changes. Social platforms control the final card layout and may retain their own cached previews. Google chooses its final
 search appearance after recrawling; deploying does not force immediate updates.
 Public school identity and the central directory allow up to eight seconds for an anonymous API read before
 returning their retryable errors; the independent marketing homepage and sitemap do

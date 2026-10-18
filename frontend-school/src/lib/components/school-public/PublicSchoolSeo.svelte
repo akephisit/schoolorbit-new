@@ -38,12 +38,17 @@
 	<meta property="og:url" content={site.homeUrl} />
 	<meta property="og:title" content={seo.title} />
 	<meta property="og:description" content={seo.description} />
-	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={seo.title} />
 	<meta name="twitter:description" content={seo.description} />
 	{#if seo.image}
 		<meta property="og:image" content={seo.image} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:type" content="image/png" />
+		<meta property="og:image:alt" content={seo.imageAlt} />
 		<meta name="twitter:image" content={seo.image} />
+		<meta name="twitter:image:alt" content={seo.imageAlt} />
 	{/if}
 	{#if seo.structuredData}
 		<svelte:element this={"script"} type="application/ld+json">{seo.structuredData}</svelte:element>

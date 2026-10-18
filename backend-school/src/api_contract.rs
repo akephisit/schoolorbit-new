@@ -786,6 +786,7 @@ use utoipa::OpenApi;
         school_calendar::http::handlers::list_calendar_tags,
         school_administration::settings::http::handlers::get_public_info,
         school_administration::settings::http::handlers::get_public_favicon,
+        school_administration::settings::http::handlers::get_public_share_image,
         school_administration::settings::http::handlers::get_public_statistics,
         school_administration::settings::http::handlers::get_public_organization,
         school_administration::settings::http::handlers::get_public_organization_avatar,
@@ -5053,6 +5054,22 @@ mod tests {
                 .get("hasMore")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn documents_current_school_social_banner_as_binary_without_file_selectors() {
+        let document = school_api_value().expect("document should serialize");
+        let operation = &document["paths"]["/api/school/public/share-image"]["get"];
+        assert_eq!(operation["operationId"], "getPublicSchoolShareImage");
+        let schema = &operation["responses"]["200"]["content"]["image/png"]["schema"];
+        assert_eq!(schema["type"], "string");
+        assert_eq!(schema["format"], "binary");
+        assert!(operation
+            .get("parameters")
+            .is_none_or(|parameters| parameters.as_array().is_some_and(Vec::is_empty)));
+        for status in ["400", "404", "503"] {
+            assert!(operation["responses"][status].is_object());
+        }
     }
 
     #[test]

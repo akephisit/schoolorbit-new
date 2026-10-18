@@ -91,6 +91,7 @@ tower = "0.5.3"
 log = "0.4.34"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
 ttf-parser = "0.25.1"
 unicode-normalization = "0.1.25"
 url = "2.5.8"

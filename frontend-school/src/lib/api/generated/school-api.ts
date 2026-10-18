@@ -6461,6 +6461,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/school/public/share-image': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicSchoolShareImage'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/school/public/statistics': {
 		parameters: {
 			query?: never;
@@ -54235,6 +54251,53 @@ export interface operations {
 			};
 			/** @description Published staff photo not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicSchoolShareImage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current school social banner, exactly 1200 by 630 pixels */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'image/png': string;
+				};
+			};
+			/** @description Invalid tenant context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Branding temporarily unavailable; retry after 30 seconds */
+			503: {
 				headers: {
 					[name: string]: unknown;
 				};

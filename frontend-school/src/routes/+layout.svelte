@@ -59,10 +59,14 @@
 			property="og:description"
 			content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
 		/>
-		<meta property="og:image" content={`${page.url.origin}/app-icon/192.png`} />
+		<meta property="og:image" content={`${page.url.origin}/og-image.png`} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:type" content="image/png" />
+		<meta property="og:image:alt" content="ข้อมูลโรงเรียนและระบบจัดการโรงเรียนครบวงจร" />
 
 		<!-- Twitter / X Card -->
-		<meta name="twitter:card" content="summary" />
+		<meta name="twitter:card" content="summary_large_image" />
 		<meta
 			name="twitter:title"
 			content={page.data.title ? `${page.data.title} - SchoolOrbit` : 'SchoolOrbit'}
@@ -71,7 +75,8 @@
 			name="twitter:description"
 			content={page.data.description ?? 'ระบบจัดการโรงเรียนแบบครบวงจร'}
 		/>
-		<meta name="twitter:image" content={`${page.url.origin}/app-icon/192.png`} />
+		<meta name="twitter:image" content={`${page.url.origin}/og-image.png`} />
+		<meta name="twitter:image:alt" content="ข้อมูลโรงเรียนและระบบจัดการโรงเรียนครบวงจร" />
 	{/if}
 </svelte:head>
 

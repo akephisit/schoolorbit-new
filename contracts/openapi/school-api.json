@@ -104957,6 +104957,57 @@
         ]
       }
     },
+    "/api/school/public/share-image": {
+      "get": {
+        "operationId": "getPublicSchoolShareImage",
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Current school social banner, exactly 1200 by 630 pixels"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid tenant context"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Branding temporarily unavailable; retry after 30 seconds"
+          }
+        },
+        "tags": [
+          "school"
+        ]
+      }
+    },
     "/api/school/public/statistics": {
       "get": {
         "operationId": "getPublicSchoolStatistics",

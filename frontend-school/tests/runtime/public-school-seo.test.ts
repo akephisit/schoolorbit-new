@@ -68,7 +68,7 @@ test('metadata and structured data preserve names safely without publishing extr
 		site,
 		`${backend}/api/public/files/public-logo/content`
 	);
-	assert.equal(seo.title, `${name.trim()} - SchoolOrbit`);
+	assert.equal(seo.title, `${name.trim()} - ระบบจัดการโรงเรียนครบวงจร`);
 	assert(seo.description.includes(name.trim()));
 	assert(seo.structuredData);
 	assert(!/[<>&\u2028\u2029]/.test(seo.structuredData));
@@ -77,15 +77,65 @@ test('metadata and structured data preserve names safely without publishing extr
 		'@type': 'School',
 		name: name.trim(),
 		url: site.homeUrl,
-		logo: seo.image
+		logo: `${backend}/api/public/files/public-logo/content`
 	});
+	assert.equal(new URL(seo.image).pathname, '/og-image.png');
+	assert.notEqual(JSON.parse(seo.structuredData).logo, seo.image);
 });
 test('missing school branding uses the platform logo and never invents a school name', () => {
 	const site = getSchoolPublicIndexing(new URL('https://alpha.schoolorbit.app/'), backend);
 	assert.equal(buildSchoolHomeSeo(null, site, null).structuredData, null);
 	assert.equal(buildSchoolHomeSeo({ schoolName: '   ' }, site, null).siteName, 'เว็บไซต์โรงเรียน');
 	const seo = buildSchoolHomeSeo({ schoolName: 'โรงเรียนทดสอบ' }, site, null);
-	assert.equal(seo.image, 'https://alpha.schoolorbit.app/schoolorbit.png');
+	assert.equal(new URL(seo.image).origin, 'https://alpha.schoolorbit.app');
 	assert(seo.structuredData);
-	assert.equal(JSON.parse(seo.structuredData).logo, seo.image);
+	assert.equal(
+		JSON.parse(seo.structuredData).logo,
+		'https://alpha.schoolorbit.app/schoolorbit.png'
+	);
+});
+
+test('homepage copy preserves the actual name and adds the school prefix only once', () => {
+	const site = getSchoolPublicIndexing(new URL('https://alpha.schoolorbit.app/'), backend);
+	for (const name of ['ซับน้อยเหนือวิทยาคม', 'โรงเรียนซับน้อยเหนือวิทยาคม']) {
+		const seo = buildSchoolHomeSeo({ schoolName: name }, site, null);
+		assert.equal(seo.title, `${name} - ระบบจัดการโรงเรียนครบวงจร`);
+		assert.equal(
+			seo.description,
+			'โรงเรียนซับน้อยเหนือวิทยาคม เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร'
+		);
+	}
+	assert.equal(
+		buildSchoolHomeSeo({ schoolName: 'โรงเรียน ซับน้อยเหนือวิทยาคม' }, site, null).description,
+		'โรงเรียน ซับน้อยเหนือวิทยาคม เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร'
+	);
+	const missing = buildSchoolHomeSeo(null, site, null);
+	assert.equal(missing.title, 'เว็บไซต์โรงเรียน - ระบบจัดการโรงเรียนครบวงจร');
+	assert.equal(
+		missing.description,
+		'เว็บไซต์โรงเรียน เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร'
+	);
+});
+
+test('school card URLs belong to the current origin and change with public branding', () => {
+	const info = { schoolName: 'ซับน้อยเหนือวิทยาคม', logoFileId: 'crest-one' };
+	const site = getSchoolPublicIndexing(new URL('https://alpha.schoolorbit.app/'), backend);
+	const image = buildSchoolHomeSeo(info, site, null).image;
+	assert.match(image, /^https:\/\/alpha\.schoolorbit\.app\/og-image\.png\?v=1-[a-f0-9]+$/);
+	assert.equal(
+		buildSchoolHomeSeo({ ...info, schoolName: ` ${info.schoolName} ` }, site, null).image,
+		image
+	);
+	assert.notEqual(buildSchoolHomeSeo({ ...info, schoolName: 'ชื่อใหม่' }, site, null).image, image);
+	assert.notEqual(
+		buildSchoolHomeSeo({ ...info, logoFileId: 'crest-two' }, site, null).image,
+		image
+	);
+	const other = getSchoolPublicIndexing(new URL('https://beta.schoolorbit.app/'), backend);
+	assert.equal(
+		new URL(buildSchoolHomeSeo(info, other, null).image).origin,
+		'https://beta.schoolorbit.app'
+	);
+	assert(!image.includes(info.schoolName));
+	assert(!image.includes(info.logoFileId));
 });
