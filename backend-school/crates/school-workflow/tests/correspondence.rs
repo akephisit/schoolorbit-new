@@ -957,7 +957,7 @@ async fn reader_migration_backfills_earliest_immutable_read_without_rewriting_au
         .await
         .unwrap();
     sqlx::raw_sql(include_str!(
-        "../../../migrations/127_correspondence_reader_templates.sql"
+        "../../../migrations/128_correspondence_reader_templates.sql"
     ))
     .execute(&pool)
     .await
@@ -1035,7 +1035,7 @@ async fn reader_migration_refuses_unmappable_and_ambiguous_reads_with_preserved_
             .await
             .unwrap();
         let error = sqlx::raw_sql(include_str!(
-            "../../../migrations/127_correspondence_reader_templates.sql"
+            "../../../migrations/128_correspondence_reader_templates.sql"
         ))
         .execute(&pool)
         .await
@@ -1082,7 +1082,7 @@ async fn reader_migration_refuses_relative_timestamps_in_immutable_read_evidence
         .await
         .unwrap();
     let error = sqlx::raw_sql(include_str!(
-        "../../../migrations/127_correspondence_reader_templates.sql"
+        "../../../migrations/128_correspondence_reader_templates.sql"
     ))
     .execute(&pool)
     .await

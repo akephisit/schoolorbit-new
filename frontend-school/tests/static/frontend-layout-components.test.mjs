@@ -66,17 +66,17 @@ test('shared app layout components define consistent page header and shell', asy
 	assert.match(pageHeader, /icon\?: Component/);
 
 	assert.match(pageShell, /from '.\/PageHeader.svelte'/);
-	assert.match(pageShell, /space-y-6/);
+	assert.match(pageShell, /school-page-content/);
 	assert.match(pageShell, /<svelte:head>/);
 	assert.match(pageShell, /<title>\{title\} - SchoolOrbit<\/title>/);
 	assert.match(
 		pageShell,
-		/class=\{cn\('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className\)\}/,
+		/class=\{cn\('school-page-shell w-full min-w-0', className\)\}/,
 		'PageShell root should own consistent app page padding'
 	);
 	assert.match(
 		pageShell,
-		/class=\{cn\('w-full min-w-0 space-y-6', contentClass\)\}/,
+		/class=\{cn\('school-page-content w-full min-w-0', contentClass\)\}/,
 		'PageShell content wrapper should preserve full-width layout and vertical spacing between page content blocks'
 	);
 	assert.match(pageShell, /@render children/);

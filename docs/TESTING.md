@@ -570,6 +570,36 @@ Use focused test filters first when changing a handler, client, or service.
 
 ## Frontend School
 
+The appearance backend uses the owned disposable database fixture. From the repository root:
+
+```bash
+CARGO_BUILD_JOBS=2 ./scripts/test_backend_school.sh --package school-administration appearance -- --nocapture
+CARGO_BUILD_JOBS=2 ./scripts/test_backend_school.sh --features api-docs integration_tests::school::public_tests::public_http_reads_need_no_session_and_keep_tenants_and_private_routes_separate -- --nocapture
+```
+
+From `backend-school`, run `cargo test --bin backend-school --features api-docs api_contract::tests -- --nocapture`
+for closed appearance schemas. These focused cases cover strict validation, revision conflicts,
+logo preservation, singleton migration refusal, public tenant isolation, read/update permission
+separation, missing rows, session/CSRF checks and JSON error envelopes. Use the pinned Rust
+toolchain and one shared target directory; do not point fixture recipes at tenant databases.
+
+School appearance uses a self-hosted frontend and local mock tenant backend; it needs no real
+student data or credentials. From `frontend-school`, run:
+
+```bash
+node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts
+npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --workers=1
+```
+
+The focused suite covers the canonical contrast/CSS serializer, per-document tenant reads,
+ETag revalidation, bounded failure, stale font preparation, same-revision font retry,
+delayed CSS/fonts before first paint, an unused stalled legacy bootstrap URL, independent
+CSS fail-open when the inline bootstrap cannot execute, personal mode,
+role/public pages, persisted settings, a fresh browser, SPA navigation, denied reads/writes
+and explicit conflict review. Install the pinned Playwright Chromium and its required host
+libraries before execution. Shared layout guards assert the density token owners; browser
+checks retain explicit utility overrides rather than requiring one fixed spacing value.
+
 `npm ci` installs the app toolchain (TypeScript 6) and the private `tools/api-contracts` workspace (TypeScript 5 required by `openapi-typescript`). The API generator resolves its CLI from that workspace; keep its peer dependency isolated when upgrading app tooling.
 
 `runed`, used by the UI primitives, still declares an optional Kit 2 peer for its separate Kit utilities. The scoped override selects Kit 3 for the portable utilities used by Bits UI and Svelte Toolbelt, which do not import `runed/kit`. The Kit-specific utilities still use retired Kit APIs; do not import `runed/kit` into the applications until upstream supports Kit 3. Verify the installed graph with `npm ls @sveltejs/kit svelte vite typescript --all` and run the mocked browser acceptance after dependency changes.
@@ -1533,7 +1563,7 @@ validation, atomic revisions, author-only access, returned-record denial and old
 payload preservation. It also covers concurrent first-render read receipts, original revision/time
 preservation, read-versus-acknowledgment authority, newly activated slot timestamps, historical/current
 render projection boundaries, no-op projection effects, explicit-read replay,
-formatted-label search and preserved numbering/profile snapshots. Synthetic migration 127 cases
+formatted-label search and preserved numbering/profile snapshots. Synthetic migration 128 cases
 backfill the earliest valid immutable Read and refuse missing-document or ambiguous first-read
 evidence without changing audit rows:
 

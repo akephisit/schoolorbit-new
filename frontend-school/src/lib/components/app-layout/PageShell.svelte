@@ -34,9 +34,9 @@
 	<title>{title} - SchoolOrbit</title>
 </svelte:head>
 
-<div class={cn('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className)}>
+<div class={cn('school-page-shell w-full min-w-0', className)}>
 	<PageHeader {title} {description} {backHref} {backPreload} {backLabel} {icon} {meta} {actions} />
-	<div class={cn('w-full min-w-0 space-y-6', contentClass)}>
+	<div class={cn('school-page-content w-full min-w-0', contentClass)}>
 		{@render children?.()}
 	</div>
 </div>

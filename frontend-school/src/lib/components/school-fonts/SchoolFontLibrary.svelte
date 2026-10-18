@@ -300,7 +300,7 @@
 			<AlertDialog.Action
 				onclick={confirmDelete}
 				disabled={deletingId !== null}
-				class="bg-destructive text-white"
+				variant="destructive"
 			>
 				{deletingId ? 'กำลังลบ...' : 'ยืนยันลบฟอนต์'}
 			</AlertDialog.Action>

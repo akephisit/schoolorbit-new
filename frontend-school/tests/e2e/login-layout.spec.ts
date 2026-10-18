@@ -186,7 +186,19 @@ for (const mode of ['absent', 'broken', 'unavailable'] as const) {
 		brandingMode = mode;
 		await page.goto(`${baseUrl}/login`);
 		await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeEnabled();
-		await expect(page.getByTestId('login-school-crest').locator('img')).toHaveCount(0);
+		const crest = page.getByTestId('login-school-crest');
+		await expect(crest.getByRole('img', { name: 'ตราโรงเรียน', exact: true })).toHaveCount(0);
+		const fallback = crest.getByRole('img', { name: 'SchoolOrbit', exact: true });
+		await expect(fallback).toHaveCount(1);
+		await expect(fallback).toBeVisible();
+		await expect(fallback).toHaveAttribute('src', '/schoolorbit.png');
+		await expect
+			.poll(() =>
+				fallback.evaluate(
+					(image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+				)
+			)
+			.toBe(true);
 		await page.getByLabel('ชื่อผู้ใช้งาน (Username)').fill('fixture-teacher');
 		await expect(page.getByLabel('ชื่อผู้ใช้งาน (Username)')).toHaveValue('fixture-teacher');
 	});

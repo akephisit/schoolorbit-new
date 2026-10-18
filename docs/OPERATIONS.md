@@ -346,12 +346,12 @@ Recurring Compose healthchecks use `/health` so process monitoring stays indepen
 
 There are four public workflow entry points:
 
-| Owner | Trigger and responsibility |
-| --- | --- |
-| [pipeline.yml](../.github/workflows/pipeline.yml) | PR scope/base planning; main or manual preparation and production release |
-| [merge.yml](../.github/workflows/merge.yml) | Serialize trusted team PR integration after `Pipeline gate` |
-| [operations.yml](../.github/workflows/operations.yml) | Explicit deployed smoke, diagnostics, benchmarks and tenant provisioning |
-| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention; dry-run unless explicitly enabled |
+| Owner                                                   | Trigger and responsibility                                                |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [pipeline.yml](../.github/workflows/pipeline.yml)       | PR scope/base planning; main or manual preparation and production release |
+| [merge.yml](../.github/workflows/merge.yml)             | Serialize trusted team PR integration after `Pipeline gate`               |
+| [operations.yml](../.github/workflows/operations.yml)   | Explicit deployed smoke, diagnostics, benchmarks and tenant provisioning  |
+| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention; dry-run unless explicitly enabled                 |
 
 The callable [prepare.yml](../.github/workflows/prepare.yml) and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
 are callable component implementations, with no separate push or manual writers.
@@ -1394,6 +1394,7 @@ Deploy the backend, generated permission/API contracts and frontend together beh
 Calendar request notifications use the central `NotificationService` through the Calendar delivery adapter in [request_workflow.rs](../backend-school/crates/school-calendar/src/delivery/request_workflow.rs). Calendar retains message/recipient selection and reminder scheduling. New requests notify active staff with both calendar read and manage permissions, resolved through the same role, organization and delegation grants as actor authorization. Decisions notify the active requester independently of the event audience notification option. Central send checks the direct recipient once inside its acceptance transaction, returning `RowNotFound` for a missing/inactive account, then commits the inbox row and dispatch job together to preserve immediate bell/inbox visibility. The central worker later delivers SSE and subscribed WebPush to that accepted recipient snapshot without checking subsequent activity changes. Its stable returned ID records accepted durable work, not external receipt. Links lead to the pending review queue or the requester's approved/rejected history; rejection reasons remain in the private request details.
 
 Calendar still commits its business mutation before resolving recipients and calling central send. A failure or interruption before successful enqueue can therefore leave a saved request or decision without a notification; central delivery guarantees begin when inbox/job enqueue commits. Later transport failures retry centrally and do not invalidate the committed business mutation. Inspect safe producer diagnostics and central queue progress before considering an explicit notification retry. Never replay request approval to resend a notification or submit test notifications to real tenant users.
+
 ### Attendance sparse-result cutover and scoped reset
 
 Migration [106](../backend-school/migrations/106_attendance_remove_person_notes.sql) removes per-person Attendance notes from records and historical result-save audit snapshots, including snapshots whose sessions were archived or reset. It preserves result facts, audit identity/actor/time/reason, revisions and unrelated audit/calendar notes. Its transactional shape preflight rejects unknown audit layouts with `ATTENDANCE_NOTE_AUDIT_UNMAPPABLE`; preservation reconciliation rejects drift with `ATTENDANCE_NOTE_PRESERVATION_FAILED` before column cleanup. Investigate only aggregate finding codes on a protected copy, repair the identified source through a reviewed operation, and retry the standard migration runner. Never delete audit entries or guess an unknown snapshot mapping.
@@ -1640,7 +1641,7 @@ and ownership remain unchanged. A rollback needs matching frontend/backend contr
 retain a runtime supporting the correspondence File Platform purposes described above; preserve
 all existing summaries, document revisions, process/action history and file/signature evidence.
 
-Migration 127 adds first-read receipts unique to each book/person. It backfills the earliest valid
+Migration 128 adds first-read receipts unique to each book/person. It backfills the earliest valid
 immutable explicit Read and refuses migration with aggregate `CORRESPONDENCE_READ_BACKFILL_BLOCKED`
 findings if historical identities/revisions/timestamps are unmappable or the earliest revision is
 ambiguous. Keep maintenance active, preserve the audit, and reconcile through an owned forward
@@ -1673,3 +1674,30 @@ after accepting versioned text, recover forward with a runtime that preserves th
 No SQL migration rewrites historical annotations or signing evidence for this rendering change.
 
 Staff leave uses additive tenant migration `126_staff_leave.sql` after directed routing 125. Configure category profiles, routing and policy source/effective dates before enabling staff submission. There are no seeded legal allowances or approval recipients. Before the first leave policy creates a source-owned process template, the schema is compatible with binaries that ignore the Staff tables; after policy/request activation, do not restore a binary lacking the source-template ownership guard. Preserve request/process/evidence history and recover by rolling forward to a compatible release. This feature adds no departure/return tracking or late-alert worker.
+
+## School appearance loading and recovery
+
+School appearance is persisted per tenant by `/api/school/settings/appearance`; its revision
+prevents concurrent editors from overwriting one another. Deploy the matching generated API
+contract, backend and frontend together. The public appearance endpoint returns only presentation
+settings and uses the request Origin to select the school. Apply additive tenant migration
+`127_school_appearance.sql` before enabling these endpoints. It expands existing settings and
+preserves logo columns and identities. Its unique singleton index refuses historical duplicate
+settings rows; stop and investigate reviewed remediation rather than choosing or deleting a
+row or logo automatically. A missing settings row returns 404 for GET/PATCH; it does not create
+an invented default save. Earlier logo-only binaries tolerate the expanded schema, but the
+new appearance frontend/backend must ship together. Preserve expanded appearance values and
+applied migration checksums during recovery. No production migration is part of draft review.
+
+Each document blocks first paint on the same-origin `/school-appearance.css` read. Its private
+ETag response revalidates with the backend; failed or timed-out reads return uncached stable
+defaults for that document. UI font faces use self-hosted `/fonts/ui/` assets and the existing built-in Sarabun files. The initial font gate
+uses an inline classic bootstrap in `app.html`, with no script download that can stall body
+parsing. It waits up to three seconds before selecting a fixed system fallback; an independent
+CSS deadline reveals readable system text if the inline bootstrap cannot execute. Delayed font completion never
+replaces that initial fallback. No shared process cache or SPA-route appearance fetch is used.
+
+After a save, font preparation precedes atomic CSS replacement. A font failure after database
+commit is reported as a successful save with a presentation retry, retaining the previous usable
+theme. Other documents pick up current settings on their next load, throttled visibility
+revalidation, or a same-origin save signal. Personal light/dark preference remains device-owned.

@@ -8,6 +8,10 @@ use axum::{
 pub fn public_routes() -> Router<AdministrationHttpState> {
     Router::new()
         .route("/school/public", get(handlers::get_public_info))
+        .route(
+            "/school/public/appearance",
+            get(handlers::get_public_appearance),
+        )
         .route("/school/public/favicon", get(handlers::get_public_favicon))
         .route(
             "/school/public/share-image",
@@ -34,4 +38,8 @@ pub fn protected_routes() -> Router<AdministrationHttpState> {
             get(handlers::get_settings).patch(handlers::update_settings),
         )
         .route("/school/settings/logo", delete(handlers::delete_logo))
+        .route(
+            "/school/settings/appearance",
+            get(handlers::get_appearance).patch(handlers::update_appearance),
+        )
 }

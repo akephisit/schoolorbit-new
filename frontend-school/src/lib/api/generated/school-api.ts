@@ -6429,6 +6429,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/school/public/appearance': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicSchoolAppearance'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/school/public/favicon': {
 		parameters: {
 			query?: never;
@@ -6524,6 +6540,22 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch?: never;
+		trace?: never;
+	};
+	'/api/school/settings/appearance': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSchoolAppearance'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateSchoolAppearance'];
 		trace?: never;
 	};
 	'/api/staff': {
@@ -12107,6 +12139,15 @@ export interface components {
 				retained: number;
 				sourceHash: string;
 				students: components['schemas']['RosterPreviewStudent'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SchoolAppearanceResponse: {
+			data: {
+				appearance: components['schemas']['SchoolAppearance'];
+				/** Format: int64 */
+				revision: number;
 			};
 			message?: string;
 			success: boolean;
@@ -23388,6 +23429,23 @@ export interface components {
 			steps: components['schemas']['ProcessTemplateStep'][];
 			title: string;
 		};
+		SchoolAppearance: {
+			density: components['schemas']['SchoolAppearanceDensity'];
+			font: components['schemas']['SchoolAppearanceFont'];
+			palette: components['schemas']['SchoolAppearancePalette'];
+			primary: string | null;
+		};
+		/** @enum {string} */
+		SchoolAppearanceDensity: 'comfortable' | 'compact';
+		/** @enum {string} */
+		SchoolAppearanceFont: 'kanit' | 'noto' | 'sarabun';
+		/** @enum {string} */
+		SchoolAppearancePalette: 'teal' | 'blue' | 'purple';
+		SchoolAppearanceResponse: {
+			appearance: components['schemas']['SchoolAppearance'];
+			/** Format: int64 */
+			revision: number;
+		};
 		SchoolFontDeleteConflict: {
 			/** Format: int64 */
 			referenceCount: number;
@@ -26088,6 +26146,11 @@ export interface components {
 			mode: components['schemas']['RosterTrackingMode'];
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		UpdateSchoolAppearanceRequest: {
+			appearance: components['schemas']['SchoolAppearance'];
+			/** Format: int64 */
+			expectedRevision: number;
 		};
 		UpdateStaffCareerRequest: {
 			changes: components['schemas']['StaffCareerCurrentChange'][];
@@ -54279,6 +54342,44 @@ export interface operations {
 			};
 		};
 	};
+	getPublicSchoolAppearance: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current tenant public appearance only */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolAppearanceResponse'];
+				};
+			};
+			/** @description Invalid tenant context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School settings not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getPublicSchoolFavicon: {
 		parameters: {
 			query?: {
@@ -54493,6 +54594,140 @@ export interface operations {
 			};
 			/** @description Settings read permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSchoolAppearance: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current school appearance */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolAppearanceResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Settings read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School settings not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateSchoolAppearance: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateSchoolAppearanceRequest'];
+			};
+		};
+		responses: {
+			/** @description Saved school appearance and committed revision */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SchoolAppearanceResponse'];
+				};
+			};
+			/** @description Invalid JSON appearance request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Settings update permission or CSRF required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School settings not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Appearance changed since it was read */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request body too large */
+			413: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid appearance or revision */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

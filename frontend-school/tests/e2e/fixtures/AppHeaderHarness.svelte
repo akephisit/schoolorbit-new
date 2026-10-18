@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Header from '#lib/components/layout/Header.svelte';
+	import { applyPersonalMode } from '#lib/appearance/mode.js';
+	import { uiPreferences } from '#lib/stores/ui-preferences.js';
 	import {
 		createAcademicContextStore,
 		setAcademicContextStore
@@ -8,6 +10,9 @@
 	setAcademicContextStore(createAcademicContextStore({ navigate: async () => {} }));
 	authStore.clearUser();
 	let menuOpen = $state(false);
+	$effect.pre(() => {
+		applyPersonalMode($uiPreferences.theme, '/staff');
+	});
 </script>
 
 <Header onMenuClick={() => (menuOpen = !menuOpen)} />
