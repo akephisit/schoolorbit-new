@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { mockCorrespondence, correspondenceId, detailPath } from './fixtures/correspondence';
+import {
+	mockCorrespondence,
+	correspondenceId,
+	detailPath,
+	fileId
+} from './fixtures/correspondence';
 import { mockDirectedCorrespondence } from './fixtures/correspondence-directed';
 
 test.use({ serviceWorkers: 'block' });
@@ -64,6 +69,65 @@ test('signing remains unavailable after a failed preview and becomes usable afte
 	expect(attempts).toBe(2);
 	expect(api.writes).toHaveLength(0);
 	await expect.poll(() => api.readRequests.length).toBe(1);
+});
+
+test('same-document preview retry after an original-download error restores signing with its existing ink and consent', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page);
+	api.detail().document.originalFileId = fileId;
+	await page.route('**/api/files/*/download**', (route) =>
+		route.fulfill({
+			status: 503,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: false, error: 'ดาวน์โหลดต้นฉบับไม่สำเร็จ' })
+		})
+	);
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+	const form = page.getByTestId('correspondence-action');
+	const surface = form.getByRole('img', { name: 'พื้นที่วาดลายมือชื่อ', exact: true });
+	await surface.scrollIntoViewIfNeeded();
+	const box = (await surface.boundingBox())!;
+	await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 8 });
+	await page.mouse.up();
+	const confirmation = form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ });
+	await confirmation.check();
+	await expect.poll(() => api.readRequests.length).toBe(1);
+	const receipt = structuredClone(api.detail().myReadReceipt);
+	const ink = await form.getByTestId('signature-pad').locator('svg path').getAttribute('d');
+	expect(ink).toBeTruthy();
+	await page.getByRole('button', { name: 'ต้นฉบับ', exact: true }).click();
+	const retry = page.getByRole('button', { name: 'ลองเปิดเอกสารอีกครั้ง', exact: true });
+	await expect(retry).toBeVisible();
+	await expect(confirmation).toBeChecked();
+	let release = () => {},
+		loading = false;
+	const preview = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/api/correspondence/*/preview**', async (route) => {
+		loading = true;
+		await preview;
+		await route.fallback();
+	});
+	await retry.click();
+	await expect.poll(() => loading).toBe(true);
+	await expect(form.getByTestId('signature-pad')).toBeHidden();
+	await expect(form.getByTestId('signature-pad').locator('svg path')).toHaveCount(1);
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
+	release();
+	await expect(surface).toBeVisible();
+	await expect(form.getByTestId('signature-pad').locator('svg path')).toHaveAttribute('d', ink!);
+	await expect(confirmation).toBeChecked();
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeEnabled();
+	await expect(page.getByTestId('signature-placement').locator('svg path')).toHaveCount(1);
+	await expect.poll(() => api.readRequests.length).toBe(2);
+	expect(api.readRequests).toEqual([{ documentRevision: 1 }, { documentRevision: 1 }]);
+	expect(api.detail().myReadReceipt).toEqual(receipt);
+	expect(api.writes).toHaveLength(0);
 });
 
 test('returning from history waits for the current PDF and preserves existing ink and consent', async ({

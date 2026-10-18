@@ -122,6 +122,7 @@
 	});
 	const pageCount = $derived(pdf?.pageCount ?? 1);
 	function cleanup() {
+		renderedDocument = '';
 		onrendered?.(null);
 		request.abort();
 		opened = false;
@@ -141,7 +142,6 @@
 				viewedDocument = key;
 				opened = false;
 				pageNumber = 1;
-				renderedDocument = '';
 				void openDocument();
 			}
 		});
