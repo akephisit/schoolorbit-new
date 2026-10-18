@@ -175,8 +175,12 @@ for (const theme of ['light', 'dark'])
 		await expect(page.locator('html')).toHaveClass(theme === 'dark' ? /dark/ : /^(?!.*\bdark\b)/);
 		await page.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ }).check();
 		await page.getByRole('checkbox', { name: 'ครูผู้รับผิดชอบ', exact: true }).check();
-		await page.getByLabel(/^ข้อเท็จจริงที่สังเกต(?: \*)?$/).fill('ข้อมูลสมมติจากการเยี่ยมบ้าน');
-		await page.getByLabel(/^แนวทางที่ตกลงร่วมกัน(?: \*)?$/).fill('ข้อตกลงสมมติ');
+		await page
+			.getByRole('textbox', { name: 'ข้อเท็จจริงที่สังเกต', exact: true })
+			.fill('ข้อมูลสมมติจากการเยี่ยมบ้าน');
+		await page
+			.getByRole('textbox', { name: 'แนวทางที่ตกลงร่วมกัน', exact: true })
+			.fill('ข้อตกลงสมมติ');
 		await page.screenshot({
 			path: `/tmp/schoolorbit-student-care-visit-form-${theme}.png`,
 			fullPage: true
@@ -293,17 +297,38 @@ test('visit completion requires factual record and retains the completed mobile 
 	page
 }) => {
 	const api = await mockStudentCare(page);
+	await page.setViewportSize({ width: 375, height: 812 });
 	await page.goto(carePath(`/visits/${careVisitId}/edit`));
 	await page.getByRole('button', { name: 'สถานะการเยี่ยมบ้าน', exact: true }).click();
 	await page.getByRole('option', { name: 'เยี่ยมแล้ว', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'วันที่เยี่ยมจริง', exact: true })).toHaveAttribute(
+		'aria-required',
+		'true'
+	);
+	for (const name of [
+		'ผู้ให้ข้อมูล / ความสัมพันธ์',
+		'ข้อเท็จจริงที่สังเกต',
+		'แนวทางที่ตกลงร่วมกัน'
+	]) {
+		await expect(page.getByRole('textbox', { name, exact: true })).toHaveAttribute(
+			'aria-required',
+			'true'
+		);
+	}
 	await page.getByRole('button', { name: 'วันที่เยี่ยมจริง', exact: true }).click();
 	await page.locator('[data-bits-day][data-today]').click();
-	await page.getByLabel(/^ผู้ให้ข้อมูล \/ ความสัมพันธ์(?: \*)?$/).fill('ผู้ปกครองสมมติ');
-	await page.getByLabel(/^ข้อเท็จจริงที่สังเกต(?: \*)?$/).fill('ข้อเท็จจริงสมมติ');
+	await page
+		.getByRole('textbox', { name: 'ผู้ให้ข้อมูล / ความสัมพันธ์', exact: true })
+		.fill('ผู้ปกครองสมมติ');
+	await page
+		.getByRole('textbox', { name: 'ข้อเท็จจริงที่สังเกต', exact: true })
+		.fill('ข้อเท็จจริงสมมติ');
 	await page.getByRole('button', { name: 'บันทึกเยี่ยมบ้าน', exact: true }).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'แนวทางที่ตกลง' })).toBeVisible();
 	expect(api.visits).toHaveLength(0);
-	await page.getByLabel(/^แนวทางที่ตกลงร่วมกัน(?: \*)?$/).fill('นัดติดตามสมมติ');
+	await page
+		.getByRole('textbox', { name: 'แนวทางที่ตกลงร่วมกัน', exact: true })
+		.fill('นัดติดตามสมมติ');
 	await page.getByRole('button', { name: 'บันทึกเยี่ยมบ้าน', exact: true }).click();
 	await expect(page.getByText('บันทึกเยี่ยมบ้านแล้ว', { exact: true })).toBeVisible();
 	expect(api.visits[0].status).toBe('completed');
