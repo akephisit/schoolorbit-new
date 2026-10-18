@@ -644,7 +644,6 @@
 
 	.registry-rail strong,
 	.certificate-number strong {
-		font-family: 'IBM Plex Mono', 'Noto Sans Mono', monospace;
 		font-size: clamp(1rem, 2.4vw, 1.4rem);
 		letter-spacing: 0.045em;
 		font-variant-numeric: tabular-nums;
@@ -907,7 +906,6 @@
 
 	.recipient h2 {
 		margin: 0.25rem 0 0;
-		font-family: 'Sarabun', 'Noto Sans Thai', Tahoma, sans-serif;
 		font-size: clamp(1.65rem, 3vw, 2.35rem);
 		font-weight: 600;
 		line-height: 1.25;
