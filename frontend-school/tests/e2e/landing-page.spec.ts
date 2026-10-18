@@ -389,7 +389,7 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 		);
 		await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
 			'content',
-			new RegExp(`^${baseUrl}/og-image\\.png\\?v=2-[a-f0-9]+$`)
+			new RegExp(`^${baseUrl}/og-image\\.png\\?v=3-[a-f0-9]+$`)
 		);
 		await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute(
 			'content',
