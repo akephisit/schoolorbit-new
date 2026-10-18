@@ -663,6 +663,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
+                "school-tenancy",
             ],
         ),
         (
@@ -860,6 +861,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-permissions",
+                "school-notifications",
+                "school-workflow",
             ],
         ),
         (

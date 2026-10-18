@@ -8,9 +8,13 @@ api-docs = [
     "school-http/api-docs",
     "school-auth/api-docs",
     "dep:utoipa",
+    "school-workflow/api-docs",
 ]
 
 [dependencies]
+school-workflow = { workspace = true }
+school-notifications = { workspace = true }
+async-trait = { workspace = true }
 school-permissions = { workspace = true }
 school-authorization = { workspace = true }
 school-file-platform = { workspace = true }

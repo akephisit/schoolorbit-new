@@ -218,3 +218,12 @@ impl FromRef<AppState> for school_student_care::http::state::StudentCareHttpStat
         }
     }
 }
+
+impl FromRef<AppState> for school_staff::leave::http::LeaveHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            work_event_channel: state.work_event_channel.clone(),
+        }
+    }
+}

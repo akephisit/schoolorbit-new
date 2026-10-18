@@ -115,6 +115,11 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
     Router::new()
         .nest(
             "/api",
+            school_staff::leave::http::routes()
+                .with_state(school_staff::leave::http::LeaveHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
             school_auth_http::http::routes::protected_routes().with_state(
                 school_auth_http::http::state::AuthHttpState::from_ref(state),
             ),

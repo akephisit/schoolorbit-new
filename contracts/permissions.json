@@ -1464,6 +1464,62 @@
       "scope": "school",
       "name": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
       "description": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูคำขอลาและขอออกนอกสถานศึกษาของตนเอง",
+      "description": "ดูคำขอลาและขอออกนอกสถานศึกษาของตนเอง"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูคำขอลาที่ได้รับมอบหมาย",
+      "description": "ดูคำขอลาที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูคำขอลาทั้งโรงเรียน",
+      "description": "ดูคำขอลาทั้งโรงเรียน"
+    },
+    {
+      "module": "staff_leave",
+      "action": "create",
+      "scope": "own",
+      "name": "สร้างและส่งคำขอลาของตนเอง",
+      "description": "สร้างและส่งคำขอลาของตนเอง"
+    },
+    {
+      "module": "staff_leave",
+      "action": "update",
+      "scope": "assigned",
+      "name": "พิจารณาคำขอลาที่ได้รับมอบหมาย",
+      "description": "พิจารณาคำขอลาที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "staff_leave",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการประเภทและเกณฑ์การลาของโรงเรียน",
+      "description": "จัดการประเภทและเกณฑ์การลาของโรงเรียน"
+    },
+    {
+      "module": "staff_leave",
+      "action": "download",
+      "scope": "own",
+      "name": "ดูและส่งออกรายงานการลาของตนเอง",
+      "description": "ดูและส่งออกรายงานการลาของตนเอง"
+    },
+    {
+      "module": "staff_leave",
+      "action": "download",
+      "scope": "school",
+      "name": "ดูและส่งออกรายงานการลาทั้งโรงเรียน",
+      "description": "ดูและส่งออกรายงานการลาทั้งโรงเรียน"
     }
   ]
 }

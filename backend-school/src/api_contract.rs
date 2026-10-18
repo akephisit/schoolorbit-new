@@ -133,6 +133,7 @@ use school_staff::http::handlers::organization_members::{
     AddMemberRequest, ListMembersQuery, UpdateMemberRequest,
 };
 use school_staff::http::handlers::staff::StaffListData;
+use school_staff::leave::models::*;
 use school_staff::models::{
     AdvisorHomeroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
     CreateStaffInfoRequest, CreateStaffRequest, DelegationItem, OrganizationAssignment,
@@ -167,6 +168,24 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        school_staff::leave::http::list_types,
+        school_staff::leave::http::create_type,
+        school_staff::leave::http::update_type,
+        school_staff::leave::http::delete_type,
+        school_staff::leave::http::list_policies,
+        school_staff::leave::http::create_policy,
+        school_staff::leave::http::effective_policy,
+        school_staff::leave::http::options,
+        school_staff::leave::http::routing_options,
+        school_staff::leave::http::list_requests,
+        school_staff::leave::http::create_request,
+        school_staff::leave::http::get_request,
+        school_staff::leave::http::update_request,
+        school_staff::leave::http::submit_request,
+        school_staff::leave::http::act_request,
+        school_staff::leave::http::cancel_request,
+        school_staff::leave::http::usage,
+
         school_student_care::http::handlers::update_assignment_reviewers,
         school_student_care::http::handlers::list_case_events,
         school_student_care::http::handlers::get_round,
@@ -833,6 +852,36 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    LeaveKind,
+    LeaveUnit,
+    LeaveCountingMode,
+    LeaveDayPortion,
+    LeaveStatus,
+    LeaveProcessPurpose,
+    SaveLeaveTypeRequest,
+    LeaveType,
+    SaveLeavePolicyRequest,
+    LeavePolicyVersion,
+    LeavePeriodInput,
+    CreateLeaveRequest,
+    UpdateLeaveRequest,
+    LeaveMutationRequest,
+    CancelLeaveRequest,
+    LeaveSignatureConsent,
+    LeaveActionRequest,
+    LeaveRequestSummary,
+    LeaveHistoryEntry,
+    LeaveRequestDetail,
+    LeaveRequestPage,
+    LeaveUsageItem,
+    LeaveUsageReport,
+    LeavePersonalOptions,
+    LeaveRoutingUser,
+    LeaveRoutingOrganization,
+    LeaveRoutingPosition,
+    LeaveRoutingOptions,
+    LeaveFileSnapshot,
+
     ProcessStepKind,
     ProcessCompletionPolicy,
     ProcessRecipientKind,
@@ -2444,6 +2493,73 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn documents_staff_leave_typed_scope_and_content_bound_mutations() {
+        let document = school_api_value().expect("staff leave contract serializes");
+        for (path, method, operation) in [
+            (
+                "/api/staff-leave/requests",
+                "post",
+                "createStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/submit",
+                "post",
+                "submitStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/actions",
+                "post",
+                "actStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/cancel",
+                "post",
+                "cancelStaffLeaveRequest",
+            ),
+            (
+                "/api/staff-leave/types/{id}/effective-policy",
+                "get",
+                "getStaffLeaveEffectivePolicy",
+            ),
+            ("/api/staff-leave/usage", "get", "getStaffLeaveUsage"),
+        ] {
+            assert_eq!(document["paths"][path][method]["operationId"], operation);
+            for status in ["401", "403", "409"] {
+                assert_eq!(
+                    document["paths"][path][method]["responses"][status]["content"]
+                        ["application/json"]["schema"]["$ref"],
+                    "#/components/schemas/ApiErrorResponse"
+                );
+            }
+        }
+        let schemas = &document["components"]["schemas"];
+        assert!(schemas["SaveLeaveTypeRequest"]["properties"]
+            .get("code")
+            .is_some());
+        assert!(!required(&schemas["SaveLeaveTypeRequest"]).contains(&"code"));
+        assert!(required(&schemas["LeaveType"]).contains(&"code"));
+        assert!(schemas["LeavePeriodInput"]["properties"]
+            .get("amount")
+            .is_none());
+        assert!(schemas["LeavePeriodInput"]["properties"]
+            .get("ownerId")
+            .is_none());
+        assert!(schemas["LeaveActionRequest"]["properties"]
+            .get("expectedProcessRevision")
+            .is_some());
+        assert!(required(&schemas["LeaveSignatureConsent"]).contains(&"consent"));
+        assert!(schemas["SaveLeavePolicyRequest"]["properties"]
+            .get("enabled")
+            .is_some());
+        assert_eq!(
+            document["paths"]["/api/staff-leave/types/{id}"]["delete"]["responses"]["200"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_EmptyData"
+        );
+        assert!(document["paths"].get("/api/process/instances").is_none());
     }
 
     #[test]

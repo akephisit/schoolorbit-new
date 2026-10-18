@@ -121,7 +121,7 @@ test('school card URLs belong to the current origin and change with public brand
 	const info = { schoolName: 'ซับน้อยเหนือวิทยาคม', logoFileId: 'crest-one' };
 	const site = getSchoolPublicIndexing(new URL('https://alpha.schoolorbit.app/'), backend);
 	const image = buildSchoolHomeSeo(info, site, null).image;
-	assert.match(image, /^https:\/\/alpha\.schoolorbit\.app\/og-image\.png\?v=1-[a-f0-9]+$/);
+	assert.match(image, /^https:\/\/alpha\.schoolorbit\.app\/og-image\.png\?v=3-[a-f0-9]+$/);
 	assert.equal(
 		buildSchoolHomeSeo({ ...info, schoolName: ` ${info.schoolName} ` }, site, null).image,
 		image

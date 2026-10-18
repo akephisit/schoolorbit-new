@@ -138,7 +138,8 @@ const MODULE_LABELS: Record<string, string> = {
 	[PERMISSION_MODULES.ATTENDANCE]: 'การมาเรียนและเช็กชื่อ',
 	[PERMISSION_MODULES.BEHAVIOR]: 'คะแนนความประพฤติ',
 	[PERMISSION_MODULES.BEHAVIOR_CLEANUP]: 'จัดการประวัติคะแนนความประพฤติ',
-	[PERMISSION_MODULES.SUPPLY_CATALOG]: 'ทะเบียนพัสดุ'
+	[PERMISSION_MODULES.SUPPLY_CATALOG]: 'ทะเบียนพัสดุ',
+	[PERMISSION_MODULES.STAFF_LEAVE]: 'การลาและออกนอกโรงเรียน'
 };
 
 export function permissionModuleLabel(module: string): string {

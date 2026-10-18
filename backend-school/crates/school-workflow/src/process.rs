@@ -120,7 +120,7 @@ pub fn validate_steps(steps: &[ProcessTemplateStep]) -> Result<(), AppError> {
 }
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<ProcessTemplate>, AppError> {
     Ok(sqlx::query_scalar::<_, Json<ProcessTemplate>>(
-        "SELECT definition FROM process_templates ORDER BY code,id LIMIT 200",
+        "SELECT definition FROM process_templates WHERE managed_source_module IS NULL ORDER BY code,id LIMIT 200",
     )
     .fetch_all(pool)
     .await?
@@ -181,7 +181,7 @@ pub async fn save_template(
     }
     let version = if id.is_some() {
         let old: i64 =
-            sqlx::query_scalar("SELECT version FROM process_templates WHERE id=$1 FOR UPDATE")
+            sqlx::query_scalar("SELECT version FROM process_templates WHERE id=$1 AND managed_source_module IS NULL FOR UPDATE")
                 .bind(template_id)
                 .fetch_optional(&mut *tx)
                 .await?
@@ -949,4 +949,78 @@ pub async fn history_in_transaction(
     source: &ProcessSource,
 ) -> Result<Vec<ProcessActionEvent>, AppError> {
     Ok(sqlx::query_scalar::<_,Json<ProcessActionEvent>>("SELECT e.event FROM process_action_events e JOIN process_instances i ON i.id=e.instance_id WHERE i.source_module=$1 AND i.source_type=$2 AND i.source_id=$3 ORDER BY e.revision,e.id").bind(&source.module_code).bind(&source.resource_type).bind(source.resource_id).fetch_all(&mut **tx).await?.into_iter().map(|e|e.0).collect())
+}
+
+/// Source-owned immutable template creation. The caller authorizes its domain settings.
+pub async fn create_source_template_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    module_code: &str,
+    title: &str,
+    steps: Vec<ProcessTemplateStep>,
+) -> Result<(), AppError> {
+    validate_steps(&steps)?;
+    let template = ProcessTemplate {
+        id,
+        code: format!("source_{}", id.simple()),
+        title: title.into(),
+        version: 1,
+        steps,
+        active: true,
+        created_at: Utc::now(),
+    };
+    sqlx::query("INSERT INTO process_templates(id,code,version,definition,created_by,managed_source_module) VALUES($1,$2,1,$3,$4,$5)").bind(id).bind(&template.code).bind(Json(&template)).bind(actor).bind(module_code).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,1,$2,$3)").bind(id).bind(Json(&template)).bind(actor).execute(&mut **tx).await?;
+    Ok(())
+}
+/// Withdraw an active source under its owning domain policy and the existing owner identity.
+/// All assignment, notification validity and process history writes share the caller transaction.
+pub async fn withdraw_source_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    source_port: &dyn ProcessSourcePort,
+    id: Uuid,
+    request_id: Uuid,
+    expected_revision: i64,
+    reason: &str,
+) -> Result<ProcessInstance, AppError> {
+    let mut instance = load_locked(tx, id).await?;
+    source_port.validate_existing(tx, actor, &instance).await?;
+    if instance.created_by != actor.user_id {
+        return Err(denied());
+    }
+    if instance.revision != expected_revision
+        || !matches!(
+            instance.status,
+            ProcessStatus::Active | ProcessStatus::RevisionRequested
+        )
+    {
+        return Err(stale());
+    }
+    if reason.trim().is_empty() {
+        return Err(invalid("กรุณาระบุเหตุผลการยกเลิก"));
+    }
+    for step in &instance.steps {
+        crate::work::close_process_item_in_transaction(tx, step.work_item_id).await?;
+    }
+    sqlx::query("UPDATE process_notification_sources SET cancelled_at=now() WHERE instance_id=$1 AND cancelled_at IS NULL").bind(id).execute(&mut **tx).await?;
+    instance.status = ProcessStatus::Closed;
+    instance.revision += 1;
+    let action = ProcessActionRequest {
+        request_id,
+        expected_revision,
+        action: ProcessAction::Close,
+        annotations: vec![],
+        comment: Some(reason.into()),
+        evidence_file_ids: vec![],
+        signature: None,
+        reassign_user_id: None,
+        reassign_from_user_id: None,
+        assignment_id: None,
+        routing: None,
+    };
+    append_event(tx, actor, &instance, &action).await?;
+    store(tx, &instance).await?;
+    Ok(instance)
 }

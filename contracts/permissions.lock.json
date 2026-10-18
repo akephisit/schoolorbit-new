@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "40240f166005497535eac506bf8885d1fac79383c74060314547ec9e7cae1952",
+  "contract_sha256": "793e32312416fde0e643c08ad943d5387a6afb655ce8d602abe87de699e06b40",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -168,6 +168,14 @@
     "staff.delete.all",
     "staff.read.all",
     "staff.update.all",
+    "staff_leave.create.own",
+    "staff_leave.download.own",
+    "staff_leave.download.school",
+    "staff_leave.manage.school",
+    "staff_leave.read.assigned",
+    "staff_leave.read.own",
+    "staff_leave.read.school",
+    "staff_leave.update.assigned",
     "staff_pii.read.own",
     "staff_pii.read.school",
     "staff_profile.read.organization_tree",
