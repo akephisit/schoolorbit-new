@@ -347,6 +347,7 @@ async fn public_organization_only_exposes_active_units_and_current_members() {
 }
 #[derive(Default)]
 struct PublicTestStorageProvider {
+    unavailable: std::sync::atomic::AtomicBool,
     objects: std::sync::Mutex<HashMap<String, Bytes>>,
 }
 
@@ -361,6 +362,9 @@ impl StorageProvider for PublicTestStorageProvider {
     }
 
     async fn get(&self, object: &StoredObject, max_bytes: u64) -> Result<Bytes, StorageError> {
+        if self.unavailable.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(StorageError::OperationFailed);
+        }
         let objects = self.objects.lock().unwrap();
         let bytes = objects
             .get(object.object_key.as_str())
@@ -401,8 +405,14 @@ impl MalwareScanner for UnexpectedScanner {
 }
 
 #[derive(Clone)]
-struct Directory(Arc<HashMap<String, (Uuid, String)>>);
+struct Directory(
+    Arc<HashMap<String, (Uuid, String)>>,
+    Arc<std::sync::atomic::AtomicBool>,
+);
 async fn directory(State(state): State<Directory>, Path(subdomain): Path<String>) -> Response {
+    if state.1.load(std::sync::atomic::Ordering::SeqCst) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
     match state.0.get(&subdomain) {
         Some((id, url)) => {
             Json(serde_json::json!({"id":id,"name":subdomain,"db_connection_string":url}))
@@ -428,16 +438,20 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         .await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let dir = Directory(Arc::new(HashMap::from([
-        (
-            "school-a".into(),
-            (Uuid::new_v4(), "test-pool://public-a".into()),
-        ),
-        (
-            "school-b".into(),
-            (Uuid::new_v4(), "test-pool://public-b".into()),
-        ),
-    ])));
+    let directory_unavailable = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let dir = Directory(
+        Arc::new(HashMap::from([
+            (
+                "school-a".into(),
+                (Uuid::new_v4(), "test-pool://public-a".into()),
+            ),
+            (
+                "school-b".into(),
+                (Uuid::new_v4(), "test-pool://public-b".into()),
+            ),
+        ])),
+        directory_unavailable.clone(),
+    );
     let server = tokio::spawn(async move {
         axum::serve(
             listener,
@@ -665,6 +679,165 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             }
         }
     }
+    let mut share_images = Vec::new();
+    for tenant in ["school-a", "school-b"] {
+        let response = app.clone().oneshot(Request::builder()
+            .uri(format!("/api/school/public/share-image?fileId={private_file}&url=https://outside.example.test/crest.png&schoolName=Injected"))
+            .header("Origin", format!("https://{tenant}.schoolorbit.app"))
+            .body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "image/png");
+        assert_eq!(response.headers()["cache-control"], "public, max-age=300");
+        assert_eq!(response.headers()["vary"], "Origin, X-School-Subdomain");
+        let png = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 1200);
+        assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 630);
+        // Query text/URLs/IDs are ignored; only current branding is represented.
+        let ordinary = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/share-image")
+                    .header("X-School-Subdomain", tenant)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ordinary.status(), StatusCode::OK);
+        assert_eq!(
+            to_bytes(ordinary.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap(),
+            png
+        );
+        share_images.push(png);
+    }
+    assert_ne!(share_images[0], share_images[1]);
+    // A configured private, non-ready or absent crest never becomes successful fallback branding.
+    for (file_id, status) in [
+        (private_file, None),
+        (crest, Some("processing")),
+        (crest, Some("quarantined")),
+    ] {
+        sqlx::query("UPDATE school_settings SET logo_file_id=$1")
+            .bind(file_id)
+            .execute(&a)
+            .await
+            .unwrap();
+        if let Some(status) = status {
+            sqlx::query("UPDATE files SET lifecycle_status=$1 WHERE id=$2")
+                .bind(status)
+                .bind(crest)
+                .execute(&a)
+                .await
+                .unwrap();
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/share-image")
+                    .header("Origin", "https://school-a.schoolorbit.app")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(response.headers()["retry-after"], "30");
+    }
+    sqlx::query("UPDATE school_settings SET logo_file_id=$1")
+        .bind(crest)
+        .execute(&a)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE files SET lifecycle_status='ready' WHERE id=$1")
+        .bind(crest)
+        .execute(&a)
+        .await
+        .unwrap();
+    for dependency in ["storage", "directory"] {
+        storage
+            .unavailable
+            .store(dependency == "storage", std::sync::atomic::Ordering::SeqCst);
+        directory_unavailable.store(
+            dependency == "directory",
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/share-image")
+                    .header("Origin", "https://school-a.schoolorbit.app")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{dependency}"
+        );
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_eq!(response.headers()["retry-after"], "30");
+    }
+    storage
+        .unavailable
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    directory_unavailable.store(false, std::sync::atomic::Ordering::SeqCst);
+    let original_crest = storage
+        .objects
+        .lock()
+        .unwrap()
+        .insert(
+            crest_key.as_str().to_owned(),
+            Bytes::from_static(b"corrupt stored image"),
+        )
+        .unwrap();
+    let corrupt = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/school/public/share-image")
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(corrupt.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(corrupt.headers()["cache-control"], "no-store");
+    assert_eq!(corrupt.headers()["retry-after"], "30");
+    storage
+        .objects
+        .lock()
+        .unwrap()
+        .insert(crest_key.as_str().to_owned(), original_crest);
+    let recovered = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/school/public/share-image")
+                .header("Origin", "https://school-a.schoolorbit.app")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(recovered.status(), StatusCode::OK);
+    assert_eq!(
+        to_bytes(recovered.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap(),
+        share_images[0]
+    );
     let unsupported = app
         .clone()
         .oneshot(
@@ -878,6 +1051,24 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         }
     }
     for (path, origin, hint, expected) in [
+        (
+            "/api/school/public/share-image",
+            None,
+            None,
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/api/school/public/share-image",
+            Some("https://school-a.schoolorbit.app"),
+            Some("school-b"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/api/school/public/share-image",
+            Some("https://missing.schoolorbit.app"),
+            None,
+            StatusCode::NOT_FOUND,
+        ),
         (
             "/api/school/public/statistics",
             None,

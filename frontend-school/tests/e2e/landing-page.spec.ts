@@ -25,6 +25,7 @@ let releaseStatistics: (() => void) | undefined;
 let organizationGate: Promise<void> | undefined;
 let releaseOrganization: (() => void) | undefined;
 const requests: { path: string; cookie?: string; origin?: string }[] = [];
+const shareImageQueries: string[] = [];
 const isRegionRead = (resource: string) =>
 	[
 		'/api/school/public',
@@ -194,6 +195,7 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (endpoint === '/api/school/public/share-image') {
+			shareImageQueries.push(new URL(req.url ?? '/', 'http://localhost').search);
 			if (shareImageMode === 'timeout') {
 				await new Promise<void>((resolve) => req.on('close', resolve));
 				return;
@@ -314,6 +316,7 @@ test.beforeAll(async () => {
 });
 test.beforeEach(() => {
 	requests.length = 0;
+	shareImageQueries.length = 0;
 	failStatistics = false;
 	failedRegion = undefined;
 	empty = false;
@@ -519,6 +522,7 @@ test('social crawlers read one current-school wide PNG without session cookies o
 	expect(response.headers()['cache-control']).toBe('public, max-age=300');
 	expect(response.headers()['x-content-type-options']).toBe('nosniff');
 	expect(await response.body()).toEqual(shareImage);
+	expect(shareImageQueries).toEqual(['']);
 	expect(requests).toEqual([
 		{ path: '/api/school/public/share-image', origin: baseUrl, cookie: undefined }
 	]);

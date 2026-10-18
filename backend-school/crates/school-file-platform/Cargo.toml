@@ -20,10 +20,12 @@ chrono = { workspace = true }
 hex = { workspace = true }
 image = { workspace = true }
 lopdf = { workspace = true }
+rustybuzz = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
+tiny-skia = { workspace = true }
 ttf-parser = { workspace = true }
 url = { workspace = true }
 utoipa = { workspace = true, optional = true }

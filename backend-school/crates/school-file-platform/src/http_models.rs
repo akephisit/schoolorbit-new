@@ -62,6 +62,23 @@ impl utoipa::PartialSchema for PublicFileFaviconPng {
 #[cfg(feature = "api-docs")]
 impl ToSchema for PublicFileFaviconPng {}
 
+#[cfg(feature = "api-docs")]
+pub struct PublicSchoolShareImagePng;
+
+#[cfg(feature = "api-docs")]
+impl utoipa::PartialSchema for PublicSchoolShareImagePng {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::{schema::Type, KnownFormat, ObjectBuilder, SchemaFormat};
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary)))
+            .into()
+    }
+}
+
+#[cfg(feature = "api-docs")]
+impl ToSchema for PublicSchoolShareImagePng {}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
