@@ -9,17 +9,24 @@
 	import type { CorrespondenceOptions, ProcessRecipient } from '#lib/api/correspondence.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import Choice from './Choice.svelte';
+	import {
+		recipientKey,
+		recipientLabel,
+		mergeRecipientLookups
+	} from '#lib/correspondence/recipients.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	let {
 		recipients = $bindable([]),
 		options,
 		disabled = false,
-		prefix = 'recipient'
+		prefix = 'recipient',
+		onlookups
 	}: {
 		recipients?: ProcessRecipient[];
 		options: CorrespondenceOptions;
 		disabled?: boolean;
 		prefix?: string;
+		onlookups?: (options: CorrespondenceOptions) => void;
 	} = $props();
 	let results = $state<CorrespondenceOptions | null>(null),
 		query = $state(''),
@@ -28,18 +35,24 @@
 	const searchRequest = new LatestRequest();
 	onDestroy(() => searchRequest.abort());
 	const visible = $derived(results ?? options);
-	const known = $derived({
-		users: [...options.users, ...(results?.users ?? [])],
-		organizations: [...options.organizations, ...(results?.organizations ?? [])],
-		positions: [...options.positions, ...(results?.positions ?? [])]
+	let cached = $state<CorrespondenceOptions>({
+		users: [],
+		organizations: [],
+		positions: [],
+		templates: []
 	});
+	const known = $derived(mergeRecipientLookups(options, cached));
 	async function search() {
 		const ticket = searchRequest.begin();
 		searchLoading = true;
 		searchError = '';
 		try {
 			const value = await getCorrespondenceOptions(query, { signal: ticket.signal });
-			if (searchRequest.isCurrent(ticket.revision)) results = value;
+			if (searchRequest.isCurrent(ticket.revision)) {
+				results = value;
+				cached = mergeRecipientLookups(cached, value);
+				onlookups?.(value);
+			}
 		} catch (cause) {
 			if (searchRequest.isCurrent(ticket.revision))
 				searchError = cause instanceof Error ? cause.message : 'ค้นหาไม่สำเร็จ';
@@ -63,7 +76,7 @@
 		if (kind === 'user') return { kind: 'user', userId: value };
 		if (kind === 'organization_unit')
 			return { kind: 'organization_unit', organizationUnitId: value };
-		const position = visible.positions.find(
+		const position = known.positions.find(
 			(item) => `${item.organizationUnitId}:${item.code}` === value
 		)!;
 		return {
@@ -71,9 +84,6 @@
 			organizationUnitId: position.organizationUnitId,
 			positionCode: position.code
 		};
-	}
-	function recipientKey(item: ProcessRecipient): string {
-		return `${item.kind}:${item.userId ?? ''}:${item.organizationUnitId ?? ''}:${item.positionCode ?? ''}`;
 	}
 	function add() {
 		const additions = selected.map(recipientFor);
@@ -90,14 +100,7 @@
 		selected = [];
 	}
 	function name(item: ProcessRecipient): string {
-		if (item.kind === 'user')
-			return known.users.find((user) => user.id === item.userId)?.displayName ?? 'บุคลากรที่เลือก';
-		const unit =
-			known.organizations.find((unit) => unit.id === item.organizationUnitId)?.name ??
-			'หน่วยงานที่เลือก';
-		return item.kind === 'organization_unit'
-			? unit
-			: `${unit} · ${known.positions.find((position) => position.organizationUnitId === item.organizationUnitId && position.code === item.positionCode)?.name ?? 'ตำแหน่งที่เลือก'}`;
+		return recipientLabel(item, known);
 	}
 </script>
 
@@ -109,6 +112,12 @@
 				<Label for={`${prefix}-search`}>ชื่อบุคลากร / หน่วยงาน</Label><Input
 					id={`${prefix}-search`}
 					bind:value={query}
+					onkeydown={(event) => {
+						if (event.key === 'Enter') {
+							event.preventDefault();
+							void search();
+						}
+					}}
 					disabled={disabled || searchLoading}
 				/>
 			</div>

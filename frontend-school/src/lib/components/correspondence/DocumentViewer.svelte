@@ -73,7 +73,7 @@
 	$effect.pre(() => {
 		const enabled = !!placement;
 		untrack(() => {
-			if (enabled) tool = 'placement';
+			if (enabled && tool === 'view') tool = 'placement';
 		});
 	});
 	const request = new LatestRequest();

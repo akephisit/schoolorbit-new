@@ -15,12 +15,16 @@
 		detail,
 		oncomplete,
 		oncancel,
-		ondirtychange
+		ondirtychange,
+		onrefresh,
+		onpendingchange
 	}: {
 		detail: CorrespondenceDetail;
 		oncomplete: (detail: CorrespondenceDetail) => void;
 		oncancel: () => void;
 		ondirtychange?: (dirty: boolean) => void;
+		onrefresh: () => void;
+		onpendingchange?: (pending: boolean) => void;
 	} = $props();
 	let templateId = $state(''),
 		steps = $state<ProcessStepRecipients[]>([]),
@@ -48,6 +52,7 @@
 			return;
 		}
 		pending = true;
+		onpendingchange?.(true);
 		try {
 			const result = await sendCorrespondence(
 				detail.record.id,
@@ -65,7 +70,10 @@
 			uncertain = intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ส่งหนังสือไม่สำเร็จ';
 		} finally {
-			if (!disposed) pending = false;
+			if (!disposed) {
+				pending = false;
+				onpendingchange?.(false);
+			}
 		}
 	}
 </script>
@@ -85,7 +93,9 @@
 	{#if error}<PageState
 			variant="error"
 			title={error}
-			description="ผู้รับที่เลือกยังอยู่ ลองส่งอีกครั้งได้"
+			description="ผู้รับที่เลือกยังอยู่ ตรวจสอบฉบับล่าสุดก่อนลองส่งอีกครั้ง"
+			actionLabel="ตรวจสอบข้อมูลล่าสุด"
+			onaction={onrefresh}
 		/>{/if}
 	{#if uncertain}<p class="text-sm text-warning">
 			ยังยืนยันผลการส่งไม่ได้ กดส่งอีกครั้งเพื่อตรวจผลด้วยข้อมูลผู้รับเดิม

@@ -94435,83 +94435,53 @@
         "operationId": "list_correspondence",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "cursor",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "register",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/CorrespondenceRegister"
-                }
-              ]
+              "$ref": "#/components/schemas/CorrespondenceRegister"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/CorrespondenceStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/CorrespondenceStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "view",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/CorrespondenceListView"
-                }
-              ]
+              "$ref": "#/components/schemas/CorrespondenceListView"
             }
           }
         ],
@@ -94966,14 +94936,11 @@
         "operationId": "correspondence_options",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],

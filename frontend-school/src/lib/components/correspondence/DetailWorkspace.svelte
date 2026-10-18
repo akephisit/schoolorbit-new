@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { authStore } from '#lib/stores/auth.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -40,6 +40,7 @@
 	import { historyActionLabel } from '#lib/correspondence/drafts.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
+	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
 	import DocumentViewer from './DocumentViewer.svelte';
 	import ActionForm from './ActionForm.svelte';
 	import SendForm from './SendForm.svelte';
@@ -69,7 +70,8 @@
 		documentDate: undefined as string | undefined,
 		urgency: 'normal' as CorrespondenceDetail['record']['urgency']
 	});
-	let actionDirty = $state(false);
+	let actionDirty = $state(false),
+		sendPending = $state(false);
 	let placementPaths = $state<import('#lib/correspondence/geometry.js').InkPath[]>([]),
 		placementFileId = $state<string | undefined>();
 	const uploadedFiles = new SvelteMap<File, string>();
@@ -180,6 +182,7 @@
 	}
 	function complete(result: CorrespondenceDetail) {
 		actionPending = false;
+		sendPending = false;
 		const preserveAnnotations =
 			selectedAction !== null && ['read', 'close', 'reassign'].includes(selectedAction);
 		const current = region.value;
@@ -205,6 +208,13 @@
 	}
 	async function saveRevision() {
 		if (!detail || savePending) return;
+		if (canEditMetadata) {
+			const invalid = validateDocumentMetadata(metadata);
+			if (invalid) {
+				error = invalid;
+				return;
+			}
+		}
 		savePending = true;
 		error = '';
 		try {
@@ -219,6 +229,8 @@
 					if (disposed) return;
 					region.patch(current);
 					editBaseRevision = current.record.revision;
+					const acceptedIds = new SvelteSet(current.document.annotations.map((item) => item.id));
+					annotations = annotations.filter((item) => !acceptedIds.has(item.id));
 				} catch (cause) {
 					revisionIntent.rejected(cause);
 					throw cause;
@@ -251,15 +263,40 @@
 				content,
 				originalFileId,
 				attachmentFileIds,
-				annotations: [...detail.document.annotations, ...annotations],
+				annotations: [
+					...current.document.annotations,
+					...annotations.filter(
+						(item) => !current.document.annotations.some((saved) => saved.id === item.id)
+					)
+				],
 				metadata: canEditMetadata
 					? {
 							...metadata,
+							title: metadata.title.trim(),
+							sender: metadata.sender.trim(),
 							documentNumber: metadata.documentNumber || null,
 							documentDate: metadata.documentDate || null
 						}
 					: undefined
 			};
+			const unchanged =
+				body.content === current.document.content &&
+				(body.originalFileId ?? null) === (current.document.originalFileId ?? null) &&
+				JSON.stringify(body.attachmentFileIds) ===
+					JSON.stringify(current.document.attachmentFileIds) &&
+				JSON.stringify(body.annotations) === JSON.stringify(current.document.annotations) &&
+				(!body.metadata ||
+					(body.metadata.title === current.record.title &&
+						body.metadata.sender === current.record.sender &&
+						body.metadata.urgency === current.record.urgency &&
+						body.metadata.documentNumber === (current.record.documentNumber ?? null) &&
+						body.metadata.documentDate === (current.record.documentDate ?? null)));
+			if (unchanged) {
+				complete(current);
+				original = null;
+				attachments = [];
+				return;
+			}
 			const result = await reviseCorrespondence(id, revisionIntent.begin(body));
 			revisionIntent.accepted();
 
@@ -310,7 +347,7 @@
 				loading={exportPending}
 				onclick={downloadExport}>ดาวน์โหลด PDF พร้อมหลักฐาน</LoadingButton
 			>{/if}{/snippet}
-	<UnsavedGuard {dirty} pending={savePending || actionPending} />
+	<UnsavedGuard {dirty} pending={savePending || actionPending || sendPending} />
 	<section data-testid="correspondence-detail" aria-busy={region.loading}>
 		{#if region.error}<PageState
 				variant="error"
@@ -346,7 +383,7 @@
 										? ` · กำหนด ${dateLabel(current.dueAt)}`
 										: ''}
 								</p>
-								<ul class="space-y-2 text-sm">
+								<ul class="space-y-2 text-sm" aria-label="ผู้รับขั้นตอนปัจจุบัน">
 									{#each current.recipients as recipient, index (`${current.stepIndex}:${index}:${recipient.userId}`)}<li
 											class="flex justify-between gap-2"
 										>
@@ -399,6 +436,10 @@
 						</details>{/if}
 					<fieldset disabled={viewingHistory} class="min-w-0 space-y-4">
 						{#if sending}<SendForm
+								onrefresh={refresh}
+								onpendingchange={(value) => {
+									sendPending = value;
+								}}
 								{detail}
 								oncomplete={complete}
 								ondirtychange={(value) => {
@@ -524,7 +565,10 @@
 						/>
 					{/if}
 					<div class="flex justify-end">
-						<Button href="#correspondence-action" variant="outline">กลับไปการดำเนินการ</Button>
+						<Button
+							href={`${page.url.pathname}${page.url.search}#correspondence-action`}
+							variant="outline">กลับไปการดำเนินการ</Button
+						>
 					</div>
 					{#if canRevise && !viewingHistory}<Card.Root
 							><Card.Header
@@ -539,7 +583,6 @@
 												bind:value={metadata.title}
 												disabled={savePending || sending}
 												required
-												maxlength={500}
 											/>
 										</div>
 										<div class="space-y-2">

@@ -26,6 +26,9 @@ export async function mockCorrespondence(
 		failAction?: number;
 		holdDetail?: boolean;
 		holdAction?: boolean;
+		holdSend?: boolean;
+		narrowSearch?: boolean;
+		secondTemplate?: boolean;
 		holdActionResponse?: boolean;
 		abortAcceptedAction?: boolean;
 		acceptedAnnotationColor?: string;
@@ -36,6 +39,7 @@ export async function mockCorrespondence(
 		rotation?: number;
 		failUploadAt?: number;
 		failSend?: number;
+		failRevision?: number;
 		abortAcceptedCreate?: boolean;
 		abortAcceptedRevision?: boolean;
 		abortAcceptedSend?: boolean;
@@ -304,6 +308,7 @@ export async function mockCorrespondence(
 				| ReviseCorrespondenceRequest;
 		}[] = [];
 	const acceptedCommands = new Map<string, { payload: string; detail: CorrespondenceDetail }>();
+	let revisionAttempts = 0;
 	let sendAttempts = 0,
 		uploadFailed = false;
 	function remember(payload: { requestId: string }, result: CorrespondenceDetail) {
@@ -375,9 +380,20 @@ export async function mockCorrespondence(
 						{ id: actor, displayName: 'ครูเจ้าของ ทดสอบ' },
 						{ id: firstStaff, displayName: 'ครูผู้รับคนที่สอง' }
 					],
-					organizations: [{ id: id(806), name: 'งานบริหารทั่วไป' }],
-					positions: [{ organizationUnitId: id(806), code: 'HEAD', name: 'หัวหน้างาน' }],
-					templates: [template]
+					organizations:
+						settings.narrowSearch && url.searchParams.get('search')
+							? []
+							: [{ id: id(806), name: 'งานบริหารทั่วไป' }],
+					positions:
+						settings.narrowSearch && url.searchParams.get('search')
+							? []
+							: [{ organizationUnitId: id(806), code: 'HEAD', name: 'หัวหน้างาน' }],
+					templates: settings.secondTemplate
+						? [
+								template,
+								{ ...template, id: id(855), code: 'alternate_fixture', title: 'แม่แบบทางเลือก' }
+							]
+						: [template]
 				});
 			if (path === '/api/process/templates' && method === 'GET') return reply(route, [template]);
 			if (path.startsWith('/api/process/templates') && method !== 'GET') {
@@ -475,7 +491,15 @@ export async function mockCorrespondence(
 					return reply(route, 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง', 503);
 				detail = {
 					...detail,
-					record: { ...detail.record, ...payload, id: correspondenceId, status: 'draft' },
+					record: {
+						...detail.record,
+						...payload,
+						documentNumber: payload.documentNumber ?? null,
+						documentDate: payload.documentDate ?? null,
+						organizationUnitId: payload.organizationUnitId ?? null,
+						id: correspondenceId,
+						status: 'draft'
+					},
 					document: { ...document, content: payload.content },
 					canManage: true,
 					canAct: false,
@@ -488,6 +512,16 @@ export async function mockCorrespondence(
 				return reply(route, detail);
 			}
 			if (path.endsWith('/revisions')) {
+				if (
+					new Set((payload.annotations ?? []).map((item: { id: string }) => item.id)).size !==
+					(payload.annotations ?? []).length
+				)
+					return reply(route, 'หมายเหตุซ้ำในฉบับแก้ไข', 400);
+				revisionAttempts += 1;
+				if (settings.failRevision && revisionAttempts === 1) {
+					if (settings.failRevision === 409) advanceDocument();
+					return reply(route, 'ฉบับร่างมีการเปลี่ยนแปลง กรุณาตรวจสอบล่าสุด', settings.failRevision);
+				}
 				detail = {
 					...detail,
 					record: { ...detail.record, ...payload.metadata, revision: detail.record.revision + 1 },
@@ -501,9 +535,12 @@ export async function mockCorrespondence(
 				return reply(route, detail);
 			}
 			if (path.endsWith('/send')) {
+				if (settings.holdSend) await held;
 				sendAttempts += 1;
-				if (settings.failSend && sendAttempts === 1)
+				if (settings.failSend && sendAttempts === 1) {
+					if (settings.failSend === 409) advanceDocument();
 					return reply(route, 'ส่งไม่สำเร็จ ลองอีกครั้ง', settings.failSend);
+				}
 				detail = {
 					...detail,
 					record: { ...detail.record, revision: detail.record.revision + 1, status: 'in_progress' },

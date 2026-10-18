@@ -9,6 +9,7 @@
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { mergeRecipientLookups } from '#lib/correspondence/recipients.js';
 	import Choice from './Choice.svelte';
 	import Recipients from './Recipients.svelte';
 	let {
@@ -100,10 +101,17 @@
 						{options}
 						{disabled}
 						prefix={`send-step-${index}`}
+						onlookups={(value) => {
+							if (options) {
+								options = mergeRecipientLookups(options, value);
+								onready?.(options);
+							}
+						}}
 					/>{/if}
 				<div class="space-y-2">
 					<Label for={`step-due-${index}`}>กำหนดเสร็จขั้นตอนนี้ (ถ้ามี)</Label><DatePicker
 						id={`step-due-${index}`}
+						value={steps[index]?.dueAt?.slice(0, 10)}
 						{disabled}
 						clearable
 						onValueChange={(value) => {

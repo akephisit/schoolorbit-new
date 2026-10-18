@@ -1652,7 +1652,7 @@ async fn list_counts_cover_authorized_results_before_view_cursor_and_page() {
     let mut drafts = Vec::new();
     for index in 0..35 {
         let mut request = create_request();
-        request.title = format!("queue_fixture {index}");
+        request.title = "queue_fixture draft".into();
         if index == 0 {
             request.register = CorrespondenceRegister::Outgoing;
         }
@@ -1761,6 +1761,21 @@ async fn list_counts_cover_authorized_results_before_view_cursor_and_page() {
         (1, 1, 0)
     );
     assert_eq!(filtered.items[0].id, drafts[0].record.id);
+    let mut status_only = list_query(CorrespondenceListView::All);
+    status_only.status = Some(CorrespondenceStatus::Draft);
+    let status_only = correspondence::list(&pool, &creator, status_only)
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            status_only.counts.all,
+            status_only.counts.drafts,
+            status_only.counts.sent,
+            status_only.counts.action_required
+        ),
+        (35, 35, 0, 0)
+    );
+    assert_eq!(status_only.items.len(), 30);
     let selected = &drafts[18].record;
     for search in [
         selected.register_number.to_string(),
@@ -1897,6 +1912,7 @@ async fn list_actions_follow_current_frozen_recipients_permissions_and_returned_
         1
     );
     let mut reassign = action(one.record.revision, ProcessAction::Reassign);
+    reassign.comment = Some("Transfer current task".into());
     reassign.reassign_from_user_id = Some(b.user_id);
     reassign.reassign_user_id = Some(creator.user_id);
     let reassigned = correspondence::act(&pool, &b, draft.record.id, &MemoryValidator, reassign)

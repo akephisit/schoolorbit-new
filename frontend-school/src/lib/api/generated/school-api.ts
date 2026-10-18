@@ -48116,16 +48116,16 @@ export interface operations {
 	};
 	list_correspondence: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				cursor: string | null;
-				limit: number | null;
-				register: null | components['schemas']['CorrespondenceRegister'];
-				search: string | null;
-				status: null | components['schemas']['CorrespondenceStatus'];
-				view: null | components['schemas']['CorrespondenceListView'];
+			query?: {
+				cursor?: string;
+				limit?: number;
+				register?: components['schemas']['CorrespondenceRegister'];
+				search?: string;
+				status?: components['schemas']['CorrespondenceStatus'];
+				view?: components['schemas']['CorrespondenceListView'];
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48455,11 +48455,11 @@ export interface operations {
 	};
 	correspondence_options: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				search: string | null;
+			query?: {
+				search?: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;

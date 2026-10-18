@@ -6635,8 +6635,19 @@ mod tests {
         }
         let list = &paths["/api/correspondence"]["get"]["parameters"];
         for name in ["cursor", "limit", "register", "status", "search", "view"] {
-            assert!(list.as_array().unwrap().iter().any(|p| p["name"] == name));
+            let parameter = list
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["name"] == name)
+                .unwrap();
+            assert_eq!(parameter["in"], "query", "{name}");
+            assert_eq!(parameter["required"], false, "{name}");
         }
+        let options_search = &paths["/api/correspondence/options"]["get"]["parameters"][0];
+        assert_eq!(options_search["name"], "search");
+        assert_eq!(options_search["in"], "query");
+        assert_eq!(options_search["required"], false);
         for status in ["400", "403", "409"] {
             assert!(
                 paths["/api/correspondence/{id}/actions"]["post"]["responses"][status].is_object()

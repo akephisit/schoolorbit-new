@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		createCorrespondence,
+		getCorrespondence,
 		sendCorrespondence,
 		type ProcessStepRecipients,
 		getCorrespondenceOptions,
@@ -24,6 +25,9 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
+	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
+	import { recipientLabel } from '#lib/correspondence/recipients.js';
+	import { ApiClientError } from '#lib/api/client.js';
 	import Choice from './Choice.svelte';
 	import RoutePicker from './RoutePicker.svelte';
 	import UnsavedGuard from './UnsavedGuard.svelte';
@@ -52,6 +56,8 @@
 		}
 	}
 	let sourceLinks = $state<{ label: string; url: string }[]>([]);
+	let originalGeneration = $state(0),
+		attachmentGeneration = $state(0);
 	let original = $state<File | null>(null),
 		attachments = $state<File[]>([]);
 	let pending = $state(false),
@@ -76,6 +82,35 @@
 	const sendIntent = new MutationIntent<SendCorrespondenceRequest>();
 	let registrationLocked = $state(false),
 		sendingUncertain = $state(false);
+	let conflict = $state(false),
+		latestDraft = $state<CorrespondenceDetail | null>(null),
+		latestPending = $state(false);
+	async function readLatestDraft() {
+		if (!created || latestPending) return;
+		latestPending = true;
+		try {
+			const result = await getCorrespondence(created.record.id, { signal: ownerController.signal });
+			if (!disposed) latestDraft = result;
+		} catch (cause) {
+			if (!disposed) error = cause instanceof Error ? cause.message : 'โหลดฉบับร่างล่าสุดไม่สำเร็จ';
+		} finally {
+			if (!disposed) latestPending = false;
+		}
+	}
+	function acknowledgeLatest() {
+		if (
+			!latestDraft ||
+			latestDraft.record.status !== 'draft' ||
+			!latestDraft.canManage ||
+			latestDraft.instance
+		)
+			return;
+		created = latestDraft;
+		latestDraft = null;
+		conflict = false;
+		error = '';
+		savedBasis = '';
+	}
 	let disposed = false;
 	const formBasis = $derived(
 		JSON.stringify([
@@ -108,11 +143,14 @@
 		ownerController.abort();
 	});
 	function validate(): boolean {
-		if (!title.trim() || !sender.trim()) {
-			error = 'กรอกเรื่องและผู้ส่งให้ครบ';
+		const invalid = validateDocumentMetadata({ title, sender, documentNumber });
+		if (invalid) {
+			error = invalid;
 			stage = 1;
+			optionalError = true;
 			return false;
 		}
+
 		if (
 			sourceLinks.some((link) => {
 				try {
@@ -243,12 +281,16 @@
 		return created;
 	}
 	async function saveDraft() {
-		if (pending) return;
+		if (pending || conflict) return;
 		pending = true;
 		error = '';
 		try {
 			await persist();
 		} catch (cause) {
+			if (cause instanceof ApiClientError && cause.status === 409 && created) {
+				conflict = true;
+				latestDraft = null;
+			}
 			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกฉบับร่างไม่สำเร็จ';
 		} finally {
 			if (!disposed) pending = false;
@@ -256,7 +298,7 @@
 	}
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (pending) return;
+		if (pending || conflict) return;
 		if (stage === 1) {
 			if (validate()) {
 				stage = 2;
@@ -302,8 +344,14 @@
 			if (disposed) return;
 			created = result;
 			finished = true;
+			sendingUncertain = false;
+			await tick();
 			await goto(`/staff/correspondence/${result.record.id}`);
 		} catch (cause) {
+			if (cause instanceof ApiClientError && cause.status === 409 && created) {
+				conflict = true;
+				latestDraft = null;
+			}
 			if (!disposed)
 				error = finished
 					? 'ส่งหนังสือแล้ว แต่เปิดรายละเอียดไม่สำเร็จ กดเปิดหนังสือด้านบนเพื่อตรวจสอบ'
@@ -321,13 +369,13 @@
 	backHref="/staff/correspondence"
 	description="กรอกข้อมูล เลือกเส้นทางผู้รับ และตรวจสอบก่อนส่งในหน้านี้"
 >
-	<UnsavedGuard {dirty} {pending} />
+	<UnsavedGuard {dirty} pending={pending && !finished} />
 	<nav aria-label="ขั้นตอนสร้างหนังสือ" class="mb-6 grid grid-cols-3 gap-2">
 		{#each ['ข้อมูลเอกสาร', 'เส้นทางผู้รับ', 'ตรวจสอบส่ง'] as label, index (label)}
 			<Button
 				type="button"
 				variant={stage === index + 1 ? 'secondary' : 'outline'}
-				disabled={pending || sendingUncertain || index + 1 > stage}
+				disabled={pending || finished || sendingUncertain || index + 1 > stage}
 				aria-current={stage === index + 1 ? 'step' : undefined}
 				onclick={() => {
 					stage = index + 1;
@@ -347,14 +395,48 @@
 				title={error}
 				description="ข้อมูลที่กรอกยังอยู่ กรุณาตรวจสอบแล้วลองอีกครั้ง"
 			/>{/if}
+		{#if conflict && created}<section
+				class="space-y-3 rounded-xl border border-warning/30 bg-warning/5 p-4"
+				aria-label="ตรวจสอบฉบับร่างล่าสุด"
+			>
+				<h2 class="font-medium">ฉบับร่างมีการเปลี่ยนแปลง</h2>
+				<p class="text-sm">
+					ข้อมูลและไฟล์ที่คุณกรอกยังอยู่ ตรวจสอบฉบับล่าสุดแล้วเลือกใช้เป็นฐานก่อนบันทึกอีกครั้ง
+				</p>
+				<LoadingButton
+					type="button"
+					variant="outline"
+					loading={latestPending}
+					onclick={readLatestDraft}>ตรวจสอบข้อมูลล่าสุด</LoadingButton
+				>
+				{#if latestDraft}<dl class="space-y-2 text-sm">
+						<dt class="font-medium">
+							ฉบับล่าสุด {latestDraft.record.revision} · {latestDraft.record.title}
+						</dt>
+						<dd>{latestDraft.record.sender}</dd>
+						<dd class="whitespace-pre-wrap break-words">{latestDraft.document.content}</dd>
+						<dd>ไฟล์แนบ {latestDraft.document.attachmentFileIds.length} ไฟล์</dd>
+					</dl>
+					{#if latestDraft.record.status === 'draft' && latestDraft.canManage && !latestDraft.instance}<Button
+							type="button"
+							onclick={acknowledgeLatest}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
+						>{:else}<p class="text-sm">
+							หนังสือฉบับนี้เปลี่ยนสถานะแล้ว เปิดรายละเอียดเพื่อตรวจสอบก่อนดำเนินการต่อ
+						</p>
+						<Button href={`/staff/correspondence/${created.record.id}`} variant="outline"
+							>เปิดหนังสือปัจจุบัน</Button
+						>{/if}{/if}
+			</section>{/if}
 		{#if created}<div
 				class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"
 				role="status"
 			>
 				<p>
-					เลขทะเบียน {created.record.registerNumber}/{created.record.registerYear} · {saved
-						? 'บันทึกฉบับร่างแล้ว ยังไม่ได้ส่ง'
-						: 'มีฉบับร่างในระบบ ยังมีข้อมูลหรือไฟล์ที่ต้องบันทึก'}
+					เลขทะเบียน {created.record.registerNumber}/{created.record.registerYear} · {finished
+						? 'ส่งหนังสือแล้ว'
+						: saved
+							? 'บันทึกฉบับร่างแล้ว ยังไม่ได้ส่ง'
+							: 'มีฉบับร่างในระบบ ยังมีข้อมูลหรือไฟล์ที่ต้องบันทึก'}
 				</p>
 				<p class="text-muted-foreground">
 					ประเภททะเบียนและหน่วยงานเจ้าของเรื่องบันทึกแล้ว แก้ไขข้อมูลเอกสารและไฟล์ต่อได้
@@ -392,7 +474,6 @@
 							id="create-title"
 							bind:value={title}
 							required
-							maxlength={500}
 							disabled={pending}
 						/>
 					</div>
@@ -404,7 +485,7 @@
 							disabled={pending}
 						/>
 					</div>
-					<details class="space-y-4 sm:col-span-2">
+					<details open={optionalError} class="space-y-4 sm:col-span-2">
 						<summary class="cursor-pointer text-sm font-medium"
 							>ข้อมูลเพิ่มเติม (เลขที่ต้นทาง วันที่ และหน่วยงาน)</summary
 						>
@@ -465,31 +546,34 @@
 						/>
 					</div>
 					<div class="space-y-2">
-						<Label for="create-original">เอกสารต้นฉบับ PDF หรือภาพ</Label><Input
-							id="create-original"
-							type="file"
-							accept="application/pdf,image/png,image/jpeg,image/webp"
-							disabled={pending}
-							onchange={(event) => {
-								original = event.currentTarget.files?.[0] ?? null;
-								savedBasis = '';
-								syncUploads();
-							}}
-						/>
+						<Label for="create-original">เอกสารต้นฉบับ PDF หรือภาพ</Label
+						>{#key originalGeneration}<Input
+								id="create-original"
+								type="file"
+								accept="application/pdf,image/png,image/jpeg,image/webp"
+								disabled={pending}
+								onchange={(event) => {
+									original = event.currentTarget.files?.[0] ?? null;
+									originalGeneration += 1;
+									savedBasis = '';
+									syncUploads();
+								}}
+							/>{/key}
 					</div>
 					<div class="space-y-2">
-						<Label for="create-attachments">ไฟล์แนบ</Label><Input
-							id="create-attachments"
-							type="file"
-							multiple
-							disabled={pending}
-							onchange={(event) => {
-								attachments = [...attachments, ...Array.from(event.currentTarget.files ?? [])];
-								event.currentTarget.value = '';
-								savedBasis = '';
-								syncUploads();
-							}}
-						/>
+						<Label for="create-attachments">ไฟล์แนบ</Label>{#key attachmentGeneration}<Input
+								id="create-attachments"
+								type="file"
+								multiple
+								disabled={pending}
+								onchange={(event) => {
+									attachments = [...attachments, ...Array.from(event.currentTarget.files ?? [])];
+
+									attachmentGeneration += 1;
+									savedBasis = '';
+									syncUploads();
+								}}
+							/>{/key}
 					</div>
 				</Card.Content></Card.Root
 			>
@@ -565,6 +649,13 @@
 				<ol class="space-y-2 text-sm">
 					{#each routeTemplate?.steps ?? [] as step, index (index)}<li>
 							{index + 1}. {step.title} · เลือกผู้รับ {steps[index]?.recipients.length ?? 0} รายการ
+							<ul class="mt-1 list-inside list-disc">
+								{#each steps[index]?.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li
+										class="break-words"
+									>
+										{routeOptions ? recipientLabel(recipient, routeOptions) : 'ผู้รับที่เลือก'}
+									</li>{/each}
+							</ul>
 						</li>{/each}
 				</ol>
 				<p class="text-sm text-muted-foreground">
@@ -635,10 +726,10 @@
 				type="button"
 				variant="outline"
 				loading={pending}
-				disabled={sendingUncertain || !title.trim() || !sender.trim()}
+				disabled={finished || conflict || sendingUncertain || !title.trim() || !sender.trim()}
 				onclick={saveDraft}>บันทึกฉบับร่าง</LoadingButton
 			>
-			<LoadingButton type="submit" loading={pending} disabled={finished}
+			<LoadingButton type="submit" loading={pending} disabled={finished || conflict}
 				>{stage === 3 ? 'ยืนยันส่งหนังสือ' : 'ถัดไป'}</LoadingButton
 			>
 		</div>

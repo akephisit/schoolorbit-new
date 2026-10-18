@@ -6,6 +6,9 @@
 	let destination = $state<string | null>(null);
 	let open = $state(false);
 	let leaving = false;
+	$effect(() => {
+		if (!dirty && !pending) open = false;
+	});
 	let navigationError = $state('');
 	async function leave() {
 		if (!destination) return;

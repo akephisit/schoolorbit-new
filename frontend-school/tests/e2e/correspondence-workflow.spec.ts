@@ -323,7 +323,9 @@ test('reassignment A to B to A preserves completed snapshots and offers only pen
 	api.applyReassignmentRoundTrip();
 	await page.goto(detailPath);
 	const step = page.getByTestId('correspondence-current-step');
-	await expect(step.locator('li')).toHaveCount(3);
+	await expect(
+		step.getByRole('list', { name: 'ผู้รับขั้นตอนปัจจุบัน' }).getByRole('listitem')
+	).toHaveCount(3);
 	await expect(step.getByText('ดำเนินการแล้ว', { exact: true })).toHaveCount(2);
 	await expect(step.getByText('รอดำเนินการ', { exact: true })).toHaveCount(1);
 	await expect(page.getByText('ส่งต่อและรับคืนหน้าที่', { exact: true })).toHaveCount(2);

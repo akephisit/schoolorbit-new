@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
 	import {
 		actOnCorrespondence,
 		listSignatureAssets,
@@ -405,7 +406,10 @@
 					/>
 				</div>
 			{/if}
-			<Button href="#correspondence-document" variant="outline">วางและปรับขนาดบนเอกสาร</Button>
+			<Button
+				href={`${page.url.pathname}${page.url.search}#correspondence-document`}
+				variant="outline">วางและปรับขนาดบนเอกสาร</Button
+			>
 			<details>
 				<summary class="cursor-pointer text-sm font-medium"
 					>ปรับตำแหน่งละเอียด / ใช้แป้นพิมพ์</summary
@@ -419,7 +423,7 @@
 								type="number"
 								min={field.min}
 								max={field.max}
-								step={field.step}
+								step={field.key === 'page' ? 1 : 'any'}
 								value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
 									(field.key === 'page' ? 1 : 100)}
 								disabled={pending}

@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase")]
 pub struct CorrespondenceListQuery {
     pub cursor: Option<Uuid>,
@@ -26,6 +27,7 @@ pub struct CorrespondenceListQuery {
 }
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 pub struct CorrespondenceOptionsQuery {
     pub search: Option<String>,
 }
