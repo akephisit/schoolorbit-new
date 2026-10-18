@@ -225,7 +225,7 @@
 										/></Table.Cell
 									>{/if}
 								<Table.Cell class="tabular-nums">{student.classNumber ?? '—'}</Table.Cell>
-								<Table.Cell class="font-mono text-xs"
+								<Table.Cell class="text-xs tabular-nums"
 									>{student.studentCode ?? 'ยังไม่มีรหัส'}</Table.Cell
 								>
 								<Table.Cell

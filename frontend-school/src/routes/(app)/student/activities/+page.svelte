@@ -385,7 +385,7 @@
 							<div class="flex flex-wrap items-start justify-between gap-3">
 								<div class="min-w-0">
 									<div class="flex flex-wrap items-center gap-2">
-										<span class="text-muted-foreground font-mono text-xs">{offering.code}</span>
+										<span class="text-muted-foreground text-xs tabular-nums">{offering.code}</span>
 										<Badge variant="outline">
 											{getStudentActivityTypeLabel(offering.activityType)}
 										</Badge>

@@ -207,7 +207,7 @@
 					</Table.Cell>
 					<Table.Cell class="align-top">
 						<p>{recipientLabels[candidate.recipientType]}</p>
-						<p class="mt-1 font-mono text-xs text-muted-foreground">
+						<p class="mt-1 text-xs text-muted-foreground tabular-nums">
 							{accountReference(candidate)}
 						</p>
 					</Table.Cell>

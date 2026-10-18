@@ -208,7 +208,7 @@
 							</div>
 							<div class="flex items-center gap-3 sm:justify-end">
 								<div class="text-end">
-									<p class="font-mono text-sm font-semibold tabular-nums">
+									<p class="text-sm font-semibold tabular-nums">
 										{room.readyCount}/{room.expectedCount}
 									</p>
 									<p class="text-xs text-muted-foreground">เปิดสอนรองรับ</p>
@@ -274,7 +274,7 @@
 																<BookOpenCheck class="size-4" />
 															</div>
 															<div>
-																<p class="font-mono text-xs font-semibold text-primary">
+																<p class="text-xs font-semibold text-primary tabular-nums">
 																	{item.code}
 																</p>
 																<p class="font-medium">{item.name}</p>
@@ -386,7 +386,7 @@
 												<div class="flex items-start justify-between gap-3">
 													<div>
 														<p
-															class="font-mono text-xs font-semibold text-sky-700 dark:text-sky-300"
+															class="text-xs font-semibold text-sky-700 dark:text-sky-300 tabular-nums"
 														>
 															{item.code}
 														</p>
@@ -437,7 +437,7 @@
 			<div class="mt-3 grid gap-2 md:grid-cols-2">
 				{#each workspace.unlinked as item (`${item.offeringId}-${item.groupId ?? 'offering'}`)}
 					<div class="rounded-lg border bg-background p-3">
-						<p class="font-mono text-xs font-semibold text-primary">{item.code}</p>
+						<p class="text-xs font-semibold text-primary tabular-nums">{item.code}</p>
 						<p class="font-medium">{item.name}</p>
 						<p class="mt-1 text-xs text-muted-foreground">{item.reason}</p>
 					</div>

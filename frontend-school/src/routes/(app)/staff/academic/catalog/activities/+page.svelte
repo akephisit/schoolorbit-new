@@ -458,7 +458,7 @@
 										<Table.Cell class="max-w-[190px] whitespace-normal"
 											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
 										>
-										<Table.Cell class="text-end font-mono tabular-nums"
+										<Table.Cell class="text-end tabular-nums"
 											>{item.displayVersion?.hoursPerWeek ?? '—'}</Table.Cell
 										>
 										<Table.Cell>
@@ -515,7 +515,7 @@
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">ชั่วโมงต่อสัปดาห์</p>
-										<p class="font-mono">{item.displayVersion?.hoursPerWeek ?? '—'}</p>
+										<p class="tabular-nums">{item.displayVersion?.hoursPerWeek ?? '—'}</p>
 									</div>
 									<div>
 										<p class="text-xs text-muted-foreground">ระดับชั้น</p>

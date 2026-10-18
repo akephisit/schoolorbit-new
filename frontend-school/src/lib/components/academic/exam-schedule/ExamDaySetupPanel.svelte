@@ -231,7 +231,7 @@
 											<div class="text-xs text-muted-foreground">{formatDayDate(day.examDate)}</div>
 										{/if}
 									</TableCell>
-									<TableCell class="font-mono text-sm">
+									<TableCell class="text-sm tabular-nums">
 										{day.startTime.slice(0, 5)}-{day.endTime.slice(0, 5)}
 									</TableCell>
 									<TableCell class="text-sm">{gradeNames(day.gradeLevelIds)}</TableCell>

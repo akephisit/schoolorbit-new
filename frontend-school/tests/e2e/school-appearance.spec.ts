@@ -1,11 +1,16 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Locator } from '@playwright/test';
 import { startSchoolAppearanceServer } from './fixtures/school-appearance-server';
 import { mockStaffHome, actor } from './fixtures/staff-home-route-data';
 import { mockParent } from './fixtures/parent-route-data';
 import { mockStudentSchedules } from './fixtures/student-schedules-route-data';
 import { navigate } from './fixtures/supervision-route-data';
 import type { CurrentUserDto } from '../../src/lib/api/auth.js';
-import { contrastRatio, type SchoolAppearanceResponse } from '../../src/lib/appearance/model.js';
+import type { CatalogSubjectOverview } from '../../src/lib/api/academic-core.js';
+import {
+	FONTS,
+	contrastRatio,
+	type SchoolAppearanceResponse
+} from '../../src/lib/appearance/model.js';
 
 test.describe.configure({ mode: 'default' });
 test.use({ serviceWorkers: 'block' });
@@ -677,3 +682,145 @@ test('actual primary and destructive primitives retain readable text in both mod
 		}
 	}
 });
+
+async function expectSchoolFont(page: Page, element: Locator, family: string) {
+	await expect(element).toBeVisible();
+	await expect
+		.poll(() => element.evaluate((node) => getComputedStyle(node).fontFamily))
+		.toContain(family);
+	// Inspect rendered glyphs as well as the CSS stack: a declared but unavailable font can fall back.
+	await element.evaluate((node) => node.setAttribute('data-font-probe', 'true'));
+	const client = await page.context().newCDPSession(page);
+	try {
+		await client.send('DOM.enable');
+		await client.send('CSS.enable');
+		const document = await client.send('DOM.getDocument');
+		const { nodeId } = await client.send('DOM.querySelector', {
+			nodeId: document.root.nodeId,
+			selector: '[data-font-probe]'
+		});
+		const { fonts } = await client.send('CSS.getPlatformFontsForNode', { nodeId });
+		expect(fonts.length).toBeGreaterThan(0);
+		expect(fonts).toEqual(
+			fonts.map(() =>
+				expect.objectContaining({
+					isCustomFont: true,
+					familyName: expect.stringContaining(family.replace('School ', ''))
+				})
+			)
+		);
+	} finally {
+		await client.detach();
+		await element.evaluate((node) => node.removeAttribute('data-font-probe'));
+	}
+}
+
+for (const [index, font] of FONTS.entries()) {
+	test(`business course codes and numbers follow ${font.label} on desktop, mobile and SPA saves`, async ({
+		page
+	}) => {
+		fixture.set({
+			...fixture.saved,
+			appearance: { ...fixture.saved.appearance, font: font.value }
+		});
+		await mockSession(page, [
+			'settings.read.all',
+			'settings.update.all',
+			'academic_catalog.read.all',
+			'academic_catalog.create.all'
+		]);
+		const subjectId = '60000000-0000-4000-8000-000000000001';
+		const groupId = '60000000-0000-4000-8000-000000000002';
+		const timestamp = '2026-01-01T00:00:00Z';
+		const overview: CatalogSubjectOverview = {
+			gradeLevelOptions: [],
+			subjectGroupOptions: [
+				{
+					subjectGroupId: groupId,
+					organizationUnitId: groupId,
+					code: 'MATH',
+					name: 'คณิตศาสตร์',
+					canManage: true
+				}
+			],
+			items: [
+				{
+					subject: {
+						id: subjectId,
+						subjectGroupId: groupId,
+						owningOrganizationUnitId: groupId,
+						code: 'ค21101',
+						rowVersion: 1,
+						createdAt: timestamp,
+						updatedAt: timestamp
+					},
+					displayState: 'current',
+					canManage: true,
+					draftCount: 0,
+					gradeLevels: [],
+					displayVersion: {
+						id: subjectId,
+						subjectId,
+						versionNo: 1,
+						nameTh: 'คณิตศาสตร์ทดสอบ',
+						subjectType: 'basic',
+						credit: '1.5',
+						periodsPerWeek: 3,
+						hoursPerSemester: 60,
+						gradeLevelIds: [],
+						effectiveFrom: '2026-01-01',
+						status: 'published',
+						migrated: false,
+						rowVersion: 1,
+						createdAt: timestamp,
+						updatedAt: timestamp
+					}
+				}
+			]
+		};
+		await page.route(
+			(url) => url.pathname === '/api/academic/catalog/subjects/overview',
+			(route) => route.fulfill({ json: { success: true, data: overview } })
+		);
+		await page.route(
+			(url) => url.pathname === `/api/academic/catalog/subjects/${subjectId}/versions`,
+			(route) => route.fulfill({ json: { success: true, data: [] } })
+		);
+		await gotoDocument(page, `${fixture.baseUrl}/staff/academic/catalog/subjects`);
+		await ready(page);
+		const table = page.getByTestId('catalog-subjects-ready').locator('table');
+		await expectSchoolFont(page, table.getByText('ค21101', { exact: true }), font.family);
+		await expectSchoolFont(page, table.getByText('1.5', { exact: true }), font.family);
+		const input = page.locator('#new-subject-code');
+		await expect(input).toHaveCSS('font-family', `"${font.family}", sans-serif`);
+		await page.getByRole('button', { name: 'เปิด ค21101', exact: true }).click();
+		await expectSchoolFont(
+			page,
+			page.getByRole('dialog').getByText('ค21101', { exact: true }),
+			font.family
+		);
+		await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+		await page.setViewportSize({ width: 390, height: 844 });
+		const card = page
+			.getByTestId('catalog-subjects-ready')
+			.getByRole('button')
+			.filter({ has: page.getByText('คณิตศาสตร์ทดสอบ', { exact: true }) });
+		await expectSchoolFont(page, card.getByText('ค21101', { exact: true }), font.family);
+		await expectSchoolFont(page, card.getByText('1.5', { exact: true }), font.family);
+		await navigate(page, '/staff/school-settings/appearance');
+		await expect(page.getByTestId('school-appearance-settings')).toBeVisible();
+		await page.getByLabel('ฟอนต์ของโรงเรียน', { exact: true }).click();
+		const nextFont = FONTS[(index + 1) % FONTS.length];
+		await expectSchoolFont(
+			page,
+			page.getByRole('option', { name: nextFont.label, exact: true }).locator('span').first(),
+			font.family
+		);
+		await page.getByRole('option', { name: nextFont.label, exact: true }).click();
+		await page.getByRole('button', { name: 'บันทึกรูปแบบโรงเรียน', exact: true }).click();
+		await expect(page.getByText('บันทึกรูปแบบของทั้งโรงเรียนแล้ว', { exact: true })).toBeVisible();
+		await navigate(page, '/staff/academic/catalog/subjects');
+		await expectSchoolFont(page, card.getByText('ค21101', { exact: true }), nextFont.family);
+		await expectSchoolFont(page, card.getByText('1.5', { exact: true }), nextFont.family);
+	});
+}

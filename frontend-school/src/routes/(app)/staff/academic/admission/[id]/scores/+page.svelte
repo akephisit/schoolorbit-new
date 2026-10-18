@@ -713,7 +713,7 @@
 										<Table.Cell class="text-center text-muted-foreground"
 											>{seat.seatNumber}</Table.Cell
 										>
-										<Table.Cell class="font-mono text-xs"
+										<Table.Cell class="text-xs tabular-nums"
 											>{seat.examId ?? seat.applicationNumber ?? '-'}</Table.Cell
 										>
 										<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
@@ -773,7 +773,9 @@
 								{@const isAbsent = absentIds.has(app.id)}
 								<Table.Row class={isAbsent ? 'opacity-50' : ''}>
 									<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
-									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
+									<Table.Cell class="text-xs tabular-nums"
+										>{app.applicationNumber ?? '-'}</Table.Cell
+									>
 									<Table.Cell class="font-medium {isAbsent ? 'line-through' : ''}"
 										>{app.fullName}</Table.Cell
 									>

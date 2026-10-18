@@ -609,17 +609,17 @@
 						</div>
 						<dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
 							<dt>หน่วยกิตที่เรียน</dt>
-							<dd class="font-mono tabular-nums">{preview.results.totals.attemptedCredits}</dd>
+							<dd class="tabular-nums">{preview.results.totals.attemptedCredits}</dd>
 							<dt>หน่วยกิตที่มีเกรดตัวเลข</dt>
-							<dd class="font-mono tabular-nums">{preview.results.totals.gradedCredits}</dd>
+							<dd class="tabular-nums">{preview.results.totals.gradedCredits}</dd>
 							<dt>หน่วยกิตที่ผ่าน</dt>
-							<dd class="font-mono tabular-nums">{preview.results.totals.earnedCredits}</dd>
+							<dd class="tabular-nums">{preview.results.totals.earnedCredits}</dd>
 							<dt>หน่วยกิตที่ยังมีผลค้าง</dt>
-							<dd class="font-mono tabular-nums">{preview.results.totals.unresolvedCredits}</dd>
+							<dd class="tabular-nums">{preview.results.totals.unresolvedCredits}</dd>
 							<dt>ผลรวมเกรด × หน่วยกิต</dt>
-							<dd class="font-mono tabular-nums">{preview.results.totals.weightedGradePoints}</dd>
+							<dd class="tabular-nums">{preview.results.totals.weightedGradePoints}</dd>
 							<dt class="border-t pt-2 font-medium">ค่าเฉลี่ยเฉพาะผลตัวเลข</dt>
-							<dd class="border-t pt-2 font-mono font-semibold tabular-nums">
+							<dd class="border-t pt-2 font-semibold tabular-nums">
 								{preview.results.totals.provisionalGpa ?? '—'}
 							</dd>
 						</dl>

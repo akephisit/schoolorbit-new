@@ -456,7 +456,7 @@
 							<Table.Body>
 								{#each students as student (student.id)}
 									<Table.Row>
-										<Table.Cell class="hidden pl-4 font-mono md:table-cell"
+										<Table.Cell class="hidden pl-4 md:table-cell tabular-nums"
 											>{student.student_id || 'ยังไม่มีรหัส'}</Table.Cell
 										>
 										<Table.Cell class="space-y-1 py-3 pl-3 whitespace-normal md:pl-2">

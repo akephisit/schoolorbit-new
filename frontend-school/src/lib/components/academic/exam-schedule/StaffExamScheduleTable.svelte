@@ -70,7 +70,7 @@
 					{#if row.showTimeCell}
 						<Table.Cell
 							rowspan={row.timeRowSpan}
-							class="text-center align-top font-mono whitespace-nowrap"
+							class="text-center align-top whitespace-nowrap tabular-nums"
 						>
 							{formatStaffExamTime(row.session.startsAt)}–{formatStaffExamTime(row.session.endsAt)}
 						</Table.Cell>
@@ -120,7 +120,7 @@
 					<div class="grid gap-2 p-4 text-sm">
 						<div>
 							<span class="text-muted-foreground">เวลา:</span>
-							<span class="font-mono">
+							<span class="tabular-nums">
 								{formatStaffExamTime(row.session.startsAt)}–{formatStaffExamTime(
 									row.session.endsAt
 								)}

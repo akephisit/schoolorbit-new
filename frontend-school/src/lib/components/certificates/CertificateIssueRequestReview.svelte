@@ -438,13 +438,13 @@
 								>
 									<div class="bg-white p-3">
 										<p class="text-xs text-emerald-700">เลขใบแรก</p>
-										<p class="mt-1 font-mono font-semibold tabular-nums">
+										<p class="mt-1 font-semibold tabular-nums">
 											{issuedOutcome.certificates[0]?.certificateNumber ?? '-'}
 										</p>
 									</div>
 									<div class="bg-white p-3">
 										<p class="text-xs text-emerald-700">เลขใบสุดท้าย</p>
-										<p class="mt-1 font-mono font-semibold tabular-nums">
+										<p class="mt-1 font-semibold tabular-nums">
 											{issuedOutcome.certificates.at(-1)?.certificateNumber ?? '-'}
 										</p>
 									</div>

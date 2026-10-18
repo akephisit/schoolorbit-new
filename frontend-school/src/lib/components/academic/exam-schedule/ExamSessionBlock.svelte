@@ -54,7 +54,7 @@
 		style:width={`${widthPx}px`}
 	>
 		<div class="truncate text-xs font-semibold leading-tight">{subjectLabel()}</div>
-		<div class="truncate font-mono text-[11px] leading-tight opacity-80">{timeLabel()}</div>
+		<div class="truncate text-[11px] leading-tight opacity-80 tabular-nums">{timeLabel()}</div>
 	</div>
 {:else}
 	<button
@@ -74,7 +74,7 @@
 		onclick={() => onOpen?.(session)}
 	>
 		<div class="truncate text-xs font-semibold leading-tight">{subjectLabel()}</div>
-		<div class="truncate font-mono text-[11px] leading-tight opacity-80">{statusLabel()}</div>
+		<div class="truncate text-[11px] leading-tight opacity-80 tabular-nums">{statusLabel()}</div>
 	</button>
 {/if}
 

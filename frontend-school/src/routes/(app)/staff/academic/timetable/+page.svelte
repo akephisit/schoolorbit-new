@@ -2140,7 +2140,7 @@
 									{#each controller.workspace.bellPeriods as period (period.id)}
 										<th class="border-b border-r px-1.5 py-2 text-center">
 											<p class="font-semibold">{periodLabel(period)}</p>
-											<p class="font-mono text-xs font-normal text-muted-foreground">
+											<p class="text-xs font-normal text-muted-foreground tabular-nums">
 												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
 											</p>
 										</th>
