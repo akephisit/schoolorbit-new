@@ -571,6 +571,57 @@ test('editor uses named aggregate choices and exposes reference recovery without
 	]);
 });
 
+test('aggregate source choices offer base scales and exclude other totals', async ({ page }) => {
+	const api = await mockStudentCare(page);
+	const definition = structuredClone(careDefinition);
+	for (const [key, label] of [
+		['total_one', 'คะแนนรวมสมมติหนึ่ง'],
+		['total_two', 'คะแนนรวมสมมติสอง']
+	]) {
+		definition.scales.push({
+			...structuredClone(definition.scales[0]),
+			key,
+			label,
+			sourceScaleKeys: ['s']
+		});
+	}
+	await page.goto(carePath('/library/new'));
+	await page.getByText('นำเข้า / ส่งออกการตั้งค่า', { exact: true }).click();
+	await page.getByLabel('ข้อมูลการตั้งค่า JSON', { exact: true }).fill(JSON.stringify(definition));
+	await page.getByRole('button', { name: 'นำเข้าการตั้งค่า', exact: true }).click();
+	await expect(page.getByLabel('ชื่อแบบประเมิน *', { exact: true })).toHaveValue(definition.name);
+	for (const number of [1, 2, 3]) {
+		const scale = page.getByRole('group', { name: `มาตรวัด ${number}`, exact: true });
+		const sources = scale.getByRole('group', { name: 'รวมคะแนนจากมาตรวัดพื้นฐาน', exact: true });
+		await expect(sources).toBeVisible();
+		await expect(
+			sources.getByRole('checkbox', { name: 'คะแนนรวมสมมติหนึ่ง', exact: true })
+		).toHaveCount(0);
+		await expect(
+			sources.getByRole('checkbox', { name: 'คะแนนรวมสมมติสอง', exact: true })
+		).toHaveCount(0);
+		if (number === 1) {
+			await expect(sources.getByRole('checkbox')).toHaveCount(0);
+		} else {
+			await expect(sources.getByRole('checkbox', { name: 'มาตรสมมติ', exact: true })).toBeChecked();
+		}
+	}
+	const secondTotal = page.getByRole('group', { name: 'มาตรวัด 3', exact: true });
+	await secondTotal.getByRole('checkbox', { name: 'มาตรสมมติ', exact: true }).click();
+	await expect(
+		secondTotal.getByRole('checkbox', { name: 'มาตรสมมติ', exact: true })
+	).not.toBeChecked();
+	await secondTotal.getByRole('checkbox', { name: 'มาตรสมมติ', exact: true }).click();
+	await expect(secondTotal.getByRole('checkbox', { name: 'มาตรสมมติ', exact: true })).toBeChecked();
+	await page.getByRole('button', { name: 'บันทึกรุ่นใหม่', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`/library/${careVersionId}`));
+	expect(api.versions[0].definition.scales.map((scale) => scale.sourceScaleKeys)).toEqual([
+		[],
+		['s'],
+		['s']
+	]);
+});
+
 test('case action comes before long history and stays available after loading older notes', async ({
 	page
 }) => {

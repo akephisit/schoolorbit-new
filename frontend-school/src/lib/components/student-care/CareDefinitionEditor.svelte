@@ -283,6 +283,15 @@
 		description="ใช้เกณฑ์จากแหล่งอ้างอิงที่ได้รับอนุญาตเท่านั้น ช่วงคะแนนต้องต่อเนื่องและครอบคลุมคะแนนทั้งหมด"
 	>
 		{#each definition.scales as scale, i (i)}
+			{@const availableSources = definition.scales
+				.map((source, sourceIndex) => ({ source, sourceIndex }))
+				.filter(
+					({ source, sourceIndex }) =>
+						sourceIndex !== i && source.key !== scale.key && !source.sourceScaleKeys.length
+				)}
+			{@const invalidReferences = scale.sourceScaleKeys.filter(
+				(key) => !availableSources.some(({ source }) => source.key === key)
+			)}
 			<fieldset class="space-y-3 rounded-xl border p-3">
 				<legend class="px-1 text-sm font-semibold">มาตรวัด {i + 1}</legend>
 				<div class="grid gap-3 sm:grid-cols-2">
@@ -322,29 +331,64 @@
 					</details>
 				</div>
 				<fieldset class="space-y-2 rounded-lg bg-muted/30 p-3">
-					<legend class="px-1 text-sm font-medium">รวมคะแนนจากมาตรวัดอื่น</legend>
+					<legend class="px-1 text-sm font-medium">รวมคะแนนจากมาตรวัดพื้นฐาน</legend>
 					<p class="text-xs text-muted-foreground">
-						เว้นว่างหากมาตรวัดนี้รับคะแนนจากคำถามโดยตรง เลือกชื่อมาตรวัดเมื่อต้องการรวมคะแนน
+						เว้นว่างหากมาตรวัดนี้รับคะแนนจากคำถามโดยตรง เลือกได้เฉพาะมาตรวัดพื้นฐาน
+						ไม่สามารถเลือกตัวเองหรือมาตรวัดรวม
 					</p>
 					<div class="flex flex-wrap gap-x-4 gap-y-2">
-						{#each definition.scales as source, sourceIndex (sourceIndex)}{#if sourceIndex !== i}<div
-									class="flex items-center gap-2"
+						{#each availableSources as { source, sourceIndex } (sourceIndex)}<div
+								class="flex items-center gap-2"
+							>
+								<Checkbox
+									id={`scale-source-${i}-${sourceIndex}`}
+									checked={scale.sourceScaleKeys.includes(source.key)}
+									onCheckedChange={(checked) =>
+										(scale.sourceScaleKeys = checked
+											? [...new Set([...scale.sourceScaleKeys, source.key])]
+											: scale.sourceScaleKeys.filter((key) => key !== source.key))}
+								/><Label for={`scale-source-${i}-${sourceIndex}`}
+									>{source.label || `มาตรวัด ${sourceIndex + 1}`}</Label
 								>
-									<Checkbox
-										id={`scale-source-${i}-${sourceIndex}`}
-										checked={scale.sourceScaleKeys.includes(source.key)}
-										onCheckedChange={(checked) =>
-											(scale.sourceScaleKeys = checked
-												? [...new Set([...scale.sourceScaleKeys, source.key])]
-												: scale.sourceScaleKeys.filter((key) => key !== source.key))}
-									/><Label for={`scale-source-${i}-${sourceIndex}`}
-										>{source.label || `มาตรวัด ${sourceIndex + 1}`}</Label
-									>
-								</div>{/if}{/each}
+							</div>{/each}
 					</div>
-					{#if definition.scales.length < 2}<p class="text-sm text-muted-foreground">
-							เพิ่มมาตรวัดอื่นก่อน หากต้องการคำนวณคะแนนรวม
+					{#if !availableSources.length}<p class="text-sm text-muted-foreground">
+							ยังไม่มีมาตรวัดพื้นฐานอื่นให้เลือก เพิ่มมาตรวัดพื้นฐานก่อนหากต้องการคำนวณคะแนนรวม
 						</p>{/if}
+					{#if invalidReferences.length}<div
+							role="group"
+							aria-label="รหัสมาตรวัดที่ต้องแก้ไข"
+							class="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3"
+						>
+							<p class="text-sm font-medium">ตรวจสอบมาตรวัดที่เชื่อมโยง</p>
+							<p class="text-xs text-muted-foreground">
+								รหัสเดิมยังเก็บอยู่ เลือกนำออกหรือแก้รหัสในส่วนรหัสอ้างอิงมาตรวัดก่อนบันทึก
+							</p>
+							<ul class="space-y-2">
+								{#each invalidReferences as key, referenceIndex (referenceIndex)}
+									{@const referenced = definition.scales.find((candidate) => candidate.key === key)}
+									<li class="flex flex-wrap items-center justify-between gap-2">
+										<p class="min-w-0 break-words text-sm">
+											{key}: {key === scale.key
+												? 'ไม่สามารถรวมคะแนนจากตัวเอง'
+												: referenced?.sourceScaleKeys.length
+													? 'มาตรวัดรวมไม่สามารถใช้เป็นแหล่งคะแนน'
+													: 'ไม่พบมาตรวัดพื้นฐานตามรหัสนี้'}
+										</p>
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											aria-label={`นำรหัสมาตรวัด ${key} ออกจากมาตรวัด ${i + 1}`}
+											onclick={() =>
+												(scale.sourceScaleKeys = scale.sourceScaleKeys.filter(
+													(reference) => reference !== key
+												))}>นำออก</Button
+										>
+									</li>
+								{/each}
+							</ul>
+						</div>{/if}
 				</fieldset>
 				{#each scale.bands as band, j (j)}<div
 						class="grid gap-3 rounded-lg bg-muted/40 p-3 sm:grid-cols-2"
