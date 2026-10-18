@@ -1464,6 +1464,62 @@
       "scope": "school",
       "name": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน",
       "description": "จัดการข้อมูลลับงานดูแลช่วยเหลือโรงเรียน"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "own",
+      "name": "คำขอลาและออกนอกสถานศึกษา read own",
+      "description": "คำขอลาและออกนอกสถานศึกษา read own"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "assigned",
+      "name": "คำขอลาและออกนอกสถานศึกษา read assigned",
+      "description": "คำขอลาและออกนอกสถานศึกษา read assigned"
+    },
+    {
+      "module": "staff_leave",
+      "action": "read",
+      "scope": "school",
+      "name": "คำขอลาและออกนอกสถานศึกษา read school",
+      "description": "คำขอลาและออกนอกสถานศึกษา read school"
+    },
+    {
+      "module": "staff_leave",
+      "action": "create",
+      "scope": "own",
+      "name": "คำขอลาและออกนอกสถานศึกษา create own",
+      "description": "คำขอลาและออกนอกสถานศึกษา create own"
+    },
+    {
+      "module": "staff_leave",
+      "action": "update",
+      "scope": "assigned",
+      "name": "คำขอลาและออกนอกสถานศึกษา review assigned",
+      "description": "คำขอลาและออกนอกสถานศึกษา review assigned"
+    },
+    {
+      "module": "staff_leave",
+      "action": "manage",
+      "scope": "school",
+      "name": "คำขอลาและออกนอกสถานศึกษา manage school",
+      "description": "คำขอลาและออกนอกสถานศึกษา manage school"
+    },
+    {
+      "module": "staff_leave",
+      "action": "download",
+      "scope": "own",
+      "name": "คำขอลาและออกนอกสถานศึกษา report own",
+      "description": "คำขอลาและออกนอกสถานศึกษา report own"
+    },
+    {
+      "module": "staff_leave",
+      "action": "download",
+      "scope": "school",
+      "name": "คำขอลาและออกนอกสถานศึกษา report school",
+      "description": "คำขอลาและออกนอกสถานศึกษา report school"
     }
   ]
 }
