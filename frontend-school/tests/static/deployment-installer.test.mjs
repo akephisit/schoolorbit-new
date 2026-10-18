@@ -908,11 +908,11 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		if (binary === 'backend-school') {
 			assert.match(
 				dockerfile,
-				/^FROM public\.ecr\.aws\/docker\/library\/rust:1\.98\.1-slim-bookworm@sha256:[a-f0-9]{64} AS base$/m
+				/^FROM docker\.io\/library\/rust:1\.98\.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730 AS base$/m
 			);
 			assert.match(
 				runtimeStage[0],
-				/^FROM public\.ecr\.aws\/docker\/library\/debian:bookworm-slim@sha256:[a-f0-9]{64} AS runtime$/
+				/^FROM docker\.io\/library\/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime$/
 			);
 		} else {
 			assert.match(dockerfile, /FROM rust:1\.98\.1-slim-bookworm AS base/);

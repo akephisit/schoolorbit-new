@@ -143,6 +143,11 @@ pub async fn create_workflow_window(
     pool: &PgPool,
     input: CreateWorkflowWindowInput,
 ) -> Result<WorkflowWindow, AppError> {
+    if input.workflow_code == "process_step" {
+        return Err(AppError::ValidationError(
+            "รอบงานนี้สงวนสำหรับกระบวนงานอัตโนมัติ".into(),
+        ));
+    }
     validate_workflow_window_schedule(input.schedule)
         .map_err(|error| AppError::ValidationError(error.message().to_string()))?;
 
@@ -208,7 +213,7 @@ pub async fn get_workflow_window(pool: &PgPool, id: Uuid) -> Result<WorkflowWind
                managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                created_by, created_at, updated_at
         FROM workflow_windows
-        WHERE id = $1
+        WHERE id = $1 AND workflow_code <> 'process_step'
         "#,
     )
     .bind(id)
@@ -226,16 +231,17 @@ pub async fn set_workflow_window_status(
     id: Uuid,
     status: WorkflowWindowStatus,
 ) -> Result<WorkflowWindow, AppError> {
-    let current_status =
-        sqlx::query_scalar::<_, String>("SELECT status FROM workflow_windows WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|error| {
-                tracing::error!("Failed to load workflow window status: {}", error);
-                AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะรอบงานได้".to_string())
-            })?
-            .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))?;
+    let current_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM workflow_windows WHERE id = $1 AND workflow_code <> 'process_step'",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to load workflow window status: {}", error);
+        AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะรอบงานได้".to_string())
+    })?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))?;
 
     let Some(current_status) = WorkflowWindowStatus::from_code(&current_status) else {
         return Err(AppError::InternalServerError(
@@ -253,7 +259,7 @@ pub async fn set_workflow_window_status(
         r#"
         UPDATE workflow_windows
         SET status = $2
-        WHERE id = $1
+        WHERE id = $1 AND workflow_code <> 'process_step'
         RETURNING id, module_code, workflow_code, title, description, organization_unit_id,
                   managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                   created_by, created_at, updated_at
@@ -280,7 +286,7 @@ async fn list_workflow_windows_query(
                 managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                 created_by, created_at, updated_at
          FROM workflow_windows
-         WHERE true",
+         WHERE workflow_code <> 'process_step'",
     );
 
     match access {

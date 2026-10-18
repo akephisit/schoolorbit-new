@@ -63,7 +63,9 @@ pub fn simple_file_access(
                 }
             }
         }
-        FilePurpose::TeachingLicense
+        FilePurpose::CorrespondenceDocument
+        | FilePurpose::CorrespondenceSignature
+        | FilePurpose::TeachingLicense
         | FilePurpose::AchievementImage
         | FilePurpose::AttendanceEvidence => None,
         FilePurpose::AdmissionApplicationDocument => Some(match action {
@@ -110,6 +112,15 @@ pub async fn authorize_create(
     resource_id: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     match purpose {
+        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
+            school_workflow::correspondence_files::authorize_create(
+                pool,
+                actor,
+                purpose,
+                resource_id,
+            )
+            .await
+        }
         FilePurpose::TeachingLicense => {
             school_staff::services::staff_license_service::authorize_upload(
                 pool,
@@ -207,6 +218,16 @@ pub async fn authorize_existing(
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     match file.purpose {
+        FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
+            school_workflow::correspondence_files::authorize_existing(
+                pool,
+                actor,
+                file,
+                action,
+                resource_id,
+            )
+            .await
+        }
         FilePurpose::TeachingLicense => {
             school_staff::services::staff_license_service::authorize_file(
                 pool,

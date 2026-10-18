@@ -1319,6 +1319,83 @@
       "description": "แก้ไขและอนุมัติหรือปฏิเสธคำเสนอพัสดุ"
     },
     {
+      "module": "correspondence",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูหนังสือของตนเอง",
+      "description": "ดูหนังสือของตนเอง"
+    },
+    {
+      "module": "correspondence",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูหนังสือที่มีส่วนร่วม",
+      "description": "ดูหนังสือที่มีส่วนร่วม"
+    },
+    {
+      "module": "correspondence",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูหนังสือหน่วยงานที่ได้รับสิทธิ์",
+      "description": "ดูหนังสือหน่วยงานที่ได้รับสิทธิ์"
+    },
+    {
+      "module": "correspondence",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูหนังสือทั้งโรงเรียน",
+      "description": "ดูหนังสือทั้งโรงเรียน"
+    },
+    {
+      "module": "correspondence",
+      "action": "create",
+      "scope": "own",
+      "name": "สร้างและส่งหนังสือของตนเอง",
+      "description": "สร้างและส่งหนังสือของตนเอง"
+    },
+    {
+      "module": "correspondence",
+      "action": "manage",
+      "scope": "organization_unit",
+      "name": "จัดการหนังสือหน่วยงานที่ได้รับสิทธิ์",
+      "description": "จัดการหนังสือหน่วยงานที่ได้รับสิทธิ์"
+    },
+    {
+      "module": "correspondence",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการหนังสือทั้งโรงเรียน",
+      "description": "จัดการหนังสือทั้งโรงเรียน"
+    },
+    {
+      "module": "correspondence",
+      "action": "update",
+      "scope": "assigned",
+      "name": "ดำเนินการหนังสือที่ได้รับมอบหมาย",
+      "description": "ดำเนินการหนังสือที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "correspondence",
+      "action": "sign",
+      "scope": "own",
+      "name": "ลงนามหนังสือด้วยตนเอง",
+      "description": "ลงนามหนังสือด้วยตนเอง"
+    },
+    {
+      "module": "correspondence",
+      "action": "download",
+      "scope": "assigned",
+      "name": "ส่งออกหนังสือที่เข้าถึงได้",
+      "description": "ส่งออกหนังสือที่เข้าถึงได้"
+    },
+    {
+      "module": "process",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการแม่แบบกระบวนงาน",
+      "description": "จัดการแม่แบบกระบวนงาน"
+    },
+    {
       "module": "student_care",
       "action": "read",
       "scope": "own",

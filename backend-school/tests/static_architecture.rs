@@ -796,6 +796,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-question-bank",
                 "school-staff",
                 "school-students",
+                "school-workflow",
             ],
         ),
         (
@@ -899,6 +900,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth-http",
                 "school-authorization",
                 "school-errors",
+                "school-file-platform",
                 "school-http",
                 "school-notifications",
                 "school-permissions",
@@ -5508,6 +5510,7 @@ fn permission_registry_uses_canonical_action_and_scope_vocabulary() {
         "request",
         "revoke",
         "scores",
+        "sign",
         "submit",
         "update",
         "verify",

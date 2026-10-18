@@ -48,6 +48,7 @@ unused_imports = "deny"
 
 [workspace.dependencies]
 school-student-care = { path = "crates/school-student-care" }
+rustybuzz = "0.20.1"
 school-files-http = { path = "crates/school-files-http" }
 school-administration = { path = "crates/school-administration" }
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
@@ -145,6 +146,7 @@ edition.workspace = true
 [features]
 api-docs = [
     "school-student-care/api-docs",
+    "school-workflow/api-docs",
     "school-files-http/api-docs",
     "school-administration/api-docs",
     "dep:utoipa",

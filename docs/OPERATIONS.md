@@ -417,10 +417,14 @@ release or open maintenance. Check the user unit with
 `systemctl --user is-enabled podman-restart.service`; use the normal Pipeline for
 failed or pending release recovery.
 
-The School backend build pulls its Rust and Debian bases from the Docker Official Images mirror
-on Amazon ECR Public, pinned by index digest. These digests match the Docker Hub originals and
-avoid anonymous Docker Hub pull limits. Disposable PostgreSQL and Nginx verification images use
-the same official mirror, and actionlint uses Google's Docker Hub cache; all keep verified upstream
+The School backend build pulls its official Rust and Debian bases from Docker Hub, pinned by
+index digest. The registry location changed after repeated Amazon ECR Public pulls failed with
+`toomanyrequests: Data limit exceeded`; both Docker Hub index responses were verified against the
+existing digests, with Linux AMD64 manifests present. This preserves the exact base content,
+versions and build settings. Docker Hub has its own pull limits; a future registry failure requires
+checking that registry's availability and authentication. Admin's base-image sources are unchanged.
+Disposable PostgreSQL and Nginx verification images still use the Docker Official Images mirror
+on Amazon ECR Public, and actionlint uses Google's Docker Hub cache; all keep verified upstream
 digests. Update tags and digests together when upgrading bases or verification images.
 
 Selected backend services use immutable digests, canonical rootless Podman topology, readiness,
@@ -1572,3 +1576,27 @@ codes are prohibited. Deploy backend and frontend together and recover by rollin
 do not restore an older binary against the migrated schema. Confirm one owner per group,
 newly created groups in catalog choices, separate member/grant controls and automatic codes
 before ending maintenance.
+
+## Correspondence processes and signing evidence
+
+Migration 121 is additive and preserves existing workflow windows and work assignments.
+Deploy the backend, permission/API contracts and frontend together through the normal tenant
+migration and universal maintenance workflow. After feature use begins, retain a compatible
+runtime recognizing the private `correspondence_document` and `correspondence_signature`
+File Platform purposes; recover with a forward release. Never edit the applied migration or
+manually remove attached files, signature images, process snapshots or action/signing history.
+
+Correspondence sends resolve every required recipient once, including future sequential steps.
+A missing active required recipient refuses the send transaction without creating work or
+notification artifacts. Accepted membership snapshots remain valid across later staffing
+changes. Active steps project through canonical My Work and central notification dispatch;
+there is no correspondence-specific delivery worker. Source-only previews and final PDFs read
+private originals through the File Platform and verify frozen file version/checksum identity.
+Final PDFs are composed on the server from persisted revisions and evidence; these electronic
+signature records do not claim PKI or certificate-backed digital signing.
+
+Reusable signature assets remain owner-only. Authorized correspondence participants can view
+only an image already accepted as signed evidence for that exact correspondence context.
+Template changes create versions and never rewrite accepted process snapshots. A returned
+record can receive a new content revision and resend under its existing source instance while
+retaining prior document, recipient, annotation and signing evidence.

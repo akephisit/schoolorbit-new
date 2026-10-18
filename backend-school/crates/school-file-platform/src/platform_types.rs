@@ -32,6 +32,8 @@ impl PublicSchoolIconSize {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilePurpose {
+    CorrespondenceDocument,
+    CorrespondenceSignature,
     TeachingLicense,
     AttendanceEvidence,
     SchoolLogo,
@@ -54,7 +56,9 @@ pub enum FilePurpose {
 }
 
 impl FilePurpose {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 21] = [
+        Self::CorrespondenceDocument,
+        Self::CorrespondenceSignature,
         Self::TeachingLicense,
         Self::AttendanceEvidence,
         Self::SchoolLogo,
@@ -78,6 +82,8 @@ impl FilePurpose {
 
     pub const fn code(self) -> &'static str {
         match self {
+            Self::CorrespondenceDocument => "correspondence_document",
+            Self::CorrespondenceSignature => "correspondence_signature",
             Self::TeachingLicense => "teaching_license",
             Self::AttendanceEvidence => "attendance_evidence",
             Self::SchoolLogo => "school_logo",

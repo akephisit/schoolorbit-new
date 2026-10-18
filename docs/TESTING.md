@@ -1496,3 +1496,24 @@ integration test through the existing disposable Admin database runner. It verif
 pending get/list/migration-connection denial after a School restart, transaction
 rollback, exact-token recovery and refusal of a stale writer claim. Never use a
 shared control-plane database for this fixture.
+
+## Correspondence and reusable processes
+
+The Workflow owner contains pure validation/geometry tests and disposable database cases for
+registration sequences, scope union, frozen recipients, all/any progression, return/resend,
+concurrent/replayed decisions, image signature ownership and immutable file/document evidence.
+Use the same pinned toolchain and shared Cargo target as other School checks:
+
+```bash
+./scripts/test_backend_school.sh --package school-workflow -- --test-threads=2
+cd backend-school
+WORKFLOW_PDF_FIXTURE_DIR=/tmp/schoolorbit-workflow-renderer cargo test -p school-workflow --lib document_export::tests
+cargo test -p school-file-platform --lib private_original_consumer_checks_ready_visibility_and_purpose_byte_bound
+```
+
+The optional renderer directory receives synthetic Thai, cropped/native-rotation, annotation,
+drawn-signature and private-image-signature PDF fixtures. Inspect both PDFs through the real
+browser PDF renderer; source preview and final composition must share visual page coordinates,
+Thai mark positioning and original crop/rotation. Fixture output contains no tenant data.
+Default and `api-docs` builds, generated API/permission checks, focused Files policy tests and
+independent frontend/browser checks also apply to changes across these boundaries.

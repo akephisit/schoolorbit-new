@@ -111,6 +111,7 @@ impl FromRef<AppState> for school_notifications::http::state::NotificationHttpSt
 impl FromRef<AppState> for school_workflow::http::state::WorkflowHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
+            file_platform: state.file_platform.clone(),
             auth_runtime: state.auth_runtime.clone(),
             work_event_channel: state.work_event_channel.clone(),
         }

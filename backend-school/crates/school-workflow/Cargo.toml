@@ -3,7 +3,20 @@ name = "school-workflow"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+api-docs = ["dep:utoipa", "school-file-platform/api-docs", "school-http/api-docs"]
+
 [dependencies]
+rustybuzz = { workspace = true }
+url = { workspace = true }
+utoipa = { workspace = true, optional = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+lopdf = { workspace = true }
+image = { workspace = true }
+school-file-platform = { workspace = true }
+async-trait = { workspace = true }
 tokio = { workspace = true }
 school-notifications = { workspace = true }
 school-http = { workspace = true }

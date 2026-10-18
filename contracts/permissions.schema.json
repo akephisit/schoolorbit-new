@@ -51,6 +51,7 @@
         "reopen",
         "request",
         "scores",
+        "sign",
         "update",
         "verify"
       ]
