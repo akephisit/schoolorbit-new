@@ -38,6 +38,7 @@ Base: `ec6436038f96f06e2374e45b0851181737174505`; shared branch `feat/correspond
 - Invoke after the first page actually renders successfully. Loading metadata, opening a route, failed rendering, and speculative preview requests do not count.
 - GET detail/preview remain read-only. Reading never acknowledges, completes, forwards, signs, or creates assignment authority.
 - A narrow process-owned transaction operation updates applicable active actor recipient/reviewer read projections and canonical My Work read state while preserving the earliest timestamp.
+- Only rendering the locked current document revision projects active work as read. A valid historical render may freeze the original book receipt without marking newer content read; newly activated slots use their current read time.
 - Existing `ProcessAction::Read` delegates to the same idempotent ownership path, retaining its assignment authorization and typed response contract.
 - Repeated reads create no record revision, process snapshot/event, or history churn; the receipt remains the first successfully recorded revision.
 - Preserve existing read audit rows. Backfill the earliest immutable explicit Read history only where book, actor, revision, and timestamp map unambiguously to valid rows.

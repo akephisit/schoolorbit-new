@@ -7,7 +7,7 @@ import {
 	parentAssignmentId,
 	childAssignmentId
 } from './fixtures/correspondence-directed';
-import { correspondenceId, detailPath } from './fixtures/correspondence';
+import { openAnnotationTools, correspondenceId, detailPath } from './fixtures/correspondence';
 import { actor, firstStaff } from './fixtures/staff-home-route-data';
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ baseURL }) => {
@@ -38,6 +38,7 @@ async function choosePerson(page: Page, label: string, name: string) {
 	await page.getByRole('option', { name, exact: true }).click();
 }
 async function addRequiredRecipient(page: Page) {
+	await choosePerson(page, 'กลุ่มผู้รับ', 'บุคลากร');
 	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 }
@@ -118,7 +119,8 @@ test('instructions, drawing and signature submit once with branch recipients and
 	});
 	await page.goto(detailPath);
 	await expect(page.getByRole('list', { name: 'สาขาการดำเนินการ' })).toContainText('รอดำเนินการ');
-	await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+	await expect(page.locator('canvas')).toBeVisible();
+	await openAnnotationTools(page);
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('โปรดดำเนินการภายในวันศุกร์');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
@@ -310,7 +312,7 @@ test('mobile instructions keep recipient type and review controls readable and r
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'พิจารณาสั่งการ', exact: true }).click();
 	const kind = page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true });
-	await expect(kind).toContainText('บุคลากร');
+	await expect(kind).toContainText('หน่วยงาน');
 	await expect(kind).toBeVisible();
 	await expect(
 		page.getByRole('checkbox', { name: 'บุคลากรอ่านอย่างเดียว', exact: true })
@@ -385,10 +387,8 @@ for (const terminalCopy of ['completed', 'closed'] as const)
 				? 'ปิดเก็บเรื่องแล้ว รับทราบสำเนาได้ตามต้องการโดยไม่เปิดงานอีกครั้ง'
 				: 'เรื่องดำเนินการเสร็จสิ้น ไม่ต้องส่งกลับตรวจรับ'
 		);
-		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
-		await expect(
-			page.getByRole('button', { name: 'เปิดเอกสารอีกครั้ง', exact: true })
-		).toBeVisible();
+		await expect(page.locator('canvas')).toBeVisible();
+		await expect(page.locator('canvas')).toBeVisible();
 		await expect(page.getByRole('radio', { name: 'ข้อความ', exact: true })).toHaveCount(0);
 		await page.getByRole('button', { name: 'รับทราบ', exact: true }).click();
 		await expect(page.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveCount(0);

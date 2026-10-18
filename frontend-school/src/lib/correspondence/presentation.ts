@@ -9,6 +9,11 @@ export const registerLabels: Record<CorrespondenceSummary['register'], string> =
 	outgoing: 'หนังสือส่ง',
 	internal: 'หนังสือภายใน'
 };
+export function correspondenceRegisterLabel(
+	record: Pick<CorrespondenceSummary, 'registerLabel' | 'registerNumber' | 'registerYear'>
+): string {
+	return record.registerLabel ?? `${record.registerNumber}/${record.registerYear}`;
+}
 export const statusLabels: Record<CorrespondenceSummary['status'], string> = {
 	draft: 'ฉบับร่าง',
 	in_progress: 'กำลังดำเนินการ',

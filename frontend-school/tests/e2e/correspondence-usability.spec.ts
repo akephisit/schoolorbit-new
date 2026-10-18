@@ -1,5 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mockCorrespondence, correspondenceId, detailPath } from './fixtures/correspondence';
+import {
+	openAnnotationTools,
+	mockCorrespondence,
+	correspondenceId,
+	detailPath
+} from './fixtures/correspondence';
 import type {
 	CreateCorrespondenceRequest,
 	ReviseCorrespondenceRequest,
@@ -17,6 +22,8 @@ async function chooseRoute(page: Page) {
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 }
@@ -52,7 +59,10 @@ for (const width of [390, 1440])
 		expect(api.count(`/api/correspondence/${correspondenceId}`)).toBe(0);
 		await views.getByRole('link', { name: /ฉันส่งติดตาม/ }).click();
 		await expect(page).toHaveURL(/view=sent/);
-		await page.getByRole('link', { name: 'ลงนาม', exact: true }).filter({ visible: true }).click();
+		await page
+			.getByRole('link', { name: 'เปิดอ่าน', exact: true })
+			.filter({ visible: true })
+			.click();
 		await expect(page.getByTestId('correspondence-detail')).toBeVisible();
 		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 		await expect(page).toHaveURL(/view=sent/);
@@ -197,6 +207,8 @@ test('batch recipients preserve user, organization and position semantics and de
 	const api = await mockCorrespondence(page, { mode: 'draft' });
 	await fillDocument(page);
 	await chooseRoute(page);
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (2)', exact: true }).click();
@@ -268,7 +280,7 @@ for (const rotation of [0, 90])
 		await page.goto(detailPath);
 		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 		await draw(page);
-		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+		await expect(page.locator('canvas')).toBeVisible();
 		if (rotation === 90) await page.getByRole('button', { name: 'หมุน 90°' }).click();
 		const frame = page.getByTestId('signature-placement');
 		await expect(frame.locator('svg path')).toHaveCount(1);
@@ -313,7 +325,7 @@ test.describe('touch signature placement', () => {
 		await page.getByRole('button', { name: 'เลือกลายมือชื่อที่บันทึก' }).click();
 		await page.getByRole('button', { name: 'ลายมือชื่อของฉัน', exact: true }).click();
 		await page.getByRole('option', { name: 'ลายมือชื่อส่วนตัว' }).click();
-		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+		await expect(page.locator('canvas')).toBeVisible();
 		await page.getByRole('button', { name: 'หมุน 90°' }).click();
 		const frame = page.getByTestId('signature-placement');
 		await expect(frame.getByRole('img', { name: 'ตัวอย่างลายมือชื่อบนเอกสาร' })).toBeVisible();
@@ -385,7 +397,7 @@ for (const width of [390, 1543])
 			await screenshot('detail');
 			await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 			await draw(page);
-			await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+			await expect(page.locator('canvas')).toBeVisible();
 			await expect(page.getByTestId('signature-placement').locator('path')).toHaveCount(1);
 			await page.getByTestId('signature-placement').scrollIntoViewIfNeeded();
 			await expect(page.getByTestId('signature-placement')).toBeVisible();
@@ -530,6 +542,8 @@ async function chooseDetailRoute(page: Page) {
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 }
@@ -581,7 +595,8 @@ for (const newer of [false, true])
 	}) => {
 		const api = await mockCorrespondence(page, { mode: 'draft', abortAcceptedRevision: true });
 		await page.goto(detailPath);
-		await page.getByRole('button', { name: 'เปิดเอกสาร', exact: true }).click();
+		await expect(page.locator('canvas')).toBeVisible();
+		await openAnnotationTools(page);
 		await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 		await page
 			.getByLabel('ข้อความกำกับ', { exact: true })
@@ -673,6 +688,8 @@ test('step deadline survives wizard backtracking, clears with its control and re
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'แม่แบบทางเลือก', exact: true }).click();
 	await expect(page.locator('#step-due-0')).toContainText('เลือกวันที่');
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 	const selectedDate = await chooseDate();
@@ -739,16 +756,12 @@ test('folded malformed source URL unfolds and focuses validation without losing 
 		await expect(input).toBeVisible();
 		await expect(input).toBeFocused();
 		await expect(input).toHaveValue('not-a-url');
-		await expect(
-			page.getByText('ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://', { exact: true })
-		).toBeVisible();
+		await expect(page.locator('#source-url-0-error')).toBeVisible();
 		expect(api.writes).toHaveLength(0);
 	}
 	await input.fill('ftp://school.example/source');
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
-	await expect(
-		page.getByText('ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://', { exact: true })
-	).toBeVisible();
+	await expect(page.locator('#source-url-0-error')).toBeVisible();
 	expect(api.writes).toHaveLength(0);
 	await input.fill('https://school.example/source');
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();

@@ -13,6 +13,11 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	import RoutePicker from './RoutePicker.svelte';
+	import {
+		focusCorrespondenceField,
+		type CorrespondenceFieldErrors
+	} from '#lib/correspondence/validation.js';
+	let fieldErrors = $state<CorrespondenceFieldErrors>({});
 	let {
 		detail,
 		oncomplete,
@@ -52,10 +57,29 @@
 	const template = $derived(options?.templates.find((item) => item.id === templateId));
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (pending || (mode === 'directed' ? !firstUserId : !template)) return;
+		if (pending || uncertain) return;
 		error = '';
-		if (mode === 'template' && steps.some((step) => !step.recipients.length)) {
-			error = 'เลือกผู้รับให้ครบทุกขั้นตอน';
+		fieldErrors = {};
+		const missingStep = steps.findIndex((step) => !step.recipients.length);
+		const invalidId =
+			mode === 'directed'
+				? !firstUserId
+					? 'send-first-decisionmaker'
+					: ''
+				: !template
+					? 'send-template'
+					: missingStep >= 0
+						? `send-step-${missingStep}-recipients`
+						: '';
+		if (invalidId) {
+			error =
+				mode === 'directed'
+					? 'เลือกผู้พิจารณาสั่งการคนแรก'
+					: !template
+						? 'เลือกแม่แบบลำดับงาน'
+						: 'เลือกผู้รับให้ครบทุกขั้นตอน';
+			fieldErrors = { [invalidId]: error };
+			void focusCorrespondenceField(invalidId);
 			return;
 		}
 		pending = true;
@@ -120,6 +144,7 @@
 			ยังยืนยันผลการส่งไม่ได้ กดส่งอีกครั้งเพื่อตรวจผลด้วยข้อมูลผู้รับเดิม
 		</p>{/if}
 	<RoutePicker
+		{fieldErrors}
 		bind:mode
 		bind:firstUserId
 		register={detail.record.register}
@@ -134,10 +159,8 @@
 
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
-		><LoadingButton
-			type="submit"
-			loading={pending}
-			disabled={mode === 'directed' ? !firstUserId : !template}>ส่งหนังสือ</LoadingButton
+		><LoadingButton type="submit" loading={pending} disabled={uncertain || !options}
+			>ส่งหนังสือ</LoadingButton
 		>
 	</div>
 </form>

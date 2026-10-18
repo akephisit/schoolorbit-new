@@ -18,6 +18,8 @@ BEGIN
                 OR row_data.entry->>'actorId' IS DISTINCT FROM row_data.actor_id::text
                 OR jsonb_typeof(row_data.entry->'documentRevision') IS DISTINCT FROM 'number'
                 OR row_data.entry->>'createdAt' IS NULL
+                OR jsonb_typeof(row_data.entry->'createdAt') IS DISTINCT FROM 'string'
+                OR row_data.entry->>'createdAt' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$'
                 OR NOT isfinite((row_data.entry->>'createdAt')::timestamptz)
                 OR NOT EXISTS (
                     SELECT 1 FROM correspondence_document_revisions d

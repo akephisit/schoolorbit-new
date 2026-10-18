@@ -3,6 +3,10 @@ import { PDFDocument, degrees } from 'pdf-lib';
 import { mockStaffHome, actor, firstStaff, id } from './staff-home-route-data';
 import type {
 	CorrespondenceDetail,
+	CorrespondenceReadRequest,
+	CorrespondenceReadReceipt,
+	CorrespondenceStampContext,
+	CorrespondenceTextStampTemplate,
 	CorrespondenceList,
 	ProcessTemplate,
 	ProcessActionRequest,
@@ -18,10 +22,32 @@ export const correspondenceId = id(800),
 	fileId = id(803);
 export const detailPath = `/staff/correspondence/${correspondenceId}`;
 const now = '2026-10-18T08:00:00Z';
+export const stampTemplates: CorrespondenceTextStampTemplate[] = [
+	{
+		id: '0199ebd0-0000-7000-8000-000000000101',
+		name: 'ตรารับหนังสือ',
+		body: '{schoolName}\nเลขรับ {registerNumber}\nวันที่ {registeredDate} เวลา {registeredTime}',
+		border: true
+	},
+	{
+		id: '0199ebd0-0000-7000-8000-000000000102',
+		name: 'ข้อความสั่งการ',
+		body: '{instruction}\n({signerName})\n{signerTitle}\nวันที่ {date}',
+		border: false
+	},
+	{
+		id: '0199ebd0-0000-7000-8000-000000000103',
+		name: 'รับทราบ',
+		body: 'ทราบ\n({signerName})\n{signerTitle}\nวันที่ {date}',
+		border: false
+	}
+];
 export async function mockCorrespondence(
 	page: Page,
 	settings: {
 		mode?: 'draft' | 'sign' | 'acknowledge';
+		failRead?: boolean;
+		stampContext?: CorrespondenceStampContext;
 		permissions?: string[];
 		failAction?: number;
 		holdDetail?: boolean;
@@ -92,6 +118,7 @@ export async function mockCorrespondence(
 		createdAt: now
 	};
 	let detail: CorrespondenceDetail = {
+		myReadReceipt: null,
 		record: {
 			id: correspondenceId,
 			register: 'incoming',
@@ -309,6 +336,17 @@ export async function mockCorrespondence(
 				| SendCorrespondenceRequest
 				| ReviseCorrespondenceRequest;
 		}[] = [];
+	const readRequests: CorrespondenceReadRequest[] = [];
+	function recordRead(documentRevision: number): CorrespondenceReadReceipt {
+		const receipt = detail.myReadReceipt ?? {
+			correspondenceId,
+			userId: actor,
+			documentRevision,
+			firstReadAt: now
+		};
+		detail = { ...detail, myReadReceipt: receipt };
+		return receipt;
+	}
 	const acceptedCommands = new Map<string, { payload: string; detail: CorrespondenceDetail }>();
 	let revisionAttempts = 0;
 	let sendAttempts = 0,
@@ -345,6 +383,13 @@ export async function mockCorrespondence(
 			if (method === 'GET') reads.set(path, (reads.get(path) ?? 0) + 1);
 			if (path === '/fixture-signature.png')
 				return route.fulfill({ contentType: 'image/png', body: png });
+			if (path.endsWith('/read') && method === 'POST') {
+				const payload = request.postDataJSON() as CorrespondenceReadRequest;
+				readRequests.push(payload);
+				if (settings.failRead && readRequests.length === 1)
+					return reply(route, 'บันทึกเปิดอ่านไม่สำเร็จ', 503);
+				return reply(route, recordRead(payload.documentRevision));
+			}
 			if (path.endsWith('/preview') || path.endsWith('/export'))
 				return route.fulfill({ contentType: 'application/pdf', body: pdfBytes });
 			if (path === '/api/files' && method === 'POST') {
@@ -398,7 +443,23 @@ export async function mockCorrespondence(
 						{ id: actor, displayName: 'ครูเจ้าของ ทดสอบ' },
 						{ id: firstStaff, displayName: 'ครูผู้รับคนที่สอง' }
 					],
-					routingSettings: [],
+					routingSettings: (['incoming', 'outgoing', 'internal'] as const).map((register) => ({
+						register,
+						revision: 0,
+						eligibleDecisionMakers: [],
+						defaultFirstRecipient: null,
+						defaultPurpose: 'acknowledge',
+						defaultRequireReview: false,
+						defaultReviewer: null,
+						defaultAllowOnwardAssignment: true,
+						numbering: { format: '{number}/{year}', minimumDigits: 1 },
+						textStampTemplates: stampTemplates
+					})),
+					stampContext: settings.stampContext ?? {
+						schoolName: 'โรงเรียนตัวอย่าง',
+						actorDisplayName: 'ครูเจ้าของ ทดสอบ',
+						signerTitle: 'ครู'
+					},
 					canManageRoutingSettings: true,
 					templates: settings.secondTemplate
 						? [
@@ -670,6 +731,8 @@ export async function mockCorrespondence(
 	return {
 		...base,
 		reads,
+		readRequests,
+		recordRead,
 		uploads,
 		assetWrites,
 		templateWrites,
@@ -681,4 +744,11 @@ export async function mockCorrespondence(
 		detail: () => detail,
 		count: (path: string) => reads.get(path) ?? 0
 	};
+}
+
+export async function openAnnotationTools(page: Page) {
+	const tools = page.getByTestId('annotation-tools');
+	await tools.waitFor({ state: 'visible' });
+	if (!(await tools.evaluate((element) => (element as HTMLDetailsElement).open)))
+		await tools.locator('summary').click();
 }

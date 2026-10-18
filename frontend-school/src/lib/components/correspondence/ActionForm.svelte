@@ -18,7 +18,7 @@
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import type { InkPath } from '#lib/correspondence/geometry.js';
+	import { hasInk, type InkPath } from '#lib/correspondence/geometry.js';
 	import { actionRequirements, validateSigningDraft } from '#lib/correspondence/drafts.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -33,6 +33,11 @@
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import SignaturePad from './SignaturePad.svelte';
 	import Choice from './Choice.svelte';
+	import FieldError from './FieldError.svelte';
+	import {
+		focusCorrespondenceField,
+		type CorrespondenceFieldErrors
+	} from '#lib/correspondence/validation.js';
 	import DirectedRoutingFields from './DirectedRoutingFields.svelte';
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	let {
@@ -60,6 +65,12 @@
 		ondirtychange?: (dirty: boolean) => void;
 		onpreviewchange?: (paths: InkPath[], fileId?: string) => void;
 	} = $props();
+	let fieldErrors = $state<CorrespondenceFieldErrors>({});
+	function invalidField(id: string, message: string) {
+		fieldErrors = { [id]: message };
+		error = message;
+		void focusCorrespondenceField(id);
+	}
 	const initialRevision = untrack(() => detail.record.revision);
 	let expectedRevision = $state(initialRevision),
 		comment = $state(''),
@@ -138,6 +149,7 @@
 	let confirmationBasis = '';
 	$effect.pre(() => {
 		const basis = JSON.stringify([
+			annotations,
 			signature,
 			method,
 			assetId,
@@ -267,20 +279,21 @@
 		event.preventDefault();
 		if (pending) return;
 		error = '';
+		fieldErrors = {};
 		if (commentRequired && !comment.trim()) {
-			error = 'กรอกความคิดเห็น / เหตุผล';
+			invalidField('action-comment', 'กรอกความคิดเห็น / เหตุผล');
 			return;
 		}
 		if (requirements.evidence && !evidence.length) {
-			error = 'แนบหลักฐานประกอบการดำเนินการ';
+			invalidField('action-evidence', 'แนบหลักฐานประกอบการดำเนินการ');
 			return;
 		}
 		if (recovery && !reassignFromUserId) {
-			error = 'เลือกผู้รับเดิมที่ต้องเปลี่ยน';
+			invalidField('reassign-source', 'เลือกผู้รับเดิมที่ต้องเปลี่ยน');
 			return;
 		}
 		if (action === 'reassign' && !reassignUserId) {
-			error = 'เลือกผู้รับผิดชอบ';
+			invalidField('reassign-user', 'เลือกผู้รับผิดชอบ');
 			return;
 		}
 		if (
@@ -288,7 +301,14 @@
 			(!routing.recipients.some((item) => item.required !== false) ||
 				(routing.requireReview && !routing.reviewer))
 		) {
-			error = 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ และเลือกผู้ตรวจทานหากกำหนดให้ตรวจทาน';
+			invalidField(
+				!routing.recipients.some((item) => item.required !== false)
+					? 'directed-target-recipients'
+					: 'directed-reviewer',
+				!routing.recipients.some((item) => item.required !== false)
+					? 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ'
+					: 'เลือกผู้ตรวจทาน'
+			);
 			return;
 		}
 		if (signing) {
@@ -301,7 +321,14 @@
 				detail.document.revision
 			);
 			if (invalid) {
-				error = invalid;
+				invalidField(
+					!signature || (method === 'drawn' ? !hasInk(paths) : !assetId)
+						? 'signature-input'
+						: !confirmed
+							? 'signature-confirm'
+							: 'placement-page',
+					invalid
+				);
 				return;
 			}
 		}
@@ -411,6 +438,7 @@
 	<fieldset disabled={pending || uncertain} class="min-w-0 space-y-4">
 		{#if action === 'route'}
 			{#if options}<DirectedRoutingFields
+					{fieldErrors}
 					{options}
 					bind:routing
 					register={detail.record.register}
@@ -426,10 +454,18 @@
 		{/if}
 		{#if action !== 'read' && !terminalCopy}<div class="space-y-2">
 				<Label for="action-comment">ความคิดเห็น / เหตุผล{commentRequired ? ' *' : ''}</Label
-				><Textarea id="action-comment" rows={4} bind:value={comment} disabled={pending} />
+				><Textarea
+					id="action-comment"
+					aria-invalid={!!fieldErrors['action-comment']}
+					aria-describedby={fieldErrors['action-comment'] ? 'action-comment-error' : undefined}
+					rows={4}
+					bind:value={comment}
+					disabled={pending}
+				/><FieldError id="action-comment-error" message={fieldErrors['action-comment']} />
 			</div>{/if}
 		{#if action === 'reassign'}{#if recovery}<Choice
 					id="reassign-source"
+					error={fieldErrors['reassign-source']}
 					label="ผู้รับเดิมที่ต้องเปลี่ยน"
 					bind:value={reassignFromUserId}
 					options={pendingRecipients.map((recipient) => ({
@@ -439,6 +475,7 @@
 					disabled={pending}
 				/>{/if}{#if options}<Choice
 					id="reassign-user"
+					error={fieldErrors['reassign-user']}
 					label="ผู้รับผิดชอบใหม่"
 					bind:value={reassignUserId}
 					options={(selectedAssignment ? options.reviewers : options.users)
@@ -459,13 +496,15 @@
 		{#if requirements.acceptsEvidence}<div class="space-y-2">
 				<Label for="action-evidence">หลักฐานประกอบ{requirements.evidence ? ' *' : ''}</Label><Input
 					id="action-evidence"
+					aria-invalid={!!fieldErrors['action-evidence']}
+					aria-describedby={fieldErrors['action-evidence'] ? 'action-evidence-error' : undefined}
 					type="file"
 					multiple
 					disabled={pending}
 					onchange={(event) => {
 						evidence = Array.from(event.currentTarget.files ?? []);
 					}}
-				/>
+				/><FieldError id="action-evidence-error" message={fieldErrors['action-evidence']} />
 			</div>{/if}
 		{#if (['approve', 'route'].includes(action) || (action === 'review' && selectedAssignment?.purpose === 'decide')) && !needsSignature && $can.has(PERMISSIONS.CORRESPONDENCE_SIGN_OWN)}<div
 				class="flex items-center gap-2"
@@ -480,7 +519,15 @@
 				>
 			</div>{/if}
 		{#if signing && signature}
-			<div class="space-y-4 rounded-xl border bg-muted/20 p-3">
+			<div
+				id="signature-input"
+				role="group"
+				aria-label="ลายมือชื่อ"
+				tabindex="-1"
+				aria-describedby={fieldErrors['signature-input'] ? 'signature-input-error' : undefined}
+				class="space-y-4 rounded-xl border bg-muted/20 p-3"
+			>
+				<FieldError id="signature-input-error" message={fieldErrors['signature-input']} />
 				<div class="flex gap-2">
 					<Button
 						type="button"
@@ -507,6 +554,7 @@
 						/>{/if}
 					<Choice
 						id="signature-asset"
+						error={fieldErrors['signature-asset']}
 						label="ลายมือชื่อของฉัน"
 						bind:value={assetId}
 						options={assets.map((asset) => ({ value: asset.id, label: asset.label }))}
@@ -550,6 +598,10 @@
 							>
 								<Label for={`placement-${field.key}`}>{field.label}</Label><Input
 									id={`placement-${field.key}`}
+									aria-invalid={!!fieldErrors[`placement-${field.key}`]}
+									aria-describedby={fieldErrors[`placement-${field.key}`]
+										? `placement-${field.key}-error`
+										: undefined}
 									type="number"
 									min={field.min}
 									max={field.max}
@@ -566,6 +618,9 @@
 											};
 										confirmed = false;
 									}}
+								/><FieldError
+									id={`placement-${field.key}-error`}
+									message={fieldErrors[`placement-${field.key}`]}
 								/>
 							</div>{/each}
 					</div>
@@ -576,12 +631,17 @@
 				<div class="flex items-start gap-2">
 					<Checkbox
 						id="signature-confirm"
+						aria-invalid={!!fieldErrors['signature-confirm']}
+						aria-describedby={fieldErrors['signature-confirm']
+							? 'signature-confirm-error'
+							: undefined}
 						bind:checked={confirmed}
 						disabled={pending || imagePending}
 					/><Label for="signature-confirm" class="leading-relaxed"
 						>ยืนยันใช้ลายมือชื่อนี้กับเอกสารฉบับ {signature.documentRevision} และการ{actionLabel}ครั้งนี้</Label
 					>
 				</div>
+				<FieldError id="signature-confirm-error" message={fieldErrors['signature-confirm']} />
 				<p class="text-xs text-muted-foreground">
 					ระบบบันทึกผู้ลงนาม เวลา และเอกสารที่ใช้ลงนาม เป็นหลักฐานลงลายมือชื่ออิเล็กทรอนิกส์
 				</p>

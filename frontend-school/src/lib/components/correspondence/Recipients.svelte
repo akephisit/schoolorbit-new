@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { getCorrespondenceOptions } from '#lib/api/correspondence.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
@@ -9,6 +9,7 @@
 	import type { CorrespondenceOptions, ProcessRecipient } from '#lib/api/correspondence.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import Choice from './Choice.svelte';
+	import FieldError from './FieldError.svelte';
 	import {
 		recipientKey,
 		recipientLabel,
@@ -22,7 +23,8 @@
 		prefix = 'recipient',
 		directed = false,
 		onadd,
-		onlookups
+		onlookups,
+		error
 	}: {
 		recipients?: ProcessRecipient[];
 		options: CorrespondenceOptions;
@@ -31,6 +33,7 @@
 		directed?: boolean;
 		onadd?: (recipients: ProcessRecipient[]) => void;
 		onlookups?: (options: CorrespondenceOptions) => void;
+		error?: string;
 	} = $props();
 	let results = $state<CorrespondenceOptions | null>(null),
 		query = $state(''),
@@ -47,7 +50,8 @@
 		decisionMakers: [],
 		reviewers: [],
 		routingSettings: [],
-		canManageRoutingSettings: false
+		canManageRoutingSettings: false,
+		stampContext: untrack(() => options.stampContext)
 	});
 	const known = $derived(mergeRecipientLookups(options, cached));
 	async function search() {
@@ -171,7 +175,12 @@
 			]}
 			{disabled}
 		/>
-		<fieldset class="min-w-0 space-y-2">
+		<fieldset
+			id={`${prefix}-recipients`}
+			tabindex="-1"
+			class="min-w-0 space-y-2"
+			aria-describedby={error ? `${prefix}-recipients-error` : undefined}
+		>
 			<legend class="text-sm font-medium">ผู้รับ (เลือกได้หลายรายการ)</legend>
 			<div class="max-h-60 space-y-1 overflow-auto rounded-lg border p-2">
 				{#each choices as option (option.value)}<div class="flex items-start gap-2 rounded-md p-2">
@@ -195,6 +204,7 @@
 						ไม่พบผู้รับ ลองค้นหาเพิ่มเติม
 					</p>{/if}
 			</div>
+			<FieldError id={`${prefix}-recipients-error`} message={error} />
 		</fieldset>
 		<Button type="button" variant="outline" onclick={add} disabled={disabled || !selected.length}
 			>เพิ่มผู้รับ{selected.length ? ` (${selected.length})` : ''}</Button

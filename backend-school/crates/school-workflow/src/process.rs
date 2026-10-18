@@ -439,7 +439,7 @@ pub(crate) async fn mark_read_in_transaction(
                     a.recipient.read_at = Some(at);
                     changed = true;
                 }
-                items.push(a.work_item_id);
+                items.push((a.work_item_id, a.recipient.read_at.unwrap_or(at)));
             }
             if active && a.status == DirectedAssignmentStatus::WaitingReview {
                 if let Some(reviewer) = a.reviewer.as_mut().filter(|r| r.user_id == actor.user_id) {
@@ -447,7 +447,7 @@ pub(crate) async fn mark_read_in_transaction(
                         reviewer.read_at = Some(at);
                         changed = true;
                     }
-                    items.push(a.review_work_item_id);
+                    items.push((a.review_work_item_id, reviewer.read_at.unwrap_or(at)));
                 }
             }
         }
@@ -462,18 +462,20 @@ pub(crate) async fn mark_read_in_transaction(
                     recipient.read_at = Some(at);
                     changed = true;
                 }
-                items.push(step.work_item_id);
+                items.push((step.work_item_id, recipient.read_at.unwrap_or(at)));
             }
         }
     }
-    for item in items {
-        crate::work::mark_process_read_in_transaction(tx, item, actor.user_id, at).await?;
+    let mut work_changed = false;
+    for (item, read_at) in items {
+        work_changed |=
+            crate::work::mark_process_read_in_transaction(tx, item, actor.user_id, read_at).await?;
     }
     if changed {
         instance.revision += 1;
         store(tx, instance).await?;
     }
-    Ok(changed)
+    Ok(changed || work_changed)
 }
 pub async fn completion_in_transaction(
     tx: &mut Transaction<'_, Postgres>,

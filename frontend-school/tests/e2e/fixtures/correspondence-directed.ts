@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { mockCorrespondence, correspondenceId, detailPath } from './correspondence';
+import { mockCorrespondence, correspondenceId, detailPath, stampTemplates } from './correspondence';
 import { actor, firstStaff, id } from './staff-home-route-data';
 import type {
 	CorrespondenceDetail,
@@ -59,7 +59,9 @@ export async function mockDirectedCorrespondence(
 		defaultPurpose: 'execute',
 		defaultRequireReview: false,
 		defaultReviewer: null,
-		defaultAllowOnwardAssignment: false
+		defaultAllowOnwardAssignment: false,
+		numbering: { format: '{number}/{year}', minimumDigits: 1 },
+		textStampTemplates: structuredClone(stampTemplates)
 	}));
 	const options: CorrespondenceOptions = {
 		users: [
@@ -76,7 +78,12 @@ export async function mockDirectedCorrespondence(
 		],
 		templates: [],
 		routingSettings: settings,
-		canManageRoutingSettings: true
+		canManageRoutingSettings: true,
+		stampContext: {
+			schoolName: 'โรงเรียนตัวอย่าง',
+			actorDisplayName: 'ครูเจ้าของ ทดสอบ',
+			signerTitle: 'ครู'
+		}
 	};
 	let detail = structuredClone(base.detail());
 	function makeDirected(
@@ -332,6 +339,7 @@ export async function mockDirectedCorrespondence(
 			url.pathname === '/api/correspondence/routing-settings' ||
 			url.pathname === `${detailPath.replace('/staff', '/api')}` ||
 			url.pathname.endsWith('/directed-send') ||
+			url.pathname.endsWith('/read') ||
 			url.pathname === `/api/correspondence/${correspondenceId}/actions`,
 		async (route) => {
 			const req = route.request(),
@@ -363,16 +371,32 @@ export async function mockDirectedCorrespondence(
 						}
 					]
 				});
+			if (path.endsWith('/read')) {
+				const payload = req.postDataJSON();
+				base.readRequests.push(payload);
+				const receipt = base.recordRead(payload.documentRevision);
+				detail = { ...detail, myReadReceipt: receipt };
+				return reply(receipt);
+			}
 			if (path === '/api/correspondence/options') return reply(options);
 			if (path === '/api/correspondence/routing-settings') {
 				if (req.method() === 'GET') return reply(settings);
 				const payload = req.postDataJSON() as SaveCorrespondenceRoutingSettingsRequest;
 				settingsWrites.push(payload);
+				const previous = settings.find((item) => item.register === payload.register);
 				const row: CorrespondenceRoutingSettings = {
 					...payload,
+					numbering: payload.numbering ??
+						previous?.numbering ?? { format: '{number}/{year}', minimumDigits: 1 },
+					textStampTemplates:
+						payload.textStampTemplates ??
+						previous?.textStampTemplates ??
+						structuredClone(stampTemplates),
 					revision: payload.expectedRevision + 1,
-					defaultRequireReview: payload.defaultRequireReview ?? false,
-					defaultAllowOnwardAssignment: payload.defaultAllowOnwardAssignment ?? false
+					defaultRequireReview:
+						payload.defaultRequireReview ?? previous?.defaultRequireReview ?? false,
+					defaultAllowOnwardAssignment:
+						payload.defaultAllowOnwardAssignment ?? previous?.defaultAllowOnwardAssignment ?? true
 				};
 				settings.splice(
 					settings.findIndex((item) => item.register === row.register),

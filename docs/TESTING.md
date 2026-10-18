@@ -1530,7 +1530,12 @@ counts beyond the first 30 items, authorization before aggregation/pagination, i
 and cursor filtering, register-number/year search, current/future/all/any/reassigned recipients,
 frozen names/deadlines and action/signature permissions. It also verifies draft metadata
 validation, atomic revisions, author-only access, returned-record denial and old idempotency
-payload preservation:
+payload preservation. It also covers concurrent first-render read receipts, original revision/time
+preservation, read-versus-acknowledgment authority, newly activated slot timestamps, historical/current
+render projection boundaries, no-op projection effects, explicit-read replay,
+formatted-label search and preserved numbering/profile snapshots. Synthetic migration 127 cases
+backfill the earliest valid immutable Read and refuse missing-document or ambiguous first-read
+evidence without changing audit rows:
 
 ```bash
 ./scripts/test_backend_school.sh --package school-workflow --test correspondence -- --test-threads=2
@@ -1540,6 +1545,14 @@ Run the generated API generation/check/tests after changing the list or revision
 correspondence browser fixtures should verify server-count tabs, creation/draft retention,
 failed-file retry, recipient selection, timeline/main action, direct signature placement and
 starter template copying at desktop and mobile sizes.
+
+The renderer fixtures include bordered Thai text with four-point inner padding and cropped pages
+at all native rotations. Pure Workflow settings tests cover placeholder/format bounds, UUIDv7
+template identities and pre-reader payload serialization. Frontend reading fixtures should report
+a read only after successful page rendering, retain retry/cancellation behavior, open the current
+revision automatically, focus invalid fields, and distinguish registration dates from insertion
+dates when expanding editable stamp text. These synthetic checks do not measure production
+database size, rendering capacity, or prove that a human read the content.
 
 Staff leave and planned school exit use `./scripts/test_backend_school.sh --package school-staff leave -- --nocapture` for the focused policy and isolated lifecycle/authorization/ledger fixtures. Signature consent and revision binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`. Policies count school-configured calendar or working dates; half-day granularity represents a full counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement is seeded by these fixtures.
 

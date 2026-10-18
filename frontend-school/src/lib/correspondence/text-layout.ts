@@ -1,5 +1,20 @@
 export type TextMeasure = (text: string, size: number) => number;
 
+/** Canonical PDF points; the compositor uses the same four-point border inset. */
+export function fitAnnotationBox(
+	text: string,
+	width: number,
+	height: number,
+	measure: TextMeasure,
+	border = false
+) {
+	const padding = border ? 4 : 0;
+	return {
+		...fitAnnotationText(text, width - 2 * padding, height - 2 * padding, measure),
+		padding
+	};
+}
+
 /** Matches the authoritative compositor's character wrapping and Thai mark attachment. */
 export function fitAnnotationText(
 	text: string,
@@ -7,9 +22,12 @@ export function fitAnnotationText(
 	height: number,
 	measure: TextMeasure
 ): { lines: string[]; size: number; overflow: boolean } {
+	if (![width, height].every(Number.isFinite) || width <= 0 || height <= 0)
+		return { lines: [], size: 5, overflow: true };
+	const normalized = text.replace(/\r\n/gu, '\n').replace(/\r/gu, '\n').replace(/\t/gu, '    ');
 	for (let size = 14; size >= 5; size -= 0.5) {
 		const lines: string[] = [];
-		for (const paragraph of text.split('\n')) {
+		for (const paragraph of normalized.split('\n')) {
 			let line = '';
 			for (const character of paragraph) {
 				const combining = /[\u0e31\u0e34-\u0e3a\u0e47-\u0e4e]/u.test(character);
@@ -20,7 +38,8 @@ export function fitAnnotationText(
 			}
 			lines.push(line);
 		}
-		if (lines.length * size * 1.3 <= height) return { lines, size, overflow: false };
+		if (lines.length * size * 1.3 <= height && lines.every((line) => measure(line, size) <= width))
+			return { lines, size, overflow: false };
 		if (size === 5) return { lines, size, overflow: true };
 	}
 	return { lines: [], size: 5, overflow: true };

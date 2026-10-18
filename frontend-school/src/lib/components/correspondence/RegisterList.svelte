@@ -14,6 +14,7 @@
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
 	import {
 		actionLabels,
+		correspondenceRegisterLabel,
 		registerLabels,
 		statusLabels,
 		dateLabel
@@ -158,7 +159,7 @@
 							><Badge variant="outline">{statusLabels[record.status]}</Badge>
 						</div>
 						<p class="text-sm">
-							{registerLabels[record.register]} · เลขทะเบียน {record.registerNumber}/{record.registerYear}
+							{registerLabels[record.register]} · เลขทะเบียน {correspondenceRegisterLabel(record)}
 						</p>
 						<p class="text-sm text-muted-foreground">
 							เลขที่ต้นทาง {record.documentNumber ?? '—'} · {record.sender}
@@ -199,7 +200,7 @@
 								<Table.Cell class="min-w-40"
 									><p>
 										{registerLabels[record.register]}
-										{record.registerNumber}/{record.registerYear}
+										{correspondenceRegisterLabel(record)}
 									</p>
 									<p class="mt-1 text-sm text-muted-foreground">
 										ต้นทาง {record.documentNumber ?? '—'}

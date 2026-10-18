@@ -776,6 +776,24 @@ pub async fn act(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
 ) -> Result<CorrespondenceDetail, AppError> {
+    Ok(act_with_changes(pool, actor, id, validator, request)
+        .await?
+        .value)
+}
+
+/// Post-commit projection effects are returned by the persistence owner, never guessed by HTTP.
+pub struct WorkflowMutation<T> {
+    pub value: T,
+    pub work_changed: bool,
+}
+
+pub async fn act_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    validator: &dyn DocumentValidationPort,
+    request: ProcessActionRequest,
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
     act_impl(pool, actor, id, validator, request, false).await
 }
 
@@ -802,16 +820,32 @@ pub async fn read(
     id: Uuid,
     request: CorrespondenceReadRequest,
 ) -> Result<CorrespondenceReadReceipt, AppError> {
+    Ok(read_with_changes(pool, actor, id, request).await?.value)
+}
+
+pub async fn read_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    request: CorrespondenceReadRequest,
+) -> Result<WorkflowMutation<CorrespondenceReadReceipt>, AppError> {
     require_read(pool, actor, id).await?;
     let mut tx = pool.begin().await?;
-    let (_, _, instance_id) = locked(&mut tx, id).await?;
+    let (_, current_revision, instance_id) = locked(&mut tx, id).await?;
     let receipt = read_receipt_in(&mut tx, actor.user_id, id, request.document_revision).await?;
-    if let Some(instance_id) = instance_id {
+    let work_changed = if let Some(instance_id) =
+        instance_id.filter(|_| request.document_revision == current_revision)
+    {
         let mut instance = process::load_locked(&mut tx, instance_id).await?;
-        process::mark_read_in_transaction(&mut tx, actor, &mut instance, None).await?;
-    }
+        process::mark_read_in_transaction(&mut tx, actor, &mut instance, None).await?
+    } else {
+        false
+    };
     tx.commit().await?;
-    Ok(receipt)
+    Ok(WorkflowMutation {
+        value: receipt,
+        work_changed,
+    })
 }
 
 async fn explicit_read(
@@ -820,7 +854,7 @@ async fn explicit_read(
     id: Uuid,
     request: &ProcessActionRequest,
     instance_revision: bool,
-) -> Result<CorrespondenceDetail, AppError> {
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
     let mut tx = pool.begin().await?;
     let operation = if instance_revision {
         "process_correspondence_action"
@@ -839,7 +873,10 @@ async fn explicit_read(
     .is_some()
     {
         tx.commit().await?;
-        return detail(pool, actor, id).await;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
     }
     let (record, revision, instance_id) = locked(&mut tx, id).await?;
     let mut instance = process::load_locked(
@@ -901,9 +938,14 @@ async fn explicit_read(
         return Err(stale());
     }
     read_receipt_in(&mut tx, actor.user_id, id, revision).await?;
-    process::mark_read_in_transaction(&mut tx, actor, &mut instance, request.assignment_id).await?;
+    let work_changed =
+        process::mark_read_in_transaction(&mut tx, actor, &mut instance, request.assignment_id)
+            .await?;
     tx.commit().await?;
-    detail(pool, actor, id).await
+    Ok(WorkflowMutation {
+        value: detail(pool, actor, id).await?,
+        work_changed,
+    })
 }
 async fn act_impl(
     pool: &PgPool,
@@ -912,7 +954,7 @@ async fn act_impl(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
     instance_revision: bool,
-) -> Result<CorrespondenceDetail, AppError> {
+) -> Result<WorkflowMutation<CorrespondenceDetail>, AppError> {
     require_read(pool, actor, id).await?;
     validate_annotations(&request.annotations)?;
     if request.action == ProcessAction::Read
@@ -961,7 +1003,10 @@ async fn act_impl(
     )
     .await?
     {
-        return detail(pool, actor, id).await;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
     }
     if request.action == ProcessAction::Read {
         return explicit_read(pool, actor, id, &request, instance_revision).await;
@@ -1014,7 +1059,10 @@ async fn act_impl(
     .is_some()
     {
         tx.commit().await?;
-        return detail(pool, actor, id).await;
+        return Ok(WorkflowMutation {
+            value: detail(pool, actor, id).await?,
+            work_changed: false,
+        });
     }
     let (mut record, doc, instance_id) = locked(&mut tx, id).await?;
     if !instance_revision && record.revision != request.expected_revision {
@@ -1258,7 +1306,10 @@ async fn act_impl(
     }
     save_record(&mut tx, &record).await?;
     tx.commit().await?;
-    detail(pool, actor, id).await
+    Ok(WorkflowMutation {
+        value: detail(pool, actor, id).await?,
+        work_changed: true,
+    })
 }
 #[derive(sqlx::FromRow)]
 struct CorrespondenceListRow {
@@ -1850,8 +1901,22 @@ pub async fn act_instance(
     validator: &dyn DocumentValidationPort,
     request: ProcessActionRequest,
 ) -> Result<ProcessInstance, AppError> {
+    Ok(
+        act_instance_with_changes(pool, actor, id, validator, request)
+            .await?
+            .value,
+    )
+}
+
+pub async fn act_instance_with_changes(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    validator: &dyn DocumentValidationPort,
+    request: ProcessActionRequest,
+) -> Result<WorkflowMutation<ProcessInstance>, AppError> {
     let instance = instance_detail(pool, actor, id).await?;
-    act_impl(
+    let result = act_impl(
         pool,
         actor,
         instance.source.resource_id,
@@ -1859,9 +1924,11 @@ pub async fn act_instance(
         request,
         true,
     )
-    .await?
-    .instance
-    .ok_or_else(denied)
+    .await?;
+    Ok(WorkflowMutation {
+        value: result.value.instance.ok_or_else(denied)?,
+        work_changed: result.work_changed,
+    })
 }
 
 async fn signing_identity(

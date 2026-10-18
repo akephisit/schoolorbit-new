@@ -259,7 +259,14 @@ fn text_box(
     let mut size = 14.0;
     loop {
         let lines = wrap(value, w, size)?;
-        if lines.len() as f64 * size * 1.3 <= h {
+        let mut fits_width = true;
+        for line in &lines {
+            if text_width(line, size)? > w {
+                fits_width = false;
+                break;
+            }
+        }
+        if fits_width && lines.len() as f64 * size * 1.3 <= h {
             for (index, line) in lines.iter().enumerate() {
                 text(
                     ops,
@@ -1032,6 +1039,51 @@ mod tests {
             a.border = true;
             a.width = 0.001;
             assert!(annotation(&mut vec![], &a, g).is_err());
+        }
+    }
+    #[test]
+    fn bordered_text_shrinks_wide_thai_clusters_and_refuses_below_minimum_size() {
+        let geometry = Geometry {
+            width: 1000.0,
+            height: 1000.0,
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        };
+        for value in ["ก", "กิ่"] {
+            let available = text_width(value, 8.0).unwrap() + 0.001;
+            let mut a = DocumentAnnotation {
+                id: Uuid::now_v7(),
+                kind: DocumentAnnotationKind::Text,
+                page: 1,
+                x: 0.1,
+                y: 0.1,
+                width: (available + 8.0) / geometry.width,
+                height: 0.1,
+                text: Some(value.into()),
+                color: "#000000".into(),
+                border: true,
+                strokes: vec![],
+            };
+            assert!(text_width(value, 14.0).unwrap() > available);
+            let mut operations = vec![];
+            annotation(&mut operations, &a, geometry).unwrap();
+            let size = f64::from(
+                operations
+                    .iter()
+                    .find(|op| op.operator == "Tf")
+                    .unwrap()
+                    .operands[1]
+                    .as_float()
+                    .unwrap(),
+            );
+            assert!((5.0..=8.0).contains(&size));
+            assert!(text_width(value, size).unwrap() <= available);
+            assert_eq!(wrap(value, available, size).unwrap(), vec![value]);
+            // A nine-point frame has just one point of content width after its padding.
+            assert!(text_width(value, 5.0).unwrap() > 1.0);
+            a.width = 9.0 / geometry.width;
+            let mut too_narrow = vec![];
+            assert!(annotation(&mut too_narrow, &a, geometry).is_err());
+            assert!(!too_narrow.iter().any(|op| op.operator == "Tf"));
         }
     }
     #[test]

@@ -14,6 +14,7 @@
 	import Choice from './Choice.svelte';
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import Recipients from './Recipients.svelte';
+	import type { CorrespondenceFieldErrors } from '#lib/correspondence/validation.js';
 	let {
 		mode = $bindable('directed'),
 		firstUserId = $bindable(''),
@@ -22,7 +23,8 @@
 		steps = $bindable([]),
 		dueDate = $bindable(),
 		disabled = false,
-		onready
+		onready,
+		fieldErrors = {}
 	}: {
 		mode?: string;
 		firstUserId?: string;
@@ -32,6 +34,7 @@
 		dueDate?: string;
 		disabled?: boolean;
 		onready?: (options: CorrespondenceOptions) => void;
+		fieldErrors?: CorrespondenceFieldErrors;
 	} = $props();
 	let options = $state<CorrespondenceOptions | null>(null),
 		loading = $state(true),
@@ -117,6 +120,7 @@
 	{#if mode === 'directed'}
 		<Choice
 			id="send-first-decisionmaker"
+			error={fieldErrors['send-first-decisionmaker']}
 			label="ผู้พิจารณาสั่งการคนแรก *"
 			bind:value={firstUserId}
 			searchable
@@ -132,6 +136,7 @@
 	{:else}
 		<Choice
 			id="send-template"
+			error={fieldErrors['send-template']}
 			label="ลำดับการดำเนินงาน"
 			value={templateId}
 			onValueChange={selectTemplate}
@@ -158,6 +163,7 @@
 							{options}
 							{disabled}
 							prefix={`send-step-${index}`}
+							error={fieldErrors[`send-step-${index}-recipients`]}
 							onlookups={(value) => {
 								if (options) {
 									options = mergeRecipientLookups(options, value);
