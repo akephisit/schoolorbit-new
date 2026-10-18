@@ -406,6 +406,24 @@ test('real settings save applies atomically and a fresh browser receives persist
 			getComputedStyle(document.documentElement).getPropertyValue('--school-appearance-font').trim()
 		)
 	).toBe('sarabun');
+
+	await page.reload();
+	await ready(page);
+	await expect(page.getByTestId('school-appearance-settings')).toBeVisible();
+	expect(
+		await page.evaluate(() => {
+			const css = getComputedStyle(document.documentElement);
+			return ['font', 'palette', 'density', 'primary'].map((name) =>
+				css.getPropertyValue(`--school-appearance-${name}`).trim()
+			);
+		})
+	).toEqual(['sarabun', 'purple', 'compact', '#245fc2']);
+	await expect(page.getByLabel('ฟอนต์ของโรงเรียน', { exact: true })).toHaveText('Sarabun');
+	await expectSchoolFont(
+		page,
+		page.getByRole('heading', { level: 1, name: 'รูปแบบและตัวอักษร', exact: true }),
+		'School Sarabun'
+	);
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page
 		.getByRole('heading', { level: 1, name: 'รูปแบบและตัวอักษร', exact: true })
@@ -718,7 +736,7 @@ async function expectSchoolFont(page: Page, element: Locator, family: string) {
 for (const [index, font] of FONTS.entries()) {
 	test(`business course codes and numbers follow ${font.label} on desktop, mobile and SPA saves`, async ({
 		page
-	}) => {
+	}, testInfo) => {
 		fixture.set({
 			...fixture.saved,
 			appearance: { ...fixture.saved.appearance, font: font.value }
@@ -791,6 +809,10 @@ for (const [index, font] of FONTS.entries()) {
 		const table = page.getByTestId('catalog-subjects-ready').locator('table');
 		await expectSchoolFont(page, table.getByText('ค21101', { exact: true }), font.family);
 		await expectSchoolFont(page, table.getByText('1.5', { exact: true }), font.family);
+		await page.screenshot({
+			path: testInfo.outputPath(`course-codes-${font.value}-desktop.png`),
+			fullPage: true
+		});
 		const input = page.locator('#new-subject-code');
 		await expect(input).toHaveCSS('font-family', `"${font.family}", sans-serif`);
 		await page.getByRole('button', { name: 'เปิด ค21101', exact: true }).click();
@@ -807,13 +829,17 @@ for (const [index, font] of FONTS.entries()) {
 			.filter({ has: page.getByText('คณิตศาสตร์ทดสอบ', { exact: true }) });
 		await expectSchoolFont(page, card.getByText('ค21101', { exact: true }), font.family);
 		await expectSchoolFont(page, card.getByText('1.5', { exact: true }), font.family);
+		await page.screenshot({
+			path: testInfo.outputPath(`course-codes-${font.value}-mobile.png`),
+			fullPage: true
+		});
 		await navigate(page, '/staff/school-settings/appearance');
 		await expect(page.getByTestId('school-appearance-settings')).toBeVisible();
 		await page.getByLabel('ฟอนต์ของโรงเรียน', { exact: true }).click();
 		const nextFont = FONTS[(index + 1) % FONTS.length];
 		await expectSchoolFont(
 			page,
-			page.getByRole('option', { name: nextFont.label, exact: true }).locator('span').first(),
+			page.getByRole('option', { name: nextFont.label, exact: true }),
 			font.family
 		);
 		await page.getByRole('option', { name: nextFont.label, exact: true }).click();
@@ -822,5 +848,40 @@ for (const [index, font] of FONTS.entries()) {
 		await navigate(page, '/staff/academic/catalog/subjects');
 		await expectSchoolFont(page, card.getByText('ค21101', { exact: true }), nextFont.family);
 		await expectSchoolFont(page, card.getByText('1.5', { exact: true }), nextFont.family);
+
+		await gotoDocument(page, `${fixture.baseUrl}/__appearance-primitives`);
+		await page.evaluate(async (family) => {
+			await Promise.all(
+				[400, 500, 600, 700].map((weight) =>
+					document.fonts.load(`${weight} 16px "${family}"`, 'ก SchoolOrbit 0123456789')
+				)
+			);
+			await document.fonts.ready;
+		}, nextFont.family);
+		await expectSchoolFont(page, page.getByTestId('font-sans-consumer'), nextFont.family);
+		await expectSchoolFont(
+			page,
+			page.getByTestId('exam-time').getByText('09:00-10:00'),
+			nextFont.family
+		);
+		await expectSchoolFont(
+			page,
+			page.getByTestId('exam-status').getByText('กำลังบันทึก'),
+			nextFont.family
+		);
+		await page.getByRole('button', { name: 'แสดงข้อความแจ้งเตือน', exact: true }).click();
+		await expectSchoolFont(page, page.locator('[data-sonner-toast] [data-title]'), nextFont.family);
+		await expectSchoolFont(
+			page,
+			page.locator('[data-sonner-toast] [data-description]'),
+			nextFont.family
+		);
+		await expectSchoolFont(
+			page,
+			page.locator('[data-sonner-toast] [data-button]'),
+			nextFont.family
+		);
+		await expect(page.getByTestId('technical-code')).toHaveCSS('font-family', /monospace/);
+		await expect(page.locator('.katex .mathnormal').first()).toHaveCSS('font-family', /KaTeX_Math/);
 	});
 }
