@@ -327,7 +327,10 @@ pub(crate) fn render_png(
         );
     }
     let mut encoded = Cursor::new(Vec::new());
+    // Overlay's floating-point alpha may round an opaque destination down to 254.
+    // Encode the completed composite as RGB, retaining its already blended color channels.
     DynamicImage::ImageRgba8(image)
+        .into_rgb8()
         .write_to(&mut encoded, ImageFormat::Png)
         .map_err(|_| FilePlatformError::InspectionRejected)?;
     Ok(Bytes::from(encoded.into_inner()))
@@ -367,6 +370,50 @@ mod tests {
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
         assert_eq!(image.dimensions(), (1200, 630));
         assert!(image.pixels().all(|pixel| pixel.0[3] == 255));
+    }
+
+    #[test]
+    fn school_share_partial_alpha_crest_blends_over_background_and_stays_opaque() {
+        let foreground = [210_u8, 35, 75];
+        let source = RgbaImage::from_fn(326, 326, |x, _| {
+            Rgba([foreground[0], foreground[1], foreground[2], (x % 256) as u8])
+        });
+        let mut source_png = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(source)
+            .write_to(&mut source_png, ImageFormat::Png)
+            .unwrap();
+        let png = render_png(
+            Some(source_png.get_ref()),
+            "โรงเรียนทดสอบ",
+            "sample.example.test",
+        )
+        .unwrap();
+        let decoded = image::load_from_memory(&png).unwrap();
+        let rendered = decoded.to_rgba8();
+        assert!(rendered.pixels().all(|pixel| pixel.0[3] == 255));
+        assert_eq!(decoded.color(), image::ColorType::Rgb8);
+        for alpha in 0..=255_u32 {
+            let (x, y) = (100 + alpha, 219);
+            let background = background().unwrap().get_pixel(x, y).0;
+            let actual = rendered.get_pixel(x, y).0;
+            for channel in 0..3 {
+                let expected = ((u32::from(foreground[channel]) * alpha
+                    + u32::from(background[channel]) * (255 - alpha))
+                    / 255) as u8;
+                assert!(
+                    actual[channel].abs_diff(expected) <= 1,
+                    "alpha={alpha}, channel={channel}: {} vs {expected}",
+                    actual[channel]
+                );
+            }
+            if alpha == 0 {
+                assert_eq!(actual, background);
+            }
+            if alpha == 255 {
+                assert_eq!(&actual[..3], &foreground);
+            }
+        }
+        assert!(png.len() <= 2 * 1024 * 1024);
     }
 
     #[test]
