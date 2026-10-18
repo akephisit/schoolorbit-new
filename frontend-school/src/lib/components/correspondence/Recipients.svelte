@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { getCorrespondenceOptions } from '#lib/api/correspondence.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import type { CorrespondenceOptions, ProcessRecipient } from '#lib/api/correspondence.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import Choice from './Choice.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	let {
@@ -46,13 +48,7 @@
 		}
 	}
 	let kind = $state('user'),
-		selected = $state('');
-	$effect.pre(() => {
-		const selectedKind = kind;
-		untrack(() => {
-			if (selectedKind) selected = '';
-		});
-	});
+		selected = $state<string[]>([]);
 	const choices = $derived(
 		kind === 'user'
 			? visible.users.map((item) => ({ value: item.id, label: item.displayName }))
@@ -63,19 +59,35 @@
 						label: `${known.organizations.find((unit) => unit.id === item.organizationUnitId)?.name ?? ''} · ${item.name}`
 					}))
 	);
+	function recipientFor(value: string): ProcessRecipient {
+		if (kind === 'user') return { kind: 'user', userId: value };
+		if (kind === 'organization_unit')
+			return { kind: 'organization_unit', organizationUnitId: value };
+		const position = visible.positions.find(
+			(item) => `${item.organizationUnitId}:${item.code}` === value
+		)!;
+		return {
+			kind: 'organization_position',
+			organizationUnitId: position.organizationUnitId,
+			positionCode: position.code
+		};
+	}
+	function recipientKey(item: ProcessRecipient): string {
+		return `${item.kind}:${item.userId ?? ''}:${item.organizationUnitId ?? ''}:${item.positionCode ?? ''}`;
+	}
 	function add() {
-		if (!selected) return;
-		let recipient: ProcessRecipient;
-		if (kind === 'user') recipient = { kind: 'user', userId: selected };
-		else if (kind === 'organization_unit')
-			recipient = { kind: 'organization_unit', organizationUnitId: selected };
-		else {
-			const [organizationUnitId, positionCode] = selected.split(':');
-			recipient = { kind: 'organization_position', organizationUnitId, positionCode };
-		}
-		if (!recipients.some((item) => JSON.stringify(item) === JSON.stringify(recipient)))
-			recipients = [...recipients, recipient];
-		selected = '';
+		const additions = selected.map(recipientFor);
+		const keys = new SvelteSet(recipients.map(recipientKey));
+		recipients = [
+			...recipients,
+			...additions.filter((item) => {
+				const key = recipientKey(item);
+				if (keys.has(key)) return false;
+				keys.add(key);
+				return true;
+			})
+		];
+		selected = [];
 	}
 	function name(item: ProcessRecipient): string {
 		if (item.kind === 'user')
@@ -120,6 +132,9 @@
 			id={`${prefix}-kind`}
 			label="กลุ่มผู้รับ"
 			bind:value={kind}
+			onValueChange={() => {
+				selected = [];
+			}}
 			options={[
 				{ value: 'user', label: 'บุคลากร' },
 				{ value: 'organization_unit', label: 'หน่วยงาน' },
@@ -127,19 +142,40 @@
 			]}
 			{disabled}
 		/>
-		<Choice
-			id={`${prefix}-target`}
-			label="ผู้รับ"
-			bind:value={selected}
-			options={choices}
-			searchable
-			{disabled}
-		/>
-		<Button type="button" variant="outline" onclick={add} disabled={disabled || !selected}
-			>เพิ่มผู้รับ</Button
+		<fieldset class="min-w-0 space-y-2">
+			<legend class="text-sm font-medium">ผู้รับ (เลือกได้หลายรายการ)</legend>
+			<div class="max-h-60 space-y-1 overflow-auto rounded-lg border p-2">
+				{#each choices as option (option.value)}<div class="flex items-start gap-2 rounded-md p-2">
+						<Checkbox
+							id={`${prefix}-target-${option.value}`}
+							checked={selected.includes(option.value)}
+							{disabled}
+							onCheckedChange={(value) => {
+								selected =
+									value === true
+										? [...selected.filter((item) => item !== option.value), option.value]
+										: selected.filter((item) => item !== option.value);
+							}}
+						/>
+						<Label
+							for={`${prefix}-target-${option.value}`}
+							class="min-w-0 break-words leading-relaxed">{option.label}</Label
+						>
+					</div>{/each}
+				{#if !choices.length}<p class="p-2 text-sm text-muted-foreground">
+						ไม่พบผู้รับ ลองค้นหาเพิ่มเติม
+					</p>{/if}
+			</div>
+		</fieldset>
+		<Button type="button" variant="outline" onclick={add} disabled={disabled || !selected.length}
+			>เพิ่มผู้รับ{selected.length ? ` (${selected.length})` : ''}</Button
 		>
 	</div>
-	<ul class="space-y-2">
+	<p class="text-xs text-muted-foreground">
+		หน่วยงานหมายถึงสมาชิกในหน่วยงาน ตำแหน่งหมายถึงผู้ดำรงตำแหน่งที่เลือก
+		ระบบบันทึกรายชื่อจริงเมื่อส่งหนังสือ
+	</p>
+	<ul class="space-y-2" aria-label="ผู้รับที่เพิ่มแล้ว">
 		{#each recipients as recipient, index (index)}<li
 				class="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
 			>

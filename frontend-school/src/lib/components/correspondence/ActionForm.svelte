@@ -36,7 +36,9 @@
 		oncomplete,
 		oncancel,
 		onrefresh,
-		onpendingchange
+		onpendingchange,
+		ondirtychange,
+		onpreviewchange
 	}: {
 		detail: CorrespondenceDetail;
 		action: ProcessAction;
@@ -46,6 +48,8 @@
 		oncancel: () => void;
 		onrefresh: () => void;
 		onpendingchange?: (pending: boolean) => void;
+		ondirtychange?: (dirty: boolean) => void;
+		onpreviewchange?: (paths: InkPath[], fileId?: string) => void;
 	} = $props();
 	const initialRevision = untrack(() => detail.record.revision);
 	let expectedRevision = $state(initialRevision),
@@ -81,13 +85,31 @@
 	const signing = $derived(needsSignature || includeSignature);
 	let confirmationBasis = '';
 	$effect.pre(() => {
-		const basis = JSON.stringify([signature, method, assetId, paths]);
+		const basis = JSON.stringify([
+			signature,
+			method,
+			assetId,
+			paths,
+			detail.document.revision,
+			detail.document.contentHash
+		]);
 		untrack(() => {
 			if (basis !== confirmationBasis) {
 				confirmationBasis = basis;
 				confirmed = false;
 			}
 		});
+	});
+	$effect(() => {
+		ondirtychange?.(
+			!!comment || paths.length > 0 || !!assetId || evidence.length > 0 || !!reassignUserId
+		);
+	});
+	$effect(() => {
+		onpreviewchange?.(
+			method === 'drawn' ? paths : [],
+			method === 'image' ? assets.find((asset) => asset.id === assetId)?.fileId : undefined
+		);
 	});
 	let disposed = false;
 	const controller = new AbortController();
@@ -383,31 +405,37 @@
 					/>
 				</div>
 			{/if}
-			<div class="grid grid-cols-3 gap-3">
-				{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย (%)', min: 0, max: 100, step: 1 }, { key: 'y', label: 'จากบน (%)', min: 0, max: 100, step: 1 }, { key: 'width', label: 'ความกว้าง (%)', min: 1, max: 100, step: 1 }, { key: 'height', label: 'ความสูง (%)', min: 1, max: 100, step: 1 }] as field (field.key)}<div
-						class="space-y-2"
-					>
-						<Label for={`placement-${field.key}`}>{field.label}</Label><Input
-							id={`placement-${field.key}`}
-							type="number"
-							min={field.min}
-							max={field.max}
-							step={field.step}
-							value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
-								(field.key === 'page' ? 1 : 100)}
-							disabled={pending}
-							oninput={(event) => {
-								if (signature)
-									signature = {
-										...signature,
-										[field.key]:
-											Number(event.currentTarget.value) / (field.key === 'page' ? 1 : 100)
-									};
-								confirmed = false;
-							}}
-						/>
-					</div>{/each}
-			</div>
+			<Button href="#correspondence-document" variant="outline">วางและปรับขนาดบนเอกสาร</Button>
+			<details>
+				<summary class="cursor-pointer text-sm font-medium"
+					>ปรับตำแหน่งละเอียด / ใช้แป้นพิมพ์</summary
+				>
+				<div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+					{#each [{ key: 'page', label: 'หน้า', min: 1, max: 999, step: 1 }, { key: 'x', label: 'จากซ้าย (%)', min: 0, max: 100, step: 1 }, { key: 'y', label: 'จากบน (%)', min: 0, max: 100, step: 1 }, { key: 'width', label: 'ความกว้าง (%)', min: 1, max: 100, step: 1 }, { key: 'height', label: 'ความสูง (%)', min: 1, max: 100, step: 1 }] as field (field.key)}<div
+							class="space-y-2"
+						>
+							<Label for={`placement-${field.key}`}>{field.label}</Label><Input
+								id={`placement-${field.key}`}
+								type="number"
+								min={field.min}
+								max={field.max}
+								step={field.step}
+								value={signature[field.key as 'page' | 'x' | 'y' | 'width' | 'height'] *
+									(field.key === 'page' ? 1 : 100)}
+								disabled={pending}
+								oninput={(event) => {
+									if (signature)
+										signature = {
+											...signature,
+											[field.key]:
+												Number(event.currentTarget.value) / (field.key === 'page' ? 1 : 100)
+										};
+									confirmed = false;
+								}}
+							/>
+						</div>{/each}
+				</div>
+			</details>
 			<p class="text-xs text-muted-foreground">
 				ปรับตำแหน่งและขนาดเป็นเปอร์เซ็นต์ของหน้า หรือแตะบนเอกสารเพื่อวางลายมือชื่อ
 			</p>

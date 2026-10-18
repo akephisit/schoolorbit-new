@@ -22,6 +22,7 @@ pub struct CorrespondenceListQuery {
     pub register: Option<CorrespondenceRegister>,
     pub status: Option<CorrespondenceStatus>,
     pub search: Option<String>,
+    pub view: Option<CorrespondenceListView>,
 }
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
@@ -92,6 +93,21 @@ fn validate_content(content: &str, annotations: &[DocumentAnnotation]) -> Result
         return Err(invalid("เนื้อหาเกิน 100,000 ตัวอักษร"));
     }
     validate_annotations(annotations)
+}
+fn validate_metadata(
+    title: &str,
+    sender: &str,
+    document_number: Option<&str>,
+) -> Result<(), AppError> {
+    if title.trim().is_empty()
+        || title.chars().count() > 300
+        || sender.trim().is_empty()
+        || sender.chars().count() > 300
+        || document_number.is_some_and(|s| s.chars().count() > 150)
+    {
+        return Err(invalid("ชื่อเรื่อง ผู้ส่ง หรือเลขหนังสือไม่ถูกต้อง"));
+    }
+    Ok(())
 }
 fn enum_code<T: Serialize>(value: T) -> Result<String, AppError> {
     serde_json::to_value(value)
@@ -274,15 +290,12 @@ pub async fn create(
 ) -> Result<CorrespondenceDetail, AppError> {
     actor.require_permission(codes::CORRESPONDENCE_CREATE_OWN)?;
     validate_content(&request.content, &request.annotations)?;
-    if request.title.trim().is_empty()
-        || request.title.chars().count() > 300
-        || request.sender.trim().is_empty()
-        || request.sender.chars().count() > 300
-        || request
-            .document_number
-            .as_ref()
-            .is_some_and(|s| s.chars().count() > 150)
-        || request.source_links.len() > 30
+    validate_metadata(
+        &request.title,
+        &request.sender,
+        request.document_number.as_deref(),
+    )?;
+    if request.source_links.len() > 30
         || request.source_links.iter().any(|s| {
             s.label.chars().count() > 200
                 || s.url.len() > 2000
@@ -395,6 +408,16 @@ pub async fn revise(
     }
     let before = detail(pool, actor, id).await?;
     require_author(actor, &before.record)?;
+    if let Some(metadata) = &request.metadata {
+        validate_metadata(
+            &metadata.title,
+            &metadata.sender,
+            metadata.document_number.as_deref(),
+        )?;
+        if before.record.status != CorrespondenceStatus::Draft || before.instance.is_some() {
+            return Err(invalid("แก้ไขข้อมูลหนังสือได้เฉพาะฉบับร่างก่อนส่ง"));
+        }
+    }
     let mut files = request.attachment_file_ids.clone();
     files.extend(request.original_file_id);
     let snapshots =
@@ -424,7 +447,7 @@ pub async fn revise(
         tx.commit().await?;
         return detail(pool, actor, id).await;
     }
-    let (mut record, doc, _) = locked(&mut tx, id).await?;
+    let (mut record, doc, instance_id) = locked(&mut tx, id).await?;
     require_author(actor, &record)?;
     if record.revision != request.expected_revision {
         return Err(stale());
@@ -434,6 +457,16 @@ pub async fn revise(
         CorrespondenceStatus::Draft | CorrespondenceStatus::RevisionRequested
     ) {
         return Err(invalid("แก้ไขได้เฉพาะฉบับร่างหรือรายการส่งกลับแก้ไข"));
+    }
+    if let Some(metadata) = request.metadata {
+        if record.status != CorrespondenceStatus::Draft || instance_id.is_some() {
+            return Err(invalid("แก้ไขข้อมูลหนังสือได้เฉพาะฉบับร่างก่อนส่ง"));
+        }
+        record.title = metadata.title;
+        record.sender = metadata.sender;
+        record.document_number = metadata.document_number;
+        record.document_date = metadata.document_date;
+        record.urgency = metadata.urgency;
     }
     add_document(&mut tx, id, actor.user_id, prepared).await?;
     record.revision += 1;
@@ -909,26 +942,192 @@ async fn act_impl(
     tx.commit().await?;
     detail(pool, actor, id).await
 }
+#[derive(sqlx::FromRow)]
+struct CorrespondenceListRow {
+    summary: Option<Json<CorrespondenceSummary>>,
+    definition: Option<Json<ProcessInstance>>,
+    action_required_count: i64,
+    sent_count: i64,
+    drafts_count: i64,
+    all_count: i64,
+}
+
+// Keep action eligibility in the same scoped snapshot as counts and pagination.
+// The completion/close branches mirror available_actions; parity is exercised by
+// the list database tests for permissions and process states.
+const LIST_SQL: &str = r#"
+WITH authorized AS MATERIALIZED (
+    SELECT c.id, c.created_by, c.summary, i.definition,
+           i.definition->'steps'->((i.definition->>'currentStep')::int) AS current_step
+    FROM correspondence_records c
+    LEFT JOIN process_instances i ON i.id = c.instance_id
+    WHERE ($1 OR (c.created_by=$2 AND $3) OR c.organization_unit_id=ANY($4)
+        OR ($5 AND EXISTS (SELECT 1 FROM process_participants p
+            WHERE p.instance_id=c.instance_id AND p.user_id=$2)))
+      AND ($6::text IS NULL OR c.summary->>'register'=$6)
+      AND ($7::text IS NULL OR c.summary->>'status'=$7)
+      AND ($8='' OR c.summary->>'title' ILIKE '%'||$8||'%'
+        OR c.summary->>'documentNumber' ILIKE '%'||$8||'%'
+        OR c.summary->>'sender' ILIKE '%'||$8||'%'
+        OR c.register_number::text ILIKE '%'||$8||'%'
+        OR c.register_year::text ILIKE '%'||$8||'%'
+        OR c.register_number::text||'/'||c.register_year::text ILIKE '%'||$8||'%'
+        OR EXISTS (SELECT 1 FROM correspondence_document_revisions d
+            WHERE d.correspondence_id=c.id AND d.revision=c.current_document_revision
+              AND (d.document->>'content' ILIKE '%'||$8||'%'
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements(d.document->'annotations') a
+                    WHERE a->>'text' ILIKE '%'||$8||'%')))
+        OR EXISTS (SELECT 1 FROM process_action_history h
+            WHERE h.correspondence_id=c.id AND (h.entry->>'comment' ILIKE '%'||$8||'%'
+              OR EXISTS (SELECT 1 FROM jsonb_array_elements(h.entry->'annotations') a
+                  WHERE a->>'text' ILIKE '%'||$8||'%'))))
+), eligible AS MATERIALIZED (
+    SELECT *,
+        COALESCE((created_by=$2 AND $9 AND (summary->>'status'='revision_requested'
+            OR definition->>'status' IN ('completed','rejected')))
+          OR (definition->>'status'='active' AND $10
+            AND (NOT COALESCE((current_step->'definition'->>'requiresSignature')::boolean, false)
+                 AND current_step->'definition'->>'kind'<>'sign' OR $11)
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements(current_step->'recipients') r
+                WHERE r->>'userId'=$2::text AND r->>'completedAt' IS NULL)), false)
+            AS action_required,
+        created_by=$2 AND summary->>'status'<>'draft' AS sent,
+        created_by=$2 AND summary->>'status'='draft' AS draft
+    FROM authorized
+), counts AS (
+    SELECT count(*) FILTER (WHERE action_required) AS action_required_count,
+           count(*) FILTER (WHERE sent) AS sent_count,
+           count(*) FILTER (WHERE draft) AS drafts_count, count(*) AS all_count
+    FROM eligible
+), page AS (
+    SELECT id, summary, definition FROM eligible
+    WHERE ($12::uuid IS NULL OR id<$12)
+      AND ($13='all' OR $13='action_required' AND action_required
+        OR $13='sent' AND sent OR $13='drafts' AND draft)
+    ORDER BY id DESC LIMIT $14
+)
+SELECT page.summary, page.definition, counts.*
+FROM counts LEFT JOIN page ON true ORDER BY page.id DESC
+"#;
+
 pub async fn list(
     pool: &PgPool,
     actor: &ActorContext,
     query: CorrespondenceListQuery,
 ) -> Result<CorrespondenceList, AppError> {
     let units = exact_read_units(pool, actor).await?;
-    let limit = query.limit.unwrap_or(30).clamp(1, 100);
+    let limit = query.limit.unwrap_or(30).clamp(1, 100) as usize;
     let search = query.search.unwrap_or_default();
     if search.len() > 300 {
         return Err(invalid("คำค้นยาวเกินกำหนด"));
     }
-    let rows:Vec<Json<CorrespondenceSummary>>=sqlx::query_scalar("SELECT c.summary FROM correspondence_records c WHERE ($1 OR (c.created_by=$2 AND $3) OR c.organization_unit_id=ANY($4) OR ($5 AND EXISTS(SELECT 1 FROM process_participants p WHERE p.instance_id=c.instance_id AND p.user_id=$2))) AND ($6::uuid IS NULL OR c.id<$6) AND ($7::text IS NULL OR c.summary->>'register'=$7) AND ($8::text IS NULL OR c.summary->>'status'=$8) AND ($9='' OR c.summary->>'title' ILIKE '%'||$9||'%' OR c.summary->>'documentNumber' ILIKE '%'||$9||'%' OR c.summary->>'sender' ILIKE '%'||$9||'%' OR EXISTS(SELECT 1 FROM correspondence_document_revisions d WHERE d.correspondence_id=c.id AND d.revision=c.current_document_revision AND (d.document->>'content' ILIKE '%'||$9||'%' OR EXISTS(SELECT 1 FROM jsonb_array_elements(d.document->'annotations') a WHERE a->>'text' ILIKE '%'||$9||'%'))) OR EXISTS(SELECT 1 FROM process_action_history h WHERE h.correspondence_id=c.id AND (h.entry->>'comment' ILIKE '%'||$9||'%' OR EXISTS(SELECT 1 FROM jsonb_array_elements(h.entry->'annotations') a WHERE a->>'text' ILIKE '%'||$9||'%')))) ORDER BY c.id DESC LIMIT $10").bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_SCHOOL,codes::CORRESPONDENCE_MANAGE_SCHOOL])).bind(actor.user_id).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_OWN,codes::CORRESPONDENCE_CREATE_OWN])).bind(units).bind(actor.has_any_permission(&[codes::CORRESPONDENCE_READ_ASSIGNED,codes::CORRESPONDENCE_UPDATE_ASSIGNED])).bind(query.cursor).bind(query.register.map(enum_code).transpose()?).bind(query.status.map(enum_code).transpose()?).bind(search).bind(limit+1).fetch_all(pool).await?;
-    let mut items: Vec<_> = rows.into_iter().map(|r| r.0).collect();
-    let next_cursor = if items.len() > limit as usize {
-        items.truncate(limit as usize);
-        items.last().map(|r| r.id)
-    } else {
-        None
-    };
-    Ok(CorrespondenceList { items, next_cursor })
+    let rows = sqlx::query_as::<_, CorrespondenceListRow>(LIST_SQL)
+        .bind(actor.has_any_permission(&[
+            codes::CORRESPONDENCE_READ_SCHOOL,
+            codes::CORRESPONDENCE_MANAGE_SCHOOL,
+        ]))
+        .bind(actor.user_id)
+        .bind(actor.has_any_permission(&[
+            codes::CORRESPONDENCE_READ_OWN,
+            codes::CORRESPONDENCE_CREATE_OWN,
+        ]))
+        .bind(units)
+        .bind(actor.has_any_permission(&[
+            codes::CORRESPONDENCE_READ_ASSIGNED,
+            codes::CORRESPONDENCE_UPDATE_ASSIGNED,
+        ]))
+        .bind(query.register.map(enum_code).transpose()?)
+        .bind(query.status.map(enum_code).transpose()?)
+        .bind(search)
+        .bind(actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN))
+        .bind(actor.has_permission(codes::CORRESPONDENCE_UPDATE_ASSIGNED))
+        .bind(actor.has_permission(codes::CORRESPONDENCE_SIGN_OWN))
+        .bind(query.cursor)
+        .bind(enum_code(query.view.unwrap_or_default())?)
+        .bind(limit as i64 + 1)
+        .fetch_all(pool)
+        .await?;
+    let counts = rows
+        .first()
+        .map_or_else(CorrespondenceListCounts::default, |row| {
+            CorrespondenceListCounts {
+                action_required: row.action_required_count,
+                sent: row.sent_count,
+                drafts: row.drafts_count,
+                all: row.all_count,
+            }
+        });
+    let mut items = Vec::with_capacity(limit);
+    let mut progress = Vec::with_capacity(limit);
+    let has_more = rows.len() > limit;
+    for row in rows.into_iter().take(limit) {
+        if let Some(record) = row.summary {
+            progress.push(list_progress(
+                actor,
+                &record,
+                row.definition.as_ref().map(|i| &i.0),
+            ));
+            items.push(record.0);
+        }
+    }
+    let next_cursor = has_more.then(|| items.last().map(|r| r.id)).flatten();
+    Ok(CorrespondenceList {
+        items,
+        next_cursor,
+        counts,
+        progress,
+    })
+}
+
+fn can_revise(actor: &ActorContext, record: &CorrespondenceSummary) -> bool {
+    actor.user_id == record.created_by
+        && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN)
+        && matches!(
+            record.status,
+            CorrespondenceStatus::Draft | CorrespondenceStatus::RevisionRequested
+        )
+}
+
+fn list_progress(
+    actor: &ActorContext,
+    record: &CorrespondenceSummary,
+    instance: Option<&ProcessInstance>,
+) -> CorrespondenceListProgress {
+    let step = instance
+        .filter(|i| i.status == ProcessStatus::Active)
+        .and_then(|i| i.steps.get(i.current_step));
+    let my_action = available_actions(actor, record, instance, false)
+        .into_iter()
+        .find(|action| {
+            matches!(
+                action,
+                ProcessAction::Acknowledge
+                    | ProcessAction::Review
+                    | ProcessAction::Approve
+                    | ProcessAction::Execute
+                    | ProcessAction::Sign
+                    | ProcessAction::Close
+            )
+        });
+    CorrespondenceListProgress {
+        correspondence_id: record.id,
+        current_step_index: step.map(|s| s.step_index),
+        step_count: instance.map_or(0, |i| i.steps.len()),
+        current_step_title: step.map(|s| s.definition.title.clone()),
+        pending_recipients: step.map_or_else(Vec::new, |s| {
+            s.recipients
+                .iter()
+                .filter(|r| r.completed_at.is_none())
+                .map(|r| CorrespondenceUserOption {
+                    id: r.user_id,
+                    display_name: r.display_name.clone(),
+                })
+                .collect()
+        }),
+        due_at: step.and_then(|s| s.due_at.or_else(|| instance.and_then(|i| i.due_at))),
+        my_action,
+        can_revise: can_revise(actor, record),
+    }
 }
 pub fn available_actions(
     actor: &ActorContext,
@@ -1025,12 +1224,7 @@ pub async fn detail(
         instance.as_ref(),
         can_manage_record(pool, actor, &record).await?,
     );
-    let can_manage = actor.user_id == record.created_by
-        && actor.has_permission(codes::CORRESPONDENCE_CREATE_OWN)
-        && matches!(
-            record.status,
-            CorrespondenceStatus::Draft | CorrespondenceStatus::RevisionRequested
-        );
+    let can_manage = can_revise(actor, &record);
     let can_act = !actions.is_empty();
     Ok(CorrespondenceDetail {
         record: record.0,

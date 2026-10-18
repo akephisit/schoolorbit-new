@@ -162,6 +162,7 @@ async fn idempotent_registration_acl_and_immutable_revisions() {
         record.record.id,
         &MemoryValidator,
         ReviseCorrespondenceRequest {
+            metadata: None,
             request_id: Uuid::now_v7(),
             expected_revision: 1,
             content: "Revised".into(),
@@ -414,6 +415,7 @@ async fn concurrency_replay_and_resend_preserve_source_identity_and_snapshots() 
         record.record.id,
         &MemoryValidator,
         ReviseCorrespondenceRequest {
+            metadata: None,
             request_id: Uuid::now_v7(),
             expected_revision: returned.record.revision,
             content: "new content".into(),
@@ -740,6 +742,7 @@ async fn document_files_and_signature_assets_have_distinct_owner_and_evidence_ac
         record.record.id,
         &MemoryValidator,
         ReviseCorrespondenceRequest {
+            metadata: None,
             request_id: Uuid::now_v7(),
             expected_revision: record.record.revision,
             content: record.document.content.clone(),
@@ -951,6 +954,7 @@ async fn own_assigned_and_exact_manager_scopes_form_a_union_without_tree_inherit
         &pool,
         &actor,
         correspondence::CorrespondenceListQuery {
+            view: None,
             cursor: None,
             limit: None,
             register: None,
@@ -961,6 +965,10 @@ async fn own_assigned_and_exact_manager_scopes_form_a_union_without_tree_inherit
     .await
     .unwrap();
     let ids: Vec<_> = result.items.iter().map(|r| r.id).collect();
+    assert_eq!(result.counts.all, 3);
+    assert_eq!(result.counts.drafts, 1);
+    assert_eq!(result.counts.action_required, 1);
+    assert_eq!(result.progress.len(), 3);
     for expected in [own.record.id, managed.record.id, assigned.record.id] {
         assert!(ids.contains(&expected));
         assert!(correspondence::require_read(&pool, &actor, expected)
@@ -1252,6 +1260,7 @@ async fn source_version_changed_after_render_is_rejected_at_acceptance() {
     let next = Uuid::now_v7();
     sqlx::query("INSERT INTO file_versions(id,file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status) VALUES($1,$2,2,'r2','private','stored',$3,'image/png','png',100,repeat('a',64),'clean')").bind(next).bind(file).bind(format!("synthetic/{file}/2")).execute(&pool).await.unwrap();
     let request = ReviseCorrespondenceRequest {
+        metadata: None,
         request_id: Uuid::now_v7(),
         expected_revision: record.record.revision,
         content: record.document.content.clone(),
@@ -1614,4 +1623,598 @@ async fn accepted_annotation_ids_are_unique_across_base_and_history_but_replay_s
         .unwrap();
     assert_eq!(next.history.len(), accepted.history.len() + 1);
     assert_eq!(next.document.annotations[0].id, base.id);
+}
+
+fn list_query(view: CorrespondenceListView) -> correspondence::CorrespondenceListQuery {
+    correspondence::CorrespondenceListQuery {
+        view: Some(view),
+        cursor: None,
+        limit: None,
+        register: None,
+        status: None,
+        search: None,
+    }
+}
+
+async fn inbox(pool: &PgPool, actor: &ActorContext) -> CorrespondenceList {
+    correspondence::list(
+        pool,
+        actor,
+        list_query(CorrespondenceListView::ActionRequired),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn list_counts_cover_authorized_results_before_view_cursor_and_page() {
+    let (pool, creator, other, foreign) = fixture("correspondence_list_counts").await;
+    let mut drafts = Vec::new();
+    for index in 0..35 {
+        let mut request = create_request();
+        request.title = format!("queue_fixture {index}");
+        if index == 0 {
+            request.register = CorrespondenceRegister::Outgoing;
+        }
+        drafts.push(
+            correspondence::create(&pool, &creator, &MemoryValidator, request)
+                .await
+                .unwrap(),
+        );
+    }
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::All,
+            &[other.user_id],
+        )],
+    )
+    .await;
+    let mut request = create_request();
+    request.title = "queue_fixture sent".into();
+    let own = correspondence::create(&pool, &creator, &MemoryValidator, request.clone())
+        .await
+        .unwrap();
+    send(&pool, &creator, &own, t.id).await;
+    let assigned_template = template(
+        &pool,
+        &other,
+        vec![step(
+            ProcessStepKind::Review,
+            ProcessCompletionPolicy::All,
+            &[creator.user_id],
+        )],
+    )
+    .await;
+    let assigned = correspondence::create(&pool, &other, &MemoryValidator, request.clone())
+        .await
+        .unwrap();
+    send(&pool, &other, &assigned, assigned_template.id).await;
+    let hidden = correspondence::create(&pool, &foreign, &MemoryValidator, request)
+        .await
+        .unwrap();
+    let mut query = list_query(CorrespondenceListView::All);
+    query.search = Some("queue_fixture".into());
+    let page = correspondence::list(&pool, &creator, query).await.unwrap();
+    assert_eq!(page.items.len(), 30);
+    assert_eq!(page.progress.len(), 30);
+    assert_eq!(
+        (
+            page.counts.all,
+            page.counts.drafts,
+            page.counts.sent,
+            page.counts.action_required
+        ),
+        (37, 35, 1, 1)
+    );
+    assert!(page.items.iter().all(|item| item.id != hidden.record.id));
+    assert!(page
+        .items
+        .iter()
+        .zip(&page.progress)
+        .all(|(item, progress)| item.id == progress.correspondence_id));
+    let mut next = list_query(CorrespondenceListView::All);
+    next.cursor = page.next_cursor;
+    let second = correspondence::list(&pool, &creator, next).await.unwrap();
+    assert_eq!(second.items.len(), 7);
+    assert!(second.next_cursor.is_none());
+    assert_eq!(second.counts.all, 37);
+    assert!(second
+        .items
+        .iter()
+        .all(|item| !page.items.iter().any(|first| first.id == item.id)));
+    let mut drafts_query = list_query(CorrespondenceListView::Drafts);
+    drafts_query.limit = Some(10);
+    let draft_page = correspondence::list(&pool, &creator, drafts_query)
+        .await
+        .unwrap();
+    assert_eq!(draft_page.items.len(), 10);
+    assert_eq!(draft_page.counts.drafts, 35);
+    assert_eq!(draft_page.counts.all, 37);
+    assert!(draft_page
+        .progress
+        .iter()
+        .all(|p| p.can_revise && p.step_count == 0 && p.my_action.is_none()));
+    let sent = correspondence::list(&pool, &creator, list_query(CorrespondenceListView::Sent))
+        .await
+        .unwrap();
+    assert_eq!(
+        sent.items.iter().map(|i| i.id).collect::<Vec<_>>(),
+        vec![own.record.id]
+    );
+    assert_eq!(sent.counts.all, 37);
+    assert_eq!(inbox(&pool, &creator).await.items[0].id, assigned.record.id);
+    let mut filtered = list_query(CorrespondenceListView::All);
+    filtered.register = Some(CorrespondenceRegister::Outgoing);
+    filtered.status = Some(CorrespondenceStatus::Draft);
+    let filtered = correspondence::list(&pool, &creator, filtered)
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            filtered.counts.all,
+            filtered.counts.drafts,
+            filtered.counts.sent
+        ),
+        (1, 1, 0)
+    );
+    assert_eq!(filtered.items[0].id, drafts[0].record.id);
+    let selected = &drafts[18].record;
+    for search in [
+        selected.register_number.to_string(),
+        format!("{}/{}", selected.register_number, selected.register_year),
+    ] {
+        let mut query = list_query(CorrespondenceListView::All);
+        query.search = Some(search);
+        let found = correspondence::list(&pool, &creator, query).await.unwrap();
+        assert!(found.items.iter().any(|r| r.id == selected.id));
+        assert_eq!(found.counts.all, 1);
+    }
+    let mut year = list_query(CorrespondenceListView::All);
+    year.search = Some(selected.register_year.to_string());
+    assert_eq!(
+        correspondence::list(&pool, &creator, year)
+            .await
+            .unwrap()
+            .counts
+            .all,
+        37
+    );
+    let mut empty = list_query(CorrespondenceListView::All);
+    empty.search = Some("no such correspondence fixture".into());
+    let empty = correspondence::list(&pool, &creator, empty).await.unwrap();
+    assert!(empty.items.is_empty() && empty.progress.is_empty() && empty.next_cursor.is_none());
+    assert_eq!(empty.counts.all, 0);
+    let denied = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![],
+    };
+    let denied = correspondence::list(&pool, &denied, list_query(CorrespondenceListView::All))
+        .await
+        .unwrap();
+    assert_eq!(denied.counts.all, 0);
+    assert!(denied.progress.is_empty());
+}
+
+#[tokio::test]
+async fn list_actions_follow_current_frozen_recipients_permissions_and_returned_author() {
+    let (pool, creator, a, b) = fixture("correspondence_list_actions").await;
+    let mut first = step(
+        ProcessStepKind::Approve,
+        ProcessCompletionPolicy::All,
+        &[a.user_id, b.user_id],
+    );
+    first.due_after_days = None;
+    let t = template(
+        &pool,
+        &creator,
+        vec![
+            first,
+            step(
+                ProcessStepKind::Review,
+                ProcessCompletionPolicy::All,
+                &[a.user_id],
+            ),
+        ],
+    )
+    .await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let due = chrono::Utc::now() + chrono::Duration::days(14);
+    let sent = correspondence::send(
+        &pool,
+        &creator,
+        draft.record.id,
+        SendCorrespondenceRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: draft.record.revision,
+            template_id: t.id,
+            step_recipients: vec![],
+            due_at: Some(due),
+        },
+    )
+    .await
+    .unwrap();
+    let initial = inbox(&pool, &a).await;
+    assert_eq!(initial.counts.action_required, 1);
+    let progress = &initial.progress[0];
+    assert_eq!(
+        (
+            progress.current_step_index,
+            progress.step_count,
+            progress.my_action
+        ),
+        (Some(0), 2, Some(ProcessAction::Approve))
+    );
+    assert_eq!(progress.due_at, Some(due));
+    let frozen_name = progress
+        .pending_recipients
+        .iter()
+        .find(|r| r.id == a.user_id)
+        .unwrap()
+        .display_name
+        .clone();
+    sqlx::query("UPDATE users SET first_name='Changed after send' WHERE id=$1")
+        .bind(a.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        inbox(&pool, &a).await.progress[0]
+            .pending_recipients
+            .iter()
+            .find(|r| r.id == a.user_id)
+            .unwrap()
+            .display_name,
+        frozen_name
+    );
+    let read_only = ActorContext {
+        user_id: a.user_id,
+        permissions: vec![codes::CORRESPONDENCE_READ_ASSIGNED.into()],
+    };
+    assert_eq!(inbox(&pool, &read_only).await.counts.action_required, 0);
+    let manager_only = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![codes::CORRESPONDENCE_MANAGE_SCHOOL.into()],
+    };
+    assert_eq!(inbox(&pool, &manager_only).await.counts.action_required, 0);
+    assert_eq!(inbox(&pool, &creator).await.counts.action_required, 0);
+    let one = correspondence::act(
+        &pool,
+        &a,
+        draft.record.id,
+        &MemoryValidator,
+        action(sent.record.revision, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inbox(&pool, &a).await.counts.action_required, 0);
+    assert_eq!(
+        inbox(&pool, &b).await.progress[0].pending_recipients.len(),
+        1
+    );
+    let mut reassign = action(one.record.revision, ProcessAction::Reassign);
+    reassign.reassign_from_user_id = Some(b.user_id);
+    reassign.reassign_user_id = Some(creator.user_id);
+    let reassigned = correspondence::act(&pool, &b, draft.record.id, &MemoryValidator, reassign)
+        .await
+        .unwrap();
+    assert_eq!(inbox(&pool, &b).await.counts.action_required, 0);
+    assert_eq!(
+        inbox(&pool, &creator).await.progress[0].pending_recipients[0].id,
+        creator.user_id
+    );
+    let next = correspondence::act(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        action(reassigned.record.revision, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        inbox(&pool, &a).await.progress[0].current_step_index,
+        Some(1)
+    );
+    let mut return_request = action(next.record.revision, ProcessAction::ReturnForRevision);
+    return_request.comment = Some("Please revise".into());
+    correspondence::act(&pool, &a, draft.record.id, &MemoryValidator, return_request)
+        .await
+        .unwrap();
+    let returned = inbox(&pool, &creator).await;
+    assert_eq!(returned.counts.action_required, 1);
+    let progress = &returned.progress[0];
+    assert!(progress.can_revise && progress.my_action.is_none());
+    assert_eq!(
+        (
+            progress.current_step_index,
+            progress.current_step_title.as_ref(),
+            progress.due_at,
+            progress.step_count
+        ),
+        (None, None, None, 2)
+    );
+    assert!(progress.pending_recipients.is_empty());
+    assert_eq!(inbox(&pool, &a).await.counts.action_required, 0);
+}
+
+#[tokio::test]
+async fn list_any_terminal_close_and_signature_permission_match_available_actions() {
+    let (pool, creator, a, b) = fixture("correspondence_list_terminal").await;
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Acknowledge,
+            ProcessCompletionPolicy::Any,
+            &[a.user_id, b.user_id],
+        )],
+    )
+    .await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    let sent = send(&pool, &creator, &draft, t.id).await;
+    // The DTO accepts omitted false defaults; SQL eligibility must match that snapshot.
+    sqlx::query("UPDATE process_instances SET definition=definition #- '{steps,0,definition,requiresSignature}' WHERE id=$1")
+        .bind(sent.instance.as_ref().unwrap().id).execute(&pool).await.unwrap();
+    let defaulted = correspondence::detail(&pool, &a, draft.record.id)
+        .await
+        .unwrap();
+    assert!(defaulted
+        .available_actions
+        .contains(&ProcessAction::Acknowledge));
+    assert_eq!(
+        inbox(&pool, &a).await.progress[0].my_action,
+        Some(ProcessAction::Acknowledge)
+    );
+    let complete = correspondence::act(
+        &pool,
+        &a,
+        draft.record.id,
+        &MemoryValidator,
+        action(sent.record.revision, ProcessAction::Acknowledge),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inbox(&pool, &b).await.counts.action_required, 0);
+    let close = inbox(&pool, &creator).await;
+    assert_eq!(close.progress[0].my_action, Some(ProcessAction::Close));
+    assert!(close.progress[0].pending_recipients.is_empty());
+    assert!(close.progress[0].current_step_index.is_none());
+    correspondence::act(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        action(complete.record.revision, ProcessAction::Close),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inbox(&pool, &creator).await.counts.action_required, 0);
+    let mut sign_step = step(
+        ProcessStepKind::Review,
+        ProcessCompletionPolicy::All,
+        &[a.user_id],
+    );
+    sign_step.requires_signature = true;
+    let t = template(&pool, &creator, vec![sign_step]).await;
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create_request())
+        .await
+        .unwrap();
+    send(&pool, &creator, &draft, t.id).await;
+    let no_sign = ActorContext {
+        user_id: a.user_id,
+        permissions: vec![codes::CORRESPONDENCE_UPDATE_ASSIGNED.into()],
+    };
+    assert_eq!(inbox(&pool, &no_sign).await.counts.action_required, 0);
+    let all = correspondence::list(&pool, &no_sign, list_query(CorrespondenceListView::All))
+        .await
+        .unwrap();
+    assert!(all.progress.iter().all(|p| p.my_action.is_none()));
+    assert_eq!(
+        inbox(&pool, &a).await.progress[0].my_action,
+        Some(ProcessAction::Review)
+    );
+}
+
+#[tokio::test]
+async fn draft_metadata_revision_is_atomic_author_only_and_preserves_registration() {
+    let (pool, creator, other, _) = fixture("correspondence_draft_metadata").await;
+    let mut create = create_request();
+    create.organization_unit_id = Some(
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM organization_units WHERE is_active LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+    );
+    let draft = correspondence::create(&pool, &creator, &MemoryValidator, create)
+        .await
+        .unwrap();
+    let request = ReviseCorrespondenceRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: draft.record.revision,
+        content: "edited body".into(),
+        original_file_id: None,
+        attachment_file_ids: vec![],
+        annotations: vec![],
+        metadata: Some(CorrespondenceDraftMetadata {
+            title: "Edited title".into(),
+            sender: "Edited sender".into(),
+            document_number: None,
+            document_date: Some(chrono::NaiveDate::from_ymd_opt(2026, 10, 18).unwrap()),
+            urgency: CorrespondenceUrgency::Urgent,
+        }),
+    };
+    let mut invalid = request.clone();
+    invalid.metadata.as_mut().unwrap().title = " ".into();
+    assert!(
+        correspondence::revise(&pool, &creator, draft.record.id, &MemoryValidator, invalid)
+            .await
+            .is_err()
+    );
+    let mut stale = request.clone();
+    stale.expected_revision = 0;
+    assert!(
+        correspondence::revise(&pool, &creator, draft.record.id, &MemoryValidator, stale)
+            .await
+            .is_err()
+    );
+    let unchanged = correspondence::detail(&pool, &creator, draft.record.id)
+        .await
+        .unwrap();
+    assert_eq!(unchanged.record.revision, draft.record.revision);
+    assert_eq!(unchanged.revisions.len(), 1);
+    assert!(correspondence::revise(
+        &pool,
+        &other,
+        draft.record.id,
+        &MemoryValidator,
+        request.clone()
+    )
+    .await
+    .is_err());
+    let read_only_author = ActorContext {
+        user_id: creator.user_id,
+        permissions: vec![codes::CORRESPONDENCE_READ_OWN.into()],
+    };
+    let read_only_list = correspondence::list(
+        &pool,
+        &read_only_author,
+        list_query(CorrespondenceListView::Drafts),
+    )
+    .await
+    .unwrap();
+    assert!(!read_only_list.progress[0].can_revise);
+    assert_eq!(read_only_list.counts.action_required, 0);
+    assert!(correspondence::revise(
+        &pool,
+        &read_only_author,
+        draft.record.id,
+        &MemoryValidator,
+        request.clone()
+    )
+    .await
+    .is_err());
+    let revised = correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(revised.record.title, "Edited title");
+    assert_eq!(revised.record.sender, "Edited sender");
+    assert_eq!(revised.record.document_number, None);
+    assert_eq!(revised.record.urgency, CorrespondenceUrgency::Urgent);
+    assert_eq!(revised.document.content, "edited body");
+    assert_eq!(
+        (
+            revised.record.register,
+            revised.record.register_number,
+            revised.record.register_year,
+            revised.record.organization_unit_id,
+            revised.record.created_by,
+            revised.record.created_at
+        ),
+        (
+            draft.record.register,
+            draft.record.register_number,
+            draft.record.register_year,
+            draft.record.organization_unit_id,
+            draft.record.created_by,
+            draft.record.created_at
+        )
+    );
+    let replay = correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        request.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(replay.revisions.len(), 2);
+    assert_eq!(replay.record.revision, revised.record.revision);
+    let mut divergent = request.clone();
+    divergent.metadata.as_mut().unwrap().sender = "different replay".into();
+    assert!(correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        divergent
+    )
+    .await
+    .is_err());
+    let t = template(
+        &pool,
+        &creator,
+        vec![step(
+            ProcessStepKind::Review,
+            ProcessCompletionPolicy::All,
+            &[other.user_id],
+        )],
+    )
+    .await;
+    let sent = send(&pool, &creator, &revised, t.id).await;
+    let mut returned_action = action(sent.record.revision, ProcessAction::ReturnForRevision);
+    returned_action.comment = Some("Revise body".into());
+    let returned = correspondence::act(
+        &pool,
+        &other,
+        draft.record.id,
+        &MemoryValidator,
+        returned_action,
+    )
+    .await
+    .unwrap();
+    let mut returned_request = request;
+    returned_request.request_id = Uuid::now_v7();
+    returned_request.expected_revision = returned.record.revision;
+    assert!(correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        returned_request.clone()
+    )
+    .await
+    .is_err());
+    returned_request.request_id = Uuid::now_v7();
+    returned_request.metadata = None;
+    let body_only = correspondence::revise(
+        &pool,
+        &creator,
+        draft.record.id,
+        &MemoryValidator,
+        returned_request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(body_only.record.title, "Edited title");
+    assert_eq!(body_only.revisions.len(), 3);
+}
+
+#[test]
+fn old_revision_requests_keep_serialized_payload_and_hash_without_metadata() {
+    let legacy = serde_json::json!({
+        "requestId": Uuid::now_v7(), "expectedRevision": 1, "content": "legacy body",
+        "originalFileId": null, "attachmentFileIds": [], "annotations": []
+    });
+    let request: ReviseCorrespondenceRequest = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(request.metadata.is_none());
+    assert_eq!(serde_json::to_value(&request).unwrap(), legacy);
+    let legacy_bytes = format!(
+        r#"{{"requestId":"{}","expectedRevision":1,"content":"legacy body","originalFileId":null,"attachmentFileIds":[],"annotations":[]}}"#,
+        request.request_id
+    );
+    assert_eq!(serde_json::to_string(&request).unwrap(), legacy_bytes);
 }

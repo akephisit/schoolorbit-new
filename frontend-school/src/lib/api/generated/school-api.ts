@@ -9391,9 +9391,11 @@ export interface components {
 		};
 		ApiResponse_CorrespondenceList: {
 			data: {
+				counts: components['schemas']['CorrespondenceListCounts'];
 				items: components['schemas']['CorrespondenceSummary'][];
 				/** Format: uuid */
 				nextCursor?: string | null;
+				progress: components['schemas']['CorrespondenceListProgress'][];
 			};
 			message?: string;
 			success: boolean;
@@ -16464,6 +16466,14 @@ export interface components {
 			/** Format: int64 */
 			revision: number;
 		};
+		CorrespondenceDraftMetadata: {
+			/** Format: date */
+			documentDate?: string | null;
+			documentNumber?: string | null;
+			sender: string;
+			title: string;
+			urgency: components['schemas']['CorrespondenceUrgency'];
+		};
 		CorrespondenceFileSnapshot: {
 			checksum: string;
 			/** Format: uuid */
@@ -16472,10 +16482,36 @@ export interface components {
 			versionId: string;
 		};
 		CorrespondenceList: {
+			counts: components['schemas']['CorrespondenceListCounts'];
 			items: components['schemas']['CorrespondenceSummary'][];
 			/** Format: uuid */
 			nextCursor?: string | null;
+			progress: components['schemas']['CorrespondenceListProgress'][];
 		};
+		CorrespondenceListCounts: {
+			/** Format: int64 */
+			actionRequired: number;
+			/** Format: int64 */
+			all: number;
+			/** Format: int64 */
+			drafts: number;
+			/** Format: int64 */
+			sent: number;
+		};
+		CorrespondenceListProgress: {
+			canRevise: boolean;
+			/** Format: uuid */
+			correspondenceId: string;
+			currentStepIndex?: number | null;
+			currentStepTitle?: string | null;
+			/** Format: date-time */
+			dueAt?: string | null;
+			myAction?: null | components['schemas']['ProcessAction'];
+			pendingRecipients: components['schemas']['CorrespondenceUserOption'][];
+			stepCount: number;
+		};
+		/** @enum {string} */
+		CorrespondenceListView: 'action_required' | 'sent' | 'drafts' | 'all';
 		CorrespondenceOptions: {
 			organizations: components['schemas']['CorrespondenceOrganizationOption'][];
 			positions: components['schemas']['CorrespondencePositionOption'][];
@@ -21269,6 +21305,7 @@ export interface components {
 			content: string;
 			/** Format: int64 */
 			expectedRevision: number;
+			metadata?: null | components['schemas']['CorrespondenceDraftMetadata'];
 			/** Format: uuid */
 			originalFileId?: string | null;
 			/** Format: uuid */
@@ -48087,6 +48124,7 @@ export interface operations {
 				register: null | components['schemas']['CorrespondenceRegister'];
 				search: string | null;
 				status: null | components['schemas']['CorrespondenceStatus'];
+				view: null | components['schemas']['CorrespondenceListView'];
 			};
 			cookie?: never;
 		};

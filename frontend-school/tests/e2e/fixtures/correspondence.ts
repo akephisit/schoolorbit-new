@@ -3,11 +3,13 @@ import { PDFDocument, degrees } from 'pdf-lib';
 import { mockStaffHome, actor, firstStaff, id } from './staff-home-route-data';
 import type {
 	CorrespondenceDetail,
+	CorrespondenceList,
 	ProcessTemplate,
 	ProcessActionRequest,
 	CreateCorrespondenceRequest,
 	SendCorrespondenceRequest,
-	ReviseCorrespondenceRequest
+	ReviseCorrespondenceRequest,
+	SaveProcessTemplateRequest
 } from '../../../src/lib/api/correspondence';
 
 export const correspondenceId = id(800),
@@ -32,6 +34,12 @@ export async function mockCorrespondence(
 		failCreate?: boolean;
 		recovery?: boolean;
 		rotation?: number;
+		failUploadAt?: number;
+		failSend?: number;
+		abortAcceptedCreate?: boolean;
+		abortAcceptedRevision?: boolean;
+		abortAcceptedSend?: boolean;
+		listCounts?: CorrespondenceList['counts'];
 	} = {}
 ) {
 	const permissions = settings.permissions ?? [
@@ -284,7 +292,7 @@ export async function mockCorrespondence(
 	);
 	const uploads: string[] = [],
 		assetWrites: { label: string; fileId: string }[] = [];
-	const templateWrites: { code: string }[] = [];
+	const templateWrites: SaveProcessTemplateRequest[] = [];
 	let createAttempts = 0;
 	const reads = new Map<string, number>(),
 		writes: {
@@ -295,6 +303,15 @@ export async function mockCorrespondence(
 				| SendCorrespondenceRequest
 				| ReviseCorrespondenceRequest;
 		}[] = [];
+	const acceptedCommands = new Map<string, { payload: string; detail: CorrespondenceDetail }>();
+	let sendAttempts = 0,
+		uploadFailed = false;
+	function remember(payload: { requestId: string }, result: CorrespondenceDetail) {
+		acceptedCommands.set(payload.requestId, {
+			payload: JSON.stringify(payload),
+			detail: structuredClone(result)
+		});
+	}
 	let actionAttempts = 0,
 		release = () => {};
 	const held = new Promise<void>((resolve) => {
@@ -325,6 +342,10 @@ export async function mockCorrespondence(
 				return route.fulfill({ contentType: 'application/pdf', body: pdfBytes });
 			if (path === '/api/files' && method === 'POST') {
 				uploads.push(request.postData() ?? '');
+				if (settings.failUploadAt === uploads.length && !uploadFailed) {
+					uploadFailed = true;
+					return reply(route, 'อัปโหลดไฟล์ไม่สำเร็จ ลองอีกครั้ง', 503);
+				}
 				return reply(route, {
 					id: id(840 + uploads.length),
 					originalFilename: 'signature.png',
@@ -373,13 +394,66 @@ export async function mockCorrespondence(
 			}
 			if (path === '/api/correspondence' && method === 'GET') {
 				if (settings.holdListRefresh && (reads.get(path) ?? 0) > 1) await held;
+				const matches =
+					(!url.searchParams.get('search') ||
+						detail.record.title.includes(url.searchParams.get('search')!)) &&
+					(!url.searchParams.get('status') ||
+						detail.record.status === url.searchParams.get('status')) &&
+					(!url.searchParams.get('register') ||
+						detail.record.register === url.searchParams.get('register'));
+				const canRevise =
+					detail.canManage && ['draft', 'revision_requested'].includes(detail.record.status);
+				const action =
+					detail.availableActions.find(
+						(action) =>
+							action === detail.instance?.steps[detail.instance.currentStep]?.definition.kind
+					) ??
+					detail.availableActions.find((action) => action === 'close') ??
+					null;
+				const counts = matches
+					? {
+							actionRequired: Number(
+								!!action || (canRevise && detail.record.status === 'revision_requested')
+							),
+							sent: Number(detail.record.createdBy === actor && detail.record.status !== 'draft'),
+							drafts: Number(detail.record.createdBy === actor && detail.record.status === 'draft'),
+							all: 1
+						}
+					: { actionRequired: 0, sent: 0, drafts: 0, all: 0 };
+				const view = url.searchParams.get('view') ?? 'all';
+				const visible =
+					matches &&
+					(view === 'all' ||
+						(view === 'action_required'
+							? counts.actionRequired > 0
+							: view === 'sent'
+								? counts.sent > 0
+								: counts.drafts > 0));
+				const current =
+					detail.instance?.status === 'active'
+						? detail.instance.steps[detail.instance.currentStep]
+						: undefined;
 				return reply(route, {
-					items:
-						!url.searchParams.get('search') ||
-						detail.record.title.includes(url.searchParams.get('search')!)
-							? [detail.record]
-							: [],
-					nextCursor: null
+					items: visible ? [detail.record] : [],
+					nextCursor: null,
+					counts: settings.listCounts ?? counts,
+					progress: visible
+						? [
+								{
+									correspondenceId,
+									currentStepIndex: current?.stepIndex ?? null,
+									stepCount: detail.instance?.steps.length ?? 0,
+									currentStepTitle: current?.definition.title ?? null,
+									pendingRecipients:
+										current?.recipients
+											.filter((item) => !item.completedAt)
+											.map((item) => ({ id: item.userId, displayName: item.displayName })) ?? [],
+									dueAt: current?.dueAt ?? null,
+									myAction: action,
+									canRevise
+								}
+							]
+						: []
 				});
 			}
 			if (path === `/api/correspondence/${correspondenceId}` && method === 'GET') {
@@ -388,6 +462,13 @@ export async function mockCorrespondence(
 			}
 			const payload = request.postDataJSON();
 			writes.push({ path, payload });
+			if (!path.endsWith('/actions')) {
+				const accepted = acceptedCommands.get(payload.requestId);
+				if (accepted)
+					return JSON.stringify(payload) === accepted.payload
+						? reply(route, accepted.detail)
+						: reply(route, 'คำขอเดิมต้องใช้ข้อมูลเดิม', 409);
+			}
 			if (path === '/api/correspondence') {
 				createAttempts += 1;
 				if (settings.failCreate && createAttempts === 1)
@@ -401,17 +482,28 @@ export async function mockCorrespondence(
 					availableActions: [],
 					instance: null
 				};
+				remember(payload, detail);
+				if (settings.abortAcceptedCreate && createAttempts === 1)
+					return route.abort('connectionreset');
 				return reply(route, detail);
 			}
 			if (path.endsWith('/revisions')) {
 				detail = {
 					...detail,
-					record: { ...detail.record, revision: detail.record.revision + 1 },
+					record: { ...detail.record, ...payload.metadata, revision: detail.record.revision + 1 },
 					document: { ...detail.document, ...payload, revision: detail.document.revision + 1 }
 				};
+				remember(payload, detail);
+				if (settings.abortAcceptedRevision) {
+					settings.abortAcceptedRevision = false;
+					return route.abort('connectionreset');
+				}
 				return reply(route, detail);
 			}
 			if (path.endsWith('/send')) {
+				sendAttempts += 1;
+				if (settings.failSend && sendAttempts === 1)
+					return reply(route, 'ส่งไม่สำเร็จ ลองอีกครั้ง', settings.failSend);
 				detail = {
 					...detail,
 					record: { ...detail.record, revision: detail.record.revision + 1, status: 'in_progress' },
@@ -419,6 +511,8 @@ export async function mockCorrespondence(
 					canAct: true,
 					availableActions: ['acknowledge']
 				};
+				remember(payload, detail);
+				if (settings.abortAcceptedSend && sendAttempts === 1) return route.abort('connectionreset');
 				return reply(route, detail);
 			}
 			if (path.endsWith('/actions')) {

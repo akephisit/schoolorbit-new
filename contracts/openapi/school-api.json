@@ -7218,6 +7218,9 @@
         "properties": {
           "data": {
             "properties": {
+              "counts": {
+                "$ref": "#/components/schemas/CorrespondenceListCounts"
+              },
               "items": {
                 "items": {
                   "$ref": "#/components/schemas/CorrespondenceSummary"
@@ -7230,10 +7233,18 @@
                   "string",
                   "null"
                 ]
+              },
+              "progress": {
+                "items": {
+                  "$ref": "#/components/schemas/CorrespondenceListProgress"
+                },
+                "type": "array"
               }
             },
             "required": [
-              "items"
+              "items",
+              "counts",
+              "progress"
             ],
             "type": "object"
           },
@@ -33204,6 +33215,38 @@
         ],
         "type": "object"
       },
+      "CorrespondenceDraftMetadata": {
+        "properties": {
+          "documentDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documentNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sender": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/CorrespondenceUrgency"
+          }
+        },
+        "required": [
+          "title",
+          "sender",
+          "urgency"
+        ],
+        "type": "object"
+      },
       "CorrespondenceFileSnapshot": {
         "properties": {
           "checksum": {
@@ -33227,6 +33270,9 @@
       },
       "CorrespondenceList": {
         "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/CorrespondenceListCounts"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/CorrespondenceSummary"
@@ -33239,12 +33285,114 @@
               "string",
               "null"
             ]
+          },
+          "progress": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceListProgress"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "items"
+          "items",
+          "counts",
+          "progress"
         ],
         "type": "object"
+      },
+      "CorrespondenceListCounts": {
+        "properties": {
+          "actionRequired": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "all": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "drafts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sent": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "actionRequired",
+          "sent",
+          "drafts",
+          "all"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceListProgress": {
+        "properties": {
+          "canRevise": {
+            "type": "boolean"
+          },
+          "correspondenceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "currentStepIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "currentStepTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "myAction": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessAction"
+              }
+            ]
+          },
+          "pendingRecipients": {
+            "items": {
+              "$ref": "#/components/schemas/CorrespondenceUserOption"
+            },
+            "type": "array"
+          },
+          "stepCount": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "correspondenceId",
+          "stepCount",
+          "pendingRecipients",
+          "canRevise"
+        ],
+        "type": "object"
+      },
+      "CorrespondenceListView": {
+        "enum": [
+          "action_required",
+          "sent",
+          "drafts",
+          "all"
+        ],
+        "type": "string"
       },
       "CorrespondenceOptions": {
         "properties": {
@@ -50412,6 +50560,16 @@
           "expectedRevision": {
             "format": "int64",
             "type": "integer"
+          },
+          "metadata": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CorrespondenceDraftMetadata"
+              }
+            ]
           },
           "originalFileId": {
             "format": "uuid",
@@ -94338,6 +94496,21 @@
               "type": [
                 "string",
                 "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
+            "name": "view",
+            "required": true,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/CorrespondenceListView"
+                }
               ]
             }
           }

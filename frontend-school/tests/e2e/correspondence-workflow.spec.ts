@@ -11,6 +11,15 @@ import type {
 } from '../../src/lib/api/correspondence';
 test.use({ serviceWorkers: 'block' });
 
+async function chooseAction(page: Page, name: string) {
+	const direct = page.getByRole('button', { name, exact: true });
+	if (await direct.isVisible()) await direct.click();
+	else {
+		await page.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click();
+		await page.getByRole('menuitem', { name, exact: true }).click();
+	}
+}
+
 async function draw(page: Page) {
 	const surface = page.getByRole('img', { name: 'พื้นที่วาดลายมือชื่อ' });
 	await surface.scrollIntoViewIfNeeded();
@@ -35,17 +44,19 @@ test('create and send starts the actual document workflow without a manual work 
 	await page.getByLabel('เรื่อง *', { exact: true }).fill('หนังสือฉบับใหม่');
 	await page.getByLabel('ผู้ส่ง / หน่วยงานต้นทาง *').fill('โรงเรียนทดสอบ');
 	await page.getByLabel('เนื้อหา / ข้อความประกอบ').fill('ขอให้ดำเนินการตามหนังสือ');
-	await page.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(correspondenceId));
-	await expect(page.getByRole('heading', { name: 'หนังสือฉบับใหม่', exact: true })).toBeVisible();
-	expect(api.count('/api/correspondence/options')).toBe(0);
-	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ' }).click();
+	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	expect(api.count('/api/correspondence/options')).toBe(1);
 	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
-	await page.getByRole('button', { name: 'ผู้รับ', exact: true }).click();
-	await page.getByRole('option', { name: 'ครูเจ้าของ ทดสอบ' }).click();
-	await page.getByRole('button', { name: 'เพิ่มผู้รับ', exact: true }).click();
-	await page.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
+	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
+	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	await expect(page.getByRole('region', { name: 'ตรวจสอบก่อนส่ง' })).toContainText(
+		'หนังสือฉบับใหม่'
+	);
+	await page.getByRole('button', { name: 'ยืนยันส่งหนังสือ', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(correspondenceId));
+	await expect(page.getByRole('heading', { name: 'หนังสือฉบับใหม่', exact: true })).toBeVisible();
 	await expect(page.getByTestId('correspondence-detail')).toContainText('กำลังดำเนินการ');
 	expect(api.writes.map((write) => write.path)).toEqual([
 		'/api/correspondence',
@@ -182,9 +193,8 @@ test('template edits create a new version with organization position recipients 
 	await page.getByLabel('ชื่อแม่แบบ *', { exact: true }).fill('แม่แบบอนุมัติใหม่');
 	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'ตำแหน่งในหน่วยงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ผู้รับ', exact: true }).click();
-	await page.getByRole('option', { name: 'งานบริหารทั่วไป · หัวหน้างาน' }).click();
-	await page.getByRole('button', { name: 'เพิ่มผู้รับ', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'งานบริหารทั่วไป · หัวหน้างาน' }).check();
+	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกแม่แบบรุ่นใหม่', exact: true }).click();
 	await expect(page.getByTestId('process-templates')).toContainText('แม่แบบอนุมัติใหม่');
 	await expect(page.getByTestId('process-templates')).toContainText('รุ่น 2');
@@ -233,12 +243,13 @@ test('create failure retains inputs and original uploads only after a resource e
 		mimeType: 'application/pdf',
 		buffer: Buffer.from('%PDF synthetic')
 	});
-	await page.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
 	await expect(page.getByText('บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง', { exact: true })).toBeVisible();
 	await expect(page.getByLabel('เรื่อง *', { exact: true })).toHaveValue('หนังสือพร้อมเอกสาร');
 	expect(api.uploads).toHaveLength(0);
-	await page.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
-	await expect(page).toHaveURL(new RegExp(correspondenceId));
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await expect(page).toHaveURL(/correspondence\/new$/);
+	await expect(page.getByText(/บันทึกฉบับร่างแล้ว ยังไม่ได้ส่ง/)).toBeVisible();
 	expect(api.uploads).toHaveLength(1);
 	expect(api.uploads[0]).toContain(correspondenceId);
 	expect(api.uploads[0]).toContain('correspondence_document');
@@ -281,7 +292,7 @@ test('server-authorized manager recovery selects pending source and reason witho
 		permissions: ['correspondence.manage.school']
 	});
 	await page.goto(detailPath);
-	await page.getByRole('button', { name: 'ส่งต่อผู้รับผิดชอบ', exact: true }).click();
+	await chooseAction(page, 'ส่งต่อผู้รับผิดชอบ');
 	await page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true }).click();
 	await page.getByRole('option', { name: 'ครูผู้รับคนที่สอง', exact: true }).click();
 	await page.getByRole('button', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
@@ -323,7 +334,7 @@ test('reassignment A to B to A preserves completed snapshots and offers only pen
 		);
 	for (const label of ['เอกสารแนบ 1', 'เอกสารแนบ 2', 'หลักฐาน 1', 'หลักฐาน 2'])
 		await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'ส่งต่อผู้รับผิดชอบ', exact: true }).click();
+	await chooseAction(page, 'ส่งต่อผู้รับผิดชอบ');
 	await expect(
 		page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
 	).toHaveCount(0);
@@ -500,7 +511,7 @@ test('applied register filter clears a previous context before its delayed resul
 	await expect(page.getByTestId('correspondence-register')).toContainText(
 		'หนังสือทดสอบการดำเนินงาน'
 	);
-	await page.getByLabel('ค้นหาเรื่อง / เลขที่หนังสือ / ผู้ส่ง').fill('ไม่มีเรื่องนี้');
+	await page.getByLabel('ค้นหาเรื่อง / เลขทะเบียน / เลขที่ต้นทาง / ผู้ส่ง').fill('ไม่มีเรื่องนี้');
 	await page.getByRole('button', { name: 'ค้นหา', exact: true }).click();
 	await expect.poll(() => api.count('/api/correspondence')).toBe(2);
 	await expect(page.getByTestId('correspondence-register')).toHaveAttribute('aria-busy', 'true');
@@ -513,7 +524,7 @@ test('applied register filter clears a previous context before its delayed resul
 	);
 	await expect(page).toHaveURL(/search=/);
 	await page.goBack();
-	await expect(page.getByLabel('ค้นหาเรื่อง / เลขที่หนังสือ / ผู้ส่ง')).toHaveValue('');
+	await expect(page.getByLabel('ค้นหาเรื่อง / เลขทะเบียน / เลขที่ต้นทาง / ผู้ส่ง')).toHaveValue('');
 	await expect(page.getByTestId('correspondence-register')).toContainText(
 		'หนังสือทดสอบการดำเนินงาน'
 	);
@@ -578,7 +589,7 @@ test('read stays distinct from signing and preserves an unsaved annotation draft
 	await page.getByRole('radio', { name: 'ข้อความ', exact: true }).click();
 	await page.getByLabel('ข้อความกำกับ', { exact: true }).fill('หมายเหตุยังไม่ยืนยัน');
 	await page.getByRole('button', { name: 'เพิ่มข้อความ', exact: true }).click();
-	await page.getByRole('button', { name: 'เปิดอ่าน', exact: true }).click();
+	await chooseAction(page, 'เปิดอ่าน');
 	await expect(page.getByTestId('signature-pad')).toHaveCount(0);
 	await expect(page.getByLabel('หลักฐานประกอบ', { exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'ยืนยันเปิดอ่าน', exact: true }).click();

@@ -6,11 +6,18 @@
 	import {
 		listCorrespondence,
 		type CorrespondenceList,
+		type CorrespondenceSummary,
+		type CorrespondenceView,
 		type CorrespondenceFilters
 	} from '#lib/api/correspondence.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
-	import { registerLabels, statusLabels, dateLabel } from '#lib/correspondence/presentation.js';
+	import {
+		actionLabels,
+		registerLabels,
+		statusLabels,
+		dateLabel
+	} from '#lib/correspondence/presentation.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -39,6 +46,7 @@
 		event.preventDefault();
 		const url = new SvelteURL(page.url.href);
 		url.search = '';
+		url.searchParams.set('view', filters.view ?? 'action_required');
 		if (search.trim()) url.searchParams.set('search', search.trim());
 		if (register !== 'all') url.searchParams.set('register', register);
 		if (status !== 'all') url.searchParams.set('status', status);
@@ -48,6 +56,34 @@
 		const url = new SvelteURL(page.url.href);
 		url.searchParams.set('cursor', cursor);
 		return `${url.pathname}${url.search}`;
+	}
+	const views = [
+		{ value: 'action_required', label: 'รอฉันดำเนินการ', count: 'actionRequired' },
+		{ value: 'sent', label: 'ฉันส่งติดตาม', count: 'sent' },
+		{ value: 'drafts', label: 'ฉบับร่าง', count: 'drafts' },
+		{ value: 'all', label: 'ทั้งหมด', count: 'all' }
+	] as const;
+	function viewHref(view: CorrespondenceView): string {
+		const url = new SvelteURL(page.url.href);
+		url.searchParams.set('view', view);
+		url.searchParams.delete('cursor');
+		return `${url.pathname}${url.search}`;
+	}
+	function detailHref(record: CorrespondenceSummary): string {
+		return `/staff/correspondence/${record.id}?${new URLSearchParams({ returnTo: `${page.url.pathname}${page.url.search}` })}`;
+	}
+	function progressFor(record: CorrespondenceSummary) {
+		return region.value?.progress.find((item) => item.correspondenceId === record.id);
+	}
+	function mainAction(record: CorrespondenceSummary): string {
+		const progress = progressFor(record);
+		return progress?.myAction
+			? actionLabels[progress.myAction]
+			: progress?.canRevise
+				? record.status === 'revision_requested'
+					? 'แก้ไขและส่งใหม่'
+					: 'เขียนต่อและส่ง'
+				: 'ดูรายละเอียด';
 	}
 </script>
 
@@ -65,15 +101,28 @@
 				>สร้างหนังสือ</Button
 			>{/if}
 	{/snippet}
+	<nav class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="มุมมองทะเบียนหนังสือ">
+		{#each views as view (view.value)}<Button
+				href={viewHref(view.value)}
+				variant={(filters.view ?? 'action_required') === view.value ? 'secondary' : 'outline'}
+				aria-current={(filters.view ?? 'action_required') === view.value ? 'page' : undefined}
+				class="justify-between gap-2"
+			>
+				{view.label}<span class="tabular-nums">{region.value?.counts[view.count] ?? '—'}</span>
+			</Button>{/each}
+	</nav>
+	{#if filters.search || filters.status || filters.register}<p
+			class="mb-3 text-xs text-muted-foreground"
+		>
+			จำนวนหนังสือตามตัวกรองที่เลือก
+		</p>{/if}
 	<form
 		class="grid gap-3 rounded-xl border bg-card p-3 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end sm:p-4"
 		onsubmit={filter}
 	>
 		<div class="space-y-2">
-			<Label for="correspondence-search">ค้นหาเรื่อง / เลขที่หนังสือ / ผู้ส่ง</Label><Input
-				id="correspondence-search"
-				bind:value={search}
-			/>
+			<Label for="correspondence-search">ค้นหาเรื่อง / เลขทะเบียน / เลขที่ต้นทาง / ผู้ส่ง</Label
+			><Input id="correspondence-search" bind:value={search} />
 		</div>
 		<Choice
 			id="register-filter"
@@ -93,7 +142,13 @@
 				...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
 			]}
 		/>
-		<Button type="submit" variant="outline">ค้นหา</Button>
+		<div class="flex flex-wrap gap-2">
+			<Button type="submit" variant="outline">ค้นหา</Button
+			>{#if filters.search || filters.status || filters.register}<Button
+					href={`/staff/correspondence?${new URLSearchParams({ view: filters.view ?? 'action_required' })}`}
+					variant="ghost">ล้างตัวกรอง</Button
+				>{/if}
+		</div>
 	</form>
 	<section aria-busy={region.loading} data-testid="correspondence-register">
 		{#if region.error}<PageState
@@ -103,42 +158,114 @@
 				onaction={() => region.retry((signal) => listCorrespondence(filters, { signal }))}
 			/>{/if}
 		{#if region.loading && !region.value}<PageSkeleton />{:else if region.value?.items.length}
-			<div class="overflow-x-auto rounded-xl border bg-card">
+			<div class="space-y-3 md:hidden">
+				{#each region.value.items as record (record.id)}{@const progress = progressFor(record)}
+					<article class="space-y-3 rounded-xl border bg-card p-4">
+						<div class="flex items-start justify-between gap-2">
+							<a class="min-w-0 break-words font-medium text-primary" href={detailHref(record)}
+								>{record.title}</a
+							><Badge variant="outline">{statusLabels[record.status]}</Badge>
+						</div>
+						<p class="text-sm">
+							{registerLabels[record.register]} · เลขทะเบียน {record.registerNumber}/{record.registerYear}
+						</p>
+						<p class="text-sm text-muted-foreground">
+							เลขที่ต้นทาง {record.documentNumber ?? '—'} · {record.sender}
+						</p>
+						{#if record.urgency !== 'normal'}<p class="text-sm text-warning">
+								{record.urgency === 'urgent' ? 'ด่วน' : 'ด่วนมาก'}
+							</p>{/if}
+						{@render progressSummary(record)}
+						<Button
+							href={detailHref(record)}
+							variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
+							class="w-full">{mainAction(record)}</Button
+						>
+					</article>{/each}
+			</div>
+			<div class="hidden overflow-x-auto rounded-xl border bg-card md:block">
 				<Table.Root
 					><Table.Header
 						><Table.Row
-							><Table.Head>เรื่อง</Table.Head><Table.Head>ทะเบียน / เลขที่</Table.Head><Table.Head
-								>ผู้ส่ง</Table.Head
-							><Table.Head>สถานะ</Table.Head><Table.Head>ลงทะเบียน</Table.Head></Table.Row
+							><Table.Head>เรื่อง / ผู้ส่ง</Table.Head><Table.Head
+								>เลขทะเบียน / เลขที่ต้นทาง</Table.Head
+							><Table.Head>สถานะ / ขั้นตอนปัจจุบัน</Table.Head><Table.Head
+								>ผู้ที่รอ / กำหนดเสร็จ</Table.Head
+							><Table.Head>ดำเนินการ</Table.Head></Table.Row
 						></Table.Header
-					><Table.Body
-						>{#each region.value.items as record (record.id)}<Table.Row
-								><Table.Cell class="min-w-48"
-									><a
-										class="font-medium text-primary underline-offset-4 hover:underline"
-										href={`/staff/correspondence/${record.id}`}>{record.title}</a
-									>{#if record.urgency !== 'normal'}<p class="text-sm text-warning">
+					><Table.Body>
+						{#each region.value.items as record (record.id)}{@const progress =
+								progressFor(record)}<Table.Row>
+								<Table.Cell class="min-w-48"
+									><a class="font-medium text-primary hover:underline" href={detailHref(record)}
+										>{record.title}</a
+									>
+									<p class="mt-1 text-sm text-muted-foreground">{record.sender}</p>
+									{#if record.urgency !== 'normal'}<p class="text-sm text-warning">
 											{record.urgency === 'urgent' ? 'ด่วน' : 'ด่วนมาก'}
 										</p>{/if}</Table.Cell
-								><Table.Cell
-									>{registerLabels[record.register]}
-									<p class="text-muted-foreground">{record.documentNumber ?? '—'}</p></Table.Cell
-								><Table.Cell class="min-w-36">{record.sender}</Table.Cell><Table.Cell
-									><Badge variant="outline">{statusLabels[record.status]}</Badge></Table.Cell
-								><Table.Cell class="whitespace-nowrap">{dateLabel(record.createdAt)}</Table.Cell
-								></Table.Row
-							>{/each}</Table.Body
-					></Table.Root
+								>
+								<Table.Cell class="min-w-40"
+									><p>
+										{registerLabels[record.register]}
+										{record.registerNumber}/{record.registerYear}
+									</p>
+									<p class="mt-1 text-sm text-muted-foreground">
+										ต้นทาง {record.documentNumber ?? '—'}
+									</p></Table.Cell
+								>
+								<Table.Cell class="min-w-40"
+									><Badge variant="outline">{statusLabels[record.status]}</Badge
+									>{#if progress?.currentStepTitle}<p class="mt-2 text-sm">
+											ขั้น {progress.currentStepIndex! + 1}/{progress.stepCount} · {progress.currentStepTitle}
+										</p>{/if}</Table.Cell
+								>
+								<Table.Cell class="min-w-44">{@render progressSummary(record)}</Table.Cell>
+								<Table.Cell
+									><Button
+										href={detailHref(record)}
+										size="sm"
+										variant={progress?.myAction || progress?.canRevise ? 'default' : 'outline'}
+										>{mainAction(record)}</Button
+									></Table.Cell
+								>
+							</Table.Row>{/each}
+					</Table.Body></Table.Root
 				>
 			</div>
+
 			{#if region.value.nextCursor}<div class="mt-4 flex justify-end">
 					<Button href={nextHref(region.value.nextCursor)} variant="outline">หน้าถัดไป</Button>
 				</div>{/if}
 		{:else if !region.error}<PageState
 				title={filters.search || filters.status || filters.register
 					? 'ไม่พบหนังสือตามเงื่อนไข'
-					: 'ยังไม่มีหนังสือ'}
+					: filters.view === 'action_required'
+						? 'ไม่มีหนังสือที่รอคุณดำเนินการ'
+						: 'ยังไม่มีหนังสือในมุมมองนี้'}
 				description="หนังสือที่คุณสร้างหรือได้รับมอบหมายจะแสดงที่นี่"
+				actionLabel="ดูหนังสือทั้งหมด"
+				onaction={() => {
+					void goto(viewHref('all'));
+				}}
 			/>{/if}
 	</section>
 </PageShell>
+
+{#snippet progressSummary(record: CorrespondenceSummary)}{@const progress = progressFor(record)}
+	<div class="space-y-1 text-sm">
+		{#if progress?.currentStepTitle}<p class="md:hidden">
+				ขั้น {progress.currentStepIndex! + 1}/{progress.stepCount} · {progress.currentStepTitle}
+			</p>{/if}
+		<p class="break-words">
+			{progress?.pendingRecipients.length
+				? `รอ ${progress.pendingRecipients.map((item) => item.displayName).join(', ')}`
+				: record.status === 'draft'
+					? 'ยังไม่ได้ส่ง'
+					: record.status === 'revision_requested'
+						? 'รอเจ้าของเรื่องแก้ไข'
+						: 'ไม่มีผู้รับที่รอดำเนินการ'}
+		</p>
+		{#if progress?.dueAt}<p class="text-muted-foreground">กำหนด {dateLabel(progress.dueAt)}</p>{/if}
+	</div>
+{/snippet}

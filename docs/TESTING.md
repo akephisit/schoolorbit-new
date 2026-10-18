@@ -1483,3 +1483,19 @@ browser PDF renderer; source preview and final composition must share visual pag
 Thai mark positioning and original crop/rotation. Fixture output contains no tenant data.
 Default and `api-docs` builds, generated API/permission checks, focused Files policy tests and
 independent frontend/browser checks also apply to changes across these boundaries.
+
+For list usability and saved-draft metadata changes, the focused correspondence target covers
+counts beyond the first 30 items, authorization before aggregation/pagination, independent view
+and cursor filtering, register-number/year search, current/future/all/any/reassigned recipients,
+frozen names/deadlines and action/signature permissions. It also verifies draft metadata
+validation, atomic revisions, author-only access, returned-record denial and old idempotency
+payload preservation:
+
+```bash
+./scripts/test_backend_school.sh --package school-workflow --test correspondence -- --test-threads=2
+```
+
+Run the generated API generation/check/tests after changing the list or revision DTOs. Frontend
+correspondence browser fixtures should verify server-count tabs, creation/draft retention,
+failed-file retry, recipient selection, timeline/main action, direct signature placement and
+starter template copying at desktop and mobile sizes.
