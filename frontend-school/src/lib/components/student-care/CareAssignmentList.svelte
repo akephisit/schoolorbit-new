@@ -30,8 +30,16 @@
 	let {
 		items,
 		term,
-		allowManagement = false
-	}: { items: CareAssignment[]; term?: string | null; allowManagement?: boolean } = $props();
+		allowManagement = false,
+		audience = 'scope',
+		filtered = false
+	}: {
+		items: CareAssignment[];
+		term?: string | null;
+		allowManagement?: boolean;
+		audience?: 'own' | 'scope';
+		filtered?: boolean;
+	} = $props();
 	let rows = $state(untrack(() => items)),
 		selected = $state<CareAssignment | null>(null),
 		reason = $state(''),
@@ -148,13 +156,25 @@
 </script>
 
 {#if !rows.length}<PageState
-		title="ยังไม่มีแบบประเมินที่มอบหมาย"
-		description="แบบประเมินที่อยู่ในสิทธิ์ของคุณจะแสดงที่นี่"
+		title={filtered
+			? 'ไม่พบแบบประเมินในรายการนี้'
+			: allowManagement
+				? 'ยังไม่มีการมอบหมายในรอบนี้'
+				: audience === 'own'
+					? 'ยังไม่มีแบบประเมินที่ต้องตอบ'
+					: 'ยังไม่มีแบบประเมินในขอบเขตของคุณ'}
+		description={filtered
+			? 'ลองล้างตัวกรองหรือกลับหน้าแรกเพื่อดูรายการอื่น'
+			: allowManagement
+				? 'ผู้มีสิทธิ์สามารถใช้ปุ่มมอบหมายผู้ตอบเมื่อรอบเปิดรับคำตอบ'
+				: audience === 'own'
+					? 'เมื่อโรงเรียนมอบหมายแบบประเมินให้คุณตอบ รายการจะแสดงที่นี่'
+					: 'รายการที่คุณมีสิทธิ์ดูแลจะแสดงที่นี่ ตรวจสอบการมอบหมายในรอบประเมินหากคาดว่ามีรายการ'}
 	/>{:else}<ul class="divide-y rounded-xl border bg-card">
 		{#each rows as item (item.id)}<li class="flex flex-wrap items-center justify-between gap-3 p-4">
 				<div class="min-w-0 space-y-1">
 					<p class="break-words font-medium">{item.instrumentName}</p>
-					<p class="text-sm text-muted-foreground">
+					<p class="break-words text-sm text-muted-foreground">
 						{item.studentName} · {respondentLabels[item.respondent]}
 					</p>
 					<CareStatus status={{ kind: 'assignment', value: item.status }} />

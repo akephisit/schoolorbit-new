@@ -171,10 +171,8 @@ for (const theme of ['light', 'dark'])
 		await page.goto(carePath('/visits/new'));
 		await page.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ }).check();
 		await page.getByRole('checkbox', { name: 'ครูผู้รับผิดชอบ', exact: true }).check();
-		await page
-			.getByLabel('ข้อเท็จจริงที่สังเกต', { exact: true })
-			.fill('ข้อมูลสมมติจากการเยี่ยมบ้าน');
-		await page.getByLabel('แนวทางที่ตกลงร่วมกัน', { exact: true }).fill('ข้อตกลงสมมติ');
+		await page.getByLabel(/^ข้อเท็จจริงที่สังเกต(?: \*)?$/).fill('ข้อมูลสมมติจากการเยี่ยมบ้าน');
+		await page.getByLabel(/^แนวทางที่ตกลงร่วมกัน(?: \*)?$/).fill('ข้อตกลงสมมติ');
 		await page.screenshot({
 			path: `/tmp/schoolorbit-student-care-visit-form-${theme}.png`,
 			fullPage: true
@@ -296,12 +294,12 @@ test('visit completion requires factual record and retains the completed mobile 
 	await page.getByRole('option', { name: 'เยี่ยมแล้ว', exact: true }).click();
 	await page.getByRole('button', { name: 'วันที่เยี่ยมจริง', exact: true }).click();
 	await page.locator('[data-bits-day][data-today]').click();
-	await page.getByLabel('ผู้ให้ข้อมูล / ความสัมพันธ์', { exact: true }).fill('ผู้ปกครองสมมติ');
-	await page.getByLabel('ข้อเท็จจริงที่สังเกต', { exact: true }).fill('ข้อเท็จจริงสมมติ');
+	await page.getByLabel(/^ผู้ให้ข้อมูล \/ ความสัมพันธ์(?: \*)?$/).fill('ผู้ปกครองสมมติ');
+	await page.getByLabel(/^ข้อเท็จจริงที่สังเกต(?: \*)?$/).fill('ข้อเท็จจริงสมมติ');
 	await page.getByRole('button', { name: 'บันทึกเยี่ยมบ้าน', exact: true }).click();
 	await expect(page.getByRole('alert').filter({ hasText: 'แนวทางที่ตกลง' })).toBeVisible();
 	expect(api.visits).toHaveLength(0);
-	await page.getByLabel('แนวทางที่ตกลงร่วมกัน', { exact: true }).fill('นัดติดตามสมมติ');
+	await page.getByLabel(/^แนวทางที่ตกลงร่วมกัน(?: \*)?$/).fill('นัดติดตามสมมติ');
 	await page.getByRole('button', { name: 'บันทึกเยี่ยมบ้าน', exact: true }).click();
 	await expect(page.getByText('บันทึกเยี่ยมบ้านแล้ว', { exact: true })).toBeVisible();
 	expect(api.visits[0].status).toBe('completed');
@@ -321,7 +319,7 @@ test('late draft completion cannot update a disposed response page', async ({ pa
 	await expect(answer).toBeChecked();
 	await page.getByRole('button', { name: 'บันทึกร่าง', exact: true }).click();
 	await expect.poll(() => api.responses.length).toBe(1);
-	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
+	await page.getByRole('link', { name: 'กลับแบบประเมินของฉัน', exact: true }).click();
 	await expect(page).toHaveURL(/\/student\/student-care/);
 	api.release();
 	await expect(page.getByText('บันทึกร่างบนเซิร์ฟเวอร์แล้ว', { exact: true })).toHaveCount(0);

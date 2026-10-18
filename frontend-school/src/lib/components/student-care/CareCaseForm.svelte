@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { HeartHandshake, UserRoundCheck, NotebookPen, Save } from '@lucide/svelte';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
 	const mutation = new CareMutationIdentity();
 
@@ -116,7 +117,11 @@
 </script>
 
 <form onsubmit={save} class="max-w-4xl space-y-5">
-	<CareSection title="แผนการดูแลช่วยเหลือ" description={initial?.case.studentName}>
+	<CareSection
+		title="1. เรื่องที่ต้องดูแล"
+		icon={HeartHandshake}
+		description={initial?.case.studentName ?? 'ระบุนักเรียนและเรื่องที่ต้องการให้ความช่วยเหลือ'}
+	>
 		{#if !initial && !studentId}<CareStudentPicker
 				initial={students}
 				{term}
@@ -135,6 +140,11 @@
 				maxlength={200}
 			/>
 		</div>
+	</CareSection><CareSection
+		title="2. ผู้รับผิดชอบและการติดตาม"
+		icon={UserRoundCheck}
+		description="ระบุผู้รับผิดชอบโดยตรง พร้อมกำหนดติดตามเมื่อทราบวันนัดหมาย"
+	>
 		<CareStaffPicker
 			{staff}
 			value={assignees}
@@ -151,6 +161,11 @@
 				clearable
 			/>
 		</div>
+	</CareSection><CareSection
+		title={initial ? '3. เหตุผลการเปลี่ยนแผน' : '3. บันทึกเริ่มต้น'}
+		icon={NotebookPen}
+		description="รายละเอียดนี้จะเก็บเป็นประวัติการดูแล ไม่ได้แทนที่บันทึกเดิม"
+	>
 		<div class="space-y-2">
 			<Label for="case-note">รายละเอียด / เหตุผล *</Label><Textarea
 				id="case-note"
@@ -172,7 +187,9 @@
 			type="submit"
 			loading={pending}
 			disabled={!!initial && (!mayManageCareCase(initial.case) || initial.case.status === 'closed')}
-			>{initial ? 'บันทึกผู้รับผิดชอบและแผน' : 'เปิดการดูแล'}</LoadingButton
+			><Save aria-hidden="true" />{initial
+				? 'บันทึกผู้รับผิดชอบและแผน'
+				: 'เปิดการดูแล'}</LoadingButton
 		>
 	</div>
 </form>

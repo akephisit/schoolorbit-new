@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ClipboardPenLine } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 
@@ -17,6 +18,8 @@
 </script>
 
 <PageShell
+	backLabel={$authStore.user?.user_type === 'staff' ? 'กลับภาพรวมการดูแล' : 'กลับแบบประเมินของฉัน'}
+	icon={ClipboardPenLine}
 	title="แบบประเมินเพื่อการดูแล"
 	backHref={`/${$authStore.user?.user_type ?? 'staff'}/student-care`}
 	>{#key $careIdentity + data.id}<CareRegion

@@ -13,6 +13,9 @@
 	} from '#lib/api/student-care.js';
 	import { careIdentity, careManagePermissions } from '#lib/features/student-care/access.js';
 	import { respondentLabels } from '#lib/features/student-care/presentation.js';
+	import { careLink } from '#lib/features/student-care/presentation.js';
+	import { ClipboardList, GraduationCap, UserRoundCheck, Send } from '@lucide/svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
 
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -116,10 +119,7 @@
 </script>
 
 <form onsubmit={save} class="max-w-4xl space-y-5">
-	<CareSection
-		title="มอบหมายผู้ตอบ"
-		description="ผู้รับผิดชอบติดตามเป็นบุคลากรที่ระบุชื่อไว้ ไม่เกิดจากสิทธิ์ครูประจำชั้นโดยอัตโนมัติ"
-	>
+	<CareSection title="1. เลือกแบบประเมิน" icon={ClipboardList} description={round.name}>
 		<CareSelect
 			id="assignment-instrument"
 			label="รุ่นแบบประเมิน"
@@ -132,6 +132,11 @@
 				}))}
 			onValueChange={(value) => (versionId = value)}
 		/>
+	</CareSection><CareSection
+		title="2. เลือกนักเรียนและผู้ตอบ"
+		icon={GraduationCap}
+		description="เลือกนักเรียนจากรายชื่อ ณ วันที่อ้างอิงของรอบนี้"
+	>
 		<CareStudentPicker
 			initial={students}
 			term={round.academicTermId}
@@ -152,6 +157,11 @@
 				onchange={(value) => (teachers = value)}
 				label="ครูผู้ตอบ"
 			/>{/if}
+	</CareSection><CareSection
+		title="3. ระบุผู้รับผิดชอบติดตามผล"
+		icon={UserRoundCheck}
+		description="ระบุชื่อบุคลากรที่จะติดตามผลโดยตรง การเป็นครูประจำชั้นไม่ได้ทำให้เข้าถึงคำตอบโดยอัตโนมัติ"
+	>
 		<CareStaffPicker
 			{staff}
 			value={reviewers}
@@ -163,9 +173,17 @@
 			title="มอบหมายไม่ได้"
 			description={error}
 		/>{/if}{#if message}<p role="status" class="text-sm text-success">{message}</p>{/if}
-	<div class="flex justify-end">
-		<LoadingButton type="submit" loading={pending} disabled={round.status !== 'open'}
-			>มอบหมายแบบประเมิน</LoadingButton
-		>
+	<div class="flex flex-wrap items-center justify-between gap-3">
+		<p class="text-sm text-muted-foreground">
+			เลือกนักเรียน {selected.length} คน · ผู้รับผิดชอบ {reviewers.length} คน
+		</p>
+		<div class="flex flex-wrap justify-end gap-2">
+			<Button variant="outline" href={careLink(`/rounds/${round.id}`, round.academicTermId)}
+				>ยกเลิก</Button
+			>
+			<LoadingButton type="submit" loading={pending} disabled={round.status !== 'open'}
+				><Send aria-hidden="true" />มอบหมายแบบประเมิน</LoadingButton
+			>
+		</div>
 	</div>
 </form>

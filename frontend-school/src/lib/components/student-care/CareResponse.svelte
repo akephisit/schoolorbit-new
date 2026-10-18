@@ -1,5 +1,15 @@
 <script lang="ts">
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
+	import {
+		ClipboardPenLine,
+		ListChecks,
+		FileCheck,
+		ChartNoAxesCombined,
+		UserRoundCheck,
+		Save,
+		Send
+	} from '@lucide/svelte';
+	import { Progress } from '#lib/components/ui/progress/index.js';
 	const mutation = new CareMutationIdentity();
 
 	import { untrack, onDestroy } from 'svelte';
@@ -137,6 +147,7 @@
 <div class="max-w-4xl space-y-5">
 	<CareSection
 		title={detail.assignment.instrumentName}
+		icon={ClipboardPenLine}
 		description={`${detail.assignment.studentName} · ${respondentLabels[detail.assignment.respondent]} · รุ่น ${detail.instrument.version}`}
 	>
 		<div class="flex flex-wrap gap-2">
@@ -146,13 +157,19 @@
 					>ส่งเมื่อ {careDate(detail.assignment.submittedAt)}</span
 				>{/if}
 		</div>
-		<p class="whitespace-pre-wrap text-sm">{detail.purpose}</p>
+		<div class="space-y-1">
+			<h3 class="text-sm font-medium">วัตถุประสงค์และการใช้ข้อมูล</h3>
+			<p class="whitespace-pre-wrap break-words text-sm">{detail.purpose}</p>
+		</div>
 		<p class="text-sm text-muted-foreground">
 			กำหนดส่ง {careDate(round.dueDate)}{round.status !== 'open' ? ' · รอบนี้ปิดรับคำตอบแล้ว' : ''}
 		</p>
-		{#if definition.instructions}<p class="whitespace-pre-wrap text-sm text-muted-foreground">
-				{definition.instructions}
-			</p>{/if}
+		{#if definition.instructions}<div class="space-y-1">
+				<h3 class="text-sm font-medium">คำชี้แจงก่อนตอบ</h3>
+				<p class="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+					{definition.instructions}
+				</p>
+			</div>{/if}
 		{#if editable}<div class="flex items-start gap-2">
 				<Checkbox id="response-purpose" bind:checked={purpose} /><Label for="response-purpose"
 					>อ่านและรับทราบวัตถุประสงค์การประเมินแล้ว</Label
@@ -176,8 +193,14 @@
 			{#if definition.mode === 'digital'}
 				<CareSection
 					title="คำตอบ"
-					description={`ตอบแล้ว ${answers.length} จาก ${definition.questions.length} ข้อ สามารถบันทึกร่างและกลับมาตอบต่อได้`}
+					icon={ListChecks}
+					description={`ตอบแล้ว ${answers.length} จาก ${definition.questions.length} ข้อ บันทึกร่างก่อนออกจากหน้านี้เพื่อกลับมาตอบต่อ`}
 				>
+					<Progress
+						value={answers.length}
+						max={definition.questions.length || 1}
+						aria-label="ความคืบหน้าการตอบแบบประเมิน"
+					/>
 					{#each definition.questions as question, i (question.key)}<fieldset
 							class="space-y-3 border-b pb-4 last:border-0"
 						>
@@ -188,12 +211,16 @@
 								aria-label={`ข้อ ${i + 1}`}
 								class="flex flex-wrap gap-4"
 							>
-								{#each question.options as option (option.key)}<div class="flex items-center gap-2">
+								{#each question.options as option (option.key)}<div
+										class="flex min-w-0 items-center gap-2"
+									>
 										<RadioGroup.Item
 											id={`${question.key}-${option.key}`}
 											value={option.key}
 											disabled={!!pending}
-										/><Label for={`${question.key}-${option.key}`}>{option.label}</Label>
+										/><Label class="min-w-0 break-words" for={`${question.key}-${option.key}`}
+											>{option.label}</Label
+										>
 									</div>{/each}
 							</RadioGroup.Root><Button
 								type="button"
@@ -207,7 +234,8 @@
 				</CareSection>
 			{:else}<CareSection
 					title="คะแนนจากแบบกระดาษ"
-					description="กรอกเฉพาะคะแนนมาตรวัดพื้นฐาน ระบบจะคำนวณมาตรรวมตามเกณฑ์รุ่นนี้"
+					icon={FileCheck}
+					description="กรอกเฉพาะคะแนนมาตรวัดพื้นฐาน ระบบจะคำนวณมาตรวัดรวมตามเกณฑ์รุ่นนี้"
 				>
 					{#each definition.scales.filter((s) => !s.sourceScaleKeys.length) as scale (scale.key)}<div
 							class="space-y-2"
@@ -236,8 +264,10 @@
 					variant="outline"
 					loading={pending === 'draft'}
 					disabled={!!pending}
-					onclick={() => save(false)}>บันทึกร่าง</LoadingButton
-				><Button type="submit" disabled={!!pending}>ตรวจและส่งแบบประเมิน</Button>
+					onclick={() => save(false)}><Save aria-hidden="true" />บันทึกร่าง</LoadingButton
+				><Button type="submit" disabled={!!pending}
+					><Send aria-hidden="true" />ตรวจและส่งแบบประเมิน</Button
+				>
 			</div>
 		</form>
 	{:else if submitted}
@@ -270,7 +300,7 @@
 						{detail.manualNote}
 					</p>{/if}</CareSection
 			>{/if}
-		<CareSection title="ผลการประเมิน"
+		<CareSection title="ผลการประเมิน" icon={ChartNoAxesCombined}
 			>{#if mayReview && detail.assignment.urgent}<p
 					class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm font-medium"
 				>
@@ -303,6 +333,7 @@
 		/>{/if}
 	{#if $authStore.user?.user_type === 'staff' && ((mayReview && submitted && !detail.assignment.acknowledgedAt) || mayCancelCareAssignment(detail.assignment))}<CareSection
 			title="การดำเนินการของผู้รับผิดชอบ"
+			icon={UserRoundCheck}
 		>
 			<div class="space-y-2">
 				<Label for="care-command-reason">บันทึก / เหตุผล *</Label><Textarea

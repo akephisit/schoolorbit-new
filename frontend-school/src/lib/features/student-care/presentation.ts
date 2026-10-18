@@ -70,3 +70,48 @@ export function careLink(suffix: string, term?: string | null) {
 	if (term) query.set('academicTermId', term);
 	return `/staff/student-care${suffix}${query.size ? `?${query}` : ''}`;
 }
+export function careClearFilters(url: string) {
+	const next = new URL(url);
+	for (const key of ['status', 'followUpBefore', 'afterId']) next.searchParams.delete(key);
+	return next.pathname + next.search;
+}
+export function careDefinitionIssue(message: string) {
+	const separator = message.indexOf(':');
+	const path = separator < 0 ? '' : message.slice(0, separator);
+	const detail = separator < 0 ? message : message.slice(separator + 1).trim();
+	const fields: Record<string, string> = {
+		name: 'ชื่อแบบประเมิน',
+		variant: 'รูปแบบ / กลุ่มอายุ',
+		language: 'ภาษา',
+		minimumAge: 'อายุต่ำสุด',
+		maximumAge: 'อายุสูงสุด',
+		source: 'แหล่งที่มา',
+		licenseNote: 'สิทธิ์ใช้งาน',
+		digitalRightsConfirmed: 'สิทธิ์เผยแพร่ดิจิทัล',
+		questions: 'คำถาม',
+		scales: 'มาตรวัด',
+		bands: 'ช่วงคะแนน',
+		options: 'ตัวเลือก',
+		key: 'รหัสอ้างอิง',
+		label: 'ชื่อ / ข้อความ',
+		text: 'คำถาม',
+		sourceScaleKeys: 'มาตรวัดที่จะรวมคะแนน',
+		scaleKey: 'มาตรวัดของคำถาม',
+		minimum: 'คะแนนตั้งแต่',
+		maximum: 'คะแนนถึง',
+		points: 'คะแนน'
+	};
+	const label = path
+		.split('.')
+		.map((part) => (/^\d+$/.test(part) ? String(Number(part) + 1) : (fields[part] ?? part)))
+		.filter(Boolean)
+		.join(' · ');
+	const section = path.startsWith('scales')
+		? 'scales'
+		: path.startsWith('questions')
+			? 'questions'
+			: ['source', 'licenseNote', 'digitalRightsConfirmed', 'instructions'].includes(path)
+				? 'rights'
+				: 'basic';
+	return { label: label || 'การตั้งค่า', message: detail, href: `#care-editor-${section}` };
+}

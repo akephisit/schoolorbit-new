@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { UserRound, ClipboardList, House, HeartHandshake } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -25,9 +26,14 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="ประวัติการดูแลรายบุคคล" backHref={careLink('', data.term)}
+<PageShell
+	backLabel="กลับภาพรวมการดูแล"
+	icon={UserRound}
+	title="ประวัติการดูแลรายบุคคล"
+	backHref={careLink('', data.term)}
 	>{#key $careIdentity + data.id}<CareSection
 			title="แบบประเมิน"
+			icon={ClipboardList}
 			description="แสดงไม่เกิน 50 รายการแรก ทุกภาคเรียนในขอบเขตของคุณ"
 			><CareRegion
 				initial={data.assignments}
@@ -39,7 +45,7 @@
 						>ดูประวัติแบบประเมินทั้งหมด</Button
 					>{/snippet}</CareRegion
 			></CareSection
-		>{#if $can.hasAny(...careRoutineReadPermissions)}<CareSection title="เยี่ยมบ้าน"
+		>{#if $can.hasAny(...careRoutineReadPermissions)}<CareSection title="เยี่ยมบ้าน" icon={House}
 				><CareRegion
 					initial={data.visits}
 					permissions={careRoutineReadPermissions}
@@ -61,7 +67,9 @@
 							variant="ghost">ดูประวัติเยี่ยมบ้านทั้งหมด</Button
 						>{/snippet}</CareRegion
 				></CareSection
-			>{/if}{#if $can.hasAny(...careSensitiveReadPermissions)}<CareSection title="การดูแลรายกรณี"
+			>{/if}{#if $can.hasAny(...careSensitiveReadPermissions)}<CareSection
+				title="การดูแลรายกรณี"
+				icon={HeartHandshake}
 				><CareRegion
 					initial={data.cases}
 					permissions={careSensitiveReadPermissions}

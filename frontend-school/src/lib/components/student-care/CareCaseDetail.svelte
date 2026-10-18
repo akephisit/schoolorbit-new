@@ -1,4 +1,11 @@
 <script lang="ts">
+	import {
+		HeartHandshake,
+		NotebookPen,
+		History,
+		CalendarClock,
+		ArrowUpRight
+	} from '@lucide/svelte';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
 	const mutation = new CareMutationIdentity();
 
@@ -135,49 +142,35 @@
 </script>
 
 <div class="max-w-4xl space-y-5">
-	<CareSection title={detail.case.title} description={detail.case.studentName}
+	<CareSection title={detail.case.title} description={detail.case.studentName} icon={HeartHandshake}
 		><CareStatus status={{ kind: 'case', value: detail.case.status }} />
-		<p class="text-sm text-muted-foreground">กำหนดติดตาม: {careDate(detail.case.nextFollowUp)}</p>
+		<p class="flex items-center gap-2 text-sm text-muted-foreground">
+			<CalendarClock class="size-4 shrink-0" aria-hidden="true" />กำหนดติดตาม: {careDate(
+				detail.case.nextFollowUp
+			)}
+		</p>
 		<div class="flex flex-wrap gap-2">
-			{#if canManage && detail.case.status !== 'closed'}<Button
+			{#if canManage}<Button href="#care-case-action"
+					><NotebookPen aria-hidden="true" />เพิ่มบันทึกการดูแล</Button
+				>{/if}{#if canManage && detail.case.status !== 'closed'}<Button
 					variant="outline"
 					href={careLink(`/cases/${detail.case.id}/edit`, term)}>แก้ผู้รับผิดชอบและแผน</Button
 				>{/if}{#if detail.case.sourceAssignmentId}<Button
 					variant="ghost"
 					href={`/student-care/assignments/${detail.case.sourceAssignmentId}`}
-					>แบบประเมินต้นทาง</Button
+					><ArrowUpRight aria-hidden="true" />แบบประเมินต้นทาง</Button
 				>{/if}{#if detail.case.sourceVisitId}<Button
 					variant="ghost"
-					href={careLink(`/visits/${detail.case.sourceVisitId}`, term)}>เยี่ยมบ้านต้นทาง</Button
+					href={careLink(`/visits/${detail.case.sourceVisitId}`, term)}
+					><ArrowUpRight aria-hidden="true" />เยี่ยมบ้านต้นทาง</Button
 				>{/if}
 		</div></CareSection
-	><CareSection title="ประวัติการดูแล"
-		><ol class="space-y-4">
-			{#each events as event (event.id)}<li class="border-l-2 border-primary/20 pl-4">
-					<div class="flex flex-wrap items-center gap-2">
-						<span class="text-sm font-semibold">{eventLabels[event.kind]}</span><time
-							class="text-xs text-muted-foreground"
-							datetime={event.createdAt}>{careDate(event.createdAt)}</time
-						>
-					</div>
-					<p class="mt-2 whitespace-pre-wrap break-words text-sm">{event.note}</p>
-				</li>{/each}
-		</ol>
-		{#if hasOlder}<LoadingButton variant="outline" loading={olderPending} onclick={older}
-				>โหลดประวัติก่อนหน้า</LoadingButton
-			>{/if}{#if olderError}<PageState
-				variant="error"
-				title="โหลดประวัติก่อนหน้าไม่ได้"
-				description={olderError}
-				actionLabel="ลองโหลดประวัติใหม่"
-				onaction={older}
-			/>{/if}
-		{#if !events.length}<p class="text-sm text-muted-foreground">
-				ยังไม่มีบันทึกเหตุการณ์
-			</p>{/if}</CareSection
-	>
-	{#if canManage}<form onsubmit={save} class="space-y-5">
-			<CareSection title="เพิ่มบันทึกการดูแล"
+	>{#if canManage}<form onsubmit={save} class="space-y-5">
+			<CareSection
+				title="เพิ่มบันทึกการดูแล"
+				id="care-case-action"
+				icon={NotebookPen}
+				description="บันทึกสิ่งที่ดำเนินการและวันติดตามครั้งต่อไป ประวัติเดิมยังคงอยู่ด้านล่าง"
 				><div class="grid gap-4 sm:grid-cols-2">
 					<CareSelect
 						id="case-event-kind"
@@ -224,7 +217,37 @@
 					description={error}
 				/>{/if}
 			<div class="flex justify-end">
-				<LoadingButton type="submit" loading={pending}>บันทึกการดำเนินการ</LoadingButton>
+				<LoadingButton type="submit" loading={pending}
+					><NotebookPen aria-hidden="true" />บันทึกการดำเนินการ</LoadingButton
+				>
 			</div>
 		</form>{/if}
+	<CareSection
+		title="ประวัติการดูแล"
+		icon={History}
+		description="แสดงบันทึกล่าสุดก่อน โหลดประวัติก่อนหน้าได้เมื่อมีรายการเพิ่มเติม"
+		><ol class="space-y-4">
+			{#each events as event (event.id)}<li class="border-l-2 border-primary/20 pl-4">
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="text-sm font-semibold">{eventLabels[event.kind]}</span><time
+							class="text-xs text-muted-foreground"
+							datetime={event.createdAt}>{careDate(event.createdAt)}</time
+						>
+					</div>
+					<p class="mt-2 whitespace-pre-wrap break-words text-sm">{event.note}</p>
+				</li>{/each}
+		</ol>
+		{#if hasOlder}<LoadingButton variant="outline" loading={olderPending} onclick={older}
+				>โหลดประวัติก่อนหน้า</LoadingButton
+			>{/if}{#if olderError}<PageState
+				variant="error"
+				title="โหลดประวัติก่อนหน้าไม่ได้"
+				description={olderError}
+				actionLabel="ลองโหลดประวัติใหม่"
+				onaction={older}
+			/>{/if}
+		{#if !events.length}<p class="text-sm text-muted-foreground">
+				ยังไม่มีบันทึกเหตุการณ์
+			</p>{/if}</CareSection
+	>
 </div>

@@ -27,7 +27,11 @@
 			initial={data.initial}
 			permissions={careReadPermissions}
 			retry={(signal) => ownCareAssignments(data.query, { signal })}
-			>{#snippet children(items)}<CareAssignmentList {items} /><CarePager
+			>{#snippet children(items)}<CareAssignmentList
+					{items}
+					audience="own"
+					filtered={!!data.query.status || !!data.query.afterId}
+				/><CarePager
 					url={data.url}
 					lastId={items.at(-1)?.id}
 					count={items.length}

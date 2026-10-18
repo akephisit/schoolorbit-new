@@ -7,57 +7,104 @@ import type {
 	SaveCareResponse
 } from '#lib/api/student-care.js';
 const key = z
-	.string()
+	.string({ error: 'กรอกรหัสอ้างอิงเป็นข้อความ' })
 	.regex(/^[a-zA-Z0-9_-]{1,60}$/, 'ใช้ตัวอักษรอังกฤษ ตัวเลข _ หรือ - ไม่เกิน 60 ตัว');
 const band = z.strictObject({
 	key,
-	label: z.string().trim().min(1).max(200),
-	minimum: z.int().min(-200000),
-	maximum: z.int().max(200000),
+	label: z
+		.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+		.trim()
+		.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+		.max(200, 'ใช้ไม่เกิน 200 ตัวอักษร'),
+	minimum: z.int({ error: 'ระบุจำนวนเต็ม' }).min(-200000, 'ค่าต้องไม่น้อยกว่า -200,000'),
+	maximum: z.int({ error: 'ระบุจำนวนเต็ม' }).max(200000, 'ค่าต้องไม่เกิน 200,000'),
 	urgent: z.boolean()
 });
 const option = z.strictObject({
 	key,
-	label: z.string().trim().min(1).max(500),
-	points: z.int().min(-1000).max(1000),
+	label: z
+		.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+		.trim()
+		.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+		.max(500, 'ใช้ไม่เกิน 500 ตัวอักษร'),
+	points: z
+		.int({ error: 'ระบุจำนวนเต็ม' })
+		.min(-1000, 'ค่าต้องไม่น้อยกว่า -1,000')
+		.max(1000, 'ค่าต้องไม่เกิน 1,000'),
 	urgent: z.boolean()
 });
 export const careDefinitionSchema = z
 	.strictObject({
-		name: z.string().trim().min(1).max(200),
+		name: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.trim()
+			.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+			.max(200, 'ใช้ไม่เกิน 200 ตัวอักษร'),
 		family: z.enum(['sdq', 'eq', 'depression', 'other']),
-		variant: z.string().trim().min(1).max(120),
-		language: z.string().trim().min(1).max(30),
+		variant: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.trim()
+			.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+			.max(120, 'ใช้ไม่เกิน 120 ตัวอักษร'),
+		language: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.trim()
+			.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+			.max(30, 'ใช้ไม่เกิน 30 ตัวอักษร'),
 		respondent: z.enum(['self_report', 'teacher', 'guardian']),
-		minimumAge: z.int().min(0),
-		maximumAge: z.int().max(120),
+		minimumAge: z.int({ error: 'ระบุจำนวนเต็ม' }).min(0, 'ค่าต้องไม่น้อยกว่า 0'),
+		maximumAge: z.int({ error: 'ระบุจำนวนเต็ม' }).max(120, 'อายุต้องไม่เกิน 120 ปี'),
 		mode: z.enum(['digital', 'manual_result']),
-		instructions: z.string().max(10000),
-		source: z.string().trim().min(1).max(2000),
-		licenseNote: z.string().trim().min(1).max(2000),
+		instructions: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.max(10000, 'ใช้ไม่เกิน 10,000 ตัวอักษร'),
+		source: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.trim()
+			.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+			.max(2000, 'ใช้ไม่เกิน 2,000 ตัวอักษร'),
+		licenseNote: z
+			.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+			.trim()
+			.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+			.max(2000, 'ใช้ไม่เกิน 2,000 ตัวอักษร'),
 		digitalRightsConfirmed: z.boolean(),
 		questions: z
 			.array(
 				z.strictObject({
 					key,
-					text: z.string().trim().min(1).max(2000),
+					text: z
+						.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+						.trim()
+						.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+						.max(2000, 'ใช้ไม่เกิน 2,000 ตัวอักษร'),
 					scaleKey: key,
 					reverse: z.boolean(),
-					options: z.array(option).min(2).max(20)
+					options: z
+						.array(option)
+						.min(2, 'เพิ่มตัวเลือกอย่างน้อย 2 ตัวเลือก')
+						.max(20, 'เพิ่มได้ไม่เกิน 20 ตัวเลือก')
 				})
 			)
-			.max(200),
+			.max(200, 'เพิ่มคำถามได้ไม่เกิน 200 ข้อ'),
 		scales: z
 			.array(
 				z.strictObject({
 					key,
-					label: z.string().trim().min(1).max(200),
+					label: z
+						.string({ error: 'กรอกข้อมูลเป็นข้อความ' })
+						.trim()
+						.min(1, 'กรอกข้อมูลนี้ให้ครบ')
+						.max(200, 'ใช้ไม่เกิน 200 ตัวอักษร'),
 					sourceScaleKeys: z.array(key),
-					bands: z.array(band).min(1).max(30)
+					bands: z
+						.array(band)
+						.min(1, 'เพิ่มช่วงคะแนนอย่างน้อย 1 ช่วง')
+						.max(30, 'เพิ่มช่วงคะแนนได้ไม่เกิน 30 ช่วง')
 				})
 			)
-			.min(1)
-			.max(30)
+			.min(1, 'เพิ่มมาตรวัดอย่างน้อย 1 มาตรวัด')
+			.max(30, 'เพิ่มมาตรวัดได้ไม่เกิน 30 มาตรวัด')
 	})
 	.superRefine((d, ctx) => {
 		const issue = (path: (string | number)[], message: string) =>
@@ -82,7 +129,7 @@ export const careDefinitionSchema = z
 			)
 				issue(
 					['scales', i, 'sourceScaleKeys'],
-					'มาตรรวมต้องอ้างอิงมาตรฐานที่มีอยู่โดยไม่ซ้ำหรือวนรอบ'
+					'มาตรวัดรวมต้องอ้างอิงมาตรวัดพื้นฐานที่มีอยู่โดยไม่ซ้ำหรือวนรอบ'
 				);
 			const bands = [...s.bands].sort((a, b) => a.minimum - b.minimum);
 			if (
@@ -130,7 +177,7 @@ export const careDefinitionSchema = z
 				!scale.bands.some((band) => band.minimum <= minimum && band.maximum >= minimum) ||
 				!scale.bands.some((band) => band.minimum <= maximum && band.maximum >= maximum)
 			)
-				issue(['scales', index, 'bands'], 'ช่วงคะแนนมาตรรวมต้องครอบคลุมผลรวมของมาตรฐาน');
+				issue(['scales', index, 'bands'], 'ช่วงคะแนนมาตรวัดรวมต้องครอบคลุมผลรวมของมาตรวัดพื้นฐาน');
 		});
 		d.questions.forEach((q, i) => {
 			if (!d.scales.some((s) => s.key === q.scaleKey && !s.sourceScaleKeys.length))

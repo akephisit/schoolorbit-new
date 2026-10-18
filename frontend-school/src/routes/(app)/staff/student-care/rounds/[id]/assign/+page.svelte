@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ClipboardList } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 
@@ -23,7 +24,11 @@
 	}
 </script>
 
-<PageShell title="มอบหมายแบบประเมิน" backHref={careLink(`/rounds/${data.id}`)}
+<PageShell
+	backLabel="กลับรายละเอียดรอบประเมิน"
+	icon={ClipboardList}
+	title="มอบหมายแบบประเมิน"
+	backHref={careLink(`/rounds/${data.id}`)}
 	>{#key $careIdentity + data.id}<CareRegion
 			initial={data.initial}
 			permissions={careManagePermissions}

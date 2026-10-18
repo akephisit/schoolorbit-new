@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { LibraryBig } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -15,7 +16,11 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title="คลังแบบประเมิน" backHref={careLink('', data.term)}
+<PageShell
+	backLabel="กลับภาพรวมการดูแล"
+	icon={LibraryBig}
+	title="คลังแบบประเมิน"
+	backHref={careLink('', data.term)}
 	>{#snippet actions()}{#if $can.hasAny(...[PERMISSIONS.STUDENT_CARE_CONFIG_MANAGE_SCHOOL])}<Button
 				href={careLink('/library/new', data.term)}>เพิ่มแบบประเมิน</Button
 			>{/if}{/snippet}<CareNavigation
@@ -27,8 +32,10 @@
 			retry={(signal) => careInstruments(data.query, { signal })}
 			label="คลังแบบประเมิน"
 			>{#snippet children(items)}{#if !items.length}<PageState
-						title="ยังไม่มีรายการ"
-						description="รายการที่อยู่ในสิทธิ์ของคุณจะแสดงที่นี่"
+						title={data.query.afterId ? 'ไม่พบแบบประเมินในรายการนี้' : 'ยังไม่มีแบบประเมิน'}
+						description={data.query.afterId
+							? 'กลับหน้าแรกเพื่อดูแบบประเมินอื่นในขอบเขตของคุณ'
+							: 'ผู้มีสิทธิ์จัดการคลังสามารถเพิ่มแบบประเมินจากปุ่มด้านบน โดยใช้เนื้อหาและเกณฑ์ที่ได้รับอนุญาต'}
 					/>{:else}<ul class="divide-y rounded-xl border bg-card">
 						{#each items as item (item.id)}<li
 								class="flex flex-wrap items-center justify-between gap-3 p-4"
@@ -47,7 +54,7 @@
 									</p>
 								</div>
 								<Button variant="outline" href={careLink(`/library/${item.id}`, data.term)}
-									>ดูรายละเอียด</Button
+									>ดูแบบประเมิน</Button
 								>
 							</li>{/each}
 					</ul>{/if}<CarePager

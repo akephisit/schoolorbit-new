@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { House, NotebookPen, Save } from '@lucide/svelte';
 	import { CareMutationIdentity } from '#lib/features/student-care/mutation.js';
 	const mutation = new CareMutationIdentity();
 
@@ -167,7 +168,11 @@
 </script>
 
 <form onsubmit={save} class="max-w-4xl space-y-5">
-	<CareSection title="แผนเยี่ยมบ้าน" description={record?.visit.studentName}>
+	<CareSection
+		title="1. แผนเยี่ยมบ้าน"
+		icon={House}
+		description={record?.visit.studentName ?? 'เลือกนักเรียน วันนัดหมาย และบุคลากรที่จะเยี่ยมบ้าน'}
+	>
 		{#if !record && rosterPending}<PageSkeleton
 				variant="detail"
 			/>{:else if !record && rosterError}<PageState
@@ -214,29 +219,47 @@
 			disabled={!!record && !$can.has(PERMISSIONS.STUDENT_CARE_MANAGE_SCHOOL)}
 		/>
 	</CareSection><CareSection
-		title="บันทึกการเยี่ยมบ้าน"
-		description="บันทึกข้อเท็จจริงเท่าที่จำเป็นและแนวทางที่ตกลงร่วมกัน"
+		title="2. บันทึกการเยี่ยมบ้าน"
+		icon={NotebookPen}
+		description={status === 'completed'
+			? 'เมื่อเลือกเยี่ยมแล้ว ต้องระบุวันที่เยี่ยมจริง ผู้ให้ข้อมูล ข้อเท็จจริง และแนวทางที่ตกลงร่วมกัน'
+			: 'ส่วนนี้ยังไม่จำเป็นสำหรับการวางแผน คุณสามารถจดข้อมูลที่ทราบแล้วและกลับมาเติมหลังเยี่ยมบ้าน'}
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div class="space-y-2">
-				<Label for="visit-actual">วันที่เยี่ยมจริง</Label><DatePicker
+				<Label for="visit-actual"
+					>วันที่เยี่ยมจริง{#if status === 'completed'}<span aria-hidden="true">
+							*</span
+						>{/if}</Label
+				><DatePicker
 					id="visit-actual"
+					required={status === 'completed'}
 					ariaLabel="วันที่เยี่ยมจริง"
 					value={visitedDate}
 					onValueChange={(value) => (visitedDate = value ?? '')}
 				/>
 			</div>
 			<div class="space-y-2">
-				<Label for="visit-contact">ผู้ให้ข้อมูล / ความสัมพันธ์</Label><Input
+				<Label for="visit-contact"
+					>ผู้ให้ข้อมูล / ความสัมพันธ์{#if status === 'completed'}<span aria-hidden="true">
+							*</span
+						>{/if}</Label
+				><Input
 					id="visit-contact"
+					aria-required={status === 'completed'}
 					bind:value={contact}
 					maxlength={500}
 				/>
 			</div>
 		</div>
 		<div class="space-y-2">
-			<Label for="visit-observations">ข้อเท็จจริงที่สังเกต</Label><Textarea
+			<Label for="visit-observations"
+				>ข้อเท็จจริงที่สังเกต{#if status === 'completed'}<span aria-hidden="true">
+						*</span
+					>{/if}</Label
+			><Textarea
 				id="visit-observations"
+				aria-required={status === 'completed'}
 				bind:value={observations}
 				maxlength={5000}
 			/>
@@ -256,8 +279,13 @@
 			/>
 		</div>
 		<div class="space-y-2">
-			<Label for="visit-actions">แนวทางที่ตกลงร่วมกัน</Label><Textarea
+			<Label for="visit-actions"
+				>แนวทางที่ตกลงร่วมกัน{#if status === 'completed'}<span aria-hidden="true">
+						*</span
+					>{/if}</Label
+			><Textarea
 				id="visit-actions"
+				aria-required={status === 'completed'}
 				bind:value={actions}
 				maxlength={5000}
 			/>
@@ -280,7 +308,8 @@
 		<Button variant="outline" href={careLink('/visits', term)}>กลับรายการ</Button><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={!editable || rosterPending || !!rosterError}>บันทึกเยี่ยมบ้าน</LoadingButton
+			disabled={!editable || rosterPending || !!rosterError}
+			><Save aria-hidden="true" />บันทึกเยี่ยมบ้าน</LoadingButton
 		>
 	</div>
 </form>

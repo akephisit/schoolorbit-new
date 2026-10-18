@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { UserRound } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { careAssignments } from '#lib/api/student-care.js';
@@ -11,6 +12,8 @@
 </script>
 
 <PageShell
+	backLabel="กลับประวัติการดูแลรายบุคคล"
+	icon={UserRound}
 	title="ประวัติแบบประเมินรายบุคคล"
 	backHref={`/staff/student-care/students/${data.id}`}
 	description="ทุกภาคเรียนในขอบเขตที่คุณรับผิดชอบ"
@@ -21,7 +24,10 @@
 			initial={data.initial}
 			permissions={careReadPermissions}
 			retry={(signal) => careAssignments(data.query, { signal })}
-			>{#snippet children(items)}<CareAssignmentList {items} /><CarePager
+			>{#snippet children(items)}<CareAssignmentList
+					{items}
+					filtered={!!data.query.status || !!data.query.afterId}
+				/><CarePager
 					url={data.url}
 					lastId={items.at(-1)?.id}
 					count={items.length}

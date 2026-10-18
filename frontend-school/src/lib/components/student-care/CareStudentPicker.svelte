@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { Search, X } from '@lucide/svelte';
 	import { careStudents, type CareStudentOption } from '#lib/api/student-care.js';
 	import { careIdentity } from '#lib/features/student-care/access.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
@@ -85,7 +86,7 @@
 				}
 			}}
 		/><LoadingButton type="button" variant="outline" loading={pending} onclick={() => load()}
-			>ค้นหา</LoadingButton
+			><Search aria-hidden="true" />ค้นหา</LoadingButton
 		>
 	</div>
 	<div class="max-h-64 space-y-2 overflow-y-auto rounded-lg border p-3" aria-busy={pending}>
@@ -123,8 +124,10 @@
 					type="button"
 					variant="secondary"
 					size="sm"
+					class="max-w-full whitespace-normal text-left"
 					onclick={() => select(student, false)}
-					aria-label={`นำ ${student.name} ออก`}>{student.name} ×</Button
+					aria-label={`นำ ${student.name} ออก`}
+					><span class="min-w-0 break-words">{student.name}</span><X aria-hidden="true" /></Button
 				>{/each}
 		</div>{/if}
 	{#if error}<PageState
