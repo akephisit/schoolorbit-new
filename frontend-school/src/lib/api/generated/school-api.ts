@@ -23292,7 +23292,8 @@ export interface components {
 		};
 		SaveLeaveTypeRequest: {
 			archived: boolean;
-			code: string;
+			/** @description Omit to generate an internal code on create or preserve it on update. */
+			code?: string | null;
 			/** Format: int64 */
 			expectedRevision?: number | null;
 			kind: components['schemas']['LeaveKind'];

@@ -13,7 +13,6 @@
 		onsaved
 	}: { type?: LeaveType; oncancel: () => void; onsaved: (type: LeaveType) => void } = $props();
 	let name = $state(untrack(() => type?.name ?? '')),
-		code = $state(untrack(() => type?.code ?? '')),
 		kind = $state<LeaveKind>(untrack(() => type?.kind ?? 'leave'));
 	let error = $state(''),
 		pending = $state(false),
@@ -24,14 +23,13 @@
 		event.preventDefault();
 		if (pending) return;
 		error = '';
-		if (!name.trim() || !code.trim()) {
-			error = 'กรอกรหัสและชื่อประเภทคำขอ';
+		if (!name.trim()) {
+			error = 'กรอกชื่อประเภทคำขอ';
 			return;
 		}
 		pending = true;
 		const basis = {
 			expectedRevision: type?.revision ?? null,
-			code: code.trim(),
 			name: name.trim(),
 			kind,
 			archived: type?.archived ?? false
@@ -48,15 +46,6 @@
 </script>
 
 <form class="space-y-4" onsubmit={save} data-testid="leave-type-form">
-	<div class="space-y-2">
-		<Label for="leave-type-code">รหัสประเภท *</Label><Input
-			id="leave-type-code"
-			bind:value={code}
-			disabled={pending || !!type}
-		/>{#if type}<p class="text-xs text-muted-foreground">
-				รหัสและกลุ่มของประเภทที่บันทึกแล้วเปลี่ยนไม่ได้
-			</p>{/if}
-	</div>
 	<div class="space-y-2">
 		<Label for="leave-type-name">ชื่อประเภท *</Label><Input
 			id="leave-type-name"
@@ -78,6 +67,7 @@
 				>ออกนอกโรงเรียน</ToggleGroup.Item
 			></ToggleGroup.Root
 		>
+		{#if type}<p class="text-xs text-muted-foreground">กลุ่มคำขอเปลี่ยนไม่ได้หลังบันทึก</p>{/if}
 	</div>
 	{#if error}<PageState
 			variant="error"

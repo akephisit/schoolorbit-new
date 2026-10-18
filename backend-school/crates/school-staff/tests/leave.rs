@@ -97,7 +97,7 @@ async fn typ(
         SaveLeaveTypeRequest {
             request_id: Uuid::now_v7(),
             expected_revision: None,
-            code: code.into(),
+            code: Some(code.into()),
             name: "ทดสอบลา".into(),
             kind: LeaveKind::Leave,
             archived: false,
@@ -768,13 +768,154 @@ async fn leave_disabled_or_missing_profiles_never_hide_stored_drafts_or_change_p
     assert_eq!(cancelled.request.status, LeaveStatus::Cancelled);
 }
 
+#[test]
+fn leave_type_request_accepts_omitted_null_and_explicit_internal_codes() {
+    let payload = serde_json::json!({
+        "requestId": Uuid::now_v7(),
+        "name": "ลาส่วนตัว",
+        "kind": "leave",
+        "archived": false
+    });
+    let omitted: SaveLeaveTypeRequest = serde_json::from_value(payload.clone()).unwrap();
+    assert_eq!(omitted.code, None);
+    assert_eq!(omitted.expected_revision, None);
+    let mut explicit = payload;
+    explicit["code"] = serde_json::Value::Null;
+    let null: SaveLeaveTypeRequest = serde_json::from_value(explicit.clone()).unwrap();
+    assert_eq!(null.code, None);
+    explicit["code"] = serde_json::json!("historical_code");
+    let supplied: SaveLeaveTypeRequest = serde_json::from_value(explicit.clone()).unwrap();
+    assert_eq!(supplied.code.as_deref(), Some("historical_code"));
+    assert_eq!(
+        serde_json::to_value(supplied).unwrap()["code"],
+        explicit["code"]
+    );
+}
+
+#[tokio::test]
+async fn leave_type_omitted_codes_are_unique_replayable_and_immutable() {
+    let (pool, owner, admin, _) = fixture("leave_type_auto_codes").await;
+    let input = SaveLeaveTypeRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: None,
+        code: None,
+        name: "ประเภทจากชื่อเท่านั้น".into(),
+        kind: LeaveKind::Leave,
+        archived: false,
+    };
+    assert!(matches!(
+        service::save_type(&pool, &owner, None, input.clone()).await,
+        Err(school_errors::AppError::Forbidden(_))
+    ));
+    let created = service::save_type(&pool, &admin, None, input.clone())
+        .await
+        .unwrap();
+    let replay = service::save_type(&pool, &admin, None, input.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.id, created.id);
+    assert_eq!(replay.code, created.code);
+    assert_eq!(replay.revision, created.revision);
+    let mut second_input = input.clone();
+    second_input.request_id = Uuid::now_v7();
+    second_input.kind = LeaveKind::Exit;
+    let second = service::save_type(&pool, &admin, None, second_input)
+        .await
+        .unwrap();
+    assert_ne!(second.id, created.id);
+    assert_ne!(second.code, created.code);
+    for item in [&created, &second] {
+        assert!(!item.code.is_empty() && item.code.len() <= 64);
+        assert!(item
+            .code
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'));
+    }
+    let update = SaveLeaveTypeRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: Some(created.revision),
+        name: "ชื่อที่แก้ไข".into(),
+        ..input.clone()
+    };
+    for code in ["", "INVALID", "has space", &"a".repeat(65)] {
+        let mut invalid = input.clone();
+        invalid.request_id = Uuid::now_v7();
+        invalid.code = Some(code.into());
+        assert!(matches!(
+            service::save_type(&pool, &admin, None, invalid).await,
+            Err(school_errors::AppError::ValidationError(_))
+        ));
+    }
+    for name in [" ".to_string(), "ก".repeat(201)] {
+        let mut invalid = input.clone();
+        invalid.name = name;
+        let error = service::save_type(&pool, &admin, None, invalid)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            school_errors::AppError::ValidationError(ref message)
+                if message == "กรุณาระบุชื่อประเภทคำขอไม่เกิน 200 ตัวอักษร"
+        ));
+    }
+    let mut changed_code = update.clone();
+    changed_code.code = Some(second.code.clone());
+    assert!(matches!(
+        service::save_type(&pool, &admin, Some(created.id), changed_code).await,
+        Err(school_errors::AppError::ValidationError(_))
+    ));
+    let mut changed_kind = update.clone();
+    changed_kind.kind = LeaveKind::Exit;
+    assert!(matches!(
+        service::save_type(&pool, &admin, Some(created.id), changed_kind).await,
+        Err(school_errors::AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        service::save_type(&pool, &owner, Some(created.id), update.clone()).await,
+        Err(school_errors::AppError::Forbidden(_))
+    ));
+    let saved = service::save_type(&pool, &admin, Some(created.id), update.clone())
+        .await
+        .unwrap();
+    assert_eq!(saved.code, created.code);
+    assert_eq!(saved.name, update.name);
+    assert_eq!(saved.revision, created.revision + 1);
+    let replay = service::save_type(&pool, &admin, Some(created.id), update.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.code, saved.code);
+    assert_eq!(replay.revision, saved.revision);
+    assert!(matches!(
+        service::save_type(&pool, &admin, Some(second.id), update.clone()).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    let mut stale = update;
+    stale.request_id = Uuid::now_v7();
+    assert!(matches!(
+        service::save_type(&pool, &admin, Some(created.id), stale).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    let stored: (String, i64) =
+        sqlx::query_as("SELECT code,revision FROM staff_leave_types WHERE id=$1")
+            .bind(created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, (created.code, saved.revision));
+    let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM staff_leave_receipts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(receipts, 3);
+}
+
 #[tokio::test]
 async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_unused_delete() {
     let (pool, owner, admin, _) = fixture("leave_type_lifecycle").await;
     let input = SaveLeaveTypeRequest {
         request_id: Uuid::now_v7(),
         expected_revision: None,
-        code: "unused".into(),
+        code: Some("unused".into()),
         name: "ประเภทที่ยังไม่ใช้".into(),
         kind: LeaveKind::Leave,
         archived: false,
@@ -813,7 +954,7 @@ async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_u
         SaveLeaveTypeRequest {
             request_id: Uuid::now_v7(),
             expected_revision: Some(p.type_revision),
-            code: t.code.clone(),
+            code: None,
             name: "ชื่อประเภทที่แก้ไข".into(),
             kind: t.kind,
             archived: true,
@@ -821,6 +962,7 @@ async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_u
     )
     .await
     .unwrap();
+    assert_eq!(archived.code, t.code);
     assert!(service::create(
         &pool,
         &owner,
@@ -854,7 +996,7 @@ async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_u
         SaveLeaveTypeRequest {
             request_id: Uuid::now_v7(),
             expected_revision: Some(archived.revision),
-            code: t.code.clone(),
+            code: None,
             name: archived.name.clone(),
             kind: t.kind,
             archived: false,
@@ -862,6 +1004,7 @@ async fn leave_type_crud_archive_restore_preserves_request_history_and_replays_u
     )
     .await
     .unwrap();
+    assert_eq!(restored.code, t.code);
     let active = submit(&pool, &owner, &draft).await;
     assert_eq!(active.request.type_name, t.name);
     let later = create(&pool, &owner, t.id, 2).await;
@@ -993,7 +1136,7 @@ async fn leave_cancellation_uses_current_routing_for_frozen_category_without_rew
         SaveLeaveTypeRequest {
             request_id: Uuid::now_v7(),
             expected_revision: Some(current.type_revision),
-            code: t.code.clone(),
+            code: Some(t.code.clone()),
             name: t.name.clone(),
             kind: t.kind,
             archived: true,
@@ -1069,7 +1212,7 @@ async fn leave_future_approved_request_uses_pinned_cancellation_route_until_a_cu
         SaveLeaveTypeRequest {
             request_id: Uuid::now_v7(),
             expected_revision: None,
-            code: "future_only".into(),
+            code: Some("future_only".into()),
             name: "เกณฑ์ในอนาคต".into(),
             kind: LeaveKind::Leave,
             archived: false,

@@ -2536,6 +2536,11 @@ mod tests {
             }
         }
         let schemas = &document["components"]["schemas"];
+        assert!(schemas["SaveLeaveTypeRequest"]["properties"]
+            .get("code")
+            .is_some());
+        assert!(!required(&schemas["SaveLeaveTypeRequest"]).contains(&"code"));
+        assert!(required(&schemas["LeaveType"]).contains(&"code"));
         assert!(schemas["LeavePeriodInput"]["properties"]
             .get("amount")
             .is_none());

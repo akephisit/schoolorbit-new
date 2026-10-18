@@ -137,6 +137,7 @@
 </script>
 
 <PageShell
+	contentClass="space-y-4"
 	title={detail?.request.typeName ?? 'รายละเอียดคำขอ'}
 	{backHref}
 	backLabel="กลับรายการคำขอ"
@@ -183,226 +184,241 @@
 				onaction={refreshed}
 			/>{/if}
 		{#if region.loading && !detail}<PageSkeleton variant="detail" />{:else if detail}
-			<div id="staff-leave-print" class="space-y-6">
-				<Card.Root class="border-primary/15 bg-gradient-to-br from-primary/5 to-card"
-					><Card.Header
-						><div class="flex flex-wrap items-center justify-between gap-3">
-							<Card.Title>{detail.request.typeName}</Card.Title><Badge
-								variant={leaveStatusVariant(detail.request.status)}
-								class={leaveStatusClass(detail.request.status)}
-								>{leaveStatusLabels[detail.request.status]}</Badge
-							>
-						</div></Card.Header
-					><Card.Content
-						><dl class="grid gap-4 sm:grid-cols-2">
-							<div>
-								<dt class="text-sm text-muted-foreground">ผู้ขอ</dt>
-								<dd class="break-words font-medium">{detail.request.ownerName}</dd>
-							</div>
-							<div>
-								<dt class="text-sm text-muted-foreground">ประเภทบุคลากรที่ใช้พิจารณา</dt>
-								<dd>
-									{detail.request.personnelType
-										? PERSONNEL_TYPE_LABELS[detail.request.personnelType]
-										: 'ยังไม่มีข้อมูลประเภทบุคลากร'}
-								</dd>
-							</div>
-							<div>
-								<dt class="text-sm text-muted-foreground">ช่วงวันที่</dt>
-								<dd>
-									{leaveDate(detail.request.startDate)}{detail.request.endDate !==
-									detail.request.startDate
-										? ` – ${leaveDate(detail.request.endDate)}`
-										: ''}{detail.request.dayPortion === 'morning'
-										? ' · ช่วงเช้า'
-										: detail.request.dayPortion === 'afternoon'
-											? ' · ช่วงบ่าย'
-											: ''}
-								</dd>
-								{#if detail.request.startTime}<dd>
-										{detail.request.startTime.slice(0, 5)} – {detail.request.endTime?.slice(0, 5)}
-									</dd>{/if}
-							</div>
-							<div>
-								<dt class="text-sm text-muted-foreground">จำนวนที่ขอ</dt>
-								<dd class="font-medium">
-									{leaveAmount(detail.request.amount, detail.request.unit)}
-								</dd>
-							</div>
-							<div class="sm:col-span-2">
-								<dt class="text-sm text-muted-foreground">เหตุผล</dt>
-								<dd class="break-words whitespace-pre-wrap">{detail.request.reason}</dd>
-							</div>
-						</dl></Card.Content
-					></Card.Root
-				>
-				{#if detail.policy}<Card.Root
-						><Card.Header
-							><Card.Title
-								>{detail.processPurpose === 'cancellation'
-									? 'เกณฑ์ของคำขอเดิม'
-									: 'นโยบายที่ใช้กับคำขอ'}</Card.Title
-							></Card.Header
-						><Card.Content
-							><dl class="grid gap-4 sm:grid-cols-2">
+			<div id="staff-leave-print" class="leave-layout">
+				<h2 class="hidden print:block text-lg font-semibold">{detail.request.typeName}</h2>
+				<div class="leave-primary">
+					<Card.Root class="leave-summary gap-3 py-4 border-primary/20 bg-primary/5"
+						><Card.Header class="px-4"
+							><div class="flex flex-wrap items-center justify-between gap-3">
+								<p class="text-sm font-medium">ข้อมูลคำขอ</p>
+								<Badge
+									variant={leaveStatusVariant(detail.request.status)}
+									class={leaveStatusClass(detail.request.status)}
+									>{leaveStatusLabels[detail.request.status]}</Badge
+								>
+							</div></Card.Header
+						><Card.Content class="px-4"
+							><dl class="grid gap-3 sm:grid-cols-2">
 								<div>
-									<dt class="text-sm text-muted-foreground">แหล่งอ้างอิง</dt>
-									<dd class="break-words">{detail.policy.sourceReference}</dd>
+									<dt class="text-sm text-muted-foreground">ผู้ขอ</dt>
+									<dd class="break-words font-medium">{detail.request.ownerName}</dd>
 								</div>
 								<div>
-									<dt class="text-sm text-muted-foreground">ฉบับ / วันที่มีผล</dt>
-									<dd>ฉบับ {detail.policy.version} · {leaveDate(detail.policy.effectiveFrom)}</dd>
-								</div>
-								<div>
-									<dt class="text-sm text-muted-foreground">การนับวัน</dt>
+									<dt class="text-sm text-muted-foreground">ประเภทบุคลากรที่ใช้พิจารณา</dt>
 									<dd>
-										{detail.policy.countingMode === 'working_days'
-											? 'วันทำงานที่โรงเรียนกำหนด'
-											: 'วันปฏิทิน'}
+										{detail.request.personnelType
+											? PERSONNEL_TYPE_LABELS[detail.request.personnelType]
+											: 'ยังไม่มีข้อมูลประเภทบุคลากร'}
 									</dd>
 								</div>
 								<div>
-									<dt class="text-sm text-muted-foreground">หลักฐาน</dt>
+									<dt class="text-sm text-muted-foreground">ช่วงวันที่</dt>
 									<dd>
-										{detail.policy.evidenceRequired
-											? 'ต้องมีหลักฐานประกอบทุกคำขอ'
-											: detail.policy.evidenceFromAmount != null
-												? `ต้องแนบตั้งแต่ ${leaveAmount(detail.policy.evidenceFromAmount, detail.policy.unit)}`
-												: 'แนบได้ตามความจำเป็น'}
+										{leaveDate(detail.request.startDate)}{detail.request.endDate !==
+										detail.request.startDate
+											? ` – ${leaveDate(detail.request.endDate)}`
+											: ''}{detail.request.dayPortion === 'morning'
+											? ' · ช่วงเช้า'
+											: detail.request.dayPortion === 'afternoon'
+												? ' · ช่วงบ่าย'
+												: ''}
+									</dd>
+									{#if detail.request.startTime}<dd>
+											{detail.request.startTime.slice(0, 5)} – {detail.request.endTime?.slice(0, 5)}
+										</dd>{/if}
+								</div>
+								<div>
+									<dt class="text-sm text-muted-foreground">จำนวนที่ขอ</dt>
+									<dd class="font-medium">
+										{leaveAmount(detail.request.amount, detail.request.unit)}
 									</dd>
 								</div>
-								{#if detail.policy.maxPerRequest != null}<div>
-										<dt class="text-sm text-muted-foreground">จำนวนสูงสุดต่อคำขอ</dt>
-										<dd>{leaveAmount(detail.policy.maxPerRequest, detail.policy.unit)}</dd>
-									</div>{/if}{#if detail.policy.annualLimit != null}<div>
-										<dt class="text-sm text-muted-foreground">สิทธิที่โรงเรียนกำหนดต่อรอบปี</dt>
-										<dd>{leaveAmount(detail.policy.annualLimit, detail.policy.unit)}</dd>
-									</div>{/if}
+								<div class="sm:col-span-2">
+									<dt class="text-sm text-muted-foreground">เหตุผล</dt>
+									<dd class="break-words whitespace-pre-wrap">{detail.request.reason}</dd>
+								</div>
 							</dl></Card.Content
 						></Card.Root
-					>{/if}
-				{#if detail.instance}<Card.Root
-						><Card.Header
-							><Card.Title
-								>{detail.processPurpose === 'cancellation'
-									? 'ขั้นตอนพิจารณาการยกเลิก'
-									: 'ขั้นตอนพิจารณา'}</Card.Title
-							></Card.Header
-						><Card.Content
-							><ol class="space-y-4">
-								{#each detail.instance.steps as step, index (step.stepIndex)}<li
-										class="rounded-lg border p-3"
-									>
-										<div class="flex flex-wrap justify-between gap-2">
-											<p class="font-medium">{index + 1}. {step.definition.title}</p>
-											<Badge
-												variant={step.completedAt
-													? 'default'
-													: index === detail.instance.currentStep
-														? 'secondary'
-														: 'outline'}
-												>{step.completedAt
-													? 'เสร็จแล้ว'
-													: index === detail.instance.currentStep
-														? 'ขั้นตอนปัจจุบัน'
-														: 'รอดำเนินการ'}</Badge
-											>
-										</div>
-										<ul class="mt-2 space-y-1 text-sm text-muted-foreground">
-											{#each step.recipients as recipient (recipient.userId)}<li>
-													{recipient.displayName}{recipient.completedAt ? ' · ดำเนินการแล้ว' : ''}
-												</li>{/each}
-										</ul>
-										{#if step.definition.requiresSignature}<p
-												class="mt-2 text-xs text-muted-foreground"
-											>
-												ขั้นตอนนี้ใช้ลายมือชื่อ
-											</p>{/if}
-									</li>{/each}
-							</ol></Card.Content
-						></Card.Root
-					>{/if}
-				{#if detail.canAct && reviewer && detail.availableActions.length}<Card.Root
-						class="print:hidden"
-						><Card.Header><Card.Title>ดำเนินการคำขอ</Card.Title></Card.Header><Card.Content
-							>{#if action}<LeaveActionForm
-									{detail}
-									{action}
-									oncomplete={completed}
-									oncancel={() => (action = null)}
-									onrefresh={refreshed}
-								/>{:else}<div class="flex flex-wrap gap-2">
-									{#each detail.availableActions as choice (choice)}<Button
-											variant={choice === 'reject'
-												? 'destructive'
-												: choice === 'return_for_revision'
-													? 'outline'
-													: 'default'}
-											onclick={() => (action = choice)}>{leaveActionLabels[choice]}</Button
-										>{/each}
-								</div>{/if}</Card.Content
-						></Card.Root
-					>{/if}
-				{#if detail.evidenceFileIds.length}<Card.Root
-						><Card.Header><Card.Title>หลักฐานประกอบ</Card.Title></Card.Header><Card.Content
-							><ul class="space-y-2">
-								{#each detail.evidenceFileIds as fileId, index (fileId)}<li>
-										<LoadingButton
-											variant="outline"
-											loading={downloadPending === fileId}
-											disabled={!!downloadPending}
-											onclick={() => download(fileId, index)}
-											>ดาวน์โหลดหลักฐาน {index + 1}</LoadingButton
+					>
+				</div>
+				<aside class="leave-side space-y-4">
+					{#if detail.canAct && reviewer && detail.availableActions.length}<Card.Root
+							class="leave-review gap-3 py-4 print:hidden"
+							><Card.Header class="px-4"
+								><Card.Title>ดำเนินการคำขอ</Card.Title>{#if detail.instance}<Card.Description
+										>{detail.instance.steps[detail.instance.currentStep]?.definition.title ??
+											'ตรวจสอบข้อมูลก่อนยืนยัน'}</Card.Description
+									>{/if}</Card.Header
+							><Card.Content class="px-4"
+								>{#if action}<LeaveActionForm
+										{detail}
+										{action}
+										oncomplete={completed}
+										oncancel={() => (action = null)}
+										onrefresh={refreshed}
+									/>{:else}<div class="flex flex-wrap gap-2">
+										{#each detail.availableActions as choice (choice)}<Button
+												variant={choice === 'reject'
+													? 'destructive'
+													: choice === 'return_for_revision'
+														? 'outline'
+														: 'default'}
+												onclick={() => (action = choice)}>{leaveActionLabels[choice]}</Button
+											>{/each}
+									</div>{/if}</Card.Content
+							></Card.Root
+						>{/if}
+					{#if detail.instance}<Card.Root class="leave-process gap-3 py-4"
+							><Card.Header class="px-4"
+								><Card.Title
+									>{detail.processPurpose === 'cancellation'
+										? 'ขั้นตอนพิจารณาการยกเลิก'
+										: 'ขั้นตอนพิจารณา'}</Card.Title
+								></Card.Header
+							><Card.Content class="px-4"
+								><ol class="space-y-2">
+									{#each detail.instance.steps as step, index (step.stepIndex)}<li
+											class="rounded-md border p-2.5"
 										>
-									</li>{/each}
-							</ul></Card.Content
+											<div class="flex flex-wrap justify-between gap-2">
+												<p class="font-medium">{index + 1}. {step.definition.title}</p>
+												<Badge
+													variant={step.completedAt
+														? 'default'
+														: index === detail.instance.currentStep
+															? 'secondary'
+															: 'outline'}
+													>{step.completedAt
+														? 'เสร็จแล้ว'
+														: index === detail.instance.currentStep
+															? 'ขั้นตอนปัจจุบัน'
+															: 'รอดำเนินการ'}</Badge
+												>
+											</div>
+											<ul class="mt-2 space-y-1 text-sm text-muted-foreground">
+												{#each step.recipients as recipient (recipient.userId)}<li>
+														{recipient.displayName}{recipient.completedAt ? ' · ดำเนินการแล้ว' : ''}
+													</li>{/each}
+											</ul>
+											{#if step.definition.requiresSignature}<p
+													class="mt-2 text-xs text-muted-foreground"
+												>
+													ขั้นตอนนี้ใช้ลายมือชื่อ
+												</p>{/if}
+										</li>{/each}
+								</ol></Card.Content
+							></Card.Root
+						>{/if}
+					{#if detail.policy}<Card.Root class="leave-criteria gap-3 py-4"
+							><Card.Header class="px-4"
+								><Card.Title
+									>{detail.processPurpose === 'cancellation'
+										? 'เกณฑ์ของคำขอเดิม'
+										: 'เกณฑ์ที่ใช้กับคำขอ'}</Card.Title
+								></Card.Header
+							><Card.Content class="px-4"
+								><dl class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+									<div>
+										<dt class="text-sm text-muted-foreground">แหล่งอ้างอิง</dt>
+										<dd class="break-words">{detail.policy.sourceReference}</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">ฉบับ / วันที่มีผล</dt>
+										<dd>ฉบับ {detail.policy.version} · {leaveDate(detail.policy.effectiveFrom)}</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">การนับวัน</dt>
+										<dd>
+											{detail.policy.countingMode === 'working_days'
+												? 'วันทำงานที่โรงเรียนกำหนด'
+												: 'วันปฏิทิน'}
+										</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">หลักฐาน</dt>
+										<dd>
+											{detail.policy.evidenceRequired
+												? 'ต้องมีหลักฐานประกอบทุกคำขอ'
+												: detail.policy.evidenceFromAmount != null
+													? `ต้องแนบตั้งแต่ ${leaveAmount(detail.policy.evidenceFromAmount, detail.policy.unit)}`
+													: 'แนบได้ตามความจำเป็น'}
+										</dd>
+									</div>
+									{#if detail.policy.maxPerRequest != null}<div>
+											<dt class="text-sm text-muted-foreground">จำนวนสูงสุดต่อคำขอ</dt>
+											<dd>{leaveAmount(detail.policy.maxPerRequest, detail.policy.unit)}</dd>
+										</div>{/if}{#if detail.policy.annualLimit != null}<div>
+											<dt class="text-sm text-muted-foreground">สิทธิที่โรงเรียนกำหนดต่อรอบปี</dt>
+											<dd>{leaveAmount(detail.policy.annualLimit, detail.policy.unit)}</dd>
+										</div>{/if}
+								</dl></Card.Content
+							></Card.Root
+						>{/if}
+				</aside>
+				<div class="leave-support space-y-4">
+					{#if detail.evidenceFileIds.length}<Card.Root class="leave-evidence gap-3 py-4"
+							><Card.Header class="px-4"><Card.Title>หลักฐานประกอบ</Card.Title></Card.Header
+							><Card.Content class="px-4"
+								><ul class="space-y-2">
+									{#each detail.evidenceFileIds as fileId, index (fileId)}<li>
+											<LoadingButton
+												variant="outline"
+												loading={downloadPending === fileId}
+												disabled={!!downloadPending}
+												onclick={() => download(fileId, index)}
+												>ดาวน์โหลดหลักฐาน {index + 1}</LoadingButton
+											>
+										</li>{/each}
+								</ul></Card.Content
+							></Card.Root
+						>{/if}
+					<Card.Root class="leave-history gap-3 py-4"
+						><Card.Header class="px-4"><Card.Title>ประวัติการดำเนินการ</Card.Title></Card.Header
+						><Card.Content class="px-4"
+							>{#if detail.history.length}<ol class="space-y-3">
+									{#each detail.history as entry (entry.id)}<li
+											class="space-y-2 border-b pb-3 last:border-0 last:pb-0"
+										>
+											<p class="font-medium">
+												{leaveHistoryLabel(entry.action)}
+											</p>
+											<p class="text-sm text-muted-foreground">
+												{entry.actorName} · {leaveDateTime(entry.createdAt)} · ฉบับ {entry.revision}
+											</p>
+											{#if entry.comment}<p class="break-words whitespace-pre-wrap text-sm">
+													{entry.comment}
+												</p>{/if}{#if entry.signature}<div class="space-y-2">
+													<p class="text-sm">
+														ลงลายมือชื่อและยืนยันคำขอฉบับ {entry.signature.input.documentRevision}
+													</p>
+													{#if entry.signature.imageFileId}<PrivateFileImage
+															fileId={entry.signature.imageFileId}
+															resourceId={detail.request.id}
+															alt={`ลายมือชื่อ ${entry.actorName}`}
+															class="h-24 w-56 object-contain"
+														/>{:else}<svg
+															viewBox="0 0 1000 1000"
+															preserveAspectRatio="none"
+															role="img"
+															aria-label={`ลายมือชื่อ ${entry.actorName}`}
+															class="h-24 w-56 rounded-md border bg-background text-foreground"
+															>{#each entry.signature.input.strokes ?? [] as stroke, index (index)}<path
+																	d={pathData(stroke.points)}
+																	fill="none"
+																	stroke="currentColor"
+																	stroke-width="6"
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																/>{/each}</svg
+														>{/if}
+												</div>{/if}
+										</li>{/each}
+								</ol>{:else}<p class="text-sm text-muted-foreground">
+									ยังไม่มีประวัติ
+								</p>{/if}</Card.Content
 						></Card.Root
-					>{/if}
-				<Card.Root
-					><Card.Header><Card.Title>ประวัติการดำเนินการ</Card.Title></Card.Header><Card.Content
-						>{#if detail.history.length}<ol class="space-y-4">
-								{#each detail.history as entry (entry.id)}<li
-										class="space-y-2 border-b pb-4 last:border-0 last:pb-0"
-									>
-										<p class="font-medium">
-											{leaveHistoryLabel(entry.action)}
-										</p>
-										<p class="text-sm text-muted-foreground">
-											{entry.actorName} · {leaveDateTime(entry.createdAt)} · ฉบับ {entry.revision}
-										</p>
-										{#if entry.comment}<p class="break-words whitespace-pre-wrap text-sm">
-												{entry.comment}
-											</p>{/if}{#if entry.signature}<div class="space-y-2">
-												<p class="text-sm">
-													ลงลายมือชื่อและยืนยันคำขอฉบับ {entry.signature.input.documentRevision}
-												</p>
-												{#if entry.signature.imageFileId}<PrivateFileImage
-														fileId={entry.signature.imageFileId}
-														resourceId={detail.request.id}
-														alt={`ลายมือชื่อ ${entry.actorName}`}
-														class="h-24 w-56 object-contain"
-													/>{:else}<svg
-														viewBox="0 0 1000 1000"
-														preserveAspectRatio="none"
-														role="img"
-														aria-label={`ลายมือชื่อ ${entry.actorName}`}
-														class="h-24 w-56 rounded-md border bg-background text-foreground"
-														>{#each entry.signature.input.strokes ?? [] as stroke, index (index)}<path
-																d={pathData(stroke.points)}
-																fill="none"
-																stroke="currentColor"
-																stroke-width="6"
-																stroke-linecap="round"
-																stroke-linejoin="round"
-															/>{/each}</svg
-													>{/if}
-											</div>{/if}
-									</li>{/each}
-							</ol>{:else}<p class="text-sm text-muted-foreground">
-								ยังไม่มีประวัติ
-							</p>{/if}</Card.Content
-					></Card.Root
-				>
+					>
+				</div>
 			</div>
 		{/if}
 	</section>
@@ -468,6 +484,31 @@
 >
 
 <style>
+	.leave-layout {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	@media (min-width: 1024px) {
+		.leave-layout {
+			display: grid;
+			grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr);
+			align-items: start;
+		}
+		.leave-primary {
+			grid-column: 1;
+			grid-row: 1;
+		}
+		.leave-side {
+			grid-column: 2;
+			grid-row: 1 / span 2;
+		}
+		.leave-support {
+			grid-column: 1;
+			grid-row: 2;
+		}
+	}
+
 	@media print {
 		:global(
 			body:has(#staff-leave-print)
@@ -482,7 +523,17 @@
 			margin: 0;
 		}
 		#staff-leave-print {
+			display: block;
 			width: 100%;
+		}
+		#staff-leave-print :global([data-slot='card']) {
+			margin-bottom: 10pt;
+			break-inside: auto;
+			gap: 8pt;
+			padding-block: 10pt;
+		}
+		#staff-leave-print :global(li) {
+			break-inside: avoid;
 		}
 		#staff-leave-print :global(*) {
 			color: black !important;
