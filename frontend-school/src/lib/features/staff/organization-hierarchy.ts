@@ -29,6 +29,23 @@ export function organizationUnitLabel(unit: OrganizationUnit) {
 	return 'หน่วยงาน';
 }
 
+export function organizationUnitPath(unit: OrganizationUnit, units: OrganizationUnit[]) {
+	return [...organizationAncestors(unit, units), unit].map((item) => item.name).join(' › ');
+}
+
+/** Flatten every selectable level in the same order as the organization tree. */
+export function organizationPickerOptions(units: OrganizationUnit[], search = '') {
+	const options: { unit: OrganizationUnit; context: string }[] = [];
+	function visit(nodes: OrganizationHierarchyNode[], ancestors: string[] = []) {
+		for (const node of nodes) {
+			if (node.matched) options.push({ unit: node.unit, context: ancestors.join(' › ') });
+			visit(node.children, [...ancestors, node.unit.name]);
+		}
+	}
+	visit(organizationHierarchy(units, search));
+	return options;
+}
+
 /** Keep ancestors as context when searching/filtering; never promote a matching child. */
 export function organizationHierarchy(
 	units: OrganizationUnit[],

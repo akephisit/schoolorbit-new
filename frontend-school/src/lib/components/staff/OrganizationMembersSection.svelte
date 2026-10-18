@@ -7,6 +7,11 @@
 		type OrganizationUnit
 	} from '#lib/api/staff.js';
 	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
+	import {
+		organizationPositionOptions as positionOptions,
+		organizationPositionLabel,
+		type OrganizationPositionCode as PositionCode
+	} from '#lib/features/staff/organization-positions.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
@@ -43,15 +48,6 @@
 		onRefresh: () => void;
 		onChanged?: () => Promise<void>;
 	}
-
-	type PositionCode =
-		'director' | 'deputy_director' | 'head' | 'deputy_head' | 'coordinator' | 'member';
-
-	type PositionOption = {
-		value: PositionCode;
-		label: string;
-		group: 'leadership' | 'coordination' | 'member';
-	};
 
 	type MemberGroup = {
 		key: string;
@@ -117,19 +113,6 @@
 	});
 	let editSubmitting = $state(false);
 	let removingMemberId = $state('');
-
-	const positionOptions: PositionOption[] = [
-		{ value: 'director', label: 'ผู้อำนวยการ', group: 'leadership' },
-		{ value: 'deputy_director', label: 'รองผู้อำนวยการ', group: 'leadership' },
-		{ value: 'head', label: 'หัวหน้า', group: 'leadership' },
-		{ value: 'deputy_head', label: 'รองหัวหน้า', group: 'coordination' },
-		{ value: 'coordinator', label: 'ผู้ประสานงาน', group: 'coordination' },
-		{ value: 'member', label: 'สมาชิก', group: 'member' }
-	];
-
-	const positionLabels = Object.fromEntries(
-		positionOptions.map((position) => [position.value, position.label])
-	) as Record<PositionCode, string>;
 
 	const positionRank = Object.fromEntries(
 		positionOptions.map((position, index) => [position.value, index])
@@ -362,7 +345,7 @@
 	}
 
 	function positionOptionLabel(positionCode: string) {
-		return positionLabels[positionCode as PositionCode] ?? 'เลือกตำแหน่ง';
+		return positionCode ? organizationPositionLabel(positionCode) : 'เลือกตำแหน่ง';
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout>;
@@ -502,10 +485,7 @@
 										<div class="min-w-0">
 											<p class="break-words text-sm font-medium">{member.name}</p>
 											<div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-												<span
-													>{positionLabels[member.position_code as PositionCode] ??
-														member.position_code}</span
-												>
+												<span>{organizationPositionLabel(member.position_code)}</span>
 												{#if includeChildren}
 													<span>·</span>
 													<span class="text-primary/80">{member.organization_unit_name}</span>
@@ -651,9 +631,9 @@
 			{/if}
 
 			<div class="space-y-2">
-				<Label>ตำแหน่ง *</Label>
+				<Label for="add-member-position">ตำแหน่ง *</Label>
 				<Select.Root type="single" bind:value={addForm.position_code}>
-					<Select.Trigger class="w-full">
+					<Select.Trigger id="add-member-position" class="w-full">
 						{positionOptionLabel(addForm.position_code)}
 					</Select.Trigger>
 					<Select.Content>
@@ -706,9 +686,9 @@
 			{/if}
 
 			<div class="space-y-2">
-				<Label>ตำแหน่ง</Label>
+				<Label for="edit-member-position">ตำแหน่ง</Label>
 				<Select.Root type="single" bind:value={editForm.position_code}>
-					<Select.Trigger class="w-full">
+					<Select.Trigger id="edit-member-position" class="w-full">
 						{positionOptionLabel(editForm.position_code)}
 					</Select.Trigger>
 					<Select.Content>
