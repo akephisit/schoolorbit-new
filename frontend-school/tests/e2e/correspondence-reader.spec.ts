@@ -33,6 +33,86 @@ test('current PDF opens automatically and a failed preview has a focused retry',
 	expect(api.writes).toHaveLength(0);
 });
 
+test('signing remains unavailable after a failed preview and becomes usable after its retry renders', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page);
+	let attempts = 0;
+	await page.route('**/api/correspondence/*/preview**', (route) => {
+		attempts++;
+		return attempts === 1
+			? route.fulfill({
+					status: 503,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'PDF ยังไม่พร้อม' })
+				})
+			: route.fallback();
+	});
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+	const form = page.getByTestId('correspondence-action');
+	await form.getByLabel('ความคิดเห็น / เหตุผล', { exact: true }).fill('ความคิดเห็นระหว่างรอ PDF');
+	await expect(form.getByTestId('signature-pad')).toBeHidden();
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
+	await page.getByRole('button', { name: 'ลองเปิดเอกสารอีกครั้ง', exact: true }).click();
+	await expect(form.getByRole('img', { name: 'พื้นที่วาดลายมือชื่อ', exact: true })).toBeVisible();
+	await expect(form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeEnabled();
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeEnabled();
+	await expect(form.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
+		'ความคิดเห็นระหว่างรอ PDF'
+	);
+	expect(attempts).toBe(2);
+	expect(api.writes).toHaveLength(0);
+	await expect.poll(() => api.readRequests.length).toBe(1);
+});
+
+test('returning from history waits for the current PDF and preserves existing ink and consent', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page);
+	api.advanceDocument();
+	let currentLoads = 0,
+		release = () => {};
+	const preview = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/api/correspondence/*/preview**', async (route) => {
+		if (
+			new URL(route.request().url()).searchParams.get('documentRevision') === '2' &&
+			++currentLoads === 2
+		)
+			await preview;
+		await route.fallback();
+	});
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+	const form = page.getByTestId('correspondence-action');
+	const surface = form.getByRole('img', { name: 'พื้นที่วาดลายมือชื่อ', exact: true });
+	await surface.scrollIntoViewIfNeeded();
+	const box = (await surface.boundingBox())!;
+	await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 8 });
+	await page.mouse.up();
+	const confirmation = form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ });
+	await confirmation.check();
+	await expect(form.getByTestId('signature-pad').locator('svg path')).toHaveCount(1);
+	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
+	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง', exact: true }).click();
+	await page.getByRole('option', { name: /ฉบับ 1 ·/ }).click();
+	await expect(form.getByTestId('signature-pad')).toBeHidden();
+	await page.getByRole('button', { name: 'กลับฉบับปัจจุบัน', exact: true }).click();
+	await expect.poll(() => currentLoads).toBe(2);
+	await expect(form.getByTestId('signature-pad')).toBeHidden();
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
+	release();
+	await expect(surface).toBeVisible();
+	await expect(form.getByTestId('signature-pad').locator('svg path')).toHaveCount(1);
+	await expect(confirmation).toBeChecked();
+	await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeEnabled();
+	expect(api.writes).toHaveLength(0);
+});
+
 test('leaving while preview is pending discards the old document response', async ({ page }) => {
 	const api = await mockCorrespondence(page);
 	let release = () => {};

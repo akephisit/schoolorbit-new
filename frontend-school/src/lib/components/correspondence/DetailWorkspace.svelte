@@ -82,13 +82,29 @@
 	const uploadedFiles = new SvelteMap<File, string>();
 	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
 	let readError = $state(''),
-		renderedRevision = $state<number | null>(null);
+		renderedDocument = $state<{ correspondenceId: string; documentRevision: number } | null>(null);
 	const readRequest = new LatestRequest();
-	async function recordRenderedRead(documentRevision: number) {
+	async function recordRenderedRead(
+		document: { correspondenceId: string; documentRevision: number } | null
+	) {
+		if (disposed) return;
+		if (!document) {
+			renderedDocument = null;
+			readError = '';
+			readRequest.abort();
+			return;
+		}
+		const { correspondenceId, documentRevision } = document;
 		const current = region.value,
 			actorId = $authStore.user?.id;
-		if (!current || !actorId || current.document.revision !== documentRevision) return;
-		renderedRevision = documentRevision;
+		if (
+			!current ||
+			!actorId ||
+			current.record.id !== correspondenceId ||
+			current.document.revision !== documentRevision
+		)
+			return;
+		renderedDocument = document;
 		const ticket = readRequest.begin();
 		readError = '';
 		try {
@@ -177,6 +193,12 @@
 	);
 	const viewerDetail = $derived(
 		detail && selectedDocument ? { ...detail, document: selectedDocument } : detail
+	);
+	const documentReady = $derived(
+		!viewingHistory &&
+			!!detail &&
+			renderedDocument?.correspondenceId === detail.record.id &&
+			renderedDocument.documentRevision === detail.document.revision
 	);
 	const canRevise = $derived(
 		!!detail?.canManage && ['draft', 'revision_requested'].includes(detail.record.status)
@@ -467,7 +489,7 @@
 									detail.availableActions.some(
 										(action) => !['read', 'close', 'reassign'].includes(action)
 									))}
-							placement={signature}
+							placement={documentReady ? signature : undefined}
 							{placementPaths}
 							{placementFileId}
 							onplacementchange={(value) => {
@@ -496,7 +518,7 @@
 							description="อ่านเอกสารต่อได้ การรับทราบยังต้องยืนยันแยกต่างหาก"
 							actionLabel="ลองบันทึกการเปิดอ่านอีกครั้ง"
 							onaction={() => {
-								if (renderedRevision !== null) void recordRenderedRead(renderedRevision);
+								if (renderedDocument) void recordRenderedRead(renderedDocument);
 							}}
 						/>{/if}
 					<div class="flex justify-end">
@@ -788,6 +810,7 @@
 									/>{:else if selectedAction}<ActionForm
 										{detail}
 										action={selectedAction}
+										{documentReady}
 										assignmentId={selectedAssignmentId}
 										{annotations}
 										bind:signature

@@ -45,6 +45,7 @@
 		action,
 		assignmentId,
 		annotations,
+		documentReady,
 		signature = $bindable(),
 		oncomplete,
 		oncancel,
@@ -57,6 +58,7 @@
 		action: ProcessAction;
 		assignmentId?: string;
 		annotations: DocumentAnnotation[];
+		documentReady: boolean;
 		signature?: SignatureInput;
 		oncomplete: (result: CorrespondenceDetail) => void;
 		oncancel: () => void;
@@ -281,56 +283,62 @@
 		if (pending) return;
 		error = '';
 		fieldErrors = {};
-		if (commentRequired && !comment.trim()) {
-			invalidField('action-comment', 'กรอกความคิดเห็น / เหตุผล');
-			return;
-		}
-		if (requirements.evidence && !evidence.length) {
-			invalidField('action-evidence', 'แนบหลักฐานประกอบการดำเนินการ');
-			return;
-		}
-		if (recovery && !reassignFromUserId) {
-			invalidField('reassign-source', 'เลือกผู้รับเดิมที่ต้องเปลี่ยน');
-			return;
-		}
-		if (action === 'reassign' && !reassignUserId) {
-			invalidField('reassign-user', 'เลือกผู้รับผิดชอบ');
-			return;
-		}
-		if (
-			action === 'route' &&
-			(!routing.recipients.some((item) => item.required !== false) ||
-				(routing.requireReview && !routing.reviewer))
-		) {
-			invalidField(
-				!routing.recipients.some((item) => item.required !== false)
-					? 'directed-target-recipients'
-					: 'directed-reviewer',
-				!routing.recipients.some((item) => item.required !== false)
-					? 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ'
-					: 'เลือกผู้ตรวจทาน'
-			);
-			return;
-		}
-		if (signing) {
-			const invalid = validateSigningDraft(
-				signature,
-				paths,
-				method,
-				assetId,
-				confirmed,
-				detail.document.revision
-			);
-			if (invalid) {
+		if (!intent.unresolved) {
+			if (commentRequired && !comment.trim()) {
+				invalidField('action-comment', 'กรอกความคิดเห็น / เหตุผล');
+				return;
+			}
+			if (requirements.evidence && !evidence.length) {
+				invalidField('action-evidence', 'แนบหลักฐานประกอบการดำเนินการ');
+				return;
+			}
+			if (recovery && !reassignFromUserId) {
+				invalidField('reassign-source', 'เลือกผู้รับเดิมที่ต้องเปลี่ยน');
+				return;
+			}
+			if (action === 'reassign' && !reassignUserId) {
+				invalidField('reassign-user', 'เลือกผู้รับผิดชอบ');
+				return;
+			}
+			if (
+				action === 'route' &&
+				(!routing.recipients.some((item) => item.required !== false) ||
+					(routing.requireReview && !routing.reviewer))
+			) {
 				invalidField(
-					!signature || (method === 'drawn' ? !hasInk(paths) : !assetId)
-						? 'signature-input'
-						: !confirmed
-							? 'signature-confirm'
-							: 'placement-page',
-					invalid
+					!routing.recipients.some((item) => item.required !== false)
+						? 'directed-target-recipients'
+						: 'directed-reviewer',
+					!routing.recipients.some((item) => item.required !== false)
+						? 'เพิ่มผู้รับหลักอย่างน้อยหนึ่งรายการ'
+						: 'เลือกผู้ตรวจทาน'
 				);
 				return;
+			}
+			if (signing) {
+				if (!documentReady) {
+					invalidField('signature-input', 'รอเปิดเอกสารให้เรียบร้อยก่อนลงนาม');
+					return;
+				}
+				const invalid = validateSigningDraft(
+					signature,
+					paths,
+					method,
+					assetId,
+					confirmed,
+					detail.document.revision
+				);
+				if (invalid) {
+					invalidField(
+						!signature || (method === 'drawn' ? !hasInk(paths) : !assetId)
+							? 'signature-input'
+							: !confirmed
+								? 'signature-confirm'
+								: 'placement-page',
+						invalid
+					);
+					return;
+				}
 			}
 		}
 		pending = true;
@@ -383,13 +391,15 @@
 			};
 			const result = await actOnCorrespondence(
 				detail.record.id,
-				detail.instance?.directed ? intent.begin(body) : { ...body, requestId: crypto.randomUUID() }
+				detail.instance?.directed || intent.unresolved
+					? intent.begin(body)
+					: { ...body, requestId: crypto.randomUUID() }
 			);
 			intent.accepted();
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			intent.rejected(cause);
-			uncertain = !!detail.instance?.directed && intent.unresolved;
+			uncertain = intent.unresolved;
 			if (!disposed) error = cause instanceof Error ? cause.message : 'ดำเนินการไม่สำเร็จ';
 		} finally {
 			if (!disposed) {
@@ -520,7 +530,11 @@
 				>
 			</div>{/if}
 		{#if signing && signature}
+			{#if !documentReady && !uncertain}<p role="status" class="text-sm text-muted-foreground">
+					กำลังเปิดเอกสารก่อนลงนาม หากเปิดไม่สำเร็จ ให้ลองเปิดอีกครั้งในส่วนเอกสาร
+				</p>{/if}
 			<div
+				hidden={!documentReady && !uncertain}
 				id="signature-input"
 				role="group"
 				aria-label="ลายมือชื่อ"
@@ -654,7 +668,7 @@
 		><LoadingButton
 			type="submit"
 			loading={pending}
-			disabled={imagePending}
+			disabled={imagePending || (signing && !documentReady && !uncertain)}
 			variant={action === 'reject' ? 'destructive' : 'default'}>ยืนยัน{actionLabel}</LoadingButton
 		>
 	</div>

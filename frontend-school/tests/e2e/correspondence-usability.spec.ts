@@ -5,10 +5,12 @@ import {
 	correspondenceId,
 	detailPath
 } from './fixtures/correspondence';
+import { mockDirectedCorrespondence } from './fixtures/correspondence-directed';
 import type {
 	CreateCorrespondenceRequest,
 	ReviseCorrespondenceRequest,
-	SendCorrespondenceRequest
+	SendCorrespondenceRequest,
+	ProcessActionRequest
 } from '../../src/lib/api/correspondence';
 
 test.use({ serviceWorkers: 'block' });
@@ -266,6 +268,116 @@ test('presets and copy remain local until an explicit versioned save', async ({ 
 	expect(api.templateWrites[1].expectedRevision).toBeUndefined();
 	expect(api.templateWrites[1].code).not.toBe(api.templateWrites[0].code);
 });
+
+test('an unresolved signing command stays exactly replayable while a newer PDF is pending', async ({
+	page
+}) => {
+	const api = await mockDirectedCorrespondence(page, { scenario: 'decide', failAction: true });
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'พิจารณาสั่งการ', exact: true }).click();
+	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
+	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
+	const form = page.getByTestId('correspondence-action');
+	await form
+		.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })
+		.fill('คำสั่งที่ยังไม่ทราบผลการส่ง');
+	await form.getByRole('checkbox', { name: 'ลงนามพร้อมคำสั่ง', exact: true }).check();
+	await draw(page);
+	await form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+	await form.getByRole('button', { name: 'ยืนยันพิจารณาสั่งการ', exact: true }).click();
+	await expect(form).toContainText('ยังยืนยันผลการดำเนินการไม่ได้');
+	const first = structuredClone(api.actions[0]);
+	const detail = api.detail();
+	detail.record = { ...detail.record, revision: detail.record.revision + 1 };
+	detail.document = { ...detail.document, revision: 2, contentHash: 'c'.repeat(64) };
+	detail.revisions = [...detail.revisions, detail.document];
+	let release = () => {};
+	const preview = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let loading = false;
+	await page.route('**/api/correspondence/*/preview**', async (route) => {
+		if (new URL(route.request().url()).searchParams.get('documentRevision') === '2') {
+			loading = true;
+			await preview;
+		}
+		await route.fallback();
+	});
+	await form.getByRole('button', { name: 'ตรวจสอบข้อมูลล่าสุด', exact: true }).click();
+	await expect.poll(() => loading).toBe(true);
+	await expect(form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toBeDisabled();
+	await expect(
+		form.getByRole('button', { name: 'ยืนยันพิจารณาสั่งการ', exact: true })
+	).toBeEnabled();
+	await form.getByRole('button', { name: 'ยืนยันพิจารณาสั่งการ', exact: true }).click();
+	await expect(form).toHaveCount(0);
+	expect(api.actions).toHaveLength(2);
+	expect(api.actions[1]).toEqual(first);
+	expect(first.signature).toMatchObject({ documentRevision: 1, contentHash: 'a'.repeat(64) });
+	release();
+});
+
+for (const failRead of [false, true])
+	test(`signing waits for the native landscape PDF render even when read recording ${failRead ? 'fails' : 'succeeds'}`, async ({
+		page
+	}) => {
+		const api = await mockCorrespondence(page, { rotation: 90, failRead });
+		let release = () => {};
+		const preview = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route('**/api/correspondence/*/preview**', async (route) => {
+			await preview;
+			await route.fallback();
+		});
+		await page.goto(detailPath);
+		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+		const form = page.getByTestId('correspondence-action');
+		await expect(form.getByRole('status')).toContainText('กำลังเปิดเอกสารก่อนลงนาม');
+		await form
+			.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })
+			.fill('เก็บความคิดเห็นระหว่างเปิดเอกสาร');
+		await expect(form.getByRole('img', { name: 'พื้นที่วาดลายมือชื่อ', exact: true })).toHaveCount(
+			0
+		);
+		await expect(form.getByTestId('signature-pad')).toBeHidden();
+		await expect(form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ })).toHaveCount(0);
+		await expect(form.getByLabel('ภาพลายมือชื่อส่วนตัว', { exact: true })).toBeHidden();
+		await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
+		expect(api.writes).toHaveLength(0);
+		expect(api.readRequests).toHaveLength(0);
+		release();
+		await expect(form.getByTestId('signature-pad')).toBeVisible();
+		await expect(form.getByLabel('ภาพลายมือชื่อส่วนตัว', { exact: true })).toBeVisible();
+		await expect(form.getByLabel('ความคิดเห็น / เหตุผล', { exact: true })).toHaveValue(
+			'เก็บความคิดเห็นระหว่างเปิดเอกสาร'
+		);
+		if (failRead)
+			await expect(
+				page.getByRole('button', { name: 'ลองบันทึกการเปิดอ่านอีกครั้ง', exact: true })
+			).toBeVisible();
+		await draw(page);
+		const frame = page.getByTestId('signature-placement');
+		await expect(frame.locator('svg path')).toHaveCount(1);
+		await page.getByRole('button', { name: 'หมุน 90°', exact: true }).click();
+		await expect(frame.locator('svg path')).toHaveCount(1);
+		await expect(form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeEnabled();
+		await form.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+		await form.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
+		await expect(page.getByText('หลักฐานลงนาม', { exact: true })).toBeVisible();
+		expect(api.writes).toHaveLength(1);
+		const payload = api.writes[0].payload as ProcessActionRequest;
+		expect(payload.comment).toBe('เก็บความคิดเห็นระหว่างเปิดเอกสาร');
+		expect(payload.signature).toMatchObject({
+			method: 'drawn',
+			documentRevision: 1,
+			contentHash: 'a'.repeat(64)
+		});
+		expect(payload.signature!.strokes).toHaveLength(1);
+		expect(api.readRequests).toEqual([{ documentRevision: 1 }]);
+	});
 
 for (const rotation of [0, 90])
 	test(`drawn preview ${rotation} degrees supports drag resize and keyboard with explicit reconfirmation`, async ({

@@ -60,7 +60,7 @@
 		onplacementchange?: (placement: SignatureInput) => void;
 		placementPaths?: InkPath[];
 		placementFileId?: string;
-		onrendered?: (documentRevision: number) => void;
+		onrendered?: (document: { correspondenceId: string; documentRevision: number } | null) => void;
 		readContext?: string;
 	} = $props();
 	let canvas = $state<HTMLCanvasElement>();
@@ -122,6 +122,7 @@
 	});
 	const pageCount = $derived(pdf?.pageCount ?? 1);
 	function cleanup() {
+		onrendered?.(null);
 		request.abort();
 		opened = false;
 		if (pdf) {
@@ -154,7 +155,8 @@
 			selected = pageNumber,
 			documentKey = viewedDocument,
 			readKey = `${viewedDocument}:${readContext}`,
-			documentRevision = detail.document.revision;
+			documentRevision = detail.document.revision,
+			correspondenceId = detail.record.id;
 		if (!target || !current) return;
 		const controller = new AbortController();
 		void Promise.all([
@@ -168,7 +170,7 @@
 					aspect = size.width / size.height;
 					if (selected === 1 && documentKey === viewedDocument && renderedDocument !== readKey) {
 						renderedDocument = readKey;
-						onrendered?.(documentRevision);
+						onrendered?.({ correspondenceId, documentRevision });
 					}
 				}
 			})
