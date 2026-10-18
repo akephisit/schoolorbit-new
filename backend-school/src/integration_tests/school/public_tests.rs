@@ -688,7 +688,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["content-type"], "image/png");
         assert_eq!(response.headers()["cache-control"], "public, max-age=300");
-        assert_eq!(response.headers()["vary"], "Origin, X-School-Subdomain");
+        assert_eq!(
+            response.headers()["vary"],
+            "Origin, X-School-Subdomain, Referer"
+        );
         let png = to_bytes(response.into_body(), 2 * 1024 * 1024)
             .await
             .unwrap();
@@ -717,6 +720,33 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         share_images.push(png);
     }
     assert_ne!(share_images[0], share_images[1]);
+    // Referer-only image requests are a distinct cache dimension on the shared API URL.
+    for (index, tenant) in ["school-a", "school-b"].into_iter().enumerate() {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/share-image")
+                    .header("Referer", format!("https://{tenant}.schoolorbit.app/"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["vary"],
+            "Origin, X-School-Subdomain, Referer"
+        );
+        assert_eq!(response.headers()["cache-control"], "public, max-age=300");
+        assert_eq!(
+            to_bytes(response.into_body(), 2 * 1024 * 1024)
+                .await
+                .unwrap(),
+            share_images[index]
+        );
+    }
+
     // A configured private, non-ready or absent crest never becomes successful fallback branding.
     for (file_id, status) in [
         (private_file, None),
@@ -750,6 +780,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(response.headers()["cache-control"], "no-store");
         assert_eq!(response.headers()["retry-after"], "30");
+        assert_eq!(
+            response.headers()["vary"],
+            "Origin, X-School-Subdomain, Referer"
+        );
     }
     sqlx::query("UPDATE school_settings SET logo_file_id=$1")
         .bind(crest)
@@ -787,6 +821,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         );
         assert_eq!(response.headers()["cache-control"], "no-store");
         assert_eq!(response.headers()["retry-after"], "30");
+        assert_eq!(
+            response.headers()["vary"],
+            "Origin, X-School-Subdomain, Referer"
+        );
     }
     storage
         .unavailable
@@ -815,6 +853,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     assert_eq!(corrupt.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(corrupt.headers()["cache-control"], "no-store");
     assert_eq!(corrupt.headers()["retry-after"], "30");
+    assert_eq!(
+        corrupt.headers()["vary"],
+        "Origin, X-School-Subdomain, Referer"
+    );
     storage
         .objects
         .lock()

@@ -166,7 +166,7 @@ pub async fn get_public_share_image(
             (header::CONTENT_TYPE, "image/png"),
             (header::CACHE_CONTROL, "public, max-age=300"),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-            (header::VARY, "Origin, X-School-Subdomain"),
+            (header::VARY, "Origin, X-School-Subdomain, Referer"),
         ],
         png,
     )
@@ -186,7 +186,7 @@ fn share_image_error(error: AppError) -> Response {
     );
     response.headers_mut().insert(
         header::VARY,
-        axum::http::HeaderValue::from_static("Origin, X-School-Subdomain"),
+        axum::http::HeaderValue::from_static("Origin, X-School-Subdomain, Referer"),
     );
     if unavailable {
         response.headers_mut().insert(
