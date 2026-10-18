@@ -14,7 +14,8 @@ pub use organization_scope::{
 };
 pub use permissions::{
     get_cached_user_permissions, load_actor_context, load_actor_context_for_session,
-    module_permission_matches, permission_matches, staff_users_with_all_permissions, ActorContext,
+    module_permission_matches, permission_matches, staff_users_with_all_permissions,
+    staff_users_with_all_permissions_on_connection, ActorContext,
 };
 
 pub mod resource_access_policy;

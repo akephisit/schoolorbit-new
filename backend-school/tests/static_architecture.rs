@@ -284,6 +284,13 @@ fn application_route_source() -> String {
             "school_attendance::http::",
         ),
         (
+            "school_student_care::http::routes::protected_routes",
+            "crates/school-student-care/src/http/routes.rs",
+            "protected_routes",
+            "",
+            "school_student_care::http::",
+        ),
+        (
             "school_behavior::http::routes::protected_routes",
             "crates/school-behavior/src/http/handlers.rs",
             "routes",
@@ -554,7 +561,22 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 34] = [
+    let approved_graph: [(&str, &[&str]); 35] = [
+        (
+            "school-student-care",
+            &[
+                "school-academic-core",
+                "school-auth",
+                "school-auth-http",
+                "school-authorization",
+                "school-crypto",
+                "school-errors",
+                "school-http",
+                "school-notifications",
+                "school-permissions",
+                "school-students",
+            ],
+        ),
         (
             "school-academic-assessment",
             &[
@@ -1562,6 +1584,7 @@ fn eligible_satellite_domains_have_singular_workspace_owners() {
         "school-staff",
         "school-calendar",
         "school-behavior",
+        "school-student-care",
         "school-question-bank",
         "school-workflow",
         "school-students",
@@ -3059,6 +3082,7 @@ fn module_rs_files() -> Vec<PathBuf> {
         "crates/school-attendance/src/application.rs",
         "crates/school-attendance/src/runtime.rs",
         "crates/school-behavior/src/http",
+        "crates/school-student-care/src/http",
         "crates/school-workflow/src/http",
         "crates/school-auth-http/src/http",
         "crates/school-auth/src/consent",

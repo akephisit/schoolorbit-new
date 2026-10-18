@@ -1354,6 +1354,40 @@ From `frontend-school`, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright t
 
 `school-behavior` owns score models and services; application adapters own Attendance delivery and lifecycle ordering. Pure domain tests can run with `cargo test -p school-behavior --lib`. Keep fixture checks distinct: a passing pure test without `TEST_DATABASE_URL` does not verify database mutations.
 
+## Student Care assessments and support
+
+Student Care is independent of Behavior points. Its domain and resource policy live in
+`backend-school/crates/school-student-care/`; the frontend route loaders, forms and typed
+draft transformations live in `frontend-school/src/lib/features/student-care/`,
+`frontend-school/src/lib/components/student-care/` and the dedicated Student Care routes.
+Use the existing disposable database runner for persistence, encryption, replay and access
+checks; never point these fixtures at a tenant database:
+
+```bash
+./scripts/test_backend_school.sh --package school-student-care -- --test-threads=1
+./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
+```
+
+From `frontend-school`, run the feature helpers and route-loading guards, then the
+synthetic Chromium workflows against a ready local frontend:
+
+```bash
+node --test tests/static/student-care-drafts.test.mjs tests/static/route-data-loading-inventory.test.mjs tests/static/route-data-loading-policy.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/student-care.spec.ts --project=chromium --workers=1
+```
+
+The browser fixtures use explicitly synthetic, nonclinical instruments. They exercise
+validated library configuration without instrument statuses, pinned round versions,
+respondent/reviewer assignment, server draft failure/retry/reopen and final submission,
+paper-score provenance, guardian restrictions, resource-specific mixed permissions,
+visit planning/completion, case sources and event history, and reviewer handoff without
+reading private responses. They also inspect narrow light/dark layouts and late-response
+disposal. Keep this evidence separate from publisher authorization, approved clinical
+content/interpretation and real-tenant staff/guardian acceptance. SDQ digital content must
+not be reproduced without prior publisher authorization; manual-result mode does not
+provide questionnaire content or invented norms. Follow `.rules` section 11 for generated
+contract/permission, Svelte/TypeScript, focused lint and production-build checks.
+
 ## Supply catalog
 
 Supply catalog ownership is in `backend-school/crates/school-administration/src/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
