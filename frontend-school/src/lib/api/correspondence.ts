@@ -21,7 +21,9 @@ export type InkStroke = Schemas['InkStroke'];
 export type SignatureInput = Schemas['SignatureInput'];
 export type SignatureAsset = Schemas['SignatureAsset'];
 
+export type CorrespondenceView = Schemas['CorrespondenceListView'];
 export interface CorrespondenceFilters {
+	view?: CorrespondenceView;
 	register?: CorrespondenceSummary['register'];
 	status?: CorrespondenceSummary['status'];
 	search?: string;

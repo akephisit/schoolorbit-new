@@ -23,6 +23,8 @@
 	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
+	import SignaturePlacement from './SignaturePlacement.svelte';
+	import type { InkPath } from '#lib/correspondence/geometry.js';
 	import AnnotationText from './AnnotationText.svelte';
 	import {
 		fitAnnotationText,
@@ -35,7 +37,10 @@
 		editable = false,
 		disabled = false,
 		placement,
-		onplacement
+		onplacement,
+		onplacementchange,
+		placementPaths = [],
+		placementFileId
 	}: {
 		detail: CorrespondenceDetail;
 		draft?: DocumentAnnotation[];
@@ -43,6 +48,9 @@
 		disabled?: boolean;
 		placement?: SignatureInput;
 		onplacement?: (point: PagePoint, page: number) => void;
+		onplacementchange?: (placement: SignatureInput) => void;
+		placementPaths?: InkPath[];
+		placementFileId?: string;
 	} = $props();
 	let canvas = $state<HTMLCanvasElement>();
 	let overlay: SVGSVGElement;
@@ -62,6 +70,12 @@
 		drawing = $state<PagePoint[]>([]),
 		start = $state<PagePoint | null>(null),
 		active = $state<number | null>(null);
+	$effect.pre(() => {
+		const enabled = !!placement;
+		untrack(() => {
+			if (enabled && tool === 'view') tool = 'placement';
+		});
+	});
 	const request = new LatestRequest();
 	const layers = $derived.by(() => {
 		const accepted = [
@@ -351,7 +365,8 @@
 						คลิกบนหน้าเพื่อวางข้อความ หรือกดเพิ่มข้อความเพื่อวางมุมบน
 					</p>{/if}
 				{#if tool === 'placement'}<p class="text-sm text-muted-foreground">
-						แตะตำแหน่งบนเอกสาร หรือปรับตำแหน่งในแผงลงนาม
+						แตะเพื่อวาง ลากกรอบเพื่อเลื่อน หรือลากมุมเพื่อปรับขนาด ใช้ Tab
+						เลือกกรอบแล้วกดปุ่มลูกศรได้
 					</p>{/if}
 				{#if draft.length}<Button
 						type="button"
@@ -449,17 +464,16 @@
 							stroke-linecap="round"
 							stroke-linejoin="round"
 						/>{/if}
-					{#if placement && placement.page === pageNumber}<rect
-							x={placement.x * pageWidth}
-							y={placement.y * pageHeight}
-							width={placement.width * pageWidth}
-							height={placement.height * pageHeight}
-							fill="none"
-							class="stroke-primary"
-							stroke-width="1.2"
-							stroke-dasharray="4 2"
-						/>{/if}
 				</svg>
+				{#if opened && placement && placement.page === pageNumber && onplacementchange}<SignaturePlacement
+						{placement}
+						{rotation}
+						bounds={() => overlay.getBoundingClientRect()}
+						{disabled}
+						paths={placementPaths}
+						fileId={placementFileId}
+						onchange={onplacementchange}
+					/>{/if}
 				{#each (opened ? detail.signatures : []).filter((signature) => signature.signature.documentRevision === detail.document.revision && signature.signature.page === pageNumber) as signed (signed.id)}
 					<div
 						class="pointer-events-none absolute"

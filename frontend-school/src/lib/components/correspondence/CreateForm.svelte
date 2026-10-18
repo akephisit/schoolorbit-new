@@ -1,12 +1,17 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		createCorrespondence,
+		getCorrespondence,
+		sendCorrespondence,
+		type ProcessStepRecipients,
 		getCorrespondenceOptions,
 		type CorrespondenceOptions,
 		reviseCorrespondence,
 		type CorrespondenceDetail,
+		type ReviseCorrespondenceRequest,
+		type SendCorrespondenceRequest,
 		type CreateCorrespondenceRequest
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
@@ -19,7 +24,13 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
+	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
+	import { recipientLabel } from '#lib/correspondence/recipients.js';
+	import { ApiClientError } from '#lib/api/client.js';
 	import Choice from './Choice.svelte';
+	import RoutePicker from './RoutePicker.svelte';
+	import UnsavedGuard from './UnsavedGuard.svelte';
 	let register = $state('incoming'),
 		title = $state(''),
 		sender = $state(''),
@@ -45,26 +56,113 @@
 		}
 	}
 	let sourceLinks = $state<{ label: string; url: string }[]>([]);
+	let originalGeneration = $state(0),
+		attachmentGeneration = $state(0);
 	let original = $state<File | null>(null),
 		attachments = $state<File[]>([]);
 	let pending = $state(false),
 		error = $state('');
 	let created = $state<CorrespondenceDetail | null>(null);
-	let originalFileId: string | undefined;
-	const attachmentFileIds: string[] = [];
-	const requestId = crypto.randomUUID();
+	let routingOpened = $state(false);
+	let stage = $state(1),
+		templateId = $state(''),
+		steps = $state<ProcessStepRecipients[]>([]),
+		dueDate = $state<string | undefined>();
+	let routeOptions = $state<CorrespondenceOptions | null>(null),
+		savedBasis = $state(''),
+		finished = $state(false);
+	type Upload = {
+		file: File;
+		id?: string;
+		status: 'queued' | 'uploading' | 'ready' | 'failed';
+		error?: string;
+	};
+	let uploads = $state<Upload[]>([]);
+	const createIntent = new MutationIntent<CreateCorrespondenceRequest>();
+	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
+	const sendIntent = new MutationIntent<SendCorrespondenceRequest>();
+	let registrationLocked = $state(false),
+		sendingUncertain = $state(false);
+	let conflict = $state(false),
+		latestDraft = $state<CorrespondenceDetail | null>(null),
+		latestPending = $state(false);
+	async function readLatestDraft() {
+		if (!created || latestPending) return;
+		latestPending = true;
+		try {
+			const result = await getCorrespondence(created.record.id, { signal: ownerController.signal });
+			if (!disposed) latestDraft = result;
+		} catch (cause) {
+			if (!disposed) error = cause instanceof Error ? cause.message : 'โหลดฉบับร่างล่าสุดไม่สำเร็จ';
+		} finally {
+			if (!disposed) latestPending = false;
+		}
+	}
+	function acknowledgeLatest() {
+		if (
+			!latestDraft ||
+			latestDraft.record.status !== 'draft' ||
+			!latestDraft.canManage ||
+			latestDraft.instance
+		)
+			return;
+		created = latestDraft;
+		latestDraft = null;
+		conflict = false;
+		error = '';
+		savedBasis = '';
+	}
 	let disposed = false;
+	const formBasis = $derived(
+		JSON.stringify([
+			register,
+			title,
+			sender,
+			documentNumber,
+			documentDate,
+			urgency,
+			content,
+			organizationUnitId,
+			sourceLinks
+		])
+	);
+	const saved = $derived(!!created && savedBasis === formBasis);
+	const initialBasis = untrack(() => formBasis);
+	let metadataExpanded = $state(false),
+		sourcesExpanded = $state(false);
+	const routeTemplate = $derived(routeOptions?.templates.find((item) => item.id === templateId));
+	const dirty = $derived(
+		!finished &&
+			(!saved || !!templateId) &&
+			(registrationLocked ||
+				formBasis !== initialBasis ||
+				!!original ||
+				attachments.length > 0 ||
+				!!templateId)
+	);
+	async function showInvalidSource(event: Event) {
+		event.preventDefault();
+		const input = event.currentTarget;
+		error = 'ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://';
+		sourcesExpanded = true;
+		stage = 1;
+		await tick();
+		if (!disposed && input instanceof HTMLInputElement) input.focus();
+	}
+
 	onDestroy(() => {
 		disposed = true;
 		ownerController.abort();
 	});
-	async function submit(event: SubmitEvent) {
-		event.preventDefault();
-		if (pending) return;
-		if (!title.trim() || !sender.trim()) {
-			error = 'กรอกเรื่องและผู้ส่งให้ครบ';
-			return;
+	function validate(): boolean {
+		const invalid = validateDocumentMetadata({ title, sender, documentNumber });
+		if (invalid) {
+			error = invalid;
+			stage = 1;
+			metadataExpanded = true;
+			return false;
 		}
+
 		if (
 			sourceLinks.some((link) => {
 				try {
@@ -75,59 +173,204 @@
 			})
 		) {
 			error = 'ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://';
+			sourcesExpanded = true;
+			stage = 1;
+			return false;
+		}
+		return true;
+	}
+	function syncUploads() {
+		const files = [...(original ? [original] : []), ...attachments];
+		uploads = files.map(
+			(file) => uploads.find((item) => item.file === file) ?? { file, status: 'queued' }
+		);
+	}
+	async function upload(item: Upload) {
+		if (item.id || !created) return;
+		item.status = 'uploading';
+		item.error = '';
+		try {
+			const result = await uploadFile(item.file, 'correspondence_document', created.record.id);
+			if (disposed) return;
+			item.id = result.id;
+			item.status = 'ready';
+		} catch (cause) {
+			if (!disposed) {
+				item.status = 'failed';
+				item.error = cause instanceof Error ? cause.message : 'อัปโหลดไม่สำเร็จ';
+			}
+			throw cause;
+		}
+	}
+	async function persist(): Promise<CorrespondenceDetail | null> {
+		if (!validate()) return null;
+		if (!created) {
+			const payload = createIntent.begin({
+				register: register as CreateCorrespondenceRequest['register'],
+				title: title.trim(),
+				sender: sender.trim(),
+				documentNumber: documentNumber || undefined,
+				documentDate,
+				urgency: urgency as CreateCorrespondenceRequest['urgency'],
+				content,
+				sourceLinks,
+				organizationUnitId: organizationUnitId || undefined,
+				annotations: [],
+				attachmentFileIds: []
+			});
+			registrationLocked = true;
+			let result: CorrespondenceDetail;
+			try {
+				result = await createCorrespondence(payload);
+				createIntent.accepted();
+			} catch (cause) {
+				createIntent.rejected(cause);
+				registrationLocked = createIntent.unresolved;
+				throw cause;
+			}
+			if (disposed) return null;
+			created = result;
+		}
+		if (revisionIntent.unresolved) {
+			const payload = revisionIntent.begin({ expectedRevision: created.record.revision, content });
+			try {
+				const result = await reviseCorrespondence(created.record.id, payload);
+				if (disposed) return null;
+				created = result;
+				revisionIntent.accepted();
+			} catch (cause) {
+				revisionIntent.rejected(cause);
+				throw cause;
+			}
+		}
+		syncUploads();
+		for (const item of uploads) {
+			await upload(item);
+			if (disposed) return null;
+		}
+		const originalFileId = original ? uploads.find((item) => item.file === original)?.id : null;
+		const attachmentFileIds = uploads
+			.filter((item) => attachments.includes(item.file))
+			.map((item) => item.id!)
+			.filter(Boolean);
+		if (
+			title.trim() !== created.record.title ||
+			sender.trim() !== created.record.sender ||
+			(documentNumber || null) !== (created.record.documentNumber ?? null) ||
+			(documentDate || null) !== (created.record.documentDate ?? null) ||
+			urgency !== created.record.urgency ||
+			content !== created.document.content ||
+			(originalFileId ?? null) !== (created.document.originalFileId ?? null) ||
+			JSON.stringify(attachmentFileIds) !== JSON.stringify(created.document.attachmentFileIds)
+		) {
+			const body = {
+				expectedRevision: created.record.revision,
+				content,
+				originalFileId,
+				attachmentFileIds,
+				annotations: [],
+				metadata: {
+					title: title.trim(),
+					sender: sender.trim(),
+					documentNumber: documentNumber || null,
+					documentDate: documentDate || null,
+					urgency: urgency as CreateCorrespondenceRequest['urgency']
+				}
+			};
+			const payload = revisionIntent.begin(body);
+			let result: CorrespondenceDetail;
+			try {
+				result = await reviseCorrespondence(created.record.id, payload);
+				revisionIntent.accepted();
+			} catch (cause) {
+				revisionIntent.rejected(cause);
+				throw cause;
+			}
+			if (disposed) return null;
+			created = result;
+		}
+		savedBasis = formBasis;
+		return created;
+	}
+	async function saveDraft() {
+		if (pending || conflict) return;
+		pending = true;
+		error = '';
+		try {
+			await persist();
+		} catch (cause) {
+			if (cause instanceof ApiClientError && cause.status === 409 && created) {
+				conflict = true;
+				latestDraft = null;
+			}
+			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกฉบับร่างไม่สำเร็จ';
+		} finally {
+			if (!disposed) pending = false;
+		}
+	}
+	async function submit(event: SubmitEvent) {
+		event.preventDefault();
+		if (pending || conflict) return;
+		if (stage === 1) {
+			if (validate()) {
+				routingOpened = true;
+				stage = 2;
+				error = '';
+			}
+			return;
+		}
+		if (
+			!routeTemplate ||
+			steps.length !== routeTemplate.steps.length ||
+			steps.some((step) => !step.recipients.length)
+		) {
+			error = 'เลือกแม่แบบและผู้รับให้ครบทุกขั้นตอน';
+			stage = 2;
+			return;
+		}
+		if (stage === 2) {
+			stage = 3;
+			error = '';
 			return;
 		}
 		pending = true;
 		error = '';
 		try {
-			if (!created) {
-				const payload: CreateCorrespondenceRequest = {
-					requestId,
-					register: register as CreateCorrespondenceRequest['register'],
-					title: title.trim(),
-					sender: sender.trim(),
-					documentNumber: documentNumber || undefined,
-					documentDate,
-					urgency: urgency as CreateCorrespondenceRequest['urgency'],
-					content,
-					sourceLinks,
-					organizationUnitId: organizationUnitId || undefined,
-					annotations: [],
-					attachmentFileIds: []
-				};
-				const result = await createCorrespondence(payload);
-				if (disposed) return;
-				created = result;
+			const draft = sendingUncertain ? created : await persist();
+			if (!draft || disposed) return;
+			const body = {
+				expectedRevision: draft.record.revision,
+				templateId,
+				stepRecipients: steps,
+				dueAt: dueDate ? `${dueDate}T23:59:59+07:00` : undefined
+			};
+			const payload = sendIntent.begin(body);
+			let result: CorrespondenceDetail;
+			try {
+				result = await sendCorrespondence(draft.record.id, payload);
+				sendIntent.accepted();
+			} catch (cause) {
+				sendIntent.rejected(cause);
+				sendingUncertain = sendIntent.unresolved;
+				throw cause;
 			}
-			if (original && !originalFileId) {
-				const file = await uploadFile(original, 'correspondence_document', created.record.id);
-				if (disposed) return;
-				originalFileId = file.id;
-			}
-			for (let index = attachmentFileIds.length; index < attachments.length; index += 1) {
-				const file = await uploadFile(
-					attachments[index],
-					'correspondence_document',
-					created.record.id
-				);
-				if (disposed) return;
-				attachmentFileIds.push(file.id);
-			}
-			if (originalFileId || attachmentFileIds.length) {
-				const result = await reviseCorrespondence(created.record.id, {
-					requestId: crypto.randomUUID(),
-					expectedRevision: created.record.revision,
-					content,
-					originalFileId,
-					attachmentFileIds,
-					annotations: []
-				});
-				if (disposed) return;
-				created = result;
-			}
-			await goto(`/staff/correspondence/${created.record.id}`);
+			if (disposed) return;
+			created = result;
+			finished = true;
+			sendingUncertain = false;
+			await tick();
+			await goto(`/staff/correspondence/${result.record.id}`);
 		} catch (cause) {
-			if (!disposed) error = cause instanceof Error ? cause.message : 'สร้างหนังสือไม่สำเร็จ';
+			if (cause instanceof ApiClientError && cause.status === 409 && created) {
+				conflict = true;
+				latestDraft = null;
+			}
+			if (!disposed)
+				error = finished
+					? 'ส่งหนังสือแล้ว แต่เปิดรายละเอียดไม่สำเร็จ กดเปิดหนังสือด้านบนเพื่อตรวจสอบ'
+					: cause instanceof Error
+						? cause.message
+						: 'ส่งหนังสือไม่สำเร็จ';
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -137,179 +380,365 @@
 <PageShell
 	title="สร้างหนังสือ"
 	backHref="/staff/correspondence"
-	description="ลงทะเบียนฉบับร่าง แล้วเลือกผู้รับเพื่อส่งดำเนินการ"
+	description="กรอกข้อมูล เลือกเส้นทางผู้รับ และตรวจสอบก่อนส่งในหน้านี้"
 >
+	<UnsavedGuard {dirty} pending={pending && !finished} />
+	<nav aria-label="ขั้นตอนสร้างหนังสือ" class="mb-6 grid grid-cols-3 gap-2">
+		{#each ['ข้อมูลเอกสาร', 'เส้นทางผู้รับ', 'ตรวจสอบส่ง'] as label, index (label)}
+			<Button
+				type="button"
+				variant={stage === index + 1 ? 'secondary' : 'outline'}
+				disabled={pending || finished || sendingUncertain || index + 1 > stage}
+				aria-current={stage === index + 1 ? 'step' : undefined}
+				onclick={() => {
+					stage = index + 1;
+				}}>{index + 1}. {label}</Button
+			>
+		{/each}
+	</nav>
 	<form class="w-full min-w-0 space-y-6" onsubmit={submit}>
 		{#if error}<PageState
 				variant="error"
 				title={error}
 				description="ข้อมูลที่กรอกยังอยู่ กรุณาตรวจสอบแล้วลองอีกครั้ง"
 			/>{/if}
-		{#if created}<p class="text-sm">
-				บันทึกฉบับร่างแล้ว กำลังแนบไฟล์ · <a
-					class="text-primary underline"
-					href={`/staff/correspondence/${created.record.id}`}>เปิดฉบับร่าง</a
-				>
-			</p>{/if}
-		<Card.Root
-			><Card.Header><Card.Title>ข้อมูลทะเบียน</Card.Title></Card.Header><Card.Content
-				class="grid gap-4 sm:grid-cols-2"
+		{#if conflict && created}<section
+				class="space-y-3 rounded-xl border border-warning/30 bg-warning/5 p-4"
+				aria-label="ตรวจสอบฉบับร่างล่าสุด"
 			>
-				<Choice
-					id="create-register"
-					label="ประเภทหนังสือ"
-					bind:value={register}
-					disabled={pending || !!created}
-					options={Object.entries(registerLabels).map(([value, label]) => ({ value, label }))}
-				/>
-				<Choice
-					id="create-urgency"
-					label="ความเร่งด่วน"
-					bind:value={urgency}
-					disabled={pending || !!created}
-					options={[
-						{ value: 'normal', label: 'ปกติ' },
-						{ value: 'urgent', label: 'ด่วน' },
-						{ value: 'very_urgent', label: 'ด่วนมาก' }
-					]}
-				/>
-				<div class="space-y-2 sm:col-span-2">
-					<Label for="create-title">เรื่อง *</Label><Input
-						id="create-title"
-						bind:value={title}
-						required
-						maxlength={500}
-						disabled={pending || !!created}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="create-sender">ผู้ส่ง / หน่วยงานต้นทาง *</Label><Input
-						id="create-sender"
-						bind:value={sender}
-						required
-						disabled={pending || !!created}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="create-number">เลขที่หนังสือต้นทาง</Label><Input
-						id="create-number"
-						bind:value={documentNumber}
-						disabled={pending || !!created}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="create-date">วันที่หนังสือ</Label><DatePicker
-						id="create-date"
-						bind:value={documentDate}
-						disabled={pending || !!created}
-						clearable
-					/>
-				</div>
-				<div class="space-y-2 sm:col-span-2">
-					{#if ownerOptions}<Choice
-							id="create-owner"
-							label="หน่วยงานเจ้าของเรื่อง (ถ้ามี)"
-							bind:value={organizationUnitId}
-							options={ownerOptions.organizations.map((unit) => ({
-								value: unit.id,
-								label: unit.name
-							}))}
-							searchable
-							disabled={pending || !!created}
-						/>{:else}<LoadingButton
-							type="button"
-							variant="outline"
-							loading={ownerLoading}
-							disabled={pending || !!created}
-							onclick={loadOwners}>ระบุหน่วยงานเจ้าของเรื่อง</LoadingButton
-						>{/if}{#if ownerError}<PageState
-							variant="error"
-							title={ownerError}
-							actionLabel="ลองอีกครั้ง"
-							onaction={loadOwners}
-						/>{/if}
-				</div>
-			</Card.Content></Card.Root
-		>
-		<Card.Root
-			><Card.Header><Card.Title>เนื้อหาและเอกสาร</Card.Title></Card.Header><Card.Content
-				class="space-y-4"
-			>
-				<div class="space-y-2">
-					<Label for="create-content">เนื้อหา / ข้อความประกอบ</Label><Textarea
-						id="create-content"
-						bind:value={content}
-						rows={8}
-						disabled={pending || !!created}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="create-original">เอกสารต้นฉบับ PDF หรือภาพ</Label><Input
-						id="create-original"
-						type="file"
-						accept="application/pdf,image/png,image/jpeg,image/webp"
-						disabled={pending || !!created}
-						onchange={(event) => {
-							original = event.currentTarget.files?.[0] ?? null;
-						}}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="create-attachments">ไฟล์แนบ</Label><Input
-						id="create-attachments"
-						type="file"
-						multiple
-						disabled={pending || !!created}
-						onchange={(event) => {
-							attachments = Array.from(event.currentTarget.files ?? []);
-						}}
-					/>
-				</div>
-			</Card.Content></Card.Root
-		>
-		<Card.Root
-			><Card.Header><Card.Title>แหล่งที่มา</Card.Title></Card.Header><Card.Content class="space-y-3"
-				>{#each sourceLinks as link, index (index)}<div
-						class="grid gap-3 sm:grid-cols-[1fr_2fr_auto]"
-					>
-						<div class="space-y-2">
-							<Label for={`source-label-${index}`}>ชื่อแหล่งที่มา {index + 1}</Label><Input
-								id={`source-label-${index}`}
-								bind:value={link.label}
-								disabled={pending || !!created}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for={`source-url-${index}`}>ลิงก์ {index + 1}</Label><Input
-								id={`source-url-${index}`}
-								type="url"
-								bind:value={link.url}
-								disabled={pending || !!created}
-							/>
-						</div>
-						<Button
-							type="button"
-							class="self-end"
-							variant="ghost"
-							disabled={pending || !!created}
-							onclick={() => {
-								sourceLinks = sourceLinks.filter((_, current) => current !== index);
-							}}>นำออก</Button
-						>
-					</div>{/each}<Button
+				<h2 class="font-medium">ฉบับร่างมีการเปลี่ยนแปลง</h2>
+				<p class="text-sm">
+					ข้อมูลและไฟล์ที่คุณกรอกยังอยู่ ตรวจสอบฉบับล่าสุดแล้วเลือกใช้เป็นฐานก่อนบันทึกอีกครั้ง
+				</p>
+				<LoadingButton
 					type="button"
 					variant="outline"
-					disabled={pending || !!created}
+					loading={latestPending}
+					onclick={readLatestDraft}>ตรวจสอบข้อมูลล่าสุด</LoadingButton
+				>
+				{#if latestDraft}<dl class="space-y-2 text-sm">
+						<dt class="font-medium">
+							ฉบับล่าสุด {latestDraft.record.revision} · {latestDraft.record.title}
+						</dt>
+						<dd>{latestDraft.record.sender}</dd>
+						<dd class="whitespace-pre-wrap break-words">{latestDraft.document.content}</dd>
+						<dd>ไฟล์แนบ {latestDraft.document.attachmentFileIds.length} ไฟล์</dd>
+					</dl>
+					{#if latestDraft.record.status === 'draft' && latestDraft.canManage && !latestDraft.instance}<Button
+							type="button"
+							onclick={acknowledgeLatest}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
+						>{:else}<p class="text-sm">
+							หนังสือฉบับนี้เปลี่ยนสถานะแล้ว เปิดรายละเอียดเพื่อตรวจสอบก่อนดำเนินการต่อ
+						</p>
+						<Button href={`/staff/correspondence/${created.record.id}`} variant="outline"
+							>เปิดหนังสือปัจจุบัน</Button
+						>{/if}{/if}
+			</section>{/if}
+		{#if created}<div
+				class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"
+				role="status"
+			>
+				<p>
+					เลขทะเบียน {created.record.registerNumber}/{created.record.registerYear} · {finished
+						? 'ส่งหนังสือแล้ว'
+						: saved
+							? 'บันทึกฉบับร่างแล้ว ยังไม่ได้ส่ง'
+							: 'มีฉบับร่างในระบบ ยังมีข้อมูลหรือไฟล์ที่ต้องบันทึก'}
+				</p>
+				<p class="text-muted-foreground">
+					ประเภททะเบียนและหน่วยงานเจ้าของเรื่องบันทึกแล้ว แก้ไขข้อมูลเอกสารและไฟล์ต่อได้
+					ผู้รับจะบันทึกเมื่อส่งหนังสือ
+				</p>
+				<a class="text-primary underline" href={`/staff/correspondence/${created.record.id}`}
+					>{finished ? 'เปิดหนังสือที่ส่งแล้ว' : 'เปิดฉบับร่าง'}</a
+				>
+			</div>{/if}
+		<fieldset disabled={sendingUncertain} hidden={stage !== 1} class="min-w-0 space-y-6">
+			<Card.Root
+				><Card.Header><Card.Title>ข้อมูลทะเบียน</Card.Title></Card.Header><Card.Content
+					class="grid gap-4 sm:grid-cols-2"
+				>
+					<Choice
+						id="create-register"
+						label="ประเภทหนังสือ"
+						bind:value={register}
+						disabled={pending || registrationLocked}
+						options={Object.entries(registerLabels).map(([value, label]) => ({ value, label }))}
+					/>
+					<Choice
+						id="create-urgency"
+						label="ความเร่งด่วน"
+						bind:value={urgency}
+						disabled={pending}
+						options={[
+							{ value: 'normal', label: 'ปกติ' },
+							{ value: 'urgent', label: 'ด่วน' },
+							{ value: 'very_urgent', label: 'ด่วนมาก' }
+						]}
+					/>
+					<div class="space-y-2 sm:col-span-2">
+						<Label for="create-title">เรื่อง *</Label><Input
+							id="create-title"
+							bind:value={title}
+							required
+							disabled={pending}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="create-sender">ผู้ส่ง / หน่วยงานต้นทาง *</Label><Input
+							id="create-sender"
+							bind:value={sender}
+							required
+							disabled={pending}
+						/>
+					</div>
+					<details bind:open={metadataExpanded} class="space-y-4 sm:col-span-2">
+						<summary class="cursor-pointer text-sm font-medium"
+							>ข้อมูลเพิ่มเติม (เลขที่ต้นทาง วันที่ และหน่วยงาน)</summary
+						>
+						<div class="mt-4 grid gap-4 sm:grid-cols-2">
+							<div class="space-y-2">
+								<Label for="create-number">เลขที่หนังสือต้นทาง</Label><Input
+									id="create-number"
+									bind:value={documentNumber}
+									disabled={pending}
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for="create-date">วันที่หนังสือ</Label><DatePicker
+									id="create-date"
+									bind:value={documentDate}
+									disabled={pending}
+									clearable
+								/>
+							</div>
+							<div class="space-y-2 sm:col-span-2">
+								{#if ownerOptions}<Choice
+										id="create-owner"
+										label="หน่วยงานเจ้าของเรื่อง (ถ้ามี)"
+										bind:value={organizationUnitId}
+										options={ownerOptions.organizations.map((unit) => ({
+											value: unit.id,
+											label: unit.name
+										}))}
+										searchable
+										disabled={pending || registrationLocked}
+									/>{:else}<LoadingButton
+										type="button"
+										variant="outline"
+										loading={ownerLoading}
+										disabled={pending || registrationLocked}
+										onclick={loadOwners}>ระบุหน่วยงานเจ้าของเรื่อง</LoadingButton
+									>{/if}{#if ownerError}<PageState
+										variant="error"
+										title={ownerError}
+										actionLabel="ลองอีกครั้ง"
+										onaction={loadOwners}
+									/>{/if}
+							</div>
+						</div>
+					</details>
+				</Card.Content></Card.Root
+			>
+			<Card.Root
+				><Card.Header><Card.Title>เนื้อหาและเอกสาร</Card.Title></Card.Header><Card.Content
+					class="space-y-4"
+				>
+					<div class="space-y-2">
+						<Label for="create-content">เนื้อหา / ข้อความประกอบ</Label><Textarea
+							id="create-content"
+							bind:value={content}
+							rows={8}
+							disabled={pending}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="create-original">เอกสารต้นฉบับ PDF หรือภาพ</Label
+						>{#key originalGeneration}<Input
+								id="create-original"
+								type="file"
+								accept="application/pdf,image/png,image/jpeg,image/webp"
+								disabled={pending}
+								onchange={(event) => {
+									original = event.currentTarget.files?.[0] ?? null;
+									originalGeneration += 1;
+									savedBasis = '';
+									syncUploads();
+								}}
+							/>{/key}
+					</div>
+					<div class="space-y-2">
+						<Label for="create-attachments">ไฟล์แนบ</Label>{#key attachmentGeneration}<Input
+								id="create-attachments"
+								type="file"
+								multiple
+								disabled={pending}
+								onchange={(event) => {
+									attachments = [...attachments, ...Array.from(event.currentTarget.files ?? [])];
+
+									attachmentGeneration += 1;
+									savedBasis = '';
+									syncUploads();
+								}}
+							/>{/key}
+					</div>
+				</Card.Content></Card.Root
+			>
+			<Card.Root
+				><Card.Content class="space-y-3"
+					><details bind:open={sourcesExpanded}>
+						<summary class="cursor-pointer font-medium">แหล่งที่มาเพิ่มเติม</summary>
+						<div class="mt-4 space-y-3">
+							{#each sourceLinks as link, index (index)}<div
+									class="grid gap-3 sm:grid-cols-[1fr_2fr_auto]"
+								>
+									<div class="space-y-2">
+										<Label for={`source-label-${index}`}>ชื่อแหล่งที่มา {index + 1}</Label><Input
+											id={`source-label-${index}`}
+											bind:value={link.label}
+											disabled={pending || registrationLocked}
+										/>
+									</div>
+									<div class="space-y-2">
+										<Label for={`source-url-${index}`}>ลิงก์ {index + 1}</Label><Input
+											id={`source-url-${index}`}
+											type="url"
+											oninvalid={showInvalidSource}
+											bind:value={link.url}
+											disabled={pending || registrationLocked}
+										/>
+									</div>
+									<Button
+										type="button"
+										class="self-end"
+										variant="ghost"
+										disabled={pending || registrationLocked}
+										onclick={() => {
+											sourceLinks = sourceLinks.filter((_, current) => current !== index);
+										}}>นำออก</Button
+									>
+								</div>{/each}<Button
+								type="button"
+								variant="outline"
+								disabled={pending || registrationLocked}
+								onclick={() => {
+									sourceLinks = [...sourceLinks, { label: '', url: '' }];
+								}}>เพิ่มแหล่งที่มา</Button
+							>
+						</div>
+					</details></Card.Content
+				></Card.Root
+			>
+		</fieldset>
+		<section hidden={stage !== 2} class="space-y-4" aria-label="เส้นทางผู้รับ">
+			{#if routingOpened}<RoutePicker
+					bind:templateId
+					bind:steps
+					bind:dueDate
+					disabled={pending || sendingUncertain}
+					onready={(value) => {
+						routeOptions = value;
+					}}
+				/>{/if}
+		</section>
+		{#if stage === 3}<section
+				class="space-y-4 rounded-xl border bg-card p-4"
+				aria-label="ตรวจสอบก่อนส่ง"
+			>
+				<h2 class="font-semibold">ตรวจสอบก่อนส่ง</h2>
+				<dl class="grid gap-2 text-sm">
+					<dt class="text-muted-foreground">เรื่อง</dt>
+					<dd class="break-words font-medium">{title}</dd>
+					<dt class="text-muted-foreground">ผู้ส่ง</dt>
+					<dd>{sender}</dd>
+					<dt class="text-muted-foreground">เส้นทาง</dt>
+					<dd>{routeTemplate?.title} · {steps.length} ขั้นตอน</dd>
+				</dl>
+				<ol class="space-y-2 text-sm">
+					{#each routeTemplate?.steps ?? [] as step, index (index)}<li>
+							{index + 1}. {step.title} · เลือกผู้รับ {steps[index]?.recipients.length ?? 0} รายการ
+							<ul class="mt-1 list-inside list-disc">
+								{#each steps[index]?.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li
+										class="break-words"
+									>
+										{routeOptions ? recipientLabel(recipient, routeOptions) : 'ผู้รับที่เลือก'}
+									</li>{/each}
+							</ul>
+						</li>{/each}
+				</ol>
+				<p class="text-sm text-muted-foreground">
+					เมื่อกดส่ง ระบบจะบันทึกผู้รับและเส้นทางสำหรับหนังสือฉบับนี้
+				</p>
+			</section>{/if}
+		{#if sendingUncertain}<PageState
+				variant="error"
+				title="ยังยืนยันผลการส่งครั้งก่อนไม่ได้"
+				description="ข้อมูลและผู้รับครั้งก่อนยังอยู่ กดยืนยันส่งอีกครั้งเพื่อตรวจผลด้วยคำขอเดิม ระบบจะไม่สร้างหนังสือหรือส่งซ้ำ"
+			/>{/if}
+		{#if uploads.length}<section class="space-y-2" aria-label="ไฟล์ที่เลือก">
+				<h2 class="text-sm font-medium">ไฟล์ที่เลือก ({uploads.length})</h2>
+				{#each uploads as item, index (index)}<div
+						class="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm"
+					>
+						<span class="min-w-0 flex-1 break-words"
+							>{item.file.name} · {Math.ceil(item.file.size / 1024)} KB {item.file === original
+								? '· ต้นฉบับ'
+								: ''}</span
+						>
+						<span role="status"
+							>{{
+								queued: 'รออัปโหลด',
+								uploading: 'กำลังอัปโหลด…',
+								ready: 'อัปโหลดแล้ว',
+								failed: 'อัปโหลดไม่สำเร็จ'
+							}[item.status]}</span
+						>
+						{#if item.status === 'uploading'}<progress
+								class="w-20"
+								aria-label={`กำลังอัปโหลด ${item.file.name}`}
+							></progress>{/if}
+						{#if item.error}<p class="w-full text-destructive">{item.error}</p>
+							<Button
+								type="button"
+								size="sm"
+								variant="outline"
+								disabled={pending}
+								onclick={saveDraft}>ลองอัปโหลดอีกครั้ง</Button
+							>{/if}
+						<Button
+							type="button"
+							size="sm"
+							variant="ghost"
+							disabled={pending}
+							aria-label={`นำไฟล์ ${item.file.name} ออก`}
+							onclick={() => {
+								if (item.file === original) original = null;
+								attachments = attachments.filter((file) => file !== item.file);
+								syncUploads();
+								savedBasis = '';
+							}}>นำออก</Button
+						>
+					</div>{/each}
+			</section>{/if}
+		<div class="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t bg-background py-3">
+			<Button href="/staff/correspondence" variant="ghost" disabled={pending}>ยกเลิก</Button>
+			{#if stage > 1}<Button
+					type="button"
+					variant="outline"
+					disabled={pending || sendingUncertain}
 					onclick={() => {
-						sourceLinks = [...sourceLinks, { label: '', url: '' }];
-					}}>เพิ่มแหล่งที่มา</Button
-				></Card.Content
-			></Card.Root
-		>
-		<div class="flex justify-end gap-3">
-			<Button href="/staff/correspondence" variant="outline">ยกเลิก</Button><LoadingButton
-				type="submit"
-				loading={pending}>สร้างฉบับร่าง</LoadingButton
+						stage -= 1;
+					}}>ย้อนกลับ</Button
+				>{/if}
+			<LoadingButton
+				type="button"
+				variant="outline"
+				loading={pending}
+				disabled={finished || conflict || sendingUncertain || !title.trim() || !sender.trim()}
+				onclick={saveDraft}>บันทึกฉบับร่าง</LoadingButton
+			>
+			<LoadingButton type="submit" loading={pending} disabled={finished || conflict}
+				>{stage === 3 ? 'ยืนยันส่งหนังสือ' : 'ถัดไป'}</LoadingButton
 			>
 		</div>
 	</form>

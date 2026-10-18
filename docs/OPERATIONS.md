@@ -1600,3 +1600,12 @@ only an image already accepted as signed evidence for that exact correspondence 
 Template changes create versions and never rewrite accepted process snapshots. A returned
 record can receive a new content revision and resend under its existing source instance while
 retaining prior document, recipient, annotation and signing evidence.
+
+The correspondence usability list derives counts and current-step projections from existing
+records and frozen process snapshots; it adds no migration or background job. Deploy its backend,
+generated API contract and frontend together under normal maintenance. Saved-draft metadata edits
+use the existing revision transaction and stop at the first send; returned records permit body
+revisions while retaining their metadata. Registration numbers, register years/kinds, organization
+and ownership remain unchanged. A rollback needs matching frontend/backend contracts and must
+retain a runtime supporting the correspondence File Platform purposes described above; preserve
+all existing summaries, document revisions, process/action history and file/signature evidence.

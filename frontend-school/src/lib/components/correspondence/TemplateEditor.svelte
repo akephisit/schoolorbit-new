@@ -6,6 +6,7 @@
 		type ProcessTemplateStep,
 		type CorrespondenceOptions
 	} from '#lib/api/correspondence.js';
+	import type { TemplateSeed } from '#lib/correspondence/template-presets.js';
 	import { stepLabels } from '#lib/correspondence/presentation.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -16,11 +17,13 @@
 	import Recipients from './Recipients.svelte';
 	let {
 		template,
+		seed,
 		options,
 		onsaved,
 		oncancel
 	}: {
 		template?: ProcessTemplate;
+		seed?: TemplateSeed;
 		options: CorrespondenceOptions;
 		onsaved: (template: ProcessTemplate) => void;
 		oncancel: () => void;
@@ -37,12 +40,12 @@
 			requiresDelegatedAuthority: false
 		};
 	}
-	let title = $state(untrack(() => template?.title ?? '')),
+	let title = $state(untrack(() => template?.title ?? seed?.title ?? '')),
 		active = $state(untrack(() => template?.active ?? true)),
 		steps = $state<ProcessTemplateStep[]>(
 			untrack(
 				() =>
-					template?.steps.map((step) => ({
+					(template?.steps ?? seed?.steps)?.map((step) => ({
 						...step,
 						recipients: (step.recipients ?? []).map((recipient) => ({ ...recipient }))
 					})) ?? [emptyStep()]

@@ -23,6 +23,8 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		search: url.searchParams.get('search') ?? undefined,
 		cursor: url.searchParams.get('cursor') ?? undefined
 	};
+	const view = url.searchParams.get('view');
+	filters.view = view === 'sent' || view === 'drafts' || view === 'all' ? view : 'action_required';
 	const register = url.searchParams.get('register');
 	if (register === 'incoming' || register === 'outgoing' || register === 'internal')
 		filters.register = register;
@@ -42,7 +44,12 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		records: captureCorrespondenceRead(
 			() => get(can).hasModule(PERMISSION_MODULES.CORRESPONDENCE),
 			() => listCorrespondence(filters, { requestFetch: fetch }),
-			{ items: [], nextCursor: null }
+			{
+				items: [],
+				nextCursor: null,
+				counts: { actionRequired: 0, sent: 0, drafts: 0, all: 0 },
+				progress: []
+			}
 		)
 	};
 };
