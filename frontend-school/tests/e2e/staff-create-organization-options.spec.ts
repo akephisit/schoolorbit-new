@@ -272,7 +272,14 @@ for (const theme of ['light', 'dark'] as const)
 			await expect(
 				page.getByRole('option', { name: optionName(deepest), exact: true })
 			).toBeVisible();
+			await popover.evaluate(async (element) => {
+				await Promise.all(element.getAnimations().map((animation) => animation.finished));
+			});
 			const bounds = await popover.boundingBox();
+			await info.attach('picker-bounds', {
+				body: JSON.stringify({ bounds, viewportWidth: width }),
+				contentType: 'application/json'
+			});
 			expect(bounds!.x).toBeGreaterThanOrEqual(0);
 			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
 			expect(await popover.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(

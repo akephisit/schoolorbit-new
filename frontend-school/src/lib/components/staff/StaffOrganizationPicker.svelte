@@ -41,7 +41,7 @@
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-[min(28rem,calc(100vw-2rem))] p-0" align="start">
+	<Popover.Content class="w-[min(28rem,calc(100vw-2rem))] p-0" align="start" collisionPadding={8}>
 		<Command.Root shouldFilter={false}>
 			<Command.Input
 				aria-label={`ค้นหา${label}`}
