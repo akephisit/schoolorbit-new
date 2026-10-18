@@ -112,3 +112,72 @@ pub struct PublicOrganizationUnit {
 pub struct PublicSchoolOrganization {
     pub units: Vec<PublicOrganizationUnit>,
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum SchoolAppearancePalette {
+    #[default]
+    Teal,
+    Blue,
+    Purple,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum SchoolAppearanceFont {
+    #[default]
+    Kanit,
+    Noto,
+    Sarabun,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum SchoolAppearanceDensity {
+    #[default]
+    Comfortable,
+    Compact,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SchoolAppearance {
+    pub palette: SchoolAppearancePalette,
+    pub font: SchoolAppearanceFont,
+    pub density: SchoolAppearanceDensity,
+    #[cfg_attr(
+        feature = "api-docs",
+        schema(required = true, pattern = "^#[0-9a-fA-F]{6}$")
+    )]
+    #[serde(deserialize_with = "deserialize_appearance_primary")]
+    pub primary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SchoolAppearanceResponse {
+    pub appearance: SchoolAppearance,
+    #[cfg_attr(feature = "api-docs", schema(minimum = 0))]
+    pub revision: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateSchoolAppearanceRequest {
+    pub appearance: SchoolAppearance,
+    #[cfg_attr(feature = "api-docs", schema(minimum = 0))]
+    pub expected_revision: i64,
+}
+
+fn deserialize_appearance_primary<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}

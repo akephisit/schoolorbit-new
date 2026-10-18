@@ -791,6 +791,9 @@ use utoipa::OpenApi;
         school_administration::settings::http::handlers::get_public_organization,
         school_administration::settings::http::handlers::get_public_organization_avatar,
         school_administration::settings::http::handlers::get_settings,
+        school_administration::settings::http::handlers::get_public_appearance,
+        school_administration::settings::http::handlers::get_appearance,
+        school_administration::settings::http::handlers::update_appearance,
         school_notifications::http::handlers::list_notifications,
         school_staff::http::handlers::roles::list_roles,
         school_staff::http::handlers::roles::get_role,
@@ -2096,6 +2099,13 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<CalendarEvent>>,
         ApiResponse<Vec<CalendarPublicEvent>>,
         SchoolSettingsResponse,
+        SchoolAppearance,
+        SchoolAppearancePalette,
+        SchoolAppearanceFont,
+        SchoolAppearanceDensity,
+        SchoolAppearanceResponse,
+        UpdateSchoolAppearanceRequest,
+        ApiResponse<SchoolAppearanceResponse>,
         PublicSchoolInfoData,
         ApiResponse<SchoolSettingsResponse>,
         ApiResponse<PublicSchoolInfoData>,
@@ -5075,6 +5085,65 @@ mod tests {
         for status in ["400", "404", "503"] {
             assert!(operation["responses"][status].is_object());
         }
+    }
+
+    #[test]
+    fn school_appearance_contract_has_closed_options_and_revision_checked_mutation() {
+        let document = school_api_value().unwrap();
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/school/public/appearance",
+                    "get",
+                    "getPublicSchoolAppearance",
+                ),
+                (
+                    "/api/school/settings/appearance",
+                    "get",
+                    "getSchoolAppearance",
+                ),
+                (
+                    "/api/school/settings/appearance",
+                    "patch",
+                    "updateSchoolAppearance",
+                ),
+            ],
+        );
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(schemas["SchoolAppearance"]["additionalProperties"], false);
+        assert_eq!(
+            schemas["UpdateSchoolAppearanceRequest"]["additionalProperties"],
+            false
+        );
+        for field in ["palette", "font", "density", "primary"] {
+            assert!(required(&schemas["SchoolAppearance"]).contains(&field));
+        }
+        assert_eq!(
+            schemas["SchoolAppearanceResponse"]["properties"]["revision"]["minimum"],
+            0
+        );
+        assert_eq!(
+            schemas["UpdateSchoolAppearanceRequest"]["properties"]["expectedRevision"]["minimum"],
+            0
+        );
+        assert_eq!(
+            schemas["SchoolAppearancePalette"]["enum"],
+            serde_json::json!(["teal", "blue", "purple"])
+        );
+        assert_eq!(
+            schemas["SchoolAppearanceFont"]["enum"],
+            serde_json::json!(["kanit", "noto", "sarabun"])
+        );
+        assert_eq!(
+            schemas["SchoolAppearanceDensity"]["enum"],
+            serde_json::json!(["comfortable", "compact"])
+        );
+        assert_eq!(
+            document["paths"]["/api/school/settings/appearance"]["patch"]["responses"]["409"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorResponse"
+        );
     }
 
     #[test]

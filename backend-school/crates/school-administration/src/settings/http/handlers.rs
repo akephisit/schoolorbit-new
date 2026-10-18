@@ -302,3 +302,98 @@ pub async fn delete_logo(
 
     Ok(Json(ApiResponse::empty()).into_response())
 }
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/school/public/appearance", operation_id = "getPublicSchoolAppearance", tag = "school",
+    responses(
+        (status = 200, description = "Current tenant public appearance only", body = ApiResponse<crate::settings::models::SchoolAppearanceResponse>),
+        (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
+        (status = 404, description = "School settings not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_public_appearance(
+    State(state): State<AdministrationHttpState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, Response> {
+    let tenant = tenant_context(&state.auth_runtime, &headers)
+        .await
+        .map_err(|error| uncached_appearance_error(error.into()))?;
+    let response = school_service::appearance::get(&tenant.pool)
+        .await
+        .map_err(|error| uncached_appearance_error(error.into()))?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(ApiResponse::ok(response)),
+    ))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/school/settings/appearance", operation_id = "getSchoolAppearance", tag = "school",
+    responses(
+        (status = 200, description = "Current school appearance", body = ApiResponse<crate::settings::models::SchoolAppearanceResponse>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Settings read permission required", body = ApiErrorResponse),
+        (status = 404, description = "School settings not found", body = ApiErrorResponse)
+    )
+))]
+pub async fn get_appearance(
+    State(state): State<AdministrationHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context.actor.require_permission(codes::SETTINGS_READ_ALL)?;
+    let response = school_service::appearance::get(&context.tenant.pool).await?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(ApiResponse::ok(response)),
+    ))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    patch, path = "/api/school/settings/appearance", operation_id = "updateSchoolAppearance", tag = "school",
+    request_body = crate::settings::models::UpdateSchoolAppearanceRequest,
+    responses(
+        (status = 200, description = "Saved school appearance and committed revision", body = ApiResponse<crate::settings::models::SchoolAppearanceResponse>),
+        (status = 400, description = "Invalid JSON appearance request", body = ApiErrorResponse),
+        (status = 422, description = "Invalid appearance or revision", body = ApiErrorResponse),
+        (status = 413, description = "Request body too large", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Settings update permission or CSRF required", body = ApiErrorResponse),
+        (status = 404, description = "School settings not found", body = ApiErrorResponse),
+        (status = 409, description = "Appearance changed since it was read", body = ApiErrorResponse)
+    )
+))]
+pub async fn update_appearance(
+    State(state): State<AdministrationHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    payload: Result<
+        Json<crate::settings::models::UpdateSchoolAppearanceRequest>,
+        axum::extract::rejection::JsonRejection,
+    >,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context
+        .actor
+        .require_permission(codes::SETTINGS_UPDATE_ALL)?;
+    let Json(payload) = payload.map_err(|error| {
+        if error.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+            AppError::PayloadTooLarge
+        } else {
+            AppError::BadRequest("ข้อมูลรูปแบบโรงเรียนไม่ถูกต้อง".into())
+        }
+    })?;
+    let response = school_service::appearance::update(&context.tenant.pool, payload).await?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(ApiResponse::ok(response)),
+    ))
+}
+
+fn uncached_appearance_error(error: AppError) -> Response {
+    let mut response = error.into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response
+}

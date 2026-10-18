@@ -560,7 +560,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             "narrow handler must enforce permission: {path}"
         );
     }
-    let app = build_app(state);
+    let app = build_app(state.clone());
     let private_file = Uuid::new_v4();
     sqlx::query("INSERT INTO files (id, display_filename, purpose_code, visibility, lifecycle_status, retention_class, inspection_metadata, created_by) VALUES ($1, 'private-font.ttf', 'school_font', 'private', 'processing', 'temporary', '{\"kind\":\"font\"}'::jsonb, $2)")
         .bind(private_file).bind(actor_id).execute(&a).await.unwrap();
@@ -1162,5 +1162,256 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             .unwrap();
         assert_eq!(response.status(), expected, "{path}");
     }
+    // Appearance's additional actors must not change the original statistics fixture.
+    assert_appearance_http_boundaries(&state, &a, &b).await;
     server.abort();
+}
+
+async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool, b: &PgPool) {
+    use school_administration::settings::services::appearance;
+    use school_auth::session_crypto::{session_csrf_token, RawSessionToken};
+    use school_permissions::registry::codes;
+
+    let origin = "https://school-a.schoolorbit.app";
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("Origin", origin.parse().unwrap());
+    let tenant = school_auth_http::tenant::tenant_context(&state.auth_runtime, &headers)
+        .await
+        .unwrap();
+    let editor = user(a, "appearance-editor", "staff", None, "active").await;
+    let reader = user(a, "appearance-reader", "staff", None, "active").await;
+    let student = user(a, "appearance-student", "student", None, "active").await;
+    let parent = user(a, "appearance-parent", "parent", None, "active").await;
+    for (actor, permissions) in [
+        (
+            editor,
+            vec![codes::SETTINGS_READ_ALL, codes::SETTINGS_UPDATE_ALL],
+        ),
+        (reader, vec![codes::SETTINGS_READ_ALL]),
+    ] {
+        let role: Uuid = sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES($1,'Appearance fixture','staff') RETURNING id")
+            .bind(format!("APPEARANCE-{actor}")).fetch_one(a).await.unwrap();
+        sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=ANY($2)")
+            .bind(role).bind(&permissions).execute(a).await.unwrap();
+        sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+            .bind(actor)
+            .bind(role)
+            .execute(a)
+            .await
+            .unwrap();
+    }
+    let app = build_app(state.clone());
+    let payload = serde_json::json!({"appearance":{"palette":"blue","font":"noto","density":"compact","primary":"#AABBCC"},"expectedRevision":0});
+    for (index, actor) in [editor, reader, student, parent].into_iter().enumerate() {
+        let session_id = Uuid::new_v4();
+        let token = RawSessionToken::from_bytes([91 + index as u8; 32]);
+        sqlx::query("INSERT INTO auth_sessions(id,user_id,current_token_hash,remember_me,device_label,created_at,last_seen_at,idle_expires_at,absolute_expires_at,rotated_at) VALUES($1,$2,$3,false,'Appearance fixture',now(),now(),now()+interval '2 hours',now()+interval '12 hours',now())")
+            .bind(session_id).bind(actor).bind(token.token_hash().as_bytes().as_slice()).execute(a).await.unwrap();
+        let cookie = format!(
+            "__Host-schoolorbit_session={}",
+            token.encode().expose_for_cookie()
+        );
+        let csrf = session_csrf_token(
+            state.auth_runtime.config.hmac_key(),
+            tenant.tenant_id,
+            session_id,
+        )
+        .expose_for_header();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/appearance")
+                    .header("Origin", origin)
+                    .header("Cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let data: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert!(data["data"]["appearance"].is_object());
+        assert!(data["data"].get("logoFileId").is_none());
+        assert_eq!(data["data"].as_object().unwrap().len(), 2);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/settings/appearance")
+                    .header("Origin", origin)
+                    .header("Cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if index < 2 {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            }
+        );
+        for (with_csrf, request_origin, expected) in [
+            (false, origin, StatusCode::FORBIDDEN),
+            (
+                true,
+                "https://school-b.schoolorbit.app",
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                true,
+                origin,
+                if index == 0 {
+                    StatusCode::OK
+                } else {
+                    StatusCode::FORBIDDEN
+                },
+            ),
+        ] {
+            let mut request = Request::builder()
+                .method("PATCH")
+                .uri("/api/school/settings/appearance")
+                .header("Origin", request_origin)
+                .header("Cookie", &cookie)
+                .header("Content-Type", "application/json");
+            if with_csrf {
+                request = request.header("X-CSRF-Token", &csrf);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::from(payload.to_string())).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                expected,
+                "actor index {index}, csrf {with_csrf}, origin {request_origin}"
+            );
+            if expected == StatusCode::OK {
+                let saved: serde_json::Value =
+                    serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap())
+                        .unwrap();
+                assert_eq!(saved["success"], true);
+                assert_eq!(saved["data"]["revision"], 1);
+                assert_eq!(saved["data"]["appearance"]["primary"], "#aabbcc");
+                let stale = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method("PATCH")
+                            .uri("/api/school/settings/appearance")
+                            .header("Origin", origin)
+                            .header("Cookie", &cookie)
+                            .header("X-CSRF-Token", &csrf)
+                            .header("Content-Type", "application/json")
+                            .body(Body::from(payload.to_string()))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(stale.status(), StatusCode::CONFLICT);
+                let stale: serde_json::Value =
+                    serde_json::from_slice(&to_bytes(stale.into_body(), 4096).await.unwrap())
+                        .unwrap();
+                assert_eq!(stale["success"], false);
+                let mut unknown_field = payload.clone();
+                unknown_field["appearance"]["mode"] = serde_json::json!("dark");
+                let mut invalid_color = payload.clone();
+                invalid_color["appearance"]["primary"] =
+                    serde_json::json!("red; background:url(x)");
+                let mut negative_revision = payload.clone();
+                negative_revision["expectedRevision"] = serde_json::json!(-1);
+                let mut unknown_enum = payload.clone();
+                unknown_enum["appearance"]["font"] = serde_json::json!("injected");
+                for (body, expected) in [
+                    (unknown_field.to_string(), StatusCode::BAD_REQUEST),
+                    (invalid_color.to_string(), StatusCode::UNPROCESSABLE_ENTITY),
+                    (
+                        negative_revision.to_string(),
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                    ),
+                    (unknown_enum.to_string(), StatusCode::BAD_REQUEST),
+                    ("{invalid".into(), StatusCode::BAD_REQUEST),
+                ] {
+                    let response = app
+                        .clone()
+                        .oneshot(
+                            Request::builder()
+                                .method("PATCH")
+                                .uri("/api/school/settings/appearance")
+                                .header("Origin", origin)
+                                .header("Cookie", &cookie)
+                                .header("X-CSRF-Token", &csrf)
+                                .header("Content-Type", "application/json")
+                                .body(Body::from(body))
+                                .unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                    assert_eq!(response.status(), expected);
+                    let error: serde_json::Value = serde_json::from_slice(
+                        &to_bytes(response.into_body(), 4096).await.unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(error["success"], false);
+                    assert!(error["error"].is_string());
+                }
+            }
+        }
+    }
+    for method in ["GET", "PATCH"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri("/api/school/settings/appearance")
+                    .header("Origin", origin)
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+    for (tenant_name, revision, palette) in [("school-a", 1, "blue"), ("school-b", 0, "teal")] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/school/public/appearance")
+                    .header("Origin", format!("https://{tenant_name}.schoolorbit.app"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let data: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+        assert_eq!(data["data"]["revision"], revision);
+        assert_eq!(data["data"]["appearance"]["palette"], palette);
+    }
+    let mismatch = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/school/public/appearance")
+                .header("Origin", origin)
+                .header("X-School-Subdomain", "school-b")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(mismatch.headers()["cache-control"], "no-store");
+    assert_eq!(appearance::get(a).await.unwrap().revision, 1);
+    assert_eq!(appearance::get(b).await.unwrap().revision, 0);
 }

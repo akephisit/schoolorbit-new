@@ -448,7 +448,7 @@
 						{/if}
 						<button
 							type="button"
-							class="absolute top-2 right-2 bg-destructive text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+							class="absolute top-2 right-2 bg-destructive text-destructive-foreground p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
 							onclick={removeImage}
 						>
 							<X class="w-4 h-4" />

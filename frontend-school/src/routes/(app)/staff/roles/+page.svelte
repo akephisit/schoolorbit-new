@@ -208,9 +208,3 @@
 		{/if}
 	</section>
 </PageShell>
-
-<style>
-	:global(body) {
-		font-family: 'Kanit', sans-serif;
-	}
-</style>
