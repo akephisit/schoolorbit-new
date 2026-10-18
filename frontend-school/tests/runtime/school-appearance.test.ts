@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
 	DEFAULT_APPEARANCE,
+	appearanceStyle,
 	validateAppearance,
 	validateAppearanceResponse,
 	schoolAppearanceCss
@@ -150,5 +152,44 @@ test('semantic destructive foreground preserves readable fills while status red 
 			appearanceTokens({ ...DEFAULT_APPEARANCE, primary: '#ffffff' }, mode).destructive,
 			tokens.destructive
 		);
+	}
+});
+
+test('fallback brand roles match the default serializer before tenant appearance CSS is available', () => {
+	const css = readFileSync(new URL('../../src/routes/layout.css', import.meta.url), 'utf8');
+	const roles = [
+		'primary',
+		'primary-foreground',
+		'primary-fill',
+		'primary-fill-foreground',
+		'primary-fill-hover',
+		'primary-fill-border',
+		'ring',
+		'secondary',
+		'accent',
+		'welcome',
+		'sidebar-primary',
+		'sidebar-primary-foreground',
+		'sidebar-accent',
+		'sidebar-ring'
+	];
+	for (const mode of ['light', 'dark'] as const) {
+		const block = css.match(mode === 'light' ? /:root\s*\{([^}]+)\}/ : /\.dark\s*\{([^}]+)\}/)?.[1];
+		assert.ok(block);
+		const serialized = new Map(
+			appearanceStyle(DEFAULT_APPEARANCE, mode)
+				.split(';')
+				.map((entry) => {
+					const [name, value] = entry.split(':');
+					return [name, value] as const;
+				})
+		);
+		for (const role of roles) {
+			assert.equal(
+				block.match(new RegExp(`--${role}:\\s*([^;]+);`))?.[1].trim(),
+				serialized.get(`--${role}`),
+				`${mode} ${role}`
+			);
+		}
 	}
 });

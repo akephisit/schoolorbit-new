@@ -123,3 +123,45 @@ test('primary button opacity hover keeps white and bright custom colors readable
 		}
 	}
 });
+
+test('chosen fills remain exact with readable text, hover and boundaries across a dense RGB sample', () => {
+	for (const mode of ['light', 'dark'] as const) {
+		for (let red = 0; red <= 255; red += 17) {
+			for (let green = 0; green <= 255; green += 17) {
+				for (let blue = 0; blue <= 255; blue += 17) {
+					const primary =
+						'#' +
+						[red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('');
+					const tokens = appearanceTokens({ ...DEFAULT_APPEARANCE, primary }, mode);
+					assert.equal(tokens.primaryFill, primary);
+					assert.ok(
+						contrastRatio(tokens.primaryFill, tokens.primaryFillForeground) >= 4.5,
+						`${mode} ${primary} fill`
+					);
+					assert.ok(
+						contrastRatio(tokens.primaryFillHover, tokens.primaryFillForeground) >= 4.5,
+						`${mode} ${primary} hover`
+					);
+					for (const surface of [tokens.card, tokens.background]) {
+						assert.ok(
+							contrastRatio(tokens.primaryFillBorder, surface) >= 3,
+							`${mode} ${primary} boundary on ${surface}`
+						);
+					}
+					for (const surface of [
+						tokens.card,
+						tokens.background,
+						tokens.secondary,
+						tokens.accent,
+						tokens.welcome
+					]) {
+						assert.ok(
+							contrastRatio(tokens.primary, surface) >= 4.5,
+							`${mode} ${primary} readable accent on ${surface}`
+						);
+					}
+				}
+			}
+		}
+	}
+});

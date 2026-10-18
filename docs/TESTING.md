@@ -587,12 +587,13 @@ School appearance uses a self-hosted frontend and local mock tenant backend; it 
 student data or credentials. From `frontend-school`, run:
 
 ```bash
-node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts
+node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts tests/runtime/color-picker.test.ts
 node --test tests/runtime/server-appearance-worker.test.mjs
 npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --workers=1
 ```
 
-The focused suite covers the canonical contrast/CSS serializer, per-document tenant reads,
+The focused suite covers the canonical contrast/CSS serializer, exact selected fills with readable
+text/hover/boundaries, keyboard RGB and pale presets, responsive form spacing, per-document tenant reads,
 ETag revalidation, bounded failure, stale font preparation, same-revision font retry,
 delayed CSS/fonts before first paint, an unused stalled legacy bootstrap URL, independent
 CSS fail-open when the inline bootstrap cannot execute, personal mode,

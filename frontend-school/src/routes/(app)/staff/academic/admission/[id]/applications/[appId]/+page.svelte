@@ -1599,7 +1599,7 @@
 									>
 										<X class="w-4 h-4 mr-1" /> ไม่อนุมัติ
 									</Button>
-									<Button class="w-full bg-green-600 hover:bg-green-700" onclick={handleVerify}>
+									<Button class="w-full" onclick={handleVerify}>
 										<Check class="w-4 h-4 mr-1" /> อนุมัติ
 									</Button>
 								</div>
