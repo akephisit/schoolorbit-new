@@ -124,7 +124,7 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	let primary = requested;
 	for (let step = 0; step <= 100; step++) {
 		primary = mix(requested, dark ? '#ffffff' : '#000000', step / 100);
-		const candidateSurfaces = [card, background, ...Object.values(surfaces(primary))];
+		const candidateSurfaces = [card, background, ...Object.values(surfaces(requested))];
 		if (
 			contrastRatio(primary, primaryForeground) >= 4.5 &&
 			contrastRatio(mix(primary, card, 0.1), primaryForeground) >= 4.5 &&
@@ -133,9 +133,27 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		)
 			break;
 	}
-	const tinted = surfaces(primary);
+	const tinted = surfaces(requested);
+	const primaryFillForeground =
+		contrastRatio(requested, '#000000') >= contrastRatio(requested, '#ffffff')
+			? '#000000'
+			: '#ffffff';
+	const primaryFillHover = mix(
+		requested,
+		primaryFillForeground === '#ffffff' ? '#000000' : '#ffffff',
+		0.08
+	);
+	const primaryFillBorder = [card, background].some(
+		(surface) => contrastRatio(requested, surface) < 3
+	)
+		? primary
+		: requested;
 	return {
 		requested,
+		primaryFill: requested,
+		primaryFillForeground,
+		primaryFillHover,
+		primaryFillBorder,
 		hoverOnCard: mix(primary, card, 0.1),
 		hoverOnBackground: mix(primary, background, 0.1),
 		adjusted: primary !== requested,
@@ -168,6 +186,10 @@ export function appearanceStyle(appearance: Appearance, mode: PreviewMode): stri
 		'popover-foreground': tokens.foreground,
 		primary: tokens.primary,
 		'primary-foreground': tokens.primaryForeground,
+		'primary-fill': tokens.primaryFill,
+		'primary-fill-foreground': tokens.primaryFillForeground,
+		'primary-fill-hover': tokens.primaryFillHover,
+		'primary-fill-border': tokens.primaryFillBorder,
 		secondary: tokens.secondary,
 		'secondary-foreground': tokens.foreground,
 		muted: tokens.secondary,

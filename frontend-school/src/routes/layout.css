@@ -16,6 +16,10 @@
 	/* Primary: default school teal */
 	--primary: #167166;
 	--primary-foreground: #ffffff;
+	--primary-fill: #167166;
+	--primary-fill-foreground: #ffffff;
+	--primary-fill-hover: #14685e;
+	--primary-fill-border: #167166;
 	/* Secondary: Warm Gray */
 	--secondary: #ecf4f3;
 	--secondary-foreground: #203a37;
@@ -75,6 +79,10 @@
 	/* Primary: readable default school teal */
 	--primary: #84b4ae;
 	--primary-foreground: #142b25;
+	--primary-fill: #167166;
+	--primary-fill-foreground: #ffffff;
+	--primary-fill-hover: #14685e;
+	--primary-fill-border: #84b4ae;
 	/* Secondary: Darker Gray */
 	--secondary: #29403a;
 	--secondary-foreground: #e8efe8;
@@ -132,6 +140,10 @@
 	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
+	--color-primary-fill: var(--primary-fill);
+	--color-primary-fill-foreground: var(--primary-fill-foreground);
+	--color-primary-fill-hover: var(--primary-fill-hover);
+	--color-primary-fill-border: var(--primary-fill-border);
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
 	--color-muted: var(--muted);

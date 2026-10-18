@@ -596,8 +596,8 @@
 		place-items: center;
 		width: 36px;
 		height: 36px;
-		background: var(--primary);
-		color: var(--primary-foreground);
+		background: var(--primary-fill);
+		color: var(--primary-fill-foreground);
 		border-radius: 11px;
 		flex-shrink: 0;
 	}
@@ -654,8 +654,8 @@
 		color: var(--muted-foreground);
 	}
 	.design-preview :global(.nav-link.active) {
-		background: var(--primary);
-		color: var(--primary-foreground);
+		background: var(--primary-fill);
+		color: var(--primary-fill-foreground);
 		font-weight: 600;
 		box-shadow: 0 4px 10px color-mix(in srgb, var(--primary) 12%, transparent);
 		margin-bottom: 4px;
@@ -901,8 +901,8 @@
 		position: absolute;
 		right: -3px;
 		bottom: -2px;
-		background: var(--primary);
-		color: var(--primary-foreground);
+		background: var(--primary-fill);
+		color: var(--primary-fill-foreground);
 		border: 2px solid var(--card);
 		border-radius: 50%;
 		padding: 2px;
