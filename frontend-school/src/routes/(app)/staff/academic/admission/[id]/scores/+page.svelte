@@ -709,7 +709,7 @@
 											.slice(0, seatGroups.indexOf(group))
 											.reduce((acc, g) => acc + g.seats.length, 0) + seatIdx}
 									{@const isAbsent = absentIds.has(seat.applicationId)}
-									<Table.Row class={isAbsent ? 'opacity-50' : ''}>
+									<Table.Row>
 										<Table.Cell class="text-center text-muted-foreground"
 											>{seat.seatNumber}</Table.Cell
 										>
@@ -722,10 +722,10 @@
 										<Table.Cell class="text-center">
 											<Button
 												size="sm"
-												variant={isAbsent ? 'default' : 'ghost'}
+												variant={isAbsent ? 'destructive' : 'ghost'}
 												class="h-7 text-xs gap-1 {isAbsent
-													? 'bg-red-600 hover:bg-red-700'
-													: 'text-muted-foreground hover:text-red-600'}"
+													? ''
+													: 'text-muted-foreground hover:text-destructive'}"
 												disabled={togglingAbsent[seat.applicationId]}
 												onclick={() => toggleAbsent(seat.applicationId)}
 											>
@@ -771,7 +771,7 @@
 						{:else}
 							{#each applications as app, i (app.id)}
 								{@const isAbsent = absentIds.has(app.id)}
-								<Table.Row class={isAbsent ? 'opacity-50' : ''}>
+								<Table.Row>
 									<Table.Cell class="text-center text-muted-foreground">{i + 1}</Table.Cell>
 									<Table.Cell class="text-xs tabular-nums"
 										>{app.applicationNumber ?? '-'}</Table.Cell
@@ -782,10 +782,10 @@
 									<Table.Cell class="text-center">
 										<Button
 											size="sm"
-											variant={isAbsent ? 'default' : 'ghost'}
+											variant={isAbsent ? 'destructive' : 'ghost'}
 											class="h-7 text-xs gap-1 {isAbsent
-												? 'bg-red-600 hover:bg-red-700'
-												: 'text-muted-foreground hover:text-red-600'}"
+												? ''
+												: 'text-muted-foreground hover:text-destructive'}"
 											disabled={togglingAbsent[app.id]}
 											onclick={() => toggleAbsent(app.id)}
 										>

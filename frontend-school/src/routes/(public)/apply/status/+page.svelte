@@ -378,11 +378,7 @@
 							class="h-11 text-center"
 						/>
 					</div>
-					<Button
-						type="submit"
-						disabled={checking}
-						class="w-full h-11 gap-2 bg-blue-600 hover:bg-blue-700"
-					>
+					<Button type="submit" disabled={checking} class="w-full h-11 gap-2">
 						<Search class="w-4 h-4" />
 						{checking ? 'กำลังตรวจสอบ...' : 'ตรวจสอบผลการสมัคร'}
 					</Button>

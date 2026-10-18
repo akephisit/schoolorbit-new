@@ -6,6 +6,15 @@ import { mockStudentSchedules } from './fixtures/student-schedules-route-data';
 import { navigate } from './fixtures/supervision-route-data';
 import type { CurrentUserDto } from '../../src/lib/api/auth.js';
 import type { CatalogSubjectOverview } from '../../src/lib/api/academic-core.js';
+import type {
+	AdmissionRound,
+	AdmissionTrack,
+	AdmissionExamSubject,
+	ApplicationDetailResponse,
+	ApplicationListItem,
+	RawScore,
+	ScoreRoomGroup
+} from '../../src/lib/api/admission.js';
 import {
 	FONTS,
 	contrastRatio,
@@ -1136,3 +1145,201 @@ for (const font of FONTS) {
 		}
 	});
 }
+
+test('real admission actions preserve pale theme fills and readable absence controls in both modes', async ({
+	page
+}) => {
+	test.setTimeout(90_000);
+	fixture.set({
+		...fixture.saved,
+		appearance: { ...fixture.saved.appearance, primary: '#dbeafe' }
+	});
+	await mockSession(page, ['admission.read.all', 'admission.verify.all', 'admission.scores.all']);
+	const id = (index: number) => `61000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+	const roundId = id(1),
+		appId = id(2),
+		trackId = id(3),
+		subjectId = id(4),
+		timestamp = '2026-01-01T00:00:00Z';
+	const round: AdmissionRound = {
+		id: roundId,
+		academicYearId: id(5),
+		gradeLevelId: id(6),
+		name: 'รอบทดสอบสี',
+		applyStartDate: '2026-01-01',
+		applyEndDate: '2026-12-31',
+		status: 'open',
+		isVisible: true,
+		createdAt: timestamp,
+		updatedAt: timestamp
+	};
+	const tracks: AdmissionTrack[] = [
+		{
+			id: trackId,
+			admissionRoundId: roundId,
+			studyProgramId: id(7),
+			name: 'สายทดสอบ',
+			scoringSubjectIds: [subjectId],
+			tiebreakMethod: 'applied_at',
+			displayOrder: 1,
+			createdAt: timestamp
+		}
+	];
+	const subjects: AdmissionExamSubject[] = [
+		{
+			id: subjectId,
+			admissionRoundId: roundId,
+			name: 'วิชาทดสอบ',
+			maxScore: 100,
+			displayOrder: 1,
+			createdAt: timestamp
+		}
+	];
+	const detail: ApplicationDetailResponse = {
+		application: {
+			id: appId,
+			admissionRoundId: roundId,
+			admissionTrackId: trackId,
+			applicationNumber: 'TEST-001',
+			nationalId: '1111111111111',
+			firstName: 'ตัวอย่าง',
+			lastName: 'ทดสอบ',
+			status: 'submitted',
+			createdAt: timestamp,
+			updatedAt: timestamp
+		},
+		documents: []
+	};
+	const applications: ApplicationListItem[] = [
+		{
+			id: appId,
+			applicationNumber: 'TEST-001',
+			fullName: 'ตัวอย่าง ทดสอบ',
+			status: 'absent',
+			trackName: 'สายทดสอบ',
+			createdAt: timestamp
+		}
+	];
+	const scores: RawScore[] = [{ applicationId: appId, subjectId, score: null, status: 'absent' }];
+	const roster: ScoreRoomGroup[] = [
+		{
+			examRoomId: id(8),
+			roomName: 'ห้องทดสอบ',
+			seats: [
+				{
+					applicationId: appId,
+					applicationNumber: 'TEST-001',
+					examId: 'EXAM-001',
+					fullName: 'ตัวอย่าง ทดสอบ',
+					seatNumber: 1
+				}
+			]
+		}
+	];
+	applications.push({
+		...applications[0],
+		id: id(9),
+		fullName: 'มาเรียน ทดสอบ',
+		status: 'verified'
+	});
+	scores.push({ applicationId: id(9), subjectId, score: 50, status: 'verified' });
+	roster[0].seats.push({
+		...roster[0].seats[0],
+		applicationId: id(9),
+		fullName: 'มาเรียน ทดสอบ',
+		seatNumber: 2
+	});
+	const replies: Record<string, unknown> = {
+		[`/api/admission/applications/${appId}`]: detail,
+		[`/api/admission/rounds/${roundId}`]: round,
+		[`/api/admission/rounds/${roundId}/tracks`]: tracks,
+		[`/api/admission/rounds/${roundId}/subjects`]: subjects,
+		[`/api/admission/rounds/${roundId}/scores`]: scores,
+		[`/api/admission/rounds/${roundId}/score-room-roster`]: roster,
+		[`/api/admission/rounds/${roundId}/applications`]: applications
+	};
+	await page.route(
+		(url) => url.pathname.startsWith('/api/admission/'),
+		async (route) => {
+			const path = new URL(route.request().url()).pathname;
+			expect(route.request().method()).toBe('GET');
+			expect(replies).toHaveProperty(path);
+			await route.fulfill({ json: { success: true, data: replies[path] } });
+		}
+	);
+	async function inspectAction(button: Locator, themeFill: boolean) {
+		await expect(button).toBeVisible();
+		await expect(button).toBeEnabled();
+		for (const width of [1218, 390]) {
+			await page.setViewportSize({ width, height: 888 });
+			for (const hovered of [false, true]) {
+				if (hovered) await button.hover();
+				else await page.mouse.move(0, 0);
+				await settleAnimations(page);
+				const colors = await button.evaluate((element) => {
+					const canvas = document.createElement('canvas');
+					canvas.width = canvas.height = 1;
+					const context = canvas.getContext('2d')!;
+					const paint = (color: string) => {
+						context.fillStyle = color;
+						context.fillRect(0, 0, 1, 1);
+					};
+					const hex = () =>
+						'#' +
+						[...context.getImageData(0, 0, 1, 1).data]
+							.slice(0, 3)
+							.map((channel) => channel.toString(16).padStart(2, '0'))
+							.join('');
+					const ancestors: Element[] = [];
+					let opacity = 1;
+					for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+						ancestors.unshift(parent);
+						opacity *= Number(getComputedStyle(parent).opacity);
+					}
+					// Resolve translucent hover fills over the actual row/card/page surfaces.
+					paint('#ffffff');
+					for (const ancestor of ancestors) paint(getComputedStyle(ancestor).backgroundColor);
+					const background = hex();
+					paint(getComputedStyle(element).color);
+					return { foreground: hex(), background, opacity };
+				});
+				expect(colors.opacity, 'enabled controls remain readable through their ancestor rows').toBe(
+					1
+				);
+				expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
+				if (themeFill && !hovered) expect(colors.background).toBe('#dbeafe');
+				if (!themeFill) expect(colors.background).not.toBe('#dbeafe');
+			}
+		}
+	}
+	for (const mode of ['light', 'dark'] as const) {
+		await gotoDocument(page, `${fixture.baseUrl}/apply/status`);
+		await ready(page);
+		await page.evaluate(async (value) => {
+			const modulePath = '/src/lib/stores/ui-preferences.ts';
+			const { uiPreferences } = await import(modulePath);
+			uiPreferences.setTheme(value);
+		}, mode);
+		await expect
+			.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
+			.toBe(mode === 'dark');
+		await inspectAction(page.getByRole('button', { name: 'ตรวจสอบผลการสมัคร', exact: true }), true);
+		await gotoDocument(
+			page,
+			`${fixture.baseUrl}/staff/academic/admission/${roundId}/applications/${appId}`
+		);
+		await inspectAction(page.getByRole('button', { name: 'อนุมัติ', exact: true }), true);
+		await gotoDocument(page, `${fixture.baseUrl}/staff/academic/admission/${roundId}/scores`);
+		await inspectAction(page.getByRole('button', { name: 'ขาด', exact: true }), false);
+		await inspectAction(
+			page.getByRole('row').filter({ hasText: 'มาเรียน ทดสอบ' }).getByRole('button'),
+			false
+		);
+		await page.getByRole('button', { name: 'ตามสาย', exact: true }).click();
+		await inspectAction(page.getByRole('button', { name: 'ขาด', exact: true }), false);
+		await inspectAction(
+			page.getByRole('row').filter({ hasText: 'มาเรียน ทดสอบ' }).getByRole('button'),
+			false
+		);
+	}
+});
