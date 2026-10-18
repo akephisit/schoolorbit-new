@@ -149,7 +149,7 @@
 
 	html {
 		font-size: 90%;
-		font-family: 'Kanit', sans-serif;
+		font-family: var(--school-font-family, system-ui, sans-serif);
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 	}
@@ -158,9 +158,28 @@
 		@apply bg-background text-foreground;
 	}
 
-	/* Force Kanit font for toast notifications */
+	/* Notifications follow the selected school font. */
 	[data-sonner-toast],
 	[data-sonner-toast] * {
-		font-family: 'Kanit', sans-serif !important;
+		font-family: var(--school-font-family, system-ui, sans-serif) !important;
+	}
+}
+
+@layer base {
+	/* Utilities supplied by a consumer continue to override shared density defaults. */
+	.school-page-shell {
+		padding: var(--school-page-padding, 1.5rem);
+	}
+	.school-page-shell > * + *,
+	.school-page-content > * + * {
+		margin-top: var(--school-page-gap, 1.5rem);
+	}
+	.school-card {
+		gap: var(--school-page-gap, 1.5rem);
+		padding-block: var(--school-card-padding, 1.5rem);
+	}
+	[data-slot='table-cell'],
+	[data-slot='table-head'] {
+		padding-block: var(--school-cell-padding, 0.5rem);
 	}
 }

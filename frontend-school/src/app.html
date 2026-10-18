@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="th">
+<html lang="th" data-school-font-pending="true">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -21,13 +21,35 @@
 		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<meta name="apple-mobile-web-app-title" content="SchoolOrbit" />
 
-		<!-- Fonts -->
-		<link rel="preconnect" href="https://fonts.googleapis.com" />
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link
-			href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap"
-			rel="stylesheet"
-		/>
+		<link rel="stylesheet" href="/school-appearance.css" />
+		<link rel="stylesheet" href="/school-appearance-fonts.css" />
+		<style>
+			html {
+				font-family: var(--school-font-family, system-ui, sans-serif);
+				background: var(--background, #f6f7f3);
+			}
+			html[data-school-font-pending='true'] body {
+				visibility: hidden;
+				animation: school-font-deadline 4s step-end forwards;
+			}
+			@keyframes school-font-deadline {
+				to {
+					visibility: visible;
+					font-family: system-ui, sans-serif;
+				}
+			}
+		</style>
+		<noscript
+			><style>
+				html[data-school-font-pending='true'] body {
+					visibility: visible;
+				}
+				html {
+					--school-font-family: system-ui, sans-serif;
+				}
+			</style></noscript
+		>
+		<script src="/school-appearance-bootstrap.js"></script>
 		<!-- schoolorbit-route-preview-meta -->
 		%sveltekit.head%
 	</head>

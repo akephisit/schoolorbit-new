@@ -15222,6 +15222,39 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SchoolAppearanceResponse": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "appearance": {
+                "$ref": "#/components/schemas/SchoolAppearance"
+              },
+              "revision": {
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "appearance",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_SchoolFontListResponse": {
         "properties": {
           "data": {
@@ -56033,6 +56066,75 @@
         ],
         "type": "object"
       },
+      "SchoolAppearance": {
+        "additionalProperties": false,
+        "properties": {
+          "density": {
+            "$ref": "#/components/schemas/SchoolAppearanceDensity"
+          },
+          "font": {
+            "$ref": "#/components/schemas/SchoolAppearanceFont"
+          },
+          "palette": {
+            "$ref": "#/components/schemas/SchoolAppearancePalette"
+          },
+          "primary": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "palette",
+          "font",
+          "density",
+          "primary"
+        ],
+        "type": "object"
+      },
+      "SchoolAppearanceDensity": {
+        "enum": [
+          "comfortable",
+          "compact"
+        ],
+        "type": "string"
+      },
+      "SchoolAppearanceFont": {
+        "enum": [
+          "kanit",
+          "noto",
+          "sarabun"
+        ],
+        "type": "string"
+      },
+      "SchoolAppearancePalette": {
+        "enum": [
+          "teal",
+          "blue",
+          "purple"
+        ],
+        "type": "string"
+      },
+      "SchoolAppearanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/SchoolAppearance"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appearance",
+          "revision"
+        ],
+        "type": "object"
+      },
       "SchoolFontDeleteConflict": {
         "properties": {
           "referenceCount": {
@@ -65932,6 +66034,24 @@
         "required": [
           "mode",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "UpdateSchoolAppearanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/SchoolAppearance"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appearance",
+          "expectedRevision"
         ],
         "type": "object"
       },
@@ -104843,6 +104963,46 @@
         ]
       }
     },
+    "/api/school/public/appearance": {
+      "get": {
+        "operationId": "getPublicSchoolAppearance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolAppearanceResponse"
+                }
+              }
+            },
+            "description": "Current tenant public appearance only"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid tenant context"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School settings not found"
+          }
+        },
+        "tags": [
+          "school"
+        ]
+      }
+    },
     "/api/school/public/favicon": {
       "get": {
         "operationId": "getPublicSchoolFavicon",
@@ -105087,6 +105247,154 @@
           }
         },
         "summary": "GET /api/school/settings — staff only (SETTINGS_READ_ALL)",
+        "tags": [
+          "school"
+        ]
+      }
+    },
+    "/api/school/settings/appearance": {
+      "get": {
+        "operationId": "getSchoolAppearance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolAppearanceResponse"
+                }
+              }
+            },
+            "description": "Current school appearance"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Settings read permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School settings not found"
+          }
+        },
+        "tags": [
+          "school"
+        ]
+      },
+      "patch": {
+        "operationId": "updateSchoolAppearance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSchoolAppearanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SchoolAppearanceResponse"
+                }
+              }
+            },
+            "description": "Saved school appearance and committed revision"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid JSON appearance request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Settings update permission or CSRF required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School settings not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Appearance changed since it was read"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request body too large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid appearance or revision"
+          }
+        },
         "tags": [
           "school"
         ]

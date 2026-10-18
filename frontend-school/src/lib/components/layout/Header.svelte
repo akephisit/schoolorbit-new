@@ -16,35 +16,22 @@
 
 	let isDarkMode = $state(false);
 
-	// Load theme from localStorage on mount
-	onMount(() => {
+	$effect(() => {
 		const theme = $uiPreferences.theme;
-		if (theme === 'dark') {
-			isDarkMode = true;
-			document.documentElement.classList.add('dark');
-		} else if (theme === 'light') {
-			isDarkMode = false;
-			document.documentElement.classList.remove('dark');
-		} else {
-			// system preference
-			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-			isDarkMode = prefersDark;
-			if (prefersDark) {
-				document.documentElement.classList.add('dark');
-			}
-		}
+		isDarkMode =
+			theme === 'dark' ||
+			(theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 	});
-
+	onMount(() => {
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		const update = () => {
+			if ($uiPreferences.theme === 'system') isDarkMode = media.matches;
+		};
+		media.addEventListener('change', update);
+		return () => media.removeEventListener('change', update);
+	});
 	function toggleDarkMode() {
-		isDarkMode = !isDarkMode;
-		// Toggle dark class on document
-		if (isDarkMode) {
-			document.documentElement.classList.add('dark');
-			uiPreferences.setTheme('dark');
-		} else {
-			document.documentElement.classList.remove('dark');
-			uiPreferences.setTheme('light');
-		}
+		uiPreferences.setTheme(isDarkMode ? 'light' : 'dark');
 	}
 </script>
 

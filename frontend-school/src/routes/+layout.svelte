@@ -2,6 +2,8 @@
 	import './layout.css';
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
+	import { browser } from '$app/env';
+	import { uiPreferences } from '#lib/stores/ui-preferences.js';
 	import { onMount } from 'svelte';
 	import InstallPrompt from '#lib/components/pwa/InstallPrompt.svelte';
 	import IOSInstallPrompt from '#lib/components/pwa/IOSInstallPrompt.svelte';
@@ -13,11 +15,20 @@
 	} from '#lib/deployment/maintenance.js';
 	import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
 	import { initPWA } from '#lib/stores/pwa.js';
+	import { startSchoolAppearance } from '#lib/appearance/runtime.js';
 
 	let { children } = $props();
+	let systemDark = $state(false);
 
 	// Initialize PWA listeners once
 	onMount(() => {
+		const stopAppearance = startSchoolAppearance();
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		systemDark = media.matches;
+		const updateSystemTheme = () => {
+			systemDark = media.matches;
+		};
+		media.addEventListener('change', updateSystemTheme);
 		initPWA();
 		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 			void getServiceWorkerRegistration().catch((error: unknown) => {
@@ -29,18 +40,24 @@
 		return () => {
 			delete document.documentElement.dataset.schoolorbitAppMounted;
 			stopDeploymentMonitor();
+			stopAppearance();
+			media.removeEventListener('change', updateSystemTheme);
 		};
 	});
 
-	// Force light theme for public pages (landing, login)
-	// Using $effect instead of onMount to handle SPA navigation
-	$effect(() => {
-		const isPublicPage = page.url.pathname === '/' || page.url.pathname.startsWith('/login');
-
-		if (isPublicPage) {
-			// Remove dark class for public pages
-			document.documentElement.classList.remove('dark');
-		}
+	// One adapter applies the existing personal mode before SPA route DOM updates.
+	$effect.pre(() => {
+		const preference = $uiPreferences.theme;
+		const path = page.url.pathname;
+		if (!browser) return;
+		const publicPage = path === '/' || path.startsWith('/login');
+		if (preference === 'system') void systemDark;
+		const prefersDark =
+			preference === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+		document.documentElement.classList.toggle(
+			'dark',
+			!publicPage && (preference === 'dark' || prefersDark)
+		);
 	});
 </script>
 

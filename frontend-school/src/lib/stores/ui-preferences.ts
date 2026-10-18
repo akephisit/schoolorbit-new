@@ -21,7 +21,14 @@ function getStoredPreferences(): UIPreferences {
 	try {
 		const stored = localStorage.getItem('ui-preferences');
 		if (stored) {
-			return { ...defaultPreferences, ...JSON.parse(stored) };
+			const parsed = JSON.parse(stored);
+			if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+				return defaultPreferences;
+			const theme =
+				parsed.theme === 'light' || parsed.theme === 'dark' || parsed.theme === 'system'
+					? parsed.theme
+					: 'system';
+			return { ...defaultPreferences, ...parsed, theme };
 		}
 	} catch (error) {
 		console.error('Failed to load UI preferences:', error);

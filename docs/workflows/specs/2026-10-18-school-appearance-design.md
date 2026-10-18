@@ -1,0 +1,13 @@
+# School appearance
+
+User-approved scope: implement a persisted, school-wide palette, font, density and optional primary color with efficient reads and no visible theme/font switch. PR 132 remains draft; no merge, deployment or live tenant operations are authorized.
+
+School Administration owns the existing tenant-local `school_settings` singleton. Migration 127 expands it with typed JSON appearance and a nonnegative revision, preserving the logo relationship. A singleton uniqueness constraint refuses duplicate historical rows rather than choosing or discarding them. Defaults are teal, Kanit, comfortable and no custom primary. A small module in the existing owner is appropriate; there is no independent lifecycle justifying another crate.
+
+Public `GET /api/school/public/appearance` resolves the authoritative tenant through the existing Origin boundary and returns only appearance/revision. Protected GET/PATCH `/api/school/settings/appearance` use the existing actor context and settings read/update permissions. PATCH validates closed enums, six-digit hex colors and nonnegative expected revision, rejects unknown request/config fields, normalizes color and atomically compares revisions. Conflicts return 409; a missing singleton fails safely. Logo saves and appearance saves retain independent ownership.
+
+The School frontend owns an early render-blocking `/school-appearance.css` request, resolved server-side to the current tenant. It revalidates authoritative state before using a private no-cache ETag, provides safe defaults on failure, self-hosts the allowed fonts and gates first display on font readiness. The existing settings UI retains permission checks, separates draft preview from saving and reconciles typed save results. Other users receive saved styles on their next document load and visibility revalidation. Light/dark/device preferences stay local. There is no new global tenant cache, broadcaster or transport queue.
+
+The schema expansion is compatible with prior logo-only binaries. Appearance requires migration 127 and the coordinated new backend/frontend before use. Reverting an application binary does not delete appearance values; migration checksums and persisted data remain intact. Any eventual release must follow normal maintenance, tenant migration and deployed acceptance gates; this task performs none of those production operations.
+
+Verification covers validation, schema constraints/defaults, logo preservation, tenant separation, persistence, stale/concurrent saves and HTTP authorization/CSRF. Generated OpenAPI/TypeScript artifacts use the actual generator. Frontend checks cover initial paint, self-hosted font readiness, settings workflow and mobile/desktop light/dark behavior.

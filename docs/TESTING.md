@@ -570,6 +570,23 @@ Use focused test filters first when changing a handler, client, or service.
 
 ## Frontend School
 
+School appearance uses a self-hosted frontend and local mock tenant backend; it needs no real
+student data or credentials. From `frontend-school`, run:
+
+```bash
+node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts
+npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --workers=1
+```
+
+The focused suite covers the canonical contrast/CSS serializer, per-document tenant reads,
+ETag revalidation, bounded failure, stale font preparation, same-revision font retry,
+delayed CSS/fonts before first paint, blocked bootstrap fail-open, personal mode,
+role/public pages, persisted settings, a fresh browser, SPA navigation, denied reads/writes
+and explicit conflict review. Install the pinned Playwright Chromium and its required host
+libraries before execution. Shared layout guards assert the density token owners; browser
+checks retain explicit utility overrides rather than requiring one fixed spacing value.
+
+
 `npm ci` installs the app toolchain (TypeScript 6) and the private `tools/api-contracts` workspace (TypeScript 5 required by `openapi-typescript`). The API generator resolves its CLI from that workspace; keep its peer dependency isolated when upgrading app tooling.
 
 `runed`, used by the UI primitives, still declares an optional Kit 2 peer for its separate Kit utilities. The scoped override selects Kit 3 for the portable utilities used by Bits UI and Svelte Toolbelt, which do not import `runed/kit`. The Kit-specific utilities still use retired Kit APIs; do not import `runed/kit` into the applications until upstream supports Kit 3. Verify the installed graph with `npm ls @sveltejs/kit svelte vite typescript --all` and run the mocked browser acceptance after dependency changes.

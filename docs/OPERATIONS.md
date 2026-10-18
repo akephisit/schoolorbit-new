@@ -1641,3 +1641,23 @@ retain a runtime supporting the correspondence File Platform purposes described 
 all existing summaries, document revisions, process/action history and file/signature evidence.
 
 Staff leave uses additive tenant migration `126_staff_leave.sql` after directed routing 125. Configure category profiles, routing and policy source/effective dates before enabling staff submission. There are no seeded legal allowances or approval recipients. Before the first leave policy creates a source-owned process template, the schema is compatible with binaries that ignore the Staff tables; after policy/request activation, do not restore a binary lacking the source-template ownership guard. Preserve request/process/evidence history and recover by rolling forward to a compatible release. This feature adds no departure/return tracking or late-alert worker.
+
+
+## School appearance loading and recovery
+
+School appearance is persisted per tenant by `/api/school/settings/appearance`; its revision
+prevents concurrent editors from overwriting one another. Deploy the matching generated API
+contract, backend and frontend together. The public appearance endpoint returns only presentation
+settings and uses the request Origin to select the school. Existing school logos are preserved.
+
+Each document blocks first paint on the same-origin `/school-appearance.css` read. Its private
+ETag response revalidates with the backend; failed or timed-out reads return uncached stable
+defaults for that document. Font files are self-hosted under `/fonts/ui/`. The initial font gate
+waits up to three seconds before selecting a fixed system fallback; an independent CSS deadline
+reveals readable system text if the bootstrap script is blocked. Delayed font completion never
+replaces that initial fallback. No shared process cache or SPA-route appearance fetch is used.
+
+After a save, font preparation precedes atomic CSS replacement. A font failure after database
+commit is reported as a successful save with a presentation retry, retaining the previous usable
+theme. Other documents pick up current settings on their next load, throttled visibility
+revalidation, or a same-origin save signal. Personal light/dark preference remains device-owned.

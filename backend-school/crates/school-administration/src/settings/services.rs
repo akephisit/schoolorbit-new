@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod public;
 
 use bytes::Bytes;

@@ -179,6 +179,11 @@
 	backHref="/staff"
 >
 	<section data-testid="settings-school" aria-busy={loading}>
+		{#if canReadSettings}<Button
+				href="/staff/school-settings/appearance"
+				variant="outline"
+				class="mb-6">รูปแบบและตัวอักษรของทั้งโรงเรียน</Button
+			>{/if}
 		{#if loadError}<PageState
 				variant="error"
 				title="โหลดการตั้งค่าไม่สำเร็จ"
