@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		createCorrespondence,
@@ -63,6 +63,7 @@
 	let pending = $state(false),
 		error = $state('');
 	let created = $state<CorrespondenceDetail | null>(null);
+	let routingOpened = $state(false);
 	let stage = $state(1),
 		templateId = $state(''),
 		steps = $state<ProcessStepRecipients[]>([]),
@@ -126,18 +127,29 @@
 		])
 	);
 	const saved = $derived(!!created && savedBasis === formBasis);
-	let optionalError = $state(false);
+	const initialBasis = untrack(() => formBasis);
+	let metadataExpanded = $state(false),
+		sourcesExpanded = $state(false);
 	const routeTemplate = $derived(routeOptions?.templates.find((item) => item.id === templateId));
 	const dirty = $derived(
 		!finished &&
 			(!saved || !!templateId) &&
-			(!!title ||
-				!!sender ||
-				!!content ||
+			(registrationLocked ||
+				formBasis !== initialBasis ||
 				!!original ||
 				attachments.length > 0 ||
-				sourceLinks.length > 0)
+				!!templateId)
 	);
+	async function showInvalidSource(event: Event) {
+		event.preventDefault();
+		const input = event.currentTarget;
+		error = 'ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://';
+		sourcesExpanded = true;
+		stage = 1;
+		await tick();
+		if (!disposed && input instanceof HTMLInputElement) input.focus();
+	}
+
 	onDestroy(() => {
 		disposed = true;
 		ownerController.abort();
@@ -147,7 +159,7 @@
 		if (invalid) {
 			error = invalid;
 			stage = 1;
-			optionalError = true;
+			metadataExpanded = true;
 			return false;
 		}
 
@@ -161,7 +173,7 @@
 			})
 		) {
 			error = 'ระบุชื่อและลิงก์แหล่งที่มาแบบ https:// หรือ http://';
-			optionalError = true;
+			sourcesExpanded = true;
 			stage = 1;
 			return false;
 		}
@@ -301,6 +313,7 @@
 		if (pending || conflict) return;
 		if (stage === 1) {
 			if (validate()) {
+				routingOpened = true;
 				stage = 2;
 				error = '';
 			}
@@ -383,13 +396,7 @@
 			>
 		{/each}
 	</nav>
-	<form
-		class="w-full min-w-0 space-y-6"
-		onsubmit={submit}
-		oninput={() => {
-			savedBasis = '';
-		}}
-	>
+	<form class="w-full min-w-0 space-y-6" onsubmit={submit}>
 		{#if error}<PageState
 				variant="error"
 				title={error}
@@ -485,7 +492,7 @@
 							disabled={pending}
 						/>
 					</div>
-					<details open={optionalError} class="space-y-4 sm:col-span-2">
+					<details bind:open={metadataExpanded} class="space-y-4 sm:col-span-2">
 						<summary class="cursor-pointer text-sm font-medium"
 							>ข้อมูลเพิ่มเติม (เลขที่ต้นทาง วันที่ และหน่วยงาน)</summary
 						>
@@ -579,7 +586,7 @@
 			>
 			<Card.Root
 				><Card.Content class="space-y-3"
-					><details open={optionalError}>
+					><details bind:open={sourcesExpanded}>
 						<summary class="cursor-pointer font-medium">แหล่งที่มาเพิ่มเติม</summary>
 						<div class="mt-4 space-y-3">
 							{#each sourceLinks as link, index (index)}<div
@@ -596,6 +603,7 @@
 										<Label for={`source-url-${index}`}>ลิงก์ {index + 1}</Label><Input
 											id={`source-url-${index}`}
 											type="url"
+											oninvalid={showInvalidSource}
 											bind:value={link.url}
 											disabled={pending || registrationLocked}
 										/>
@@ -623,7 +631,7 @@
 			>
 		</fieldset>
 		<section hidden={stage !== 2} class="space-y-4" aria-label="เส้นทางผู้รับ">
-			{#if stage >= 2}<RoutePicker
+			{#if routingOpened}<RoutePicker
 					bind:templateId
 					bind:steps
 					bind:dueDate
