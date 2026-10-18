@@ -22,6 +22,11 @@
 
 	let { data }: PageProps = $props();
 	const source = $derived(data.appearance);
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
 	const canRead = $derived(
 		$authStore.user?.user_type === 'staff' && $can.has(PERMISSIONS.SETTINGS_READ_ALL)
 	);
@@ -57,7 +62,7 @@
 	}
 	$effect.pre(() => {
 		const operation = source,
-			identity = `${$authStore.user?.id ?? ''}|${canRead}|${canUpdate}`;
+			identity = `${identityKey}|${canRead}|${canUpdate}`;
 		untrack(() => {
 			if (owner !== identity) {
 				owner = identity;

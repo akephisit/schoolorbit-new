@@ -1256,6 +1256,16 @@
 			"notes": "Direct exact-scope loader owns logo settings; first/error/retry and identity/disposal guards. Upload stays interaction-only, draft survives failed empty commit, success patches logo only and a late upload cannot attach after disposal. Owner SQL is one logo-column singleton SELECT; unchanged."
 		},
 		{
+			"route": "staff/school-settings/appearance",
+			"wave": "staff",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "backend-school school-administration appearance settings",
+			"notes": "Exact settings.read.all route loader owns the revisioned appearance read, identity/permission guards and retry. Settings.update.all gates explicit CAS saves; conflicts retain drafts for review. Fonts prepare before atomic global presentation updates; the document stylesheet owns first paint, not this route."
+		},
+		{
 			"route": "staff/settings",
 			"wave": "staff",
 			"dataOwner": "interaction-only",

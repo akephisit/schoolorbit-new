@@ -6,34 +6,34 @@
 
 :root {
 	--radius: 0.625rem;
-	/* Educational Blue Theme - Light Mode */
-	--background: oklch(0.99 0.005 240);
-	--foreground: oklch(0.2 0.02 240);
-	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.2 0.02 240);
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.2 0.02 240);
-	/* Primary: Deep Educational Blue */
-	--primary: oklch(0.45 0.15 250);
-	--primary-foreground: oklch(0.98 0.005 240);
+	/* Default school appearance fallback - Light Mode */
+	--background: #f6f7f3;
+	--foreground: #203a37;
+	--card: #ffffff;
+	--card-foreground: #203a37;
+	--popover: #ffffff;
+	--popover-foreground: #203a37;
+	/* Primary: default school teal */
+	--primary: #167166;
+	--primary-foreground: #ffffff;
 	/* Secondary: Warm Gray */
-	--secondary: oklch(0.96 0.01 240);
-	--secondary-foreground: oklch(0.2 0.02 240);
+	--secondary: #ecf4f3;
+	--secondary-foreground: #203a37;
 	/* Muted: Light Gray */
-	--muted: oklch(0.96 0.01 240);
-	--muted-foreground: oklch(0.5 0.02 240);
-	/* Accent: Soft Blue */
-	--accent: oklch(0.95 0.02 240);
-	--accent-foreground: oklch(0.2 0.02 240);
+	--muted: #ecf4f3;
+	--muted-foreground: #61746d;
+	/* Accent: default school tint */
+	--accent: #ecf4f3;
+	--accent-foreground: #203a37;
 	/* Destructive: Warm Red */
-	--destructive: oklch(0.55 0.22 25);
-	--destructive-foreground: oklch(0.98 0.005 240);
-	--success: oklch(0.43 0.12 155);
-	--warning: oklch(0.47 0.12 60);
+	--destructive: #b54441;
+	--destructive-foreground: #ffffff;
+	--success: #276442;
+	--warning: #98651b;
 	/* Borders & Inputs */
-	--border: oklch(0.9 0.01 240);
-	--input: oklch(0.9 0.01 240);
-	--ring: oklch(0.45 0.15 250);
+	--border: #e0e7df;
+	--input: #e0e7df;
+	--ring: #167166;
 	/* Charts: Educational Color Palette */
 	--chart-1: oklch(0.55 0.2 250);
 	/* Blue */
@@ -46,45 +46,53 @@
 	--chart-5: oklch(0.6 0.18 30);
 	/* Red-Orange */
 	/* Sidebar Colors */
-	--sidebar: oklch(1 0 0);
-	--sidebar-foreground: oklch(0.2 0.02 240);
-	--sidebar-primary: oklch(0.45 0.15 250);
-	--sidebar-primary-foreground: oklch(0.98 0.005 240);
-	--sidebar-accent: oklch(0.95 0.02 240);
-	--sidebar-accent-foreground: oklch(0.2 0.02 240);
-	--sidebar-border: oklch(0.9 0.01 240);
-	--sidebar-ring: oklch(0.45 0.15 250);
+	--sidebar: #ffffff;
+	--sidebar-foreground: #203a37;
+	--sidebar-primary: #167166;
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: #ecf4f3;
+	--sidebar-accent-foreground: #203a37;
+	--sidebar-border: #e0e7df;
+	--sidebar-ring: #167166;
+	--warning-surface: #fcf3df;
+	--destructive-surface: #fbecea;
+	--success-surface: #e9f3eb;
+	--welcome: #eaf2f1;
+	--school-page-gap: 1.5rem;
+	--school-page-padding: 1.5rem;
+	--school-card-padding: 1.5rem;
+	--school-cell-padding: 0.5rem;
 }
 
 .dark {
-	/* Educational Dark Theme - Easy on Eyes */
-	--background: oklch(0.15 0.02 240);
-	--foreground: oklch(0.95 0.01 240);
-	--card: oklch(0.2 0.02 240);
-	--card-foreground: oklch(0.95 0.01 240);
-	--popover: oklch(0.2 0.02 240);
-	--popover-foreground: oklch(0.95 0.01 240);
-	/* Primary: Bright Blue for Dark Mode */
-	--primary: oklch(0.6 0.2 250);
-	--primary-foreground: oklch(0.98 0.005 240);
+	/* Default school appearance fallback - Dark Mode */
+	--background: #152521;
+	--foreground: #e8efe8;
+	--card: #1d302a;
+	--card-foreground: #e8efe8;
+	--popover: #1d302a;
+	--popover-foreground: #e8efe8;
+	/* Primary: readable default school teal */
+	--primary: #84b4ae;
+	--primary-foreground: #142b25;
 	/* Secondary: Darker Gray */
-	--secondary: oklch(0.25 0.02 240);
-	--secondary-foreground: oklch(0.95 0.01 240);
+	--secondary: #29403a;
+	--secondary-foreground: #e8efe8;
 	/* Muted: Medium Gray */
-	--muted: oklch(0.25 0.02 240);
-	--muted-foreground: oklch(0.65 0.02 240);
+	--muted: #29403a;
+	--muted-foreground: #afc1b4;
 	/* Accent: Subtle Blue */
-	--accent: oklch(0.25 0.03 240);
-	--accent-foreground: oklch(0.95 0.01 240);
+	--accent: #2c443e;
+	--accent-foreground: #e8efe8;
 	/* Destructive: Softer Red for Dark Mode */
-	--destructive: oklch(0.6 0.2 25);
-	--destructive-foreground: oklch(0.98 0.005 240);
-	--success: oklch(0.78 0.16 155);
-	--warning: oklch(0.8 0.14 60);
+	--destructive: #f4a49a;
+	--destructive-foreground: #39201d;
+	--success: #91d4ac;
+	--warning: #efc37c;
 	/* Borders & Inputs */
-	--border: oklch(0.3 0.02 240);
-	--input: oklch(0.3 0.02 240);
-	--ring: oklch(0.6 0.2 250);
+	--border: #354b3e;
+	--input: #354b3e;
+	--ring: #84b4ae;
 	/* Charts: Vibrant but Comfortable */
 	--chart-1: oklch(0.6 0.22 250);
 	--chart-2: oklch(0.65 0.2 160);
@@ -92,17 +100,26 @@
 	--chart-4: oklch(0.65 0.22 290);
 	--chart-5: oklch(0.65 0.2 30);
 	/* Sidebar Colors for Dark Mode */
-	--sidebar: oklch(0.2 0.02 240);
-	--sidebar-foreground: oklch(0.95 0.01 240);
-	--sidebar-primary: oklch(0.6 0.2 250);
-	--sidebar-primary-foreground: oklch(0.98 0.005 240);
-	--sidebar-accent: oklch(0.25 0.03 240);
-	--sidebar-accent-foreground: oklch(0.95 0.01 240);
-	--sidebar-border: oklch(0.3 0.02 240);
-	--sidebar-ring: oklch(0.6 0.2 250);
+	--sidebar: #1d302a;
+	--sidebar-foreground: #e8efe8;
+	--sidebar-primary: #84b4ae;
+	--sidebar-primary-foreground: #142b25;
+	--sidebar-accent: #2c443e;
+	--sidebar-accent-foreground: #e8efe8;
+	--sidebar-border: #354b3e;
+	--sidebar-ring: #84b4ae;
+	--warning-surface: #453d2c;
+	--destructive-surface: #4a3531;
+	--success-surface: #243c2d;
+	--welcome: #29403a;
+	--school-page-gap: 1.5rem;
+	--school-page-padding: 1.5rem;
+	--school-card-padding: 1.5rem;
+	--school-cell-padding: 0.5rem;
 }
 
 @theme inline {
+	--font-sans: var(--school-font-family, system-ui, sans-serif);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -122,6 +139,7 @@
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
 	--color-success: var(--success);
 	--color-warning: var(--warning);
 	--color-border: var(--border);

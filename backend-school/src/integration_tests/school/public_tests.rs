@@ -560,8 +560,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             "narrow handler must enforce permission: {path}"
         );
     }
-    assert_appearance_http_boundaries(&state, &a, &b).await;
-    let app = build_app(state);
+    let app = build_app(state.clone());
     let private_file = Uuid::new_v4();
     sqlx::query("INSERT INTO files (id, display_filename, purpose_code, visibility, lifecycle_status, retention_class, inspection_metadata, created_by) VALUES ($1, 'private-font.ttf', 'school_font', 'private', 'processing', 'temporary', '{\"kind\":\"font\"}'::jsonb, $2)")
         .bind(private_file).bind(actor_id).execute(&a).await.unwrap();
@@ -1163,6 +1162,8 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             .unwrap();
         assert_eq!(response.status(), expected, "{path}");
     }
+    // Appearance's additional actors must not change the original statistics fixture.
+    assert_appearance_http_boundaries(&state, &a, &b).await;
     server.abort();
 }
 

@@ -1,11 +1,36 @@
 import { createServer as createHttpServer } from 'node:http';
-import { createServer } from 'vite';
+import { createServer, type Plugin } from 'vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	DEFAULT_APPEARANCE,
 	type SchoolAppearanceResponse
 } from '../../../src/lib/appearance/model.js';
+
+function appearancePrimitivesHarness(): Plugin {
+	const entry = 'virtual:appearance-primitives';
+	return {
+		name: 'school-appearance-primitives-test',
+		enforce: 'pre',
+		resolveId(id) {
+			if (id === entry) return `\0${entry}`;
+		},
+		load(id) {
+			if (id !== `\0${entry}`) return;
+			return `import { mount } from 'svelte'; import '/src/routes/layout.css'; import Harness from '/tests/e2e/fixtures/AppearancePrimitivesHarness.svelte'; mount(Harness, { target: document.querySelector('#app') });`;
+		},
+		configureServer(server) {
+			server.middlewares.use((request, response, next) => {
+				if (new URL(request.url ?? '/', 'http://fixture').pathname !== '/__appearance-primitives')
+					return next();
+				response.setHeader('Content-Type', 'text/html; charset=utf-8');
+				response.end(
+					`<!doctype html><html lang="th"><head><link rel="stylesheet" href="/school-appearance.css"></head><body><div id="app"></div><script type="module" src="/@id/${entry}"></script></body></html>`
+				);
+			});
+		}
+	};
+}
 
 export async function startSchoolAppearanceServer() {
 	let saved: SchoolAppearanceResponse = {
@@ -33,6 +58,10 @@ export async function startSchoolAppearanceServer() {
 		}
 		const respond = () => {
 			if (res.destroyed) return;
+			if (pathname === '/api/auth/me') {
+				res.writeHead(401).end(JSON.stringify({ success: false, error: 'No session' }));
+				return;
+			}
 			if (pathname === '/deployment-status') {
 				res.end(JSON.stringify({ status: 'ready', releaseId: 'fixture' }));
 				return;
@@ -64,6 +93,7 @@ export async function startSchoolAppearanceServer() {
 	const vite = await createServer({
 		root,
 		configFile: path.join(root, 'vite.config.ts'),
+		plugins: [appearancePrimitivesHarness()],
 		cacheDir: path.join(root, 'node_modules/.vite-school-appearance-test'),
 		logLevel: 'error',
 		server: { host: '127.0.0.1', port: 0 }

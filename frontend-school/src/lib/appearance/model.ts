@@ -150,6 +150,7 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		warning: dark ? '#efc37c' : '#98651b',
 		warningSurface: dark ? '#453d2c' : '#fcf3df',
 		destructive: dark ? '#f4a49a' : '#b54441',
+		destructiveForeground: dark ? '#39201d' : '#ffffff',
 		destructiveSurface: dark ? '#4a3531' : '#fbecea',
 		success: dark ? '#91d4ac' : '#276442',
 		successSurface: dark ? '#243c2d' : '#e9f3eb'
@@ -174,6 +175,7 @@ export function appearanceStyle(appearance: Appearance, mode: PreviewMode): stri
 		accent: tokens.accent,
 		'accent-foreground': tokens.foreground,
 		destructive: tokens.destructive,
+		'destructive-foreground': tokens.destructiveForeground,
 		border: tokens.border,
 		input: tokens.border,
 		ring: tokens.primary,

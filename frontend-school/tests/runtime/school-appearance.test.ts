@@ -127,3 +127,28 @@ test('a committed value with failed fonts remains retryable at the same revision
 	assert.equal(await controller.apply(next), 'stale');
 	assert.deepEqual(installed, [2]);
 });
+
+test('semantic destructive foreground preserves readable fills while status red remains stable', async () => {
+	const { appearanceTokens, contrastRatio } = await import('../../src/lib/appearance/model.ts');
+	for (const mode of ['light', 'dark'] as const) {
+		const tokens = appearanceTokens(DEFAULT_APPEARANCE, mode);
+		assert.ok(contrastRatio(tokens.destructive, tokens.destructiveForeground) >= 4.5);
+		const mixed =
+			'#' +
+			[1, 3, 5]
+				.map((index) =>
+					Math.round(
+						Number.parseInt(tokens.destructive.slice(index, index + 2), 16) * 0.9 +
+							Number.parseInt(tokens.background.slice(index, index + 2), 16) * 0.1
+					)
+						.toString(16)
+						.padStart(2, '0')
+				)
+				.join('');
+		assert.ok(contrastRatio(mixed, tokens.destructiveForeground) >= 4.5);
+		assert.equal(
+			appearanceTokens({ ...DEFAULT_APPEARANCE, primary: '#ffffff' }, mode).destructive,
+			tokens.destructive
+		);
+	}
+});

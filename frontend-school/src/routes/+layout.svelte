@@ -16,6 +16,7 @@
 	import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
 	import { initPWA } from '#lib/stores/pwa.js';
 	import { startSchoolAppearance } from '#lib/appearance/runtime.js';
+	import { applyPersonalMode } from '#lib/appearance/mode.js';
 
 	let { children } = $props();
 	let systemDark = $state(false);
@@ -50,14 +51,8 @@
 		const preference = $uiPreferences.theme;
 		const path = page.url.pathname;
 		if (!browser) return;
-		const publicPage = path === '/' || path.startsWith('/login');
 		if (preference === 'system') void systemDark;
-		const prefersDark =
-			preference === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches;
-		document.documentElement.classList.toggle(
-			'dark',
-			!publicPage && (preference === 'dark' || prefersDark)
-		);
+		applyPersonalMode(preference, path);
 	});
 </script>
 

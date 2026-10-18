@@ -377,11 +377,7 @@
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel disabled={deleting}>ยกเลิก</AlertDialog.Cancel>
-			<AlertDialog.Action
-				onclick={removeAsset}
-				disabled={deleting}
-				class="bg-destructive text-white"
-			>
+			<AlertDialog.Action onclick={removeAsset} disabled={deleting} variant="destructive">
 				{deleting ? 'กำลังลบ...' : 'ลบไฟล์'}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>

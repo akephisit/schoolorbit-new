@@ -2,15 +2,41 @@ import { getPublicSchoolAppearance } from './api.js';
 import { AppearanceController } from './controller.js';
 import {
 	FONTS,
+	DEFAULT_APPEARANCE,
 	schoolAppearanceCss,
 	validateAppearanceResponse,
 	type PreviewFont,
 	type SchoolAppearanceResponse
 } from './model.js';
 
+/** Recreate only failed faces from the authoritative self-hosted stylesheet on an explicit retry.
+ * A failed FontFace's load promise otherwise remains rejected for the document lifetime. */
+function retryFailedFontFaces(family: string) {
+	const normalize = (name: string) => name.replace(/['"]/g, '').trim();
+	const failed = [...document.fonts].some(
+		(face) => normalize(face.family) === family && face.status === 'error'
+	);
+	if (!failed) return;
+	for (const sheet of document.styleSheets) {
+		if (!sheet.href || new URL(sheet.href).pathname !== '/school-appearance-fonts.css') continue;
+		for (let index = 0; index < sheet.cssRules.length; index++) {
+			const rule = sheet.cssRules[index];
+			if (
+				!(rule instanceof CSSFontFaceRule) ||
+				normalize(rule.style.getPropertyValue('font-family')) !== family
+			)
+				continue;
+			const css = rule.cssText;
+			sheet.deleteRule(index);
+			sheet.insertRule(css, index);
+		}
+	}
+}
+
 export async function prepareSchoolFont(font: PreviewFont): Promise<void> {
 	const family = FONTS.find((option) => option.value === font)?.family;
 	if (!family || !document.fonts) throw new Error('โหลดฟอนต์ไม่สำเร็จ');
+	retryFailedFontFaces(family);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		await Promise.race([
@@ -44,8 +70,8 @@ function readAppliedAppearance(): SchoolAppearanceResponse {
 			primary: property('primary') === 'none' ? null : property('primary')
 		}
 	});
-	if (!result) throw new Error('ไม่พบรูปแบบโรงเรียนที่โหลดไว้');
-	return result;
+	// A failed stylesheet request must not break application startup or repaint on mount.
+	return result ?? { appearance: { ...DEFAULT_APPEARANCE }, revision: 0 };
 }
 function install(value: SchoolAppearanceResponse) {
 	let style = document.getElementById('school-appearance-runtime');
@@ -57,6 +83,7 @@ function install(value: SchoolAppearanceResponse) {
 	style.textContent = schoolAppearanceCss(value);
 	document.documentElement.style.removeProperty('--school-font-family');
 	delete document.documentElement.dataset.schoolFontFallback;
+	document.documentElement.dataset.schoolFontPending = 'false';
 	const color = getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
 	document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
 }

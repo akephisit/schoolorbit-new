@@ -570,6 +570,19 @@ Use focused test filters first when changing a handler, client, or service.
 
 ## Frontend School
 
+The appearance backend uses the owned disposable database fixture. From the repository root:
+
+```bash
+CARGO_BUILD_JOBS=2 ./scripts/test_backend_school.sh --package school-administration appearance -- --nocapture
+CARGO_BUILD_JOBS=2 ./scripts/test_backend_school.sh --features api-docs integration_tests::school::public_tests::public_http_reads_need_no_session_and_keep_tenants_and_private_routes_separate -- --nocapture
+```
+
+From `backend-school`, run `cargo test --bin backend-school --features api-docs api_contract::tests -- --nocapture`
+for closed appearance schemas. These focused cases cover strict validation, revision conflicts,
+logo preservation, singleton migration refusal, public tenant isolation, read/update permission
+separation, missing rows, session/CSRF checks and JSON error envelopes. Use the pinned Rust
+toolchain and one shared target directory; do not point fixture recipes at tenant databases.
+
 School appearance uses a self-hosted frontend and local mock tenant backend; it needs no real
 student data or credentials. From `frontend-school`, run:
 
@@ -585,7 +598,6 @@ role/public pages, persisted settings, a fresh browser, SPA navigation, denied r
 and explicit conflict review. Install the pinned Playwright Chromium and its required host
 libraries before execution. Shared layout guards assert the density token owners; browser
 checks retain explicit utility overrides rather than requiring one fixed spacing value.
-
 
 `npm ci` installs the app toolchain (TypeScript 6) and the private `tools/api-contracts` workspace (TypeScript 5 required by `openapi-typescript`). The API generator resolves its CLI from that workspace; keep its peer dependency isolated when upgrading app tooling.
 
