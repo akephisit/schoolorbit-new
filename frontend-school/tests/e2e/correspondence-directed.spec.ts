@@ -51,6 +51,32 @@ async function draw(page: Page) {
 	await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 8 });
 	await page.mouse.up();
 }
+test('detail directed send replays an accepted lost response with the exact first recipient', async ({
+	page
+}) => {
+	const api = await mockDirectedCorrespondence(page, { scenario: 'draft', abortSend: true });
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ', exact: true }).click();
+	const form = page.getByTestId('correspondence-send');
+	await choosePerson(page, 'ผู้พิจารณาสั่งการคนแรก *', 'ครูผู้รับคนที่สอง');
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toContainText('ยังยืนยันผลการส่งไม่ได้');
+	const first = structuredClone(api.sends[0]);
+	const accepted = structuredClone(api.detail());
+	expect(first.requestId).toBeTruthy();
+	expect(first.firstRecipient).toEqual({ kind: 'user', userId: firstStaff });
+	await expect(form.locator('#send-first-decisionmaker')).toBeDisabled();
+	await expect(form.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true })).toBeDisabled();
+	await expect(form.locator('#send-due')).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ส่งหนังสือ', exact: true })).toBeEnabled();
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toHaveCount(0);
+	expect(api.sends).toHaveLength(2);
+	expect(api.sends[1]).toEqual(first);
+	expect(api.detail()).toEqual(accepted);
+});
+
 for (const width of [390, 1440])
 	for (const dark of [false, true])
 		test(`directed wizard ${width}px ${dark ? 'dark' : 'light'} defaults to one decision maker and retains backtracking`, async ({

@@ -47,10 +47,41 @@ pub fn validate_annotations(values: &[DocumentAnnotation]) -> Result<(), AppErro
             return Err(invalid("ตำแหน่งหรือข้อความกำกับไม่ถูกต้อง"));
         }
         validate_strokes(&a.strokes)?;
+        if a.text_layout_version.is_some_and(|version| version != 1)
+            || (a.border && a.text_layout_version != Some(1))
+            || (a.kind != DocumentAnnotationKind::Text
+                && (a.border || a.text_layout_version.is_some()))
+        {
+            return Err(invalid("รุ่นการจัดวางข้อความกำกับไม่ถูกต้อง"));
+        }
         if a.kind == DocumentAnnotationKind::Text
             && a.text.as_deref().is_none_or(|s| s.trim().is_empty())
         {
             return Err(invalid("กรุณาระบุข้อความกำกับ"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_new_text_annotations(
+    values: &[DocumentAnnotation],
+    accepted: &[DocumentAnnotation],
+) -> Result<(), AppError> {
+    for value in values
+        .iter()
+        .filter(|value| value.kind == DocumentAnnotationKind::Text)
+    {
+        if value.text_layout_version == Some(1) {
+            continue;
+        }
+        let previous = accepted
+            .iter()
+            .find(|old| old.id == value.id && old.text_layout_version.is_none());
+        if value.text_layout_version.is_some()
+            || previous.map(process::payload_hash).transpose()?
+                != Some(process::payload_hash(value)?)
+        {
+            return Err(invalid("ข้อความกำกับใหม่หรือที่แก้ไขต้องใช้การจัดวางรุ่น 1"));
         }
     }
     Ok(())
@@ -335,6 +366,7 @@ pub async fn create(
         let old:Uuid=sqlx::query_scalar("SELECT resource_id FROM workflow_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor.user_id).bind(request.request_id).fetch_one(pool).await?;
         return detail(pool, actor, old).await;
     }
+    validate_new_text_annotations(&request.annotations, &[])?;
     if request.original_file_id.is_some() || !request.attachment_file_ids.is_empty() {
         return Err(invalid("สร้างฉบับร่างก่อนอัปโหลดเอกสารสำหรับหนังสือนี้"));
     }
@@ -431,6 +463,7 @@ pub async fn revise(
     }
     let before = detail(pool, actor, id).await?;
     require_author(actor, &before.record)?;
+    validate_new_text_annotations(&request.annotations, &before.document.annotations)?;
     if let Some(metadata) = &request.metadata {
         validate_metadata(
             &metadata.title,
@@ -1008,6 +1041,7 @@ async fn act_impl(
             work_changed: false,
         });
     }
+    validate_new_text_annotations(&request.annotations, &[])?;
     if request.action == ProcessAction::Read {
         return explicit_read(pool, actor, id, &request, instance_revision).await;
     }
@@ -1821,6 +1855,41 @@ pub async fn instance_detail(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fresh_text_layout_requires_version_one_but_unchanged_accepted_legacy_is_preserved() {
+        let legacy = DocumentAnnotation {
+            id: Uuid::now_v7(),
+            kind: DocumentAnnotationKind::Text,
+            page: 1,
+            x: 0.1,
+            y: 0.1,
+            width: 0.001,
+            height: 0.2,
+            text: Some("ก".into()),
+            color: "#000000".into(),
+            border: false,
+            text_layout_version: None,
+            strokes: vec![],
+        };
+        validate_annotations(std::slice::from_ref(&legacy)).unwrap();
+        assert!(validate_new_text_annotations(std::slice::from_ref(&legacy), &[]).is_err());
+        validate_new_text_annotations(std::slice::from_ref(&legacy), std::slice::from_ref(&legacy))
+            .unwrap();
+        let mut edited = legacy.clone();
+        edited.text = Some("แก้ไข".into());
+        assert!(validate_new_text_annotations(
+            std::slice::from_ref(&edited),
+            std::slice::from_ref(&legacy)
+        )
+        .is_err());
+        edited.text_layout_version = Some(1);
+        validate_new_text_annotations(std::slice::from_ref(&edited), &[]).unwrap();
+        edited.text_layout_version = Some(2);
+        assert!(validate_annotations(std::slice::from_ref(&edited)).is_err());
+        edited.text_layout_version = None;
+        edited.border = true;
+        assert!(validate_annotations(&[edited]).is_err());
+    }
     #[test]
     fn stamp_titles_use_explicit_identity_or_known_thai_labels_without_role_codes() {
         assert_eq!(

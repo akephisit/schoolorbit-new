@@ -29,6 +29,7 @@ for (const rotation of [0, 90]) {
 	test(`bordered receipt text moves and resizes at ${rotation} degrees and changing it revokes signature consent`, async ({
 		page
 	}, info) => {
+		await page.setViewportSize({ width: rotation === 0 ? 390 : 1440, height: 960 });
 		const api = await mockCorrespondence(page, { rotation });
 		await page.goto(detailPath);
 		const dialog = await stampDialog(page);
@@ -58,6 +59,15 @@ for (const rotation of [0, 90]) {
 		).toBeGreaterThan(1);
 		await page.getByRole('button', { name: 'แก้ไขข้อความ', exact: true }).click();
 		await page.getByLabel('ข้อความ *', { exact: true }).fill('ข้อความ'.repeat(1000));
+		const editor = page.getByRole('dialog');
+		const editorBox = (await editor.boundingBox())!;
+		expect(editorBox.y).toBeGreaterThanOrEqual(0);
+		expect(editorBox.y + editorBox.height).toBeLessThanOrEqual(960);
+		const textBox = (await editor.locator('#edit-annotation-text').boundingBox())!;
+		expect(textBox.height).toBeLessThanOrEqual(960 * 0.35);
+		await expect(
+			editor.getByRole('button', { name: 'ใช้ข้อความนี้', exact: true })
+		).toBeInViewport();
 		await page.getByRole('button', { name: 'ใช้ข้อความนี้', exact: true }).click();
 		await expect(page.locator('#edit-annotation-text')).toBeFocused();
 		await expect(page.locator('#edit-annotation-text-error')).toBeVisible();
@@ -83,6 +93,7 @@ for (const rotation of [0, 90]) {
 		const annotation = (api.writes[0].payload as ProcessActionRequest).annotations![0];
 		expect(annotation).toMatchObject({
 			kind: 'text',
+			textLayoutVersion: 1,
 			border: true,
 			text: 'โรงเรียนตัวอย่าง\nเลขรับ 18/2569\nตรวจสอบตรารับ',
 			page: 1
@@ -219,4 +230,33 @@ test.describe('touch text placement', () => {
 		expect(api.writes).toHaveLength(0);
 		await expect.poll(() => api.readRequests.length).toBe(1);
 	});
+});
+
+test('accepted legacy text keeps its original height-only font while versioned text fits its width', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { mode: 'draft' });
+	api.addCommittedAnnotation('W');
+	const legacy = api.detail().history[0].annotations[0];
+	Object.assign(legacy, { width: 6 / 595, height: 40 / 842 });
+	const versioned = {
+		...legacy,
+		id: '0199ebd0-0000-7000-8000-000000000201',
+		x: 0.4,
+		textLayoutVersion: 1
+	};
+	api.detail().history[0].annotations.push(versioned);
+	const original = structuredClone(api.detail().history[0].annotations);
+	await page.goto(detailPath);
+	await expect(page.locator('canvas')).toBeVisible();
+	const text = page.locator('svg text').filter({ hasText: /^W$/ });
+	await expect(text).toHaveCount(2);
+	await expect(text.nth(0)).toHaveAttribute('font-size', '14');
+	const strictSize = Number(await text.nth(1).getAttribute('font-size'));
+	expect(strictSize).toBeLessThan(14);
+	expect(strictSize).toBeGreaterThanOrEqual(5);
+	expect(api.detail().history[0].annotations).toEqual(original);
+	expect(legacy.textLayoutVersion).toBeUndefined();
+	expect(api.writes).toHaveLength(0);
+	await expect.poll(() => api.readRequests.length).toBe(1);
 });

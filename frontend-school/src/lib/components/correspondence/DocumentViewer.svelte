@@ -241,6 +241,7 @@
 		const annotation: DocumentAnnotation = {
 			id: correspondenceUuidV7(),
 			kind: 'text',
+			textLayoutVersion: 1,
 			page: pageNumber,
 			x: point.x,
 			y: point.y,
@@ -268,6 +269,7 @@
 		if (!selectedText || disabled) return;
 		const annotation = {
 			...selectedText,
+			textLayoutVersion: 1,
 			text: editText.trim(),
 			border: editBorder ? true : undefined
 		};
@@ -545,6 +547,7 @@
 								height={annotation.height * pageHeight}
 								color={annotation.color}
 								border={annotation.border ?? false}
+								textLayoutVersion={annotation.textLayoutVersion}
 								{measure}
 							/>
 						{:else if annotation.kind === 'ink'}<g
@@ -676,7 +679,7 @@
 >
 
 <Dialog.Root bind:open={editTextOpen}
-	><Dialog.Content class="sm:max-w-xl"
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"
 		><Dialog.Header
 			><Dialog.Title>แก้ไขข้อความบนเอกสาร</Dialog.Title><Dialog.Description
 				>การแก้ไขนี้ยังเป็นฉบับร่างจนกว่าจะยืนยันการดำเนินการ</Dialog.Description
@@ -686,6 +689,7 @@
 			<div class="space-y-2">
 				<Label for="edit-annotation-text">ข้อความ *</Label><Textarea
 					id="edit-annotation-text"
+					class="field-sizing-fixed max-h-[35dvh] overflow-y-auto"
 					bind:value={editText}
 					rows={7}
 					{disabled}

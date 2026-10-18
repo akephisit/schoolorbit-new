@@ -73,9 +73,14 @@
 			if (!disposed && request.isCurrent(ticket.revision)) loading = false;
 		}
 	}
+	let loadedContext: typeof register;
+	let initialized = false;
 	$effect.pre(() => {
 		const context = register;
 		untrack(() => {
+			if (initialized && loadedContext === context) return;
+			initialized = true;
+			loadedContext = context;
 			options = null;
 			void loadOptions(context);
 		});

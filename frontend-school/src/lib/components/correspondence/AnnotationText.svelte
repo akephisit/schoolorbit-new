@@ -8,7 +8,8 @@
 		height,
 		color,
 		measure,
-		border = false
+		border = false,
+		textLayoutVersion
 	}: {
 		text: string;
 		x: number;
@@ -18,8 +19,18 @@
 		color: string;
 		measure: TextMeasure;
 		border?: boolean;
+		textLayoutVersion?: number | null;
 	} = $props();
-	const layout = $derived(fitAnnotationBox(text, width, height, measure, border));
+	const layout = $derived(
+		fitAnnotationBox(
+			text,
+			width,
+			height,
+			measure,
+			border,
+			textLayoutVersion === 1 ? 'strict' : 'legacy-height-only'
+		)
+	);
 </script>
 
 {#if border}<rect {x} {y} {width} {height} fill="none" stroke={color} stroke-width="0.75" />{/if}

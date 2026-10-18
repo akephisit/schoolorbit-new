@@ -332,6 +332,7 @@ export async function mockDirectedCorrespondence(
 		actions: ProcessActionRequest[] = [],
 		settingsWrites: SaveCorrespondenceRoutingSettingsRequest[] = [];
 	let sendAccepted: CorrespondenceDetail | undefined;
+	let acceptedSendPayload: string | undefined;
 	await page.route(
 		(url) =>
 			(url.pathname === '/api/correspondence' && url.searchParams.has('limit')) ||
@@ -409,9 +410,12 @@ export async function mockDirectedCorrespondence(
 			if (path.endsWith('/directed-send')) {
 				const payload = req.postDataJSON() as DirectedSendCorrespondenceRequest;
 				sends.push(payload);
+				if (acceptedSendPayload && JSON.stringify(payload) !== acceptedSendPayload)
+					return reply('คำขอเดิมต้องใช้ข้อมูลเดิม', 409);
 				if (!sendAccepted) {
 					detail = makeDirected(base.detail());
 					sendAccepted = structuredClone(detail);
+					acceptedSendPayload = JSON.stringify(payload);
 				}
 				if (config.abortSend && sends.length === 1) return route.abort('connectionreset');
 				return reply(sendAccepted);

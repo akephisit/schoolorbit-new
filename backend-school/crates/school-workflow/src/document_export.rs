@@ -255,12 +255,13 @@ fn text_box(
     w: f64,
     h: f64,
     color: &str,
+    strict_width: bool,
 ) -> Result<(), AppError> {
     let mut size = 14.0;
     loop {
         let lines = wrap(value, w, size)?;
         let mut fits_width = true;
-        for line in &lines {
+        for line in lines.iter().filter(|_| strict_width) {
             if text_width(line, size)? > w {
                 fits_width = false;
                 break;
@@ -445,6 +446,11 @@ fn annotation(
     ops.push(op("q", vec![]));
     match a.kind {
         DocumentAnnotationKind::Text => {
+            let strict_width = match a.text_layout_version {
+                None if !a.border => false,
+                Some(1) => true,
+                _ => return Err(invalid("รุ่นการจัดวางข้อความกำกับไม่ถูกต้อง")),
+            };
             let padding = if a.border { 4.0 } else { 0.0 };
             if w <= padding * 2.0 || h <= padding * 2.0 {
                 return Err(invalid("พื้นที่ข้อความเล็กเกินไป กรุณาขยายกรอบ"));
@@ -463,6 +469,7 @@ fn annotation(
                 w - padding * 2.0,
                 h - padding * 2.0,
                 &a.color,
+                strict_width,
             )?
         }
         DocumentAnnotationKind::Ink => ink(ops, &a.strokes, x, y, w, h)?,
@@ -815,6 +822,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
                 border: true,
                 page: 1,
                 x: 0.1,
@@ -828,6 +836,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Highlight,
+                text_layout_version: None,
                 border: false,
                 page: 1,
                 x: 0.1,
@@ -841,6 +850,7 @@ mod tests {
             DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Circle,
+                text_layout_version: None,
                 border: false,
                 page: 1,
                 x: 0.7,
@@ -984,6 +994,7 @@ mod tests {
             let mut a = DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
                 page: 1,
                 x: 0.1,
                 y: 0.2,
@@ -1053,6 +1064,7 @@ mod tests {
             let mut a = DocumentAnnotation {
                 id: Uuid::now_v7(),
                 kind: DocumentAnnotationKind::Text,
+                text_layout_version: Some(1),
                 page: 1,
                 x: 0.1,
                 y: 0.1,
@@ -1085,6 +1097,66 @@ mod tests {
             assert!(annotation(&mut too_narrow, &a, geometry).is_err());
             assert!(!too_narrow.iter().any(|op| op.operator == "Tf"));
         }
+    }
+    #[test]
+    fn legacy_narrow_text_keeps_its_accepted_rendering_during_export_and_later_signing() {
+        let mut detail = fixture_detail();
+        let mut legacy = DocumentAnnotation {
+            id: Uuid::now_v7(),
+            kind: DocumentAnnotationKind::Text,
+            page: 1,
+            x: 0.1,
+            y: 0.1,
+            width: 0.001,
+            height: 0.2,
+            text: Some("กิ่".into()),
+            color: "#000000".into(),
+            border: false,
+            text_layout_version: None,
+            strokes: vec![],
+        };
+        detail.document.annotations = vec![legacy.clone()];
+        let source = source_document(&detail.document, None).unwrap();
+        let geometry = geometry(&source, source.get_pages()[&1]).unwrap();
+        let mut old_operations = vec![];
+        annotation(&mut old_operations, &legacy, geometry).unwrap();
+        assert_eq!(
+            old_operations
+                .iter()
+                .find(|operation| operation.operator == "Tf")
+                .unwrap()
+                .operands[1]
+                .as_float()
+                .unwrap(),
+            14.0
+        );
+        let exported = compose(source, &detail, &BTreeMap::new()).unwrap();
+        assert_eq!(Document::load_mem(&exported).unwrap().get_pages().len(), 1);
+        let signature = SignatureInput {
+            method: SignatureMethod::Drawn,
+            asset_id: None,
+            strokes: vec![],
+            page: 1,
+            x: 0.5,
+            y: 0.6,
+            width: 0.2,
+            height: 0.1,
+            document_revision: 1,
+            content_hash: detail.document.content_hash.clone(),
+        };
+        validate_document_bytes(
+            &detail.document,
+            None,
+            &[],
+            Some(&signature),
+            "ผู้ลงนาม ทดสอบ",
+        )
+        .unwrap();
+        legacy.text_layout_version = Some(1);
+        detail.document.annotations = vec![legacy.clone()];
+        assert!(validate_document_bytes(&detail.document, None, &[], None, "").is_err());
+        legacy.text_layout_version = Some(2);
+        assert!(annotation(&mut vec![], &legacy, geometry).is_err());
     }
     #[test]
     fn signer_caption_uses_bangkok_buddhist_date_and_wraps_long_identity() {
@@ -1206,7 +1278,7 @@ fn signature_caption(
     let top = ((1.0 - signature.y - signature.height) * geometry.height - 2.0)
         .max(48.0)
         .min(geometry.height);
-    text_box(operations, label, left, top, width, 48.0, "#333333")
+    text_box(operations, label, left, top, width, 48.0, "#333333", false)
 }
 pub(crate) fn signing_label(
     name: &str,

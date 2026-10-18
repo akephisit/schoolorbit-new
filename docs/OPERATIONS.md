@@ -1663,4 +1663,13 @@ and compose bytes on demand without persisting a generated PDF. This describes c
 measured storage or compute usage. After these fields or read receipts are accepted, recover by
 rolling forward; older runtimes may drop new JSON fields when rewriting summaries or profiles.
 
+Accepted text annotations without `textLayoutVersion` keep their original height-only fitting;
+do not rewrite or infer their layout from UUIDs, dates, or document revisions. New/edited text
+requires version 1, which fits both width and height; a bordered text box also requires version 1.
+An exactly unchanged accepted legacy base annotation may carry forward into a document revision,
+and accepted old mutation requests still replay before new-submission checks. Signature captions
+retain their existing layout. Deploy the matching generated contracts/frontend/backend together;
+after accepting versioned text, recover forward with a runtime that preserves these semantics.
+No SQL migration rewrites historical annotations or signing evidence for this rendering change.
+
 Staff leave uses additive tenant migration `126_staff_leave.sql` after directed routing 125. Configure category profiles, routing and policy source/effective dates before enabling staff submission. There are no seeded legal allowances or approval recipients. Before the first leave policy creates a source-owned process template, the schema is compatible with binaries that ignore the Staff tables; after policy/request activation, do not restore a binary lacking the source-template ownership guard. Preserve request/process/evidence history and recover by rolling forward to a compatible release. This feature adds no departure/return tracking or late-alert worker.

@@ -1,3 +1,4 @@
+export type TextFitPolicy = 'strict' | 'legacy-height-only';
 export type TextMeasure = (text: string, size: number) => number;
 
 /** Canonical PDF points; the compositor uses the same four-point border inset. */
@@ -6,11 +7,12 @@ export function fitAnnotationBox(
 	width: number,
 	height: number,
 	measure: TextMeasure,
-	border = false
+	border = false,
+	policy: TextFitPolicy = 'strict'
 ) {
 	const padding = border ? 4 : 0;
 	return {
-		...fitAnnotationText(text, width - 2 * padding, height - 2 * padding, measure),
+		...fitAnnotationText(text, width - 2 * padding, height - 2 * padding, measure, policy),
 		padding
 	};
 }
@@ -20,7 +22,8 @@ export function fitAnnotationText(
 	text: string,
 	width: number,
 	height: number,
-	measure: TextMeasure
+	measure: TextMeasure,
+	policy: TextFitPolicy = 'strict'
 ): { lines: string[]; size: number; overflow: boolean } {
 	if (![width, height].every(Number.isFinite) || width <= 0 || height <= 0)
 		return { lines: [], size: 5, overflow: true };
@@ -38,7 +41,10 @@ export function fitAnnotationText(
 			}
 			lines.push(line);
 		}
-		if (lines.length * size * 1.3 <= height && lines.every((line) => measure(line, size) <= width))
+		if (
+			lines.length * size * 1.3 <= height &&
+			(policy === 'legacy-height-only' || lines.every((line) => measure(line, size) <= width))
+		)
 			return { lines, size, overflow: false };
 		if (size === 5) return { lines, size, overflow: true };
 	}

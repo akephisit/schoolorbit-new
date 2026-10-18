@@ -42178,6 +42178,14 @@
               "null"
             ]
           },
+          "textLayoutVersion": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "width": {
             "format": "double",
             "type": "number"

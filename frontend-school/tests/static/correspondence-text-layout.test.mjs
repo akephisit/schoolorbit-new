@@ -56,3 +56,20 @@ test('CRLF, lone CR and tabs use the compositor normalization before wrapping an
 	assert.ok(fitted.lines.every((line) => !/[\r\t]/u.test(line)));
 	assert.ok(fitted.lines.every((line) => measure(line, fitted.size) <= 60));
 });
+
+test('unversioned accepted text retains height-only font layout while version one obeys width', () => {
+	const measure = (text, size) => [...text].length * size;
+	const legacy = fitAnnotationBox('W', 6, 40, measure, false, 'legacy-height-only');
+	assert.equal(legacy.size, 14);
+	assert.equal(legacy.overflow, false);
+	assert.deepEqual(legacy.lines, ['W']);
+	const strict = fitAnnotationBox('W', 6, 40, measure);
+	assert.equal(strict.size, 6);
+	assert.equal(strict.overflow, false);
+	assert.equal(fitAnnotationBox('W', 4, 40, measure).overflow, true);
+	assert.equal(fitAnnotationBox('W', 4, 40, measure, false, 'legacy-height-only').size, 14);
+	assert.deepEqual(
+		fitAnnotationBox('ก\tข\r\nค\rง', 60, 100, measure, false, 'legacy-height-only'),
+		fitAnnotationBox('ก    ข\nค\nง', 60, 100, measure, false, 'legacy-height-only')
+	);
+});

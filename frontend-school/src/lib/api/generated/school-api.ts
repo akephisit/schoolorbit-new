@@ -19427,6 +19427,8 @@ export interface components {
 			page: number;
 			strokes?: components['schemas']['InkStroke'][];
 			text?: string | null;
+			/** Format: int32 */
+			textLayoutVersion?: number | null;
 			/** Format: double */
 			width: number;
 			/** Format: double */

@@ -57,7 +57,7 @@
 	const template = $derived(options?.templates.find((item) => item.id === templateId));
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (pending || uncertain) return;
+		if (pending) return;
 		error = '';
 		fieldErrors = {};
 		const missingStep = steps.findIndex((step) => !step.recipients.length);
@@ -71,7 +71,7 @@
 					: missingStep >= 0
 						? `send-step-${missingStep}-recipients`
 						: '';
-		if (invalidId) {
+		if (!uncertain && invalidId) {
 			error =
 				mode === 'directed'
 					? 'เลือกผู้พิจารณาสั่งการคนแรก'
@@ -106,6 +106,7 @@
 						);
 			intent.accepted();
 			directedIntent.accepted();
+			uncertain = false;
 			if (!disposed) oncomplete(result);
 		} catch (cause) {
 			intent.rejected(cause);
@@ -129,6 +130,7 @@
 		<Button
 			type="button"
 			variant="outline"
+			disabled={uncertain || pending}
 			onclick={() => {
 				expectedRevision = detail.record.revision;
 			}}>ใช้ข้อมูลล่าสุดและเก็บผู้รับที่เลือก</Button
@@ -158,9 +160,8 @@
 	/>
 
 	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={uncertain || !options}
-			>ส่งหนังสือ</LoadingButton
-		>
+		<Button type="button" variant="outline" onclick={oncancel} disabled={pending || uncertain}
+			>ยกเลิก</Button
+		><LoadingButton type="submit" loading={pending} disabled={!options}>ส่งหนังสือ</LoadingButton>
 	</div>
 </form>

@@ -201,11 +201,16 @@ mod tests {
         let legacy_action = r##"{"requestId":"0199ebd0-0000-7000-8000-000000000001","expectedRevision":2,"action":"report","annotations":[{"id":"0199ebd0-0000-7000-8000-000000000002","kind":"text","page":1,"x":0.1,"y":0.1,"width":0.3,"height":0.2,"text":"ทราบ","color":"#000000","strokes":[]}],"comment":"accepted","evidenceFileIds":[],"signature":null,"reassignUserId":null,"reassignFromUserId":null}"##;
         let request: ProcessActionRequest = serde_json::from_str(legacy_action).unwrap();
         assert!(!request.annotations[0].border);
+        assert!(request.annotations[0].text_layout_version.is_none());
         assert_eq!(serde_json::to_string(&request).unwrap(), legacy_action);
         let mut bordered = request;
         bordered.annotations[0].border = true;
+        bordered.annotations[0].text_layout_version = Some(1);
         assert!(serde_json::to_string(&bordered)
             .unwrap()
             .contains("\"border\":true"));
+        assert!(serde_json::to_string(&bordered)
+            .unwrap()
+            .contains("\"textLayoutVersion\":1"));
     }
 }

@@ -268,6 +268,8 @@ pub struct DocumentAnnotation {
     pub color: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub border: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_layout_version: Option<u8>,
     #[serde(default)]
     pub strokes: Vec<InkStroke>,
 }

@@ -548,6 +548,34 @@ async function chooseDetailRoute(page: Page) {
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
 }
 
+test('a read receipt update preserves the open route choice without fetching options again', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { mode: 'draft' });
+	let release = () => {};
+	const pendingRead = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/api/correspondence/*/read', async (route) => {
+		await pendingRead;
+		await route.fallback();
+	});
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ', exact: true }).click();
+	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
+	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน', exact: true }).click();
+	const option = page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน', exact: true });
+	await expect(option).toBeVisible();
+	release();
+	await expect(page.getByText(/^เปิดอ่านครั้งแรก /)).toBeVisible();
+	await expect(option).toBeVisible();
+	expect(api.count('/api/correspondence/options')).toBe(1);
+	await option.click();
+	await expect(page.locator('#send-template')).toContainText('เวียนหนังสือมาตรฐาน');
+	expect(api.writes).toHaveLength(0);
+	expect(api.readRequests).toHaveLength(1);
+});
+
 test('detail send conflict explicitly reads and rebases the current draft while retaining chosen recipients', async ({
 	page
 }) => {
@@ -571,6 +599,35 @@ test('detail send conflict explicitly reads and rebases the current draft while 
 	expect(sends[1].stepRecipients).toEqual(sends[0].stepRecipients);
 	expect(sends[1].expectedRevision).toBeGreaterThan(sends[0].expectedRevision);
 	expect(api.count(`/api/correspondence/${correspondenceId}`)).toBe(2);
+});
+
+test('detail template send replays an accepted lost response with its exact frozen recipients', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { mode: 'draft', abortAcceptedSend: true });
+	await chooseDetailRoute(page);
+	const form = page.getByTestId('correspondence-send');
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toContainText('ยังยืนยันผลการส่งไม่ได้');
+	const first = structuredClone(
+		api.writes.find((write) => write.path.endsWith('/send'))!.payload as SendCorrespondenceRequest
+	);
+	const accepted = structuredClone(api.detail());
+	expect(first.requestId).toBeTruthy();
+	expect(first.stepRecipients![0].recipients).toHaveLength(1);
+	await expect(
+		form.getByRole('radio', { name: 'เลือกผู้พิจารณาสั่งการ', exact: true })
+	).toBeDisabled();
+	await expect(form.locator('#send-template')).toBeDisabled();
+	await expect(form.locator('#send-due')).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+	await expect(form.getByRole('button', { name: 'ส่งหนังสือ', exact: true })).toBeEnabled();
+	await form.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
+	await expect(form).toHaveCount(0);
+	const sends = api.writes.filter((write) => write.path.endsWith('/send'));
+	expect(sends).toHaveLength(2);
+	expect(sends[1].payload).toEqual(first);
+	expect(api.detail()).toEqual(accepted);
 });
 
 test('in-flight detail send prevents leaving until the server responds', async ({ page }) => {
@@ -632,19 +689,40 @@ test('metadata counts Unicode scalars in the browser and preserves over-limit dr
 	await fillDocument(page);
 	await page.getByLabel('เรื่อง *', { exact: true }).fill('😀'.repeat(301));
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
-	await expect(page.getByText('เรื่องต้องไม่เกิน 300 ตัวอักษร', { exact: true })).toBeVisible();
+	await expect(page.locator('#create-title-error')).toHaveText('เรื่องต้องไม่เกิน 300 ตัวอักษร');
+	await expect(page.locator('#create-title')).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#create-title')).toHaveAttribute(
+		'aria-describedby',
+		'create-title-error'
+	);
+	await expect(page.locator('#create-title')).toBeFocused();
 	await expect(page.getByLabel('เรื่อง *', { exact: true })).toHaveValue('😀'.repeat(301));
 	expect(api.writes).toHaveLength(0);
 	await page.getByLabel('เรื่อง *', { exact: true }).fill('😀'.repeat(300));
 	await page.getByLabel('ผู้ส่ง / หน่วยงานต้นทาง *').fill('😀'.repeat(301));
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
-	await expect(page.getByText('ผู้ส่งต้องไม่เกิน 300 ตัวอักษร', { exact: true })).toBeVisible();
+	await expect(page.locator('#create-sender-error')).toHaveText('ผู้ส่งต้องไม่เกิน 300 ตัวอักษร');
+	await expect(page.locator('#create-sender')).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#create-sender')).toHaveAttribute(
+		'aria-describedby',
+		'create-sender-error'
+	);
+	await expect(page.locator('#create-sender')).toBeFocused();
 	await page.getByLabel('ผู้ส่ง / หน่วยงานต้นทาง *').fill('😀'.repeat(300));
+	await page
+		.getByText('ข้อมูลเพิ่มเติม (เลขที่ต้นทาง วันที่ และหน่วยงาน)', { exact: true })
+		.click();
 	await page.getByLabel('เลขที่หนังสือต้นทาง', { exact: true }).fill('😀'.repeat(151));
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
-	await expect(
-		page.getByText('เลขที่หนังสือต้นทางต้องไม่เกิน 150 ตัวอักษร', { exact: true })
-	).toBeVisible();
+	await expect(page.locator('#create-number-error')).toHaveText(
+		'เลขที่หนังสือต้นทางต้องไม่เกิน 150 ตัวอักษร'
+	);
+	await expect(page.locator('#create-number')).toHaveAttribute('aria-invalid', 'true');
+	await expect(page.locator('#create-number')).toHaveAttribute(
+		'aria-describedby',
+		'create-number-error'
+	);
+	await expect(page.locator('#create-number')).toBeFocused();
 	expect(api.writes).toHaveLength(0);
 	await page.getByLabel('เลขที่หนังสือต้นทาง', { exact: true }).fill('😀'.repeat(150));
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();

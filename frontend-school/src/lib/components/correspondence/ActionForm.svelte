@@ -244,21 +244,15 @@
 			if (!disposed) imagePending = false;
 		}
 	}
-	async function loadReassign() {
+	async function loadReassign(context = detail.record.register) {
 		optionsLoading = true;
 		try {
-			const result = await getCorrespondenceOptions(
-				'',
-				{ signal: controller.signal },
-				detail.record.register
-			);
+			const result = await getCorrespondenceOptions('', { signal: controller.signal }, context);
 			if (!disposed) {
 				options = result;
 				if (!routingInitialized && action === 'route') {
 					routingInitialized = true;
-					const defaults = result.routingSettings.find(
-						(item) => item.register === detail.record.register
-					);
+					const defaults = result.routingSettings.find((item) => item.register === context);
 					routing = {
 						recipients: [],
 						requireReview: defaults?.defaultRequireReview ?? false,
@@ -272,8 +266,15 @@
 			if (!disposed) optionsLoading = false;
 		}
 	}
+	let optionsContext = '';
 	$effect(() => {
-		if (action === 'reassign' || action === 'route') void loadReassign();
+		const register = detail.record.register,
+			context = `${action}:${register}`;
+		untrack(() => {
+			if (optionsContext === context) return;
+			optionsContext = context;
+			if (action === 'reassign' || action === 'route') void loadReassign(register);
+		});
 	});
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -448,7 +449,7 @@
 			{:else if optionsLoading}<p role="status" class="text-sm text-muted-foreground">
 					กำลังโหลดผู้รับคำสั่ง…
 				</p>
-			{:else}<Button type="button" variant="outline" onclick={loadReassign}
+			{:else}<Button type="button" variant="outline" onclick={() => loadReassign()}
 					>โหลดผู้รับคำสั่งอีกครั้ง</Button
 				>{/if}
 		{/if}
@@ -490,7 +491,7 @@
 						.map((user) => ({ value: user.id, label: user.displayName }))}
 					searchable
 					disabled={pending}
-				/>{:else}<Button type="button" variant="outline" onclick={loadReassign}
+				/>{:else}<Button type="button" variant="outline" onclick={() => loadReassign()}
 					>โหลดผู้รับผิดชอบ</Button
 				>{/if}{/if}
 		{#if requirements.acceptsEvidence}<div class="space-y-2">
