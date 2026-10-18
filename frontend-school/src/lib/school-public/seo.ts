@@ -34,8 +34,21 @@ export interface SchoolHomeSeo {
 	title: string;
 	description: string;
 	siteName: string;
-	image: string | null;
+	image: string;
+	imageAlt: string;
 	structuredData: string | null;
+}
+
+/** Public branding only; bump the template version when the card design changes. */
+function schoolShareImageUrl(info: PublicSchoolInfo | null, homeUrl: string): string {
+	const branding = `v1:${info?.schoolName?.trim() || ''}:${info?.logoFileId || ''}`;
+	let hash = 2166136261;
+	for (let index = 0; index < branding.length; index++) {
+		hash = Math.imul(hash ^ branding.charCodeAt(index), 16777619);
+	}
+	const image = new URL('/og-image.png', homeUrl);
+	image.searchParams.set('v', `1-${(hash >>> 0).toString(16)}`);
+	return image.href;
 }
 
 export function buildSchoolHomeSeo(
@@ -44,21 +57,22 @@ export function buildSchoolHomeSeo(
 	logoUrl: string | null
 ): SchoolHomeSeo {
 	const name = info?.schoolName?.trim() || null;
-	const image = logoUrl || new URL('/schoolorbit.png', site.homeUrl).href;
+	const siteName = name || 'เว็บไซต์โรงเรียน';
+	const schoolName = name?.replace(/^โรงเรียน/, '') || null;
+	const logo = logoUrl || new URL('/schoolorbit.png', site.homeUrl).href;
 	return {
-		title: `${name || 'เว็บไซต์โรงเรียน'} - SchoolOrbit`,
-		description: name
-			? `ข้อมูลโรงเรียน${name} สถิตินักเรียน ครู ห้องเรียน โครงสร้างบริหาร และบริการสาธารณะของโรงเรียน`
-			: 'ข้อมูลโรงเรียน สถิตินักเรียน ครู ห้องเรียน โครงสร้างบริหาร และบริการสาธารณะ',
-		siteName: name || 'เว็บไซต์โรงเรียน',
-		image,
+		title: `${siteName} - ระบบจัดการโรงเรียนครบวงจร`,
+		description: `${schoolName ? `โรงเรียน${schoolName}` : 'เว็บไซต์โรงเรียน'} เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร`,
+		siteName,
+		image: schoolShareImageUrl(info, site.homeUrl),
+		imageAlt: `${siteName} - ระบบจัดการโรงเรียนครบวงจร`,
 		structuredData: name
 			? JSON.stringify({
 					'@context': 'https://schema.org',
 					'@type': 'School',
 					name,
 					url: site.homeUrl,
-					...(image ? { logo: image } : {})
+					logo
 				}).replace(
 					/[<>&\u2028\u2029]/g,
 					(character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`

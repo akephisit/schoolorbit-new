@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer, type ViteDevServer } from 'vite';
+import { crc32, deflateSync } from 'node:zlib';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 let devServer: ViteDevServer;
@@ -15,6 +16,7 @@ let empty = false;
 let logoAvailable = true;
 let brokenLogo = false;
 let faviconDelayMs = 0;
+let shareImageMode = 'ready';
 let schoolName = 'โรงเรียนสาธิตทดสอบ';
 let identityGate: Promise<void> | undefined;
 let releaseIdentity: (() => void) | undefined;
@@ -35,6 +37,28 @@ const counts = (male: number, female: number, other = 0) => ({
 	female,
 	otherOrUnspecified: other
 });
+function fixtureShareImage() {
+	const chunk = (type: string, data: Buffer) => {
+		const name = Buffer.from(type);
+		const size = Buffer.alloc(4);
+		size.writeUInt32BE(data.length);
+		const checksum = Buffer.alloc(4);
+		checksum.writeUInt32BE(crc32(Buffer.concat([name, data])));
+		return Buffer.concat([size, name, data, checksum]);
+	};
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(1200, 0);
+	header.writeUInt32BE(630, 4);
+	header[8] = 8;
+	header[9] = 6;
+	return Buffer.concat([
+		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+		chunk('IHDR', header),
+		chunk('IDAT', deflateSync(Buffer.alloc((1200 * 4 + 1) * 630))),
+		chunk('IEND', Buffer.alloc(0))
+	]);
+}
+const shareImage = fixtureShareImage();
 const statistics = {
 	academicYear: { year: 2569, name: 'ปีการศึกษา 2569' },
 	students: counts(61, 62, 1),
@@ -169,6 +193,35 @@ test.beforeAll(async () => {
 			res.writeHead(204).end();
 			return;
 		}
+		if (endpoint === '/api/school/public/share-image') {
+			if (shareImageMode === 'timeout') {
+				await new Promise<void>((resolve) => req.on('close', resolve));
+				return;
+			}
+			if (shareImageMode === 'redirect') {
+				res.writeHead(302, { location: '/untrusted-share-image' }).end();
+				return;
+			}
+			if (failedRegion === endpoint) {
+				res.writeHead(503).end();
+				return;
+			}
+			res.setHeader('content-type', shareImageMode === 'mime' ? 'text/html' : 'image/png');
+			if (shareImageMode === 'oversize') {
+				res.setHeader('content-length', 2 * 1024 * 1024 + 1);
+				res.end(Buffer.alloc(2 * 1024 * 1024 + 1));
+			} else if (shareImageMode === 'chunked-oversize') {
+				res.write(Buffer.alloc(1024 * 1024));
+				res.end(Buffer.alloc(1024 * 1024 + 1));
+			} else if (shareImageMode === 'invalid') {
+				res.end('not a PNG');
+			} else if (shareImageMode === 'square') {
+				res.end(readFileSync(new URL('../../static/schoolorbit.png', import.meta.url)));
+			} else {
+				res.end(shareImage);
+			}
+			return;
+		}
 		if (endpoint === '/api/school/public/favicon') {
 			if (faviconDelayMs) await new Promise((resolve) => setTimeout(resolve, faviconDelayMs));
 			if (failedRegion === endpoint) {
@@ -267,6 +320,7 @@ test.beforeEach(() => {
 	logoAvailable = true;
 	brokenLogo = false;
 	faviconDelayMs = 0;
+	shareImageMode = 'ready';
 	schoolName = 'โรงเรียนสาธิตทดสอบ';
 	identityGate = undefined;
 	releaseIdentity = undefined;
@@ -323,13 +377,38 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 		await expect(
 			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 		).toBeVisible();
-		await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
+		await expect(page).toHaveTitle(`${schoolName} - ระบบจัดการโรงเรียนครบวงจร`);
 		await expect(page.locator('head title')).toHaveCount(1);
 		await expect(page.locator('meta[name="description"]')).toHaveCount(1);
 		await expect(page.locator('meta[name="description"]')).toHaveAttribute(
 			'content',
-			new RegExp(schoolName)
+			`${schoolName} เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร`
 		);
+		await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+			'content',
+			new RegExp(`^${baseUrl}/og-image\\.png\\?v=1-[a-f0-9]+$`)
+		);
+		await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute(
+			'content',
+			'1200'
+		);
+		await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute(
+			'content',
+			'630'
+		);
+		await expect(page.locator('meta[property="og:image:type"]')).toHaveAttribute(
+			'content',
+			'image/png'
+		);
+		await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
+			'content',
+			`${schoolName} - ระบบจัดการโรงเรียนครบวงจร`
+		);
+		await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
+			'content',
+			'summary_large_image'
+		);
+		expect(requests.some((r) => r.path === '/api/school/public/share-image')).toBe(false);
 		await expect(page.locator('meta[property="og:title"]')).toHaveCount(1);
 		await expect(page.locator('meta[property="og:site_name"]')).toHaveAttribute(
 			'content',
@@ -357,12 +436,17 @@ test('fresh HTML metadata follows each school name and escapes hostile text safe
 	page
 }) => {
 	for (const name of [
+		'ซับน้อยเหนือวิทยาคม',
 		'โรงเรียนทดสอบแห่งที่สอง',
 		'โรงเรียน "ทดสอบ" & </script><script>window.seoInjection=true</script>'
 	]) {
 		schoolName = name;
 		await page.goto(baseUrl);
-		await expect(page).toHaveTitle(`${name} - SchoolOrbit`);
+		await expect(page).toHaveTitle(`${name} - ระบบจัดการโรงเรียนครบวงจร`);
+		await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+			'content',
+			`${name.startsWith('โรงเรียน') ? name : `โรงเรียน${name}`} เชื่อมครู นักเรียน และผู้ปกครอง ผ่านระบบจัดการโรงเรียนครบวงจร`
+		);
 		await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
 		const schema = await page.locator('script[type="application/ld+json"]').textContent();
 		expect(JSON.parse(schema || 'null').name).toBe(name);
@@ -418,6 +502,91 @@ test('logo crawlers resolve only the current public crest without cookies or cal
 	brokenLogo = false;
 	failedRegion = '/api/school/public';
 	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(503);
+});
+
+test('social crawlers read one current-school wide PNG without session cookies or caller selectors', async ({
+	request
+}) => {
+	const response = await request.get(
+		`${baseUrl}/og-image.png?fileId=private-file&url=https://evil.example/image&v=old`,
+		{
+			maxRedirects: 0,
+			headers: { Cookie: 'fixture-private-cookie=not-a-real-session' }
+		}
+	);
+	expect(response.status()).toBe(200);
+	expect(response.headers()['content-type']).toBe('image/png');
+	expect(response.headers()['cache-control']).toBe('public, max-age=300');
+	expect(response.headers()['x-content-type-options']).toBe('nosniff');
+	expect(await response.body()).toEqual(shareImage);
+	expect(requests).toEqual([
+		{ path: '/api/school/public/share-image', origin: baseUrl, cookie: undefined }
+	]);
+	// Missing/deleted crests are represented by a valid designed card from the backend.
+	logoAvailable = false;
+	expect((await request.get(`${baseUrl}/og-image.png`)).status()).toBe(200);
+	brokenLogo = true;
+	expect((await request.get(`${baseUrl}/og-image.png`)).status()).toBe(200);
+});
+
+for (const mode of ['mime', 'oversize', 'chunked-oversize', 'redirect', 'invalid', 'square']) {
+	test(`social image rejects ${mode} responses without caching a failure`, async ({ request }) => {
+		shareImageMode = mode;
+		const response = await request.get(`${baseUrl}/og-image.png`, { maxRedirects: 0 });
+		expect(response.status()).toBe(503);
+		expect(response.headers()['cache-control']).toBe('no-store');
+		expect(response.headers()['retry-after']).toBe('60');
+		expect(response.headers().location).toBeUndefined();
+		expect(requests.map((r) => r.path)).toEqual(['/api/school/public/share-image']);
+		shareImageMode = 'ready';
+		expect((await request.get(`${baseUrl}/og-image.png`)).status()).toBe(200);
+	});
+}
+
+test('social image upstream failures and timeout are uncached and retryable', async ({
+	request
+}) => {
+	failedRegion = '/api/school/public/share-image';
+	const unavailable = await request.get(`${baseUrl}/og-image.png`);
+	expect(unavailable.status()).toBe(503);
+	expect(unavailable.headers()['cache-control']).toBe('no-store');
+	expect(unavailable.headers()['retry-after']).toBe('60');
+	failedRegion = undefined;
+	shareImageMode = 'timeout';
+	const started = Date.now();
+	const timeout = await request.get(`${baseUrl}/og-image.png`);
+	expect(Date.now() - started).toBeLessThan(20_000);
+	expect(timeout.status()).toBe(503);
+	expect(timeout.headers()['cache-control']).toBe('no-store');
+	expect(timeout.headers()['retry-after']).toBe('60');
+	shareImageMode = 'ready';
+	expect((await request.get(`${baseUrl}/og-image.png`)).status()).toBe(200);
+});
+
+test('social image proxy forwards the current host origin for each tenant', async ({ request }) => {
+	for (const host of ['alpha.localhost', 'beta.localhost']) {
+		const response = await request.get(`${baseUrl}/og-image.png`, { headers: { Host: host } });
+		expect(response.status()).toBe(200);
+		expect(requests.at(-1)).toEqual({
+			path: '/api/school/public/share-image',
+			origin: `http://${host}`,
+			cookie: undefined
+		});
+	}
+});
+
+test('protected route initial HTML keeps menu titles and wide public card without identity reads', async ({
+	request
+}) => {
+	const response = await request.get(`${baseUrl}/staff/academic/assessments`);
+	expect(response.status()).toBe(200);
+	const html = await response.text();
+	expect(html).toContain('<title>โครงสร้างคะแนน - SchoolOrbit</title>');
+	expect(html).toContain(`property="og:image" content="${baseUrl}/og-image.png"`);
+	expect(html).toContain('property="og:image:width" content="1200"');
+	expect(html).toContain('property="og:image:height" content="630"');
+	expect(html).toContain('name="twitter:card" content="summary_large_image"');
+	expect(requests).toHaveLength(0);
 });
 
 test('favicon reads only this school crest and uses the Admin brand when no crest is available', async ({
@@ -544,7 +713,7 @@ test('a four-second identity read still provides the school title in the first H
 	try {
 		const page = await context.newPage();
 		await page.goto(baseUrl);
-		await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
+		await expect(page).toHaveTitle(`${schoolName} - ระบบจัดการโรงเรียนครบวงจร`);
 		await expect(
 			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 		).toBeVisible();
@@ -568,7 +737,7 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	await expect(page.getByTestId('public-executive-team')).toHaveCount(0);
-	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน - SchoolOrbit');
+	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน - ระบบจัดการโรงเรียนครบวงจร');
 	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
 	releaseIdentity?.();
 	identityGate = undefined;
@@ -577,7 +746,7 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	await expect(
 		page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
 	).toBeVisible();
-	await expect(page).toHaveTitle(`${schoolName} - SchoolOrbit`);
+	await expect(page).toHaveTitle(`${schoolName} - ระบบจัดการโรงเรียนครบวงจร`);
 	expect(
 		requests
 			.filter((r) => isRegionRead(r.path))
