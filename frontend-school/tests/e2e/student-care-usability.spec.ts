@@ -317,14 +317,20 @@ async function namedControls(content: Locator) {
 		/^\s*-\s+(?:button|link|textbox|combobox|spinbutton|checkbox|radio)(?=\s|:|$)(?!\s+")/m
 	);
 }
-async function regionVisible(content: Locator, region: Region) {
+function regionLocator(content: Locator, region: Region) {
 	const locator =
 		'text' in region
 			? content.getByText(region.text, { exact: false })
 			: 'label' in region
 				? content.getByLabel(region.label, { exact: true })
 				: content.getByRole(region.role, { name: region.name, exact: true });
-	await expect(locator.first()).toBeVisible();
+	return locator.first();
+}
+async function regionVisible(content: Locator, region: Region) {
+	const locator = regionLocator(content, region);
+	await expect(locator).toBeVisible();
+	await locator.scrollIntoViewIfNeeded();
+	await expect(locator).toBeInViewport();
 }
 
 for (const viewport of [
@@ -337,7 +343,10 @@ for (const viewport of [
 				page
 			}) => {
 				await page.setViewportSize(viewport);
-				await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+				await page.addInitScript(
+					(value) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: value })),
+					theme
+				);
 				await mockStudentCare(page, {
 					longNames: true,
 					manyPeople: true,
@@ -376,10 +385,22 @@ for (const viewport of [
 				await noDocumentOverflow(page);
 				if (route.screenshot) {
 					await mkdir('/tmp/student-care-ux', { recursive: true });
+					await page.getByRole('main').evaluate((element) => {
+						element.scrollTop = 0;
+					});
 					await page.screenshot({
 						path: `/tmp/student-care-ux/${route.key}-${viewport.name}-${theme}.png`,
 						fullPage: true
 					});
+					for (const [index, region] of route.regions.entries()) {
+						if (index < route.regions.length - 2) continue;
+						const target = regionLocator(content, region);
+						await target.scrollIntoViewIfNeeded();
+						await expect(target).toBeInViewport();
+						await page.screenshot({
+							path: `/tmp/student-care-ux/${route.key}-${viewport.name}-${theme}-region-${index + 1}.png`
+						});
+					}
 				}
 			});
 		}
@@ -533,24 +554,54 @@ test.describe('emulated mobile touch', () => {
 		await expect(second).toBeChecked();
 		const { pane, outerScroll } = await scrollableStudentList(page);
 		const session = await context.newCDPSession(page);
+		const settleFrames = () =>
+			page.evaluate(
+				() =>
+					new Promise<void>((resolve) =>
+						requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+					)
+			);
+		async function swipe(distance: number) {
+			const bounds = await pane.boundingBox();
+			if (!bounds) throw new Error('Touch scroll target is not rendered');
+			const x = bounds.x + bounds.width / 2;
+			const y = bounds.y + bounds.height / 2;
+			await session.send('Input.dispatchTouchEvent', {
+				type: 'touchStart',
+				touchPoints: [{ x, y, id: 1, radiusX: 1, radiusY: 1, force: 1 }]
+			});
+			for (let step = 1; step <= 12; step++) {
+				await settleFrames();
+				await session.send('Input.dispatchTouchEvent', {
+					type: 'touchMove',
+					touchPoints: [
+						{ x, y: y + (distance * step) / 12, id: 1, radiusX: 1, radiusY: 1, force: 1 }
+					]
+				});
+			}
+			await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+			await settleFrames();
+		}
 		try {
+			await pane.evaluate((element) => {
+				element.scrollIntoView({ block: 'center' });
+				element.scrollTop = (element.scrollHeight - element.clientHeight) / 2;
+			});
+			await settleFrames();
+			const innerBefore = await pane.evaluate((element) => element.scrollTop);
+			await swipe(-180);
+			await expect
+				.poll(() => pane.evaluate((element) => element.scrollTop))
+				.toBeGreaterThan(innerBefore);
 			for (const boundary of ['bottom', 'top'] as const) {
 				await pane.evaluate((element, edge) => {
 					element.scrollIntoView({ block: 'center' });
 					element.scrollTop = edge === 'bottom' ? element.scrollHeight : 0;
 				}, boundary);
-				const bounds = await pane.boundingBox();
-				if (!bounds) throw new Error('Touch scroll target is not rendered');
+				await settleFrames();
 				const before = await outerScroll();
 				if (boundary === 'top') expect(before).toBeGreaterThan(0);
-				await session.send('Input.synthesizeScrollGesture', {
-					x: bounds.x + bounds.width / 2,
-					y: bounds.y + bounds.height / 2,
-					yDistance: boundary === 'bottom' ? -350 : 350,
-					gestureSourceType: 'touch',
-					preventFling: true,
-					speed: 600
-				});
+				await swipe(boundary === 'bottom' ? -180 : 180);
 				if (boundary === 'bottom') await expect.poll(outerScroll).toBeGreaterThan(before);
 				else await expect.poll(outerScroll).toBeLessThan(before);
 			}

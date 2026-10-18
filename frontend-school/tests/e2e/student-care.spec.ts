@@ -166,9 +166,13 @@ test('named sensitive staff records paper provenance and retains explicit zero s
 for (const theme of ['light', 'dark'])
 	test(`mobile visit planning and factual record are usable in ${theme}`, async ({ page }) => {
 		await page.setViewportSize({ width: 375, height: 812 });
-		await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+		await page.addInitScript(
+			(value) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: value })),
+			theme
+		);
 		const api = await mockStudentCare(page);
 		await page.goto(carePath('/visits/new'));
+		await expect(page.locator('html')).toHaveClass(theme === 'dark' ? /dark/ : /^(?!.*\bdark\b)/);
 		await page.getByRole('checkbox', { name: /นักเรียนทดสอบ หนึ่ง/ }).check();
 		await page.getByRole('checkbox', { name: 'ครูผู้รับผิดชอบ', exact: true }).check();
 		await page.getByLabel(/^ข้อเท็จจริงที่สังเกต(?: \*)?$/).fill('ข้อมูลสมมติจากการเยี่ยมบ้าน');
