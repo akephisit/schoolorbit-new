@@ -251,7 +251,7 @@ export async function mockDirectedCorrespondence(
 			record: { ...detail.record, status: config.terminalCopy },
 			availableActions: ['read', 'acknowledge'],
 			assignmentActions: [{ assignmentId, actions: ['read', 'acknowledge'] }],
-			instance: { ...detail.instance, status: 'completed' }
+			instance: { ...detail.instance, status: config.terminalCopy }
 		};
 	if (config.bookStatus && detail.instance)
 		detail = {
