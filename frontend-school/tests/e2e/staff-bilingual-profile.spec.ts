@@ -51,8 +51,8 @@ test('English-only creation requires a whole language set and reviews all qualif
 	await page.getByRole('button', { name: 'บทบาทตัวเลือก staff ระดับ 10', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await page.getByRole('button', { name: '+ เพิ่มหน่วยงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'เลือกหน่วยงาน', exact: true }).click();
-	await page.getByRole('option', { name: /สังกัด หน่วยงานตัวเลือก/ }).click();
+	await page.getByRole('combobox', { name: 'ชื่อหน่วยงานที่ 1', exact: true }).click();
+	await page.getByRole('option', { name: 'หน่วยงานตัวเลือก', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	const review = page.getByTestId('staff-create-review');
 	await expect(review).toContainText('Ms. Alice Example');

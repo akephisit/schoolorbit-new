@@ -279,8 +279,8 @@ test('new personnel selection survives draft reload and appears in review and cr
 	await page.getByRole('button', { name: 'บทบาทตัวเลือก staff ระดับ 10', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await page.getByRole('button', { name: '+ เพิ่มหน่วยงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'เลือกหน่วยงาน', exact: true }).click();
-	await page.getByRole('option', { name: /สังกัด หน่วยงานตัวเลือก/ }).click();
+	await page.getByRole('combobox', { name: 'ชื่อหน่วยงานที่ 1', exact: true }).click();
+	await page.getByRole('option', { name: 'หน่วยงานตัวเลือก', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await expect(page.getByTestId('staff-create-review')).toContainText('ตำแหน่ง: ครู');
 	await expect(page.getByTestId('staff-create-review')).toContainText('วิทยาศาสตร์');

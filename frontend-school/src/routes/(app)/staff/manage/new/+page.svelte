@@ -15,6 +15,12 @@
 		preferredStaffName
 	} from '#lib/forms/staff-name.js';
 	import StaffPersonnelFields from '#lib/components/staff/StaffPersonnelFields.svelte';
+	import StaffOrganizationPicker from '#lib/components/staff/StaffOrganizationPicker.svelte';
+	import { organizationUnitPath } from '#lib/features/staff/organization-hierarchy.js';
+	import {
+		organizationPositionOptions,
+		organizationPositionLabel
+	} from '#lib/features/staff/organization-positions.js';
 	import {
 		ACADEMIC_RANK_LABELS,
 		EDUCATION_LEVEL_LABELS,
@@ -47,7 +53,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 
-	import { ArrowLeft, ArrowRight, LoaderCircle, Check, Building2 } from '@lucide/svelte';
+	import { ArrowLeft, ArrowRight, LoaderCircle, Check } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -894,93 +900,41 @@
 
 										<div class="space-y-3">
 											<div>
-												<Label class="mb-2">ชื่อหน่วยงาน</Label>
-												<Select.Root type="single" bind:value={dept.organization_unit_id}>
-													<Select.Trigger>
-														{#if dept.organization_unit_id}
-															{organizationUnits.find((d) => d.id === dept.organization_unit_id)
-																?.name || 'เลือกหน่วยงาน'}
-														{:else}
-															เลือกหน่วยงาน
-														{/if}
-													</Select.Trigger>
-													<Select.Content
-														class="max-h-[300px] overflow-y-auto w-full max-w-[400px]"
-													>
-														<Select.Item value="">เลือกหน่วยงาน</Select.Item>
-
-														<!-- Group by Parent Organization Units (Administrative Groups) -->
-														{#each organizationUnits.filter((d) => !d.parent_unit_id) as parentDept (parentDept.id)}
-															<Select.Group>
-																<Select.Label
-																	class="font-bold text-primary flex items-center gap-2 bg-muted/30 px-2 py-1"
-																>
-																	<Building2 class="w-3 H-3" />
-																	{parentDept.name}
-																</Select.Label>
-
-																<!-- Parent itself (Optional) -->
-																<Select.Item
-																	value={parentDept.id}
-																	class="pl-4 font-semibold text-muted-foreground/80"
-																>
-																	— สังกัด {parentDept.name} (ส่วนกลาง) —
-																</Select.Item>
-
-																<!-- Child Organization Units -->
-																{#each organizationUnits.filter((d) => d.parent_unit_id === parentDept.id) as childDept (childDept.id)}
-																	<Select.Item value={childDept.id} class="pl-6">
-																		<div class="flex flex-col">
-																			<span>{childDept.name}</span>
-																			{#if childDept.code}
-																				<span class="text-[10px] text-muted-foreground">
-																					{childDept.code}
-																				</span>
-																			{/if}
-																		</div>
-																	</Select.Item>
-																{/each}
-															</Select.Group>
-															<Select.Separator />
-														{/each}
-
-														<!-- Orphan Organization Units -->
-														{#if organizationUnits.some((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id))}
-															<Select.Group>
-																<Select.Label class="font-bold text-muted-foreground"
-																	>อื่นๆ</Select.Label
-																>
-																{#each organizationUnits.filter((d) => d.parent_unit_id && !organizationUnits.find((p) => p.id === d.parent_unit_id)) as orphan (orphan.id)}
-																	<Select.Item value={orphan.id} class="pl-6">
-																		{orphan.name}
-																	</Select.Item>
-																{/each}
-															</Select.Group>
-														{/if}
-													</Select.Content>
-												</Select.Root>
+												<Label for={`staff-organization-${i}`} class="mb-2">ชื่อหน่วยงาน</Label>
+												<StaffOrganizationPicker
+													id={`staff-organization-${i}`}
+													label={`ชื่อหน่วยงานที่ ${i + 1}`}
+													units={organizationUnits}
+													bind:value={dept.organization_unit_id}
+												/>
 											</div>
 
 											<div>
-												<Label class="mb-2">ตำแหน่งในหน่วยงาน</Label>
+												<Label for={`staff-organization-position-${i}`} class="mb-2"
+													>ตำแหน่งในหน่วยงาน</Label
+												>
 												<Select.Root type="single" bind:value={dept.position_code}>
-													<Select.Trigger>
-														{dept.position_code === 'member'
-															? 'สมาชิก'
-															: dept.position_code === 'head'
-																? 'หัวหน้า'
-																: 'เลือกตำแหน่ง'}
+													<Select.Trigger
+														id={`staff-organization-position-${i}`}
+														aria-label={`ตำแหน่งในหน่วยงานที่ ${i + 1}`}
+													>
+														{organizationPositionLabel(dept.position_code)}
 													</Select.Trigger>
 													<Select.Content>
-														<Select.Item value="member">สมาชิก</Select.Item>
-														<Select.Item value="head">หัวหน้า</Select.Item>
+														{#each organizationPositionOptions as position (position.value)}
+															<Select.Item value={position.value}>{position.label}</Select.Item>
+														{/each}
 													</Select.Content>
 												</Select.Root>
 											</div>
 
 											<div>
-												<Label class="mb-2">หน้าที่รับผิดชอบ</Label>
+												<Label for={`staff-organization-responsibilities-${i}`} class="mb-2"
+													>หน้าที่รับผิดชอบ</Label
+												>
 												<Textarea
+													id={`staff-organization-responsibilities-${i}`}
+													aria-label={`หน้าที่รับผิดชอบในหน่วยงานที่ ${i + 1}`}
 													bind:value={dept.responsibilities}
 													placeholder="ระบุหน้าที่รับผิดชอบ..."
 													rows={2}
@@ -990,10 +944,15 @@
 											<div>
 												<div class="flex items-center gap-2 cursor-pointer">
 													<Checkbox
+														id={`staff-organization-primary-${i}`}
+														aria-label={`สังกัดหลักหน่วยงานที่ ${i + 1}`}
 														checked={dept.is_primary}
 														onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 													/>
-													<span class="text-sm">สังกัดหลัก</span>
+													<Label
+														for={`staff-organization-primary-${i}`}
+														class="cursor-pointer text-sm">สังกัดหลัก</Label
+													>
 												</div>
 											</div>
 										</div>
@@ -1139,10 +1098,17 @@
 									>
 								</div>
 								<ul class="mt-3 space-y-2">
-									{#each formData.organization_assignments as assignment (assignment.organization_unit_id)}<li
-										>
-											{organizationUnits.find((unit) => unit.id === assignment.organization_unit_id)
-												?.name ?? 'หน่วยงานที่เลือก'}{assignment.is_primary ? ' • สังกัดหลัก' : ''}
+									{#each formData.organization_assignments as assignment (assignment.organization_unit_id)}
+										{@const selectedUnit = organizationUnits.find(
+											(unit) => unit.id === assignment.organization_unit_id
+										)}
+										<li class="break-words">
+											{selectedUnit
+												? organizationUnitPath(selectedUnit, organizationUnits)
+												: 'หน่วยงานที่เลือก'}
+											• {organizationPositionLabel(assignment.position_code)}{assignment.is_primary
+												? ' • สังกัดหลัก'
+												: ''}
 										</li>{/each}
 								</ul>
 							</div>
