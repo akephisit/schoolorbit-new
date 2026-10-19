@@ -21,8 +21,6 @@ setup() {
     SO_SECRETS[SMOKE_SUBDOMAIN]=smoke-school
     SO_SECRETS[SMOKE_USERNAME]=smoke.operator
     SO_SECRETS[SMOKE_PASSWORD]=Smoke-Pass-7vK9nM3q
-    SO_CF_ORIGIN_ROOT_FILE="$TEST_ROOT/cloudflare-origin-root.pem"
-    printf '%s\n' fixture-root >"$SO_CF_ORIGIN_ROOT_FILE"
     export FAKE_ADMIN_IDENTITY='SchoolOrbit Backend Admin'
     export FAKE_SCHOOL_IDENTITY='SchoolOrbit Backend School'
 
@@ -113,7 +111,7 @@ install_orchestration_fakes() {
         SO_CF_ADMIN_RECORD_ID=dns-admin-1
         SO_CF_SCHOOL_RECORD_ID=dns-school-1
         if [[ ${FAKE_DNS_CUTOVER:-false} == true ]]; then
-            SO_CF_DNS_RECORDS='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"192.0.2.20","ttl":1,"proxied":true,"modified_on":"2026-08-02T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"192.0.2.20","ttl":1,"proxied":true,"modified_on":"2026-08-02T00:00:00Z"}]'
+            SO_CF_DNS_RECORDS='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"192.0.2.20","ttl":1,"proxied":false,"modified_on":"2026-08-02T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"192.0.2.20","ttl":1,"proxied":false,"modified_on":"2026-08-02T00:00:00Z"}]'
         else
             SO_CF_DNS_RECORDS='[{"id":"dns-admin-1","type":"A","name":"admin-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"},{"id":"dns-school-1","type":"A","name":"school-api.example.test","content":"198.51.100.10","ttl":1,"proxied":true,"modified_on":"2026-08-01T00:00:00Z"}]'
         fi
@@ -175,7 +173,8 @@ install_orchestration_fakes() {
         [[ $1 != cutover ]] || FAKE_DNS_CUTOVER=true
     }
     cf_wait_for_record_content() { printf 'wait-content %s\n' "$1" >>"$FAKE_COMMAND_LOG"; }
-    cf_wait_for_proxy_resolution() { printf '%s\n' wait-proxy >>"$FAKE_COMMAND_LOG"; }
+    cf_wait_for_target_resolution() { printf '%s\n' wait-proxy >>"$FAKE_COMMAND_LOG"; }
+    cf_wait_for_snapshot_resolution() { printf '%s\n' proxy-resolved >>"$FAKE_COMMAND_LOG"; }
     vps_bootstrap() { printf '%s\n' apt-get-bootstrap >>"$FAKE_COMMAND_LOG"; }
     vps_install_runtime_env() { printf '%s\n' runtime-env-installed >>"$FAKE_COMMAND_LOG"; }
     vps_configure_cockpit() { printf '%s\n' cockpit-configured >>"$FAKE_COMMAND_LOG"; }
@@ -186,10 +185,8 @@ install_orchestration_fakes() {
     }
     vps_cleanup_deployment_key() { printf '%s\n' deployment-key-cleaned >>"$FAKE_COMMAND_LOG"; }
     vps_issue_and_install_tls() {
-        SO_CF_CERTIFICATE_ID=origin-cert-123
-        SO_CF_CERTIFICATE_EXPIRES=2041-08-02T00:00:00Z
-        SO_CF_ORIGIN_ROOT_FILE="$TEST_ROOT/origin-root.pem"
-        printf '%s\n' fixture-root >"$SO_CF_ORIGIN_ROOT_FILE"
+        SO_TLS_CERTIFICATE_FINGERPRINT=origin-cert-123
+        SO_TLS_CERTIFICATE_EXPIRES=2041-08-02T00:00:00Z
         printf '%s\n' tls-installed >>"$FAKE_COMMAND_LOG"
     }
     github_configure_repository() { printf '%s\n' 'variable set rollout=false; secret set runtime' >>"$FAKE_COMMAND_LOG"; }
@@ -211,10 +208,7 @@ install_orchestration_fakes() {
         printf '%s\n' cockpit-public-verified >>"$FAKE_COMMAND_LOG"
     }
     vps_reverify_bootstrap() { return 0; }
-    vps_reverify_tls() {
-        SO_CF_ORIGIN_ROOT_FILE="$TEST_ROOT/origin-root.pem"
-        printf '%s\n' fixture-root >"$SO_CF_ORIGIN_ROOT_FILE"
-    }
+    vps_reverify_tls() { return 0; }
     confirm_exact() {
         printf '%s\n' "$1" >"$TEST_ROOT/confirmation"
         [[ ${FAKE_CONFIRM:-yes} == yes ]]
@@ -228,7 +222,7 @@ install_orchestration_fakes() {
 
     grep -F -- '--resolve admin-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
     grep -F -- '--resolve school-api.example.test:443:192.0.2.20' "$FAKE_COMMAND_LOG"
-    grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
+    ! grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
     ! grep -Fq -- "$insecure_flag" "$FAKE_COMMAND_LOG"
     grep -Fq 'podman-compose -f podman-compose.yml --dry-run up -d' "$FAKE_COMMAND_LOG"
     ! grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"

@@ -1,0 +1,84 @@
+name: Serialized public API certificate operation
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+      rollback_id:
+        type: string
+        default: ""
+permissions:
+  contents: read
+  actions: read
+jobs:
+  certificate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Require prepared main and preserve accepted application identity
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_TLS_MODE: ${{ inputs.mode }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: node scripts/lib/pipeline-api-tls.mjs
+      - name: Verify external direct HTTPS and authenticated full academic payload before DNS cutover
+        if: inputs.mode == 'dns-only'
+        env:
+          SMOKE_SUBDOMAIN: sandbox
+          SMOKE_API_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          SMOKE_ADMIN_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          SMOKE_TENANT_URL: https://sandbox.${{ vars.BASE_DOMAIN }}
+          SMOKE_ORIGIN: https://sandbox.${{ vars.BASE_DOMAIN }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_REQUIRE_AUTH: "true"
+          SMOKE_ACADEMIC_CONTEXT: "true"
+          SMOKE_DIRECT_BACKEND: "false"
+          SMOKE_RESOLVE_IP: ${{ secrets.SERVER_IP }}
+          SMOKE_CA_CERT: ""
+        run: bash scripts/smoke_test.sh
+      - name: Upload shared certificate and maintenance owners
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: scripts/lib/pipeline-remote/api-tls.sh,scripts/lib/pipeline-remote/api-tls-operation.sh,scripts/lib/pipeline-remote/api-dns-operation.sh,scripts/lib/pipeline-remote/maintenance.sh,scripts/lib/schoolorbit-installer/common.sh,scripts/lib/schoolorbit-installer/cloudflare.sh,scripts/render_nginx_config.sh,scripts/smoke_test.sh,nginx-configs
+          target: /opt/stack/deployment
+      - name: Stage and accept public API certificate under universal maintenance
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          ACCEPTED_APP_SHA: ${{ steps.preflight.outputs.accepted_app_sha }}
+          API_TLS_MODE: ${{ inputs.mode }}
+          API_TLS_CLOUDFLARE_TOKEN: ${{ secrets.API_TLS_CLOUDFLARE_TOKEN }}
+          TARGET_ORIGIN_IP: ${{ secrets.SERVER_IP }}
+          API_DNS_REQUEST_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          API_DNS_ROLLBACK_ID: ${{ inputs.rollback_id }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 25m
+          envs: BASE_DOMAIN,ACCEPTED_APP_SHA,API_TLS_MODE,API_TLS_CLOUDFLARE_TOKEN,TARGET_ORIGIN_IP,API_DNS_REQUEST_ID,API_DNS_ROLLBACK_ID,SMOKE_USERNAME,SMOKE_PASSWORD
+          script: |
+            case "$API_TLS_MODE" in
+              dns-only|dns-rollback) bash /opt/stack/deployment/scripts/lib/pipeline-remote/api-dns-operation.sh "$API_TLS_MODE" ;;
+              *) bash /opt/stack/deployment/scripts/lib/pipeline-remote/api-tls-operation.sh "$API_TLS_MODE" ;;
+            esac

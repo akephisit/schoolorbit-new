@@ -351,7 +351,7 @@ There are four public workflow entry points:
 | [pipeline.yml](../.github/workflows/pipeline.yml)       | PR scope/base planning; main or manual preparation and production release |
 | [merge.yml](../.github/workflows/merge.yml)             | Serialize trusted team PR integration after `Pipeline gate`               |
 | [operations.yml](../.github/workflows/operations.yml)   | Explicit deployed smoke, diagnostics, benchmarks and tenant provisioning  |
-| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention; dry-run unless explicitly enabled                 |
+| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention and serialized public API certificate renewal                 |
 
 The callable [prepare.yml](../.github/workflows/prepare.yml) and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
 are callable component implementations, with no separate push or manual writers.
@@ -398,7 +398,7 @@ transition from the previous workflows deliberately reconciles all four componen
 releases remain possible while these are disabled. The installer dispatches one full Pipeline with
 an exact deployment ID and selected target origin, and enables automatic releases only after its
 public handoff verification. Direct-origin checks use the intended API hostname, loopback resolution
-and the pinned Cloudflare Origin CA; the still-public DNS name is not evidence of a replacement VPS.
+and public system CA trust; the still-public DNS name is not evidence of a replacement VPS.
 
 Every production deployment enters maintenance for both School and Admin, including frontend-only
 updates and provisioning. `/deployment-status` remains available with no-store typed status;
@@ -902,13 +902,13 @@ verified phase:
 ./scripts/schoolorbit-installer migrate-vps --resume RUN_ID
 ```
 
-The migration bootstraps the target, installs runtime configuration and Origin CA material,
+The migration bootstraps the target, installs runtime configuration and public ACME certificate material,
 dispatches backend-admin, frontend-admin, and one `full` school release, and pins school tenant
 discovery and verification to the selected origin until DNS is changed. Menu synchronization uses
 the backend-school VPS loopback while public DNS still points at the prior origin. The installer
-verifies both APIs directly with `curl --resolve` and pinned Origin CA trust, then
+verifies both APIs directly with `curl --resolve` and public system CA trust, then
 prints the DNS diff and
-requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch. Public
+requires the exact phrase `CUTOVER <target-ip>` before one two-record Cloudflare batch sets only both API A records to DNS only (`proxied:false`). Public
 verification covers API identity, both frontends, authenticated SSE, and the File Platform. Only
 after those checks pass does the migration configure the Cockpit management Tunnel, verify its
 connector came from the selected target, publish `server.schoolorbit.app`, and verify the public
@@ -928,10 +928,91 @@ also restores or removes its management CNAME after revalidating both current st
 replacement VPS, GitHub configuration, and both Cloudflare Tunnels are retained for diagnosis or a
 later retry. Keep the old VPS available until the rollback window has been closed explicitly.
 
-The TLS checkpoint stores the Cloudflare Origin CA certificate ID and `certificate_expiry`, but
-never the private key. Monitor that expiry independently and schedule replacement in advance;
-Cloudflare does not send Origin CA expiry notifications. Keep Cloudflare SSL/TLS mode at
-`Full (strict)` for installer-managed API origins.
+The TLS checkpoint stores `certificate_fingerprint` and `certificate_expiry`, never the private
+key or DNS credential. Keep Cloudflare SSL/TLS mode at `Full (strict)` for the unchanged frontend
+and management topology.
+
+### Public API certificate lifecycle
+
+[`api-tls.sh`](../scripts/lib/pipeline-remote/api-tls.sh) is the single certificate owner. It
+runs the official digest-pinned Certbot DNS Cloudflare container through the existing rootless
+Podman namespace. DNS-01 can validate both API names while DNS still reaches a previous VPS;
+there is no port-80 challenge routing dependency. Certbot account, renewal state and private logs
+live under `/opt/stack/acme`. Its mode-0600 credential is mounted from `/run/user/<uid>` only for
+the invocation and is removed on normal/signal exit; reboot clears the runtime filesystem.
+The persistent renewal configuration stores only that container credential path.
+
+`API_TLS_CLOUDFLARE_TOKEN` is an Actions secret with Zone DNS Edit access to this zone. Prefer a
+dedicated restricted DNS token; the installer uses the existing runtime DNS provisioning token
+when configuring this secret. The broad bootstrap and Worker deployment tokens are never stored
+for ACME. Never print credentials, copy ACME private state to CI artifacts, or enable a host timer.
+The image and server user's existing Podman setup avoid privileged package installation.
+
+The existing [Maintenance workflow](../.github/workflows/maintenance.yml) renews daily under
+`schoolorbit-production`; weekly GHCR retention remains separate. To request renewal manually:
+
+```bash
+gh workflow run maintenance.yml --ref main -f task=api-tls
+```
+
+It requires the latest main Pipeline attempt's planning and selected build gate, trusted accepted
+state, no queued runtime changes and no pending application release. Documentation-only main
+commits may retain an older accepted application SHA. Issuance stages a validated export outside
+Certbot's mutable `live/` lineage. If the exported fingerprint already serves, no maintenance or
+reload occurs. Otherwise both APIs enter maintenance; one atomic generation pointer activates the
+fullchain and key, then public-trust readiness and authenticated academic smoke must pass before
+reopening the exact accepted application release. Nginx keeps its existing certificate filenames;
+its complete SSL-directory mount exposes the relative generation links on reload. TLS does not
+publish application baselines or change frontend versions.
+
+For the initial Cloudflare Origin CA replacement only, disable both automatic rollout gates before
+integrating the prepared change, verify exact-main Pipeline planning and every selected build,
+then run the explicit `migrate-api-tls` Operations task on main. It stages first, uses the
+hash-pinned old CA solely for verified maintenance entry, activates the public certificate, and
+uses system trust for every subsequent readiness and authenticated check. Run the normal prepared
+Pipeline immediately afterward. Verify direct HTTPS to both API hostnames without `--cacert` or
+`--insecure` before changing ONLY their exact A records to `proxied:false`, after refreshing the
+DNS snapshot and rejecting additional AAAA/CNAME records or drift. Recheck public readiness and
+authenticated full academic-context smoke, restore automatic gates and retire the one-time trust
+bridge after acceptance. Apex, wildcard, tenant Workers and `server.schoolorbit.app` stay proxied.
+
+For an existing VPS after the normal Pipeline passes, use the serialized API-only DNS operation:
+
+```bash
+gh workflow run operations.yml --ref main -f operation=api-dns-only
+```
+
+It refuses queued runtime changes, pending releases, invalid public TLS, ambiguous API records,
+drift or A records targeting another origin. Its private rollback journal is
+`/opt/stack/deployment/api-dns/<workflow-run-id>-<attempt>.json`. It verifies authenticated full
+academic-context smoke directly from the external Actions runner before mutation, proving public
+port 443/firewall reachability in addition to the VPS loopback checks, and public smoke afterward.
+Rollback deliberately omits that external precondition so it remains available for reachability
+recovery. To restore only the complete
+two-record DNS snapshot, use the printed journal identity:
+
+```bash
+gh workflow run operations.yml --ref main -f operation=rollback-api-dns \
+  -f 'options={"rollback_id":"RUN_ID-ATTEMPT"}'
+```
+
+Rollback refuses changed cutover records and preserves the accepted application identity. It
+retains certificate generations and management DNS; failure keeps maintenance active.
+
+On failed activation the owner restores the preceding certificate pair and leaves maintenance
+active. On later acceptance failure the new valid pair remains with maintenance active. Repeat the
+same serialized TLS operation to resume its private journal, bound to the accepted application SHA,
+operation mode, staged fingerprint and UUID. Only its owned pending-release link permits that
+recovery; an unrelated pending application release must use the normal Pipeline. A retry after
+activation still completes public verification and acceptance. An interrupted first migration can
+re-enter old trust only before a public certificate is active; subsequent entry uses public trust.
+Existing and reused exported private keys must retain server-user ownership and mode 0600.
+DNS-only operational preflight needs zone/DNS access without SSL Settings Read; installer bootstrap
+retains its separate Full (strict) settings check. Keep previous private generations
+and DNS snapshots until the rollback window is explicitly closed. Never restore an untrusted
+Origin CA certificate while either API is DNS only. DNS rollback must restore the snapshot's
+original proxy flags before that old-certificate recovery could be used. Private ACME logs on the
+VPS explain issuance failures; workflow logs deliberately contain only bounded status.
 
 ## School homepage search indexing
 

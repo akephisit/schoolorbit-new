@@ -7,6 +7,19 @@ mode=${1:?enter, verify or accept is required}
 stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
 root="$stack/deployment"
 renderer="$root/scripts/render_nginx_config.sh"
+declare -a transition_trust=()
+# Explicit one-time bridge for an already serving Origin CA certificate. This
+# mode is never selected by normal releases or recurring renewal and is retired
+# after the public-certificate cutover has been accepted.
+if [[ $mode == enter-origin-ca-migration ]]; then
+    transition_root=$(mktemp)
+    trap 'rm -f "$transition_root"' EXIT
+    curl --fail --silent --show-error --location \
+        https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem >"$transition_root"
+    test "$(sha256sum "$transition_root" | cut -d ' ' -f 1)" = 91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae
+    transition_trust=(--cacert "$transition_root")
+    mode=enter
+fi
 mkdir -p "$root/releases/$RELEASE_SHA"
 journal="$root/releases/$RELEASE_SHA"
 public_status() {
@@ -26,7 +39,7 @@ public_status() {
             # proxy mode with bounded retries rather than interpreting that race
             # as a deployment failure or reopening unverified traffic.
             status=000
-            if status=$(curl --silent --show-error --max-time 10 --cacert "$stack/nginx/ssl/cloudflare-origin-rsa-root.pem" \
+            if status=$(curl --silent --show-error --max-time 10 "${transition_trust[@]}" \
                 --resolve "${host}:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://${host}/ready") &&
                 [[ $status == "$expected" ]] && jq -e "$filter" "$body" >/dev/null; then break; fi
             if ((attempt == 10)); then
@@ -91,17 +104,16 @@ if [[ $mode == enter ]]; then
 elif [[ $mode == accept || $mode == verify ]]; then
     test "$(cat "$root/pending-release")" = "$RELEASE_SHA"
     probe=$(cat "$journal/probe-token")
-    origin_root=${stack}/nginx/ssl/cloudflare-origin-rsa-root.pem
     for part in school admin; do
         host="${part}-api.${BASE_DOMAIN}"
-        response=$(curl --fail --silent --show-error --max-time 30 --cacert "$origin_root" \
+        response=$(curl --fail --silent --show-error --max-time 30 \
             --resolve "${host}:443:127.0.0.1" -H "X-Schoolorbit-Release-Probe: $probe" "https://${host}/ready")
         printf '%s' "$response" | jq -e '.status == "ready"' >/dev/null
     done
     SMOKE_SUBDOMAIN=sandbox SMOKE_API_URL="https://school-api.${BASE_DOMAIN}" \
         SMOKE_ADMIN_API_URL="https://admin-api.${BASE_DOMAIN}" SMOKE_TENANT_URL="https://sandbox.${BASE_DOMAIN}" \
         SMOKE_ORIGIN="https://sandbox.${BASE_DOMAIN}" SMOKE_REQUIRE_AUTH=true SMOKE_ACADEMIC_CONTEXT=true \
-        SMOKE_DIRECT_BACKEND=false SMOKE_RESOLVE_IP=127.0.0.1 SMOKE_CA_CERT="$origin_root" \
+        SMOKE_DIRECT_BACKEND=false SMOKE_RESOLVE_IP=127.0.0.1 \
         SMOKE_RELEASE_PROBE_TOKEN="$probe" bash "$root/scripts/smoke_test.sh"
     if [[ $mode == verify ]]; then
         if [[ -n ${PREPARED_IMAGES-} ]]; then

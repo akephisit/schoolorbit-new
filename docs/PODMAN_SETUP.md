@@ -43,7 +43,7 @@ Management plane ใช้ Cockpit และ cloudflared เป็น host syste
   --dry-run
 ```
 
-เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command รวมถึงกำหนด `SCHOOLORBIT_SERVER_PASSWORD` ที่ไม่ซ้ำและยาวอย่างน้อย 10 ตัวสำหรับบัญชี `schoolorbit` ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง Cloudflare Origin CA, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง, ขอคำยืนยันก่อนย้าย DNS แล้วจึงติดตั้ง Cockpit/cloudflared และ publish management Tunnel หลังระบบ application ผ่าน public verification.
+เมื่อ preflight ผ่านแล้วจึงรันคำสั่งเดิมโดยตัด `--dry-run` ออก ส่ง secret ผ่าน environment, hidden prompt หรือ `--secrets-stdin` เท่านั้น ห้ามใส่ secret ต่อท้าย command รวมถึงกำหนด `SCHOOLORBIT_SERVER_PASSWORD` ที่ไม่ซ้ำและยาวอย่างน้อย 10 ตัวสำหรับบัญชี `schoolorbit` ตัว installer จะติดตั้ง Podman แบบ rootless, สร้าง `/opt/stack`, ตั้ง GitHub variables/secrets, ติดตั้ง public ACME certificate, dispatch backend/frontend workflows, ตรวจ origin ใหม่โดยตรง, ขอคำยืนยันก่อนย้าย DNS แล้วจึงติดตั้ง Cockpit/cloudflared และ publish management Tunnel หลังระบบ application ผ่าน public verification.
 
 ถ้าหยุดกลางทาง ให้ใช้ run ID ที่พิมพ์ไว้:
 
@@ -237,17 +237,28 @@ podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 - `school-api.schoolorbit.app`;
 - admin API domain ที่เลือกใช้จริง.
 
-API records ของ production ที่ installer รองรับต้องเป็น Cloudflare Proxied ทั้งคู่และชี้ origin IPv4 เดียวกันก่อน cutover.
+API records ของ production ต้องเป็น A records สองรายการที่ชี้ origin IPv4 เดียวกันก่อน cutover; installer ตรวจ certificate แบบ public trust ก่อนเปลี่ยนเฉพาะสอง API records เป็น DNS only. ห้ามเปลี่ยน apex, wildcard, tenant หรือ management DNS.
 
 ### TLS ครั้งแรก
 
-สำหรับ API origins หลัง Cloudflare proxy ให้สร้าง Cloudflare Origin CA certificate ที่มีเฉพาะ `school-api.<base-domain>` และ `admin-api.<base-domain>` แล้วติดตั้งเป็น:
+Installer ใช้ shared TLS owner กับ Certbot DNS Cloudflare container ที่ pin digest ผ่าน rootless
+Podman เพื่อออก public certificate ที่มีเฉพาะ `school-api.<base-domain>` และ
+`admin-api.<base-domain>` ก่อนย้าย DNS. ไม่ต้องติดตั้ง Certbot บน host หรือเปิด host renewal timer.
+เก็บ ACME account/state/logs แบบ private ใน `/opt/stack/acme`; DNS token อยู่เฉพาะไฟล์ mode-0600
+ใน runtime tmpfs ระหว่างคำสั่ง และไม่ปรากฏใน command arguments, log หรือ checkpoint.
 
-- `/opt/stack/nginx/ssl/schoolorbit-origin.pem` โหมด `0644`;
-- `/opt/stack/nginx/ssl/schoolorbit-origin.key` โหมด `0600`;
-- `/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem` โหมด `0644`.
+Nginx ใช้ชื่อเดิมซึ่งชี้ผ่าน generation link เดียวสำหรับ certificate/key:
 
-ห้ามส่ง private key ผ่าน log หรือ commit ลง repository ตรวจ certificate กับ Cloudflare Origin CA root และ hostname ทั้งสองก่อนเปิด traffic จากนั้นตั้ง Cloudflare SSL/TLS encryption mode เป็น `Full (strict)`. บันทึกวันหมดอายุไว้ในระบบติดตามของผู้ดูแล เพราะ Cloudflare ไม่แจ้งเตือน Origin CA expiry; installer จะบันทึกค่า `certificate_expiry` ใน checkpoint ให้.
+- `/opt/stack/nginx/ssl/schoolorbit-origin.pem` fullchain โหมด `0644`;
+- `/opt/stack/nginx/ssl/schoolorbit-origin.key` private key โหมด `0600`.
+
+Installer ตั้ง GitHub secret `API_TLS_CLOUDFLARE_TOKEN` จาก runtime DNS provisioning token;
+ควรใช้ dedicated token ที่จำกัด Zone DNS Edit ใน zone นี้เมื่อมี. ห้ามเก็บ bootstrap/deploy token
+สำหรับ ACME บน VPS. Maintenance workflow ต่ออายุทุกวันภายใต้ production lock เดิมและตรวจทั้ง
+สอง API ด้วย system CA trust ก่อนเปิด maintenance. รักษา Cloudflare `Full (strict)` สำหรับ
+frontend/management ที่ยัง proxied และทำตาม [Operations](./OPERATIONS.md) สำหรับ initial
+Origin CA migration, renewal และ recovery. Checkpoint บันทึก `certificate_fingerprint` และ
+`certificate_expiry` โดยไม่เก็บ private key.
 
 ### Nginx configuration
 

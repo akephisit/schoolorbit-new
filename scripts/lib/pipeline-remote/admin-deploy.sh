@@ -14,15 +14,12 @@ runtime_source="$deployment_root/podman-compose.yml"
 runtime_compose=/opt/stack/podman-compose.yml
 renderer_source="$deployment_root/scripts/render_nginx_config.sh"
 renderer="$deployment_root/render-nginx"
-origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
-origin_root_installer="$deployment_root/install-origin-root"
 network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
 timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
 image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
 proxy_template="$deployment_root/nginx-configs/admin-api.conf.template"
 proxy_target=/opt/stack/nginx/conf.d/admin-api.conf
 legacy_proxy_target=/opt/stack/nginx/conf.d/admin-api.${base_domain}.conf
-origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
 compose_up_quiet() {
     podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
 }
@@ -58,10 +55,6 @@ test -f "$renderer_source" || {
     echo "Proxy renderer is missing"
     exit 1
 }
-test -f "$origin_root_installer_source" || {
-    echo "Origin CA root installer is missing"
-    exit 1
-}
 test -f "$network_helper_source" || {
     echo "Container network helper is missing"
     exit 1
@@ -91,8 +84,6 @@ validate_backend_network() {
 }
 
 install -m 0755 "$renderer_source" "$renderer"
-install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
-"$origin_root_installer" "$origin_root"
 cp "$runtime_source" "${runtime_compose}.next"
 podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-admin >/dev/null 2>&1
 mv "${runtime_compose}.next" "$runtime_compose"
@@ -212,14 +203,12 @@ direct_admin_ok=false
 for attempt in $(seq 1 12); do
     if direct_ready="$(
         curl --fail --silent --show-error --max-time 10 \
-            --cacert "$origin_root" \
             --resolve "${admin_host}:443:127.0.0.1" \
             -H "X-Schoolorbit-Release-Probe: $probe" "https://${admin_host}/ready"
     )" && printf '%s' "$direct_ready" | jq -e \
         '.status == "ready" and .database == "connected"' >/dev/null &&
         direct_identity="$(
             curl --fail --silent --show-error --max-time 10 \
-                --cacert "$origin_root" \
                 --resolve "${admin_host}:443:127.0.0.1" \
                 -H "X-Schoolorbit-Release-Probe: $probe" "https://${admin_host}/"
         )" && printf '%s' "$direct_identity" | jq -e \

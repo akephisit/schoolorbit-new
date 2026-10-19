@@ -774,15 +774,16 @@ test('frontend promotion waits for complete tenant assets and application mount 
 	assert.equal(steps[readinessIndex].run.trim(), 'node scripts/verify-tenant-worker-readiness.mjs');
 });
 
-test('release acceptance trusts the pinned Origin CA only for resolved API smoke calls', async () => {
+test('release acceptance uses public trust with an isolated explicit initial migration', async () => {
 	const maintenance = await readFile(
 		path.join(repoRoot, 'scripts/lib/pipeline-remote/maintenance.sh'),
 		'utf8'
 	);
-	assert.match(maintenance, /--cacert "\$origin_root"/);
+	assert.match(maintenance, /mode == enter-origin-ca-migration/);
+	assert.doesNotMatch(maintenance, /--cacert "\$origin_root"/);
 	assert.match(maintenance, /--resolve "\$\{host\}:443:127.0.0.1"/);
 	assert.match(maintenance, /SMOKE_RESOLVE_IP=127.0.0.1/);
-	assert.match(maintenance, /SMOKE_CA_CERT="\$origin_root"/);
+	assert.doesNotMatch(maintenance, /SMOKE_CA_CERT=/);
 	assert.match(maintenance, /SMOKE_RELEASE_PROBE_TOKEN/);
 	assert.doesNotMatch(maintenance, /curl[^\n]*--insecure/);
 });

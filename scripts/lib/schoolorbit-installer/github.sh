@@ -48,6 +48,7 @@ github_configure_repository() {
     github_set_secret SERVER_PORT "${SO_CONFIG[ssh_port]}" || return
     github_set_secret SSH_PRIVATE_KEY "${SO_SECRETS[SSH_PRIVATE_KEY]-}" || return
     github_set_secret CLOUDFLARE_API_TOKEN "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN]-}" || return
+    github_set_secret API_TLS_CLOUDFLARE_TOKEN "${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]-}" || return
     github_set_secret INTERNAL_API_SECRET "${SO_SECRETS[INTERNAL_API_SECRET]-}" || return
     github_set_secret DEPLOY_KEY "${SO_SECRETS[DEPLOY_KEY]-}" || return
     github_set_secret SMOKE_USERNAME "${SO_SECRETS[SMOKE_USERNAME]-}" || return
