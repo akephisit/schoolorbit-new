@@ -390,7 +390,10 @@ still stages tenant Workers before backend replacement and promotes them only af
 global acceptance waits for both branches and leaves maintenance enabled on either failure.
 The accepted schema-2 `pipeline-state` artifact records each component SHA and input hash, immutable
 OCI digest or frontend bundle digest/run, and exact Worker versions. The reader checks repository,
-main ref, workflow, accepted attempt and successful acceptance job. A cache hit alone never proves
+main ref, workflow, accepted attempt and successful acceptance job. It reads every artifact page
+and selects the newest trusted successful acceptance by artifact publication time; numeric artifact
+IDs and a run's later rerun update time do not establish acceptance order. Missing/invalid publication
+times or distinct trusted states tied for newest publication fail closed. A cache hit alone never proves
 verification or acceptance. Missing/expired/divergent state requires reconciliation; the first
 transition from the previous workflows deliberately reconciles all four components.
 
