@@ -80,7 +80,10 @@ done
 [ -n "$request" ] && cp "$request" "$CAPTURED_REQUEST_BODY"
 case "$url" in
     */zones\?*) cp "$FIXTURE_DIR/cloudflare-zone.json" "$output" ;;
-    */settings/ssl) printf "%s\n" "{\"success\":true,\"result\":{\"value\":\"strict\"}}" >"$output" ;;
+    */settings/ssl)
+        [ "${FAIL_SSL_SETTINGS:-false}" != true ] || exit 22
+        printf "%s\n" "{\"success\":true,\"result\":{\"value\":\"strict\"}}" >"$output"
+        ;;
     */dns_records/batch) printf "%s\n" "{\"success\":true,\"result\":{}}" >"$output" ;;
     */dns_records*) cp "$CF_DNS_FIXTURE" "$output" ;;
     *) printf "%s\n" "{\"success\":false,\"errors\":[{\"code\":7000,\"message\":\"unknown fake endpoint\"}]}" >"$output" ;;
@@ -208,6 +211,17 @@ teardown() {
 
     run cf_preflight
     [ "$status" -eq 78 ]
+}
+
+@test "DNS preflight needs no SSL Settings scope while installer bootstrap still checks strict mode" {
+    export FAIL_SSL_SETTINGS=true
+    cf_dns_preflight
+    [ "$SO_CF_ZONE_ID" = zone-123 ]
+    [ "$SO_CF_ADMIN_RECORD_ID" = dns-admin-1 ]
+    ! grep -Fq '/settings/ssl' "$FAKE_COMMAND_LOG"
+    run cf_preflight
+    [ "$status" -eq 69 ]
+    grep -Fq '/settings/ssl' "$FAKE_COMMAND_LOG"
 }
 
 @test "API DNS preflight rejects an additional AAAA record before cutover" {

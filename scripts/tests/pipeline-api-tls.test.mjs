@@ -37,7 +37,7 @@ test('certificate renewal and explicit API DNS operations retain the shared prod
   assert.match(operations, /api-dns:\n[\s\S]*?group: schoolorbit-production\n      cancel-in-progress: false/);
   assert.match(operations, /migrate-api-tls:\n[\s\S]*?group: schoolorbit-production\n      cancel-in-progress: false/);
   const wrapper = read('scripts/lib/pipeline-remote/api-tls-operation.sh');
-  assert.match(wrapper, /if \[\[ \$mode == migrate-origin-ca \]\]; then\n    bash "\$maintenance" enter-origin-ca-migration\nelse\n    bash "\$maintenance" enter/);
+  assert.match(wrapper, /if \[\[ \$mode == migrate-origin-ca \]\] && ! bash "\$owner" status[^\n]*; then\n    bash "\$maintenance" enter-origin-ca-migration\nelse\n    bash "\$maintenance" enter/);
   assert.doesNotMatch(read('scripts/lib/pipeline-remote/api-tls.sh'), /cloudflare-origin|origin_ca_rsa_root|enter-origin-ca-migration/);
 });
 

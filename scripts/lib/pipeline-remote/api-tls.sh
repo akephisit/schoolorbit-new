@@ -18,6 +18,10 @@ validate_pair() {
     local directory=$1 names certificate_key private_key
     test -s "$directory/fullchain.pem"
     test -s "$directory/privkey.pem"
+    [[ $(stat -Lc '%a:%u' "$directory/privkey.pem") == "600:$(id -u)" ]] || {
+        echo 'Private key must be mode 0600 and owned by the server user' >&2
+        return 78
+    }
     openssl x509 -in "$directory/fullchain.pem" -noout -checkend 604800 >/dev/null
     names=$(openssl x509 -in "$directory/fullchain.pem" -noout -ext subjectAltName | tail -n +2 | tr -d '[:space:]')
     [[ $names == "DNS:$admin_host,DNS:$school_host" || $names == "DNS:$school_host,DNS:$admin_host" ]] || {
@@ -100,6 +104,8 @@ case "$operation" in
             mv "$temporary" "$generation"
             trap - EXIT
         fi
+        validate_pair "$generation"
+        test "$(metadata "$generation" | jq -er .fingerprint)" = "$fingerprint"
         printf '%s\n' "$details"
         ;;
     activate)
@@ -107,6 +113,7 @@ case "$operation" in
         [[ $fingerprint =~ ^[0-9a-f]{64}$ ]] || exit 64
         generation="api-tls-generations/$fingerprint"
         validate_pair "$ssl/$generation"
+        test "$(metadata "$ssl/$generation" | jq -er .fingerprint)" = "$fingerprint"
         if podman container exists schoolorbit-nginx; then
             test -s "$stack/deployment/pending-release" || {
                 echo 'Serving certificate activation requires an active maintenance journal' >&2

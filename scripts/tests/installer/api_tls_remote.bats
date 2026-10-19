@@ -147,3 +147,38 @@ stage_certificate() {
 	[ "$(readlink "$directory/schoolorbit-origin.key")" = .api-tls-current/privkey.pem ]
 	bash "$TLS_SCRIPT" status >/dev/null
 }
+
+@test "status activation and reused exports reject unsafe key permissions" {
+    details=$(stage_certificate)
+    fingerprint=$(jq -r .fingerprint <<<"$details")
+    bash "$TLS_SCRIPT" activate "$fingerprint" >/dev/null
+    chmod 0644 "$SCHOOLORBIT_STACK_ROOT/nginx/ssl/api-tls-generations/$fingerprint/privkey.pem"
+    for operation in status activate; do
+        run bash "$TLS_SCRIPT" "$operation" "$fingerprint"
+        [ "$status" -ne 0 ]
+        [[ $output == *'mode 0600 and owned by the server user'* ]]
+    done
+    run stage_certificate
+    [ "$status" -ne 0 ]
+    [[ $output == *'mode 0600 and owned by the server user'* ]]
+}
+
+@test "private key ownership drift is refused even with mode 0600" {
+    details=$(stage_certificate)
+    fingerprint=$(jq -r .fingerprint <<<"$details")
+    bash "$TLS_SCRIPT" activate "$fingerprint" >/dev/null
+    export REAL_STAT
+    REAL_STAT=$(command -v stat)
+    cat >"$TEST_ROOT/bin/stat" <<'SH'
+#!/usr/bin/env bash
+if [[ $1 == -Lc && $2 == '%a:%u' ]]; then
+    printf '600:%s\n' "$(($(id -u) + 1))"
+else
+    "$REAL_STAT" "$@"
+fi
+SH
+    chmod +x "$TEST_ROOT/bin/stat"
+    run bash "$TLS_SCRIPT" status
+    [ "$status" -ne 0 ]
+    [[ $output == *'mode 0600 and owned by the server user'* ]]
+}

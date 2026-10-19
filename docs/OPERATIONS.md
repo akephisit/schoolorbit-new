@@ -1000,8 +1000,15 @@ Rollback refuses changed cutover records and preserves the accepted application 
 retains certificate generations and management DNS; failure keeps maintenance active.
 
 On failed activation the owner restores the preceding certificate pair and leaves maintenance
-active. On later acceptance failure the new valid pair remains with maintenance active; recover
-through the normal serialized Pipeline before retrying renewal. Keep previous private generations
+active. On later acceptance failure the new valid pair remains with maintenance active. Repeat the
+same serialized TLS operation to resume its private journal, bound to the accepted application SHA,
+operation mode, staged fingerprint and UUID. Only its owned pending-release link permits that
+recovery; an unrelated pending application release must use the normal Pipeline. A retry after
+activation still completes public verification and acceptance. An interrupted first migration can
+re-enter old trust only before a public certificate is active; subsequent entry uses public trust.
+Existing and reused exported private keys must retain server-user ownership and mode 0600.
+DNS-only operational preflight needs zone/DNS access without SSL Settings Read; installer bootstrap
+retains its separate Full (strict) settings check. Keep previous private generations
 and DNS snapshots until the rollback window is explicitly closed. Never restore an untrusted
 Origin CA certificate while either API is DNS only. DNS rollback must restore the snapshot's
 original proxy flags before that old-certificate recovery could be used. Private ACME logs on the

@@ -64,7 +64,7 @@ while (($#)); do
 done
 case "$url" in
     */zones\?*) cp "$FIXTURE_DIR/cloudflare-zone.json" "$output" ;;
-    */settings/ssl) printf '{"success":true,"result":{"value":"strict"}}\n' >"$output" ;;
+    */settings/ssl) printf 'forbidden SSL settings lookup\n' >>"$COMMAND_LOG"; exit 22 ;;
     */dns_records\?*) cp "$DNS_STATE" "$output" ;;
     */dns_records/batch)
         cp "$body" "$TEST_ROOT/last-batch.json"
@@ -95,6 +95,7 @@ teardown() { rm -rf "$TEST_ROOT"; }
     [ "$(cat "$COMMAND_LOG")" = $'maintenance enter\nmaintenance verify\nbatch\npublic authenticated full-context smoke\nmaintenance accept' ]
     [ "$(stat -c %a "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json")" = 600 ]
     ! grep -R -Fq private-dns-fixture-token "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns"
+    ! grep -Fq 'SSL settings' "$COMMAND_LOG"
 }
 
 @test "TLS failure and extra AAAA refuse DNS mutation" {

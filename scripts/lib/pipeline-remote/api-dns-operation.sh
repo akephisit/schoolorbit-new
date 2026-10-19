@@ -37,7 +37,7 @@ trap 'rm -rf "$operation_temp"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 install -d -m 0700 "$root/api-dns"
-cf_preflight
+cf_dns_preflight
 
 public_smoke() {
     local probe

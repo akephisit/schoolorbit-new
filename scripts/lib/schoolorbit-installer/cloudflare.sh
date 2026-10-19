@@ -82,10 +82,10 @@ _cf_refresh_dns() {
     SO_CF_SCHOOL_RECORD_ID=$(jq -er --arg name "$school_host" '.[] | select(.name == $name) | .id' <<<"$records") || return 78
 }
 
-cf_preflight() {
+cf_dns_preflight() {
     require_command curl || return
     require_command jq || return
-    local response count ssl_response
+    local response count
     response=$(_cf_temporary_file) || return
     if ! _cf_request GET "/zones?name=${SO_CONFIG[base_domain]}&status=active&match=all" "$response"; then
         command rm -f "$response"
@@ -112,7 +112,12 @@ cf_preflight() {
         return
     }
     command rm -f "$response"
+    _cf_refresh_dns
+}
 
+cf_preflight() {
+    cf_dns_preflight || return
+    local ssl_response
     ssl_response=$(_cf_temporary_file) || return
     if ! _cf_request GET "/zones/$SO_CF_ZONE_ID/settings/ssl" "$ssl_response"; then
         command rm -f "$ssl_response"
@@ -124,7 +129,6 @@ cf_preflight() {
         return
     fi
     command rm -f "$ssl_response"
-    _cf_refresh_dns
 }
 
 _cf_dns_etag() {
