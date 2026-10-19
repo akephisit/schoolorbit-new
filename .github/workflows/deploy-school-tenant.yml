@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend-school/package-lock.json
       - name: Read the trusted accepted frontend artifact

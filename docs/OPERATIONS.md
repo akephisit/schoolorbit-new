@@ -986,7 +986,12 @@ It refuses queued runtime changes, pending releases, invalid public TLS, ambiguo
 drift or A records targeting another origin. Its private rollback journal is
 `/opt/stack/deployment/api-dns/<workflow-run-id>-<attempt>.json`. It verifies authenticated full
 academic-context smoke directly from the external Actions runner before mutation, proving public
-port 443/firewall reachability in addition to the VPS loopback checks, and public smoke afterward.
+port 443/firewall reachability in addition to the VPS loopback checks. After DNS propagation, public
+HTTPS must return the typed maintenance response without a probe token. Loopback authenticated
+smoke passes before reopening; public authenticated smoke runs after normal acceptance with the
+probe token explicitly absent. A failed public check restores owned maintenance and leaves the
+applied journal available for recovery. An already-DNS-only request still performs public
+authenticated full-context smoke; successful verification changes neither DNS nor proxy mode.
 Rollback deliberately omits that external precondition so it remains available for reachability
 recovery. To restore only the complete
 two-record DNS snapshot, use the printed journal identity:
@@ -998,6 +1003,23 @@ gh workflow run operations.yml --ref main -f operation=rollback-api-dns \
 
 Rollback refuses changed cutover records and preserves the accepted application identity. It
 retains certificate generations and management DNS; failure keeps maintenance active.
+
+For a newly journaled DNS-only operation whose public acceptance failed, resume its exact owned
+journal on the same accepted application SHA:
+
+```bash
+gh workflow run operations.yml --ref main -f operation=api-dns-only \
+  -f 'options={"resume_id":"RUN_ID-ATTEMPT"}'
+```
+
+The mode-0600 server-user journal must match its schema, owner, request ID, accepted SHA, base
+domain, target and exact applied DNS state. Only its private pending-release link permits reuse
+of existing maintenance. Resume repeats external public TLS checks and private authenticated
+acceptance without another DNS batch; release probe tokens remain loopback only. Invalid resume
+IDs fail before remote actions. Source changes still require the normal Pipeline to reconcile
+queued runtime work first. Recovery never upgrades a historical journal to a different accepted
+SHA. Legacy journals without the ownership marker use normal Pipeline recovery, followed by an
+ordinary already-DNS-only verification; their snapshots remain intact.
 
 On failed activation the owner restores the preceding certificate pair and leaves maintenance
 active. On later acceptance failure the new valid pair remains with maintenance active. Repeat the

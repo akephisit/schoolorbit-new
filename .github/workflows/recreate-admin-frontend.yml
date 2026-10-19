@@ -15,7 +15,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
       - name: Prepare a frontend-only Pipeline and wait for its build gate
         env:
           GH_TOKEN: ${{ github.token }}

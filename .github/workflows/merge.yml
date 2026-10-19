@@ -24,7 +24,7 @@ jobs:
           ref: main
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version-file: .node-version
       - name: Integrate eligible collaborator PRs without required approval
         env:
           GH_TOKEN: ${{ github.token }}

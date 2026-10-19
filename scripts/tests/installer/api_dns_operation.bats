@@ -35,7 +35,10 @@ case "$1" in
         printf probe >"$SCHOOLORBIT_STACK_ROOT/deployment/releases/$RELEASE_SHA/probe-token"
         ;;
     verify) [[ ${FAIL_VERIFY:-false} != true ]] ;;
-    accept) rm "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ;;
+    accept)
+        rm "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
+        [[ ${FAIL_ACCEPT:-false} != true ]]
+        ;;
 esac
 SH
     cat >"$root/scripts/smoke_test.sh" <<'SH'
@@ -45,16 +48,20 @@ test "$SMOKE_ACADEMIC_CONTEXT" = true
 test "$SMOKE_REQUIRE_AUTH" = true
 test -z "$SMOKE_RESOLVE_IP"
 test -z "$SMOKE_CA_CERT"
+test -z "${SMOKE_RELEASE_PROBE_TOKEN:-}"
+test ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
 printf 'public authenticated full-context smoke\n' >>"$COMMAND_LOG"
+if [[ ${INTERRUPT_PUBLIC:-false} == true ]]; then kill -TERM "$PPID"; fi
 [[ ${FAIL_PUBLIC:-false} != true ]]
 SH
     cat >"$TEST_ROOT/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-output= request= body= url=
+output= request= body= url= write_status=false
 while (($#)); do
     case "$1" in
         --output) output=$2; shift 2 ;;
+        --write-out) write_status=true; shift 2 ;;
         --request) request=$2; shift 2 ;;
         --data-binary) body=${2#@}; shift 2 ;;
         --header|--resolve|--max-time) shift 2 ;;
@@ -73,7 +80,16 @@ case "$url" in
         printf 'batch\n' >>"$COMMAND_LOG"
         printf '{"success":true}\n' >"$output"
         ;;
-    */ready) printf '{"status":"ready"}\n' ;;
+    */ready)
+        if [[ $write_status == true ]]; then
+            test -s "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
+            printf '{"error":"maintenance"}\n' >"$output"
+            printf 'public maintenance TLS\n' >>"$COMMAND_LOG"
+            if [[ ${FAIL_PUBLIC_TLS:-false} == true ]]; then printf 502; else printf 503; fi
+        else
+            printf '{"status":"ready"}\n'
+        fi
+        ;;
     *) exit 64 ;;
 esac
 SH
@@ -92,7 +108,8 @@ teardown() { rm -rf "$TEST_ROOT"; }
     bash "$DNS_OPERATION" dns-only
     jq -e '.patches | length == 2 and all(.[]; .type=="A" and .proxied==false and .content=="192.0.2.20")' "$TEST_ROOT/last-batch.json"
     jq -e '.result[] | select(.id=="unrelated") | .proxied==true and .content=="fixture.cfargotunnel.com"' "$DNS_STATE"
-    [ "$(cat "$COMMAND_LOG")" = $'maintenance enter\nmaintenance verify\nbatch\npublic authenticated full-context smoke\nmaintenance accept' ]
+    [ "$(cat "$COMMAND_LOG")" = $'maintenance enter\nmaintenance verify\nbatch\npublic maintenance TLS\npublic maintenance TLS\nmaintenance accept\npublic authenticated full-context smoke' ]
+    jq -e '.status=="accepted"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
     [ "$(stat -c %a "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json")" = 600 ]
     ! grep -R -Fq private-dns-fixture-token "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns"
     ! grep -Fq 'SSL settings' "$COMMAND_LOG"
@@ -138,5 +155,82 @@ teardown() { rm -rf "$TEST_ROOT"; }
     [ "$status" -ne 0 ]
     [ -s "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
     jq -e '.status=="applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    grep -Fq 'maintenance accept' "$COMMAND_LOG"
+    [ "$(tail -n 1 "$COMMAND_LOG")" = 'maintenance enter' ]
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+}
+
+@test "explicit applied-journal resume repeats acceptance without a second DNS mutation" {
+    export FAIL_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    unset FAIL_PUBLIC
+    export API_DNS_RESUME_ID=123-1 API_DNS_REQUEST_ID=124-1
+    bash "$DNS_OPERATION" dns-only
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 1 ]
+    [ ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    jq -e '.status=="accepted"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    [ "$(cat "$SCHOOLORBIT_STACK_ROOT/deployment/accepted-release")" = "$ACCEPTED_APP_SHA" ]
+}
+
+@test "resume refuses a foreign pending file stale accepted identity and invalid journal ownership" {
+    export FAIL_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    unset FAIL_PUBLIC
+    export API_DNS_RESUME_ID=123-1
+    pending="$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
+    original=$(readlink "$pending")
+    rm "$pending"
+    printf '%s\n' "$ACCEPTED_APP_SHA" >"$pending"
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    rm "$pending"
+    ln -s "$original" "$pending"
+    journal="$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    chmod 0644 "$journal"
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    chmod 0600 "$journal"
+    export ACCEPTED_APP_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 1 ]
+}
+
+@test "already DNS-only verification still performs public authenticated smoke without maintenance or DNS writes" {
+    jq '(.result[] | select(.type=="A") | .proxied)=false' "$DNS_STATE" >"$DNS_STATE.next"
+    mv "$DNS_STATE.next" "$DNS_STATE"
+    bash "$DNS_OPERATION" dns-only
+    [ "$(cat "$COMMAND_LOG")" = 'public authenticated full-context smoke' ]
+    [ ! -e "$TEST_ROOT/last-batch.json" ]
+    [ ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+}
+
+@test "public TLS maintenance failure refuses reopening and retains the applied journal" {
+    export FAIL_PUBLIC_TLS=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
     ! grep -Fq 'maintenance accept' "$COMMAND_LOG"
+    ! grep -Fq 'public authenticated' "$COMMAND_LOG"
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    jq -e '.status=="applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+}
+
+@test "interruption after reopening restores owned maintenance before exiting" {
+    export INTERRUPT_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -eq 143 ]
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    [ "$(tail -n 1 "$COMMAND_LOG")" = 'maintenance enter' ]
+    jq -e '.status=="applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+}
+
+@test "failed normal acceptance also restores the owned pending marker" {
+    export FAIL_ACCEPT=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    [ "$(tail -n 1 "$COMMAND_LOG")" = 'maintenance enter' ]
+    ! grep -Fq 'public authenticated full-context smoke' "$COMMAND_LOG"
 }

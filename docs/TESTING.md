@@ -15,6 +15,12 @@ Do not replace a failed check by disabling it or by running a narrower command t
 
 ## Local verification and GitHub delivery
 
+All GitHub Node setup steps read the root `.node-version` pin. Keep planning, preparation,
+deployment tooling and release preflight on that exact full version: frontend artifact hashes
+include `process.versions.node`, so mixing cached patch versions must fail preflight. Verify a pin
+change with the deployment workflow-consumer guard and pipeline policy fixtures; retain the full
+version in artifact/tooling identities. Do not repair mismatches by dropping it from the hash.
+
 Before final acceptance, readiness and integration, the Senior fetches `origin` and checks
 `git merge-base --is-ancestor origin/main HEAD`; updating local `main` alone is insufficient.
 If behind/diverged, pause/save writers and require a clean tree before the Senior merges
@@ -34,7 +40,7 @@ list such as `contracts,frontend-school` selects whole owner suites. Use the foc
 service/filter and browser commands below for bounded work. `--scope auto` conservatively selects
 whole application suites from changed paths, including uncommitted/untracked files; `--scope full`
 runs every suite. Choose these broad modes only when the policy calls for their coverage.
-Install Node 24, pinned Rust, Docker, and the
+Install the exact Node version in [`.node-version`](../.node-version), pinned Rust, Docker, and the
 owning application's locked npm dependencies. Deployment/static checks need ShellCheck, shfmt,
 Bats, envsubst and jq. Local test profiles use no debug information or Cargo incremental data;
 production release optimization is unchanged. Keep incomplete or failing work in a draft PR.

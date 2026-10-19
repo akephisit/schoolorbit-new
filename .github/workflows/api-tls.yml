@@ -8,6 +8,9 @@ on:
       rollback_id:
         type: string
         default: ""
+      resume_id:
+        type: string
+        default: ""
 permissions:
   contents: read
   actions: read
@@ -22,19 +25,20 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
       - name: Require prepared main and preserve accepted application identity
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
           API_TLS_MODE: ${{ inputs.mode }}
+          API_DNS_RESUME_ID: ${{ inputs.resume_id }}
           PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
           PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
         run: node scripts/lib/pipeline-api-tls.mjs
       - name: Verify external direct HTTPS and authenticated full academic payload before DNS cutover
-        if: inputs.mode == 'dns-only'
+        if: inputs.mode == 'dns-only' && inputs.resume_id == ''
         env:
           SMOKE_SUBDOMAIN: sandbox
           SMOKE_API_URL: ${{ vars.BACKEND_SCHOOL_URL }}
@@ -49,6 +53,24 @@ jobs:
           SMOKE_RESOLVE_IP: ${{ secrets.SERVER_IP }}
           SMOKE_CA_CERT: ""
         run: bash scripts/smoke_test.sh
+      - name: Verify external public TLS for an explicitly resumed DNS operation
+        if: inputs.mode == 'dns-only' && inputs.resume_id != ''
+        shell: bash
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          TARGET_ORIGIN_IP: ${{ secrets.SERVER_IP }}
+        run: |
+          set -euo pipefail
+          body=$(mktemp)
+          trap 'rm -f "$body"' EXIT
+          for part in admin school; do
+            host="$part-api.$BASE_DOMAIN"
+            status=$(curl --silent --show-error --max-time 30 --resolve "$host:443:$TARGET_ORIGIN_IP" \
+              --output "$body" --write-out '%{http_code}' "https://$host/ready")
+            if [ "$status" = 503 ]; then jq -e '.error == "maintenance"' "$body" >/dev/null
+            elif [ "$status" = 200 ]; then jq -e '.status == "ready"' "$body" >/dev/null
+            else exit 1; fi
+          done
       - name: Upload shared certificate and maintenance owners
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -68,6 +90,7 @@ jobs:
           TARGET_ORIGIN_IP: ${{ secrets.SERVER_IP }}
           API_DNS_REQUEST_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           API_DNS_ROLLBACK_ID: ${{ inputs.rollback_id }}
+          API_DNS_RESUME_ID: ${{ inputs.resume_id }}
           SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         with:
@@ -76,7 +99,7 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 25m
-          envs: BASE_DOMAIN,ACCEPTED_APP_SHA,API_TLS_MODE,API_TLS_CLOUDFLARE_TOKEN,TARGET_ORIGIN_IP,API_DNS_REQUEST_ID,API_DNS_ROLLBACK_ID,SMOKE_USERNAME,SMOKE_PASSWORD
+          envs: BASE_DOMAIN,ACCEPTED_APP_SHA,API_TLS_MODE,API_TLS_CLOUDFLARE_TOKEN,TARGET_ORIGIN_IP,API_DNS_REQUEST_ID,API_DNS_ROLLBACK_ID,API_DNS_RESUME_ID,SMOKE_USERNAME,SMOKE_PASSWORD
           script: |
             case "$API_TLS_MODE" in
               dns-only|dns-rollback) bash /opt/stack/deployment/scripts/lib/pipeline-remote/api-dns-operation.sh "$API_TLS_MODE" ;;

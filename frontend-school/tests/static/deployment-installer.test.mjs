@@ -42,6 +42,8 @@ test('workflow command strings stay within the GitHub Actions 21000 character li
 test('Node and Rust workflow jobs select the supported toolchains', async () => {
 	const workflowDirectory = path.join(repoRoot, '.github/workflows');
 	const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/.test(file));
+	const nodeVersion = (await readFile(path.join(repoRoot, '.node-version'), 'utf8')).trim();
+	assert.equal(nodeVersion, '24.22.0');
 	const nodeCommand = /\b(?:node|npm|npx)\b/;
 	const rustCommand = /^\s*(?:cargo|rustc|rustup)\s/m;
 
@@ -57,10 +59,11 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 					nodeSetupIndexes.push(stepIndex);
 					assert.equal(step.uses, 'actions/setup-node@v6', `${file}:${jobName} setup-node action`);
 					assert.equal(
-						String(step.with?.['node-version']),
-						'24',
-						`${file}:${jobName} Node version`
+						step.with?.['node-version-file'],
+						'.node-version',
+						`${file}:${jobName} canonical Node version file`
 					);
+					assert.equal(step.with?.['node-version'], undefined, 'no competing floating version');
 				}
 				if (typeof step.uses === 'string' && step.uses.startsWith('dtolnay/rust-toolchain@')) {
 					rustSetupIndexes.push(stepIndex);
@@ -1033,7 +1036,7 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	assert.match(workflow, /schoolorbit-backend-admin/);
 	assert.match(workflow, /schoolorbit-backend-school/);
 	assert.match(workflow, /uses: actions\/setup-node@v6/);
-	assert.match(workflow, /node-version: "24"/);
+	assert.match(workflow, /node-version-file: \.node-version/);
 	assert.match(workflow, /node scripts\/prune_ghcr_versions\.mjs/);
 	const retentionJob = parseYaml(workflow).jobs.retain;
 	assert.deepEqual(retentionJob.strategy.matrix.include, [

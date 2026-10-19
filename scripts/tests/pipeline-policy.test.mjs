@@ -24,6 +24,13 @@ test('UI, service, docs, tests and control changes have separate verification/de
   assert.throws(() => classify(['../outside']), /Invalid/);
 });
 
+test('the exact Node toolchain pin selects its frontend artifacts and Node verification consumers explicitly', () => {
+  const selected = classify(['.node-version']);
+  assert.deepEqual(selected.verify, ['documentation', 'deployment', 'contracts', 'frontend-admin', 'frontend-school']);
+  assert.deepEqual(selected.deploy, ['frontend-admin', 'frontend-school']);
+  assert.deepEqual(selected.unknown, []);
+});
+
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'pipeline-policy-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

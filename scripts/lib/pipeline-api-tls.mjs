@@ -21,10 +21,17 @@ export function requireTlsRuntimePlan(plan, mode) {
   }
 }
 
+export function validateDnsResumeId(mode, id = '') {
+  if (id && (mode !== 'dns-only' || !/^[0-9]+-[0-9]+$/.test(id))) {
+    throw new Error('DNS resume requires an exact request journal identity');
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repo = process.env.GITHUB_REPOSITORY;
   const sha = process.env.GITHUB_SHA;
   const mode = process.env.API_TLS_MODE;
+  validateDnsResumeId(mode, process.env.API_DNS_RESUME_ID);
   if (process.env.GITHUB_REF !== 'refs/heads/main' || !/^[\w.-]+\/[\w.-]+$/.test(repo || '') ||
       sha !== git('.', 'rev-parse', 'HEAD')) throw new Error('TLS operations require exact main checkout');
   if (mode !== 'renew' && process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {

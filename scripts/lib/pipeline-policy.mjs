@@ -29,6 +29,11 @@ export function classify(files) {
   const unknown = [];
   for (const file of files) {
     if (!file || file.startsWith('/') || file.split('/').includes('..')) throw new Error('Invalid change path');
+    if (file === '.node-version') {
+      ['deployment', 'contracts', 'frontend-admin', 'frontend-school'].forEach(suite => verify.add(suite));
+      ['frontend-admin', 'frontend-school'].forEach(part => deploy.add(part));
+      continue;
+    }
     if (file.endsWith('.md')) continue;
     const recipe = Object.entries(buildRecipes).find(([, prefix]) => file.startsWith(prefix));
     if (recipe) {
