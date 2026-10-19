@@ -53,6 +53,7 @@ jobs:
     with:
       mode: ${{ inputs.operation == 'api-dns-only' && 'dns-only' || 'dns-rollback' }}
       rollback_id: ${{ fromJson(inputs.options).rollback_id || '' }}
+      resume_id: ${{ fromJson(inputs.options).resume_id || '' }}
     secrets: inherit
   migrate-api-tls:
     if: inputs.operation == 'migrate-api-tls' && github.ref == 'refs/heads/main'

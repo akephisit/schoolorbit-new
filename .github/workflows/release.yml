@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
       - name: Recheck trusted gate, current main and accepted state under the production lock
         id: reconcile
         env:
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
       - name: Validate reconciled plan transport before private checks
         env:
           PLAN: ${{ needs.preflight.outputs.plan }}
@@ -191,7 +191,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: .node-version
       - name: Download prepared component manifests
         uses: actions/download-artifact@v7
         with:

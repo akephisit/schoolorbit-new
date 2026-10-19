@@ -184,6 +184,15 @@ cf_assert_cutover_state() {
     [[ $current == "$expected" ]] || die 78 'Cloudflare API records do not match the verified cutover state'
 }
 
+cf_assert_snapshot_state() {
+    [[ -n $SO_DNS_SNAPSHOT ]] || die 78 'Cloudflare DNS snapshot is missing' || return
+    _cf_refresh_dns || return
+    local expected current
+    expected=$(jq -c '[.[] | {id,type,name,content,ttl,proxied}] | sort_by(.name)' <<<"$SO_DNS_SNAPSHOT") || return
+    current=$(jq -c '[.[] | {id,type,name,content,ttl,proxied}] | sort_by(.name)' <<<"$SO_CF_DNS_RECORDS") || return
+    [[ $current == "$expected" ]] || die 78 'Cloudflare API records do not match the restored snapshot'
+}
+
 cf_assert_no_dns_drift() {
     [[ -n $SO_DNS_SNAPSHOT_ETAG ]] || die 78 'Cloudflare DNS snapshot is missing' || return
     if [[ -z $SO_DNS_CURRENT_ETAG ]]; then

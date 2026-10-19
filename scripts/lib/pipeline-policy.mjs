@@ -29,6 +29,11 @@ export function classify(files) {
   const unknown = [];
   for (const file of files) {
     if (!file || file.startsWith('/') || file.split('/').includes('..')) throw new Error('Invalid change path');
+    if (file === '.node-version') {
+      ['deployment', 'contracts', 'frontend-admin', 'frontend-school'].forEach(suite => verify.add(suite));
+      ['frontend-admin', 'frontend-school'].forEach(part => deploy.add(part));
+      continue;
+    }
     if (file.endsWith('.md')) continue;
     const recipe = Object.entries(buildRecipes).find(([, prefix]) => file.startsWith(prefix));
     if (recipe) {
@@ -99,7 +104,7 @@ export function changes(root, base, head) {
 export function inputHash(root, head, component, publicConfig = {}) {
   if (!components.includes(component)) throw new Error('Unknown component');
   const recipe = buildRecipes[component.startsWith('frontend-') ? 'frontend' : 'backend'];
-  const entries = git(root, 'ls-tree', '-r', head, '--', component, recipe, ...(component.startsWith('frontend-') ? ['scripts/prepare_frontend_worker.mjs'] : []))
+  const entries = git(root, 'ls-tree', '-r', head, '--', component, recipe, ...(component.startsWith('frontend-') ? ['scripts/prepare_frontend_worker.mjs', '.node-version'] : []))
     .split('\n').filter(Boolean).filter((entry) => !testOnly(entry.split('\t')[1] || ''));
   return createHash('sha256').update(JSON.stringify({ version: 2, entries, publicConfig, platform: 'linux/amd64', node: component.startsWith('frontend-') ? process.versions.node : null, rust: '1.98.1', profile: 'release' })).digest('hex');
 }

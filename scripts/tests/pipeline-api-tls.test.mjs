@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {requirePreparedTlsGate, requireTlsRuntimePlan} from '../lib/pipeline-api-tls.mjs';
+import {requirePreparedTlsGate, requireTlsRuntimePlan, validateDnsResumeId} from '../lib/pipeline-api-tls.mjs';
 
 const sha = 'a'.repeat(40);
 const job = name => ({name, conclusion: 'success', head_sha: sha, run_attempt: 2});
@@ -48,9 +48,22 @@ test('existing origin DNS cutover checks public port reachability and authentica
   assert.ok(external > 0 && external < remote);
   const step = workflow.slice(external, remote);
   assert.match(step, /if: inputs.mode == 'dns-only'/);
+  assert.match(step, /inputs.resume_id == ''/);
   assert.match(step, /SMOKE_RESOLVE_IP: \$\{\{ secrets\.SERVER_IP \}\}/);
   assert.match(step, /SMOKE_CA_CERT: ""/);
   assert.match(step, /SMOKE_REQUIRE_AUTH: "true"/);
   assert.match(step, /SMOKE_ACADEMIC_CONTEXT: "true"/);
   assert.match(step, /run: bash scripts\/smoke_test\.sh/);
+});
+
+test('resume transport is validated before remote actions and retains external read-only TLS verification', () => {
+  validateDnsResumeId('dns-only', '123-1');
+  validateDnsResumeId('dns-only', '');
+  assert.throws(() => validateDnsResumeId('dns-only', '../request'));
+  assert.throws(() => validateDnsResumeId('dns-rollback', '123-1'));
+  const workflow = readFileSync(new URL('../../.github/workflows/api-tls.yml', import.meta.url), 'utf8');
+  const check = workflow.slice(workflow.indexOf('name: Verify external public TLS'), workflow.indexOf('name: Upload shared certificate'));
+  assert.match(check, /inputs.resume_id != ''/);
+  assert.match(check, /--resolve "\$host:443:\$TARGET_ORIGIN_IP"/);
+  assert.doesNotMatch(check, /SMOKE_RELEASE_PROBE_TOKEN|--insecure|--cacert/);
 });
