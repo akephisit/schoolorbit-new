@@ -183,6 +183,7 @@ else
     if ! jq -e '.status == "rollback_applied"' "$journal" >/dev/null; then
         cf_apply_dns_batch rollback
         mark_status rollback_applied
+        cf_assert_snapshot_state
     fi
     cf_wait_for_snapshot_resolution
 fi

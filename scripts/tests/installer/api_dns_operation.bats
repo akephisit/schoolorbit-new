@@ -85,6 +85,10 @@ case "$url" in
         cp "$body" "$TEST_ROOT/last-batch.json"
         jq --slurpfile batch "$body" '.result |= map(. as $record | ($batch[0].patches | map(select(.id == $record.id)) | .[0]) as $patch | if $patch then $record + $patch else $record end)' "$DNS_STATE" >"$DNS_STATE.next"
         mv "$DNS_STATE.next" "$DNS_STATE"
+        if [[ ${WRONG_ROLLBACK_TTL:-false} == true ]] && jq -e 'all(.patches[]; .proxied==true)' "$body" >/dev/null; then
+            jq '(.result[] | select(.id=="dns-school-1") | .ttl)=300' "$DNS_STATE" >"$DNS_STATE.next"
+            mv "$DNS_STATE.next" "$DNS_STATE"
+        fi
         printf 'batch\n' >>"$COMMAND_LOG"
         printf '{"success":true}\n' >"$output"
         ;;
@@ -298,4 +302,19 @@ teardown() { rm -rf "$TEST_ROOT"; }
     [[ "$output" == *'Failed to restore owned DNS maintenance'* ]]
     [ ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
     [ "$(grep -c '^maintenance enter$' "$COMMAND_LOG")" -eq 1 ]
+}
+
+@test "fresh rollback refuses acceptance when a successful provider batch leaves mismatched restored fields" {
+    bash "$DNS_OPERATION" dns-only
+    : >"$COMMAND_LOG"
+    export WRONG_ROLLBACK_TTL=true
+    run bash "$DNS_OPERATION" dns-rollback
+    [ "$status" -eq 78 ]
+    [[ "$output" == *'do not match the restored snapshot'* ]]
+    jq -e '.status=="rollback_applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    jq -e '.result[] | select(.id=="dns-school-1") | .proxied==true and .ttl==300' "$DNS_STATE"
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 1 ]
+    ! grep -Fq 'maintenance accept' "$COMMAND_LOG"
+    ! grep -Fq 'public authenticated' "$COMMAND_LOG"
 }
