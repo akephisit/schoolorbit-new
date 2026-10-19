@@ -15,8 +15,8 @@ export function requirePreparedTlsGate(jobs, sha, attempt) {
 }
 
 export function requireTlsRuntimePlan(plan, mode) {
-  if (!['renew', 'migrate-origin-ca', 'dns-only', 'dns-rollback'].includes(mode)) throw new Error('Unknown TLS operation');
-  if (mode !== 'migrate-origin-ca' && plan.deploy.length) {
+  if (!['renew', 'dns-only', 'dns-rollback'].includes(mode)) throw new Error('Unknown TLS operation');
+  if (plan.deploy.length) {
     throw new Error('Queued runtime changes require the normal Pipeline before certificate renewal');
   }
 }
@@ -35,7 +35,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.env.GITHUB_REF !== 'refs/heads/main' || !/^[\w.-]+\/[\w.-]+$/.test(repo || '') ||
       sha !== git('.', 'rev-parse', 'HEAD')) throw new Error('TLS operations require exact main checkout');
   if (mode !== 'renew' && process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {
-    throw new Error('Migration and DNS cutover require an explicit operation');
+    throw new Error('DNS operations require an explicit operation');
   }
   const api = route => JSON.parse(execFileSync('gh', ['api', route], {encoding: 'utf8'}));
   if (api(`repos/${repo}/git/ref/heads/main`).object.sha !== sha) throw new Error('A newer main exists');

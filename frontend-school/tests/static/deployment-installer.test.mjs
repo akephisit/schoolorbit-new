@@ -1285,7 +1285,7 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 		'rollback-dns --run-id',
 		'CUTOVER',
 		'ROLLBACK',
-		'Origin CA',
+		'publicly trusted',
 		'certificate_expiry'
 	]) {
 		assert.ok(operations.includes(value), `operations must contain ${value}`);

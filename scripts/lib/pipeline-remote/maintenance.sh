@@ -7,19 +7,6 @@ mode=${1:?enter, verify or accept is required}
 stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
 root="$stack/deployment"
 renderer="$root/scripts/render_nginx_config.sh"
-declare -a transition_trust=()
-# Explicit one-time bridge for an already serving Origin CA certificate. This
-# mode is never selected by normal releases or recurring renewal and is retired
-# after the public-certificate cutover has been accepted.
-if [[ $mode == enter-origin-ca-migration ]]; then
-    transition_root=$(mktemp)
-    trap 'rm -f "$transition_root"' EXIT
-    curl --fail --silent --show-error --location \
-        https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem >"$transition_root"
-    test "$(sha256sum "$transition_root" | cut -d ' ' -f 1)" = 91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae
-    transition_trust=(--cacert "$transition_root")
-    mode=enter
-fi
 mkdir -p "$root/releases/$RELEASE_SHA"
 journal="$root/releases/$RELEASE_SHA"
 public_status() {
@@ -39,7 +26,7 @@ public_status() {
             # proxy mode with bounded retries rather than interpreting that race
             # as a deployment failure or reopening unverified traffic.
             status=000
-            if status=$(curl --silent --show-error --max-time 10 "${transition_trust[@]}" \
+            if status=$(curl --silent --show-error --max-time 10 \
                 --resolve "${host}:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://${host}/ready") &&
                 [[ $status == "$expected" ]] && jq -e "$filter" "$body" >/dev/null; then break; fi
             if ((attempt == 10)); then

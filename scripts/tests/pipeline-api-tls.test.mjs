@@ -19,7 +19,8 @@ test('TLS gate rejects missing, ambiguous, failed and stale preparation', () => 
 test('renewal permits older accepted source with no queued runtime change and rejects pending runtime work', () => {
   requireTlsRuntimePlan({deploy: []}, 'renew');
   assert.throws(() => requireTlsRuntimePlan({deploy: ['backend-school']}, 'renew'));
-  requireTlsRuntimePlan({deploy: ['backend-school']}, 'migrate-origin-ca');
+  assert.throws(() => requireTlsRuntimePlan({deploy: ['backend-school']}, 'migrate-origin-ca'), /Unknown TLS operation/);
+  assert.throws(() => requireTlsRuntimePlan({deploy: []}, 'migrate-origin-ca'), /Unknown TLS operation/);
   assert.throws(() => requireTlsRuntimePlan({deploy: []}, 'other'));
   for (const mode of ['dns-only', 'dns-rollback']) {
     requireTlsRuntimePlan({deploy: []}, mode);
@@ -35,9 +36,12 @@ test('certificate renewal and explicit API DNS operations retain the shared prod
   assert.match(maintenance, /cron: 47 19 \* \* \*/);
   assert.match(maintenance, /github\.event\.schedule == '23 19 \* \* 6'/);
   assert.match(operations, /api-dns:\n[\s\S]*?group: schoolorbit-production\n      cancel-in-progress: false/);
-  assert.match(operations, /migrate-api-tls:\n[\s\S]*?group: schoolorbit-production\n      cancel-in-progress: false/);
+  assert.doesNotMatch(operations, /migrate-api-tls|migrate-origin-ca/);
   const wrapper = read('scripts/lib/pipeline-remote/api-tls-operation.sh');
-  assert.match(wrapper, /if \[\[ \$mode == migrate-origin-ca \]\] && ! bash "\$owner" status[^\n]*; then\n    bash "\$maintenance" enter-origin-ca-migration\nelse\n    bash "\$maintenance" enter/);
+  assert.match(wrapper, /bash "\$maintenance" enter/);
+  for (const source of [wrapper, read('scripts/lib/pipeline-remote/maintenance.sh')]) {
+    assert.doesNotMatch(source, /migrate-origin-ca|enter-origin-ca-migration|origin_ca_rsa_root|--cacert|--insecure/);
+  }
   assert.doesNotMatch(read('scripts/lib/pipeline-remote/api-tls.sh'), /cloudflare-origin|origin_ca_rsa_root|enter-origin-ca-migration/);
 });
 
