@@ -299,6 +299,21 @@ teardown() {
     [ "$status" -eq 78 ]
 }
 
+@test "restored snapshot validation ignores provider timestamps and refuses every restored field drift" {
+    cf_preflight
+    cf_snapshot_dns
+    restored="$TEST_ROOT/restored-state.json"
+    jq '(.result[].modified_on)="provider-updated-timestamp"' "$CF_DNS_FIXTURE" >"$restored"
+    export CF_DNS_FIXTURE="$restored"
+    cf_assert_snapshot_state
+    for change in '.id="changed-id"' '.name="other.schoolorbit.app"' '.type="AAAA"' '.content="192.0.2.99"' '.ttl=300' '.proxied=false'; do
+        jq ".result[0] |= ($change)" "$restored" >"$TEST_ROOT/restored-drift.json"
+        export CF_DNS_FIXTURE="$TEST_ROOT/restored-drift.json"
+        run cf_assert_snapshot_state
+        [ "$status" -eq 78 ]
+    done
+}
+
 @test "DNS-only polling accepts only the exact target and rejects Cloudflare addresses" {
     make_fake_command getent 'printf "%s %s\n" "192.0.2.20" "STREAM fake"'
     cf_wait_for_target_resolution

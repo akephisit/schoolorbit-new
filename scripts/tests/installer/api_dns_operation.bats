@@ -51,6 +51,14 @@ test -z "$SMOKE_CA_CERT"
 test -z "${SMOKE_RELEASE_PROBE_TOKEN:-}"
 test ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
 printf 'public authenticated full-context smoke\n' >>"$COMMAND_LOG"
+if [[ ${FOREIGN_PENDING_ON_PUBLIC:-false} == true ]]; then
+    printf 'foreign-release-owner\n' >"$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
+    exit 1
+fi
+if [[ ${UNSAFE_OWNED_PENDING_ON_PUBLIC:-false} == true ]]; then
+    chmod 0644 "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/$API_DNS_REQUEST_ID.pending-release"
+    exit 1
+fi
 if [[ ${INTERRUPT_PUBLIC:-false} == true ]]; then kill -TERM "$PPID"; fi
 [[ ${FAIL_PUBLIC:-false} != true ]]
 SH
@@ -233,4 +241,61 @@ teardown() { rm -rf "$TEST_ROOT"; }
     [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
     [ "$(tail -n 1 "$COMMAND_LOG")" = 'maintenance enter' ]
     ! grep -Fq 'public authenticated full-context smoke' "$COMMAND_LOG"
+}
+
+@test "rollback acceptance retries validate restored records without another DNS batch" {
+    bash "$DNS_OPERATION" dns-only
+    export FAIL_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-rollback
+    [ "$status" -ne 0 ]
+    journal="$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    jq -e '.status=="rollback_applied"' "$journal"
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    jq -e '.result[] | select(.id=="dns-school-1") | .proxied==true' "$DNS_STATE"
+    unset FAIL_PUBLIC
+    bash "$DNS_OPERATION" dns-rollback
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 2 ]
+    [ ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    jq -e '.status=="rolled_back"' "$journal"
+}
+
+@test "rollback interruption retains acceptance-only recovery and refuses restored DNS drift" {
+    bash "$DNS_OPERATION" dns-only
+    export INTERRUPT_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-rollback
+    [ "$status" -eq 143 ]
+    jq -e '.status=="rollback_applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+    unset INTERRUPT_PUBLIC
+    jq '(.result[] | select(.id=="dns-school-1") | .ttl)=300' "$DNS_STATE" >"$DNS_STATE.next"
+    mv "$DNS_STATE.next" "$DNS_STATE"
+    run bash "$DNS_OPERATION" dns-rollback
+    [ "$status" -ne 0 ]
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 2 ]
+    [ -L "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    jq '(.result[] | select(.id=="dns-school-1") | .ttl)=1' "$DNS_STATE" >"$DNS_STATE.next"
+    mv "$DNS_STATE.next" "$DNS_STATE"
+    bash "$DNS_OPERATION" dns-rollback
+    [ "$(grep -c '^batch$' "$COMMAND_LOG")" -eq 2 ]
+    jq -e '.status=="rolled_back"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+}
+
+@test "conditional cleanup refuses a foreign pending marker without overwriting its owner" {
+    export FOREIGN_PENDING_ON_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'Failed to restore owned DNS maintenance'* ]]
+    pending="$SCHOOLORBIT_STACK_ROOT/deployment/pending-release"
+    [ ! -L "$pending" ]
+    [ "$(cat "$pending")" = foreign-release-owner ]
+    [ "$(grep -c '^maintenance enter$' "$COMMAND_LOG")" -eq 1 ]
+    jq -e '.status=="applied"' "$SCHOOLORBIT_STACK_ROOT/deployment/api-dns/123-1.json"
+}
+
+@test "conditional cleanup refuses unsafe private pending permissions before entering maintenance" {
+    export UNSAFE_OWNED_PENDING_ON_PUBLIC=true
+    run bash "$DNS_OPERATION" dns-only
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'Failed to restore owned DNS maintenance'* ]]
+    [ ! -e "$SCHOOLORBIT_STACK_ROOT/deployment/pending-release" ]
+    [ "$(grep -c '^maintenance enter$' "$COMMAND_LOG")" -eq 1 ]
 }

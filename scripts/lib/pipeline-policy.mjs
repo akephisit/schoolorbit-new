@@ -104,7 +104,7 @@ export function changes(root, base, head) {
 export function inputHash(root, head, component, publicConfig = {}) {
   if (!components.includes(component)) throw new Error('Unknown component');
   const recipe = buildRecipes[component.startsWith('frontend-') ? 'frontend' : 'backend'];
-  const entries = git(root, 'ls-tree', '-r', head, '--', component, recipe, ...(component.startsWith('frontend-') ? ['scripts/prepare_frontend_worker.mjs'] : []))
+  const entries = git(root, 'ls-tree', '-r', head, '--', component, recipe, ...(component.startsWith('frontend-') ? ['scripts/prepare_frontend_worker.mjs', '.node-version'] : []))
     .split('\n').filter(Boolean).filter((entry) => !testOnly(entry.split('\t')[1] || ''));
   return createHash('sha256').update(JSON.stringify({ version: 2, entries, publicConfig, platform: 'linux/amd64', node: component.startsWith('frontend-') ? process.versions.node : null, rust: '1.98.1', profile: 'release' })).digest('hex');
 }

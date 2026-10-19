@@ -44,6 +44,22 @@ function fixture(t) {
   return { root, base, state, commit };
 }
 
+test('canonical Node pin content invalidates only frontend artifacts, including caches from before the pin', t => {
+  const f = fixture(t);
+  const pin = path.join(f.root, '.node-version');
+  writeFileSync(pin, '24.22.0\n');
+  let previous = f.base;
+  for (const version of ['24.22.0', '24.23.0']) {
+    writeFileSync(pin, `${version}\n`);
+    const head = f.commit();
+    for (const part of components) {
+      assert.equal(inputHash(f.root, head, part) !== inputHash(f.root, previous, part), part.startsWith('frontend-'), part);
+    }
+    assert.deepEqual(makePlan({ ...f, head }).build, ['frontend-admin', 'frontend-school']);
+    previous = head;
+  }
+});
+
 test('deployment tooling changes reconcile both frontend owners while retaining existing compiled artifacts', (t) => {
   for (const file of ['scripts/deployment_tooling.mjs', '.github/actions/setup-deployment-tooling/action.yml']) {
     const f = fixture(t);

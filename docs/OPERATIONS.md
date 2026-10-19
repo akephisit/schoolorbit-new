@@ -1001,7 +1001,10 @@ gh workflow run operations.yml --ref main -f operation=rollback-api-dns \
   -f 'options={"rollback_id":"RUN_ID-ATTEMPT"}'
 ```
 
-Rollback refuses changed cutover records and preserves the accepted application identity. It
+Rollback refuses changed cutover records and preserves the accepted application identity. After
+its DNS batch, the journal records `rollback_applied`. Repeating the same rollback after failed
+acceptance validates the exact restored snapshot and repeats acceptance without another DNS batch.
+Drift, a different accepted release or foreign pending ownership still refuses recovery. Rollback
 retains certificate generations and management DNS; failure keeps maintenance active.
 
 For a newly journaled DNS-only operation whose public acceptance failed, resume its exact owned

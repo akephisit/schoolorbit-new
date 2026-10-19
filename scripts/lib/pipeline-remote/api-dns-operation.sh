@@ -98,17 +98,31 @@ load_owned_journal() {
 }
 
 reserve_maintenance() {
-    local owned_pending="api-dns/$request.pending-release"
+    local owned_pending="api-dns/$request.pending-release" pending_target pending_sha pending_metadata
+    # Explicit returns are required: cleanup calls this function in a conditional,
+    # where Bash disables errexit for the entire function body.
+    test "$(cat "$root/accepted-release")" = "$accepted" || return 78
     if [[ -e $root/pending-release || -L $root/pending-release ]]; then
-        test -L "$root/pending-release"
-        test "$(readlink "$root/pending-release")" = "$owned_pending"
-        test "$(cat "$root/pending-release")" = "$accepted"
-        test "$(stat -Lc '%a:%u' "$root/pending-release")" = "600:$(id -u)"
-    else
-        printf '%s\n' "$accepted" >"$root/$owned_pending"
-        ln -s "$owned_pending" "$root/pending-release"
+        test -L "$root/pending-release" || return 78
+        pending_target=$(readlink "$root/pending-release") || return 78
+        test "$pending_target" = "$owned_pending" || return 78
     fi
-    bash "$maintenance" enter
+    if [[ -e $root/$owned_pending || -L $root/$owned_pending ]]; then
+        test ! -L "$root/$owned_pending" && test -f "$root/$owned_pending" || return 78
+        pending_sha=$(cat "$root/$owned_pending") || return 78
+        test "$pending_sha" = "$accepted" || return 78
+        pending_metadata=$(stat -c '%a:%u' "$root/$owned_pending") || return 78
+        test "$pending_metadata" = "600:$(id -u)" || return 78
+    else
+        (
+            set -o noclobber
+            printf '%s\n' "$accepted" >"$root/$owned_pending"
+        ) || return 78
+    fi
+    if [[ ! -e $root/pending-release && ! -L $root/pending-release ]]; then
+        ln -s "$owned_pending" "$root/pending-release" || return 78
+    fi
+    bash "$maintenance" enter || return
 }
 
 resume=${API_DNS_RESUME_ID:-}
@@ -158,11 +172,18 @@ elif [[ $mode == dns-only ]]; then
     cf_wait_for_target_resolution
 else
     load_owned_journal "${API_DNS_ROLLBACK_ID:?Rollback journal identity is required}"
-    jq -e '.status == "accepted" or .status == "applied" or .status == "prepared"' "$journal" >/dev/null
-    cf_assert_cutover_state
+    jq -e '.status == "accepted" or .status == "applied" or .status == "prepared" or .status == "rollback_applied"' "$journal" >/dev/null
+    if jq -e '.status == "rollback_applied"' "$journal" >/dev/null; then
+        cf_assert_snapshot_state
+    else
+        cf_assert_cutover_state
+    fi
     reserve_maintenance
     bash "$maintenance" verify
-    cf_apply_dns_batch rollback
+    if ! jq -e '.status == "rollback_applied"' "$journal" >/dev/null; then
+        cf_apply_dns_batch rollback
+        mark_status rollback_applied
+    fi
     cf_wait_for_snapshot_resolution
 fi
 public_maintenance
