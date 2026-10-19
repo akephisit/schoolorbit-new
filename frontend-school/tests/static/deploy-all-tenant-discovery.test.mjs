@@ -12,7 +12,7 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testDirectory, '../../..');
 const discoveryScript = path.join(repoRoot, 'scripts/discover_school_tenants.sh');
 
-test('pre-cutover frontend deployment pins API traffic to the selected origin', async () => {
+test('pre-cutover frontend deployment pins API traffic to the selected origin with public CA trust', async () => {
 	const workflow = await readWorkflowSource(
 		repoRoot,
 		'.github/workflows/deploy-school-release.yml'
@@ -24,20 +24,16 @@ test('pre-cutover frontend deployment pins API traffic to the selected origin', 
 
 	assert.match(workflow, /target_origin_ip:/);
 	assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/configure_pre_cutover_origin\.sh/);
-	assert.match(
-		workflow,
-		/CURL_CA_BUNDLE: \$\{\{ steps\.origin-routing\.outputs\.origin_ca_root \}\}/
-	);
+	for (const source of [workflow, originRouting, await readFile(discoveryScript, 'utf8')]) {
+		assert.doesNotMatch(source, /CURL_CA_BUNDLE|origin_ca_root|--cacert|--insecure/);
+	}
 	assert.match(workflow, /127\.0\.0\.1:18081:127\.0\.0\.1:8081/);
 	assert.match(workflow, /PUBLIC_BACKEND_URL=http:\/\/127\.0\.0\.1:18081/);
 	assert.match(workflow, /SMOKE_RESOLVE_IP=127\.0\.0\.1/);
-	assert.match(
-		originRouting,
-		/https:\/\/developers\.cloudflare\.com\/ssl\/static\/origin_ca_rsa_root\.pem/
-	);
-	assert.match(originRouting, /91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/);
+	assert.match(originRouting, /"\$target_ip"/);
 	assert.match(originRouting, /admin-api\.\$base_domain/);
 	assert.match(originRouting, /school-api\.\$base_domain/);
+	assert.match(originRouting, /sudo tee -a \/etc\/hosts/);
 });
 
 async function runDiscovery(handler, environment = {}) {

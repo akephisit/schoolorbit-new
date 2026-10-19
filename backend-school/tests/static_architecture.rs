@@ -7318,8 +7318,12 @@ fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness(
     assert!(admin_deploy.contains("http://127.0.0.1:8080/ready"));
     assert!(school_deploy.contains(r#"--resolve "${school_host}:443:127.0.0.1""#));
     assert!(admin_deploy.contains(r#"--resolve "${admin_host}:443:127.0.0.1""#));
-    assert!(school_deploy.contains("cloudflare-origin-rsa-root.pem"));
-    assert!(admin_deploy.contains("cloudflare-origin-rsa-root.pem"));
+    for deploy in [&school_deploy, &admin_deploy] {
+        assert!(!deploy.contains("cloudflare-origin-rsa-root.pem"));
+        assert!(!deploy.contains("CURL_CA_BUNDLE"));
+        assert!(!deploy.contains("--cacert"));
+        assert!(!deploy.contains("--insecure"));
+    }
     assert!(school_deploy.contains("seq 1 36"));
     assert!(admin_deploy.contains("seq 1 12"));
     assert!(school_deploy.contains("timeout 180 bash -c"));

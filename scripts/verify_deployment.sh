@@ -9,6 +9,8 @@ shfmt -d -i 4 -ci backend-school/scripts/build_release.sh backend-school/scripts
     scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
 bats scripts/tests/installer
 node --test frontend-school/tests/static/deployment-installer.test.mjs scripts/tests/pipeline*.test.mjs \
+    frontend-school/tests/static/deploy-all-tenant-discovery.test.mjs \
+    frontend-school/tests/static/admin-api-proxy.test.mjs \
     scripts/tests/backend-school-test-database.test.mjs \
     scripts/tests/runtime-env.test.mjs \
     scripts/tests/admin-account-release.test.mjs \
