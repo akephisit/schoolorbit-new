@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { components } from './pipeline-policy.mjs';
 
 export function trustedRun(run, repository, workflow, sha, acceptedAttempt = false) {
@@ -29,8 +30,21 @@ const api = (route) => JSON.parse(execFileSync('gh', ['api', route], { encoding:
 
 export function readAcceptedState(repository = process.env.GITHUB_REPOSITORY) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository || '')) throw new Error('Repository is required');
-  const list = api(`/repos/${repository}/actions/artifacts?name=pipeline-state&per_page=100`);
-  for (const artifact of list.artifacts.filter((item) => !item.expired).sort((a, b) => b.id - a.id)) {
+  const pages = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `/repos/${repository}/actions/artifacts?name=pipeline-state&per_page=100`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+  // Artifact IDs are not chronological. Publication occurs under the production
+  // lock; run updated_at can instead describe an unrelated later failed rerun.
+  const artifacts = pages.flatMap(page => page.artifacts).filter(item => !item.expired).map(artifact => {
+    const published = Date.parse(artifact.created_at);
+    if (typeof artifact.created_at !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(artifact.created_at) ||
+        !Number.isFinite(published) || new Date(published).toISOString() !== artifact.created_at.replace('Z', '.000Z')) {
+      throw new Error('Invalid accepted artifact publication timestamp');
+    }
+    return { artifact, published };
+  }).sort((a, b) => b.published - a.published);
+  let selected = null;
+  let selectedPublished;
+  for (const {artifact, published} of artifacts) {
+    if (selected && published < selectedPublished) return selected;
     const run = api(`/repos/${repository}/actions/runs/${artifact.workflow_run.id}`);
     if (!trustedRun(run, repository, 'pipeline.yml', null, true)) continue;
     const temp = mkdtempSync(path.join(os.tmpdir(), 'pipeline-state-'));
@@ -43,10 +57,12 @@ export function readAcceptedState(repository = process.env.GITHUB_REPOSITORY) {
       const pages = JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', `/repos/${repository}/actions/runs/${run.id}/attempts/${state.attempt}/jobs?per_page=100`], { encoding: 'utf8' }));
       const acceptance = pages.flatMap((page) => page.jobs).filter((job) => /(?:^| \/ )accept$/.test(job.name));
       if (acceptance.length !== 1 || acceptance[0].conclusion !== 'success' || acceptance[0].head_sha !== state.sha) continue;
-      return state;
+      if (selected && !isDeepStrictEqual(selected, state)) throw new Error('Ambiguous accepted state publication timestamp');
+      selected = state;
+      selectedPublished = published;
     } finally { rmSync(temp, { recursive: true, force: true }); }
   }
-  return null;
+  return selected;
 }
 
 if (process.argv[1]?.endsWith('/pipeline-state.mjs')) {

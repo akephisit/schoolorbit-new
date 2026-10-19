@@ -25,6 +25,7 @@ if(cfg.sequences[route]) {
  const file=process.env.FAKE_GH_LOG+'.counts';let counts={};try{counts=JSON.parse(fs.readFileSync(file,'utf8'))}catch{}
  const count=counts[route]||0;const list=cfg.sequences[route];response=list[Math.min(count,list.length-1)];counts[route]=count+1;fs.writeFileSync(file,JSON.stringify(counts));
 }
+if(route?.includes('/actions/artifacts?name=pipeline-state') && !args.includes('--paginate'))response=response?.[0];
 if(response===undefined){console.error('Unexpected API '+route);process.exit(90)}
 if(response.binary)process.stdout.write(fs.readFileSync(response.binary));else process.stdout.write(JSON.stringify(response));
 `,{mode:0o755});
@@ -50,13 +51,72 @@ function candidatePlan(f) {
  return {pr,plan,run};
 }
 function acceptedState(){return {schemaVersion:2,runId:'21',attempt:1,sha:head,components:Object.fromEntries(components.map(part=>[part,{sha:head,inputHash:'e'.repeat(64),digest:'sha256:'+'f'.repeat(64),bundleDigest:'e'.repeat(64),artifactRunId:21,versionId:'12345678-abcd-1234-abcd-123456789abc',workers:{sandbox:'12345678-abcd-1234-abcd-123456789abc'}}]))};}
-for(const accepted of [true,false])test(`accepted state requires its acceptance attempt job success=${accepted}, even on a later rerun`,t=>{
- const f=fixture(t);const run={...runIdentity(),head_branch:'main',event:'push',status:'in_progress',conclusion:null,run_attempt:2};
- f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[{id:12,workflow_run:{id:21}}]};
+for(const rerun of ['in_progress','failure'])for(const accepted of [true,false])test(`accepted state requires its acceptance attempt job success=${accepted}, even on a later ${rerun} rerun`,t=>{
+ const f=fixture(t);const run={...runIdentity(),head_branch:'main',event:'push',status:rerun==='failure'?'completed':'in_progress',conclusion:rerun==='failure'?'failure':null,run_attempt:2};
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[{id:12,created_at:'2026-10-20T18:55:26Z',workflow_run:{id:21}}]}];
  f.routes[`/repos/${repo}/actions/runs/21`]=run;
  f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'release / accept',head_sha:head,conclusion:accepted?'success':'failure'}]}];f.zip(12,'pipeline-state.json',acceptedState());
  const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout)?.runId,accepted?'21':undefined);
 });
+function acceptedArtifact(f, id, artifactId, createdAt, overrides = {}) {
+ const run={...runIdentity(id),head_branch:'main',event:'push',...overrides.run};
+ const state={...acceptedState(),runId:String(id)};
+ f.routes[`/repos/${repo}/actions/runs/${id}`]=run;
+ f.routes[`/repos/${repo}/actions/runs/${id}/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'release / accept',head_sha:head,conclusion:'success',...overrides.job}]}];
+ f.zip(artifactId,'pipeline-state.json',state);
+ return {id:artifactId,created_at:createdAt,workflow_run:{id}};
+}
+
+test('accepted state uses publication time across every artifact page instead of numeric artifact IDs', t=>{
+ const f=fixture(t);
+ const older=acceptedArtifact(f,39305416049,12214690035,'2026-10-20T18:55:26Z');
+ const newer=acceptedArtifact(f,39307537185,12213389289,'2026-10-20T19:09:56Z');
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[older]},{artifacts:[newer]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);
+ assert.equal(JSON.parse(result.stdout).runId,'39307537185');
+ const listing=f.calls().find(call=>call.route.includes('/actions/artifacts?'));
+ assert.ok(listing.args.includes('--paginate'));assert.ok(listing.args.includes('--slurp'));
+});
+
+for(const invalid of ['untrusted-run','failed-acceptance'])test(`newer ${invalid} cannot displace the latest successful accepted state`,t=>{
+ const f=fixture(t);
+ const older=acceptedArtifact(f,21,101,'2026-10-20T18:55:26Z');
+ const newer=acceptedArtifact(f,22,100,'2026-10-20T19:09:56Z',invalid==='untrusted-run'?{run:{head_branch:'feature'}}:{job:{conclusion:'failure'}});
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[older,newer]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout).runId,'21');
+});
+
+for(const createdAt of [undefined,'invalid','2026-02-30T19:09:56Z'])test(`accepted state refuses missing or malformed publication timestamp ${createdAt}`,t=>{
+ const f=fixture(t);
+ const artifact=acceptedArtifact(f,21,12,createdAt);
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[artifact]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,1);assert.match(result.stderr,/publication timestamp/);
+});
+
+test('equal publication timestamps cannot silently choose between trusted accepted releases',t=>{
+ const f=fixture(t);
+ const first=acceptedArtifact(f,21,100,'2026-10-20T19:09:56Z');
+ const second=acceptedArtifact(f,22,101,'2026-10-20T19:09:56Z');
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[first,second]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,1);assert.match(result.stderr,/Ambiguous accepted state/);
+});
+
+for(const invalid of ['untrusted-run','failed-acceptance'])test(`an equally timed ${invalid} is not an ambiguous accepted state`,t=>{
+ const f=fixture(t);
+ const valid=acceptedArtifact(f,21,101,'2026-10-20T19:09:56Z');
+ const invalidArtifact=acceptedArtifact(f,22,100,'2026-10-20T19:09:56Z',invalid==='untrusted-run'?{run:{head_branch:'feature'}}:{job:{conclusion:'failure'}});
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[valid,invalidArtifact]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout).runId,'21');
+});
+
+test('duplicate artifacts for an identical accepted state do not create an ambiguous release',t=>{
+ const f=fixture(t);
+ const first=acceptedArtifact(f,21,100,'2026-10-20T19:09:56Z');
+ const second=acceptedArtifact(f,21,101,'2026-10-20T19:09:56Z');
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[first,second]}];
+ const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout).runId,'21');
+});
+
 for(const stale of [false,true])test(`merge controller serializes two ready PRs and blocks stale base=${stale}`,t=>{
  const f=fixture(t);const p=candidatePlan(f);f.routes[`/repos/${repo}/pulls?state=open&base=main&sort=created&direction=asc&per_page=100`]=[p.pr,{...p.pr,number:8}];
  for(const number of [7,8])f.routes[`/repos/${repo}/pulls/${number}`]=p.pr;
@@ -84,7 +144,7 @@ for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-d
  f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:mode==='stale-main'?sha:commit}};
  f.routes[`/repos/${repo}/actions/runs/42`]={...runIdentity(42),event:'push',head_branch:'main',head_sha:commit,run_attempt:mode==='wrong-attempt'?2:1};
  f.routes[`/repos/${repo}/actions/runs/42/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'Pipeline gate',head_sha:commit,run_attempt:1,conclusion:mode==='failed-gate'?'failure':'success'}]}];
- f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[]};
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[]}];
  const result=f.run('release_preflight.mjs',{PLAN:JSON.stringify(plan),GITHUB_SHA:commit,RUNTIME_DEPLOY_ENABLED:mode==='rollout-disabled'?'false':'true',FRONTEND_DEPLOY_ENABLED:'true',PUBLIC_BACKEND_URL:'',PUBLIC_VAPID_KEY:'',PUBLIC_API_URL:'',BACKEND_SCHOOL_URL:''},checkout);
  assert.equal(result.status,mode==='valid'?0:1,result.stderr);
 });
@@ -102,7 +162,7 @@ for (const scope of ['auto', 'full', 'backend-school']) test(`production-lock re
  f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:commit}};
  f.routes[`/repos/${repo}/actions/runs/42`]={...run,id:42};
  f.routes[`/repos/${repo}/actions/runs/42/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'Pipeline gate',head_sha:commit,run_attempt:1,conclusion:'success'}]}];
- f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[{id:12,workflow_run:{id:21}}]};
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]=[{artifacts:[{id:12,created_at:'2026-10-20T18:55:26Z',workflow_run:{id:21}}]}];
  f.routes[`/repos/${repo}/actions/runs/21`]=run;
  f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'release / accept',head_sha:commit,conclusion:'success'}]}];
  f.zip(12,'pipeline-state.json',state);
