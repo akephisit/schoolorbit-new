@@ -38,14 +38,18 @@ export function deploymentLock(lock, component) {
   const roots = applications[component];
   if (!roots || lock.lockfileVersion !== 3 || !lock.packages?.[""])
     throw new Error("Unsupported application lockfile");
-  const selected = new Set();
+  // Optionality belongs to edges reachable from these deployment roots. A node
+  // required elsewhere in the full app can be optional in this smaller closure.
+  const selected = new Map();
   const visit = (owner, name, optional = false) => {
     const location = resolvePackage(lock.packages, owner, name);
     if (!location) {
       if (optional) return;
       throw new Error(`Missing locked deployment dependency: ${name}`);
     }
-    if (selected.has(location)) return;
+    const required = !optional;
+    if (selected.get(location) === true || selected.get(location) === required)
+      return;
     const item = lock.packages[location];
     if (
       item.link ||
@@ -54,12 +58,12 @@ export function deploymentLock(lock, component) {
       !/^https:\/\//.test(item.resolved || "")
     )
       throw new Error(`Nonportable deployment dependency: ${name}`);
-    selected.add(location);
+    selected.set(location, required);
     for (const [child] of Object.entries(item.dependencies || {}))
       visit(
         location,
         child,
-        Object.hasOwn(item.optionalDependencies || {}, child),
+        optional || Object.hasOwn(item.optionalDependencies || {}, child),
       );
     for (const [child] of Object.entries(item.optionalDependencies || {}))
       visit(location, child, true);
@@ -67,7 +71,7 @@ export function deploymentLock(lock, component) {
       visit(
         location,
         child,
-        item.peerDependenciesMeta?.[child]?.optional === true,
+        optional || item.peerDependenciesMeta?.[child]?.optional === true,
       );
   };
   const dependencies = {};
@@ -84,8 +88,12 @@ export function deploymentLock(lock, component) {
   const packages = {
     "": { name: manifest.name, version: manifest.version, dependencies },
   };
-  for (const location of [...selected].sort())
-    packages[location] = lock.packages[location];
+  for (const location of [...selected.keys()].sort()) {
+    const item = lock.packages[location];
+    const optional = !selected.get(location);
+    packages[location] =
+      Boolean(item.optional) === optional ? item : { ...item, optional };
+  }
   return {
     manifest,
     lock: {
@@ -141,14 +149,15 @@ function installed(c, base = c.directory) {
   return (
     Object.entries(c.subset.lock.packages).every(([location, item]) => {
       if (!location || !supportedPlatform(item)) return true;
+      const directory = path.join(base, location);
+      if (!existsSync(directory)) return item.optional === true;
       try {
         return (
-          JSON.parse(
-            readFileSync(path.join(base, location, "package.json"), "utf8"),
-          ).version === item.version
+          JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"))
+            .version === item.version
         );
       } catch {
-        return item.optional === true;
+        return false;
       }
     }) &&
     applications[path.basename(c.app)].every((name) => {
