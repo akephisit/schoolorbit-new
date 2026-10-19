@@ -66,6 +66,28 @@ function fixture(t) {
     tools: path.join(prefix, "frontend-school"),
   };
 }
+function installFixture(f, omitted = new Set()) {
+  for (const [location, item] of Object.entries(f.original.packages)) {
+    if (!location || item.link || omitted.has(location)) continue;
+    mkdirSync(path.join(f.app, location), { recursive: true });
+    writeFileSync(
+      path.join(f.app, location, "package.json"),
+      JSON.stringify({ version: item.version }),
+    );
+  }
+  const bin = path.join(f.app, "node_modules/wrangler/bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "cli.js"), "console.log('locked-cli');\n");
+}
+
+function optionalBranch(original) {
+  original.packages["node_modules/optional"] = entry("1.0.0", {
+    dependencies: { "optional-child": "^1" },
+  });
+  original.packages["node_modules/optional-child"] = entry("1.0.0", {
+    dependencies: { optional: "^1" },
+  });
+}
 test("deployment closure preserves locked nested versions and peers while excluding application workspace links", () => {
   const original = lock(),
     result = deploymentLock(original, "frontend-school");
@@ -108,6 +130,32 @@ test("required missing, unpinned and nonportable dependencies refuse tooling pre
     assert.throws(() => deploymentLock(value, "frontend-school"));
   }
 });
+test("optional peers and their descendants inherit deployment reachability instead of app-wide required flags", () => {
+  const original = lock();
+  optionalBranch(original);
+  const result = deploymentLock(original, "frontend-school");
+  for (const name of ["optional", "optional-child"]) {
+    const location = `node_modules/${name}`;
+    assert.equal(result.lock.packages[location].optional, true);
+    assert.equal(original.packages[location].optional, undefined);
+    for (const key of ["version", "resolved", "integrity"])
+      assert.equal(
+        result.lock.packages[location][key],
+        original.packages[location][key],
+      );
+  }
+  assert.equal(result.lock.packages["node_modules/shared"].optional, undefined);
+});
+test("a later required path upgrades an optional branch and its cyclic descendants", () => {
+  const original = lock();
+  optionalBranch(original);
+  original.packages["node_modules/playwright"].dependencies.optional = "^1";
+  original.packages["node_modules/optional"].optional = true;
+  original.packages["node_modules/optional-child"].optional = true;
+  const result = deploymentLock(original, "frontend-school");
+  for (const name of ["optional", "optional-child"])
+    assert.equal(result.lock.packages[`node_modules/${name}`].optional, false);
+});
 test("unrelated frontend dependencies do not invalidate deployment reuse, but locked tooling does", (t) => {
   const f = fixture(t),
     first = f.run("prepare");
@@ -133,17 +181,7 @@ test("unrelated frontend dependencies do not invalidate deployment reuse, but lo
 });
 test("seeded cache retains exact versions and runnable bin links, and refuses a different platform identity", (t) => {
   const f = fixture(t);
-  for (const [location, item] of Object.entries(f.original.packages)) {
-    if (!location || item.link) continue;
-    mkdirSync(path.join(f.app, location), { recursive: true });
-    writeFileSync(
-      path.join(f.app, location, "package.json"),
-      JSON.stringify({ version: item.version }),
-    );
-  }
-  const bin = path.join(f.app, "node_modules/wrangler/bin");
-  mkdirSync(bin);
-  writeFileSync(path.join(bin, "cli.js"), "console.log('locked-cli');\n");
+  installFixture(f);
   assert.equal(f.run("prepare").status, 0);
   assert.equal(f.run("seed").stdout, "seeded=true\n");
   assert.equal(f.run("mark").status, 0);
@@ -171,6 +209,32 @@ test("seeded cache retains exact versions and runnable bin links, and refuses a 
     '{"version":"wrong"}',
   );
   assert.equal(f.run("validate").stdout, "valid=false\n");
+});
+test("minimal installs permit absent optional branches but reject wrong or malformed present packages and missing required packages", (t) => {
+  const f = fixture(t);
+  optionalBranch(f.original);
+  writeFileSync(
+    path.join(f.app, "package-lock.json"),
+    JSON.stringify(f.original),
+  );
+  installFixture(
+    f,
+    new Set(["node_modules/optional", "node_modules/optional-child"]),
+  );
+  assert.equal(f.run("prepare").status, 0);
+  assert.equal(f.run("seed").stdout, "seeded=true\n");
+  assert.equal(f.run("mark").status, 0);
+  assert.equal(f.run("validate").stdout, "valid=true\n");
+  const optional = path.join(f.tools, "node_modules/optional");
+  mkdirSync(optional);
+  writeFileSync(path.join(optional, "package.json"), '{"version":"wrong"}');
+  assert.notEqual(f.run("mark").status, 0);
+  assert.equal(f.run("validate").stdout, "valid=false\n");
+  writeFileSync(path.join(optional, "package.json"), "{invalid-json");
+  assert.notEqual(f.run("mark").status, 0);
+  rmSync(optional, { recursive: true });
+  rmSync(path.join(f.tools, "node_modules/shared"), { recursive: true });
+  assert.notEqual(f.run("mark").status, 0);
 });
 test("partial caches fall back to install instead of claiming a hit or copying app files", (t) => {
   const f = fixture(t);
