@@ -15,8 +15,6 @@ runtime_compose=/opt/stack/podman-compose.yml
 runtime_env=/opt/stack/.env
 renderer_source="$deployment_root/scripts/render_nginx_config.sh"
 renderer="$deployment_root/render-nginx"
-origin_root_installer_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/install_origin_root.sh"
-origin_root_installer="$deployment_root/install-origin-root"
 network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
 timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
 image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
@@ -28,7 +26,6 @@ proxy_source="$deployment_root/school-api.conf"
 maintenance_proxy_source="$deployment_root/school-api.maintenance.conf"
 proxy_target=/opt/stack/nginx/conf.d/school-api.conf
 legacy_proxy_target=/opt/stack/nginx/conf.d/school-api.${base_domain}.conf
-origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
 backend_image=ghcr.io/akephisit/schoolorbit-backend-school
 backend_image_digest="${BACKEND_IMAGE_DIGEST}"
 if ! printf '%s' "$backend_image_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
@@ -46,10 +43,6 @@ test -f "$runtime_env" || {
 }
 test -f "$renderer_source" || {
     echo "Proxy renderer is missing"
-    exit 1
-}
-test -f "$origin_root_installer_source" || {
-    echo "Origin CA root installer is missing"
     exit 1
 }
 test -f "$network_helper_source" || {
@@ -141,8 +134,6 @@ if ! school_allowed_dev_origins="$(runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS)
 fi
 
 install -m 0755 "$renderer_source" "$renderer"
-install -m 0755 "$origin_root_installer_source" "$origin_root_installer"
-"$origin_root_installer" "$origin_root"
 export_school_compose_env
 cp "$runtime_source" "${runtime_compose}.next"
 podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1

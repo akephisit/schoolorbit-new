@@ -2,11 +2,9 @@
 
 VPS_MODULE_DIRECTORY=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 SCHOOLORBIT_REPOSITORY_ROOT=${REPOSITORY_ROOT:-$(cd -- "$VPS_MODULE_DIRECTORY/../../.." && pwd)}
-CF_ORIGIN_RSA_ROOT_URL=https://developers.cloudflare.com/ssl/static/origin_ca_rsa_root.pem
-CF_ORIGIN_RSA_ROOT_SHA256=91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae
 SO_VPS_DEPLOYMENT_KEY_DIR=
-SO_VPS_TLS_TEMP_DIR=
-SO_CF_ORIGIN_ROOT_FILE=
+SO_TLS_CERTIFICATE_FINGERPRINT=
+SO_TLS_CERTIFICATE_EXPIRES=
 
 _vps_ssh() {
     ssh \
@@ -201,22 +199,13 @@ _vps_remove_private_temp_dir() {
 
 vps_cleanup_transients() {
     _vps_remove_private_temp_dir "$SO_VPS_DEPLOYMENT_KEY_DIR"
-    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR"
     SO_VPS_DEPLOYMENT_KEY_DIR=
-    SO_VPS_TLS_TEMP_DIR=
-    SO_CF_ORIGIN_ROOT_FILE=
 }
 
 vps_cleanup_deployment_key() {
     _vps_remove_private_temp_dir "$SO_VPS_DEPLOYMENT_KEY_DIR" || return
     SO_VPS_DEPLOYMENT_KEY_DIR=
     unset 'SO_SECRETS[SSH_PRIVATE_KEY]'
-}
-
-vps_cleanup_tls_material() {
-    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR" || return
-    SO_VPS_TLS_TEMP_DIR=
-    SO_CF_ORIGIN_ROOT_FILE=
 }
 
 vps_create_deployment_key() {
@@ -349,23 +338,6 @@ trap - EXIT'
     _vps_ssh "$remote_command" <"$source_file" || die 69 "Unable to install TLS file ${destination##*/}"
 }
 
-_vps_download_origin_root() {
-    local destination=$1 root_hash
-    curl --silent --show-error --fail --location "$CF_ORIGIN_RSA_ROOT_URL" --output "$destination" || die 69 'Unable to download the Cloudflare Origin CA root' || return
-    root_hash=$(sha256sum "$destination" | awk '{print $1}')
-    [[ $root_hash == "$CF_ORIGIN_RSA_ROOT_SHA256" ]] || die 78 'Cloudflare Origin CA root checksum is invalid'
-}
-
-vps_prepare_verified_origin_root() {
-    require_command curl || return
-    if [[ -n $SO_CF_ORIGIN_ROOT_FILE && -r $SO_CF_ORIGIN_ROOT_FILE ]]; then
-        return 0
-    fi
-    [[ -n $SO_VPS_TLS_TEMP_DIR && -d $SO_VPS_TLS_TEMP_DIR ]] || SO_VPS_TLS_TEMP_DIR=$(_vps_make_private_temp_dir) || return
-    SO_CF_ORIGIN_ROOT_FILE="$SO_VPS_TLS_TEMP_DIR/cloudflare-origin-rsa-root.pem"
-    _vps_download_origin_root "$SO_CF_ORIGIN_ROOT_FILE"
-}
-
 vps_reverify_bootstrap() {
     vps_preflight || return
     local prefix
@@ -373,48 +345,33 @@ vps_reverify_bootstrap() {
     _vps_ssh "${prefix}bash -c 'id \"${SO_CONFIG[server_user]}\" >/dev/null && test -s /opt/stack/.env && test \"\$(stat -c %a /opt/stack/.env)\" = 600'" >/dev/null || die 78 'VPS bootstrap checkpoint no longer matches the target'
 }
 
+_vps_tls_ssh() {
+    ssh -p "${SO_CONFIG[ssh_port]}" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+        -i "$SO_VPS_DEPLOYMENT_KEY_DIR/github-actions" \
+        "${SO_CONFIG[server_user]}@${SO_CONFIG[target]}" "$@"
+}
+
 vps_reverify_tls() {
-    local prefix
-    prefix=$(_vps_privileged_prefix)
-    _vps_ssh "${prefix}bash -c 'test -s /opt/stack/nginx/ssl/schoolorbit-origin.pem && test -s /opt/stack/nginx/ssl/schoolorbit-origin.key && openssl x509 -checkend 86400 -noout -in /opt/stack/nginx/ssl/schoolorbit-origin.pem'" >/dev/null || die 78 'VPS Origin TLS checkpoint no longer matches the target' || return
-    vps_prepare_verified_origin_root
+    local metadata
+    [[ -n ${SO_SECRETS[SSH_PRIVATE_KEY]-} ]] || vps_create_deployment_key || return
+    metadata=$(_vps_tls_ssh "BASE_DOMAIN=${SO_CONFIG[base_domain]} bash /opt/stack/api-tls.sh status") || die 78 'Public API TLS checkpoint no longer matches the target' || return
+    [[ $(jq -er '.fingerprint' <<<"$metadata") == "$SO_TLS_CERTIFICATE_FINGERPRINT" ]] || die 78 'Public API certificate changed since the checkpoint'
 }
 
 vps_issue_and_install_tls() {
-    require_command curl || return
-    require_command openssl || return
-    local private_key csr certificate root certificate_key_hash private_key_hash admin_host school_host
-    _vps_remove_private_temp_dir "$SO_VPS_TLS_TEMP_DIR" || return
-    SO_VPS_TLS_TEMP_DIR=
-    SO_CF_ORIGIN_ROOT_FILE=
-    SO_VPS_TLS_TEMP_DIR=$(_vps_make_private_temp_dir) || return
-    private_key="$SO_VPS_TLS_TEMP_DIR/schoolorbit-origin.key"
-    csr="$SO_VPS_TLS_TEMP_DIR/schoolorbit-origin.csr"
-    certificate="$SO_VPS_TLS_TEMP_DIR/schoolorbit-origin.pem"
-    root="$SO_VPS_TLS_TEMP_DIR/cloudflare-origin-rsa-root.pem"
-    admin_host="admin-api.${SO_CONFIG[base_domain]}"
-    school_host="school-api.${SO_CONFIG[base_domain]}"
-
-    openssl req -new -newkey rsa:2048 -nodes \
-        -keyout "$private_key" -out "$csr" \
-        -subj "/CN=$admin_host" \
-        -addext "subjectAltName=DNS:$admin_host,DNS:$school_host" >/dev/null 2>&1 || die 69 'Unable to generate the Origin CA key and CSR' || return
-    chmod 0600 "$private_key"
-    cf_issue_origin_certificate "$csr" || return
-    printf '%s\n' "$CF_CERTIFICATE" >"$certificate"
-    chmod 0644 "$certificate"
-
-    _vps_download_origin_root "$root" || return
-    openssl verify -CAfile "$root" "$certificate" >/dev/null || die 78 'Origin certificate verification failed' || return
-    openssl x509 -in "$certificate" -noout -checkhost "$admin_host" >/dev/null || die 78 'Origin certificate is missing the admin API host' || return
-    openssl x509 -in "$certificate" -noout -checkhost "$school_host" >/dev/null || die 78 'Origin certificate is missing the school API host' || return
-    certificate_key_hash=$(openssl x509 -in "$certificate" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}') || return 78
-    private_key_hash=$(openssl pkey -in "$private_key" -pubout -outform DER | sha256sum | awk '{print $1}') || return 78
-    [[ $certificate_key_hash == "$private_key_hash" ]] || die 78 'Origin certificate and private key do not match' || return
-
-    _vps_stream_file "$certificate" /opt/stack/nginx/ssl/schoolorbit-origin.pem 0644 || return
-    _vps_stream_file "$private_key" /opt/stack/nginx/ssl/schoolorbit-origin.key 0600 || return
-    _vps_stream_file "$root" /opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem 0644 || return
-    # shellcheck disable=SC2034 # Consumed by direct-origin verification before cleanup.
-    SO_CF_ORIGIN_ROOT_FILE=$root
+    local metadata fingerprint
+    [[ -n ${SO_SECRETS[SSH_PRIVATE_KEY]-} ]] || vps_create_deployment_key || return
+    _vps_stream_file "$SCHOOLORBIT_REPOSITORY_ROOT/scripts/lib/pipeline-remote/api-tls.sh" /opt/stack/api-tls.sh 0750 || return
+    metadata=$(
+        (
+            export SO_TLS_DNS_TOKEN=${SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]-}
+            jq -n '{cloudflare_token:env.SO_TLS_DNS_TOKEN}'
+        ) | _vps_tls_ssh "BASE_DOMAIN=${SO_CONFIG[base_domain]} bash /opt/stack/api-tls.sh stage"
+    ) || die 69 'Public API ACME certificate staging failed' || return
+    fingerprint=$(jq -er '.fingerprint | select(test("^[0-9a-f]{64}$"))' <<<"$metadata") || return
+    _vps_tls_ssh "BASE_DOMAIN=${SO_CONFIG[base_domain]} bash /opt/stack/api-tls.sh activate $fingerprint" >/dev/null || die 69 'Public API certificate activation failed' || return
+    # shellcheck disable=SC2034 # Consumed by orchestration checkpoints.
+    SO_TLS_CERTIFICATE_FINGERPRINT=$fingerprint
+    # shellcheck disable=SC2034 # Consumed by orchestration checkpoints.
+    SO_TLS_CERTIFICATE_EXPIRES=$(jq -er '.certificate_expiry' <<<"$metadata")
 }

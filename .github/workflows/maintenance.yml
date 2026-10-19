@@ -2,8 +2,16 @@ name: Maintenance
 on:
   schedule:
     - cron: 23 19 * * 6
+    - cron: 47 19 * * *
   workflow_dispatch:
     inputs:
+      task:
+        description: Maintenance task
+        type: choice
+        default: retention
+        options:
+          - retention
+          - api-tls
       dry_run:
         description: List old backend releases without deleting them
         required: true
@@ -17,7 +25,14 @@ concurrency:
   group: schoolorbit-production
   cancel-in-progress: false
 jobs:
+  api-tls:
+    if: (github.event_name == 'schedule' && github.event.schedule == '47 19 * * *') || (github.event_name == 'workflow_dispatch' && inputs.task == 'api-tls')
+    uses: ./.github/workflows/api-tls.yml
+    with:
+      mode: renew
+    secrets: inherit
   retain:
+    if: (github.event_name == 'schedule' && github.event.schedule == '23 19 * * 6') || (github.event_name == 'workflow_dispatch' && inputs.task == 'retention')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

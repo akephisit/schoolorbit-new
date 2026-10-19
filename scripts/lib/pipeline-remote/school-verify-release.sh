@@ -9,13 +9,11 @@ smoke_subdomain=${ACADEMIC_CORE_SMOKE_SUBDOMAIN:-sandbox}
 proxy_source=/opt/stack/deployment/school-api.conf
 maintenance_proxy_source=/opt/stack/deployment/school-api.maintenance.conf
 proxy_target=/opt/stack/nginx/conf.d/school-api.conf
-origin_root=/opt/stack/nginx/ssl/cloudflare-origin-rsa-root.pem
 smoke_script=/opt/stack/deployment/scripts/smoke_test.sh
 timing_helper_source=/opt/stack/deployment/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
 image_cleanup=/opt/stack/deployment/scripts/prune_runtime_images.sh
 test -f "$proxy_source"
 test -f "$maintenance_proxy_source"
-test -f "$origin_root"
 test -f "$smoke_script"
 test -f "$timing_helper_source"
 test -x "$image_cleanup"
@@ -47,7 +45,6 @@ direct_ready_ok=false
 for attempt in $(seq 1 12); do
     if direct_ready="$(
         curl --fail --silent --show-error --max-time 15 \
-            --cacert "$origin_root" \
             --resolve "${school_host}:443:127.0.0.1" \
             -H "X-Schoolorbit-Release-Probe: $probe" "https://${school_host}/ready"
     )" && printf '%s' "$direct_ready" | jq -e \
@@ -72,7 +69,6 @@ if ! SMOKE_SUBDOMAIN="$smoke_subdomain" \
     SMOKE_ACADEMIC_CONTEXT=true \
     SMOKE_DIRECT_BACKEND=false \
     SMOKE_RESOLVE_IP=127.0.0.1 \
-    SMOKE_CA_CERT="$origin_root" \
     SMOKE_RELEASE_PROBE_TOKEN="$probe" \
     SMOKE_USERNAME="$SMOKE_USERNAME" \
     SMOKE_PASSWORD="$SMOKE_PASSWORD" \

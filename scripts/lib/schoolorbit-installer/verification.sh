@@ -24,15 +24,7 @@ _verify_https_json() {
     body=$(_verification_temp_file) || return
     curl_options+=("$body" --write-out '%{http_code}')
     if [[ $mode == direct ]]; then
-        [[ -r ${SO_CF_ORIGIN_ROOT_FILE-} ]] || {
-            command rm -f "$body"
-            die 78 'Verified Cloudflare Origin CA root is unavailable'
-            return
-        }
-        curl_options+=(
-            --cacert "$SO_CF_ORIGIN_ROOT_FILE"
-            --resolve "$host:443:${SO_CONFIG[target]}"
-        )
+        curl_options+=(--resolve "$host:443:${SO_CONFIG[target]}")
     fi
 
     if ! status=$(curl "${curl_options[@]}" "https://$host$path"); then

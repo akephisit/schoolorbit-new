@@ -334,3 +334,8 @@ teardown() {
     [[ "$output" == *'rollback-cockpit --run-id RUN_ID'* ]]
     [[ "$output" != *'--internal-api-secret'* ]]
 }
+
+@test "public certificate checkpoint retains fingerprint expiry and rejects private material" {
+    details=$(_state_sanitize_details '{"certificate_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","certificate_expiry":"Jan 1 00:00:00 2030 GMT","private_key":"fixture-secret","cloudflare_certificate_id":"retired"}')
+    jq -e '.certificate_fingerprint == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" and .certificate_expiry != null and (has("private_key")|not) and (has("cloudflare_certificate_id")|not)' <<<"$details"
+}

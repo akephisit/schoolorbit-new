@@ -28,6 +28,7 @@ setup() {
 
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_BOOTSTRAP_TOKEN]=cf-bootstrap-7vK9nM3qR8wX2zLp6tY4
     SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_DEPLOY_TOKEN]=cf-deploy-8wL2pN4rT7xZ5cV9mQ3s
+    SO_SECRETS[SCHOOLORBIT_CLOUDFLARE_RUNTIME_TOKEN]=cf-runtime-dns-fixture
     SO_SECRETS[INTERNAL_API_SECRET]=internal-api-7vK9nM3qR8wX2zLp
     SO_SECRETS[DEPLOY_KEY]=deploy-4rT8yP2mN6vK9xC3sL7q
     SO_SECRETS[SMOKE_USERNAME]=smoke.operator
@@ -82,7 +83,6 @@ case "$url" in
     */settings/ssl) printf "%s\n" "{\"success\":true,\"result\":{\"value\":\"strict\"}}" >"$output" ;;
     */dns_records/batch) printf "%s\n" "{\"success\":true,\"result\":{}}" >"$output" ;;
     */dns_records*) cp "$CF_DNS_FIXTURE" "$output" ;;
-    */certificates) cp "$FIXTURE_DIR/cloudflare-certificate.json" "$output" ;;
     *) printf "%s\n" "{\"success\":false,\"errors\":[{\"code\":7000,\"message\":\"unknown fake endpoint\"}]}" >"$output" ;;
 esac
 '
@@ -210,28 +210,21 @@ teardown() {
     [ "$status" -eq 78 ]
 }
 
-@test "Origin CA request uses exact hosts and keeps only certificate metadata beside memory" {
-    local csr="$TEST_ROOT/origin.csr"
-    printf '%s\n' '-----BEGIN CERTIFICATE REQUEST-----' 'fixture-csr-data' '-----END CERTIFICATE REQUEST-----' >"$csr"
-    cf_issue_origin_certificate "$csr"
-
-    jq -e '
-        .hostnames == ["admin-api.schoolorbit.app", "school-api.schoolorbit.app"] and
-        .request_type == "origin-rsa" and .requested_validity == 5475
-    ' "$CAPTURED_REQUEST_BODY"
-    [[ $CF_CERTIFICATE == *'BEGIN CERTIFICATE'* ]]
-    [ "$SO_CF_CERTIFICATE_ID" = origin-cert-123 ]
-    [ "$SO_CF_CERTIFICATE_EXPIRES" = '2041-08-02T00:00:00Z' ]
+@test "API DNS preflight rejects an additional AAAA record before cutover" {
+    jq '.result += [(.result[0] | .id="extra-ipv6" | .type="AAAA" | .content="2001:db8::1")]' "$CF_DNS_FIXTURE" >"$TEST_ROOT/ambiguous.json"
+    export CF_DNS_FIXTURE="$TEST_ROOT/ambiguous.json"
+    run cf_preflight
+    [ "$status" -eq 78 ]
 }
 
-@test "Cloudflare cutover sends one two-record proxied batch" {
+@test "Cloudflare cutover sends one two-record DNS-only batch" {
     cf_preflight
     cf_snapshot_dns
     cf_apply_dns_batch cutover
 
     run jq -e '
         .patches | length == 2 and
-        all(.[]; .content == "192.0.2.20" and .proxied == true)
+        all(.[]; .content == "192.0.2.20" and .proxied == false)
     ' "$CAPTURED_REQUEST_BODY"
     [ "$status" -eq 0 ]
 }
@@ -269,7 +262,7 @@ teardown() {
 
 @test "Cloudflare record polling requires both API records to reach the target" {
     local cutover_dns="$TEST_ROOT/cutover-dns.json"
-    jq '(.result[].content) = "192.0.2.20"' "$FIXTURE_DIR/cloudflare-dns.json" >"$cutover_dns"
+    jq '(.result[].content) = "192.0.2.20" | (.result[].proxied) = false' "$FIXTURE_DIR/cloudflare-dns.json" >"$cutover_dns"
     export CF_DNS_FIXTURE=$cutover_dns
     cf_preflight
 
@@ -280,7 +273,7 @@ teardown() {
     local cutover_dns="$TEST_ROOT/cutover-state.json"
     cf_preflight
     cf_snapshot_dns
-    jq '(.result[].content) = "192.0.2.20"' "$FIXTURE_DIR/cloudflare-dns.json" >"$cutover_dns"
+    jq '(.result[].content) = "192.0.2.20" | (.result[].proxied) = false' "$FIXTURE_DIR/cloudflare-dns.json" >"$cutover_dns"
     export CF_DNS_FIXTURE=$cutover_dns
 
     cf_assert_cutover_state
@@ -292,25 +285,25 @@ teardown() {
     [ "$status" -eq 78 ]
 }
 
-@test "proxied DNS polling accepts Cloudflare addresses and rejects the origin address" {
-    make_fake_command getent 'printf "%s %s\n" "203.0.113.41" "STREAM fake"'
-    cf_wait_for_proxy_resolution 192.0.2.20
-
+@test "DNS-only polling accepts only the exact target and rejects Cloudflare addresses" {
     make_fake_command getent 'printf "%s %s\n" "192.0.2.20" "STREAM fake"'
-    run cf_wait_for_proxy_resolution 192.0.2.20
+    cf_wait_for_target_resolution
+
+    make_fake_command getent 'printf "%s %s\n" "203.0.113.41" "STREAM fake"'
+    run cf_wait_for_target_resolution
     [ "$status" -eq 75 ]
 }
 
 @test "provider failure fixture performs one poll without retry backoff" {
     make_fake_command getent '
-printf "%s %s\n" "192.0.2.20" "STREAM fake"
+printf "%s %s\n" "203.0.113.41" "STREAM fake"
 printf "%s\n" getent >>"$FAKE_COMMAND_LOG"
 '
     sleep() {
         printf 'sleep %s\n' "$*" >>"$FAKE_COMMAND_LOG"
     }
 
-    run cf_wait_for_proxy_resolution 192.0.2.20
+    run cf_wait_for_target_resolution
 
     [ "$status" -eq 75 ]
     [ "$(grep -c '^getent$' "$FAKE_COMMAND_LOG")" -eq 1 ]

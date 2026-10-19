@@ -16,6 +16,9 @@ on:
           - cache-benchmark
           - compiler-cache-diagnostic
           - http-benchmark
+          - migrate-api-tls
+          - api-dns-only
+          - rollback-api-dns
       request_id:
         description: Exact provisioning request identifier
         type: string
@@ -41,6 +44,25 @@ permissions:
   actions: read
   packages: write
 jobs:
+  api-dns:
+    if: (inputs.operation == 'api-dns-only' || inputs.operation == 'rollback-api-dns') && github.ref == 'refs/heads/main'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/api-tls.yml
+    with:
+      mode: ${{ inputs.operation == 'api-dns-only' && 'dns-only' || 'dns-rollback' }}
+      rollback_id: ${{ fromJson(inputs.options).rollback_id || '' }}
+    secrets: inherit
+  migrate-api-tls:
+    if: inputs.operation == 'migrate-api-tls' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/api-tls.yml
+    with:
+      mode: migrate-origin-ca
+    secrets: inherit
   recreate-admin-frontend:
     if: inputs.operation == 'recreate-admin-frontend' && github.ref == 'refs/heads/main'
     concurrency:

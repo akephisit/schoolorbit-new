@@ -14,8 +14,10 @@ maintenance workflow call that same owner. Use the official Certbot DNS Cloudfla
 runtime; no privileged package installation or independent host renewal timer is
 needed. Certbot state and private logs remain under `/opt/stack/acme` with private
 permissions. A credential arrives through protected stdin or SSH environment and
-exists only in a temporary mode-0600 credentials file. Never persist a deployment
-token in application environment, checkpoints or certificate state.
+exists only in a temporary mode-0600 credentials file on the server user runtime tmpfs. Never persist a deployment
+token in application environment, checkpoints or certificate state. The Actions secret
+`API_TLS_CLOUDFLARE_TOKEN` reuses the existing runtime DNS provisioning capability;
+a dedicated zone-restricted DNS token is preferred when available.
 
 Keep the Nginx `schoolorbit-origin.pem` and `schoolorbit-origin.key` interfaces.
 They identify this origin's certificate, regardless of issuer. Export Certbot's

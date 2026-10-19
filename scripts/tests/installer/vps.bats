@@ -190,57 +190,26 @@ teardown() {
     ! grep -Fq 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' "$FAKE_COMMAND_LOG"
 }
 
-@test "Origin TLS verifies the pinned root and streams certificate key and root modes" {
-    make_fake_command curl '
+@test "public TLS delegates to the rootless owner with token only in protected stdin" {
+    make_fake_command ssh '
 set -eu
-output=
-while [ "$#" -gt 0 ]; do
-    case "$1" in
-        --output) output=$2; shift 2 ;;
-        *) shift ;;
-    esac
-done
-printf "%s\n" "fixture-cloudflare-origin-root" >"$output"
-'
-    make_fake_command openssl '
-set -eu
-case "${1-}" in
-    req)
-        while [ "$#" -gt 0 ]; do
-            case "$1" in
-                -keyout) key=$2; shift 2 ;;
-                -out) csr=$2; shift 2 ;;
-                *) shift ;;
-            esac
-        done
-        printf "%s\n" "fixture-tls-private-key" >"$key"
-        printf "%s\n" "fixture-csr" >"$csr"
+printf "ssh %s\n" "$*" >>"$FAKE_COMMAND_LOG"
+cat >"$TEST_ROOT/tls-last-stdin"
+case "$*" in
+    *"api-tls.sh stage"*)
+        cp "$TEST_ROOT/tls-last-stdin" "$TEST_ROOT/tls-credentials-input"
+        cat <<JSON
+{"fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","certificate_expiry":"Jan 1 00:00:00 2030 GMT"}
+JSON
         ;;
-    verify) exit 0 ;;
-    x509)
-        case "$*" in *-pubkey*) printf "%s\n" "fixture-public-key" ;; *) exit 0 ;; esac
-        ;;
-    pkey) printf "%s\n" "fixture-key-der" ;;
+    *"api-tls.sh activate"*) exit 0 ;;
 esac
 '
-    make_fake_command sha256sum '
-if [ "$#" -gt 0 ]; then
-    printf "%s  %s\n" "91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae" "$1"
-else
-    cat >/dev/null
-    printf "%s  -\n" "fixture-key-hash"
-fi
-'
-    cf_issue_origin_certificate() {
-        CF_CERTIFICATE=$'-----BEGIN CERTIFICATE-----\nfixture-certificate\n-----END CERTIFICATE-----'
-    }
-
     vps_issue_and_install_tls
-
-    [ -r "$SO_CF_ORIGIN_ROOT_FILE" ]
-    grep -Fq 'schoolorbit-origin.pem 0644' "$FAKE_COMMAND_LOG"
-    grep -Fq 'schoolorbit-origin.key 0600' "$FAKE_COMMAND_LOG"
-    grep -Fq 'cloudflare-origin-rsa-root.pem 0644' "$FAKE_COMMAND_LOG"
-    run grep -F 'fixture-tls-private-key' "$FAKE_COMMAND_LOG"
-    [ "$status" -eq 1 ]
+    [ "$SO_TLS_CERTIFICATE_FINGERPRINT" = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]
+    jq -e '.cloudflare_token == "runtime-only-value"' "$TEST_ROOT/tls-credentials-input"
+    grep -Fq 'schoolorbit@192.0.2.20' "$FAKE_COMMAND_LOG"
+    grep -Fq 'api-tls.sh stage' "$FAKE_COMMAND_LOG"
+    ! grep -Fq runtime-only-value "$FAKE_COMMAND_LOG"
+    ! grep -Fq must-not-reach-vps "$FAKE_COMMAND_LOG"
 }

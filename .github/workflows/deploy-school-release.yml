@@ -99,14 +99,12 @@ jobs:
         run: |
           bash scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh \
             "$TARGET_ORIGIN_IP" \
-            "$BASE_DOMAIN" \
-            "$RUNNER_TEMP/cloudflare-origin-rsa-root.pem"
+            "$BASE_DOMAIN"
       - name: Fetch active school list
         id: fetch-schools
         env:
           BACKEND_ADMIN_URL: ${{ vars.BACKEND_ADMIN_URL }}
           INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
-          CURL_CA_BUNDLE: ${{ steps.origin-routing.outputs.origin_ca_root }}
         run: bash scripts/discover_school_tenants.sh
       - name: Require at least one active school
         env:
@@ -455,7 +453,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template,scripts/lib/pipeline-remote
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template,scripts/lib/pipeline-remote
           target: /opt/stack/deployment
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5

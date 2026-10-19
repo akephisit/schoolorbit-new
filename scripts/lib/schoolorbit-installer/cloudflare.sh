@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 
 CF_API_BASE_URL=${CF_API_BASE_URL:-https://api.cloudflare.com/client/v4}
-CF_CERTIFICATE=
 SO_CF_ZONE_ID=
 SO_CF_ACCOUNT_ID=
 SO_CF_ADMIN_RECORD_ID=
 SO_CF_SCHOOL_RECORD_ID=
-SO_CF_CERTIFICATE_ID=
-SO_CF_CERTIFICATE_EXPIRES=
 SO_CF_DNS_RECORDS=
 SO_DNS_SNAPSHOT=
 SO_DNS_SNAPSHOT_ETAG=
@@ -130,55 +127,6 @@ cf_preflight() {
     _cf_refresh_dns
 }
 
-cf_issue_origin_certificate() {
-    local csr_file=$1 request response admin_host school_host
-    [[ -r $csr_file ]] || die 64 'Origin certificate CSR is not readable' || return
-    request=$(_cf_temporary_file) || return
-    response=$(_cf_temporary_file) || {
-        command rm -f "$request"
-        return
-    }
-    admin_host="admin-api.${SO_CONFIG[base_domain]}"
-    school_host="school-api.${SO_CONFIG[base_domain]}"
-    jq -n \
-        --arg admin_host "$admin_host" \
-        --arg school_host "$school_host" \
-        --rawfile csr "$csr_file" \
-        '{hostnames:[$admin_host,$school_host],request_type:"origin-rsa",requested_validity:5475,csr:$csr}' \
-        >"$request"
-    if ! _cf_request POST /certificates "$response" "$request"; then
-        command rm -f "$request" "$response"
-        return 69
-    fi
-    command rm -f "$request"
-
-    if ! jq -e --arg admin "$admin_host" --arg school "$school_host" '
-        (.result.hostnames | index($admin)) != null and
-        (.result.hostnames | index($school)) != null and
-        (.result.certificate | startswith("-----BEGIN CERTIFICATE-----"))
-    ' "$response" >/dev/null; then
-        command rm -f "$response"
-        die 78 'Origin certificate response does not contain both requested hosts'
-        return
-    fi
-    # shellcheck disable=SC2034 # Kept in memory for the VPS TLS installation phase.
-    CF_CERTIFICATE=$(jq -er '.result.certificate' "$response") || {
-        command rm -f "$response"
-        return 69
-    }
-    # shellcheck disable=SC2034 # Metadata is consumed by orchestration checkpoints.
-    SO_CF_CERTIFICATE_ID=$(jq -er '.result.id' "$response") || {
-        command rm -f "$response"
-        return 69
-    }
-    # shellcheck disable=SC2034
-    SO_CF_CERTIFICATE_EXPIRES=$(jq -er '.result.expires_on' "$response") || {
-        command rm -f "$response"
-        return 69
-    }
-    command rm -f "$response"
-}
-
 _cf_dns_etag() {
     printf '%s' "$1" | sha256sum | awk '{print $1}'
 }
@@ -227,7 +175,7 @@ cf_assert_cutover_state() {
     [[ -n $SO_DNS_SNAPSHOT ]] || die 78 'Cloudflare DNS snapshot is missing' || return
     _cf_refresh_dns || return
     local expected current
-    expected=$(jq -c --arg target "${SO_CONFIG[target]}" '[.[] | {id,type,name,content:$target,ttl,proxied:true}] | sort_by(.name)' <<<"$SO_DNS_SNAPSHOT")
+    expected=$(jq -c --arg target "${SO_CONFIG[target]}" '[.[] | {id,type,name,content:$target,ttl,proxied:false}] | sort_by(.name)' <<<"$SO_DNS_SNAPSHOT")
     current=$(jq -c '[.[] | {id,type,name,content,ttl,proxied}] | sort_by(.name)' <<<"$SO_CF_DNS_RECORDS")
     [[ $current == "$expected" ]] || die 78 'Cloudflare API records do not match the verified cutover state'
 }
@@ -258,7 +206,7 @@ cf_apply_dns_batch() {
                 return
             }
             patches=$(jq -c --arg target "${SO_CONFIG[target]}" \
-                '[.[] | {id,type,name,content:$target,ttl,proxied:true}]' <<<"$SO_DNS_SNAPSHOT")
+                '[.[] | {id,type,name,content:$target,ttl,proxied:false}]' <<<"$SO_DNS_SNAPSHOT")
             ;;
         rollback)
             patches=$(jq -c '[.[] | {id,type,name,content,ttl,proxied}]' <<<"$SO_DNS_SNAPSHOT")
@@ -292,16 +240,43 @@ cf_wait_for_record_content() {
     return 75
 }
 
-_cf_proxy_hosts_resolve() {
+_cf_wait_for_resolution() {
+    # Previous proxied answers may remain cached for five minutes. Bound the
+    # propagation window to six minutes without exponential multi-hour retries.
+    local attempt attempts=${SO_PROVIDER_POLL_ATTEMPTS:-120} delay=${SO_PROVIDER_POLL_DELAY:-3}
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        "$@" && return 0
+        ((attempt == attempts)) || sleep "$delay"
+    done
+    return 75
+}
+
+_cf_target_hosts_resolve() {
     local target_ip=$1 host addresses
     for host in "admin-api.${SO_CONFIG[base_domain]}" "school-api.${SO_CONFIG[base_domain]}"; do
         addresses=$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u) || return 1
-        [[ -n $addresses ]] || return 1
-        ! grep -Fxq "$target_ip" <<<"$addresses" || return 1
+        [[ $addresses == "$target_ip" ]] || return 1
     done
 }
 
-cf_wait_for_proxy_resolution() {
-    local target_ip=${1:-${SO_CONFIG[target]}}
-    retry "${SO_PROVIDER_POLL_ATTEMPTS:-20}" "${SO_PROVIDER_POLL_DELAY:-3}" _cf_proxy_hosts_resolve "$target_ip"
+cf_wait_for_target_resolution() {
+    _cf_wait_for_resolution _cf_target_hosts_resolve "${SO_CONFIG[target]}"
+}
+
+_cf_snapshot_hosts_resolve() {
+    local host origin proxied addresses
+    while IFS='|' read -r host origin proxied; do
+        addresses=$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u) || return 1
+        [[ -n $addresses ]] || return 1
+        if [[ $proxied == true ]]; then
+            ! grep -Fxq "$origin" <<<"$addresses" || return 1
+            ! grep -Fxq "${SO_CONFIG[target]}" <<<"$addresses" || return 1
+        else
+            [[ $addresses == "$origin" ]] || return 1
+        fi
+    done < <(jq -r '.[] | [.name,.content,(.proxied|tostring)] | join("|")' <<<"$SO_DNS_SNAPSHOT")
+}
+
+cf_wait_for_snapshot_resolution() {
+    _cf_wait_for_resolution _cf_snapshot_hosts_resolve
 }

@@ -105,9 +105,9 @@ _phase_bootstrap_apply() {
 _phase_tls_apply() {
     vps_issue_and_install_tls || return
     SO_PHASE_DETAILS=$(jq -cn \
-        --arg certificate_id "$SO_CF_CERTIFICATE_ID" \
-        --arg expiry "$SO_CF_CERTIFICATE_EXPIRES" \
-        '{cloudflare_certificate_id:$certificate_id,certificate_expiry:$expiry}')
+        --arg certificate_id "$SO_TLS_CERTIFICATE_FINGERPRINT" \
+        --arg expiry "$SO_TLS_CERTIFICATE_EXPIRES" \
+        '{certificate_fingerprint:$certificate_id,certificate_expiry:$expiry}')
 }
 
 _phase_deploy_apply() {
@@ -116,7 +116,7 @@ _phase_deploy_apply() {
         pipeline.yml
     )
     SO_WORKFLOW_RUNS='[]'
-    vps_create_deployment_key || return
+    [[ -n ${SO_SECRETS[SSH_PRIVATE_KEY]-} ]] || vps_create_deployment_key || return
     github_configure_repository || return
     for workflow in "${workflows[@]}"; do
         github_dispatch_and_wait "$workflow" "$SO_RUN_ID" || return
@@ -131,16 +131,14 @@ _phase_deploy_apply() {
 }
 
 _phase_origin_verify_apply() {
-    vps_prepare_verified_origin_root || return
-    verify_direct_origin || return
-    vps_cleanup_tls_material
+    verify_direct_origin
 }
 
 _print_cutover_diff() {
     local mode=$1
     case "$mode" in
         cutover)
-            jq -r --arg target "${SO_CONFIG[target]}" '.[] | "\(.name): \(.content) -> \($target) (proxied=true)"' <<<"$SO_DNS_SNAPSHOT"
+            jq -r --arg target "${SO_CONFIG[target]}" '.[] | "\(.name): \(.content) -> \($target) (proxied=false)"' <<<"$SO_DNS_SNAPSHOT"
             ;;
         rollback)
             jq -r --arg target "${SO_CONFIG[target]}" '.[] | "\(.name): \($target) -> \(.content) (proxied=\(.proxied))"' <<<"$SO_DNS_SNAPSHOT"
@@ -156,9 +154,9 @@ _phase_cutover_gate_apply() {
 _phase_dns_cutover_apply() {
     cf_apply_dns_batch cutover || return
     cf_wait_for_record_content "${SO_CONFIG[target]}" || return
-    cf_wait_for_proxy_resolution "${SO_CONFIG[target]}" || return
+    cf_wait_for_target_resolution || return
     cf_assert_cutover_state || return
-    SO_PHASE_DETAILS=$(jq -cn --arg target "${SO_CONFIG[target]}" '{target_ip:$target,verification_codes:["dns_api_target","proxy_resolved"]}')
+    SO_PHASE_DETAILS=$(jq -cn --arg target "${SO_CONFIG[target]}" '{target_ip:$target,verification_codes:["dns_api_target","dns_resolved"]}')
 }
 
 _phase_public_verify_apply() {
@@ -219,7 +217,7 @@ _print_handoff() {
     info "Migration run: $SO_RUN_ID"
     info "Checkpoint: $SO_STATE_FILE"
     jq -r '.[] | "Workflow \(.workflow): \(.url)"' <<<"$SO_WORKFLOW_RUNS" | while IFS= read -r line; do info "$line"; done
-    info "Origin certificate: $SO_CF_CERTIFICATE_ID (expires $SO_CF_CERTIFICATE_EXPIRES)"
+    info "Origin certificate: $SO_TLS_CERTIFICATE_FINGERPRINT (expires $SO_TLS_CERTIFICATE_EXPIRES)"
     info "Origin IP: $SO_DNS_ORIGINAL_IP -> ${SO_CONFIG[target]}"
     info 'Deployment gates: runtime=true, frontend=true'
     _print_management_handoff
@@ -256,8 +254,8 @@ _restore_checkpoint_outputs() {
     fi
     if state_phase_done tls; then
         tls_details=$(jq -c '.phases.tls' "$SO_STATE_FILE")
-        SO_CF_CERTIFICATE_ID=$(jq -r '.cloudflare_certificate_id' <<<"$tls_details")
-        SO_CF_CERTIFICATE_EXPIRES=$(jq -r '.certificate_expiry' <<<"$tls_details")
+        SO_TLS_CERTIFICATE_FINGERPRINT=$(jq -r '.certificate_fingerprint' <<<"$tls_details")
+        SO_TLS_CERTIFICATE_EXPIRES=$(jq -r '.certificate_expiry' <<<"$tls_details")
     fi
     if state_phase_done deploy; then
         deploy_details=$(jq -c '.phases.deploy' "$SO_STATE_FILE")
@@ -359,7 +357,7 @@ _phase_reverify() {
         tls) vps_reverify_tls ;;
         deploy) github_runs_succeeded "$SO_WORKFLOW_RUNS" ;;
         origin-verify)
-            vps_prepare_verified_origin_root && verify_direct_origin && vps_cleanup_tls_material
+            verify_direct_origin
             ;;
         cutover-gate)
             state_phase_done dns-cutover && return 0
@@ -520,13 +518,13 @@ run_dns_rollback() {
     confirm_exact "ROLLBACK $SO_DNS_ORIGINAL_IP" "Type ROLLBACK $SO_DNS_ORIGINAL_IP to restore DNS: " || die 64 'DNS rollback was not confirmed' || return
     cf_apply_dns_batch rollback || return
     cf_wait_for_record_content "$SO_DNS_ORIGINAL_IP" || return
-    cf_wait_for_proxy_resolution "${SO_CONFIG[target]}" || return
+    cf_wait_for_snapshot_resolution || return
     if _management_was_published; then
         cf_cockpit_restore_dns || return
         _mark_management_rollback || return
     fi
     now=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-    details=$(jq -cn --arg now "$now" --arg original "$SO_DNS_ORIGINAL_IP" '{status:"passed",completed_at:$now,original_ip:$original,verification_codes:["dns_rollback_applied","proxy_resolved"]}')
+    details=$(jq -cn --arg now "$now" --arg original "$SO_DNS_ORIGINAL_IP" '{status:"passed",completed_at:$now,original_ip:$original,verification_codes:["dns_rollback_applied","dns_resolved"]}')
     state_mark_phase dns-rollback "$details" || return
     info "DNS rollback completed for run $SO_RUN_ID. The replacement VPS and GitHub configuration were retained."
 }

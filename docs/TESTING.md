@@ -839,6 +839,7 @@ The installer Bats directory includes focused Cockpit coverage:
 
 - `cockpit_provider.bats` exercises Tunnel creation/adoption, ingress, connector IP, CNAME drift, memory-only token handling, and management rollback without deleting Tunnels;
 - `cockpit_remote.bats` executes the remote configurator against an isolated filesystem and checks loopback-only listening, root prohibition, mode-`0600` token storage, pinned amd64/arm64 cloudflared artifacts, and idempotency;
+- `api_tls_remote.bats` executes the shared certificate owner with synthetic CA/key fixtures for public-chain validation, credential cleanup, staged activation, interrupted-link repair and reload rollback; `pipeline-api-tls.test.mjs` covers latest-attempt gates and queued-runtime refusal;
 - `vps.bats` verifies separate SSH stdin streams for the tracked script and secret JSON plus a fresh verification session;
 - `orchestration.bats` verifies phase ordering, dry-run mutation absence, publish journaling, resume, standalone rollback, and full migration rollback.
 
@@ -1129,10 +1130,10 @@ SMOKE_PASSWORD='provided-at-runtime' \
 
 Alternatively, copy `.env.smoke.example` to the ignored `.env.smoke.local`. The script loads that file by default; `SMOKE_ENV_FILE` can point elsewhere. Credentials must come from `SMOKE_*` environment variables or the ignored environment file and must never be committed.
 
-When `SMOKE_RESOLVE_IP` pins the API hostnames directly to an origin that uses a Cloudflare Origin
-CA certificate, set `SMOKE_CA_CERT` to the readable pinned CA file. The option applies only to
-admin/school API requests; the tenant frontend request continues to use the normal public trust
-store.
+When `SMOKE_RESOLVE_IP` pins production API hostnames directly to their origin, use the normal
+system CA store. Both APIs must present a publicly trusted certificate with the intended names;
+production checks never supply `SMOKE_CA_CERT` or `--insecure`. `SMOKE_CA_CERT` remains available
+only for explicit synthetic local TLS fixtures and applies to API requests, not the tenant frontend.
 
 If credentials are absent, authenticated checks are skipped. Report that limitation rather than describing the smoke suite as fully passing.
 
