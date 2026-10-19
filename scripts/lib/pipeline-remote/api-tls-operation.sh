@@ -2,7 +2,7 @@
 set -euo pipefail
 
 mode=${1:?Operation is required}
-case "$mode" in renew | migrate-origin-ca) ;; *) exit 64 ;; esac
+case "$mode" in renew) ;; *) exit 64 ;; esac
 : "${SMOKE_USERNAME:?Authenticated smoke username is required}"
 : "${SMOKE_PASSWORD:?Authenticated smoke password is required}"
 unset PREPARED_IMAGES
@@ -74,18 +74,14 @@ if [[ $resuming == false ]]; then
 fi
 unset API_TLS_CLOUDFLARE_TOKEN
 test "$(cat "$root/accepted-release")" = "$accepted"
-if [[ $mode == migrate-origin-ca ]] && ! bash "$owner" status >/dev/null 2>&1; then
-    bash "$maintenance" enter-origin-ca-migration
-else
-    bash "$maintenance" enter
-fi
+bash "$maintenance" enter
 write_phase maintenance
 if [[ $fingerprint != "$before" ]]; then
     bash "$owner" activate "$fingerprint" >/dev/null
 fi
 write_phase activated
 bash "$owner" status >/dev/null
-# These calls use system trust exclusively, including the initial migration.
+# Renewal and recovery use system trust exclusively.
 bash "$maintenance" verify
 write_phase verified
 bash "$maintenance" accept

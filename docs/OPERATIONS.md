@@ -965,16 +965,9 @@ reopening the exact accepted application release. Nginx keeps its existing certi
 its complete SSL-directory mount exposes the relative generation links on reload. TLS does not
 publish application baselines or change frontend versions.
 
-For the initial Cloudflare Origin CA replacement only, disable both automatic rollout gates before
-integrating the prepared change, verify exact-main Pipeline planning and every selected build,
-then run the explicit `migrate-api-tls` Operations task on main. It stages first, uses the
-hash-pinned old CA solely for verified maintenance entry, activates the public certificate, and
-uses system trust for every subsequent readiness and authenticated check. Run the normal prepared
-Pipeline immediately afterward. Verify direct HTTPS to both API hostnames without `--cacert` or
-`--insecure` before changing ONLY their exact A records to `proxied:false`, after refreshing the
-DNS snapshot and rejecting additional AAAA/CNAME records or drift. Recheck public readiness and
-authenticated full academic-context smoke, restore automatic gates and retire the one-time trust
-bridge after acceptance. Apex, wildcard, tenant Workers and `server.schoolorbit.app` stay proxied.
+Both API hosts use publicly trusted certificates and DNS-only A records. Verify direct HTTPS
+with the intended hostnames and system CA trust before an origin change. Apex, wildcard, tenant
+Workers and `server.schoolorbit.app` remain proxied.
 
 For an existing VPS after the normal Pipeline passes, use the serialized API-only DNS operation:
 
@@ -1029,14 +1022,14 @@ active. On later acceptance failure the new valid pair remains with maintenance 
 same serialized TLS operation to resume its private journal, bound to the accepted application SHA,
 operation mode, staged fingerprint and UUID. Only its owned pending-release link permits that
 recovery; an unrelated pending application release must use the normal Pipeline. A retry after
-activation still completes public verification and acceptance. An interrupted first migration can
-re-enter old trust only before a public certificate is active; subsequent entry uses public trust.
+activation still completes public verification and acceptance. Every renewal and recovery check
+uses system CA trust.
 Existing and reused exported private keys must retain server-user ownership and mode 0600.
 DNS-only operational preflight needs zone/DNS access without SSL Settings Read; installer bootstrap
 retains its separate Full (strict) settings check. Keep previous private generations
-and DNS snapshots until the rollback window is explicitly closed. Never restore an untrusted
-Origin CA certificate while either API is DNS only. DNS rollback must restore the snapshot's
-original proxy flags before that old-certificate recovery could be used. Private ACME logs on the
+and DNS snapshots until the rollback window is explicitly closed. Certificate recovery must retain
+a valid publicly trusted chain for both API hostnames. DNS rollback changes only the snapshotted
+record fields and does not authorize restoring an untrusted certificate. Private ACME logs on the
 VPS explain issuance failures; workflow logs deliberately contain only bounded status.
 
 ## School homepage search indexing

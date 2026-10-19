@@ -256,8 +256,8 @@ Installer ตั้ง GitHub secret `API_TLS_CLOUDFLARE_TOKEN` จาก runtim
 ควรใช้ dedicated token ที่จำกัด Zone DNS Edit ใน zone นี้เมื่อมี. ห้ามเก็บ bootstrap/deploy token
 สำหรับ ACME บน VPS. Maintenance workflow ต่ออายุทุกวันภายใต้ production lock เดิมและตรวจทั้ง
 สอง API ด้วย system CA trust ก่อนเปิด maintenance. รักษา Cloudflare `Full (strict)` สำหรับ
-frontend/management ที่ยัง proxied และทำตาม [Operations](./OPERATIONS.md) สำหรับ initial
-Origin CA migration, renewal และ recovery. Checkpoint บันทึก `certificate_fingerprint` และ
+frontend/management ที่ยัง proxied และทำตาม [Operations](./OPERATIONS.md) สำหรับ renewal
+และ recovery ด้วย system CA trust. Checkpoint บันทึก `certificate_fingerprint` และ
 `certificate_expiry` โดยไม่เก็บ private key.
 
 ### Nginx configuration
