@@ -25347,6 +25347,7 @@ export interface components {
 		TimetableBlockGroup: {
 			code: string;
 			homeroomIds: string[];
+			homeroomNames: string[];
 			/** Format: uuid */
 			id: string;
 			instructors: components['schemas']['TimetableBlockInstructor'][];

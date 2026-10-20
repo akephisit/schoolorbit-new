@@ -99,3 +99,35 @@ export function buildSchedulerTargetLabel(
 	}
 	return unique(block.groups.map((group) => group.name)).join(', ') || null;
 }
+
+/** Staff self-service shows real classes only within the teacher's returned assignment scope. */
+export function buildStaffOwnTimetableBlockDisplay(
+	block: TimetableBlock,
+	currentStaffId: string
+): { classLabel: string | null; roomLabel: string | null } {
+	if (block.blockKind === 'structural') return { classLabel: null, roomLabel: null };
+	const synchronized = block.schedulingMode === 'synchronized';
+	const groups = synchronized
+		? block.groups.filter((group) =>
+				group.instructors.some((teacher) => teacher.teacherId === currentStaffId)
+			)
+		: block.groups;
+	const homerooms = synchronized ? [] : block.homerooms;
+	if (synchronized && groups.length === 0) return { classLabel: null, roomLabel: null };
+	const classNames = unique(
+		[
+			...groups.flatMap((group) => group.homeroomNames),
+			...homerooms.map((homeroom) => homeroom.name)
+		].map((name) => name.trim())
+	);
+	const roomNames = unique([
+		...groups.map((group) => group.roomName?.trim() || (group.roomId ? 'ไม่พบชื่อห้อง' : null)),
+		...homerooms.map(
+			(homeroom) => homeroom.roomName?.trim() || (homeroom.roomId ? 'ไม่พบชื่อห้อง' : null)
+		)
+	]);
+	return {
+		classLabel: classNames.join(', ') || null,
+		roomLabel: roomNames.join(', ') || 'ไม่ระบุห้อง'
+	};
+}

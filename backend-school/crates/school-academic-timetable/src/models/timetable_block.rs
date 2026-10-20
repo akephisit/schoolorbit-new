@@ -103,6 +103,7 @@ pub struct TimetableBlockGroup {
     pub code: String,
     pub name: String,
     pub homeroom_ids: Vec<Uuid>,
+    pub homeroom_names: Vec<String>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub room_id: Option<Uuid>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]

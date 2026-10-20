@@ -466,6 +466,8 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .await
         .expect("ordinary placement must succeed");
     assert_eq!(block.groups.len(), 1);
+    assert!(block.groups[0].homeroom_ids.is_empty());
+    assert!(block.groups[0].homeroom_names.is_empty());
     assert_eq!(block.groups[0].room_id, Some(preferred_room_id));
     assert_eq!(
         block.groups[0].room_name.as_deref(),
@@ -571,6 +573,57 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     .expect("one-period drag must move the canonical block with its exact instructors");
     assert_eq!(moved.day_of_week, "TUE");
     assert_eq!(moved.groups[0].instructors[0].teacher_id, teacher_id);
+
+    let mut homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 2",
+    )
+    .bind(year_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(homeroom_ids.len(), 2);
+    homeroom_ids.reverse();
+    for (id, name) in homeroom_ids.iter().zip(["ม.4/1", "ม.3/2"]) {
+        sqlx::query("UPDATE homerooms SET name=$2 WHERE id=$1")
+            .bind(id)
+            .bind(name)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    // Stored coverage, rather than the current delivery group or its display name,
+    // remains authoritative for a placed block, including an inactive homeroom.
+    sqlx::query("UPDATE homerooms SET is_active=false WHERE id=$1")
+        .bind(homeroom_ids[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stored_ids = vec![homeroom_ids[0], homeroom_ids[1], homeroom_ids[0]];
+    sqlx::query("UPDATE academic_timetable_block_groups SET homeroom_ids=$2 WHERE id=$1")
+        .bind(moved.groups[0].id)
+        .bind(&stored_ids)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let own_blocks =
+        timetable_block_service::list_instructor_blocks(&pool, version_id, term_id, teacher_id)
+            .await
+            .unwrap();
+    assert_eq!(own_blocks.len(), 1);
+    assert_eq!(own_blocks[0].id, moved.id);
+    assert_eq!(own_blocks[0].groups.len(), 1);
+    assert_eq!(own_blocks[0].groups[0].name, "กลุ่มทดสอบตารางสอน");
+    assert_eq!(own_blocks[0].groups[0].homeroom_ids, stored_ids);
+    assert_eq!(
+        own_blocks[0].groups[0].homeroom_names,
+        vec!["ม.4/1", "ม.3/2"]
+    );
+    assert!(
+        timetable_block_service::list_instructor_blocks(&pool, version_id, term_id, actor_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

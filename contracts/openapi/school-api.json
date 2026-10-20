@@ -63256,6 +63256,12 @@
             },
             "type": "array"
           },
+          "homeroomNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -63321,6 +63327,7 @@
           "code",
           "name",
           "homeroomIds",
+          "homeroomNames",
           "roomId",
           "roomCode",
           "roomName",

@@ -177,6 +177,7 @@ export function makeTimetableBlock(
 				code: groupId === timetableIds.groupA ? 'M1-1-A' : 'M1-1-B',
 				name: groupId === timetableIds.groupA ? 'ม.1/1 คณิตศาสตร์' : 'ม.1/1 วิทยาศาสตร์',
 				homeroomIds: [timetableIds.homeroom],
+				homeroomNames: ['ม.1/1'],
 				instructors: instructors(options.instructorIds ?? [timetableIds.teacherA]),
 				roomId,
 				roomCode,
