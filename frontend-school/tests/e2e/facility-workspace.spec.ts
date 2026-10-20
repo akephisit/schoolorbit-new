@@ -493,7 +493,9 @@ for (const action of ['update', 'delete'] as const) {
 				.evaluate((element) => (element as HTMLFormElement).requestSubmit());
 		} else {
 			dialog = page.getByRole('alertdialog');
-			await expect(dialog.getByRole('button', { name: 'กำลังลบ...', exact: true })).toBeDisabled();
+			await expect(
+				dialog.getByRole('button', { name: 'รอรายการก่อนหน้า...', exact: true })
+			).toBeDisabled();
 		}
 		expect(api.count('mutation')).toBe(1);
 		api.release();

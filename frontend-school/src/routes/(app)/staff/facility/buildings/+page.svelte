@@ -880,7 +880,12 @@
 							onclick={(event) => {
 								event.preventDefault();
 								void handleDelete();
-							}}>{submitting ? 'กำลังลบ...' : 'ยืนยันลบ'}</AlertDialog.Action
+							}}
+							>{pendingDraft === draftEpoch
+								? 'กำลังลบ...'
+								: submitting
+									? 'รอรายการก่อนหน้า...'
+									: 'ยืนยันลบ'}</AlertDialog.Action
 						></AlertDialog.Footer
 					>
 				</AlertDialog.Content>
