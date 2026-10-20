@@ -157,6 +157,15 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 
 	await fulfillJson(pendingTimetableRoute, [
 		{
+			...makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
+				code: 'ว21101',
+				name: 'วิทยาศาสตร์วันจันทร์'
+			}),
+			academicTermId: '30000000-0000-4000-8000-000000000001',
+			academicYearId: '20000000-0000-4000-8000-000000000001',
+			dayOfWeek: 'MON'
+		},
+		{
 			...makeTimetableBlock(timetableIds.blockA, timetableIds.period1),
 			academicTermId: '30000000-0000-4000-8000-000000000001',
 			academicYearId: '20000000-0000-4000-8000-000000000001',
@@ -165,7 +174,17 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	]);
 
 	await expect(downloadButton).toBeEnabled();
-	await expect(page.getByText('ค21101')).toBeVisible();
+	await expect(page.getByTestId('own-timetable-week').getByText('ค21101')).toBeVisible();
+	await page
+		.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })
+		.filter({ visible: true })
+		.getByRole('radio', { name: 'รายวัน', exact: true })
+		.click();
+	await page
+		.getByRole('radiogroup', { name: 'วันในตารางสอน' })
+		.getByRole('radio', { name: 'วันเสาร์', exact: true })
+		.click();
+	await expect(page.getByTestId('own-timetable-day').getByText('ค21101')).toBeVisible();
 
 	const downloadPromise = page.waitForEvent('download');
 	await downloadButton.click();
@@ -181,6 +200,10 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	}).replace(/\s/g, '');
 	expect(text).toContain('ตารางสอนครูสายใจวิทยา');
 	expect(text).toContain('ม.1/1');
+	expect(text).toContain('จันทร์');
+	expect(text).toContain('เสาร์');
+	expect(text).toContain('วิทยาศาสตร์วันจันทร์');
+	expect(text).toContain('คณิตศาสตร์พื้นฐาน');
 	expect(text).not.toContain('ม.1/1คณิตศาสตร์');
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();

@@ -36,49 +36,67 @@ async function fulfill(route: Route, data: unknown) {
 	});
 }
 
-async function installShell(page: Page) {
-	await page.route('**/api/**', async (route) => {
-		const url = new URL(route.request().url());
-		if (url.pathname === '/api/auth/me') {
-			await fulfill(route, {
-				id: '90000000-0000-4000-8000-000000000011',
-				username: 'exam-reader',
-				firstName: 'ทดสอบ',
-				displayName: 'ทดสอบ ตารางสอบ',
-				lastName: 'ตารางสอบ',
-				userType: 'staff',
-				status: 'ACTIVE',
-				permissions: ['*']
-			});
-			return;
-		}
-		if (url.pathname === '/api/academic/context/options') {
-			await fulfill(route, {
-				activeAcademicYearId: yearId,
-				activeAcademicTermId: termOne,
-				years: [{ id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
-				terms: [termOne, termTwo].map((id, index) => ({
-					id,
-					academicYearId: yearId,
-					name: `ภาคเรียนที่ ${index + 1}`,
-					code: String(index + 1),
-					sequence: index + 1,
-					termType: 'regular',
-					status: 'active',
-					startDate: '2026-05-01',
-					endDate: '2027-03-31',
-					includedInYearResult: true,
-					blocksYearClosure: true
-				}))
-			});
-			return;
-		}
-		if (url.pathname === '/api/menu/user') {
-			await fulfill(route, { groups: [] });
-			return;
-		}
-		await fulfill(route, []);
+async function missingWorkspace(route: Route) {
+	await route.fulfill({
+		status: 404,
+		contentType: 'application/json',
+		body: JSON.stringify({ success: false, error: 'ไม่พบรอบสอบในข้อมูลทดสอบ' })
 	});
+}
+
+async function installShell(page: Page) {
+	await page.route(
+		(url) => url.pathname.startsWith('/api/'),
+		async (route) => {
+			const url = new URL(route.request().url());
+			if (url.pathname === '/api/auth/me') {
+				await fulfill(route, {
+					id: '90000000-0000-4000-8000-000000000011',
+					username: 'exam-reader',
+					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ตารางสอบ',
+					lastName: 'ตารางสอบ',
+					userType: 'staff',
+					status: 'ACTIVE',
+					permissions: ['*']
+				});
+				return;
+			}
+			if (url.pathname === '/api/academic/context/options') {
+				await fulfill(route, {
+					activeAcademicYearId: yearId,
+					activeAcademicTermId: termOne,
+					years: [{ id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					terms: [termOne, termTwo].map((id, index) => ({
+						id,
+						academicYearId: yearId,
+						name: `ภาคเรียนที่ ${index + 1}`,
+						code: String(index + 1),
+						sequence: index + 1,
+						termType: 'regular',
+						status: 'active',
+						startDate: '2026-05-01',
+						endDate: '2027-03-31',
+						includedInYearResult: true,
+						blocksYearClosure: true
+					}))
+				});
+				return;
+			}
+			if (url.pathname === '/api/menu/user') {
+				await fulfill(route, { groups: [] });
+				return;
+			}
+			if (
+				route.request().method() === 'GET' &&
+				/^\/api\/academic\/exam-schedules\/[^/]+$/.test(url.pathname)
+			) {
+				await missingWorkspace(route);
+				return;
+			}
+			await fulfill(route, []);
+		}
+	);
 }
 
 async function navigateInApp(page: Page, href: string) {
@@ -146,23 +164,35 @@ test('round refresh retains rows and retries only its list request after failure
 });
 
 test('deleting a round locally cannot be undone by an older list response', async ({ page }) => {
+	const pageErrors: string[] = [];
+	page.on('pageerror', (error) => pageErrors.push(error.message));
 	await installShell(page);
 	const pending: Route[] = [];
 	await page.route('**/api/academic/exam-schedules?**', (route) => {
 		pending.push(route);
 	});
-	await page.route(`**/api/academic/exam-schedules/${roundId}`, (route) => fulfill(route, {}));
+	await page.route(`**/api/academic/exam-schedules/${roundId}`, async (route) => {
+		if (route.request().method() === 'DELETE') await fulfill(route, {});
+		else await route.fallback();
+	});
 	await page.goto(roundsUrl());
 	await expect.poll(() => pending.length).toBe(1);
 	await fulfill(pending[0], [round(termOne, 'รอบที่จะลบ')]);
 	await expect(page.getByText('รอบที่จะลบ')).toBeVisible();
 	await revalidatePage(page);
 	await expect.poll(() => pending.length).toBe(2);
+	const preloadResponse = page.waitForResponse(
+		(response) =>
+			new URL(response.url()).pathname === `/api/academic/exam-schedules/${roundId}` &&
+			response.request().method() === 'GET'
+	);
 	await page.getByRole('button', { name: 'ลบรอบสอบ รอบที่จะลบ' }).click();
+	await expect((await preloadResponse).status()).toBe(404);
 	await page.getByRole('button', { name: 'ลบรอบสอบถาวร' }).click();
 	await expect(page.getByText('รอบที่จะลบ')).toHaveCount(0);
 	await fulfill(pending[1], [round(termOne, 'รอบที่จะลบ')]).catch(() => undefined);
 	await expect(page.getByText('รอบที่จะลบ')).toHaveCount(0);
+	expect(pageErrors).toEqual([]);
 });
 
 test('staff schedule keeps its previous result during refresh and clears another term', async ({

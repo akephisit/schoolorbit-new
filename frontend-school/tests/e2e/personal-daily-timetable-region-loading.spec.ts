@@ -191,7 +191,7 @@ test('personal timetable starts once in the route and clears the old term before
 		makeTimetableBlock(timetableIds.blockA, timetableIds.period1, { name: 'วิชาภาคหนึ่ง' })
 	]);
 	await expect(page.getByTestId('personal-timetable-ready')).toBeVisible();
-	await expect(page.getByText('วิชาภาคหนึ่ง')).toBeVisible();
+	await expect(page.getByTestId('own-timetable-week').getByText('วิชาภาคหนึ่ง')).toBeVisible();
 
 	await page.evaluate((href) => {
 		const link = document.createElement('a');
@@ -208,7 +208,7 @@ test('personal timetable starts once in the route and clears the old term before
 	await fulfill(pending[1], [
 		makeTimetableBlock(timetableIds.blockB, timetableIds.period1, { name: 'วิชาภาคสอง' })
 	]);
-	await expect(page.getByText('วิชาภาคสอง')).toBeVisible();
+	await expect(page.getByTestId('own-timetable-week').getByText('วิชาภาคสอง')).toBeVisible();
 	expect(pending).toHaveLength(2);
 });
 
