@@ -117,6 +117,7 @@
 			</div>
 			{#if day}
 				<h2 class="shrink-0 text-sm font-semibold">วัน{day.label}</h2>
+				<!-- svelte-ignore a11y_no_noninteractive_tabindex (Native scroll regions need keyboard focus for arrow and page navigation.) -->
 				<div
 					class="min-h-0 overflow-y-auto rounded-lg border"
 					tabindex="0"
@@ -156,6 +157,7 @@
 			class={view === null ? 'min-h-0 min-w-0 flex-1 hidden md:block' : 'min-h-0 min-w-0 flex-1'}
 			data-testid="own-timetable-week"
 		>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (Native scroll regions need keyboard focus for arrow and page navigation.) -->
 			<div
 				class="max-h-full w-full min-w-0 overflow-auto rounded-lg border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				tabindex="0"
