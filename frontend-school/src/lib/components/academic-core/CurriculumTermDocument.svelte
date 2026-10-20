@@ -61,6 +61,7 @@
 										<Table.Cell class="text-xs font-semibold tabular-nums">{row.code}</Table.Cell>
 										<Table.Cell>
 											<div class="font-medium">{row.name}</div>
+											<div class="text-xs text-muted-foreground">v{row.versionNo}</div>
 											<Badge variant="secondary" class="mt-1 text-[10px]">
 												{row.requirementKind === 'required'
 													? 'บังคับ'

@@ -13,6 +13,7 @@ use crate::models::GradeLevelLookupItem;
 use super::super::models::{
     AcademicSetupWorkspace, CurriculumCatalogVersionOption, CurriculumCreateOptions,
     CurriculumLevelView, CurriculumManagementOptions, CurriculumOverview, CurriculumOverviewItem,
+    RequirementResourceKind,
 };
 use super::{bell_schedules, curriculum, years_terms};
 
@@ -120,12 +121,12 @@ pub async fn curriculum_management_options(
     require_curriculum_version_access(pool, version_id, filter).await?;
     let grade_levels = active_workspace_grade_levels(pool).await?;
     let owner_ids = filter.allowed_organization_unit_ids();
-    let catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
+    let mut catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
         r#"
-        SELECT option.id, option.resource_kind, option.code, option.name,
+        SELECT option.id, option.catalog_id, false AS selectable_for_new_requirement, option.resource_kind, option.code, option.name,
                option.version_no, option.effective_from, option.effective_until
         FROM (
-            SELECT version.id, 'course'::text AS resource_kind,
+            SELECT version.id, subject.id AS catalog_id, 'course'::text AS resource_kind,
                    subject.code, version.name_th AS name, version.version_no,
                    version.effective_from, version.effective_until
             FROM subject_versions version
@@ -133,7 +134,7 @@ pub async fn curriculum_management_options(
             WHERE version.status = 'published'
               AND ($1 OR subject.owning_organization_unit_id = ANY($2))
             UNION ALL
-            SELECT version.id, 'activity'::text AS resource_kind,
+            SELECT version.id, activity.id AS catalog_id, 'activity'::text AS resource_kind,
                    activity.code, version.name, version.version_no,
                    version.effective_from, version.effective_until
             FROM activity_versions version
@@ -150,6 +151,19 @@ pub async fn curriculum_management_options(
     .bind((MAX_CURRICULUM_CATALOG_OPTIONS + 1) as i64)
     .fetch_all(pool)
     .await?;
+    let subject_ids = catalog_versions
+        .iter()
+        .filter(|option| option.resource_kind == RequirementResourceKind::Course)
+        .map(|option| option.catalog_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current = super::catalog::current_subject_version_ids(pool, &subject_ids).await?;
+    for option in &mut catalog_versions {
+        option.selectable_for_new_requirement = option.resource_kind
+            == RequirementResourceKind::Activity
+            || current.get(&option.catalog_id) == Some(&option.id);
+    }
     ensure_workspace_size(
         catalog_versions.len(),
         MAX_CURRICULUM_CATALOG_OPTIONS,

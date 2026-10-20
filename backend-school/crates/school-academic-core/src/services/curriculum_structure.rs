@@ -34,6 +34,8 @@ struct RequirementRow {
     term_slot_id: Uuid,
     resource_kind: RequirementResourceKind,
     catalog_version_id: Uuid,
+    catalog_id: Uuid,
+    version_no: i32,
     code: String,
     name: String,
     catalog_classification: String,
@@ -127,6 +129,8 @@ pub(super) async fn get_workspace_from_publication(
                   requirement.term_slot_id,
                   'course'::text AS resource_kind,
                   requirement.subject_version_id AS catalog_version_id,
+                  subject.id AS catalog_id,
+                  version.version_no,
                   subject.code,
                   version.name_th AS name,
                   version.type AS catalog_classification,
@@ -151,6 +155,8 @@ pub(super) async fn get_workspace_from_publication(
                   requirement.term_slot_id,
                   'activity'::text AS resource_kind,
                   requirement.activity_version_id AS catalog_version_id,
+                  activity.id AS catalog_id,
+                  version.version_no,
                   activity.code,
                   version.name,
                   activity.activity_type AS catalog_classification,
@@ -259,6 +265,8 @@ pub async fn replace_program_structure(
             "แผนการเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
+
+    validate_new_subject_requirements(&mut transaction, program_id, &request.requirements).await?;
 
     validate_requirement_ownership(
         &mut transaction,
@@ -526,6 +534,78 @@ fn validate_requirement_inputs(
     Ok(())
 }
 
+async fn validate_new_subject_requirements(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    program_id: Uuid,
+    requirements: &[CurriculumStructureRequirementInput],
+) -> Result<(), AppError> {
+    let existing = sqlx::query_as::<_, (Uuid,Uuid,Uuid)>(
+        "SELECT subject_version_id,grade_level_id,term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$1",
+    ).bind(program_id).fetch_all(&mut **transaction).await?.into_iter().collect::<HashSet<_>>();
+    let courses = requirements
+        .iter()
+        .filter(|item| item.resource_kind == RequirementResourceKind::Course)
+        .collect::<Vec<_>>();
+    let mut version_ids = existing
+        .iter()
+        .map(|key| key.0)
+        .chain(courses.iter().map(|item| item.catalog_version_id))
+        .collect::<Vec<_>>();
+    version_ids.sort_unstable();
+    version_ids.dedup();
+    let subjects = sqlx::query_as::<_, (Uuid, Uuid)>(
+        "SELECT id,subject_id FROM subject_versions WHERE id=ANY($1)",
+    )
+    .bind(&version_ids)
+    .fetch_all(&mut **transaction)
+    .await?
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+    let subject_ids = subjects.values().copied().collect::<Vec<_>>();
+    super::catalog::lock_subjects_for_revision_selection(transaction, &subject_ids).await?;
+    // Read the current decision after acquiring the same stable locks used by publication.
+    let current =
+        super::catalog::current_subject_version_ids(&mut **transaction, &subject_ids).await?;
+    let mut buckets = HashMap::<(Uuid, Uuid, Uuid), (usize, bool)>::new();
+    for requirement in courses {
+        let subject_id = subjects
+            .get(&requirement.catalog_version_id)
+            .ok_or_else(subject_selection_conflict)?;
+        let preserved = existing.contains(&(
+            requirement.catalog_version_id,
+            requirement.grade_level_id,
+            requirement.term_slot_id,
+        ));
+        if !preserved && current.get(subject_id) != Some(&requirement.catalog_version_id) {
+            return Err(subject_selection_conflict());
+        }
+        let bucket = buckets
+            .entry((
+                *subject_id,
+                requirement.grade_level_id,
+                requirement.term_slot_id,
+            ))
+            .or_default();
+        bucket.0 += 1;
+        bucket.1 |= !preserved;
+    }
+    if buckets
+        .values()
+        .any(|(count, has_new)| *count > 1 && *has_new)
+    {
+        return Err(AppError::Conflict(
+            "มีรายวิชาเดียวกันซ้ำในชั้นและภาคเรียนนี้ กรุณาลบรายการเดิมก่อนเพิ่มเวอร์ชันใหม่".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn subject_selection_conflict() -> AppError {
+    AppError::Conflict(
+        "เวอร์ชันรายวิชาเปลี่ยนหรือยังไม่มีเวอร์ชันที่ใช้ได้ในวันนี้ กรุณาโหลดตัวเลือกใหม่และเลือกเวอร์ชันปัจจุบัน".into(),
+    )
+}
+
 async fn validate_requirement_ownership(
     transaction: &mut sqlx::Transaction<'_, Postgres>,
     version_id: Uuid,
@@ -686,6 +766,8 @@ fn requirement_from_row(
         term_slot_id: row.term_slot_id,
         resource_kind: row.resource_kind,
         catalog_version_id: row.catalog_version_id,
+        catalog_id: row.catalog_id,
+        version_no: row.version_no,
         code: row.code,
         name: row.name,
         section,
