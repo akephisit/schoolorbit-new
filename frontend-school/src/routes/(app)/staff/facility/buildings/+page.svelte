@@ -80,6 +80,11 @@
 			)
 		)
 	);
+	const filteredRooms = $derived(
+		rooms.filter((room) =>
+			room.name_th.toLocaleLowerCase().includes(searchTerm.trim().toLocaleLowerCase())
+		)
+	);
 	const currentBuildingPage = $derived(
 		Math.min(buildingPage, Math.max(1, Math.ceil(filteredBuildings.length / pageSize)))
 	);
@@ -91,11 +96,6 @@
 	);
 	const visibleRooms = $derived(
 		filteredRooms.slice((currentRoomPage - 1) * pageSize, currentRoomPage * pageSize)
-	);
-	const filteredRooms = $derived(
-		rooms.filter((room) =>
-			room.name_th.toLocaleLowerCase().includes(searchTerm.trim().toLocaleLowerCase())
-		)
 	);
 
 	// Dialogs
