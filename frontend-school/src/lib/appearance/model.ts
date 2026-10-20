@@ -125,7 +125,14 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	let primary = requested;
 	for (let step = 0; step <= 100; step++) {
 		primary = mix(requested, dark ? '#ffffff' : '#000000', step / 100);
-		const candidateSurfaces = [card, background, muted, ...Object.values(surfaces(primary))];
+		const candidateSurfaces = [
+			card,
+			background,
+			muted,
+			...Object.values(surfaces(primary)),
+			// Reusable low-opacity selected/status treatments can sit on neutral trays or hovered rows.
+			mix(muted, primary, 0.2)
+		];
 		if (
 			contrastRatio(primary, primaryForeground) >= 4.5 &&
 			contrastRatio(mix(primary, card, 0.1), primaryForeground) >= 4.5 &&
@@ -154,6 +161,19 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	const primaryFillBorder = controlSurfaces.some((surface) => contrastRatio(requested, surface) < 3)
 		? primary
 		: requested;
+	const statusInk = (color: string) => {
+		let candidate = color;
+		for (let step = 0; step <= 100; step++) {
+			candidate = mix(color, dark ? '#ffffff' : '#000000', step / 100);
+			if (
+				[card, muted].every(
+					(surface) => contrastRatio(candidate, mix(surface, candidate, 0.2)) >= 4.5
+				)
+			)
+				break;
+		}
+		return candidate;
+	};
 	return {
 		requested,
 		primaryFill: requested,
@@ -173,12 +193,12 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		border: dark ? '#3a4858' : '#d2dbe4',
 		input,
 		mutedForeground: dark ? '#bac5d2' : '#526174',
-		warning: dark ? '#efc37c' : '#98651b',
+		warning: statusInk(dark ? '#efc37c' : '#98651b'),
 		warningSurface: dark ? '#453d2c' : '#fcf3df',
-		destructive: dark ? '#f4a49a' : '#b54441',
+		destructive: statusInk(dark ? '#f4a49a' : '#b54441'),
 		destructiveForeground: dark ? '#39201d' : '#ffffff',
 		destructiveSurface: dark ? '#4a3531' : '#fbecea',
-		success: dark ? '#91d4ac' : '#276442',
+		success: statusInk(dark ? '#91d4ac' : '#276442'),
 		successSurface: dark ? '#243c2d' : '#e9f3eb'
 	};
 }

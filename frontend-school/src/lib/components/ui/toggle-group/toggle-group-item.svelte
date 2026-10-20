@@ -15,7 +15,7 @@
 	data-slot="toggle-group-item"
 	class={cn(
 		buttonVariants({ variant: 'outline', size: 'sm' }),
-		'data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground data-[state=on]:border-primary data-[state=on]:font-semibold data-[state=on]:shadow-[inset_0_-2px_0_var(--primary)] data-[state=on]:hover:bg-secondary',
+		'data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground data-[state=on]:border-primary data-[state=on]:font-semibold data-[state=on]:shadow-[inset_0_-2px_0_currentColor]',
 		className
 	)}
 	{...restProps}

@@ -2,6 +2,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Plugin } from 'vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { publicSchoolStatistics } from './public-school-server';
 import {
 	DEFAULT_APPEARANCE,
 	type SchoolAppearanceResponse
@@ -76,9 +77,11 @@ export async function startSchoolAppearanceServer() {
 					);
 				return;
 			}
-			const data = pathname.endsWith('/organization')
-				? { units: [] }
-				: { schoolName: 'โรงเรียนรูปแบบทดสอบ', logoFileId: null };
+			const data = pathname.endsWith('/statistics')
+				? publicSchoolStatistics
+				: pathname.endsWith('/organization')
+					? { units: [] }
+					: { schoolName: 'โรงเรียนรูปแบบทดสอบ', logoFileId: null };
 			res.end(JSON.stringify({ success: true, data }));
 		};
 		if (pathname.endsWith('/appearance') && delay) setTimeout(respond, delay);

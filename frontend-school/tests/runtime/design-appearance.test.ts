@@ -199,3 +199,32 @@ test('canvas, cards, trays, selection and hover remain separate with extreme cus
 		}
 	}
 });
+
+test('semantic inks stay readable on translucent treatments over neutral surfaces', () => {
+	const blend = (surface: string, ink: string, opacity: number) =>
+		'#' +
+		[1, 3, 5]
+			.map((start) =>
+				Math.round(
+					Number.parseInt(surface.slice(start, start + 2), 16) * (1 - opacity) +
+						Number.parseInt(ink.slice(start, start + 2), 16) * opacity
+				)
+					.toString(16)
+					.padStart(2, '0')
+			)
+			.join('');
+	for (const mode of ['light', 'dark'] as const)
+		for (const palette of ['teal', 'blue', 'purple'] as const) {
+			for (const primary of [null, '#ffffff', '#000000', '#dbeafe', '#fce7f3']) {
+				const tokens = appearanceTokens({ ...DEFAULT_APPEARANCE, palette, primary }, mode);
+				for (const ink of [tokens.primary, tokens.success, tokens.warning, tokens.destructive]) {
+					for (const surface of [tokens.card, tokens.background, tokens.muted])
+						for (const opacity of [0.15, 0.2])
+							assert.ok(
+								contrastRatio(ink, blend(surface, ink, opacity)) >= 4.5,
+								`${mode} ${palette} ${primary} ink ${ink} at ${opacity} on ${surface}`
+							);
+				}
+			}
+		}
+});

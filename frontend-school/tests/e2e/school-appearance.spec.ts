@@ -182,7 +182,7 @@ test('delayed tenant CSS and fonts never expose default colors or wrong fonts on
 	expect(reads).toHaveLength(1);
 	expect(reads[0].origin).toBe(fixture.baseUrl);
 	expect(reads[0].cookie).toBeUndefined();
-	expect(await page.locator('meta[name="theme-color"]').getAttribute('content')).toBe('#f8f5fa');
+	expect(await page.locator('meta[name="theme-color"]').getAttribute('content')).toBe('#f2eef6');
 });
 
 test('font timeout selects a stable system fallback and late fonts never swap the document', async ({

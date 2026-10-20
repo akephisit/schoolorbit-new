@@ -14,30 +14,30 @@
 	--popover: #ffffff;
 	--popover-foreground: #202d3d;
 	/* Primary: default school teal */
-	--primary: #167166;
+	--primary: #136057;
 	--primary-foreground: #ffffff;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
 	--primary-fill-border: #167166;
 	/* Secondary: selected control surface */
-	--secondary: #deebea;
+	--secondary: #dee9e7;
 	--secondary-foreground: #202d3d;
 	/* Muted: neutral tray surface */
 	--muted: #e4eaf0;
 	--muted-foreground: #526174;
 	/* Accent: interactive hover surface */
-	--accent: #f1f6f6;
+	--accent: #f1f5f5;
 	--accent-foreground: #202d3d;
 	/* Destructive: Warm Red */
-	--destructive: #b54441;
+	--destructive: #913634;
 	--destructive-foreground: #ffffff;
-	--success: #276442;
-	--warning: #98651b;
+	--success: #266140;
+	--warning: #754e15;
 	/* Subtle dividers and contrast-checked control boundaries */
 	--border: #d2dbe4;
 	--input: #7e858e;
-	--ring: #167166;
+	--ring: #136057;
 	/* Charts: Educational Color Palette */
 	--chart-1: oklch(0.55 0.2 250);
 	/* Blue */
@@ -52,16 +52,16 @@
 	/* Sidebar Colors */
 	--sidebar: #ffffff;
 	--sidebar-foreground: #202d3d;
-	--sidebar-primary: #167166;
+	--sidebar-primary: #136057;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #f1f6f6;
+	--sidebar-accent: #f1f5f5;
 	--sidebar-accent-foreground: #202d3d;
 	--sidebar-border: #d2dbe4;
-	--sidebar-ring: #167166;
+	--sidebar-ring: #136057;
 	--warning-surface: #fcf3df;
 	--destructive-surface: #fbecea;
 	--success-surface: #e9f3eb;
-	--welcome: #eaf2f1;
+	--welcome: #eaf1f0;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;
@@ -77,30 +77,30 @@
 	--popover: #1c2631;
 	--popover-foreground: #e8edf4;
 	/* Primary: readable default school teal */
-	--primary: #7fb1ab;
+	--primary: #a4c8c3;
 	--primary-foreground: #111820;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
-	--primary-fill-border: #7fb1ab;
+	--primary-fill-border: #a4c8c3;
 	/* Secondary: selected control surface */
-	--secondary: #2e3f47;
+	--secondary: #34434b;
 	--secondary-foreground: #e8edf4;
 	/* Muted: neutral tray surface */
 	--muted: #273440;
 	--muted-foreground: #bac5d2;
 	/* Accent: interactive hover surface */
-	--accent: #24313b;
+	--accent: #27333d;
 	--accent-foreground: #e8edf4;
 	/* Destructive: Softer Red for Dark Mode */
-	--destructive: #f4a49a;
+	--destructive: #f5aca3;
 	--destructive-foreground: #39201d;
 	--success: #91d4ac;
 	--warning: #efc37c;
 	/* Borders & Inputs */
 	--border: #3a4858;
-	--input: #808891;
-	--ring: #7fb1ab;
+	--input: #868d96;
+	--ring: #a4c8c3;
 	/* Charts: Vibrant but Comfortable */
 	--chart-1: oklch(0.6 0.22 250);
 	--chart-2: oklch(0.65 0.2 160);
@@ -110,16 +110,16 @@
 	/* Sidebar Colors for Dark Mode */
 	--sidebar: #1c2631;
 	--sidebar-foreground: #e8edf4;
-	--sidebar-primary: #7fb1ab;
+	--sidebar-primary: #a4c8c3;
 	--sidebar-primary-foreground: #111820;
-	--sidebar-accent: #24313b;
+	--sidebar-accent: #27333d;
 	--sidebar-accent-foreground: #e8edf4;
 	--sidebar-border: #3a4858;
-	--sidebar-ring: #7fb1ab;
+	--sidebar-ring: #a4c8c3;
 	--warning-surface: #453d2c;
 	--destructive-surface: #4a3531;
 	--success-surface: #243c2d;
-	--welcome: #283740;
+	--welcome: #2c3943;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;

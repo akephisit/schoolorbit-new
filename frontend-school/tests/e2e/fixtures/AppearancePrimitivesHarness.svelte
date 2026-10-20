@@ -8,6 +8,15 @@
 	import { Toaster, toast } from 'svelte-sonner';
 	import { Check } from '@lucide/svelte';
 	import { Card } from '#lib/components/ui/card/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { ToggleGroup, ToggleGroupItem } from '#lib/components/ui/toggle-group/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	let pressed = $state(false);
 
 	const id = '61000000-0000-4000-8000-000000000001';
 	const session: ExamSession = {
@@ -73,4 +82,71 @@
 		><p>หนึ่ง</p>
 		<p>สอง</p></Card
 	>
+
+	<section class="mx-auto max-w-3xl space-y-4 p-4" aria-label="ตัวอย่างเครื่องมือร่วม">
+		<Card class="gap-4 p-4" data-testid="controls-card">
+			<h2>แบบฟอร์มและตัวเลือก</h2>
+			<Input aria-label="ชื่อรายการ" placeholder="กรอกชื่อรายการ" data-testid="surface-input" />
+			<Textarea
+				aria-label="รายละเอียด"
+				placeholder="กรอกรายละเอียด"
+				data-testid="surface-textarea"
+			/>
+			<Select.Root type="single" value="first">
+				<Select.Trigger aria-label="ประเภท" data-testid="surface-select">ประเภทแรก</Select.Trigger>
+				<Select.Content
+					><Select.Item value="first">ประเภทแรก</Select.Item><Select.Item value="second"
+						>ประเภทที่สอง</Select.Item
+					></Select.Content
+				>
+			</Select.Root>
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" data-testid="surface-outline">ยกเลิก</Button>
+				<Button
+					variant="secondary"
+					aria-pressed={pressed}
+					onclick={() => (pressed = !pressed)}
+					data-testid="surface-secondary">เลือกกลุ่ม</Button
+				>
+				<Button
+					variant="outline"
+					aria-pressed={pressed}
+					class="border-primary/40 bg-accent"
+					onclick={() => (pressed = !pressed)}
+					data-testid="surface-pressed">เลือกรอบ</Button
+				>
+				<Button variant="secondary" aria-current="page" data-testid="surface-current"
+					>หน้าปัจจุบัน</Button
+				>
+				<Button disabled variant="outline" data-testid="surface-disabled">ยังไม่พร้อม</Button>
+			</div>
+			<Tabs.Root value="first">
+				<Tabs.List aria-label="มุมมอง"
+					><Tabs.Trigger value="first" data-testid="surface-tab">รายการ</Tabs.Trigger><Tabs.Trigger
+						value="second">สรุป</Tabs.Trigger
+					></Tabs.List
+				>
+				<Tabs.Content value="first">ข้อมูลรายการ</Tabs.Content><Tabs.Content value="second"
+					>ข้อมูลสรุป</Tabs.Content
+				>
+			</Tabs.Root>
+			<ToggleGroup type="single" value="first" aria-label="รูปแบบรายการ">
+				<ToggleGroupItem value="first" data-testid="surface-toggle">ตาราง</ToggleGroupItem
+				><ToggleGroupItem value="second">การ์ด</ToggleGroupItem>
+			</ToggleGroup>
+			<div class="flex flex-wrap items-center gap-4">
+				<Checkbox aria-label="เลือกรายการ" data-testid="surface-checkbox" />
+				<RadioGroup.Root value="first" aria-label="ตัวเลือก"
+					><RadioGroup.Item value="first" data-testid="surface-radio" /></RadioGroup.Root
+				>
+				<Switch aria-label="เปิดใช้งาน" data-testid="surface-switch" />
+			</div>
+			<p class="text-muted-foreground" data-testid="surface-muted-text">
+				ข้อความประกอบที่อ่านได้ชัดเจน
+			</p>
+		</Card>
+		<div class="bg-muted rounded-lg p-4" data-testid="controls-tray">
+			<Input aria-label="ค้นหาในรายการ" placeholder="ค้นหา" data-testid="tray-input" />
+		</div>
+	</section>
 </main>

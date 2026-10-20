@@ -595,7 +595,7 @@ student data or credentials. From `frontend-school`, run:
 ```bash
 node --experimental-strip-types --test tests/runtime/design-appearance.test.ts tests/runtime/school-appearance.test.ts tests/runtime/color-picker.test.ts
 node --test tests/runtime/server-appearance-worker.test.mjs
-npx playwright test tests/e2e/school-appearance.spec.ts --project=chromium --workers=1
+npx playwright test tests/e2e/school-appearance.spec.ts tests/e2e/school-surface-contrast.spec.ts --project=chromium --workers=1
 ```
 
 The focused suite covers the canonical contrast/CSS serializer, exact selected fills with readable
@@ -606,7 +606,7 @@ CSS fail-open when the inline bootstrap cannot execute, personal mode,
 role/public pages, persisted settings, a fresh browser, SPA navigation, denied reads/writes
 and explicit conflict review. Install the pinned Playwright Chromium and its required host
 libraries before execution. Shared layout guards assert the density token owners; browser
-checks retain explicit utility overrides rather than requiring one fixed spacing value.
+checks retain explicit utility overrides rather than requiring one fixed spacing value. The surface-contrast suite checks actual shared fields, control boundaries, keyboard focus and persistent selected markers, plus the real Attendance select/edit/save workflow and public/staff/student consumers at 390, 614 and 1543 pixels in both modes. It covers the three school palettes and pale, white and dark custom fills, and saves synthetic screenshots in Playwright's per-test output directories. Set `E2E_ARTIFACT_DIR` to collect screenshots in an explicit directory. Public pages retain their existing light appearance under either system preference. Decorative card/table dividers remain subtle; enabled control boundaries are checked against their actual neighboring surfaces.
 The Workers fixture runs the real stylesheet handler under the Cloudflare runtime, checks fresh
 tenant settings on repeated reads and rejects redirects instead of silently accepting another
 origin. Browser font cases inspect actual custom glyph fonts for course codes, numbers, shared
