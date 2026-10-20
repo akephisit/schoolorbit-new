@@ -427,6 +427,7 @@ for (const width of [390, 614, 1029, 1533]) {
 			await buttons.getByRole('radio', { name: 'รายสัปดาห์', exact: true }).click();
 			await expect(weekly).toBeVisible();
 			const scroll = page.getByTestId('own-timetable-week-scroll');
+
 			await expectNoOuterOverflow(page);
 			await expect(buttons.getByRole('radio', { name: 'รายสัปดาห์', exact: true })).toBeFocused();
 			await page.keyboard.press('Enter');
@@ -436,15 +437,12 @@ for (const width of [390, 614, 1029, 1533]) {
 			);
 			await page.keyboard.press('Tab');
 			await expect(scroll).toBeFocused();
-			await page.keyboard.press('ArrowRight');
 			const size = await scroll.evaluate((node) => ({
 				width: node.clientWidth,
 				fullWidth: node.scrollWidth,
 				height: node.clientHeight,
 				fullHeight: node.scrollHeight
 			}));
-			if (size.fullWidth > size.width)
-				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 			for (const text of [longSubject, longStructural])
 				await expectFullText(weekly.getByText(text, { exact: true }));
 			await expect(weekly.locator('button, [role=button]')).toHaveCount(0);
@@ -460,6 +458,8 @@ for (const width of [390, 614, 1029, 1533]) {
 				}))
 			);
 			expect(new Set(tones.map((tone) => JSON.stringify(tone))).size).toBe(1);
+			await scroll.evaluate((node) => node.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
+			await expect.poll(() => scroll.evaluate((node) => node.scrollLeft + node.scrollTop)).toBe(0);
 			await swipePane(page, scroll, size.fullWidth > size.width);
 			await expect
 				.poll(() => scroll.evaluate((node) => node.scrollLeft > 0 || node.scrollTop > 0))
@@ -483,6 +483,14 @@ for (const width of [390, 614, 1029, 1533]) {
 			await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
 			await page.mouse.wheel(-1000, -1000);
 			await expectNoOuterOverflow(page);
+			if (size.fullWidth > size.width) {
+				await scroll.focus();
+				await page.keyboard.press('ArrowRight');
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+				await page.keyboard.press('ArrowLeft');
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
+			}
+
 			await page.screenshot({
 				path: `/workspace/artifacts/staff-timetable-refinement/timetable-week-${width}-${theme}.png`,
 				fullPage: true,
