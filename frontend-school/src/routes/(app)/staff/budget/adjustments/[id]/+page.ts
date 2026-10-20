@@ -3,7 +3,7 @@ import type { PageLoad } from './$types';
 import { budgetRead } from '#lib/budget/route-data.js';
 import { budgetFilters, safeReturn } from '#lib/budget/presentation.js';
 import { getBudgetAdjustment, getBudgetProcess, getBudgetCatalogs } from '#lib/api/budget.js';
-import { adjustmentProjectSources } from '#lib/budget/adjustment-context.js';
+import { adjustmentAllocationSources } from '#lib/budget/adjustment-context.js';
 export const _meta = {
 	academicContext: 'none' as const,
 	access: { user_type: 'staff', permission: budgetRoutePermissions }
@@ -16,14 +16,14 @@ export const load: PageLoad = ({ fetch, url, params, depends }) => {
 		() => getBudgetAdjustment(params.id, { requestFetch: fetch }),
 		null
 	);
-	const projects = adjustmentProjectSources(record, { requestFetch: fetch });
+	const allocations = adjustmentAllocationSources(record, { requestFetch: fetch });
 	return {
 		requestKey: JSON.stringify(query) + ('id' in params ? params.id : ''),
 		id: params.id,
 		returnTo: safeReturn(url.searchParams.get('returnTo'), '/staff/budget/adjustments'),
 		record,
-		fromProject: projects.from,
-		toProject: projects.to,
+		fromBudget: allocations.from,
+		toBudget: allocations.to,
 		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null),
 		process: budgetRead(
 			canReadBudget,

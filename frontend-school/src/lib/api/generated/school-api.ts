@@ -47709,18 +47709,18 @@ export interface operations {
 	};
 	listBudgetAdjustments: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48034,19 +48034,20 @@ export interface operations {
 	};
 	getBudgetAdjustmentHistory: {
 		parameters: {
-			query?: never;
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
 			header?: never;
 			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
 				/** @description Budget resource ID */
 				id: string;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
 			};
 			cookie?: never;
 		};
@@ -48291,15 +48292,15 @@ export interface operations {
 	};
 	getBudgetDashboard: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				exportScope: boolean | null;
-				fiscalYearId: string | null;
-				metric: null | components['schemas']['BudgetReportMetric'];
-				organizationUnitId: string | null;
-				projectId: string | null;
+			query?: {
+				exportScope?: boolean;
+				fiscalYearId?: string;
+				metric?: components['schemas']['BudgetReportMetric'];
+				organizationUnitId?: string;
+				projectId?: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48356,18 +48357,18 @@ export interface operations {
 	};
 	listBudgetProjects: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -48747,19 +48748,20 @@ export interface operations {
 	};
 	getBudgetProjectHistory: {
 		parameters: {
-			query?: never;
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
 			header?: never;
 			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
 				/** @description Budget resource ID */
 				id: string;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
 			};
 			cookie?: never;
 		};
@@ -49011,15 +49013,15 @@ export interface operations {
 	};
 	exportBudgetReport: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				exportScope: boolean | null;
-				fiscalYearId: string | null;
-				metric: null | components['schemas']['BudgetReportMetric'];
-				organizationUnitId: string | null;
-				projectId: string | null;
+			query?: {
+				exportScope?: boolean;
+				fiscalYearId?: string;
+				metric?: components['schemas']['BudgetReportMetric'];
+				organizationUnitId?: string;
+				projectId?: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -49061,18 +49063,18 @@ export interface operations {
 	};
 	listBudgetRequests: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -49389,19 +49391,20 @@ export interface operations {
 	};
 	getBudgetRequestHistory: {
 		parameters: {
-			query?: never;
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
 			header?: never;
 			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
 				/** @description Budget resource ID */
 				id: string;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
 			};
 			cookie?: never;
 		};
@@ -49459,19 +49462,20 @@ export interface operations {
 	};
 	listBudgetPayments: {
 		parameters: {
-			query?: never;
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
 			header?: never;
 			path: {
-				activityId: string | null;
-				fiscalYearId: string | null;
 				/** @description Budget resource ID */
 				id: string;
-				limit: number | null;
-				offset: number | null;
-				organizationUnitId: string | null;
-				projectId: string | null;
-				search: string | null;
-				status: null | components['schemas']['BudgetStatus'];
 			};
 			cookie?: never;
 		};

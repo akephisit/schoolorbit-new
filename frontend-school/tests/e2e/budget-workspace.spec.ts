@@ -389,9 +389,56 @@ test('same-project transfer review resolves distinct accepted debit and credit a
 	await expect(debit).not.toContainText('ชื่อฉบับร่าง');
 	await expect(page.getByRole('region', { name: 'ปีงบประมาณของรายการ' })).toContainText('2570');
 	expect(
-		api.reads.filter((path) => path === `/api/budget/projects/${budgetProjectId}`)
+		api.reads.filter((path) => path === `/api/budget/dashboard?projectId=${budgetProjectId}`)
 	).toHaveLength(1);
 	await expect(page.getByRole('button', { name: 'อนุมัติ', exact: true })).toBeVisible();
+});
+
+test('repayment review resolves retained historical activity after an approved amendment removes it', async ({
+	page
+}) => {
+	const api = await mockBudget(page, { reviewer: true });
+	const adjustmentId = seedTransfer(api);
+	const historical = api.workspace.acceptedPlan!.activities.shift()!;
+	const adjustment = api.adjustments[0];
+	adjustment.kind = 'repayment';
+	adjustment.loanId = id(969);
+	adjustment.reason = 'คืนเงินยืมจากยอดกิจกรรมเดิม';
+	api.workspace.acceptedPlan!.version++;
+	api.retainedRows.push({
+		projectId: budgetProjectId,
+		projectName: api.workspace.acceptedPlan!.project.name,
+		activityId: historical.id,
+		activityTitle: historical.title,
+		fundId: budgetFundId,
+		fundName: 'เงินอุดหนุน',
+		expenseCategoryId: materialsId,
+		expenseCategoryName: 'วัสดุ',
+		plannedSatang: '0',
+		adjustedSatang: '10000',
+		currentSatang: '10000',
+		reservedSatang: '0',
+		paidSatang: '0',
+		availableSatang: '10000',
+		loanOutstandingSatang: '10000'
+	});
+	await page.goto(`/staff/budget/adjustments/${adjustmentId}`);
+	const debit = page.getByRole('region', { name: 'งบประมาณต้นทาง (หักออก)', exact: true });
+	await expect(debit).toContainText('กิจกรรมที่หนึ่ง');
+	await expect(debit).not.toContainText('ชื่อฉบับร่าง');
+	await expect(
+		page.getByRole('region', { name: 'งบประมาณปลายทาง (รับเข้า)', exact: true })
+	).toContainText('กิจกรรมที่สอง');
+	expect(
+		api.workspace.acceptedPlan!.activities.some((activity) => activity.id === historical.id)
+	).toBe(false);
+	expect(
+		api.reads.filter((path) => path === `/api/budget/dashboard?projectId=${budgetProjectId}`)
+	).toHaveLength(1);
+	expect(api.reads.some((path) => path === `/api/budget/projects/${budgetProjectId}`)).toBe(false);
+	await page.getByRole('button', { name: 'อนุมัติ', exact: true }).click();
+	await page.getByRole('button', { name: 'ยืนยันอนุมัติ', exact: true }).click();
+	await expect(page.getByTestId('budget-adjustment-detail')).toContainText('อนุมัติแล้ว');
 });
 
 test('failed allocation lookup preserves adjustment and blocks approval until focused retries succeed', async ({
@@ -401,7 +448,9 @@ test('failed allocation lookup preserves adjustment and blocks approval until fo
 	const adjustmentId = seedTransfer(api);
 	let reads = 0;
 	await page.route(
-		(url) => url.pathname === `/api/budget/projects/${budgetProjectId}`,
+		(url) =>
+			url.pathname === '/api/budget/dashboard' &&
+			url.searchParams.get('projectId') === budgetProjectId,
 		(route) => {
 			reads++;
 			return reads === 1

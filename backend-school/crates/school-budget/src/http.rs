@@ -572,3 +572,79 @@ pub fn routes() -> Router<BudgetHttpState> {
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(get_catalogs,get_settings,save_settings,list_projects,create_project,get_project,save_project,submit_project,act_project,amend_project,list_requests,create_request,get_request,save_request,submit_request,act_request,close_request,list_payments,create_payment,list_adjustments,create_adjustment,get_adjustment,save_adjustment,submit_adjustment,act_adjustment,get_dashboard,project_process,project_history,request_process,request_history,adjustment_process,adjustment_history,refund_payment,export_report),components(schemas(BudgetStatus,BudgetAdjustmentKind,BudgetResourceKind,BudgetCatalogItem,BudgetFiscalYear,BudgetCatalogs,BudgetSettings,SaveBudgetSettingsRequest,BudgetProjectInput,CreateBudgetProjectRequest,SaveBudgetProjectRequest,BudgetActivityInput,BudgetPlanLineInput,BudgetActivity,BudgetPlanLine,BudgetPlanSnapshot,BudgetProjectSummary,BudgetCapabilities,BudgetAllocationRef,BudgetBalance,BudgetProjectWorkspace,BudgetProjectPage,BudgetMutationRequest,BudgetActionRequest,StartBudgetAmendmentRequest,BudgetRequestLineInput,BudgetSpendingRequestInput,SaveBudgetSpendingRequestRequest,BudgetRequestSummary,BudgetSpendingRequestDetail,BudgetRequestPage,BudgetPaymentAllocationInput,CreateBudgetPaymentRequest,RefundBudgetPaymentRequest,BudgetFileSnapshot,BudgetRefund,BudgetPayment,BudgetPaymentPage,CloseBudgetRequestRequest,BudgetAdjustmentInput,SaveBudgetAdjustmentRequest,BudgetAdjustmentDetail,BudgetAdjustmentPage,BudgetHistoryEntry,BudgetHistoryPage,BudgetProcessDetail,BudgetDashboardRow,BudgetDashboardTotals,BudgetDashboard,BudgetListQuery,BudgetReportQuery,BudgetRequestLine,UpdateBudgetAdjustmentRequest,BudgetCatalogItemInput,BudgetFiscalYearInput,BudgetReportMetric,ApiResponse<BudgetAdjustmentDetail>,ApiResponse<BudgetAdjustmentPage>,ApiResponse<BudgetCatalogs>,ApiResponse<BudgetDashboard>,ApiResponse<BudgetHistoryPage>,ApiResponse<BudgetPaymentPage>,ApiResponse<BudgetProcessDetail>,ApiResponse<BudgetProjectPage>,ApiResponse<BudgetProjectWorkspace>,ApiResponse<BudgetRequestPage>,ApiResponse<BudgetSettings>,ApiResponse<BudgetSpendingRequestDetail>)))]
 pub struct BudgetApi;
+
+#[cfg(all(test, feature = "api-docs"))]
+mod contract_tests {
+    use super::BudgetApi;
+    use utoipa::OpenApi;
+
+    #[test]
+    fn budget_query_contract_matches_registered_extractors() {
+        let document = serde_json::to_value(BudgetApi::openapi()).unwrap();
+        let paths = document["paths"].as_object().unwrap();
+        let list_filters = [
+            "fiscalYearId",
+            "projectId",
+            "activityId",
+            "organizationUnitId",
+            "status",
+            "search",
+            "limit",
+            "offset",
+        ];
+        let report_filters = [
+            "exportScope",
+            "metric",
+            "fiscalYearId",
+            "projectId",
+            "organizationUnitId",
+        ];
+        for path in [
+            "/api/budget/projects",
+            "/api/budget/requests",
+            "/api/budget/adjustments",
+            "/api/budget/projects/{id}/history",
+            "/api/budget/requests/{id}/history",
+            "/api/budget/adjustments/{id}/history",
+            "/api/budget/requests/{id}/payments",
+            "/api/budget/dashboard",
+            "/api/budget/reports/export",
+        ] {
+            let parameters = paths[path]["get"]["parameters"].as_array().unwrap();
+            let expected = if path.ends_with("dashboard") || path.ends_with("export") {
+                report_filters.as_slice()
+            } else {
+                list_filters.as_slice()
+            };
+            for name in expected {
+                let parameter = parameters
+                    .iter()
+                    .find(|p| p["name"] == *name)
+                    .unwrap_or_else(|| panic!("missing {name} parameter on GET {path}"));
+                assert_eq!(parameter["in"], "query", "GET {path}: {name}");
+                assert_eq!(parameter["required"], false, "GET {path}: optional {name}");
+            }
+        }
+        // Actual path parameters must occur in the URI. Optional query filters may
+        // never become synthetic required path arguments in the generated client.
+        for (path, item) in paths {
+            let Some(parameters) = item["get"]["parameters"].as_array() else {
+                continue;
+            };
+            for parameter in parameters {
+                let name = parameter["name"].as_str().unwrap();
+                match parameter["in"].as_str().unwrap() {
+                    "path" => {
+                        assert!(
+                            path.contains(&format!("{{{name}}}")),
+                            "GET {path}: phantom {name}"
+                        );
+                        assert_eq!(parameter["required"], true);
+                    }
+                    "query" => assert_eq!(parameter["required"], false, "GET {path}: {name}"),
+                    other => panic!("unexpected parameter location {other} on GET {path}"),
+                }
+            }
+        }
+    }
+}

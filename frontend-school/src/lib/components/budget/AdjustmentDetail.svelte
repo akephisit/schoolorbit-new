@@ -5,13 +5,13 @@
 	import {
 		getBudgetAdjustment,
 		getBudgetProcess,
-		getBudgetProject,
+		getBudgetDashboard,
 		getBudgetCatalogs,
 		submitBudgetAdjustment,
 		actOnBudgetAdjustment,
 		type BudgetAdjustmentDetail,
 		type BudgetProcessDetail,
-		type BudgetProjectWorkspace,
+		type BudgetDashboard,
 		type BudgetCatalogs
 	} from '#lib/api/budget.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -44,14 +44,14 @@
 		id: string;
 		source: Promise<RouteLoadResult<BudgetAdjustmentDetail | null>>;
 		processSource: Promise<RouteLoadResult<BudgetProcessDetail | null>>;
-		fromSource: Promise<RouteLoadResult<BudgetProjectWorkspace | null>>;
-		toSource: Promise<RouteLoadResult<BudgetProjectWorkspace | null>>;
+		fromSource: Promise<RouteLoadResult<BudgetDashboard | null>>;
+		toSource: Promise<RouteLoadResult<BudgetDashboard | null>>;
 		catalogsSource: Promise<RouteLoadResult<BudgetCatalogs | null>>;
 		returnTo: string;
 	} = $props();
 	const region = new BudgetRegion<BudgetAdjustmentDetail | null>(),
-		fromProject = new BudgetRegion<BudgetProjectWorkspace | null>(),
-		toProject = new BudgetRegion<BudgetProjectWorkspace | null>(),
+		fromBudget = new BudgetRegion<BudgetDashboard | null>(),
+		toBudget = new BudgetRegion<BudgetDashboard | null>(),
 		catalogs = new BudgetRegion<BudgetCatalogs | null>(),
 		intent = new BudgetMutationIntent();
 	const lookupController = new AbortController();
@@ -59,31 +59,17 @@
 		catalogs.value?.fiscalYears.find((year) => year.id === region.value?.fiscalYearId)
 	);
 	const fromAllocation = $derived(
-		region.value
-			? acceptedAllocation(
-					region.value.from,
-					region.value.fiscalYearId,
-					fromProject.value,
-					catalogs.value
-				)
-			: null
+		region.value ? acceptedAllocation(region.value.from, fromBudget.value) : null
 	);
 	const toAllocation = $derived(
-		region.value
-			? acceptedAllocation(
-					region.value.to,
-					region.value.fiscalYearId,
-					toProject.value,
-					catalogs.value
-				)
-			: null
+		region.value ? acceptedAllocation(region.value.to, toBudget.value) : null
 	);
 	const allocationReady = $derived(
 		!!region.value &&
 			!!fiscalYear &&
 			!catalogs.error &&
-			(region.value.kind === 'add' || (!!fromAllocation && !fromProject.error)) &&
-			(region.value.kind === 'reduce' || (!!toAllocation && !toProject.error))
+			(region.value.kind === 'add' || (!!fromAllocation && !fromBudget.error)) &&
+			(region.value.kind === 'reduce' || (!!toAllocation && !toBudget.error))
 	);
 	let pending = $state(false),
 		error = $state(''),
@@ -93,15 +79,15 @@
 		disposed = false;
 	$effect.pre(() => {
 		region.consume(source);
-		fromProject.consume(fromSource);
-		toProject.consume(toSource);
+		fromBudget.consume(fromSource);
+		toBudget.consume(toSource);
 		catalogs.consume(catalogsSource);
 	});
 	onDestroy(() => {
 		disposed = true;
 		region.dispose();
-		fromProject.dispose();
-		toProject.dispose();
+		fromBudget.dispose();
+		toBudget.dispose();
 		catalogs.dispose();
 		lookupController.abort();
 	});
@@ -113,16 +99,19 @@
 			previous?.to?.projectId === value.to?.projectId
 		)
 			return;
-		const reads: Partial<Record<string, Promise<BudgetProjectWorkspace>>> = {};
+		const reads: Partial<Record<string, Promise<BudgetDashboard>>> = {};
 		for (const [ref, target] of [
-			[value.from, fromProject],
-			[value.to, toProject]
+			[value.from, fromBudget],
+			[value.to, toBudget]
 		] as const) {
 			target.patch(null);
 			if (!ref) continue;
 			let read = reads[ref.projectId];
 			if (!read) {
-				read = getBudgetProject(ref.projectId, { signal: lookupController.signal });
+				read = getBudgetDashboard({
+					signal: lookupController.signal,
+					query: { projectId: ref.projectId }
+				});
 				reads[ref.projectId] = read;
 			}
 			target.consume(captureRouteLoad(read, 'โหลดรายละเอียดงบประมาณไม่สำเร็จ'));
@@ -227,7 +216,7 @@
 			/>{/if}
 	</section>
 	{#if region.value}<div class="grid gap-3 lg:grid-cols-2">
-			{#each [{ side: 'from' as const, title: 'งบประมาณต้นทาง (หักออก)', ref: region.value.from, project: fromProject, allocation: fromAllocation }, { side: 'to' as const, title: 'งบประมาณปลายทาง (รับเข้า)', ref: region.value.to, project: toProject, allocation: toAllocation }] as context (context.side)}{#if context.ref}<section
+			{#each [{ side: 'from' as const, title: 'งบประมาณต้นทาง (หักออก)', ref: region.value.from, project: fromBudget, allocation: fromAllocation }, { side: 'to' as const, title: 'งบประมาณปลายทาง (รับเข้า)', ref: region.value.to, project: toBudget, allocation: toAllocation }] as context (context.side)}{#if context.ref}<section
 						class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
 						aria-label={context.title}
 						aria-busy={context.project.loading}
@@ -241,7 +230,9 @@
 								onaction={() => {
 									const ref = context.ref;
 									if (ref)
-										context.project.retry((signal) => getBudgetProject(ref.projectId, { signal }));
+										context.project.retry((signal) =>
+											getBudgetDashboard({ signal, query: { projectId: ref.projectId } })
+										);
 								}}
 							/>{/if}{#if context.project.loading && !context.project.value}<PageSkeleton
 								variant="form"

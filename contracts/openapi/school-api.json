@@ -97588,101 +97588,73 @@
         "operationId": "listBudgetAdjustments",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -98110,101 +98082,73 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -98524,65 +98468,46 @@
         "operationId": "getBudgetDashboard",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "exportScope",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "metric",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetReportMetric"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetReportMetric"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -98658,101 +98583,73 @@
         "operationId": "listBudgetProjects",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -99272,101 +99169,73 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -99708,65 +99577,46 @@
         "operationId": "exportBudgetReport",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "exportScope",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "metric",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetReportMetric"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetReportMetric"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -99822,101 +99672,73 @@
         "operationId": "listBudgetRequests",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -100358,101 +100180,73 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -100538,101 +100332,73 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "fiscalYearId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "projectId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "activityId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "organizationUnitId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "status",
-            "required": true,
+            "required": false,
             "schema": {
-              "oneOf": [
-                {
-                  "type": "null"
-                },
-                {
-                  "$ref": "#/components/schemas/BudgetStatus"
-                }
-              ]
+              "$ref": "#/components/schemas/BudgetStatus"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "limit",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "offset",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],

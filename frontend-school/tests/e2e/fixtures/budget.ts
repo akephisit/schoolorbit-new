@@ -152,6 +152,7 @@ export async function mockBudget(
 			requestSteps: [],
 			adjustmentSteps: []
 		};
+	const retainedRows: BudgetDashboard['rows'] = [];
 	const payments: BudgetPayment[] = [],
 		adjustments: BudgetAdjustmentDetail[] = [],
 		reads: string[] = [],
@@ -332,7 +333,7 @@ export async function mockBudget(
 			}))
 		);
 		return {
-			rows,
+			rows: [...rows, ...retainedRows],
 			totals: {
 				plannedSatang: '992800',
 				adjustedSatang: '0',
@@ -849,6 +850,7 @@ export async function mockBudget(
 			return request;
 		},
 		payments,
+		retainedRows,
 		adjustments,
 		history,
 		async asReviewer() {

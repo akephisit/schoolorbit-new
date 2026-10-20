@@ -626,6 +626,7 @@ pub struct BudgetDashboard {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema, utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetListQuery {
     pub fiscal_year_id: Option<Uuid>,
@@ -639,6 +640,7 @@ pub struct BudgetListQuery {
 }
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema, utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetReportQuery {
     pub export_scope: Option<bool>,
