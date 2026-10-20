@@ -42011,6 +42011,10 @@
       },
       "CurriculumCatalogVersionOption": {
         "properties": {
+          "catalogId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -42035,6 +42039,9 @@
           "resourceKind": {
             "$ref": "#/components/schemas/RequirementResourceKind"
           },
+          "selectableForNewRequirement": {
+            "type": "boolean"
+          },
           "versionNo": {
             "format": "int32",
             "type": "integer"
@@ -42042,6 +42049,8 @@
         },
         "required": [
           "id",
+          "catalogId",
+          "selectableForNewRequirement",
           "resourceKind",
           "code",
           "name",
@@ -42800,6 +42809,10 @@
       },
       "CurriculumStructureRequirement": {
         "properties": {
+          "catalogId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "catalogVersionId": {
             "format": "uuid",
             "type": "string"
@@ -42840,6 +42853,10 @@
           "termSlotId": {
             "format": "uuid",
             "type": "string"
+          },
+          "versionNo": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "required": [
@@ -42849,6 +42866,8 @@
           "termSlotId",
           "resourceKind",
           "catalogVersionId",
+          "catalogId",
+          "versionNo",
           "code",
           "name",
           "section",

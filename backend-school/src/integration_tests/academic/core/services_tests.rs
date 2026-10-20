@@ -35,6 +35,9 @@ use uuid::Uuid;
 #[path = "subject_revision_tests.rs"]
 mod subject_revision_tests;
 
+#[path = "curriculum_current_subject_tests.rs"]
+mod curriculum_current_subject_tests;
+
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
@@ -828,6 +831,16 @@ async fn create_published_program_option_fixture(
     (curriculum_row.id, program.id)
 }
 
+async fn current_fixture_subject_version(pool: &PgPool) -> Uuid {
+    let subject_id = sqlx::query_scalar("SELECT id FROM subjects WHERE code='MATH-CORE'")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    catalog::current_subject_version_ids(pool, &[subject_id])
+        .await
+        .unwrap()[&subject_id]
+}
+
 async fn create_curriculum_overview_fixture(
     pool: &PgPool,
     _owner_id: Uuid,
@@ -906,6 +919,11 @@ async fn create_curriculum_overview_fixture(
         )
         .await
         .unwrap();
+        // This factory represents an existing historical curriculum graph, including v1
+        // pins. Seed that tuple explicitly, then exercise the provider's preservation save.
+        sqlx::query("INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order) VALUES($1,$2,$3,$4,$5,$6,'required',1)")
+            .bind(Uuid::now_v7()).bind(version.id).bind(program.id).bind(subject_version_id)
+            .bind(grade_level_id).bind(term_slot_id).execute(pool).await.unwrap();
         curriculum_structure::replace_program_structure(
             pool,
             program.id,
@@ -947,7 +965,7 @@ async fn curriculum_publication_validates_all_levels_before_changing_any_plan() 
             .fetch_one(&pool)
             .await
             .unwrap();
-    let subject: Uuid = sqlx::query_scalar("SELECT id FROM subject_versions WHERE status='published' AND periods_per_week > 0 AND hours_per_semester > 0 ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let subject = current_fixture_subject_version(&pool).await;
     let (edition_id, first_level_id) = create_curriculum_overview_fixture(
         &pool,
         Uuid::nil(),
@@ -1511,12 +1529,7 @@ async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slo
             .fetch_one(&pool)
             .await
             .unwrap();
-    let subject_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_version_id = current_fixture_subject_version(&pool).await;
     sqlx::query(
         r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
@@ -4548,12 +4561,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    let subject_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_version_id = current_fixture_subject_version(&pool).await;
     sqlx::query(
         r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
@@ -4908,12 +4916,7 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
             .fetch_one(&pool)
             .await
             .unwrap();
-    let subject_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let subject_version_id = current_fixture_subject_version(&pool).await;
     sqlx::query(
         r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
@@ -5196,12 +5199,23 @@ async fn curriculum_publication_baseline_preserves_every_graph_and_actual_refere
 }
 
 async fn publication_fixture(pool: &PgPool, code: &str) -> (Uuid, Uuid) {
+    let subject:Uuid=sqlx::query_scalar("SELECT id FROM subject_versions WHERE status='published' AND periods_per_week>0 AND hours_per_semester>0 ORDER BY id LIMIT 1").fetch_one(pool).await.unwrap();
+    let stable_id = catalog::get_subject_version(pool, subject)
+        .await
+        .unwrap()
+        .subject_id;
+    let current_id = catalog::current_subject_version_ids(pool, &[stable_id])
+        .await
+        .unwrap()[&stable_id];
+    // The synthetic legacy fixture has no current-version grade links. Supply the
+    // same active grade to current v2 here; the historical graph factory pins v1.
     let grade: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels WHERE is_active ORDER BY id LIMIT 1")
             .fetch_one(pool)
             .await
             .unwrap();
-    let subject:Uuid=sqlx::query_scalar("SELECT id FROM subject_versions WHERE status='published' AND periods_per_week>0 AND hours_per_semester>0 ORDER BY id LIMIT 1").fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO subject_version_grade_levels(subject_id,grade_level_id) VALUES($1,$2) ON CONFLICT DO NOTHING")
+        .bind(current_id).bind(grade).execute(pool).await.unwrap();
     let (edition, level) = create_curriculum_overview_fixture(
         pool,
         Uuid::nil(),
@@ -5300,9 +5314,14 @@ async fn curriculum_publication_amendment_adds_term_two_preserves_history_and_ac
     .await
     .unwrap();
     let first_requirement = &workspace.requirements[0];
-    let input = |term_slot_id| CurriculumStructureRequirementInput {
+    let new_catalog_version_id =
+        catalog::current_subject_version_ids(&pool, &[first_requirement.catalog_id])
+            .await
+            .unwrap()[&first_requirement.catalog_id];
+    assert_ne!(new_catalog_version_id, first_requirement.catalog_version_id);
+    let input = |term_slot_id, catalog_version_id| CurriculumStructureRequirementInput {
         resource_kind: first_requirement.resource_kind,
-        catalog_version_id: first_requirement.catalog_version_id,
+        catalog_version_id,
         grade_level_id: first_requirement.grade_level.id,
         term_slot_id,
         requirement_kind: first_requirement.requirement_kind,
@@ -5315,8 +5334,11 @@ async fn curriculum_publication_amendment_adds_term_two_preserves_history_and_ac
             draft_id: token,
             row_version: workspace.programs[0].row_version,
             requirements: vec![
-                input(first_requirement.term_slot_id),
-                input(workspace.term_slots[1].id),
+                input(
+                    first_requirement.term_slot_id,
+                    first_requirement.catalog_version_id,
+                ),
+                input(workspace.term_slots[1].id, new_catalog_version_id),
             ],
         },
     )
@@ -5351,6 +5373,24 @@ async fn curriculum_publication_amendment_adds_term_two_preserves_history_and_ac
     assert_eq!(current.programs[0].id, program_id);
     assert_eq!(current.term_slots.len(), 2);
     assert_eq!(current.requirements.len(), 2);
+    assert_eq!(
+        current
+            .requirements
+            .iter()
+            .find(|row| row.term_slot_id == before.requirements[0].term_slot_id)
+            .unwrap()
+            .catalog_version_id,
+        before.requirements[0].catalog_version_id
+    );
+    assert_eq!(
+        current
+            .requirements
+            .iter()
+            .find(|row| row.term_slot_id != before.requirements[0].term_slot_id)
+            .unwrap()
+            .catalog_version_id,
+        new_catalog_version_id
+    );
     let old = publications::read_workspace(
         &pool,
         level_id,

@@ -19822,6 +19822,8 @@ export interface components {
 			userType: string;
 		};
 		CurriculumCatalogVersionOption: {
+			/** Format: uuid */
+			catalogId: string;
 			code: string;
 			/** Format: date */
 			effectiveFrom: string;
@@ -19831,6 +19833,7 @@ export interface components {
 			id: string;
 			name: string;
 			resourceKind: components['schemas']['RequirementResourceKind'];
+			selectableForNewRequirement: boolean;
 			/** Format: int32 */
 			versionNo: number;
 		};
@@ -20042,6 +20045,8 @@ export interface components {
 		};
 		CurriculumStructureRequirement: {
 			/** Format: uuid */
+			catalogId: string;
+			/** Format: uuid */
 			catalogVersionId: string;
 			code: string;
 			/** Format: int32 */
@@ -20058,6 +20063,8 @@ export interface components {
 			studyProgramId: string;
 			/** Format: uuid */
 			termSlotId: string;
+			/** Format: int32 */
+			versionNo: number;
 		};
 		CurriculumStructureRequirementInput: {
 			/** Format: uuid */

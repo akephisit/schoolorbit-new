@@ -955,6 +955,8 @@ pub enum RequirementResourceKind {
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCatalogVersionOption {
     pub id: Uuid,
+    pub catalog_id: Uuid,
+    pub selectable_for_new_requirement: bool,
     pub resource_kind: RequirementResourceKind,
     pub code: String,
     pub name: String,
@@ -1028,6 +1030,8 @@ pub struct CurriculumStructureRequirement {
     pub term_slot_id: Uuid,
     pub resource_kind: RequirementResourceKind,
     pub catalog_version_id: Uuid,
+    pub catalog_id: Uuid,
+    pub version_no: i32,
     pub code: String,
     pub name: String,
     pub section: CurriculumDocumentSection,

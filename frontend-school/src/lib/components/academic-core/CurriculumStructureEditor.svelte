@@ -6,6 +6,13 @@
 		CurriculumStructureWorkspace,
 		CurriculumTermSlotInput
 	} from '#lib/api/academic-core.js';
+	import {
+		appendSelectedCatalogRequirements,
+		existingCourseVersions,
+		selectableCatalogOption,
+		type StagedCurriculumRequirement
+	} from '#lib/academic-core/curriculum-catalog-selection.js';
+	import { formatEffectiveRange } from '#lib/academic-core/catalog-presentation.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import CurriculumTermSlotEditor from '#lib/components/academic-core/CurriculumTermSlotEditor.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -36,7 +43,7 @@
 		onCreateProgram: (request: CreateStudyProgramRequest) => Promise<void>;
 		onClose: () => void;
 	} = $props();
-	type StagedRequirement = CurriculumStructureRequirementInput & { studyProgramId: string };
+	type StagedRequirement = StagedCurriculumRequirement;
 	function initialProgramId() {
 		return workspace.programs[0]?.id ?? '';
 	}
@@ -103,7 +110,9 @@
 		workspace.termSlots.find((slot) => slot.id === selectedTermSlotId)?.name ?? 'เลือกภาคเรียน'
 	);
 	let selectionReady = $derived(
-		Boolean(selectedProgramId && selectedGradeId && selectedTermSlotId)
+		workspace.programs.some((program) => program.id === selectedProgramId) &&
+			workspace.gradeLevels.some((grade) => grade.id === selectedGradeId) &&
+			workspace.termSlots.some((slot) => slot.id === selectedTermSlotId)
 	);
 	let selectionGuidance = $derived(
 		!selectedProgramId
@@ -115,6 +124,7 @@
 	let filteredCatalog = $derived.by(() => {
 		const query = search.trim().toLocaleLowerCase('th');
 		return managementOptions.catalogVersions.filter((option) => {
+			if (!selectableCatalogOption(option)) return false;
 			if (resourceKind !== 'all' && option.resourceKind !== resourceKind) return false;
 			return !query || `${option.code} ${option.name}`.toLocaleLowerCase('th').includes(query);
 		});
@@ -175,41 +185,42 @@
 			: selectedCatalogIds.filter((value) => value !== id);
 	}
 
+	let selectionContext = $derived({
+		studyProgramId: selectedProgramId,
+		gradeLevelId: selectedGradeId,
+		termSlotId: selectedTermSlotId
+	});
+	let catalogChoices = $derived(
+		filteredCatalog.map((option) => ({
+			option,
+			existingVersions: existingCourseVersions(
+				option,
+				selectionContext,
+				stagedRequirements,
+				managementOptions.catalogVersions,
+				workspace.requirements
+			)
+		}))
+	);
+
+	function selectContext(field: 'program' | 'grade' | 'term', value: string) {
+		selectedCatalogIds = [];
+		if (field === 'program') selectedProgramId = value;
+		else if (field === 'grade') selectedGradeId = value;
+		else selectedTermSlotId = value;
+	}
+
 	function addSelected() {
 		if (!selectionReady) return;
-		const next = [...stagedRequirements];
-		let order =
-			Math.max(
-				0,
-				...next
-					.filter(
-						(item) =>
-							item.gradeLevelId === selectedGradeId && item.termSlotId === selectedTermSlotId
-					)
-					.map((item) => item.displayOrder)
-			) + 1;
-		for (const catalogVersionId of selectedCatalogIds) {
-			const option = catalogOption(catalogVersionId);
-			if (!option) continue;
-			const duplicate = next.some(
-				(item) =>
-					item.studyProgramId === selectedProgramId &&
-					item.catalogVersionId === catalogVersionId &&
-					item.gradeLevelId === selectedGradeId &&
-					item.termSlotId === selectedTermSlotId
-			);
-			if (duplicate) continue;
-			next.push({
-				studyProgramId: selectedProgramId,
-				resourceKind: option.resourceKind,
-				catalogVersionId,
-				gradeLevelId: selectedGradeId,
-				termSlotId: selectedTermSlotId,
-				requirementKind,
-				displayOrder: order++
-			});
-		}
-		replaceStaged(next);
+		const next = appendSelectedCatalogRequirements(
+			stagedRequirements,
+			selectedCatalogIds,
+			selectionContext,
+			managementOptions.catalogVersions,
+			workspace.requirements,
+			requirementKind
+		);
+		if (next.length !== stagedRequirements.length) replaceStaged(next);
 		selectedCatalogIds = [];
 	}
 
@@ -337,24 +348,40 @@
 			{/if}
 
 			<div class="grid gap-3 rounded-xl border bg-card p-3 lg:grid-cols-3">
-				<Select.Root type="single" bind:value={selectedProgramId}>
-					<Select.Trigger>{selectedProgramName}</Select.Trigger>
+				<Select.Root
+					type="single"
+					value={selectedProgramId}
+					onValueChange={(value) => selectContext('program', value)}
+				>
+					<Select.Trigger aria-label="แผนการเรียนที่จะจัดโครงสร้าง"
+						>{selectedProgramName}</Select.Trigger
+					>
 					<Select.Content>
 						{#each workspace.programs as program (program.id)}
 							<Select.Item value={program.id}>{program.nameTh}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Select.Root type="single" bind:value={selectedGradeId}>
-					<Select.Trigger>{selectedGradeName}</Select.Trigger>
+				<Select.Root
+					type="single"
+					value={selectedGradeId}
+					onValueChange={(value) => selectContext('grade', value)}
+				>
+					<Select.Trigger aria-label="ระดับชั้นที่จะจัดโครงสร้าง"
+						>{selectedGradeName}</Select.Trigger
+					>
 					<Select.Content>
 						{#each workspace.gradeLevels as grade (grade.id)}
 							<Select.Item value={grade.id}>{grade.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Select.Root type="single" bind:value={selectedTermSlotId}>
-					<Select.Trigger>{selectedTermName}</Select.Trigger>
+				<Select.Root
+					type="single"
+					value={selectedTermSlotId}
+					onValueChange={(value) => selectContext('term', value)}
+				>
+					<Select.Trigger aria-label="ภาคเรียนที่จะจัดโครงสร้าง">{selectedTermName}</Select.Trigger>
 					<Select.Content>
 						{#each workspace.termSlots as slot (slot.id)}
 							<Select.Item value={slot.id}>{slot.name}</Select.Item>
@@ -368,8 +395,8 @@
 				</p>
 			{/if}
 
-			<div class="grid gap-4 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(34rem,1.4fr)]">
-				<section class="space-y-3 rounded-xl border p-3">
+			<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.4fr)]">
+				<section class="min-w-0 space-y-3 rounded-xl border p-3" aria-label="เลือกจากทะเบียน">
 					<div>
 						<h3 class="font-semibold">เลือกจากทะเบียน</h3>
 						<p class="text-xs text-muted-foreground">เลือกรายการได้หลายรายการ แล้วเพิ่มพร้อมกัน</p>
@@ -378,7 +405,16 @@
 						<Search class="absolute left-3 top-2.5 size-4 text-muted-foreground" />
 						<Input bind:value={search} class="pl-9" placeholder="ค้นหารหัสหรือชื่อ" />
 					</div>
-					<Select.Root type="single" bind:value={resourceKind}>
+					<Select.Root
+						type="single"
+						value={resourceKind}
+						onValueChange={(value) => {
+							if (value === 'all' || value === 'course' || value === 'activity') {
+								resourceKind = value;
+								selectedCatalogIds = [];
+							}
+						}}
+					>
 						<Select.Trigger>
 							{resourceKind === 'all'
 								? 'ทั้งหมด'
@@ -393,9 +429,11 @@
 						</Select.Content>
 					</Select.Root>
 					<div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-1">
-						{#each filteredCatalog as option (option.id)}
+						{#each catalogChoices as { option, existingVersions } (option.id)}
 							<label class="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted/60">
 								<Checkbox
+									aria-label={`เลือก ${option.code} v${option.versionNo}`}
+									disabled={existingVersions.length > 0 || !selectionReady || saving}
 									checked={selectedCatalogIds.includes(option.id)}
 									onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 								/>
@@ -404,6 +442,17 @@
 										>{option.code}</span
 									>
 									<span class="block text-sm">{option.name}</span>
+									<span class="block text-xs text-muted-foreground"
+										>v{option.versionNo} · {formatEffectiveRange(
+											option.effectiveFrom,
+											option.effectiveUntil
+										)}</span
+									>
+									{#if existingVersions.length}<span class="block text-xs text-muted-foreground"
+											>มีรายวิชานี้แล้ว · {existingVersions
+												.map((version) => `v${version}`)
+												.join(', ')}</span
+										>{/if}
 								</span>
 							</label>
 						{/each}
@@ -431,7 +480,7 @@
 					</Button>
 				</section>
 
-				<section class="overflow-hidden rounded-xl border">
+				<section class="min-w-0 overflow-hidden rounded-xl border" aria-label="รายการในหลักสูตร">
 					<div class="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
 						<div>
 							<h3 class="font-semibold">รายการใน {selectedTermName}</h3>
@@ -463,6 +512,9 @@
 												{option?.code ?? source?.code}
 											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>
+											<div class="text-xs text-muted-foreground">
+												v{source?.versionNo ?? option?.versionNo}
+											</div>
 										</Table.Cell>
 										<Table.Cell>
 											<Select.Root

@@ -826,7 +826,7 @@ pub async fn get_catalog_subject_overview(
         CatalogAction::Manage,
     )
     .await?;
-    let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
+    let today = catalog::subject_catalog_today();
     Ok(ok(catalog::list_subject_overview(
         &pool,
         &read_filter,
