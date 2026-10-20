@@ -185,6 +185,7 @@ test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
 	// Compile the self-hosted Vite routes during fixture setup, outside user-interaction timing.
 	test.setTimeout(120_000);
+	const previewUrl = process.env.E2E_PUBLIC_PREVIEW_URL;
 	apiServer = createHttpServer(async (req, res) => {
 		const endpoint = new URL(req.url ?? '/', 'http://localhost').pathname;
 		requests.push({ path: endpoint, cookie: req.headers.cookie, origin: req.headers.origin });
@@ -293,22 +294,32 @@ test.beforeAll(async () => {
 					};
 		res.end(JSON.stringify({ success: true, data }));
 	});
-	await new Promise<void>((done) => apiServer.listen(0, '127.0.0.1', done));
+	await new Promise<void>((done) =>
+		apiServer.listen(
+			previewUrl ? Number(process.env.E2E_PUBLIC_API_PORT ?? 3000) : 0,
+			'127.0.0.1',
+			done
+		)
+	);
 	const apiAddress = apiServer.address();
 	if (!apiAddress || typeof apiAddress === 'string') throw new Error('API fixture did not start');
 	process.env.PUBLIC_BACKEND_URL = `http://127.0.0.1:${apiAddress.port}`;
 	process.env.PUBLIC_VAPID_KEY = 'test';
-	devServer = await createServer({
-		root: frontendRoot,
-		configFile: path.join(frontendRoot, 'vite.config.ts'),
-		cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-public-school-layout-test'),
-		logLevel: 'error',
-		server: { host: '127.0.0.1', port: 0 }
-	});
-	await devServer.listen();
-	const address = devServer.httpServer?.address();
-	if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
-	baseUrl = `http://127.0.0.1:${address.port}`;
+	if (previewUrl) {
+		baseUrl = previewUrl;
+	} else {
+		devServer = await createServer({
+			root: frontendRoot,
+			configFile: path.join(frontendRoot, 'vite.config.ts'),
+			cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-public-school-layout-test'),
+			logLevel: 'error',
+			server: { host: '127.0.0.1', port: 0 }
+		});
+		await devServer.listen();
+		const address = devServer.httpServer?.address();
+		if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
+		baseUrl = `http://127.0.0.1:${address.port}`;
+	}
 	for (const route of ['/', '/login']) {
 		const response = await fetch(`${baseUrl}${route}`);
 		if (!response.ok) throw new Error(`Public fixture route ${route} failed to start`);
