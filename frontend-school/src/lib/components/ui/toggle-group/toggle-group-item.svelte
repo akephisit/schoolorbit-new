@@ -15,7 +15,7 @@
 	data-slot="toggle-group-item"
 	class={cn(
 		buttonVariants({ variant: 'outline', size: 'sm' }),
-		'data-[state=on]:bg-accent data-[state=on]:text-accent-foreground',
+		'data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground',
 		className
 	)}
 	{...restProps}

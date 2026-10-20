@@ -5,21 +5,21 @@ export const PALETTES = [
 		label: 'เขียวอมฟ้า',
 		description: 'อบอุ่น สงบ เป็นมิตร',
 		primary: '#167166',
-		background: '#f6f7f3'
+		background: '#f9fcff'
 	},
 	{
 		value: 'blue',
 		label: 'น้ำเงิน',
 		description: 'ชัดเจน น่าเชื่อถือ',
 		primary: '#245fc2',
-		background: '#f3f6fb'
+		background: '#f9fcff'
 	},
 	{
 		value: 'purple',
 		label: 'ม่วง',
 		description: 'ร่วมสมัย มีเอกลักษณ์',
 		primary: '#7850a5',
-		background: '#f8f5fa'
+		background: '#f9fcff'
 	}
 ] as const;
 export const FONTS = [
@@ -110,21 +110,25 @@ export function contrastRatio(first: string, second: string): number {
 }
 export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	const dark = mode === 'dark';
-	const palette = PALETTES.find((item) => item.value === appearance.palette) ?? PALETTES[0];
 	const requested = palettePrimary(appearance);
-	const card = dark ? '#1d302a' : '#ffffff';
-	const background = dark ? '#152521' : palette.background;
-	const foreground = dark ? '#e8efe8' : '#203a37';
-	const primaryForeground = dark ? '#142b25' : '#ffffff';
-	const surfaces = (primary: string) => ({
-		secondary: mix(card, primary, dark ? 0.12 : 0.08),
-		accent: mix(card, primary, dark ? 0.15 : 0.08),
-		welcome: mix(card, primary, dark ? 0.12 : 0.09)
-	});
+	const card = dark ? '#0e171e' : '#ffffff';
+	const background = dark ? '#040c13' : '#f9fcff';
+	const foreground = dark ? '#e9f0f5' : '#0e171e';
+	const primaryForeground = dark ? '#040c13' : '#ffffff';
+	const muted = dark ? '#19232a' : '#ecf3f8';
+	// Neutral visual roles follow the pre-appearance design, independently of school brand.
+	const surfaces = { secondary: muted, accent: dark ? '#14242f' : '#e3f1fb', welcome: muted };
 	let primary = requested;
 	for (let step = 0; step <= 100; step++) {
 		primary = mix(requested, dark ? '#ffffff' : '#000000', step / 100);
-		const candidateSurfaces = [card, background, ...Object.values(surfaces(requested))];
+		const candidateSurfaces = [
+			card,
+			background,
+			muted,
+			...Object.values(surfaces),
+			// Reusable low-opacity selected/status treatments can sit on neutral trays or hovered rows.
+			mix(muted, primary, 0.2)
+		];
 		if (
 			contrastRatio(primary, primaryForeground) >= 4.5 &&
 			contrastRatio(mix(primary, card, 0.1), primaryForeground) >= 4.5 &&
@@ -133,7 +137,8 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		)
 			break;
 	}
-	const tinted = surfaces(requested);
+	const controlSurfaces = [card, background, muted, ...Object.values(surfaces)];
+	const border = dark ? '#252f37' : '#d8dfe4';
 	const primaryFillForeground =
 		contrastRatio(requested, '#000000') >= contrastRatio(requested, '#ffffff')
 			? '#000000'
@@ -143,11 +148,22 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		primaryFillForeground === '#ffffff' ? '#000000' : '#ffffff',
 		0.08
 	);
-	const primaryFillBorder = [card, background].some(
-		(surface) => contrastRatio(requested, surface) < 3
-	)
+	const primaryFillBorder = controlSurfaces.some((surface) => contrastRatio(requested, surface) < 3)
 		? primary
 		: requested;
+	const statusInk = (color: string) => {
+		let candidate = color;
+		for (let step = 0; step <= 100; step++) {
+			candidate = mix(color, dark ? '#ffffff' : '#000000', step / 100);
+			if (
+				[card, muted].every(
+					(surface) => contrastRatio(candidate, mix(surface, candidate, 0.2)) >= 4.5
+				)
+			)
+				break;
+		}
+		return candidate;
+	};
 	return {
 		requested,
 		primaryFill: requested,
@@ -162,15 +178,17 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		background,
 		foreground,
 		card,
-		...tinted,
-		border: dark ? '#354b3e' : '#e0e7df',
-		mutedForeground: dark ? '#afc1b4' : '#61746d',
-		warning: dark ? '#efc37c' : '#98651b',
+		...surfaces,
+		muted,
+		border,
+		input: border,
+		mutedForeground: dark ? '#85919a' : '#59656e',
+		warning: statusInk(dark ? '#efc37c' : '#98651b'),
 		warningSurface: dark ? '#453d2c' : '#fcf3df',
-		destructive: dark ? '#f4a49a' : '#b54441',
+		destructive: statusInk(dark ? '#f4a49a' : '#b54441'),
 		destructiveForeground: dark ? '#39201d' : '#ffffff',
 		destructiveSurface: dark ? '#4a3531' : '#fbecea',
-		success: dark ? '#91d4ac' : '#276442',
+		success: statusInk(dark ? '#91d4ac' : '#276442'),
 		successSurface: dark ? '#243c2d' : '#e9f3eb'
 	};
 }
@@ -192,14 +210,14 @@ export function appearanceStyle(appearance: Appearance, mode: PreviewMode): stri
 		'primary-fill-border': tokens.primaryFillBorder,
 		secondary: tokens.secondary,
 		'secondary-foreground': tokens.foreground,
-		muted: tokens.secondary,
+		muted: tokens.muted,
 		'muted-foreground': tokens.mutedForeground,
 		accent: tokens.accent,
 		'accent-foreground': tokens.foreground,
 		destructive: tokens.destructive,
 		'destructive-foreground': tokens.destructiveForeground,
 		border: tokens.border,
-		input: tokens.border,
+		input: tokens.input,
 		ring: tokens.primary,
 		warning: tokens.warning,
 		'warning-surface': tokens.warningSurface,

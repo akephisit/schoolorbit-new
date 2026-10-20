@@ -7,37 +7,37 @@
 :root {
 	--radius: 0.625rem;
 	/* Default school appearance fallback - Light Mode */
-	--background: #f6f7f3;
-	--foreground: #203a37;
+	--background: #f9fcff;
+	--foreground: #0e171e;
 	--card: #ffffff;
-	--card-foreground: #203a37;
+	--card-foreground: #0e171e;
 	--popover: #ffffff;
-	--popover-foreground: #203a37;
+	--popover-foreground: #0e171e;
 	/* Primary: default school teal */
-	--primary: #167166;
+	--primary: #14665c;
 	--primary-foreground: #ffffff;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
 	--primary-fill-border: #167166;
-	/* Secondary: Warm Gray */
-	--secondary: #ecf4f3;
-	--secondary-foreground: #203a37;
-	/* Muted: Light Gray */
-	--muted: #ecf4f3;
-	--muted-foreground: #61746d;
-	/* Accent: default school tint */
-	--accent: #ecf4f3;
-	--accent-foreground: #203a37;
+	/* Secondary: selected control surface */
+	--secondary: #ecf3f8;
+	--secondary-foreground: #0e171e;
+	/* Muted: neutral tray surface */
+	--muted: #ecf3f8;
+	--muted-foreground: #59656e;
+	/* Accent: interactive hover surface */
+	--accent: #e3f1fb;
+	--accent-foreground: #0e171e;
 	/* Destructive: Warm Red */
-	--destructive: #b54441;
+	--destructive: #9a3a37;
 	--destructive-foreground: #ffffff;
 	--success: #276442;
-	--warning: #98651b;
-	/* Borders & Inputs */
-	--border: #e0e7df;
-	--input: #e0e7df;
-	--ring: #167166;
+	--warning: #7b5216;
+	/* Quiet pre-appearance dividers and control outlines */
+	--border: #d8dfe4;
+	--input: #d8dfe4;
+	--ring: #14665c;
 	/* Charts: Educational Color Palette */
 	--chart-1: oklch(0.55 0.2 250);
 	/* Blue */
@@ -51,17 +51,17 @@
 	/* Red-Orange */
 	/* Sidebar Colors */
 	--sidebar: #ffffff;
-	--sidebar-foreground: #203a37;
-	--sidebar-primary: #167166;
+	--sidebar-foreground: #0e171e;
+	--sidebar-primary: #14665c;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #ecf4f3;
-	--sidebar-accent-foreground: #203a37;
-	--sidebar-border: #e0e7df;
-	--sidebar-ring: #167166;
+	--sidebar-accent: #e3f1fb;
+	--sidebar-accent-foreground: #0e171e;
+	--sidebar-border: #d8dfe4;
+	--sidebar-ring: #14665c;
 	--warning-surface: #fcf3df;
 	--destructive-surface: #fbecea;
 	--success-surface: #e9f3eb;
-	--welcome: #eaf2f1;
+	--welcome: #ecf3f8;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;
@@ -70,37 +70,37 @@
 
 .dark {
 	/* Default school appearance fallback - Dark Mode */
-	--background: #152521;
-	--foreground: #e8efe8;
-	--card: #1d302a;
-	--card-foreground: #e8efe8;
-	--popover: #1d302a;
-	--popover-foreground: #e8efe8;
+	--background: #040c13;
+	--foreground: #e9f0f5;
+	--card: #0e171e;
+	--card-foreground: #e9f0f5;
+	--popover: #0e171e;
+	--popover-foreground: #e9f0f5;
 	/* Primary: readable default school teal */
-	--primary: #6fa7a0;
-	--primary-foreground: #142b25;
+	--primary: #7dafa9;
+	--primary-foreground: #040c13;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
-	--primary-fill-border: #6fa7a0;
-	/* Secondary: Darker Gray */
-	--secondary: #1c3831;
-	--secondary-foreground: #e8efe8;
-	/* Muted: Medium Gray */
-	--muted: #1c3831;
-	--muted-foreground: #afc1b4;
-	/* Accent: Subtle Blue */
-	--accent: #1c3a33;
-	--accent-foreground: #e8efe8;
+	--primary-fill-border: #7dafa9;
+	/* Secondary: selected control surface */
+	--secondary: #19232a;
+	--secondary-foreground: #e9f0f5;
+	/* Muted: neutral tray surface */
+	--muted: #19232a;
+	--muted-foreground: #85919a;
+	/* Accent: interactive hover surface */
+	--accent: #14242f;
+	--accent-foreground: #e9f0f5;
 	/* Destructive: Softer Red for Dark Mode */
 	--destructive: #f4a49a;
 	--destructive-foreground: #39201d;
 	--success: #91d4ac;
 	--warning: #efc37c;
 	/* Borders & Inputs */
-	--border: #354b3e;
-	--input: #354b3e;
-	--ring: #6fa7a0;
+	--border: #252f37;
+	--input: #252f37;
+	--ring: #7dafa9;
 	/* Charts: Vibrant but Comfortable */
 	--chart-1: oklch(0.6 0.22 250);
 	--chart-2: oklch(0.65 0.2 160);
@@ -108,18 +108,18 @@
 	--chart-4: oklch(0.65 0.22 290);
 	--chart-5: oklch(0.65 0.2 30);
 	/* Sidebar Colors for Dark Mode */
-	--sidebar: #1d302a;
-	--sidebar-foreground: #e8efe8;
-	--sidebar-primary: #6fa7a0;
-	--sidebar-primary-foreground: #142b25;
-	--sidebar-accent: #1c3a33;
-	--sidebar-accent-foreground: #e8efe8;
-	--sidebar-border: #354b3e;
-	--sidebar-ring: #6fa7a0;
+	--sidebar: #0e171e;
+	--sidebar-foreground: #e9f0f5;
+	--sidebar-primary: #7dafa9;
+	--sidebar-primary-foreground: #040c13;
+	--sidebar-accent: #14242f;
+	--sidebar-accent-foreground: #e9f0f5;
+	--sidebar-border: #252f37;
+	--sidebar-ring: #7dafa9;
 	--warning-surface: #453d2c;
 	--destructive-surface: #4a3531;
 	--success-surface: #243c2d;
-	--welcome: #1c3831;
+	--welcome: #19232a;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;

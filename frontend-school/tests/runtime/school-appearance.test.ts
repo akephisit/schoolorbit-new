@@ -155,9 +155,31 @@ test('semantic destructive foreground preserves readable fills while status red 
 	}
 });
 
-test('fallback brand roles match the default serializer before tenant appearance CSS is available', () => {
+test('fallback semantic roles match the default serializer before tenant appearance CSS is available', () => {
 	const css = readFileSync(new URL('../../src/routes/layout.css', import.meta.url), 'utf8');
 	const roles = [
+		'background',
+		'foreground',
+		'card',
+		'card-foreground',
+		'popover',
+		'popover-foreground',
+		'border',
+		'input',
+		'muted',
+		'muted-foreground',
+		'secondary-foreground',
+		'accent-foreground',
+		'sidebar',
+		'sidebar-foreground',
+		'sidebar-border',
+		'success',
+		'success-surface',
+		'warning',
+		'warning-surface',
+		'destructive',
+		'destructive-foreground',
+		'destructive-surface',
 		'primary',
 		'primary-foreground',
 		'primary-fill',

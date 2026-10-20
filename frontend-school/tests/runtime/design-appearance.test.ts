@@ -142,7 +142,18 @@ test('chosen fills remain exact with readable text, hover and boundaries across 
 						contrastRatio(tokens.primaryFillHover, tokens.primaryFillForeground) >= 4.5,
 						`${mode} ${primary} hover`
 					);
-					for (const surface of [tokens.card, tokens.background]) {
+					for (const surface of [
+						tokens.card,
+						tokens.background,
+						tokens.muted,
+						tokens.secondary,
+						tokens.accent
+					]) {
+						for (const text of [tokens.foreground, tokens.mutedForeground])
+							assert.ok(
+								contrastRatio(text, surface) >= 4.5,
+								`${mode} ${primary} text ${text} on ${surface}`
+							);
 						assert.ok(
 							contrastRatio(tokens.primaryFillBorder, surface) >= 3,
 							`${mode} ${primary} boundary on ${surface}`
@@ -164,4 +175,63 @@ test('chosen fills remain exact with readable text, hover and boundaries across 
 			}
 		}
 	}
+});
+
+test('neutral surfaces and quiet outlines follow the pre-appearance design across school brands', () => {
+	for (const mode of ['light', 'dark'] as const) {
+		const baseline = appearanceTokens(DEFAULT_APPEARANCE, mode);
+		for (const palette of ['teal', 'blue', 'purple'] as const) {
+			for (const primary of [null, '#ffffff', '#000000', '#dbeafe', '#fce7f3']) {
+				const tokens = appearanceTokens({ ...DEFAULT_APPEARANCE, palette, primary }, mode);
+				for (const role of [
+					'background',
+					'card',
+					'secondary',
+					'muted',
+					'accent',
+					'border',
+					'input'
+				] as const)
+					assert.equal(
+						tokens[role],
+						baseline[role],
+						`${mode} ${palette} ${primary} neutral ${role}`
+					);
+				assert.notEqual(tokens.background, tokens.card);
+				assert.notEqual(tokens.muted, tokens.card);
+				assert.equal(tokens.secondary, tokens.muted);
+				assert.notEqual(tokens.secondary, tokens.accent);
+				assert.equal(tokens.input, tokens.border);
+			}
+		}
+	}
+});
+
+test('semantic inks stay readable on translucent treatments over neutral surfaces', () => {
+	const blend = (surface: string, ink: string, opacity: number) =>
+		'#' +
+		[1, 3, 5]
+			.map((start) =>
+				Math.round(
+					Number.parseInt(surface.slice(start, start + 2), 16) * (1 - opacity) +
+						Number.parseInt(ink.slice(start, start + 2), 16) * opacity
+				)
+					.toString(16)
+					.padStart(2, '0')
+			)
+			.join('');
+	for (const mode of ['light', 'dark'] as const)
+		for (const palette of ['teal', 'blue', 'purple'] as const) {
+			for (const primary of [null, '#ffffff', '#000000', '#dbeafe', '#fce7f3']) {
+				const tokens = appearanceTokens({ ...DEFAULT_APPEARANCE, palette, primary }, mode);
+				for (const ink of [tokens.primary, tokens.success, tokens.warning, tokens.destructive]) {
+					for (const surface of [tokens.card, tokens.background, tokens.muted])
+						for (const opacity of [0.15, 0.2])
+							assert.ok(
+								contrastRatio(ink, blend(surface, ink, opacity)) >= 4.5,
+								`${mode} ${palette} ${primary} ink ${ink} at ${opacity} on ${surface}`
+							);
+				}
+			}
+		}
 });
