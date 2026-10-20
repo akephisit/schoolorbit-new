@@ -1,0 +1,34 @@
+[package]
+name = "school-budget"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = ["school-http/api-docs", "school-auth/api-docs", "school-workflow/api-docs", "dep:utoipa"]
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+school-file-platform = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+school-permissions = { workspace = true }
+school-workflow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-test-db = { workspace = true }
+
+[lints]
+workspace = true

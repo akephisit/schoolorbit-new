@@ -1,5 +1,7 @@
 <script lang="ts">
+	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
+	import { budgetUpdatePermissions } from '#lib/budget/access.js';
 	import { goto } from '$app/navigation';
 	import {
 		getBudgetProject,
@@ -138,18 +140,18 @@
 					variant="outline"
 					disabled={pending || editing}
 					onclick={() => (metadataOpen = true)}>แก้ไขข้อมูลโครงการ</Button
-				>{/if}{#if value.capabilities.canAmend}<Button
+				>{/if}{#if value.capabilities.canAmend && $can.hasAny(...budgetUpdatePermissions)}<Button
 					variant="outline"
 					disabled={pending}
 					onclick={() => {
 						amendmentOpen = true;
 						error = '';
 					}}>แก้ไขแผนที่อนุมัติ</Button
-				>{/if}{#if value.capabilities.canCreateRequest}<Button
+				>{/if}{#if value.capabilities.canCreateRequest && $can.has(PERMISSIONS.BUDGET_CREATE_OWN)}<Button
 					disabled={pending}
 					onclick={() => (requestOpen = true)}>สร้างคำขอใช้เงิน</Button
 				>{/if}{/if}{/snippet}
-	<Navigation />
+	<Navigation /><ReadAccessNotice />
 	<section
 		class="space-y-4"
 		aria-label="แผนโครงการ"
@@ -194,11 +196,11 @@
 						{value.project.status === 'approved' ? 'แผนที่อนุมัติ' : 'แผนฉบับร่าง'}
 					</h2>
 					<div class="flex flex-wrap gap-2">
-						{#if value.capabilities.canEdit}<Button
+						{#if value.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}<Button
 								variant="outline"
 								disabled={pending}
 								onclick={() => (editing = true)}>แก้ไขกิจกรรมและค่าใช้จ่าย</Button
-							>{/if}{#if value.capabilities.canSubmit}<LoadingButton
+							>{/if}{#if value.capabilities.canSubmit && $can.hasAny(...budgetUpdatePermissions)}<LoadingButton
 								loading={pending}
 								onclick={submit}>ส่งแผนพิจารณา</LoadingButton
 							>{/if}
@@ -256,7 +258,7 @@
 													(item) => item.id === balance.expenseCategoryId
 												)?.name ?? '—'}
 											</p></Table.Cell
-										>{#each [balance.currentSatang, balance.reservedSatang, balance.paidSatang, balance.availableSatang, balance.loanOutstandingSatang] as amount}<Table.Cell
+										>{#each [balance.currentSatang, balance.reservedSatang, balance.paidSatang, balance.availableSatang, balance.loanOutstandingSatang] as amount, columnIndex (columnIndex)}<Table.Cell
 												class="whitespace-nowrap text-right tabular-nums"
 												>{money(amount)}</Table.Cell
 											>{/each}</Table.Row
@@ -279,7 +281,7 @@
 			}}
 		/>{/if}
 	<RequestList source={requestsSource} {query} embedded />
-	<History kind="projects" {id} />
+	{#if region.value}<History kind="projects" {id} />{/if}
 </PageShell>
 <Dialog.Root bind:open={metadataOpen}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"

@@ -33,6 +33,7 @@ export type BudgetAdjustmentDetail = Schemas['BudgetAdjustmentDetail'];
 export type BudgetAdjustmentPage = Schemas['BudgetAdjustmentPage'];
 export type BudgetAllocationRef = Schemas['BudgetAllocationRef'];
 export type SaveBudgetAdjustmentRequest = Schemas['SaveBudgetAdjustmentRequest'];
+export type UpdateBudgetAdjustmentRequest = Schemas['UpdateBudgetAdjustmentRequest'];
 export type BudgetDashboard = Schemas['BudgetDashboard'];
 export type BudgetDashboardRow = Schemas['BudgetDashboardRow'];
 export type BudgetBalance = Schemas['BudgetBalance'];
@@ -57,7 +58,10 @@ const read = async <T>(url: string, options: ApiRequestOptions = {}): Promise<T>
 const post = async <T>(url: string, input: object): Promise<T> =>
 	requireApiData(await apiClient.post<T>(url, input), 'บันทึกข้อมูลงบประมาณไม่สำเร็จ');
 export const getBudgetCatalogs = (options: ApiRequestOptions = {}) =>
-	read<BudgetCatalogs>(`${base}/catalogs`, options);
+	read<BudgetCatalogs>(`${base}/catalogs`, {
+		...options,
+		query: { includeInactive: true, ...options.query }
+	});
 export const getBudgetSettings = (options: ApiRequestOptions = {}) =>
 	read<BudgetSettings>(`${base}/settings`, options);
 export async function saveBudgetSettings(
@@ -129,6 +133,15 @@ export const getBudgetAdjustment = (id: string, options: ApiRequestOptions = {})
 	read<BudgetAdjustmentDetail>(path('adjustments', id), options);
 export const createBudgetAdjustment = (input: SaveBudgetAdjustmentRequest) =>
 	post<BudgetAdjustmentDetail>(`${base}/adjustments`, input);
+export async function saveBudgetAdjustment(
+	id: string,
+	input: UpdateBudgetAdjustmentRequest
+): Promise<BudgetAdjustmentDetail> {
+	return requireApiData(
+		await apiClient.put<BudgetAdjustmentDetail>(path('adjustments', id), input),
+		'บันทึกการปรับงบประมาณไม่สำเร็จ'
+	);
+}
 export const submitBudgetAdjustment = (id: string, input: BudgetMutationRequest) =>
 	post<BudgetAdjustmentDetail>(`${path('adjustments', id)}/submit`, input);
 export const actOnBudgetAdjustment = (id: string, input: BudgetActionRequest) =>

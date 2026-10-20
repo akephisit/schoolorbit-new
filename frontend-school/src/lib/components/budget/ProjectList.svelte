@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import ReadAccessNotice from './ReadAccessNotice.svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { listBudgetProjects, type BudgetProjectPage } from '#lib/api/budget.js';
@@ -7,6 +8,7 @@
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
 	import { budgetFilters, destination, dateLabel } from '#lib/budget/presentation.js';
 	import { money } from '#lib/budget/money.js';
+	import { budgetReadPermissions } from '#lib/budget/access.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -29,16 +31,16 @@
 	} = $props();
 	const region = new BudgetRegion<BudgetProjectPage | null>();
 	let creating = $state(false),
-		search = $state(query.search);
+		search = $state(untrack(() => query.search));
 	$effect.pre(() => region.consume(source));
 	onDestroy(() => region.dispose());
 </script>
 
 <PageShell title="โครงการงบประมาณ" contentClass="space-y-4">
-	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN)}<Button
+	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN) && $can.hasAny(...budgetReadPermissions)}<Button
 				onclick={() => (creating = true)}>สร้างโครงการ</Button
 			>{/if}{/snippet}
-	<Navigation />
+	<Navigation /><ReadAccessNotice />
 	<form
 		class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4"
 		onsubmit={(event) => {
@@ -95,7 +97,7 @@
 							>{/each}</Table.Body
 					></Table.Root
 				>
-			</div>{:else if !region.error}<PageState
+			</div>{:else if region.value && !region.error}<PageState
 				title={query.search ? 'ไม่พบโครงการตามคำค้น' : 'ยังไม่มีโครงการงบประมาณ'}
 				description="สร้างโครงการและเพิ่มกิจกรรมเพื่อเริ่มวางแผนค่าใช้จ่าย"
 			/>{/if}

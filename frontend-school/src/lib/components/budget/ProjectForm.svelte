@@ -133,7 +133,7 @@
 		options={(catalogs?.fiscalYears ?? [])
 			.filter((year) => year.active || year.id === draft.fiscalYearId)
 			.map((year) => ({ value: year.id, label: year.name }))}
-		disabled={pending || loading}
+		disabled={pending || loading || !!workspace?.acceptedPlan}
 		error={errors.fiscalYearId}
 	/>
 	<Choice
@@ -141,8 +141,13 @@
 		label="หน่วยงานที่รับผิดชอบ"
 		required
 		bind:value={draft.organizationUnitId}
-		options={organizations.map((org) => ({ value: org.id, label: org.name }))}
-		disabled={pending || loading}
+		options={[
+			...organizations.map((org) => ({ value: org.id, label: org.name })),
+			...(workspace && !organizations.some((org) => org.id === draft.organizationUnitId)
+				? [{ value: draft.organizationUnitId, label: workspace.project.organizationUnitName }]
+				: [])
+		]}
+		disabled={pending || loading || !!workspace?.acceptedPlan}
 		error={errors.organizationUnitId}
 	/>
 	<fieldset class="grid gap-3 sm:grid-cols-2">

@@ -1,4 +1,5 @@
 /** Budget wire values are integer satang strings; browser arithmetic stays exact. */
+export const maxMoneySatang = 999999999999n;
 export function satang(value: string): bigint {
 	if (!/^\d+$/.test(value)) throw new Error('จำนวนเงินไม่ถูกต้อง');
 	return BigInt(value);
@@ -23,12 +24,24 @@ export function quantityMillis(value: string): bigint {
 	const [whole, fraction = ''] = value.split('.');
 	const amount = BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'));
 	if (amount <= 0n) throw new Error('จำนวนต้องมากกว่า 0');
+	if (whole.length > 7 || amount > 1000000000n) throw new Error('จำนวนต้องไม่เกิน 1,000,000');
 	return amount;
 }
 
 /** Round a nonnegative exact quantity × unit price half up once, to satang. */
 export function lineTotal(quantity: string, unitPriceSatang: string): string {
-	return ((quantityMillis(quantity) * satang(unitPriceSatang) + 500n) / 1000n).toString();
+	const price = satang(unitPriceSatang);
+	const total = (quantityMillis(quantity) * price + 500n) / 1000n;
+	if (price > maxMoneySatang || total > maxMoneySatang)
+		throw new Error('จำนวนเงินต้องไม่เกิน 9,999,999,999.99 บาท');
+	return total.toString();
+}
+
+export function positiveAmount(value: string): string {
+	const amount = toSatang(value);
+	if (BigInt(amount) <= 0n || BigInt(amount) > maxMoneySatang)
+		throw new Error('กรอกจำนวนเงินมากกว่า 0 และไม่เกิน 9,999,999,999.99 บาท');
+	return amount;
 }
 
 export function sumSatang(values: readonly string[]): string {

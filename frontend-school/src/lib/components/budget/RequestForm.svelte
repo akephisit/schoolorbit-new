@@ -7,7 +7,7 @@
 		type BudgetSpendingRequestDetail
 	} from '#lib/api/budget.js';
 	import { BudgetMutationIntent } from '#lib/budget/mutation-intent.js';
-	import { bahtInput, toSatang, sumSatang, money } from '#lib/budget/money.js';
+	import { bahtInput, toSatang, positiveAmount, sumSatang, money } from '#lib/budget/money.js';
 	import { message } from '#lib/budget/drafts.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -66,7 +66,7 @@
 			if (!activityId || !title.trim()) throw new Error('กรอกชื่อคำขอและเลือกกิจกรรม');
 			const lines = (activity?.lines ?? [])
 				.filter((line) => amounts[line.id] !== undefined)
-				.map((line) => ({ planLineId: line.id, amountSatang: toSatang(amounts[line.id]) }));
+				.map((line) => ({ planLineId: line.id, amountSatang: positiveAmount(amounts[line.id]) }));
 			if (!lines.length || lines.some((line) => BigInt(line.amountSatang) <= 0n))
 				throw new Error('เลือกรายการและกรอกจำนวนเงินมากกว่า 0');
 			pending = true;

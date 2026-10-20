@@ -856,6 +856,96 @@
 			"notes": "Dedicated read-first settings section. Loader owns only the selected section; exact Behavior management permission gates reads and saves. Feature drafts and independent retry remain with their component."
 		},
 		{
+			"route": "staff/budget",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned independent dashboard and fiscal catalogs; explicit read-scope union, exact integer-satang display, identity/fiscal-context supersession and focused regional retries."
+		},
+		{
+			"route": "staff/budget/adjustments",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned bounded adjustments directory. Authorized create workflow lazily reads fiscal catalogs and current allocation options; monetary drafts stay exact and retain failed mutations."
+		},
+		{
+			"route": "staff/budget/adjustments/[id]",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned adjustment and process regions; immutable history reads only when expanded. Exact capabilities guard review, returned-draft editing and loan repayment; mutations patch typed detail."
+		},
+		{
+			"route": "staff/budget/projects",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned bounded project directory; URL search and pagination. Create-only users without read do not start reads or mutations. Authorized project form catalogs and organization lookups remain lazy."
+		},
+		{
+			"route": "staff/budget/projects/[id]",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route starts authorized project, catalogs, process and request regions independently. Local mutations patch the project only; creation/edit options and private evidence are lazy. Accepted snapshots remain separate from amendment drafts."
+		},
+		{
+			"route": "staff/budget/reports",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned independent authoritative rows and fiscal catalogs. Browser derives activity/fund/category matrix and exact totals; metric presentation changes reuse rows. Export is a lazy backend-authorized download."
+		},
+		{
+			"route": "staff/budget/requests",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route-owned bounded activity-bound spending request directory. URL filters and paging preserve context; finance-only users without explicit read see guidance without forbidden requests."
+		},
+		{
+			"route": "staff/budget/requests/[id]",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Route starts request, process and bounded payments independently. Exact action permissions and capabilities guard lazy edit/payment/refund/close workflows; typed mutations reconcile affected regions. Private Files reads require explicit evidence action."
+		},
+		{
+			"route": "staff/budget/settings",
+			"wave": "budget",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "tenant actor and budget fiscal year; academic context none",
+			"status": "complete",
+			"backendOwner": "school-budget + school-workflow + school-file-platform",
+			"notes": "Manage-only route-owned settings; catalog drafts preserve failures, new persistent identities remain server-owned. Staff/organization routing lookups start only after opening routing configuration."
+		},
+		{
 			"route": "staff/calendar",
 			"wave": "staff",
 			"dataOwner": "route",

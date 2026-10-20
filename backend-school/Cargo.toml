@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/school-budget",
     "crates/school-student-care",
     "crates/school-files-http",
     "crates/school-administration",
@@ -47,6 +48,7 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-budget = { path = "crates/school-budget" }
 school-student-care = { path = "crates/school-student-care" }
 rustybuzz = "0.20.1"
 school-files-http = { path = "crates/school-files-http" }
@@ -146,6 +148,7 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-budget/api-docs",
     "school-student-care/api-docs",
     "school-workflow/api-docs",
     "school-files-http/api-docs",
@@ -178,6 +181,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-budget = { workspace = true }
 school-student-care = { workspace = true }
 school-files-http = { workspace = true }
 school-administration = { workspace = true }

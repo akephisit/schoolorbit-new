@@ -838,6 +838,7 @@ dependencies = [
  "school-auth-http",
  "school-authorization",
  "school-behavior",
+ "school-budget",
  "school-calendar",
  "school-certificates",
  "school-certificates-http",
@@ -4418,6 +4419,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-budget"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "school-auth",
+ "school-auth-http",
+ "school-authorization",
+ "school-errors",
+ "school-file-platform",
+ "school-http",
+ "school-notifications",
+ "school-permissions",
+ "school-test-db",
+ "school-workflow",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-calendar"
 version = "0.1.0"
 dependencies = [
@@ -4567,6 +4594,7 @@ dependencies = [
  "school-auth",
  "school-auth-http",
  "school-authorization",
+ "school-budget",
  "school-certificates",
  "school-errors",
  "school-file-platform",

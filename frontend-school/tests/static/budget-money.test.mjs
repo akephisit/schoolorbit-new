@@ -24,7 +24,9 @@ test('quantity multiplication rounds half up once to integer satang', () => {
 	assert.equal(lineTotal('0.004', '100'), '0');
 	assert.equal(lineTotal('2', '179400'), '358800');
 	assert.equal(lineTotal('1.125', '100'), '113');
-	assert.equal(lineTotal('9007199254740993', '100'), '900719925474099300');
+	assert.throws(() => lineTotal('1000000.001', '100'));
+	assert.throws(() => lineTotal('1000000', '999999999999'));
+	assert.equal(lineTotal('999999.999', '1'), '1000000');
 	for (const value of ['0', '-1', '1.0001', '1e2', '']) assert.throws(() => quantityMillis(value));
 });
 

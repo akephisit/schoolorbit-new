@@ -36,8 +36,8 @@
 		error = $state(''),
 		pending = $state(false),
 		disposed = false;
-	let expectedRevision = 0,
-		expectedProcessRevision = 0;
+	let expectedRevision = $state(0),
+		expectedProcessRevision = $state(0);
 	const process = $derived(region.value?.process),
 		current = $derived(process?.steps.find((step) => step.stepIndex === process.currentStep));
 	const actionLabel = $derived(

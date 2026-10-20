@@ -10,8 +10,15 @@
 		resourceId,
 		ids = $bindable([]),
 		busy = $bindable(false),
-		disabled = false
-	}: { resourceId: string; ids?: string[]; busy?: boolean; disabled?: boolean } = $props();
+		disabled = false,
+		required = false
+	}: {
+		resourceId: string;
+		ids?: string[];
+		busy?: boolean;
+		disabled?: boolean;
+		required?: boolean;
+	} = $props();
 	let error = $state(''),
 		disposed = false;
 	onDestroy(() => {
@@ -38,7 +45,7 @@
 </script>
 
 <div class="space-y-2">
-	<Label for={`budget-evidence-${resourceId}`}>แนบหลักฐาน</Label><Input
+	<Label for={`budget-evidence-${resourceId}`}>แนบหลักฐาน{required ? ' *' : ''}</Label><Input
 		id={`budget-evidence-${resourceId}`}
 		type="file"
 		multiple

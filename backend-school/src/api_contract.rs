@@ -2326,6 +2326,7 @@ impl OpenApi for SchoolApiSchemasDoc {
         append_schema_registry(&mut document, build_schema_group_17());
         append_schema_registry(&mut document, build_schema_group_18());
         append_schema_registry(&mut document, build_supply_catalog_schemas());
+        append_schema_registry(&mut document, school_budget::http::BudgetApi::openapi());
         document
     }
 }

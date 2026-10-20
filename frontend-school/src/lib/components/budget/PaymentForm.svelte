@@ -7,7 +7,8 @@
 		type BudgetSpendingRequestDetail
 	} from '#lib/api/budget.js';
 	import { BudgetMutationIntent } from '#lib/budget/mutation-intent.js';
-	import { bahtInput, toSatang, sumSatang, money } from '#lib/budget/money.js';
+	import { toSatang, sumSatang, money } from '#lib/budget/money.js';
+	import { paymentLines, paymentAllocations } from '#lib/budget/allocations.js';
 	import { message, validDate } from '#lib/budget/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -30,7 +31,7 @@
 		onsaved: (value: BudgetSpendingRequestDetail) => void;
 	} = $props();
 	const expectedRevision = untrack(() => detail.request.revision),
-		lines = untrack(() => payment?.allocations ?? detail.lines);
+		lines = untrack(() => paymentLines(detail, payment));
 	let paidOn = $state<string | undefined>(),
 		voucher = $state(''),
 		note = $state(''),
@@ -62,14 +63,7 @@
 			if (!paidOn || !validDate(paidOn)) throw new Error('เลือกวันที่ทำรายการ');
 			if (payment ? !reason.trim() : !voucher.trim())
 				throw new Error(payment ? 'กรอกเหตุผลการคืนเงิน' : 'กรอกเลขที่ใบสำคัญ');
-			const allocations = lines
-				.filter((line) => amounts[line.planLineId])
-				.map((line) => ({
-					planLineId: line.planLineId,
-					amountSatang: toSatang(amounts[line.planLineId])
-				}));
-			if (!allocations.length || allocations.some((line) => BigInt(line.amountSatang) <= 0n))
-				throw new Error('กรอกจำนวนเงินมากกว่า 0 อย่างน้อยหนึ่งรายการ');
+			const allocations = paymentAllocations(amounts, lines);
 			pending = true;
 			const common = { expectedRevision, allocations, evidenceFileIds: evidenceIds };
 			let result: BudgetSpendingRequestDetail;
@@ -127,7 +121,8 @@
 				<Label for={`budget-payment-line-${line.planLineId}`}
 					>{lineNames[line.planLineId] ?? `รายการที่ ${index + 1}`}<span
 						class="block text-xs text-muted-foreground"
-						>จำนวนเงิน{payment ? 'ที่จ่าย' : 'ตามคำขอ'} {money(line.amountSatang)} บาท</span
+						>ยอดคงเหลือ{payment ? 'ที่คืนได้' : 'ที่จ่ายได้'}
+						{money(line.remainingSatang)} บาท</span
 					></Label
 				><Input
 					id={`budget-payment-line-${line.planLineId}`}

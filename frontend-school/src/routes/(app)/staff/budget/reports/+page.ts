@@ -1,12 +1,12 @@
+import { canReadBudget, budgetRoutePermissions } from '#lib/budget/access.js';
 import type { PageLoad } from './$types';
-import { get } from 'svelte/store';
-import { can } from '#lib/stores/permissions.js';
-import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import { budgetRead } from '#lib/budget/route-data.js';
-import { budgetFilters, safeReturn } from '#lib/budget/presentation.js';
+import { budgetFilters } from '#lib/budget/presentation.js';
 import { getBudgetDashboard, getBudgetCatalogs } from '#lib/api/budget.js';
 export const _meta = {
 	academicContext: 'none' as const,
+	access: { user_type: 'staff', permission: budgetRoutePermissions },
 	menu: {
 		title: 'รายงานงบประมาณ',
 		icon: 'ChartNoAxesCombined',
@@ -17,7 +17,7 @@ export const _meta = {
 		permission: PERMISSION_MODULES.BUDGET
 	}
 };
-export const load: PageLoad = ({ fetch, url, params, depends }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
 	const filters = budgetFilters(url);
 	const query = { fiscalYearId: filters.fiscalYearId || undefined };
@@ -25,14 +25,10 @@ export const load: PageLoad = ({ fetch, url, params, depends }) => {
 		query,
 		requestKey: JSON.stringify(query),
 		record: budgetRead(
-			() => get(can).hasModule(PERMISSION_MODULES.BUDGET),
+			canReadBudget,
 			() => getBudgetDashboard({ requestFetch: fetch, query }),
 			null
 		),
-		catalogs: budgetRead(
-			() => get(can).hasModule(PERMISSION_MODULES.BUDGET),
-			() => getBudgetCatalogs({ requestFetch: fetch }),
-			null
-		)
+		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null)
 	};
 };

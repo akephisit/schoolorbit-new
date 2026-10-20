@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { listBudgetRequests, type BudgetRequestPage } from '#lib/api/budget.js';
@@ -27,6 +28,7 @@
 	onDestroy(() => region.dispose());
 </script>
 
+{#if !embedded}<ReadAccessNotice />{/if}
 <section
 	class="space-y-3"
 	aria-label="คำขอใช้เงิน"
@@ -80,7 +82,7 @@
 						>{/each}</Table.Body
 				></Table.Root
 			>
-		</div>{:else if !region.error}<PageState
+		</div>{:else if region.value && !region.error}<PageState
 			title="ยังไม่มีคำขอใช้เงิน"
 			description="สร้างคำขอจากกิจกรรมในโครงการที่อนุมัติแผนแล้ว"
 		/>{/if}

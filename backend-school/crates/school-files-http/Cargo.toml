@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-budget/api-docs",
     "school-administration/api-docs",
     "school-attendance/api-docs",
     "school-admission/api-docs",
@@ -20,6 +21,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-budget = { workspace = true }
 school-workflow = { workspace = true }
 school-administration = { workspace = true }
 school-attendance = { workspace = true }

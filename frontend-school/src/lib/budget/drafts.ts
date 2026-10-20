@@ -123,6 +123,8 @@ export function projectErrors(
 ): Partial<Record<keyof BudgetProjectInput, string>> {
 	const errors: Partial<Record<keyof BudgetProjectInput, string>> = {};
 	if (!draft.name.trim()) errors.name = 'กรอกชื่อโครงการ';
+	else if (Array.from(draft.name.trim()).length > 250)
+		errors.name = 'ชื่อโครงการต้องไม่เกิน 250 ตัวอักษร';
 	if (!draft.fiscalYearId) errors.fiscalYearId = 'เลือกปีงบประมาณ';
 	if (!draft.organizationUnitId) errors.organizationUnitId = 'เลือกหน่วยงานที่รับผิดชอบ';
 	if (!validDate(draft.startDate)) errors.startDate = 'เลือกวันที่เริ่มต้น';
@@ -137,7 +139,11 @@ export function lineErrors(
 > {
 	const errors: ReturnType<typeof lineErrors> = {};
 	if (!line.description.trim()) errors.description = 'กรอกชื่อรายการ';
+	else if (Array.from(line.description.trim()).length > 500)
+		errors.description = 'ชื่อรายการต้องไม่เกิน 500 ตัวอักษร';
 	if (!line.unit.trim()) errors.unit = 'กรอกหน่วยนับ';
+	else if (Array.from(line.unit.trim()).length > 80)
+		errors.unit = 'หน่วยนับต้องไม่เกิน 80 ตัวอักษร';
 	if (!line.fundId) errors.fundId = 'เลือกแหล่งเงิน';
 	if (!line.expenseCategoryId) errors.expenseCategoryId = 'เลือกหมวดรายจ่าย';
 	try {
@@ -150,6 +156,12 @@ export function lineErrors(
 	} catch (cause) {
 		errors.price = message(cause);
 	}
+	if (!errors.quantity && !errors.price)
+		try {
+			lineTotal(line.quantity, toSatang(line.price));
+		} catch (cause) {
+			errors.price = message(cause);
+		}
 	return errors;
 }
 export function previewTotal(line: LineDraft): string {

@@ -1,5 +1,7 @@
 <script lang="ts">
+	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
+	import { budgetUpdatePermissions } from '#lib/budget/access.js';
 	import {
 		getBudgetRequest,
 		getBudgetProject,
@@ -167,15 +169,16 @@
 	contentClass="space-y-4"
 >
 	{#snippet actions()}{#if region.value}{@const detail =
-				region.value}{#if detail.capabilities.canEdit}<Button
+				region.value}{#if detail.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}<Button
 					variant="outline"
 					disabled={pending}
 					onclick={edit}>แก้ไขฉบับร่าง</Button
-				>{/if}{#if detail.capabilities.canSubmit}<LoadingButton loading={pending} onclick={submit}
-					>ส่งคำขอพิจารณา</LoadingButton
+				>{/if}{#if detail.capabilities.canSubmit && $can.hasAny(...budgetUpdatePermissions)}<LoadingButton
+					loading={pending}
+					onclick={submit}>ส่งคำขอพิจารณา</LoadingButton
 				>{/if}{#if detail.capabilities.canPay && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
 					onclick={() => (paying = true)}>บันทึกการจ่ายเงิน</Button
-				>{/if}{#if detail.capabilities.canClose}<Button
+				>{/if}{#if detail.capabilities.canClose && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
 					variant="outline"
 					disabled={pending}
 					onclick={() => {
@@ -183,7 +186,7 @@
 						error = '';
 					}}>ปิดคำขอ</Button
 				>{/if}{/if}{/snippet}
-	<Navigation />
+	<Navigation /><ReadAccessNotice />
 	<section
 		class="space-y-4"
 		aria-label="รายละเอียดคำขอใช้เงิน"
@@ -211,7 +214,7 @@
 					>
 				</div>
 				<dl class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-					{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้ว', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric}<div
+					{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้ว', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric (metric.label)}<div
 						>
 							<dt class="text-sm text-muted-foreground">{metric.label}</dt>
 							<dd class="font-semibold tabular-nums">{money(metric.value)} บาท</dd>
@@ -305,7 +308,7 @@
 											resourceId={id}
 										/>
 									</div>{/each}
-							</div>{/if}{#if region.value?.capabilities.canPay && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
+							</div>{/if}{#if region.value && ['approved', 'closed'].includes(region.value.request.status) && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
 								size="sm"
 								variant="outline"
 								onclick={() => (refund = payment)}>บันทึกคืนเงิน</Button
@@ -326,7 +329,7 @@
 				>
 			</div>{:else if !payments.error}<PageState title="ยังไม่มีการจ่ายเงิน" />{/if}
 	</section>
-	<History kind="requests" {id} />
+	{#if region.value}<History kind="requests" {id} />{/if}
 </PageShell>
 <Dialog.Root bind:open={editing}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"

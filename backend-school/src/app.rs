@@ -113,6 +113,7 @@ fn internal_routes() -> Router<AppState> {
 
 fn protected_routes(state: &AppState) -> Router<AppState> {
     Router::new()
+        .nest("/api",school_budget::http::routes().with_state(school_budget::http::BudgetHttpState::from_ref(state)))
         .nest(
             "/api",
             school_staff::leave::http::routes()

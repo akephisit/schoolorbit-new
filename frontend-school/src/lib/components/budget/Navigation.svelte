@@ -13,7 +13,7 @@
 </script>
 
 <nav class="flex flex-wrap gap-1 border-b pb-3" aria-label="งานงบประมาณ">
-	{#each links as link}<Button
+	{#each links as link (link.href)}<Button
 			href={link.href}
 			variant={page.url.pathname === link.href ? 'secondary' : 'ghost'}
 			size="sm"
