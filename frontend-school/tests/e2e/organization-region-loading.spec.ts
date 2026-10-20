@@ -180,7 +180,9 @@ test('membership picker stays lazy and uses minimal lookup under membership perm
 test('membership removal rereads only the shared member region once', async ({ page }) => {
 	const api = await mockOrganization(page);
 	await page.goto(unitPath());
-	await page.getByRole('button', { name: 'ลบสมาชิก สมาชิกแรก', exact: true }).click();
+	await page
+		.getByRole('button', { name: 'ลบสมาชิก สมาชิกแรก จาก หน่วยงานแรก', exact: true })
+		.click();
 	await expect(page.getByTestId('organization-members')).not.toContainText('สมาชิกแรก');
 	expect(api.count(endpoint('members'))).toBe(2);
 	expect(api.count(endpoint('unit'))).toBe(1);
@@ -282,8 +284,8 @@ test('ordinary detail links preload their destination and preserve one primary r
 	await expect(page).toHaveURL(new RegExp(`${firstUnit}(?:\\?|$)`));
 	await expect(page.getByTestId('organization-unit')).toContainText('หน่วยงานแรก');
 	await page
+		.getByTestId('organization-structure')
 		.getByRole('link', { name: /หน่วยงานสอง/ })
-		.first()
 		.click();
 	await expect(page).toHaveURL(new RegExp(`${secondUnit}$`));
 	await expect(page.getByTestId('organization-members')).toContainText('สมาชิกสอง');

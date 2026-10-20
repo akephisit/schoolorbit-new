@@ -368,3 +368,39 @@ pub async fn deactivate_organization_unit(
 
     Ok(Json(ApiResponse::empty_with_message("ปิดใช้งานหน่วยงานสำเร็จ")).into_response())
 }
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,
+    path = "/api/organization/units/{id}/permanent",
+    operation_id = "deleteOrganizationUnitPermanently",
+    tag = "organization",
+    params(("id" = Uuid, Path, description = "Organization unit ID")),
+    responses(
+        (status = 200, description = "Unreferenced administrative unit permanently deleted", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Organization unit not found", body = ApiErrorResponse),
+        (status = 409, description = "Protected unit or linked records prevent deletion", body = ApiErrorResponse)
+    )
+))]
+pub async fn delete_organization_unit_permanently(
+    State(state): State<StaffHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(unit_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context.actor.require_permission(codes::ROLES_DELETE_ALL)?;
+    organization_unit_service::delete_organization_unit_permanently(
+        &context.tenant.pool,
+        unit_id,
+        context.actor.user_id,
+    )
+    .await?;
+    state
+        .auth_runtime
+        .invalidate_permission_tenant(&context.tenant.subdomain);
+    state
+        .auth_runtime
+        .notify_all_permissions_changed(&context.tenant.subdomain);
+    Ok(Json(ApiResponse::empty_with_message("ลบหน่วยงานอย่างถาวรสำเร็จ")).into_response())
+}

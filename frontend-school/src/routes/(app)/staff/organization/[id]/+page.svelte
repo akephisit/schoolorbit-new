@@ -2,6 +2,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { organizationAncestors } from '#lib/features/staff/organization-hierarchy.js';
 	import { onDestroy, untrack } from 'svelte';
+	import { organizationPeople } from '#lib/features/staff/organization-members.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { requireApiData } from '#lib/api/client.js';
@@ -81,6 +82,8 @@
 		membersLoaded = $state(false),
 		membersError = $state(''),
 		allMembers: OrganizationMemberItem[] = $state([]);
+	const displayedMembers = $derived(organizationPeople(allMembers, deptId));
+
 	let delegationsLoading = $state(false),
 		delegationsLoaded = $state(false),
 		delegationsError = $state('');
@@ -110,13 +113,13 @@
 	let canAssignOrganizationMembers = $derived.by(() => $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
 	let leaderCount = $derived(
-		deptMembers.filter((member) =>
+		displayedMembers.filter((member) =>
 			['director', 'deputy_director', 'head'].includes(member.position_code)
 		).length
 	);
 
 	let primaryMembers = $derived(
-		deptMembers.filter((member) =>
+		displayedMembers.filter((member) =>
 			['director', 'deputy_director', 'head', 'deputy_head', 'coordinator'].includes(
 				member.position_code
 			)
@@ -146,14 +149,14 @@
 					? 'ระดับโรงเรียน'
 					: 'ไม่มีข้อมูล'),
 		childCount: structureLoaded ? childDepts.length : '—',
-		memberCount: membersLoaded ? deptMembers.length : '—'
+		memberCount: membersLoaded ? displayedMembers.length : '—'
 	}));
 
 	let detailStats = $derived.by(() => {
 		const stats = [
 			{
 				label: 'สมาชิกในหน่วยงาน',
-				value: membersLoaded ? String(deptMembers.length) : '—',
+				value: membersLoaded ? String(displayedMembers.length) : '—',
 				helper: 'คนในหน่วยงานนี้'
 			},
 			{
@@ -202,7 +205,11 @@
 
 	let detailTabs = $derived.by(() => {
 		const tabs: { id: DetailTab; label: string; count?: number }[] = [
-			{ id: 'members', label: 'สมาชิก', count: membersLoaded ? deptMembers.length : undefined },
+			{
+				id: 'members',
+				label: 'สมาชิก',
+				count: membersLoaded ? displayedMembers.length : undefined
+			},
 			{ id: 'permissions', label: 'สิทธิ์ตามตำแหน่ง' },
 			{
 				id: 'children',
@@ -675,6 +682,7 @@
 								onRefresh={loadMembers}
 								organizationUnitId={deptId}
 								childUnits={childDepts}
+								organizationUnits={allDepartments}
 								canAssignMembers={canAssignOrganizationMembers}
 								onChanged={loadMembers}
 							/>{/key}

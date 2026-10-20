@@ -72,7 +72,11 @@ export const load: PageLoad = ({ fetch, depends, url }) => {
 				unitId: unit?.id ?? '',
 				members: unit
 					? requireApiData(
-							await listOrganizationMembers(unit.id, undefined, { requestFetch: fetch }),
+							await listOrganizationMembers(
+								unit.id,
+								{ include_children: true },
+								{ requestFetch: fetch }
+							),
 							'โหลดสมาชิกไม่สำเร็จ'
 						)
 					: []

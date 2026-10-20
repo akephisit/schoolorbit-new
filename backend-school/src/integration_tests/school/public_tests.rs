@@ -546,6 +546,12 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             "/certificates",
             get(school_certificates_http::handlers::list_certificate_campaigns),
         )
+        .route(
+            "/organization-test/{id}/permanent",
+            axum::routing::delete(
+                school_staff::http::handlers::roles::delete_organization_unit_permanently,
+            ),
+        )
         .layer(axum::Extension(session))
         .with_state(state.clone());
     for path in ["/academic", "/certificates"] {
@@ -560,6 +566,29 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             "narrow handler must enforce permission: {path}"
         );
     }
+    let protected_unit: Uuid = sqlx::query_scalar("INSERT INTO organization_units(code,name,unit_type) VALUES('DELETE-DENIED','Cannot delete without permission','division') RETURNING id").fetch_one(&a).await.unwrap();
+    let denied = narrow_routes
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/organization-test/{protected_unit}/permanent"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    let preserved: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_units WHERE id=$1)")
+            .bind(protected_unit)
+            .fetch_one(&a)
+            .await
+            .unwrap();
+    assert!(
+        preserved,
+        "denied permanent deletion must not mutate the unit"
+    );
     let app = build_app(state.clone());
     let private_file = Uuid::new_v4();
     sqlx::query("INSERT INTO files (id, display_filename, purpose_code, visibility, lifecycle_status, retention_class, inspection_metadata, created_by) VALUES ($1, 'private-font.ttf', 'school_font', 'private', 'processing', 'temporary', '{\"kind\":\"font\"}'::jsonb, $2)")
@@ -920,6 +949,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         ("POST", "/api/staff"),
         ("GET", "/api/roles"),
         ("GET", "/api/organization/units"),
+        (
+            "DELETE",
+            "/api/organization/units/00000000-0000-0000-0000-000000000001/permanent",
+        ),
         ("GET", "/api/permissions"),
         ("GET", "/api/achievements"),
         ("POST", "/api/school-fonts/inspect"),

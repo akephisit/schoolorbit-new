@@ -1,6 +1,7 @@
 use crate::models::{
     CreateOrganizationUnitRequest, CreateStaffRequest, OrganizationAssignment,
-    OrganizationPermissionGrantInput, UpdateOrganizationUnitRequest, UpdateStaffRequest,
+    OrganizationPermissionGrantInput, UpdateOrganizationUnitRequest, UpdateRoleRequest,
+    UpdateStaffRequest,
 };
 use school_authorization::get_cached_user_permissions;
 use school_authorization::PermissionCache;
@@ -105,6 +106,194 @@ fn assert_lacks_permission(permissions: &[String], code: &str) {
         permissions.iter().all(|permission| permission != code),
         "did not expect {code} in {permissions:?}"
     );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AuditedStatusMutation {
+    UnitUpdate,
+    UnitStatus,
+    RoleUpdate,
+    RoleStatus,
+}
+
+impl AuditedStatusMutation {
+    async fn deactivate(
+        self,
+        pool: &PgPool,
+        resource_id: Uuid,
+        actor: Uuid,
+    ) -> Result<StatusTransitionOutcome, AppError> {
+        match self {
+            Self::UnitUpdate => {
+                organization_unit_service::update_organization_unit(
+                    pool,
+                    resource_id,
+                    UpdateOrganizationUnitRequest {
+                        name: None,
+                        name_en: None,
+                        description: None,
+                        parent_unit_id: None,
+                        phone: None,
+                        email: None,
+                        location: None,
+                        is_active: Some(false),
+                        category: None,
+                        unit_type: None,
+                    },
+                    actor,
+                )
+                .await
+            }
+            Self::UnitStatus => {
+                organization_unit_service::set_organization_unit_active(
+                    pool,
+                    resource_id,
+                    false,
+                    actor,
+                )
+                .await
+            }
+            Self::RoleUpdate => {
+                role_service::update_role(
+                    pool,
+                    resource_id,
+                    UpdateRoleRequest {
+                        name: None,
+                        name_en: None,
+                        description: None,
+                        user_type: None,
+                        level: None,
+                        permissions: None,
+                        is_active: Some(false),
+                    },
+                    actor,
+                )
+                .await
+            }
+            Self::RoleStatus => {
+                role_service::set_role_active(pool, resource_id, false, actor).await
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn audited_status_mutations_lock_actor_before_unit_or_role_and_reject_missing_actor() {
+    let pool = create_test_pool().await;
+    run_test_migrations(&pool).await;
+    let actor = create_test_user(&pool, "audit-lock-order@example.test", "Test1234!")
+        .await
+        .unwrap();
+
+    for operation in [
+        AuditedStatusMutation::UnitUpdate,
+        AuditedStatusMutation::UnitStatus,
+        AuditedStatusMutation::RoleUpdate,
+        AuditedStatusMutation::RoleStatus,
+    ] {
+        let resource_id = Uuid::now_v7();
+        let (insert_sql, share_sql, active_sql, entity_type) = match operation {
+            AuditedStatusMutation::UnitUpdate | AuditedStatusMutation::UnitStatus => (
+                "INSERT INTO organization_units(id,code,name,unit_type) VALUES($1,$2,'lock fixture','unit')",
+                "SELECT id FROM organization_units WHERE id=$1 FOR SHARE NOWAIT",
+                "SELECT is_active FROM organization_units WHERE id=$1",
+                "organization_unit",
+            ),
+            AuditedStatusMutation::RoleUpdate | AuditedStatusMutation::RoleStatus => (
+                "INSERT INTO roles(id,code,name,user_type) VALUES($1,$2,'lock fixture','staff')",
+                "SELECT id FROM roles WHERE id=$1 FOR SHARE NOWAIT",
+                "SELECT is_active FROM roles WHERE id=$1",
+                "role",
+            ),
+        };
+        sqlx::query(insert_sql)
+            .bind(resource_id)
+            .bind(resource_id.to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            operation
+                .deactivate(&pool, resource_id, Uuid::now_v7())
+                .await,
+            Err(AppError::NotFound(_))
+        ));
+        assert!(sqlx::query_scalar::<_, bool>(active_sql)
+            .bind(resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap());
+
+        // Reproduce the user lock held by a same-actor staff/member writer. The
+        // real status service must wait here before acquiring its resource lock.
+        let mut writer = pool.begin().await.unwrap();
+        let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+            .bind(actor)
+            .execute(&mut *writer)
+            .await
+            .unwrap();
+        let operation_pool = pool.clone();
+        let status = tokio::spawn(async move {
+            operation
+                .deactivate(&operation_pool, resource_id, actor)
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+                     WHERE $1 = ANY(pg_blocking_pids(pid)))",
+                )
+                .bind(writer_pid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                if waiting {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("status service must demonstrably wait on the held actor transaction");
+        sqlx::query(share_sql)
+            .bind(resource_id)
+            .execute(&mut *writer)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("{operation:?} locked its resource before waiting for actor: {error}")
+            });
+        writer.commit().await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), status)
+                .await
+                .expect("status resumes after actor commit")
+                .unwrap()
+                .unwrap(),
+            StatusTransitionOutcome::Changed { is_active: false }
+        );
+        assert!(!sqlx::query_scalar::<_, bool>(active_sql)
+            .bind(resource_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap());
+        let audits: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM audit_logs
+             WHERE entity_type=$1 AND entity_id=$2 AND user_id=$3 AND action='deactivate'",
+        )
+        .bind(entity_type)
+        .bind(resource_id)
+        .bind(actor)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audits, 1, "only the successful transition is audited");
+    }
 }
 
 #[tokio::test]

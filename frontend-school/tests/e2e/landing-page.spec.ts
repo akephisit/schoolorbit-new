@@ -175,6 +175,7 @@ const organizationFixture = {
 const organization = {
 	units: organizationFixture.units.map((unit) => ({
 		...unit,
+		learningAreaId: unit.unitType === 'subject_group' ? 'linked-learning-area' : null,
 		members: unit.members.map((member) => ({ ...member, personKey: member.name }))
 	}))
 };
@@ -184,6 +185,7 @@ test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
 	// Compile the self-hosted Vite routes during fixture setup, outside user-interaction timing.
 	test.setTimeout(120_000);
+	const previewUrl = process.env.E2E_PUBLIC_PREVIEW_URL;
 	apiServer = createHttpServer(async (req, res) => {
 		const endpoint = new URL(req.url ?? '/', 'http://localhost').pathname;
 		requests.push({ path: endpoint, cookie: req.headers.cookie, origin: req.headers.origin });
@@ -292,22 +294,32 @@ test.beforeAll(async () => {
 					};
 		res.end(JSON.stringify({ success: true, data }));
 	});
-	await new Promise<void>((done) => apiServer.listen(0, '127.0.0.1', done));
+	await new Promise<void>((done) =>
+		apiServer.listen(
+			previewUrl ? Number(process.env.E2E_PUBLIC_API_PORT ?? 3000) : 0,
+			'127.0.0.1',
+			done
+		)
+	);
 	const apiAddress = apiServer.address();
 	if (!apiAddress || typeof apiAddress === 'string') throw new Error('API fixture did not start');
 	process.env.PUBLIC_BACKEND_URL = `http://127.0.0.1:${apiAddress.port}`;
 	process.env.PUBLIC_VAPID_KEY = 'test';
-	devServer = await createServer({
-		root: frontendRoot,
-		configFile: path.join(frontendRoot, 'vite.config.ts'),
-		cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-public-school-layout-test'),
-		logLevel: 'error',
-		server: { host: '127.0.0.1', port: 0 }
-	});
-	await devServer.listen();
-	const address = devServer.httpServer?.address();
-	if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
-	baseUrl = `http://127.0.0.1:${address.port}`;
+	if (previewUrl) {
+		baseUrl = previewUrl;
+	} else {
+		devServer = await createServer({
+			root: frontendRoot,
+			configFile: path.join(frontendRoot, 'vite.config.ts'),
+			cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-public-school-layout-test'),
+			logLevel: 'error',
+			server: { host: '127.0.0.1', port: 0 }
+		});
+		await devServer.listen();
+		const address = devServer.httpServer?.address();
+		if (!address || typeof address === 'string') throw new Error('Vite test server did not start');
+		baseUrl = `http://127.0.0.1:${address.port}`;
+	}
 	for (const route of ['/', '/login']) {
 		const response = await fetch(`${baseUrl}${route}`);
 		if (!response.ok) throw new Error(`Public fixture route ${route} failed to start`);
@@ -856,8 +868,13 @@ test('all current positions are grouped and retain custom position titles', asyn
 		page
 			.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
 			.getByTestId('public-person')
-	).toHaveCount(7);
-	await expect(page.getByText('ครูฝ่ายวิชาการ', { exact: true })).toBeVisible();
+	).toHaveCount(9);
+	const customTitlePerson = page
+		.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+		.getByTestId('public-person')
+		.filter({ has: page.getByText('สมาชิก หนึ่ง', { exact: true }) });
+	await expect(customTitlePerson).toHaveCount(1);
+	await expect(customTitlePerson.getByText(/^ครูฝ่ายวิชาการ\s*กลุ่มบริหารวิชาการ$/)).toBeVisible();
 });
 
 test('branding shares one read, and the hero crest follows text height without a frame', async ({
@@ -1020,8 +1037,16 @@ for (const width of [320, 375, 768, 1280]) {
 			page.getByRole('heading', { level: 1, name: 'กลุ่มบริหาร', exact: true })
 		).toBeVisible();
 		await expect(page.getByText('สมาชิก หนึ่ง', { exact: true })).toBeVisible();
-		await expect(page.getByText('หัวหน้างาน ทดสอบ', { exact: true })).toBeVisible();
-		await expect(page.getByText('เจ้าหน้าที่วัดผล', { exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+				.getByText('หัวหน้างาน ทดสอบ', { exact: true })
+		).toBeVisible();
+		await expect(
+			page
+				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+				.getByText(/^เจ้าหน้าที่วัดผล\s*งานวัดผล$/)
+		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'กลุ่มสาระคณิตศาสตร์', exact: true })
 		).toHaveCount(0);

@@ -1,5 +1,10 @@
 <script lang="ts">
 	import {
+		organizationPrimaryError,
+		organizationPrimaryLabel,
+		setOrganizationPrimary
+	} from '#lib/features/staff/organization-members.js';
+	import {
 		buildCreateStaffCareer,
 		careerFieldErrors,
 		formatCareerDate,
@@ -314,9 +319,12 @@
 			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
 			return false;
 		}
-		const hasPrimary = formData.organization_assignments.some((d) => d.is_primary);
-		if (!hasPrimary) {
-			errors.organization_units = 'กรุณาระบุสังกัดหลัก';
+		const primaryError = organizationPrimaryError(
+			formData.organization_assignments,
+			organizationUnits
+		);
+		if (primaryError) {
+			errors.organization_units = primaryError;
 			return false;
 		}
 
@@ -388,10 +396,11 @@
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
-		formData.organization_assignments = formData.organization_assignments.map((dept, i) => ({
-			...dept,
-			is_primary: i === index
-		}));
+		formData.organization_assignments = setOrganizationPrimary(
+			formData.organization_assignments,
+			index,
+			organizationUnits
+		);
 	}
 
 	// Submit form
@@ -951,7 +960,11 @@
 													/>
 													<Label
 														for={`staff-organization-primary-${i}`}
-														class="cursor-pointer text-sm">สังกัดหลัก</Label
+														class="cursor-pointer text-sm"
+														>{organizationPrimaryLabel(
+															dept.organization_unit_id,
+															organizationUnits
+														)}</Label
 													>
 												</div>
 											</div>
@@ -1107,7 +1120,7 @@
 												? organizationUnitPath(selectedUnit, organizationUnits)
 												: 'หน่วยงานที่เลือก'}
 											• {organizationPositionLabel(assignment.position_code)}{assignment.is_primary
-												? ' • สังกัดหลัก'
+												? ` • ${organizationPrimaryLabel(assignment.organization_unit_id, organizationUnits)}`
 												: ''}
 										</li>{/each}
 								</ul>

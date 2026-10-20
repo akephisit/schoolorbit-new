@@ -222,6 +222,120 @@ async fn insert_organization_memberships(
     Ok(())
 }
 
+async fn reconcile_organization_memberships(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    user_id: Uuid,
+    rows: &[OrganizationMembershipBulkRow],
+) -> Result<(), AppError> {
+    let existing: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        r#"
+        SELECT id, organization_unit_id FROM organization_members
+        WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+          AND started_at < coalesce(ended_at, 'infinity'::date)
+        ORDER BY id FOR UPDATE
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut seen = std::collections::HashSet::new();
+    for (_, unit_id) in &existing {
+        if !seen.insert(*unit_id) {
+            return Err(AppError::Conflict(
+                "มีการมอบหมายหลายช่วงเวลาซ้อนกันในหน่วยงานเดียว กรุณาตรวจสอบก่อนแก้ไข".into(),
+            ));
+        }
+    }
+    let selected: Vec<Uuid> = rows.iter().map(|row| row.organization_unit_id).collect();
+    let positions: Vec<&str> = rows.iter().map(|row| row.position_code.as_str()).collect();
+    let titles: Vec<Option<&str>> = rows
+        .iter()
+        .map(|row| row.position_title.as_deref())
+        .collect();
+    let flags: Vec<bool> = rows.iter().map(|row| row.is_primary).collect();
+    let responsibilities: Vec<Option<&str>> = rows
+        .iter()
+        .map(|row| row.responsibilities.as_deref())
+        .collect();
+    // Explicit removal ends an assignment; a cancelled future interval becomes empty.
+    sqlx::query(
+        r#"
+        UPDATE organization_members SET ended_at = greatest(started_at, CURRENT_DATE)
+        WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+          AND started_at < coalesce(ended_at, 'infinity'::date)
+          AND NOT (organization_unit_id = ANY($2))
+        "#,
+    )
+    .bind(user_id)
+    .bind(&selected)
+    .execute(&mut **tx)
+    .await?;
+    // Clear flags before applying the validated set so update order cannot create conflicts.
+    sqlx::query(
+        r#"
+        UPDATE organization_members SET is_primary = false
+        WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+          AND started_at < coalesce(ended_at, 'infinity'::date)
+          AND organization_unit_id = ANY($2) AND is_primary IS TRUE
+        "#,
+    )
+    .bind(user_id)
+    .bind(&selected)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE organization_members m
+        SET position_code = requested.position_code, position_title = requested.position_title,
+            is_primary = requested.is_primary, responsibilities = requested.responsibilities
+        FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::bool[], $6::text[])
+            requested(unit_id, position_code, position_title, is_primary, responsibilities)
+        WHERE m.user_id = $1 AND m.organization_unit_id = requested.unit_id
+          AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
+          AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&selected)
+    .bind(&positions)
+    .bind(&titles)
+    .bind(&flags)
+    .bind(&responsibilities)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO organization_members (
+            user_id, organization_unit_id, position_code, position_title,
+            is_primary, responsibilities, started_at
+        )
+        SELECT $1, requested.unit_id, requested.position_code, requested.position_title,
+            requested.is_primary, requested.responsibilities, CURRENT_DATE
+        FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::bool[], $6::text[])
+            requested(unit_id, position_code, position_title, is_primary, responsibilities)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM organization_members m
+            WHERE m.user_id = $1 AND m.organization_unit_id = requested.unit_id
+              AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
+              AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
+        )
+        ON CONFLICT (user_id, organization_unit_id, started_at) DO UPDATE
+        SET position_code = EXCLUDED.position_code, position_title = EXCLUDED.position_title,
+            is_primary = EXCLUDED.is_primary, responsibilities = EXCLUDED.responsibilities,
+            ended_at = NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(&selected)
+    .bind(&positions)
+    .bind(&titles)
+    .bind(&flags)
+    .bind(&responsibilities)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 async fn validate_active_staff_roles(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     role_ids: &[Uuid],
@@ -265,39 +379,67 @@ async fn validate_active_staff_roles(
 async fn validate_active_organization_assignments(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     assignments: &[OrganizationAssignment],
+    existing_user_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    let requested_unit_ids: Vec<Uuid> = assignments
+    let rows = organization_assignments_to_bulk_rows(assignments);
+    let ids: Vec<Uuid> = rows.iter().map(|row| row.organization_unit_id).collect();
+    let positions: Vec<&str> = rows.iter().map(|row| row.position_code.as_str()).collect();
+    let titles: Vec<Option<&str>> = rows
         .iter()
-        .map(|assignment| assignment.organization_unit_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
+        .map(|row| row.position_title.as_deref())
         .collect();
-    if requested_unit_ids.is_empty() {
-        return Ok(());
-    }
-
-    let valid_unit_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id
-         FROM organization_units
-         WHERE id = ANY($1)
-           AND is_active = true
-         ORDER BY id
-         FOR SHARE",
+    let flags: Vec<bool> = rows.iter().map(|row| row.is_primary).collect();
+    let responsibilities: Vec<Option<&str>> = rows
+        .iter()
+        .map(|row| row.responsibilities.as_deref())
+        .collect();
+    let units: Vec<(Uuid, bool, bool)> = sqlx::query_as(
+        r#"
+        SELECT ou.id, ou.unit_type = 'subject_group', ou.is_active OR EXISTS (
+            SELECT 1 FROM organization_members m
+            WHERE m.user_id = $6 AND m.organization_unit_id = ou.id
+              AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
+              AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
+              AND m.position_code = requested.position_code
+              AND m.position_title IS NOT DISTINCT FROM requested.position_title
+              AND (m.is_primary = requested.is_primary
+                   OR (m.is_primary IS TRUE AND requested.is_primary IS FALSE))
+              AND m.responsibilities IS NOT DISTINCT FROM requested.responsibilities
+        )
+        FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::bool[], $5::text[])
+            requested(unit_id, position_code, position_title, is_primary, responsibilities)
+        JOIN organization_units ou ON ou.id = requested.unit_id
+        ORDER BY ou.id FOR SHARE OF ou
+        "#,
     )
-    .bind(&requested_unit_ids)
+    .bind(&ids)
+    .bind(&positions)
+    .bind(&titles)
+    .bind(&flags)
+    .bind(&responsibilities)
+    .bind(existing_user_id)
     .fetch_all(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!(%error, "failed to validate staff organization assignments");
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานที่ระบุได้".to_string())
-    })?;
-
-    if valid_unit_ids.len() != requested_unit_ids.len() {
-        return Err(AppError::BadRequest(
-            "หน่วยงานที่ระบุไม่มีอยู่หรือถูกปิดใช้งาน".to_string(),
+    .await?;
+    if units.len() != rows.len() {
+        return Err(AppError::BadRequest("ไม่พบหน่วยงานที่ระบุ".into()));
+    }
+    if units.iter().any(|(_, _, valid)| !valid) {
+        return Err(AppError::Conflict(
+            "หน่วยงานที่ปิดใช้งานแล้วคงได้เฉพาะการมอบหมายเดิม".into(),
         ));
     }
-
+    let mut primary_domains = std::collections::HashSet::new();
+    for row in rows.iter().filter(|row| row.is_primary) {
+        let (_, learning_area, _) = units
+            .iter()
+            .find(|(id, _, _)| *id == row.organization_unit_id)
+            .ok_or_else(|| AppError::BadRequest("ไม่พบหน่วยงานที่ระบุ".into()))?;
+        if !primary_domains.insert(*learning_area) {
+            return Err(AppError::ValidationError(
+                "กำหนดสังกัดหลักได้ประเภทละหนึ่งหน่วยงาน: กลุ่มสาระและฝ่ายบริหาร".into(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -429,7 +571,7 @@ pub async fn list_staff(
             sqlx::query_as::<_, (Uuid, String)>(
                 "SELECT om.user_id, ou.name FROM organization_members om
                  JOIN organization_units ou ON ou.id = om.organization_unit_id
-                 WHERE om.user_id = ANY($1) AND om.ended_at IS NULL
+                 WHERE om.user_id = ANY($1) AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
                  ORDER BY om.is_primary DESC, ou.name, ou.id"
             )
             .bind(&ids)
@@ -590,7 +732,7 @@ pub async fn get_staff_profile(
                 om.position_code, om.position_title, om.is_primary, om.responsibilities
          FROM organization_members om
          JOIN organization_units ou ON om.organization_unit_id = ou.id
-         WHERE om.user_id = $1 AND om.ended_at IS NULL
+         WHERE om.user_id = $1 AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE) AND om.started_at < coalesce(om.ended_at, 'infinity'::date)
          ORDER BY om.is_primary DESC",
     )
     .bind(staff_id)
@@ -788,7 +930,7 @@ pub async fn create_staff(
 
     validate_active_staff_roles(&mut tx, &payload.role_ids).await?;
     if let Some(organization_assignments) = &payload.organization_assignments {
-        validate_active_organization_assignments(&mut tx, organization_assignments).await?;
+        validate_active_organization_assignments(&mut tx, organization_assignments, None).await?;
     }
 
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
@@ -904,11 +1046,14 @@ pub async fn update_staff(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
+    super::organization_member_service::lock_member_user(&mut tx, staff_id).await?;
+
     if let Some(role_ids) = &payload.role_ids {
         validate_active_staff_roles(&mut tx, role_ids).await?;
     }
     if let Some(organization_assignments) = &payload.organization_assignments {
-        validate_active_organization_assignments(&mut tx, organization_assignments).await?;
+        validate_active_organization_assignments(&mut tx, organization_assignments, Some(staff_id))
+            .await?;
     }
     let old_file_id = sqlx::query_as::<_, (Option<Uuid>,)>(
         "SELECT profile_image_file_id FROM users WHERE id = $1 AND user_type = 'staff' FOR UPDATE",
@@ -1032,17 +1177,8 @@ SELECT EXISTS(
     }
 
     if let Some(organization_assignments) = &payload.organization_assignments {
-        sqlx::query("DELETE FROM organization_members WHERE user_id = $1")
-            .bind(staff_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to delete organization members: {}", e);
-                AppError::InternalServerError("ไม่สามารถอัพเดตหน่วยงานได้".to_string())
-            })?;
-
         let membership_rows = organization_assignments_to_bulk_rows(organization_assignments);
-        insert_organization_memberships(&mut tx, staff_id, &membership_rows).await?;
+        reconcile_organization_memberships(&mut tx, staff_id, &membership_rows).await?;
     }
 
     tx.commit().await.map_err(|e| {
@@ -1145,7 +1281,7 @@ pub async fn get_public_staff_profile(
         "SELECT ou.id, ou.code, ou.name, om.position_code, om.position_title
          FROM organization_members om
          JOIN organization_units ou ON om.organization_unit_id = ou.id
-         WHERE om.user_id = $1",
+         WHERE om.user_id = $1 AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)",
     )
     .bind(staff_id)
     .fetch_all(pool)

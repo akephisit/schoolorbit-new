@@ -1,4 +1,12 @@
 <script lang="ts">
+	import {
+		organizationAssignmentDraft,
+		organizationAssignmentInput,
+		type OrganizationAssignmentDraft,
+		organizationPrimaryError,
+		organizationPrimaryLabel,
+		setOrganizationPrimary
+	} from '#lib/features/staff/organization-members.js';
 	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '#lib/forms/staff-career.js';
 	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -128,12 +136,7 @@
 		personnel: staffPersonnelDraft(null),
 
 		// Organization Units
-		organization_assignments: [] as Array<{
-			organization_unit_id: string;
-			position_code: string;
-			is_primary: boolean;
-			responsibilities: string;
-		}>
+		organization_assignments: [] as OrganizationAssignmentDraft[]
 	});
 
 	let selectedPosition =
@@ -222,13 +225,7 @@
 				hired_date: staff.hired_date || '',
 				status: staff.status,
 				personnel: staffPersonnelDraft(staff.staff_info),
-				organization_assignments:
-					staff.organization_units?.map((d) => ({
-						organization_unit_id: d.id,
-						position_code: d.position_code || 'member',
-						is_primary: d.is_primary || false,
-						responsibilities: d.responsibilities || ''
-					})) || []
+				organization_assignments: staff.organization_units?.map(organizationAssignmentDraft) || []
 			};
 			originalForm = structuredClone($state.snapshot(formData));
 		}
@@ -270,7 +267,7 @@
 		loadingOrganizationUnits = true;
 		organizationError = '';
 		const result = await captureRouteLoad(
-			listOrganizationUnits(undefined, { signal: ticket.signal }).then((reply) =>
+			listOrganizationUnits({ include_inactive: true }, { signal: ticket.signal }).then((reply) =>
 				requireApiData(reply, 'โหลดตัวเลือกหน่วยงานไม่สำเร็จ')
 			),
 			'โหลดตัวเลือกหน่วยงานไม่สำเร็จ'
@@ -278,7 +275,13 @@
 		if (!organizationRequest.isCurrent(ticket.revision)) return;
 		loadingOrganizationUnits = false;
 		if (result.ok) {
-			organizationUnits = result.data;
+			organizationUnits = result.data.filter(
+				(unit) =>
+					unit.is_active ||
+					formData.organization_assignments.some(
+						(assignment) => assignment.organization_unit_id === unit.id
+					)
+			);
 			organizationsLoaded = true;
 		} else organizationError = result.error;
 	}
@@ -324,8 +327,12 @@
 			formData.organization_assignments.length
 		)
 			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
-		else if (formData.organization_assignments.filter((item) => item.is_primary).length !== 1)
-			errors.organization_units = 'กรุณาระบุสังกัดหลัก 1 หน่วยงาน';
+		else
+			errors.organization_units = organizationPrimaryError(
+				formData.organization_assignments,
+				organizationUnits
+			);
+		if (!errors.organization_units) delete errors.organization_units;
 		return Object.keys(errors).length === 0;
 	}
 	// OrganizationUnit management
@@ -336,6 +343,8 @@
 			{
 				organization_unit_id: '',
 				position_code: 'member',
+				position_title: null,
+				storedResponsibilities: null,
 				is_primary: isFirst,
 				responsibilities: ''
 			}
@@ -343,18 +352,30 @@
 	}
 
 	function removeOrganizationUnit(index: number) {
-		const removedPrimary = formData.organization_assignments[index]?.is_primary;
+		const removed = formData.organization_assignments[index];
 		formData.organization_assignments = formData.organization_assignments.filter(
 			(_, i) => i !== index
 		);
-		if (removedPrimary && formData.organization_assignments.length) setPrimaryOrganizationUnit(0);
+		if (removed?.is_primary) {
+			const type =
+				organizationUnits.find((unit) => unit.id === removed.organization_unit_id)?.unit_type ===
+				'subject_group';
+			const replacement = formData.organization_assignments.findIndex(
+				(item) =>
+					(organizationUnits.find((unit) => unit.id === item.organization_unit_id)?.unit_type ===
+						'subject_group') ===
+					type
+			);
+			if (replacement >= 0) setPrimaryOrganizationUnit(replacement);
+		}
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
-		formData.organization_assignments = formData.organization_assignments.map((dept, i) => ({
-			...dept,
-			is_primary: i === index
-		}));
+		formData.organization_assignments = setOrganizationPrimary(
+			formData.organization_assignments,
+			index,
+			organizationUnits
+		);
 	}
 
 	// Submit form
@@ -434,7 +455,9 @@
 			);
 			if (hrPatch) payload.staff_info = hrPatch;
 			if (organizationsChanged)
-				payload.organization_assignments = formData.organization_assignments;
+				payload.organization_assignments = formData.organization_assignments.map(
+					organizationAssignmentInput
+				);
 
 			const result = await updateStaff(owner, payload);
 			if (!current()) return;
@@ -1034,10 +1057,16 @@
 												<div>
 													<div class="flex items-center gap-2 cursor-pointer">
 														<Checkbox
+															aria-label={`สังกัดหลักหน่วยงานที่ ${i + 1}`}
 															checked={dept.is_primary}
 															onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 														/>
-														<span class="text-sm">สังกัดหลัก</span>
+														<span class="text-sm"
+															>{organizationPrimaryLabel(
+																dept.organization_unit_id,
+																organizationUnits
+															)}</span
+														>
 													</div>
 												</div>
 											</div>

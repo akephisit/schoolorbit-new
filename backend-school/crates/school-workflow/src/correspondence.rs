@@ -1767,8 +1767,7 @@ async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStamp
             .bind(actor)
             .fetch_one(pool)
             .await?;
-    let position: Option<(String, Option<String>)> = sqlx::query_as("SELECT m.position_code,m.position_title FROM organization_members m JOIN organization_units ou ON ou.id=m.organization_unit_id AND ou.is_active WHERE m.user_id=$1 AND m.started_at<=CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) ORDER BY m.is_primary DESC,m.id LIMIT 1")
-        .bind(actor).fetch_optional(pool).await?;
+    let position = current_correspondence_position(pool, actor).await?;
     let signer_title =
         position.and_then(|(code, title)| stamp_position_title(&code, title.as_deref()));
     Ok(CorrespondenceStampContext {
@@ -1776,6 +1775,27 @@ async fn stamp_context(pool: &PgPool, actor: Uuid) -> Result<CorrespondenceStamp
         actor_display_name,
         signer_title,
     })
+}
+
+async fn current_correspondence_position(
+    pool: &PgPool,
+    actor: Uuid,
+) -> Result<Option<(String, Option<String>)>, AppError> {
+    // Both primary domains can coexist. Correspondence prefers administration only
+    // when primary status ties; a primary learning area still beats a secondary unit.
+    Ok(sqlx::query_as(
+        r#"
+        SELECT m.position_code, m.position_title FROM organization_members m
+        JOIN organization_units ou ON ou.id = m.organization_unit_id AND ou.is_active
+        WHERE m.user_id = $1 AND m.started_at <= CURRENT_DATE
+          AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
+        ORDER BY m.is_primary DESC NULLS LAST, (ou.unit_type <> 'subject_group') DESC, m.id
+        LIMIT 1
+    "#,
+    )
+    .bind(actor)
+    .fetch_optional(pool)
+    .await?)
 }
 
 fn stamp_position_title(code: &str, title: Option<&str>) -> Option<String> {
@@ -1890,6 +1910,52 @@ mod tests {
         edited.border = true;
         assert!(validate_annotations(&[edited]).is_err());
     }
+    #[tokio::test]
+    async fn correspondence_dual_primary_prefers_administration_for_stamp_and_signature() {
+        use school_test_db::{create_named_test_pool, create_test_user, run_test_migrations};
+        let pool = create_named_test_pool("correspondence_dual_primary").await;
+        run_test_migrations(&pool).await;
+        let actor = create_test_user(&pool, "dual-primary@example.test", "Test1234!")
+            .await
+            .unwrap();
+        let area:Uuid=sqlx::query_scalar("SELECT id FROM organization_units WHERE unit_type='subject_group' AND is_active LIMIT 1").fetch_one(&pool).await.unwrap();
+        let admin:Uuid=sqlx::query_scalar("INSERT INTO organization_units(code,name,unit_type) VALUES('CORR-DUAL','Test administration','division') RETURNING id").fetch_one(&pool).await.unwrap();
+        // Insert learning first to ensure UUID ordering cannot pick it by accident.
+        sqlx::query("INSERT INTO organization_members(id,user_id,organization_unit_id,position_code,position_title,is_primary) VALUES($1,$2,$3,'head','หัวหน้ากลุ่มสาระ',true),($4,$2,$5,'head','หัวหน้าฝ่ายบริหาร',true)")
+            .bind(Uuid::from_u128(1)).bind(actor).bind(area).bind(Uuid::from_u128(2)).bind(admin).execute(&pool).await.unwrap();
+        assert_eq!(
+            stamp_context(&pool, actor)
+                .await
+                .unwrap()
+                .signer_title
+                .as_deref(),
+            Some("หัวหน้าฝ่ายบริหาร")
+        );
+        assert_eq!(
+            signing_identity(&pool, actor).await.unwrap().1.as_deref(),
+            Some("หัวหน้าฝ่ายบริหาร")
+        );
+        sqlx::query("UPDATE organization_members SET is_primary=false WHERE user_id=$1 AND organization_unit_id=$2").bind(actor).bind(admin).execute(&pool).await.unwrap();
+        assert_eq!(
+            stamp_context(&pool, actor)
+                .await
+                .unwrap()
+                .signer_title
+                .as_deref(),
+            Some("หัวหน้ากลุ่มสาระ")
+        );
+        sqlx::query("UPDATE organization_units SET is_active=false WHERE id=$1")
+            .bind(admin)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            signing_identity(&pool, actor).await.unwrap().1.as_deref(),
+            Some("หัวหน้ากลุ่มสาระ")
+        );
+        pool.close().await;
+    }
+
     #[test]
     fn stamp_titles_use_explicit_identity_or_known_thai_labels_without_role_codes() {
         assert_eq!(
@@ -2009,7 +2075,9 @@ async fn signing_identity(
             .bind(actor)
             .fetch_one(pool)
             .await?;
-    let role:Option<String>=sqlx::query_scalar("SELECT coalesce(position_title,position_code) FROM organization_members WHERE user_id=$1 AND started_at<=CURRENT_DATE AND (ended_at IS NULL OR ended_at>CURRENT_DATE) ORDER BY is_primary DESC,id LIMIT 1").bind(actor).fetch_optional(pool).await?;
+    let role = current_correspondence_position(pool, actor)
+        .await?
+        .map(|(code, title)| title.unwrap_or(code));
     Ok((name, role))
 }
 

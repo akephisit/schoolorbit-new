@@ -7,7 +7,7 @@ use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::StatusTransitionOutcome;
+use super::{lock_audit_actor, StatusTransitionOutcome};
 
 pub async fn list_organization_units(
     pool: &PgPool,
@@ -127,6 +127,7 @@ pub async fn update_organization_unit(
         tracing::error!(%unit_id, %error, "failed to start organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
         .execute(&mut *tx)
         .await?;
@@ -430,6 +431,7 @@ pub async fn set_organization_unit_active(
         tracing::error!(%unit_id, %error, "failed to start organization unit status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
     let parent_unit_id = unit.parent_unit_id;
     let outcome = transition_locked_organization_unit_status(
@@ -515,4 +517,58 @@ mod learning_area_validation_tests {
         assert!(validate_unit_fields("  ", Some("division"), None).is_err());
         assert!(validate_unit_fields("งานวัดผล", Some("division"), None).is_ok());
     }
+}
+
+/// Permanently remove only an unlinked administrative identity. No FK cascade is accepted.
+pub async fn delete_organization_unit_permanently(
+    pool: &PgPool,
+    unit_id: Uuid,
+    actor_user_id: Uuid,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
+        .execute(&mut *tx)
+        .await?;
+    let unit = lock_organization_unit(&mut tx, unit_id).await?;
+    if unit.is_system
+        || unit.unit_type == "school"
+        || unit.unit_type == "subject_group"
+        || unit.subject_group_id.is_some()
+    {
+        return Err(AppError::Conflict(
+            "ไม่สามารถลบหน่วยงานระบบหรือหน่วยงานที่เชื่อมทะเบียนกลุ่มสาระได้".into(),
+        ));
+    }
+    let category: Option<String> =
+        sqlx::query_scalar("SELECT organization_unit_reference_category($1)")
+            .bind(unit_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if let Some(category) = category {
+        let description = match category.as_str() {
+            "children" => "หน่วยงานย่อย",
+            "memberships" => "สมาชิกหรือประวัติสมาชิก",
+            "permissions" => "สิทธิ์ของหน่วยงาน",
+            "delegations" => "ประวัติการมอบหมายสิทธิ์",
+            "roles" => "บทบาทที่อ้างอิงหน่วยงาน",
+            "workflow_records" => "กระบวนงานหรือการกำหนดเส้นทางที่อ้างอิงหน่วยงาน",
+            _ => "ข้อมูลการปฏิบัติงานที่อ้างอิงหน่วยงาน",
+        };
+        return Err(AppError::Conflict(format!(
+            "ไม่สามารถลบหน่วยงานได้ เนื่องจากยังมี{description}"
+        )));
+    }
+    sqlx::query("DELETE FROM organization_units WHERE id=$1")
+        .bind(unit_id)
+        .execute(&mut *tx)
+        .await?;
+    AuditLogBuilder::new("delete", "organization_unit")
+        .user(actor_user_id, None, None)
+        .entity(unit_id, Some(unit.name))
+        .description("ลบหน่วยงานที่ไม่มีข้อมูลอ้างอิงอย่างถาวร")
+        .save_in_transaction(&mut tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }

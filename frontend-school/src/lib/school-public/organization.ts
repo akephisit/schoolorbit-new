@@ -145,7 +145,16 @@ export function publicPersonnelGroups(
 	unitType: 'management_group' | 'subject_group'
 ): PublicPersonnelGroup[] {
 	function group(node: PublicOrganizationNode): PublicPersonnelGroup {
-		const all = people(node.members.map((member) => ({ unit: node, member })));
+		const assignments = node.members.map((member) => ({ unit: node as Unit, member }));
+		function inherit(children: PublicOrganizationNode[]) {
+			for (const child of children) {
+				if (child.unitType === 'subject_group') continue;
+				assignments.push(...child.members.map((member) => ({ unit: child, member })));
+				inherit(child.children);
+			}
+		}
+		inherit(node.children);
+		const all = people(assignments);
 		const leaderKeys = new Set(highestMembers(node).map((member) => member.personKey));
 		return {
 			unit: node,
@@ -162,7 +171,8 @@ export function publicPersonnelGroups(
 	const result: PublicPersonnelGroup[] = [];
 	function visit(nodes: PublicOrganizationNode[]) {
 		for (const node of nodes) {
-			if (node.unitType === unitType) result.push(group(node));
+			if (unitType === 'subject_group' ? Boolean(node.learningAreaId) : node.unitType === unitType)
+				result.push(group(node));
 			visit(node.children);
 		}
 	}

@@ -170,7 +170,11 @@ test('all six positions can be reviewed and submitted with full-depth organizati
 			.getByLabel(`หน้าที่รับผิดชอบในหน่วยงานที่ ${index + 1}`, { exact: true })
 			.fill(`หน้าที่ ${index + 1}`);
 	}
+	await page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 6', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 4', exact: true }).click();
+	await expect(
+		page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 6', exact: true })
+	).toBeChecked();
 	await next(page);
 	const review = page.getByTestId('staff-create-review');
 	for (const [index, [, label]] of positions.entries())
@@ -184,7 +188,7 @@ test('all six positions can be reviewed and submitted with full-depth organizati
 		positions.map(([code], index) => ({
 			organization_unit_id: selectedUnits[index],
 			position_code: code,
-			is_primary: index === 3,
+			is_primary: index === 3 || index === 5,
 			responsibilities: `หน้าที่ ${index + 1}`
 		}))
 	);

@@ -2,7 +2,10 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PublicSchoolStatistics } from '../../../src/lib/api/school.js';
+import type {
+	PublicSchoolStatistics,
+	PublicSchoolOrganization
+} from '../../../src/lib/api/school.js';
 
 const counts = (male: number, female: number, otherOrUnspecified = 0) => ({
 	male,
@@ -61,7 +64,10 @@ export const publicSchoolStatistics: PublicSchoolStatistics = {
 	]
 };
 
-export async function startPublicSchoolServer() {
+export async function startPublicSchoolServer(
+	organization: PublicSchoolOrganization = { units: [] },
+	preview?: { url: string; apiPort: number }
+) {
 	const requests: URL[] = [];
 	let statistics = publicSchoolStatistics;
 	let fail = false;
@@ -87,29 +93,33 @@ export async function startPublicSchoolServer() {
 			url.pathname === '/api/school/public/statistics'
 				? statistics
 				: url.pathname === '/api/school/public/organization'
-					? { units: [] }
+					? organization
 					: { schoolName: 'โรงเรียนทดสอบ', logoFileId: null };
 		res.end(JSON.stringify({ success: true, data }));
 	});
-	await new Promise<void>((done) => api.listen(0, '127.0.0.1', done));
+	await new Promise<void>((done) => api.listen(preview?.apiPort ?? 0, '127.0.0.1', done));
 	const address = api.address();
 	if (!address || typeof address === 'string') throw new Error('Fixture API unavailable');
 	process.env.PUBLIC_BACKEND_URL = `http://127.0.0.1:${address.port}`;
 	process.env.PUBLIC_VAPID_KEY = 'test';
 	const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-	const vite = await createServer({
-		root,
-		configFile: path.join(root, 'vite.config.ts'),
-		cacheDir: path.join(root, 'node_modules/.vite-public-school-test'),
-		logLevel: 'silent',
-		server: { host: '127.0.0.1', port: 0 }
-	});
-	await vite.listen();
-	const viteAddress = vite.httpServer?.address();
-	if (!viteAddress || typeof viteAddress === 'string')
+	const vite = preview
+		? null
+		: await createServer({
+				root,
+				configFile: path.join(root, 'vite.config.ts'),
+				cacheDir: path.join(root, 'node_modules/.vite-public-school-test'),
+				logLevel: 'silent',
+				server: { host: '127.0.0.1', port: 0 }
+			});
+	await vite?.listen();
+	const viteAddress = vite?.httpServer?.address();
+	if (!preview && (!viteAddress || typeof viteAddress === 'string'))
 		throw new Error('Fixture frontend unavailable');
 	return {
-		baseUrl: `http://127.0.0.1:${viteAddress.port}`,
+		baseUrl:
+			preview?.url ??
+			`http://127.0.0.1:${typeof viteAddress === 'object' && viteAddress ? viteAddress.port : 0}`,
 		requests,
 		setStatistics(value: PublicSchoolStatistics) {
 			statistics = value;
@@ -118,7 +128,7 @@ export async function startPublicSchoolServer() {
 			fail = value;
 		},
 		async close() {
-			await vite.close();
+			await vite?.close();
 			await new Promise<void>((done, reject) =>
 				api.close((error) => (error ? reject(error) : done()))
 			);

@@ -100,6 +100,8 @@ pub struct PublicOrganizationMember {
 pub struct PublicOrganizationUnit {
     pub id: Uuid,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub learning_area_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub parent_id: Option<Uuid>,
     pub name: String,
     pub unit_type: String,

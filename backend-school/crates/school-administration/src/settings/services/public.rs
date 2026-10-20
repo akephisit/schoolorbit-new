@@ -144,6 +144,7 @@ ORDER BY CASE g.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2
 #[derive(Debug, FromRow)]
 struct OrganizationRow {
     id: Uuid,
+    learning_area_id: Option<Uuid>,
     parent_id: Option<Uuid>,
     name: String,
     unit_type: String,
@@ -161,6 +162,7 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
         let index = *indices.entry(row.id).or_insert_with(|| {
             units.push(PublicOrganizationUnit {
                 id: row.id,
+                learning_area_id: row.learning_area_id,
                 parent_id: row.parent_id,
                 name: row.name,
                 unit_type: row.unit_type,
@@ -187,12 +189,13 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
-SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
+SELECT o.id, learning_area.id AS learning_area_id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
     CASE WHEN u.id IS NOT NULL THEN md5('school-public-directory:' || u.id::text) END AS person_key,
     CASE WHEN u.id IS NOT NULL THEN u.display_name END AS member_name,
     CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title,
     CASE WHEN profile.id IS NOT NULL THEN m.id END AS avatar_member_id
 FROM organization_units o
+LEFT JOIN subject_groups learning_area ON learning_area.id = o.subject_group_id AND learning_area.is_active
 LEFT JOIN organization_members m ON m.organization_unit_id = o.id
     AND m.started_at <= CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
 LEFT JOIN user_display_names u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
@@ -262,11 +265,42 @@ mod tests {
         assert_eq!(result.grades[0].students.total, result.students.total);
     }
 
+    #[tokio::test]
+    async fn public_organization_reports_actual_learning_area_linkage_and_current_staff() {
+        use school_test_db::{create_named_test_pool, run_test_migrations};
+        let pool = create_named_test_pool("public_org_learning_link").await;
+        run_test_migrations(&pool).await;
+        let expected:Vec<(Uuid,Option<Uuid>,String)> = sqlx::query_as("SELECT u.id,g.id,u.unit_type FROM organization_units u LEFT JOIN subject_groups g ON g.id=u.subject_group_id AND g.is_active WHERE u.is_active ORDER BY u.id").fetch_all(&pool).await.unwrap();
+        let organization = get_organization(&pool).await.unwrap();
+        assert_eq!(organization.units.len(), expected.len());
+        for (id, area, kind) in expected {
+            let unit = organization.units.iter().find(|u| u.id == id).unwrap();
+            assert_eq!(unit.learning_area_id, area);
+            assert_eq!(unit.unit_type, kind);
+        }
+        let activity: Uuid =
+            sqlx::query_scalar("SELECT id FROM organization_units WHERE code='ACAD-ACT'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let activity = organization
+            .units
+            .iter()
+            .find(|u| u.id == activity)
+            .unwrap();
+        assert_eq!(activity.unit_type, "division");
+        assert!(activity.learning_area_id.is_some());
+        let json = serde_json::to_value(&organization).unwrap();
+        assert!(json["units"][0].get("learningAreaId").is_some());
+        pool.close().await;
+    }
+
     #[test]
     fn organization_keeps_vacant_units_and_multiple_members_without_exposing_user_ids() {
         let id = Uuid::new_v4();
         let result = organization_from_rows(vec![OrganizationRow {
             id,
+            learning_area_id: None,
             parent_id: None,
             name: "โรงเรียนทดสอบ".into(),
             unit_type: "school".into(),
@@ -287,6 +321,7 @@ mod tests {
         let id = Uuid::new_v4();
         let row = |person_key: &str, position: &str| OrganizationRow {
             id,
+            learning_area_id: None,
             parent_id: None,
             name: "กลุ่มบริหารทดสอบ".into(),
             unit_type: "management_group".into(),

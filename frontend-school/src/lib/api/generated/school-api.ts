@@ -6398,6 +6398,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/organization/units/{id}/permanent': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete: operations['deleteOrganizationUnitPermanently'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/organization/units/{id}/permissions': {
 		parameters: {
 			query?: never;
@@ -23531,6 +23547,8 @@ export interface components {
 		PublicOrganizationUnit: {
 			/** Format: uuid */
 			id: string;
+			/** Format: uuid */
+			learningAreaId: string | null;
 			members: components['schemas']['PublicOrganizationMember'][];
 			name: string;
 			/** Format: uuid */
@@ -56020,7 +56038,7 @@ export interface operations {
 	listOrganizationMembers: {
 		parameters: {
 			query?: {
-				/** @description Include direct child units */
+				/** @description Include all active administrative descendants; assignments retain their source unit */
 				include_children?: boolean;
 			};
 			header?: never;
@@ -56205,6 +56223,65 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteOrganizationUnitPermanently: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Organization unit ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Unreferenced administrative unit permanently deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Organization unit not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Protected unit or linked records prevent deletion */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
