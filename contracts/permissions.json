@@ -1520,6 +1520,132 @@
       "scope": "school",
       "name": "ดูและส่งออกรายงานการลาทั้งโรงเรียน",
       "description": "ดูและส่งออกรายงานการลาทั้งโรงเรียน"
+    },
+    {
+      "module": "budget",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูโครงการและงบประมาณ",
+      "description": "ดูโครงการและงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูโครงการและงบประมาณ",
+      "description": "ดูโครงการและงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "read",
+      "scope": "organization_unit",
+      "name": "ดูโครงการและงบประมาณ",
+      "description": "ดูโครงการและงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "read",
+      "scope": "organization_tree",
+      "name": "ดูโครงการและงบประมาณ",
+      "description": "ดูโครงการและงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูโครงการและงบประมาณ",
+      "description": "ดูโครงการและงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "create",
+      "scope": "own",
+      "name": "สร้างโครงการและคำขอใช้งบประมาณ",
+      "description": "สร้างโครงการและคำขอใช้งบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "update",
+      "scope": "own",
+      "name": "แก้ไขโครงการและคำขอใช้งบประมาณ",
+      "description": "แก้ไขโครงการและคำขอใช้งบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "update",
+      "scope": "organization_unit",
+      "name": "แก้ไขโครงการและคำขอใช้งบประมาณ",
+      "description": "แก้ไขโครงการและคำขอใช้งบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "update",
+      "scope": "organization_tree",
+      "name": "แก้ไขโครงการและคำขอใช้งบประมาณ",
+      "description": "แก้ไขโครงการและคำขอใช้งบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "update",
+      "scope": "school",
+      "name": "แก้ไขโครงการและคำขอใช้งบประมาณ",
+      "description": "แก้ไขโครงการและคำขอใช้งบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "approve",
+      "scope": "assigned",
+      "name": "พิจารณางบประมาณที่ได้รับมอบหมาย",
+      "description": "พิจารณางบประมาณที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "budget_payment",
+      "action": "execute",
+      "scope": "school",
+      "name": "บันทึกจ่ายและคืนเงินงบประมาณ",
+      "description": "บันทึกจ่ายและคืนเงินงบประมาณ"
+    },
+    {
+      "module": "budget_adjustment",
+      "action": "create",
+      "scope": "school",
+      "name": "จัดทำรายการปรับและยืมงบประมาณ",
+      "description": "จัดทำรายการปรับและยืมงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "manage",
+      "scope": "school",
+      "name": "ตั้งค่างบประมาณโรงเรียน",
+      "description": "ตั้งค่างบประมาณโรงเรียน"
+    },
+    {
+      "module": "budget",
+      "action": "download",
+      "scope": "own",
+      "name": "ส่งออกรายงานงบประมาณ",
+      "description": "ส่งออกรายงานงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "download",
+      "scope": "organization_unit",
+      "name": "ส่งออกรายงานงบประมาณ",
+      "description": "ส่งออกรายงานงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "download",
+      "scope": "organization_tree",
+      "name": "ส่งออกรายงานงบประมาณ",
+      "description": "ส่งออกรายงานงบประมาณ"
+    },
+    {
+      "module": "budget",
+      "action": "download",
+      "scope": "school",
+      "name": "ส่งออกรายงานงบประมาณ",
+      "description": "ส่งออกรายงานงบประมาณ"
     }
   ]
 }
