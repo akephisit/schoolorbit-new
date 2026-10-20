@@ -63,7 +63,8 @@ pub fn simple_file_access(
                 }
             }
         }
-        FilePurpose::StaffLeaveEvidence
+        FilePurpose::BudgetEvidence
+        | FilePurpose::StaffLeaveEvidence
         | FilePurpose::StaffLeaveSignature
         | FilePurpose::CorrespondenceDocument
         | FilePurpose::CorrespondenceSignature
@@ -114,6 +115,9 @@ pub async fn authorize_create(
     resource_id: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     match purpose {
+        FilePurpose::BudgetEvidence => {
+            school_budget::files::authorize_create(pool, actor, resource_id).await
+        }
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
             school_staff::leave::files::authorize_create(pool, actor, purpose, resource_id).await
         }
@@ -224,6 +228,9 @@ pub async fn authorize_existing(
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     match file.purpose {
+        FilePurpose::BudgetEvidence => {
+            school_budget::files::authorize_existing(pool, actor, file, action, resource_id).await
+        }
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
             school_staff::leave::files::authorize_existing(pool, actor, file, action, resource_id)
                 .await

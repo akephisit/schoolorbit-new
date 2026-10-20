@@ -256,3 +256,26 @@ mod tests {
         ));
     }
 }
+
+/// Resolve only the supplied active staff, retaining their acceptance locks and effective grants.
+pub(crate) async fn active_staff_actors_on_connection(
+    connection: &mut PgConnection,
+    users: &[Uuid],
+) -> Result<Vec<ActorContext>, sqlx::Error> {
+    let mut users = users.to_vec();
+    users.sort();
+    users.dedup();
+    let active:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) AND status='active' AND user_type='staff' ORDER BY id FOR SHARE").bind(users).fetch_all(&mut *connection).await?;
+    let query=format!("{EFFECTIVE_PERMISSIONS_CTE} SELECT u.id,coalesce(array_agg(DISTINCT e.code ORDER BY e.code) FILTER(WHERE e.code IS NOT NULL),'{{}}'::text[]) FROM users u LEFT JOIN effective_permissions e ON e.user_id=u.id WHERE u.id=ANY($1) GROUP BY u.id ORDER BY u.id");
+    let rows: Vec<(Uuid, Vec<String>)> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(active)
+        .fetch_all(connection)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(user_id, permissions)| ActorContext {
+            user_id,
+            permissions,
+        })
+        .collect())
+}

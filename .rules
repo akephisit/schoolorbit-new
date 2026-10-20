@@ -281,6 +281,11 @@ A feature is not complete when only its UI is hidden. Backend authorization, res
 
 Feature toggles are optional. Add one only for staged rollout or operational control, and enforce it in the backend as well as the UI; a frontend-only toggle is not an authorization or safety boundary.
 
+### User-facing business codes
+
+- Add a user-facing business code only when a demonstrable workflow or official reference requires it. Use names and relevant context by default, including for projects and activities; do not add a code merely because the record needs an identifier.
+- Retain internal UUIDs, foreign keys, technical registries and existing required codes. This rule does not authorize incidental code removal, schema changes or migrations in unrelated domains.
+
 ### Canonical replacements and data preservation
 
 - Design replacement schemas, APIs, DTOs, and business models around one orderly canonical structure suitable for long-term maintenance. Do not distort the new design merely to keep a legacy runtime interface alive.

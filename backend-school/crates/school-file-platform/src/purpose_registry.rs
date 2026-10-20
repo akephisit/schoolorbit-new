@@ -143,6 +143,17 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::BudgetEvidence => PurposeDefinition {
+            domain_segment: "budget",
+            purpose_segment: "evidence",
+            visibility: FileVisibility::Private,
+            allowed_content: CORRESPONDENCE_CONTENT,
+            limits: image_limits_with_pixels(10 * 1024 * 1024, 6000, 6000, 36_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::ExplicitOwningResource,
+        },
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => PurposeDefinition {
             domain_segment: "staff-leave",
             purpose_segment: if purpose == FilePurpose::StaffLeaveEvidence {
@@ -777,7 +788,47 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 23);
+        assert_eq!(FilePurpose::ALL.len(), 24);
+    }
+
+    #[test]
+    fn budget_evidence_is_private_scanned_bounded_and_resource_owned() {
+        let purpose = FilePurpose::BudgetEvidence;
+        let definition = purpose_definition(purpose).unwrap();
+        assert_eq!(purpose_from_code("budget_evidence"), Ok(purpose));
+        assert_eq!(definition.domain_segment, "budget");
+        assert_eq!(definition.purpose_segment, "evidence");
+        assert_eq!(definition.visibility, FileVisibility::Private);
+        assert_eq!(definition.limits.max_bytes, 10 * 1024 * 1024);
+        assert_eq!(definition.limits.max_width, Some(6000));
+        assert_eq!(definition.limits.max_height, Some(6000));
+        assert_eq!(definition.limits.max_decoded_pixels, Some(36_000_000));
+        assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+        assert_eq!(definition.retention_class, RetentionClass::Temporary);
+        assert_eq!(definition.policy_key, PolicyKey::ExplicitOwningResource);
+        assert!(definition.derivatives.is_empty());
+        let allowed = [
+            DetectedContent::Jpeg,
+            DetectedContent::Png,
+            DetectedContent::Webp,
+            DetectedContent::Pdf,
+        ];
+        assert_eq!(definition.allowed_content, allowed.as_slice());
+        let tenant = Uuid::now_v7();
+        let file = Uuid::now_v7();
+        for content in allowed {
+            let key = original_object_key(tenant, purpose, file, 1, content).unwrap();
+            assert_eq!(key.storage_class(), StorageClass::Private);
+            assert!(key.as_str().contains("/budget/evidence/"));
+        }
+        assert_eq!(
+            original_object_key(tenant, purpose, file, 1, DetectedContent::Ttf),
+            Err(PurposeRegistryError::UnsupportedDetectedContent)
+        );
+        assert_eq!(
+            derivative_object_key(tenant, purpose, file, 1, DerivativeRecipe::Thumbnail256Webp),
+            Err(PurposeRegistryError::DerivativeNotAllowed)
+        );
     }
 
     #[test]

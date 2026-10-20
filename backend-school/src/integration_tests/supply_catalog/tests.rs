@@ -393,6 +393,140 @@ async fn versions_serialize_append_and_edit_with_stale_refusal() {
     ));
 }
 #[tokio::test]
+async fn price_snapshot_preserves_selected_version_authority_and_transaction_locks() {
+    let (pool, manager, reader, category) = fixture("supply_price_snapshot").await;
+    let item = services::create_item(
+        &pool,
+        &manager,
+        product(category, "  Snapshot item  ", None),
+    )
+    .await
+    .unwrap();
+    let selected = item.latest_version.clone();
+    let other = services::create_item(&pool, &manager, product(category, "Other item", None))
+        .await
+        .unwrap();
+    let appended = services::write_version(
+        &pool,
+        &manager,
+        item.id,
+        None,
+        SupplyVersionWrite {
+            price: "99.90".into(),
+            shop: "Latest shop".into(),
+            revision: item.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(appended.item.latest_version.id, selected.id);
+
+    let mut denied_tx = pool.begin().await.unwrap();
+    let no_read = actor(manager.user_id, &[codes::SUPPLY_CATALOG_MANAGE_SCHOOL]);
+    assert!(matches!(
+        services::price_snapshot_in_transaction(&mut denied_tx, &no_read, item.id, selected.id)
+            .await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        services::price_snapshot_in_transaction(
+            &mut denied_tx,
+            &reader,
+            item.id,
+            other.latest_version.id,
+        )
+        .await,
+        Err(AppError::NotFound(_))
+    ));
+    denied_tx.rollback().await.unwrap();
+
+    let mut snapshot_tx = pool.begin().await.unwrap();
+    let retained =
+        services::price_snapshot_in_transaction(&mut snapshot_tx, &reader, item.id, selected.id)
+            .await
+            .unwrap();
+    assert_eq!(retained.item_id, item.id);
+    assert_eq!(retained.version_id, selected.id);
+    assert_eq!(retained.revision, selected.revision);
+    assert_eq!(retained.name, "Snapshot item");
+    assert_eq!(retained.unit, "ชิ้น");
+    assert_eq!(retained.price_satang, 1234);
+
+    // Consumers must retain one coherent item/selected-price snapshot until their
+    // own transaction commits, even though catalog metadata and prices are editable.
+    let locks = [
+        (
+            "SELECT id FROM supply_items WHERE id=$1 FOR UPDATE NOWAIT",
+            item.id,
+        ),
+        (
+            "SELECT id FROM supply_item_versions WHERE id=$1 FOR UPDATE NOWAIT",
+            selected.id,
+        ),
+    ];
+    for (query, id) in locks {
+        let error = sqlx::query(query)
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("55P03")
+        );
+    }
+    snapshot_tx.commit().await.unwrap();
+    for (query, id) in locks {
+        sqlx::query(query).bind(id).fetch_one(&pool).await.unwrap();
+    }
+
+    services::update_item(
+        &pool,
+        &platform(),
+        &manager,
+        item.id,
+        SupplyItemUpdate {
+            name: "Updated snapshot item".into(),
+            description: item.description.clone(),
+            category_id: category,
+            unit: "กล่อง".into(),
+            image_file_id: None,
+            revision: appended.item.revision,
+        },
+    )
+    .await
+    .unwrap();
+    services::write_version(
+        &pool,
+        &manager,
+        item.id,
+        Some(selected.id),
+        SupplyVersionWrite {
+            price: "78.90".into(),
+            shop: "Corrected shop".into(),
+            revision: selected.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let mut fresh_tx = pool.begin().await.unwrap();
+    let fresh =
+        services::price_snapshot_in_transaction(&mut fresh_tx, &reader, item.id, selected.id)
+            .await
+            .unwrap();
+    fresh_tx.commit().await.unwrap();
+    assert_eq!((fresh.item_id, fresh.version_id), (item.id, selected.id));
+    assert_eq!(fresh.revision, selected.revision + 1);
+    assert_eq!(fresh.name, "Updated snapshot item");
+    assert_eq!(fresh.unit, "กล่อง");
+    assert_eq!(fresh.price_satang, 7890);
+    assert_eq!(retained.revision, selected.revision);
+    assert_eq!(retained.name, "Snapshot item");
+    assert_eq!(retained.unit, "ชิ้น");
+    assert_eq!(retained.price_satang, 1234);
+    pool.close().await;
+}
+#[tokio::test]
 async fn bundles_resolve_latest_prices_and_keep_ownership() {
     let (pool, manager, reader, category) = fixture("supply_bundles").await;
     let item = services::create_item(&pool, &manager, product(category, "Bundle item", None))

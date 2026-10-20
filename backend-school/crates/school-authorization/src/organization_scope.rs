@@ -97,8 +97,22 @@ async fn query_exact_units_for_permission<'e>(
     permission_code: &str,
     target_organization_unit_id: Option<Uuid>,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(
-        r#"
+    sqlx::query_scalar(EXACT_UNITS_SQL)
+        .bind(actor_user_id)
+        .bind(permission_code)
+        .bind(target_organization_unit_id)
+        .fetch_all(executor)
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                reason = "exact_organization_unit_permission_query_failed",
+                database_error = %error
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
+        })
+}
+
+const EXACT_UNITS_SQL: &str = r#"
         SELECT target_unit.id
         FROM organization_units target_unit
         WHERE target_unit.is_active = true
@@ -152,18 +166,30 @@ async fn query_exact_units_for_permission<'e>(
               )
           )
         ORDER BY target_unit.id
-        "#,
-    )
-    .bind(actor_user_id)
-    .bind(permission_code)
-    .bind(target_organization_unit_id)
-    .fetch_all(executor)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            reason = "exact_organization_unit_permission_query_failed",
-            database_error = %error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
-    })
+        "#;
+
+/// Batch the same exact permission-origin policy for bounded recipient acceptance.
+pub(crate) async fn exact_units_for_users_on_connection(
+    connection: &mut PgConnection,
+    users: &[Uuid],
+    code: &str,
+    tree: bool,
+) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+    if users.is_empty() {
+        return Ok(vec![]);
+    }
+    let exact = EXACT_UNITS_SQL.replace("$1", "actor.user_id");
+    let roots=format!("SELECT actor.user_id,permitted.id AS organization_unit_id FROM unnest($1::uuid[]) actor(user_id) CROSS JOIN LATERAL ({exact}) permitted");
+    let query = if tree {
+        format!("WITH RECURSIVE roots AS ({roots}), tree(user_id,organization_unit_id) AS (SELECT user_id,organization_unit_id FROM roots UNION SELECT tree.user_id,child.id FROM tree JOIN organization_units child ON child.parent_unit_id=tree.organization_unit_id AND child.is_active) SELECT user_id,organization_unit_id FROM tree ORDER BY user_id,organization_unit_id")
+    } else {
+        format!("{roots} ORDER BY actor.user_id,permitted.id")
+    };
+    sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(users)
+        .bind(code)
+        .bind(Option::<Uuid>::None)
+        .fetch_all(connection)
+        .await
+        .map_err(AppError::from)
 }

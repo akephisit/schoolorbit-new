@@ -4396,6 +4396,438 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/budget/adjustments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listBudgetAdjustments'];
+		put?: never;
+		post: operations['createBudgetAdjustment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/adjustments/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetAdjustment'];
+		put: operations['saveBudgetAdjustment'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/adjustments/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['actBudgetAdjustment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/adjustments/{id}/history': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetAdjustmentHistory'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/adjustments/{id}/process': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetAdjustmentProcess'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/adjustments/{id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitBudgetAdjustment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/catalogs': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetCatalogs'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/dashboard': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetDashboard'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listBudgetProjects'];
+		put?: never;
+		post: operations['createBudgetProject'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetProject'];
+		put: operations['saveBudgetProject'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['actBudgetProject'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/amendments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['startBudgetAmendment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/history': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetProjectHistory'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/process': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetProjectProcess'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/requests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createBudgetSpendingRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/projects/{id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitBudgetProject'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/reports/export': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['exportBudgetReport'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listBudgetRequests'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetSpendingRequest'];
+		put: operations['saveBudgetSpendingRequest'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/actions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['actBudgetSpendingRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/close': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['closeBudgetSpendingRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/history': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetRequestHistory'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/payments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listBudgetPayments'];
+		put?: never;
+		post: operations['createBudgetPayment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/payments/{paymentId}/refunds': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['refundBudgetPayment'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/process': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetRequestProcess'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/requests/{id}/submit': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['submitBudgetSpendingRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetSettings'];
+		put: operations['saveBudgetSettings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/categories': {
 		parameters: {
 			query?: never;
@@ -9516,6 +9948,156 @@ export interface components {
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetAdjustmentDetail: {
+			data: {
+				amountSatang: string;
+				capabilities: components['schemas']['BudgetCapabilities'];
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				fiscalYearId: string;
+				from?: null | components['schemas']['BudgetAllocationRef'];
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['BudgetAdjustmentKind'];
+				/** Format: uuid */
+				loanId?: string | null;
+				loanOutstandingSatang: string;
+				/** Format: uuid */
+				ownerId: string;
+				reason: string;
+				/** Format: int64 */
+				revision: number;
+				status: components['schemas']['BudgetStatus'];
+				to?: null | components['schemas']['BudgetAllocationRef'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetAdjustmentPage: {
+			data: {
+				items: components['schemas']['BudgetAdjustmentDetail'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				offset: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetCatalogs: {
+			data: {
+				expenseCategories: components['schemas']['BudgetCatalogItem'][];
+				fiscalYears: components['schemas']['BudgetFiscalYear'][];
+				funds: components['schemas']['BudgetCatalogItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetDashboard: {
+			data: {
+				rows: components['schemas']['BudgetDashboardRow'][];
+				totals: components['schemas']['BudgetDashboardTotals'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetHistoryPage: {
+			data: {
+				items: components['schemas']['BudgetHistoryEntry'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				offset: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetPaymentPage: {
+			data: {
+				items: components['schemas']['BudgetPayment'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				offset: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetProcessDetail: {
+			data: {
+				process?: null | components['schemas']['ProcessInstance'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetProjectPage: {
+			data: {
+				items: components['schemas']['BudgetProjectSummary'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				offset: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetProjectWorkspace: {
+			data: {
+				acceptedPlan?: null | components['schemas']['BudgetPlanSnapshot'];
+				activities: components['schemas']['BudgetActivity'][];
+				balances: components['schemas']['BudgetBalance'][];
+				capabilities: components['schemas']['BudgetCapabilities'];
+				project: components['schemas']['BudgetProjectSummary'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetRequestPage: {
+			data: {
+				items: components['schemas']['BudgetRequestSummary'][];
+				/** Format: int64 */
+				limit: number;
+				/** Format: int64 */
+				offset: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetSettings: {
+			data: {
+				adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+				expenseCategories: components['schemas']['BudgetCatalogItem'][];
+				fiscalYears: components['schemas']['BudgetFiscalYear'][];
+				funds: components['schemas']['BudgetCatalogItem'][];
+				planSteps: components['schemas']['ProcessTemplateStep'][];
+				requestSteps: components['schemas']['ProcessTemplateStep'][];
+				/** Format: int64 */
+				revision: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetSpendingRequestDetail: {
+			data: {
+				capabilities: components['schemas']['BudgetCapabilities'];
+				evidenceFileIds: string[];
+				lines: components['schemas']['BudgetRequestLine'][];
+				request: components['schemas']['BudgetRequestSummary'];
 			};
 			message?: string;
 			success: boolean;
@@ -16453,6 +17035,484 @@ export interface components {
 			label: string;
 			startTime: string;
 		};
+		BudgetActionRequest: {
+			action: components['schemas']['ProcessAction'];
+			comment?: string | null;
+			/** Format: int64 */
+			expectedProcessRevision: number;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+		};
+		BudgetActivity: {
+			/** Format: uuid */
+			defaultExpenseCategoryId?: string | null;
+			/** Format: uuid */
+			defaultFundId?: string | null;
+			/** Format: uuid */
+			id: string;
+			lines: components['schemas']['BudgetPlanLine'][];
+			title: string;
+			totalSatang: string;
+		};
+		BudgetActivityInput: {
+			/** Format: uuid */
+			defaultExpenseCategoryId?: string | null;
+			/** Format: uuid */
+			defaultFundId?: string | null;
+			/** Format: uuid */
+			id?: string | null;
+			lines: components['schemas']['BudgetPlanLineInput'][];
+			title: string;
+		};
+		BudgetAdjustmentDetail: {
+			amountSatang: string;
+			capabilities: components['schemas']['BudgetCapabilities'];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			from?: null | components['schemas']['BudgetAllocationRef'];
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['BudgetAdjustmentKind'];
+			/** Format: uuid */
+			loanId?: string | null;
+			loanOutstandingSatang: string;
+			/** Format: uuid */
+			ownerId: string;
+			reason: string;
+			/** Format: int64 */
+			revision: number;
+			status: components['schemas']['BudgetStatus'];
+			to?: null | components['schemas']['BudgetAllocationRef'];
+		};
+		BudgetAdjustmentInput: {
+			amountSatang: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			from?: null | components['schemas']['BudgetAllocationRef'];
+			kind: components['schemas']['BudgetAdjustmentKind'];
+			/** Format: uuid */
+			loanId?: string | null;
+			reason: string;
+			to?: null | components['schemas']['BudgetAllocationRef'];
+		};
+		/** @enum {string} */
+		BudgetAdjustmentKind: 'add' | 'reduce' | 'transfer' | 'loan' | 'repayment';
+		BudgetAdjustmentPage: {
+			items: components['schemas']['BudgetAdjustmentDetail'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			offset: number;
+			/** Format: int64 */
+			total: number;
+		};
+		BudgetAllocationRef: {
+			/** Format: uuid */
+			activityId: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			/** Format: uuid */
+			fundId: string;
+			/** Format: uuid */
+			projectId: string;
+		};
+		BudgetBalance: {
+			/** Format: uuid */
+			activityId: string;
+			adjustedSatang: string;
+			availableSatang: string;
+			currentSatang: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			/** Format: uuid */
+			fundId: string;
+			loanOutstandingSatang: string;
+			paidSatang: string;
+			plannedSatang: string;
+			/** Format: uuid */
+			projectId: string;
+			reservedSatang: string;
+		};
+		BudgetCapabilities: {
+			canAct: boolean;
+			canAdjust: boolean;
+			canAmend: boolean;
+			canClose: boolean;
+			canCreateRequest: boolean;
+			canEdit: boolean;
+			canExport: boolean;
+			canManageSettings: boolean;
+			canPay: boolean;
+			canSubmit: boolean;
+		};
+		BudgetCatalogItem: {
+			active: boolean;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		BudgetCatalogItemInput: {
+			active: boolean;
+			/** Format: uuid */
+			id?: string | null;
+			name: string;
+		};
+		BudgetCatalogs: {
+			expenseCategories: components['schemas']['BudgetCatalogItem'][];
+			fiscalYears: components['schemas']['BudgetFiscalYear'][];
+			funds: components['schemas']['BudgetCatalogItem'][];
+		};
+		BudgetDashboard: {
+			rows: components['schemas']['BudgetDashboardRow'][];
+			totals: components['schemas']['BudgetDashboardTotals'];
+		};
+		BudgetDashboardRow: {
+			/** Format: uuid */
+			activityId: string;
+			activityTitle: string;
+			adjustedSatang: string;
+			availableSatang: string;
+			currentSatang: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			expenseCategoryName: string;
+			/** Format: uuid */
+			fundId: string;
+			fundName: string;
+			loanOutstandingSatang: string;
+			paidSatang: string;
+			plannedSatang: string;
+			/** Format: uuid */
+			projectId: string;
+			projectName: string;
+			reservedSatang: string;
+		};
+		BudgetDashboardTotals: {
+			adjustedSatang: string;
+			availableSatang: string;
+			currentSatang: string;
+			loanOutstandingSatang: string;
+			paidSatang: string;
+			plannedSatang: string;
+			reservedSatang: string;
+		};
+		BudgetFileSnapshot: {
+			checksum: string;
+			/** Format: uuid */
+			fileId: string;
+			/** Format: uuid */
+			versionId: string;
+		};
+		BudgetFiscalYear: {
+			active: boolean;
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: date */
+			startDate: string;
+		};
+		BudgetFiscalYearInput: {
+			active: boolean;
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			id?: string | null;
+			name: string;
+			/** Format: date */
+			startDate: string;
+		};
+		BudgetHistoryEntry: {
+			action: string;
+			/** Format: uuid */
+			actorId: string;
+			comment?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			resourceId: string;
+			resourceKind: components['schemas']['BudgetResourceKind'];
+			/** Format: int64 */
+			revision: number;
+		};
+		BudgetHistoryPage: {
+			items: components['schemas']['BudgetHistoryEntry'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			offset: number;
+			/** Format: int64 */
+			total: number;
+		};
+		BudgetListQuery: {
+			/** Format: uuid */
+			activityId?: string | null;
+			/** Format: uuid */
+			fiscalYearId?: string | null;
+			/** Format: int64 */
+			limit?: number | null;
+			/** Format: int64 */
+			offset?: number | null;
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+			/** Format: uuid */
+			projectId?: string | null;
+			search?: string | null;
+			status?: null | components['schemas']['BudgetStatus'];
+		};
+		BudgetMutationRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+		};
+		BudgetPayment: {
+			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			evidence: components['schemas']['BudgetFileSnapshot'][];
+			/** Format: uuid */
+			id: string;
+			note?: string | null;
+			/** Format: date */
+			paidOn: string;
+			refunds: components['schemas']['BudgetRefund'][];
+			/** Format: uuid */
+			requestId: string;
+			totalSatang: string;
+			voucherNumber: string;
+		};
+		BudgetPaymentAllocationInput: {
+			amountSatang: string;
+			/** Format: uuid */
+			planLineId: string;
+		};
+		BudgetPaymentPage: {
+			items: components['schemas']['BudgetPayment'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			offset: number;
+			/** Format: int64 */
+			total: number;
+		};
+		BudgetPlanLine: {
+			description: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			/** Format: uuid */
+			fundId: string;
+			/** Format: uuid */
+			id: string;
+			quantity: string;
+			/** Format: uuid */
+			supplyItemId?: string | null;
+			supplyNameSnapshot?: string | null;
+			/** Format: uuid */
+			supplyVersionId?: string | null;
+			/** Format: int64 */
+			supplyVersionRevision?: number | null;
+			totalSatang: string;
+			unit: string;
+			unitPriceSatang: string;
+		};
+		BudgetPlanLineInput: {
+			description: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			/** Format: uuid */
+			fundId: string;
+			/** Format: uuid */
+			id?: string | null;
+			quantity: string;
+			/** Format: uuid */
+			supplyItemId?: string | null;
+			/** Format: uuid */
+			supplyVersionId?: string | null;
+			unit: string;
+			unitPriceSatang: string;
+		};
+		BudgetPlanSnapshot: {
+			/** Format: date-time */
+			acceptedAt: string;
+			/** Format: uuid */
+			acceptedBy: string;
+			activities: components['schemas']['BudgetActivity'][];
+			/** Format: uuid */
+			id: string;
+			project: components['schemas']['BudgetProjectInput'];
+			totalSatang: string;
+			/** Format: int64 */
+			version: number;
+		};
+		BudgetProcessDetail: {
+			process?: null | components['schemas']['ProcessInstance'];
+		};
+		BudgetProjectInput: {
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			/** Format: date */
+			startDate: string;
+		};
+		BudgetProjectPage: {
+			items: components['schemas']['BudgetProjectSummary'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			offset: number;
+			/** Format: int64 */
+			total: number;
+		};
+		BudgetProjectSummary: {
+			/** Format: int64 */
+			acceptedVersion?: number | null;
+			availableSatang: string;
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			organizationUnitName: string;
+			/** Format: uuid */
+			ownerId: string;
+			paidSatang: string;
+			reservedSatang: string;
+			/** Format: int64 */
+			revision: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['BudgetStatus'];
+			totalSatang: string;
+		};
+		BudgetProjectWorkspace: {
+			acceptedPlan?: null | components['schemas']['BudgetPlanSnapshot'];
+			activities: components['schemas']['BudgetActivity'][];
+			balances: components['schemas']['BudgetBalance'][];
+			capabilities: components['schemas']['BudgetCapabilities'];
+			project: components['schemas']['BudgetProjectSummary'];
+		};
+		BudgetRefund: {
+			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string;
+			evidence: components['schemas']['BudgetFileSnapshot'][];
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			paymentId: string;
+			reason: string;
+			/** Format: date */
+			refundedOn: string;
+			totalSatang: string;
+		};
+		/** @enum {string} */
+		BudgetReportMetric: 'planned' | 'current' | 'paid';
+		BudgetReportQuery: {
+			exportScope?: boolean | null;
+			/** Format: uuid */
+			fiscalYearId?: string | null;
+			metric?: null | components['schemas']['BudgetReportMetric'];
+			/** Format: uuid */
+			organizationUnitId?: string | null;
+			/** Format: uuid */
+			projectId?: string | null;
+		};
+		BudgetRequestLine: {
+			amountSatang: string;
+			description: string;
+			/** Format: uuid */
+			expenseCategoryId: string;
+			expenseCategoryName: string;
+			/** Format: uuid */
+			fundId: string;
+			fundName: string;
+			paidSatang: string;
+			/** Format: uuid */
+			planLineId: string;
+			reservedSatang: string;
+			unit: string;
+		};
+		BudgetRequestLineInput: {
+			amountSatang: string;
+			/** Format: uuid */
+			planLineId: string;
+		};
+		BudgetRequestPage: {
+			items: components['schemas']['BudgetRequestSummary'][];
+			/** Format: int64 */
+			limit: number;
+			/** Format: int64 */
+			offset: number;
+			/** Format: int64 */
+			total: number;
+		};
+		BudgetRequestSummary: {
+			/** Format: uuid */
+			activityId: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			ownerId: string;
+			paidSatang: string;
+			/** Format: uuid */
+			projectId: string;
+			remainingSatang: string;
+			reservedSatang: string;
+			/** Format: int64 */
+			revision: number;
+			status: components['schemas']['BudgetStatus'];
+			title: string;
+			totalSatang: string;
+		};
+		/** @enum {string} */
+		BudgetResourceKind: 'project' | 'request' | 'adjustment';
+		BudgetSettings: {
+			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+			expenseCategories: components['schemas']['BudgetCatalogItem'][];
+			fiscalYears: components['schemas']['BudgetFiscalYear'][];
+			funds: components['schemas']['BudgetCatalogItem'][];
+			planSteps: components['schemas']['ProcessTemplateStep'][];
+			requestSteps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: int64 */
+			revision: number;
+		};
+		BudgetSpendingRequestDetail: {
+			capabilities: components['schemas']['BudgetCapabilities'];
+			evidenceFileIds: string[];
+			lines: components['schemas']['BudgetRequestLine'][];
+			request: components['schemas']['BudgetRequestSummary'];
+		};
+		BudgetSpendingRequestInput: {
+			/** Format: uuid */
+			activityId: string;
+			evidenceFileIds: string[];
+			lines: components['schemas']['BudgetRequestLineInput'][];
+			title: string;
+		};
+		/** @enum {string} */
+		BudgetStatus: 'draft' | 'submitted' | 'returned' | 'approved' | 'rejected' | 'closed';
 		Building: {
 			code: string | null;
 			/** Format: date-time */
@@ -17721,6 +18781,13 @@ export interface components {
 			/** Format: int64 */
 			sourceRowVersion: number;
 		};
+		CloseBudgetRequestRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+		};
 		CompleteEnrollmentData: {
 			studentCode: string;
 			/** Format: uuid */
@@ -18186,6 +19253,31 @@ export interface components {
 			name: string;
 			/** Format: uuid */
 			owningOrganizationUnitId?: string | null;
+		};
+		CreateBudgetPaymentRequest: {
+			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
+			evidenceFileIds: string[];
+			/** Format: int64 */
+			expectedRevision: number;
+			note?: string | null;
+			/** Format: date */
+			paidOn: string;
+			/** Format: uuid */
+			requestId: string;
+			voucherNumber: string;
+		};
+		CreateBudgetProjectRequest: {
+			/** Format: date */
+			endDate: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: date */
+			startDate: string;
 		};
 		CreateBuildingRequest: {
 			code?: string | null;
@@ -20144,6 +21236,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		FilePurpose:
+			| 'budget_evidence'
 			| 'staff_leave_evidence'
 			| 'staff_leave_signature'
 			| 'correspondence_document'
@@ -22779,6 +23872,17 @@ export interface components {
 			| 'no_next_rank';
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
+		RefundBudgetPaymentRequest: {
+			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
+			evidenceFileIds: string[];
+			/** Format: int64 */
+			expectedRevision: number;
+			reason: string;
+			/** Format: date */
+			refundedOn: string;
+			/** Format: uuid */
+			requestId: string;
+		};
 		RejectCalendarRequest: {
 			reason: string;
 		};
@@ -23314,6 +24418,58 @@ export interface components {
 		};
 		SaveBehaviorSettings: {
 			settings: components['schemas']['BehaviorSettings'];
+		};
+		SaveBudgetAdjustmentRequest: {
+			amountSatang: string;
+			/** Format: uuid */
+			fiscalYearId: string;
+			from?: null | components['schemas']['BudgetAllocationRef'];
+			kind: components['schemas']['BudgetAdjustmentKind'];
+			/** Format: uuid */
+			loanId?: string | null;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			to?: null | components['schemas']['BudgetAllocationRef'];
+		};
+		SaveBudgetProjectRequest: {
+			activities: components['schemas']['BudgetActivityInput'][];
+			/** Format: date */
+			endDate: string;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			fiscalYearId: string;
+			name: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: date */
+			startDate: string;
+		};
+		SaveBudgetSettingsRequest: {
+			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: int64 */
+			expectedRevision: number;
+			expenseCategories: components['schemas']['BudgetCatalogItemInput'][];
+			fiscalYears: components['schemas']['BudgetFiscalYearInput'][];
+			funds: components['schemas']['BudgetCatalogItemInput'][];
+			planSteps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: uuid */
+			requestId: string;
+			requestSteps: components['schemas']['ProcessTemplateStep'][];
+		};
+		SaveBudgetSpendingRequestRequest: {
+			/** Format: uuid */
+			activityId: string;
+			evidenceFileIds: string[];
+			/** Format: int64 */
+			expectedRevision: number;
+			lines: components['schemas']['BudgetRequestLineInput'][];
+			/** Format: uuid */
+			requestId: string;
+			title: string;
 		};
 		SaveCareCase: {
 			assignedUserIds: string[];
@@ -23977,6 +25133,13 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			name: string;
+		};
+		StartBudgetAmendmentRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
 		};
 		StartCertificateCampaignPurgeRequest: {
 			confirmationName: string;
@@ -25885,6 +27048,21 @@ export interface components {
 			owningOrganizationUnitId?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		UpdateBudgetAdjustmentRequest: {
+			amountSatang: string;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			fiscalYearId: string;
+			from?: null | components['schemas']['BudgetAllocationRef'];
+			kind: components['schemas']['BudgetAdjustmentKind'];
+			/** Format: uuid */
+			loanId?: string | null;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			to?: null | components['schemas']['BudgetAllocationRef'];
 		};
 		UpdateBuildingRequest: {
 			code?: string | null;
@@ -46520,6 +47698,2214 @@ export interface operations {
 				};
 			};
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listBudgetAdjustments: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBudgetAdjustment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetAdjustmentRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetAdjustment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetAdjustment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateBudgetAdjustmentRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	actBudgetAdjustment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetAdjustmentHistory: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetAdjustmentProcess: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitBudgetAdjustment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetCatalogs: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetCatalogs'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetDashboard: {
+		parameters: {
+			query?: {
+				exportScope?: boolean;
+				fiscalYearId?: string;
+				metric?: components['schemas']['BudgetReportMetric'];
+				organizationUnitId?: string;
+				projectId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetDashboard'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listBudgetProjects: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBudgetProjectRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetProjectRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	actBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	startBudgetAmendment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['StartBudgetAmendmentRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetProjectHistory: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetProjectProcess: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetSpendingRequestRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	exportBudgetReport: {
+		parameters: {
+			query?: {
+				exportScope?: boolean;
+				fiscalYearId?: string;
+				metric?: components['schemas']['BudgetReportMetric'];
+				organizationUnitId?: string;
+				projectId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Budget pivot CSV */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'text/csv': string;
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listBudgetRequests: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetRequestPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetSpendingRequestRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	actBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetActionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	closeBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CloseBudgetRequestRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetRequestHistory: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listBudgetPayments: {
+		parameters: {
+			query?: {
+				activityId?: string;
+				fiscalYearId?: string;
+				limit?: number;
+				offset?: number;
+				organizationUnitId?: string;
+				projectId?: string;
+				search?: string;
+				status?: components['schemas']['BudgetStatus'];
+			};
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetPaymentPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBudgetPayment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBudgetPaymentRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	refundBudgetPayment: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Request ID */
+				id: string;
+				/** @description Payment ID */
+				paymentId: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RefundBudgetPaymentRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetRequestProcess: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	submitBudgetSpendingRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetSettingsRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
