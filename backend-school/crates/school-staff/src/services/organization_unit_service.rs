@@ -7,7 +7,7 @@ use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::StatusTransitionOutcome;
+use super::{lock_audit_actor, StatusTransitionOutcome};
 
 pub async fn list_organization_units(
     pool: &PgPool,
@@ -127,6 +127,7 @@ pub async fn update_organization_unit(
         tracing::error!(%unit_id, %error, "failed to start organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
         .execute(&mut *tx)
         .await?;
@@ -430,6 +431,7 @@ pub async fn set_organization_unit_active(
         tracing::error!(%unit_id, %error, "failed to start organization unit status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
     let parent_unit_id = unit.parent_unit_id;
     let outcome = transition_locked_organization_unit_status(
@@ -524,15 +526,7 @@ pub async fn delete_organization_unit_permanently(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    // Audit takes an actor FK lock. Acquire it before unit locks, matching membership
-    // writers' user-first order so deleting an actor's own unit cannot deadlock.
-    let actor: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR KEY SHARE")
-        .bind(actor_user_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if actor.is_none() {
-        return Err(AppError::NotFound("ไม่พบผู้ดำเนินการ".into()));
-    }
+    lock_audit_actor(&mut tx, actor_user_id).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
         .execute(&mut *tx)
         .await?;

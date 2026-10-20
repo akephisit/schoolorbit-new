@@ -17,6 +17,22 @@ mod staff_name_service;
 pub mod staff_service;
 pub mod user_role_service;
 
+/// Audit inserts reference the actor. Take that FK-compatible lock before any
+/// resource lock, matching staff/member writers that serialize on the user first.
+async fn lock_audit_actor(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    actor_user_id: uuid::Uuid,
+) -> Result<(), school_errors::AppError> {
+    let actor: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM users WHERE id = $1 FOR KEY SHARE")
+            .bind(actor_user_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    actor
+        .map(|_| ())
+        .ok_or_else(|| school_errors::AppError::NotFound("ไม่พบผู้ดำเนินการ".into()))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusTransitionOutcome {
     Changed { is_active: bool },

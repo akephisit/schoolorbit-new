@@ -5,7 +5,7 @@ use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::StatusTransitionOutcome;
+use super::{lock_audit_actor, StatusTransitionOutcome};
 
 const ROLE_SELECT_WITH_PERMISSIONS: &str = r#"
 SELECT r.*,
@@ -148,6 +148,7 @@ pub async fn update_role(
         tracing::error!("❌ Failed to start transaction: {}", e);
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
 
     let status_outcome = if let Some(is_active) = payload.is_active {
         transition_role_status(&mut tx, role_id, is_active, actor_user_id).await?
@@ -317,6 +318,7 @@ pub async fn set_role_active(
         tracing::error!(%role_id, %error, "failed to start role status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
+    lock_audit_actor(&mut tx, actor_user_id).await?;
 
     let outcome = transition_role_status(&mut tx, role_id, is_active, actor_user_id).await?;
 
