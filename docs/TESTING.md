@@ -708,6 +708,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-offeri
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personal-daily-timetable-region-loading.spec.ts tests/e2e/timetable-daily-overview-layout.spec.ts tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/timetable-board-templates-region-loading.spec.ts tests/e2e/timetable-teacher-board.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/exam-schedule-lists-region-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-exams-workspace.spec.ts tests/e2e/staff-own-timetable-grid.spec.ts --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/exam-schedule-detail-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/question-bank-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/gradebook-workflow.spec.ts tests/e2e/result-preparation-region-loading.spec.ts --project=chromium
@@ -735,6 +736,8 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
   tests/e2e/academic-term-lifecycle.spec.ts tests/e2e/academic-year-lifecycle.spec.ts \
   --project=chromium --workers=2
 ```
+
+The staff exam and own-timetable workspace fixtures use synthetic read-only staff data. They cover compact context controls, responsive results in light/dark themes, filters and empty states, keyboard navigation, school appearance, and the absence of management requests or writes. Exam cases also verify all four tabs, round changes, mobile assessment phases, and actual personal duty duration.
 
 Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
 

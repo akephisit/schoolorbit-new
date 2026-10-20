@@ -168,6 +168,11 @@
 		selectedHomeroomId = 'all';
 	}
 
+	function chooseLevel(value: string) {
+		const option = levelOptions.find((item) => item.value === value);
+		if (option) selectLevel(option.value);
+	}
+
 	function openExamDay(examDayId: string) {
 		selectedDayId = examDayId;
 		activeTab = 'schedule';
@@ -322,10 +327,8 @@
 								<Label id={`${controlId}-level`}>ช่วงชั้น</Label>
 								<ToggleGroup.Root
 									type="single"
-									value={selectedLevel}
+									bind:value={() => selectedLevel, chooseLevel}
 									aria-labelledby={`${controlId}-level`}
-									onValueChange={(value) =>
-										value && selectLevel(value as StaffExamScheduleLevelFilter)}
 									class="flex-wrap"
 								>
 									{#each levelOptions as option (option.value)}<ToggleGroup.Item
@@ -354,22 +357,22 @@
 						</div>
 						<dl class="flex flex-wrap gap-x-6 gap-y-2 text-sm">
 							<div class="flex items-baseline gap-2">
+								<dt class="order-2 text-muted-foreground">วันสอบ</dt>
 								<dd class="text-xl font-semibold tabular-nums">
 									{roundSummary?.examDayCount ?? 0}
 								</dd>
-								<dt class="text-muted-foreground">วันสอบ</dt>
 							</div>
 							<div class="flex items-baseline gap-2">
+								<dt class="order-2 text-muted-foreground">ห้องสอบที่ใช้</dt>
 								<dd class="text-xl font-semibold tabular-nums">
 									{roundSummary?.examRoomCount ?? 0}
 								</dd>
-								<dt class="text-muted-foreground">ห้องสอบที่ใช้</dt>
 							</div>
 							<div class="flex items-baseline gap-2">
+								<dt class="order-2 text-muted-foreground">กรรมการที่มอบหมาย</dt>
 								<dd class="text-xl font-semibold tabular-nums">
 									{roundSummary?.invigilatorCount ?? 0}
 								</dd>
-								<dt class="text-muted-foreground">กรรมการที่มอบหมาย</dt>
 							</div>
 						</dl>
 						<p class="border-t pt-3 text-sm text-muted-foreground">

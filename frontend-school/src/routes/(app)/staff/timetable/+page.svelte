@@ -2,7 +2,6 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
-	import { buildTimetableBlockDisplay } from '#lib/academic/timetable/block-display.js';
 	import {
 		currentLocalDate,
 		getMyTimetable,
@@ -21,7 +20,8 @@
 		runStaffOwnTimetablePdfDownload,
 		staffOwnTimetableSelectionKey
 	} from '#lib/utils/staff-own-timetable-pdf.js';
-	import { Download, Loader2, MapPin, School } from '@lucide/svelte';
+	import OwnTimetableWorkspace from '#lib/components/academic/timetable/OwnTimetableWorkspace.svelte';
+	import { Download, Loader2 } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 
 	const dayOptions = [
@@ -66,7 +66,6 @@
 			? dayOptions.filter((day) => configured.has(day.value))
 			: dayOptions.slice(0, 5);
 	});
-	const tableMinWidth = $derived(96 + periods.length * 132);
 	const canDownloadPdf = $derived(
 		canDownloadStaffOwnTimetablePdf({
 			loading,
@@ -145,29 +144,6 @@
 		}
 	}
 
-	function blocksForCell(day: string, periodId: string): TimetableBlock[] {
-		return blocks.filter(
-			(block) => block.dayOfWeek === day && block.bellSchedulePeriodId === periodId
-		);
-	}
-
-	function blockCode(block: TimetableBlock): string | null {
-		return block.blockKind === 'course' ? block.offeringCode : null;
-	}
-
-	function blockTitle(block: TimetableBlock): string {
-		if (block.blockKind === 'structural') return block.title ?? 'กิจกรรม';
-		return block.offeringName ?? block.title ?? 'กิจกรรม';
-	}
-
-	function blockColor(blockKind: TimetableBlock['blockKind']): string {
-		if (blockKind === 'course')
-			return 'border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100';
-		if (blockKind === 'activity')
-			return 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100';
-		return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
-	}
-
 	$effect.pre(() => {
 		const yearId = data.academicYearId ?? '';
 		const termId = data.academicTermId;
@@ -206,7 +182,7 @@
 
 <PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
 	{#snippet actions()}
-		<Button variant="outline" disabled={!canDownloadPdf} onclick={downloadPdf}>
+		<Button variant="outline" size="sm" disabled={!canDownloadPdf} onclick={downloadPdf}>
 			{#if isExportingPdf}<Loader2 class="animate-spin" />{:else}<Download />{/if}
 			ดาวน์โหลด PDF
 		</Button>
@@ -241,65 +217,7 @@
 					<Button variant="outline" size="sm" onclick={() => loadTimetable()}>ลองอีกครั้ง</Button>
 				</div>
 			{/if}
-			<div class="overflow-x-auto rounded-lg border">
-				<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
-					<thead
-						><tr
-							><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
-							>{#each periods as period, index (period.id)}<th
-									class="bg-muted/70 border p-2 text-center text-xs"
-									><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-									<p class="text-muted-foreground font-normal">
-										{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-									</p></th
-								>{/each}</tr
-						></thead
-					>
-					<tbody>
-						{#each schoolDays as day (day.value)}
-							<tr
-								><th class="bg-muted/30 border p-2 text-xs">{day.label}</th>
-								{#each periods as period (period.id)}
-									{@const cellBlocks = blocksForCell(day.value, period.id)}
-									<td class="h-24 border p-1 align-top">
-										{#each cellBlocks as block (block.id)}
-											{@const display = buildTimetableBlockDisplay(block, 'personal')}
-											{@const code = blockCode(block)}
-											<div
-												class={`flex h-full min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
-											>
-												{#if code}<p class="truncate font-semibold">{code}</p>{/if}
-												<p
-													class={[
-														code && 'mt-1',
-														block.blockKind === 'course'
-															? 'line-clamp-2 opacity-80'
-															: 'line-clamp-3 whitespace-pre-line font-semibold'
-													]}
-												>
-													{blockTitle(block)}
-												</p>
-												{#if display.groupLabel}<p
-														class="mt-auto flex items-center gap-1 truncate opacity-70"
-													>
-														<School class="size-3" />
-														{display.groupLabel}
-													</p>{/if}
-												{#if display.roomLabel}<p
-														class="flex items-center gap-1 truncate opacity-70"
-													>
-														<MapPin class="size-3" />
-														{display.roomLabel}
-													</p>{/if}
-											</div>
-										{/each}
-									</td>
-								{/each}
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<OwnTimetableWorkspace {blocks} {periods} days={schoolDays} />
 		</div>
 	{/if}
 </PageShell>

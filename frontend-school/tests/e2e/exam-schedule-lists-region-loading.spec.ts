@@ -37,48 +37,51 @@ async function fulfill(route: Route, data: unknown) {
 }
 
 async function installShell(page: Page) {
-	await page.route('**/api/**', async (route) => {
-		const url = new URL(route.request().url());
-		if (url.pathname === '/api/auth/me') {
-			await fulfill(route, {
-				id: '90000000-0000-4000-8000-000000000011',
-				username: 'exam-reader',
-				firstName: 'ทดสอบ',
-				displayName: 'ทดสอบ ตารางสอบ',
-				lastName: 'ตารางสอบ',
-				userType: 'staff',
-				status: 'ACTIVE',
-				permissions: ['*']
-			});
-			return;
+	await page.route(
+		(url) => url.pathname.startsWith('/api/'),
+		async (route) => {
+			const url = new URL(route.request().url());
+			if (url.pathname === '/api/auth/me') {
+				await fulfill(route, {
+					id: '90000000-0000-4000-8000-000000000011',
+					username: 'exam-reader',
+					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ตารางสอบ',
+					lastName: 'ตารางสอบ',
+					userType: 'staff',
+					status: 'ACTIVE',
+					permissions: ['*']
+				});
+				return;
+			}
+			if (url.pathname === '/api/academic/context/options') {
+				await fulfill(route, {
+					activeAcademicYearId: yearId,
+					activeAcademicTermId: termOne,
+					years: [{ id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
+					terms: [termOne, termTwo].map((id, index) => ({
+						id,
+						academicYearId: yearId,
+						name: `ภาคเรียนที่ ${index + 1}`,
+						code: String(index + 1),
+						sequence: index + 1,
+						termType: 'regular',
+						status: 'active',
+						startDate: '2026-05-01',
+						endDate: '2027-03-31',
+						includedInYearResult: true,
+						blocksYearClosure: true
+					}))
+				});
+				return;
+			}
+			if (url.pathname === '/api/menu/user') {
+				await fulfill(route, { groups: [] });
+				return;
+			}
+			await fulfill(route, []);
 		}
-		if (url.pathname === '/api/academic/context/options') {
-			await fulfill(route, {
-				activeAcademicYearId: yearId,
-				activeAcademicTermId: termOne,
-				years: [{ id: yearId, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }],
-				terms: [termOne, termTwo].map((id, index) => ({
-					id,
-					academicYearId: yearId,
-					name: `ภาคเรียนที่ ${index + 1}`,
-					code: String(index + 1),
-					sequence: index + 1,
-					termType: 'regular',
-					status: 'active',
-					startDate: '2026-05-01',
-					endDate: '2027-03-31',
-					includedInYearResult: true,
-					blocksYearClosure: true
-				}))
-			});
-			return;
-		}
-		if (url.pathname === '/api/menu/user') {
-			await fulfill(route, { groups: [] });
-			return;
-		}
-		await fulfill(route, []);
-	});
+	);
 }
 
 async function navigateInApp(page: Page, href: string) {
