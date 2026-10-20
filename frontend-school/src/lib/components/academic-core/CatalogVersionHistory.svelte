@@ -235,7 +235,10 @@
 								min="0.01"
 								step="0.01"
 								inputmode="decimal"
-								bind:value={draft.exactValue}
+								bind:value={
+									() => draft.exactValue,
+									(value) => (draft.exactValue = value == null ? '' : String(value))
+								}
 								required
 							/>
 						</div>
@@ -248,7 +251,10 @@
 									min="1"
 									step="1"
 									inputmode="numeric"
-									bind:value={draft.standardPeriodsPerWeek}
+									bind:value={
+										() => draft.standardPeriodsPerWeek,
+										(value) => (draft.standardPeriodsPerWeek = value == null ? '' : String(value))
+									}
 									required
 								/>
 							</div>
@@ -261,7 +267,10 @@
 								min={kind === 'subject' ? '1' : '0.01'}
 								step={kind === 'subject' ? '1' : '0.01'}
 								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
-								bind:value={draft.totalValue}
+								bind:value={
+									() => draft.totalValue,
+									(value) => (draft.totalValue = value == null ? '' : String(value))
+								}
 								required
 							/>
 						</div>

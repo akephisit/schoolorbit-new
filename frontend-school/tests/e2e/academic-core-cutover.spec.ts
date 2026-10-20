@@ -1,5 +1,16 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { UpdateAcademicTermRequest } from '../../src/lib/api/academic-core';
+import {
+	fillSubjectVersion,
+	installSubjectCatalog,
+	openSubjectDetails,
+	subjectApi,
+	subjectFixture,
+	subjectGrade,
+	subjectName,
+	subjectPath,
+	failSubject
+} from './fixtures/subject-catalog';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -343,90 +354,54 @@ test('derives term count from rows and exposes no stored count control', async (
 });
 
 test('creates a new subject version while preserving published history', async ({ page }) => {
-	await mockShell(page, async (route, url) => {
-		if (url.pathname === '/api/academic/catalog/subjects') {
-			await fulfill(route, [
-				{
-					id: ids.subject,
-					code: 'MATH101',
-					owningOrganizationUnitId: null,
-					archivedAt: null,
-					rowVersion: 1,
-					createdAt: '',
-					updatedAt: ''
-				}
-			]);
-			return true;
+	const fixture = subjectFixture(1);
+	const id = fixture.items[0].subject.id;
+	const original = structuredClone(fixture.histories.get(id)![0]);
+	const requests = await installSubjectCatalog(page, fixture);
+	await page.goto(subjectPath);
+	await openSubjectDetails(page);
+	await expect(page.getByRole('region', { name: 'ประวัติรุ่น', exact: true })).toContainText(
+		subjectName
+	);
+	await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('คณิตศาสตร์ฉบับใหม่');
+	await page.getByLabel('หน่วยกิต', { exact: true }).fill('');
+	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	expect(
+		await page
+			.getByLabel('หน่วยกิต', { exact: true })
+			.evaluate((input: HTMLInputElement) => input.validity.valueMissing)
+	).toBe(true);
+	expect(requests.writes).toEqual([]);
+	await fillSubjectVersion(page, 'คณิตศาสตร์ฉบับใหม่');
+	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	const history = page.getByRole('region', { name: 'ประวัติรุ่น', exact: true });
+	await expect(history.getByRole('heading', { name: subjectName, exact: true })).toBeVisible();
+	await expect(
+		history.getByRole('heading', { name: 'คณิตศาสตร์ฉบับใหม่', exact: true })
+	).toBeVisible();
+	expect(fixture.histories.get(id)?.find((version) => version.id === original.id)).toEqual(
+		original
+	);
+	expect(requests.writes).toEqual([
+		{
+			method: 'POST',
+			path: `${subjectApi}/${id}/versions`,
+			body: {
+				nameTh: 'คณิตศาสตร์ฉบับใหม่',
+				nameEn: 'Synthetic revised mathematics',
+				credit: '1.75',
+				description: null,
+				effectiveFrom: '2026-10-21',
+				effectiveUntil: null,
+				gradeLevelIds: [subjectGrade.id],
+				hoursPerSemester: 60,
+				periodsPerWeek: 3,
+				subjectType: 'BASIC',
+				termCode: null
+			}
 		}
-		if (url.pathname.endsWith('/versions') && route.request().method() === 'GET') {
-			await fulfill(route, [
-				{
-					id: ids.subjectVersion,
-					subjectId: ids.subject,
-					versionNo: 1,
-					nameTh: 'คณิตศาสตร์เดิม',
-					nameEn: null,
-					credit: '1.00',
-					description: null,
-					effectiveFrom: '2027-05-01',
-					effectiveUntil: null,
-					gradeLevelIds: [ids.year],
-					groupId: null,
-					hoursPerSemester: 40,
-					periodsPerWeek: 2,
-					subjectType: 'BASIC',
-					termCode: null,
-					status: 'published',
-					rowVersion: 1,
-					migrated: false,
-					publishedAt: '',
-					createdAt: '',
-					updatedAt: ''
-				}
-			]);
-			return true;
-		}
-		if (url.pathname.endsWith('/versions') && route.request().method() === 'POST') {
-			await fulfill(
-				route,
-				{
-					id: `${ids.subjectVersion.slice(0, -1)}2`,
-					subjectId: ids.subject,
-					versionNo: 2,
-					nameTh: 'คณิตศาสตร์ฉบับใหม่',
-					nameEn: null,
-					credit: '1.50',
-					description: null,
-					effectiveFrom: '2028-05-01',
-					effectiveUntil: null,
-					gradeLevelIds: [ids.year],
-					groupId: null,
-					hoursPerSemester: null,
-					periodsPerWeek: null,
-					subjectType: 'BASIC',
-					termCode: null,
-					status: 'draft',
-					rowVersion: 1,
-					migrated: false,
-					publishedAt: null,
-					createdAt: '',
-					updatedAt: ''
-				},
-				201
-			);
-			return true;
-		}
-		return false;
-	});
-	await page.goto('/staff/academic/catalog/subjects');
-	await expect(page.getByText('คณิตศาสตร์เดิม')).toBeVisible();
-	await page.getByLabel('ชื่อภาษาไทย').fill('คณิตศาสตร์ฉบับใหม่');
-	await page.getByLabel('หน่วยกิต').fill('1.50');
-	await page.getByLabel('รหัสระดับชั้น (คั่นด้วยจุลภาค)').fill(ids.year);
-	await page.getByLabel('เริ่มใช้').fill('2028-05-01');
-	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่' }).click();
-	await expect(page.getByText('คณิตศาสตร์เดิม')).toBeVisible();
-	await expect(page.getByText('คณิตศาสตร์ฉบับใหม่')).toBeVisible();
+	]);
+	expect(requests.pageErrors).toEqual([]);
 });
 
 test('creates future placement without changing the active-year placement timeline', async ({
@@ -474,36 +449,31 @@ test('creates course and activity offerings and exposes roster review before pub
 });
 
 test('preserves a subject-version draft after a stale row conflict', async ({ page }) => {
-	await mockShell(page, async (route, url) => {
-		if (url.pathname === '/api/academic/catalog/subjects') {
-			await fulfill(route, [
-				{
-					id: ids.subject,
-					code: 'SCI101',
-					owningOrganizationUnitId: null,
-					archivedAt: null,
-					rowVersion: 1,
-					createdAt: '',
-					updatedAt: ''
-				}
-			]);
-			return true;
+	const fixture = subjectFixture(1);
+	const requests = await installSubjectCatalog(page, fixture, {
+		onRequest: async (route, url) => {
+			if (url.pathname.endsWith('/versions') && route.request().method() === 'POST') {
+				await failSubject(route, 409, 'ข้อมูลรุ่นถูกแก้ไขโดยผู้ใช้อื่นแล้ว');
+				return true;
+			}
+			return false;
 		}
-		if (url.pathname.endsWith('/versions') && route.request().method() === 'GET') {
-			await fulfill(route, []);
-			return true;
-		}
-		if (url.pathname.endsWith('/versions') && route.request().method() === 'POST') {
-			await fulfill(route, 'ข้อมูลรุ่นถูกแก้ไขโดยผู้ใช้อื่นแล้ว', 409);
-			return true;
-		}
-		return false;
 	});
-	await page.goto('/staff/academic/catalog/subjects');
-	await page.getByLabel('ชื่อภาษาไทย').fill('วิทยาศาสตร์ฉบับร่างของฉัน');
-	await page.getByLabel('รหัสระดับชั้น (คั่นด้วยจุลภาค)').fill(ids.year);
-	await page.getByLabel('เริ่มใช้').fill('2028-05-01');
-	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่' }).click();
+	await page.goto(subjectPath);
+	await openSubjectDetails(page);
+	await fillSubjectVersion(page, 'วิทยาศาสตร์ฉบับร่างของฉัน');
+	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
 	await expect(page.getByRole('alert')).toContainText('กรุณาโหลดข้อมูลล่าสุด');
-	await expect(page.getByLabel('ชื่อภาษาไทย')).toHaveValue('วิทยาศาสตร์ฉบับร่างของฉัน');
+	await expect(page.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue(
+		'วิทยาศาสตร์ฉบับร่างของฉัน'
+	);
+	await expect(page.getByLabel('หน่วยกิต', { exact: true })).toHaveValue('1.75');
+	await expect(page.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ })).toContainText('ม.1');
+	await expect(
+		page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+	).toContainText('21 ต.ค. 2569');
+	await expect(page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true })).toBeEnabled();
+	expect(requests.writes).toHaveLength(1);
+	expect(requests.historyReads.get(fixture.items[0].subject.id)).toBe(1);
+	expect(requests.pageErrors).toEqual([]);
 });

@@ -91,10 +91,13 @@ test('building deletion leaves visible rooms present with the nullable building 
 	await page.goto(path);
 	await expect(page.getByTestId('facility-buildings')).toContainText('อาคารแรก');
 	await page.getByRole('button', { name: 'ลบอาคาร อาคารแรก', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยันลบ', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันลบ', exact: true })
+		.click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	await page.keyboard.press('Escape');
-	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
 	await page.getByRole('tab', { name: 'ห้องเรียน/ห้องปฏิบัติการ', exact: true }).click();
 	const row = page.getByTestId('facility-rooms').getByRole('row').filter({ hasText: 'ห้องแรก' });
 	await expect(row).toContainText('อาคารแรก');

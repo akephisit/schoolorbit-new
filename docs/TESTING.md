@@ -701,6 +701,7 @@ PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run build
 PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -- --host 127.0.0.1 --port 4173
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/subject-catalog-workspace.spec.ts tests/e2e/facility-workspace.spec.ts --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-foundation-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts tests/e2e/curriculum-publications.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-year-collections-route-loading.spec.ts --project=chromium
@@ -738,6 +739,8 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
 ```
 
 The staff exam and own-timetable workspace fixtures use synthetic read-only staff data. They cover compact context controls, responsive results in light/dark themes, filters and empty states, keyboard navigation, school appearance, and the absence of management requests or writes. Exam cases also verify all four tabs, round changes, mobile assessment phases, and actual personal duty duration.
+
+Subject catalog and facility workspace fixtures exercise compact filters and bounded results, create/detail forms, scoped capabilities, error and pending draft retention, and late-response ownership on mobile/desktop in both themes. Subject version fixtures also check decimal-string payloads and publication revisions; the two subject-version cases in `academic-core-cutover.spec.ts` cover published-history preservation and conflict draft retention with the current overview, Sheet, grade selector and DatePicker.
 
 Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
 

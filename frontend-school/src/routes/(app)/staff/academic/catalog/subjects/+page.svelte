@@ -54,7 +54,9 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let mutationError = $state('');
-	let creating = $state(false);
+	let createRevision = $state(0);
+	let pendingCreateRevision = $state<number | null>(null);
+	let creating = $derived(pendingCreateRevision === createRevision);
 	let createOpen = $state(false);
 	let filtersOpen = $state(false);
 	let pageNumber = $state(1);
@@ -65,12 +67,16 @@
 	let typeFilter = $state(allValue);
 	let subjectGroupFilter = $state(allValue);
 	let editingSubjectGroupValue = $state('');
-	let subjectMetadataSaving = $state(false);
+	let selectionRevision = $state(0);
+	let pendingMetadataRevision = $state<number | null>(null);
+	let subjectMetadataSaving = $derived(pendingMetadataRevision === selectionRevision);
 	let subjectMetadataError = $state('');
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	let historyRevision = 0;
 	let pendingOpenSubjectId = '';
+	let pendingOpenSelectionRevision = 0;
+	let pendingOpenCreateRevision = 0;
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
@@ -195,6 +201,12 @@
 						if (selectedId) {
 							selected = latest.items.find((item) => item.subject.id === selectedId) ?? null;
 						}
+						if (
+							pendingOpenSubjectId &&
+							(pendingOpenSelectionRevision !== selectionRevision ||
+								pendingOpenCreateRevision !== createRevision)
+						)
+							pendingOpenSubjectId = '';
 						if (pendingOpenSubjectId) {
 							const item = latest.items.find((row) => row.subject.id === pendingOpenSubjectId);
 							if (item) {
@@ -213,6 +225,7 @@
 	});
 
 	async function openSubject(item: CatalogSubjectOverviewItem) {
+		selectionRevision += 1;
 		const currentHistoryRevision = ++historyRevision;
 		selected = item;
 		editingSubjectGroupValue = item.subject.subjectGroupId;
@@ -266,7 +279,10 @@
 
 	function setSheetOpen(open: boolean) {
 		sheetOpen = open;
-		if (!open) historyRevision += 1;
+		if (!open) {
+			historyRevision += 1;
+			selectionRevision += 1;
+		}
 	}
 
 	async function reconcileSubjectMutation(subjectId: string) {
@@ -276,6 +292,18 @@
 		else await loadOverview();
 	}
 
+	function openCreateSubject() {
+		createRevision += 1;
+		code = '';
+		mutationError = '';
+		createOpen = true;
+	}
+
+	function setCreateOpen(open: boolean) {
+		createOpen = open;
+		if (!open) createRevision += 1;
+	}
+
 	async function addSubject(event: SubmitEvent) {
 		event.preventDefault();
 		if (creating || !canCreate) return;
@@ -283,21 +311,28 @@
 			mutationError = 'กรุณาเลือกกลุ่มสาระของรายวิชา';
 			return;
 		}
-		creating = true;
+		const draftRevision = createRevision;
+		pendingCreateRevision = draftRevision;
 		mutationError = '';
 		try {
 			const created = await createCatalogSubject({
 				code,
 				subjectGroupId: selectedSubjectGroup.subjectGroupId
 			});
-			code = '';
-			createOpen = false;
-			pendingOpenSubjectId = created.id;
+			if (disposed) return;
+			if (createOpen && createRevision === draftRevision) {
+				code = '';
+				createOpen = false;
+				pendingOpenSubjectId = created.id;
+				pendingOpenSelectionRevision = selectionRevision;
+				pendingOpenCreateRevision = createRevision;
+			}
 			await loadOverview();
 		} catch (error) {
-			mutationError = error instanceof Error ? error.message : 'เพิ่มรหัสรายวิชาไม่สำเร็จ';
+			if (!disposed && createOpen && createRevision === draftRevision)
+				mutationError = error instanceof Error ? error.message : 'เพิ่มรหัสรายวิชาไม่สำเร็จ';
 		} finally {
-			creating = false;
+			if (pendingCreateRevision === draftRevision) pendingCreateRevision = null;
 		}
 	}
 
@@ -322,20 +357,29 @@
 
 	async function saveSubjectGroup() {
 		if (!selected?.canManage || !editingSubjectGroupValue || subjectMetadataSaving) return;
-		subjectMetadataSaving = true;
+		const target = selected.subject;
+		const targetGroupId = editingSubjectGroupValue;
+		const draftRevision = selectionRevision;
+		pendingMetadataRevision = draftRevision;
 		subjectMetadataError = '';
 		try {
-			await updateCatalogSubject(selected.subject.id, {
-				code: selected.subject.code,
-				subjectGroupId: editingSubjectGroupValue,
-				archived: selected.subject.archivedAt !== null,
-				rowVersion: selected.subject.rowVersion
+			await updateCatalogSubject(target.id, {
+				code: target.code,
+				subjectGroupId: targetGroupId,
+				archived: target.archivedAt !== null,
+				rowVersion: target.rowVersion
 			});
-			await loadOverview();
+			if (!disposed) await loadOverview();
 		} catch (error) {
-			subjectMetadataError = error instanceof Error ? error.message : 'เปลี่ยนกลุ่มสาระไม่สำเร็จ';
+			if (
+				!disposed &&
+				sheetOpen &&
+				selectionRevision === draftRevision &&
+				selected?.subject.id === target.id
+			)
+				subjectMetadataError = error instanceof Error ? error.message : 'เปลี่ยนกลุ่มสาระไม่สำเร็จ';
 		} finally {
-			subjectMetadataSaving = false;
+			if (pendingMetadataRevision === draftRevision) pendingMetadataRevision = null;
 		}
 	}
 
@@ -356,11 +400,8 @@
 	description="รหัส ชื่อ ประเภท ระดับชั้น และภาระการเรียนของรายวิชา"
 >
 	{#snippet actions()}
-		{#if canCreate}<Button
-				onclick={() => {
-					mutationError = '';
-					createOpen = true;
-				}}><Plus class="size-4" aria-hidden="true" />เพิ่มรายวิชา</Button
+		{#if canCreate}<Button onclick={openCreateSubject}
+				><Plus class="size-4" aria-hidden="true" />เพิ่มรายวิชา</Button
 			>{/if}
 	{/snippet}
 	{#if loading && !overview}
@@ -834,17 +875,8 @@
 	</Sheet.Content>
 </Sheet.Root>
 
-<Dialog.Root bind:open={createOpen}>
-	<Dialog.Content
-		class="sm:max-w-md"
-		onInteractOutside={(event) => {
-			if (creating) event.preventDefault();
-		}}
-		onEscapeKeydown={(event) => {
-			if (creating) event.preventDefault();
-		}}
-		showCloseButton={!creating}
-	>
+<Dialog.Root bind:open={() => createOpen, setCreateOpen}>
+	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header
 			><Dialog.Title>เพิ่มรายวิชา</Dialog.Title><Dialog.Description
 				>เพิ่มรหัสและกลุ่มสาระ แล้วกำหนดรายละเอียดรายวิชาในรุ่นแรก</Dialog.Description
@@ -877,8 +909,7 @@
 			</div>
 			{#if mutationError}<p role="alert" class="text-sm text-destructive">{mutationError}</p>{/if}
 			<Dialog.Footer
-				><Button variant="outline" disabled={creating} onclick={() => (createOpen = false)}
-					>ยกเลิก</Button
+				><Button variant="outline" onclick={() => setCreateOpen(false)}>ยกเลิก</Button
 				><LoadingButton type="submit" loading={creating} loadingLabel="กำลังเพิ่ม..."
 					>เพิ่มและกำหนดรายละเอียด</LoadingButton
 				></Dialog.Footer
