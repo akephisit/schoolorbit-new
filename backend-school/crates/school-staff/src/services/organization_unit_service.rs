@@ -525,13 +525,23 @@ pub async fn delete_organization_unit_permanently(
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
-        .execute(&mut *tx).await?;
+        .execute(&mut *tx)
+        .await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
-    if unit.is_system || unit.unit_type == "school" || unit.unit_type == "subject_group" || unit.subject_group_id.is_some() {
-        return Err(AppError::Conflict("ไม่สามารถลบหน่วยงานระบบหรือหน่วยงานที่เชื่อมทะเบียนกลุ่มสาระได้".into()));
+    if unit.is_system
+        || unit.unit_type == "school"
+        || unit.unit_type == "subject_group"
+        || unit.subject_group_id.is_some()
+    {
+        return Err(AppError::Conflict(
+            "ไม่สามารถลบหน่วยงานระบบหรือหน่วยงานที่เชื่อมทะเบียนกลุ่มสาระได้".into(),
+        ));
     }
-    let category: Option<String> = sqlx::query_scalar("SELECT organization_unit_reference_category($1)")
-        .bind(unit_id).fetch_one(&mut *tx).await?;
+    let category: Option<String> =
+        sqlx::query_scalar("SELECT organization_unit_reference_category($1)")
+            .bind(unit_id)
+            .fetch_one(&mut *tx)
+            .await?;
     if let Some(category) = category {
         let description = match category.as_str() {
             "children" => "หน่วยงานย่อย",
@@ -541,13 +551,20 @@ pub async fn delete_organization_unit_permanently(
             "roles" => "บทบาทที่อ้างอิงหน่วยงาน",
             _ => "ข้อมูลการปฏิบัติงานที่อ้างอิงหน่วยงาน",
         };
-        return Err(AppError::Conflict(format!("ไม่สามารถลบหน่วยงานได้ เนื่องจากยังมี{description}")));
+        return Err(AppError::Conflict(format!(
+            "ไม่สามารถลบหน่วยงานได้ เนื่องจากยังมี{description}"
+        )));
     }
-    sqlx::query("DELETE FROM organization_units WHERE id=$1").bind(unit_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM organization_units WHERE id=$1")
+        .bind(unit_id)
+        .execute(&mut *tx)
+        .await?;
     AuditLogBuilder::new("delete", "organization_unit")
-        .user(actor_user_id, None, None).entity(unit_id, Some(unit.name))
+        .user(actor_user_id, None, None)
+        .entity(unit_id, Some(unit.name))
         .description("ลบหน่วยงานที่ไม่มีข้อมูลอ้างอิงอย่างถาวร")
-        .save_in_transaction(&mut tx).await?;
+        .save_in_transaction(&mut tx)
+        .await?;
     tx.commit().await?;
     Ok(())
 }

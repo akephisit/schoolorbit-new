@@ -265,6 +265,36 @@ mod tests {
         assert_eq!(result.grades[0].students.total, result.students.total);
     }
 
+    #[tokio::test]
+    async fn public_organization_reports_actual_learning_area_linkage_and_current_staff() {
+        use school_test_db::{create_named_test_pool, run_test_migrations};
+        let pool = create_named_test_pool("public_org_learning_link").await;
+        run_test_migrations(&pool).await;
+        let expected:Vec<(Uuid,Option<Uuid>,String)> = sqlx::query_as("SELECT u.id,g.id,u.unit_type FROM organization_units u LEFT JOIN subject_groups g ON g.id=u.subject_group_id AND g.is_active WHERE u.is_active ORDER BY u.id").fetch_all(&pool).await.unwrap();
+        let organization = get_organization(&pool).await.unwrap();
+        assert_eq!(organization.units.len(), expected.len());
+        for (id, area, kind) in expected {
+            let unit = organization.units.iter().find(|u| u.id == id).unwrap();
+            assert_eq!(unit.learning_area_id, area);
+            assert_eq!(unit.unit_type, kind);
+        }
+        let activity: Uuid =
+            sqlx::query_scalar("SELECT id FROM organization_units WHERE code='ACAD-ACT'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let activity = organization
+            .units
+            .iter()
+            .find(|u| u.id == activity)
+            .unwrap();
+        assert_eq!(activity.unit_type, "division");
+        assert!(activity.learning_area_id.is_some());
+        let json = serde_json::to_value(&organization).unwrap();
+        assert!(json["units"][0].get("learningAreaId").is_some());
+        pool.close().await;
+    }
+
     #[test]
     fn organization_keeps_vacant_units_and_multiple_members_without_exposing_user_ids() {
         let id = Uuid::new_v4();

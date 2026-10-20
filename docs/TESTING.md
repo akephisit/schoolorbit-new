@@ -1617,6 +1617,19 @@ light/dark layouts. Database cases exercise pair rollback, concurrent codes, sta
 active-catalog deactivation refusal and concurrent creation/deactivation in both lock orders,
 migration preflight/retry and identity/grant preservation.
 
+Organization display membership derives from direct assignments through every active administrative descendant;
+exact-unit grants continue to use direct membership. Run the domain and public projection regressions:
+
+```bash
+./scripts/test_backend_school.sh --package school-staff organization_membership_ -- --test-threads=2
+./scripts/test_backend_school.sh --package school-administration public_organization_reports_actual_learning_area -- --test-threads=1
+```
+
+These disposable fixtures cover deep/cyclic display traversal, source preservation and permission isolation,
+independent dated primary domains and raw-writer concurrency, migration refusal/retry, membership history
+reconciliation, and permanent deletion refusing referenced identities. Permanent deletion uses a separate
+operation from deactivation and protects the school root and linked learning-area identities.
+
 ## Admin Worker creation and recovery
 
 Run `node --test scripts/tests/admin-worker-bootstrap.test.mjs` for exact Admin

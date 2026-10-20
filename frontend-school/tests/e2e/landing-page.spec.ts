@@ -175,6 +175,7 @@ const organizationFixture = {
 const organization = {
 	units: organizationFixture.units.map((unit) => ({
 		...unit,
+		learningAreaId: unit.unitType === 'subject_group' ? 'linked-learning-area' : null,
 		members: unit.members.map((member) => ({ ...member, personKey: member.name }))
 	}))
 };
@@ -856,7 +857,7 @@ test('all current positions are grouped and retain custom position titles', asyn
 		page
 			.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
 			.getByTestId('public-person')
-	).toHaveCount(7);
+	).toHaveCount(9);
 	await expect(page.getByText('ครูฝ่ายวิชาการ', { exact: true })).toBeVisible();
 });
 
@@ -1020,8 +1021,16 @@ for (const width of [320, 375, 768, 1280]) {
 			page.getByRole('heading', { level: 1, name: 'กลุ่มบริหาร', exact: true })
 		).toBeVisible();
 		await expect(page.getByText('สมาชิก หนึ่ง', { exact: true })).toBeVisible();
-		await expect(page.getByText('หัวหน้างาน ทดสอบ', { exact: true })).toBeVisible();
-		await expect(page.getByText('เจ้าหน้าที่วัดผล', { exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+				.getByText('หัวหน้างาน ทดสอบ', { exact: true })
+		).toBeVisible();
+		await expect(
+			page
+				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+				.getByText('เจ้าหน้าที่วัดผล', { exact: true })
+		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'กลุ่มสาระคณิตศาสตร์', exact: true })
 		).toHaveCount(0);

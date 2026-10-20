@@ -112,7 +112,7 @@ export function publicExecutiveTeam(units: Unit[]) {
 	const administration: Unit[] = [];
 	const visit = (nodes: PublicOrganizationNode[]) => {
 		for (const node of nodes) {
-			if (node.learningAreaId) continue;
+			if (node.unitType === 'subject_group') continue;
 			administration.push(node);
 			visit(node.children);
 		}
@@ -148,7 +148,7 @@ export function publicPersonnelGroups(
 		const assignments = node.members.map((member) => ({ unit: node as Unit, member }));
 		function inherit(children: PublicOrganizationNode[]) {
 			for (const child of children) {
-				if (child.learningAreaId) continue;
+				if (child.unitType === 'subject_group') continue;
 				assignments.push(...child.members.map((member) => ({ unit: child, member })));
 				inherit(child.children);
 			}
@@ -165,13 +165,14 @@ export function publicPersonnelGroups(
 	}
 	function descendants(nodes: PublicOrganizationNode[]): PublicPersonnelGroup[] {
 		return nodes
-			.filter((node) => !node.learningAreaId && node.unitType !== 'management_group')
+			.filter((node) => node.unitType !== 'subject_group' && node.unitType !== 'management_group')
 			.map(group);
 	}
 	const result: PublicPersonnelGroup[] = [];
 	function visit(nodes: PublicOrganizationNode[]) {
 		for (const node of nodes) {
-			if (unitType === 'subject_group' ? Boolean(node.learningAreaId) : node.unitType === unitType && !node.learningAreaId) result.push(group(node));
+			if (unitType === 'subject_group' ? Boolean(node.learningAreaId) : node.unitType === unitType)
+				result.push(group(node));
 			visit(node.children);
 		}
 	}

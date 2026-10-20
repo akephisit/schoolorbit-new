@@ -63,13 +63,19 @@ DECLARE reference record; referenced boolean;
 BEGIN
     FOR reference IN
         SELECT c.conrelid::regclass AS relation, a.attname AS column_name,
-               cl.relname AS table_name
+               cl.relname AS table_name, cardinality(c.conkey) AS key_count, referenced_column.attname AS referenced_column_name
         FROM pg_constraint c
         JOIN pg_class cl ON cl.oid = c.conrelid
-        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+        JOIN LATERAL unnest(c.conkey, c.confkey) AS key_columns(local_key, foreign_key) ON true
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key_columns.local_key
+        JOIN pg_attribute referenced_column ON referenced_column.attrelid = c.confrelid AND referenced_column.attnum = key_columns.foreign_key
         WHERE c.contype = 'f' AND c.confrelid = 'organization_units'::regclass
         ORDER BY cl.relname, c.conname
     LOOP
+        -- A future non-ID reference cannot be mapped to this UUID safely. Refuse deletion.
+        IF reference.referenced_column_name <> 'id' THEN
+            RETURN 'business_records';
+        END IF;
         EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s WHERE %I = $1)', reference.relation, reference.column_name)
             INTO referenced USING target_id;
         IF referenced THEN

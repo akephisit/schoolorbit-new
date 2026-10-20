@@ -62,3 +62,6 @@ pub mod rank_milestone_service;
 
 #[cfg(test)]
 mod staff_profile_tests;
+
+#[cfg(test)]
+mod organization_membership_tests;

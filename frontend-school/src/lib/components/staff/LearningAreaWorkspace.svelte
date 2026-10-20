@@ -178,8 +178,8 @@
 		membersLoading = true;
 		membersError = '';
 		const result = await captureRouteLoad(
-			listOrganizationMembers(owner, undefined, { signal: ticket.signal }).then((reply) =>
-				requireApiData(reply, 'โหลดสมาชิกไม่สำเร็จ')
+			listOrganizationMembers(owner, { include_children: true }, { signal: ticket.signal }).then(
+				(reply) => requireApiData(reply, 'โหลดสมาชิกไม่สำเร็จ')
 			),
 			'โหลดสมาชิกไม่สำเร็จ'
 		);

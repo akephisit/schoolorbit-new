@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
@@ -66,7 +67,7 @@ pub async fn already_member(
         "SELECT EXISTS(
              SELECT 1 FROM organization_members
              WHERE user_id = $1 AND organization_unit_id = $2
-               AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+               AND (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < coalesce(ended_at, 'infinity'::date)
          )",
     )
     .bind(user_id)
@@ -94,7 +95,7 @@ pub async fn add_member(
         return Err(AppError::Conflict("บุคลากรนี้เป็นสมาชิกของหน่วยงานนี้อยู่แล้ว".into()));
     }
     if is_primary {
-        clear_primary_in_domain(&mut tx, user_id, organization_unit_id).await?;
+        clear_primary_in_domain(&mut tx, user_id, organization_unit_id, None, None).await?;
     }
     sqlx::query(
         "INSERT INTO organization_members
@@ -102,7 +103,10 @@ pub async fn add_member(
                 user_id, organization_unit_id, position_code, position_title,
                 is_primary, responsibilities, started_at
             )
-         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)",
+         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)
+         ON CONFLICT(user_id, organization_unit_id, started_at) DO UPDATE SET
+            position_code=EXCLUDED.position_code, position_title=EXCLUDED.position_title,
+            is_primary=EXCLUDED.is_primary, responsibilities=EXCLUDED.responsibilities, ended_at=NULL",
     )
     .bind(user_id)
     .bind(organization_unit_id)
@@ -139,13 +143,85 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
     }
 
     if input.new_organization_unit_id != input.organization_unit_id
-        && already_member_in_transaction(&mut tx, input.user_id, input.new_organization_unit_id).await? {
-        return Err(AppError::Conflict("บุคลากรนี้เป็นสมาชิกของหน่วยงานปลายทางอยู่แล้ว".into()));
+        && already_member_in_transaction(&mut tx, input.user_id, input.new_organization_unit_id)
+            .await?
+    {
+        return Err(AppError::Conflict(
+            "บุคลากรนี้เป็นสมาชิกของหน่วยงานปลายทางอยู่แล้ว".into(),
+        ));
     }
-    let exists = already_member_in_transaction(&mut tx, input.user_id, input.organization_unit_id).await?;
-    if !exists { return Ok(0); }
+    let sources: Vec<(Uuid, NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
+        "SELECT id, started_at, ended_at FROM organization_members
+         WHERE user_id = $1 AND organization_unit_id = $2
+           AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+           AND started_at < coalesce(ended_at, 'infinity'::date)
+         FOR UPDATE",
+    )
+    .bind(input.user_id)
+    .bind(input.organization_unit_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let Some((source_id, source_start, source_end)) = sources.first().copied() else {
+        return Ok(0);
+    };
+    if sources.len() > 1 {
+        return Err(AppError::Conflict(
+            "มีการมอบหมายหลายช่วงเวลาในหน่วยงานเดียว กรุณาตรวจสอบก่อนแก้ไข".into(),
+        ));
+    }
+    if input.new_organization_unit_id != input.organization_unit_id {
+        // Moving changes the source from today onward, retaining any planned start/end.
+        let target_start: NaiveDate = sqlx::query_scalar("SELECT greatest($1::date, CURRENT_DATE)")
+            .bind(source_start)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE organization_members SET ended_at = $2 WHERE id = $1")
+            .bind(source_id)
+            .bind(target_start)
+            .execute(&mut *tx)
+            .await?;
+        if input.is_primary {
+            clear_primary_in_domain(
+                &mut tx,
+                input.user_id,
+                input.new_organization_unit_id,
+                Some(target_start),
+                source_end,
+            )
+            .await?;
+        }
+        sqlx::query(
+            "INSERT INTO organization_members (
+                user_id, organization_unit_id, position_code, position_title,
+                is_primary, responsibilities, started_at, ended_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT(user_id, organization_unit_id, started_at) DO UPDATE SET
+                position_code = EXCLUDED.position_code, position_title = EXCLUDED.position_title,
+                is_primary = EXCLUDED.is_primary, responsibilities = EXCLUDED.responsibilities,
+                ended_at = EXCLUDED.ended_at",
+        )
+        .bind(input.user_id)
+        .bind(input.new_organization_unit_id)
+        .bind(input.position_code)
+        .bind(input.position_title)
+        .bind(input.is_primary)
+        .bind(input.responsibilities)
+        .bind(target_start)
+        .bind(source_end)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(1);
+    }
     if input.is_primary {
-        clear_primary_in_domain(&mut tx, input.user_id, input.new_organization_unit_id).await?;
+        clear_primary_in_domain(
+            &mut tx,
+            input.user_id,
+            input.new_organization_unit_id,
+            Some(source_start),
+            source_end,
+        )
+        .await?;
     }
     let result = sqlx::query(
         r#"UPDATE organization_members
@@ -155,7 +231,7 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
                responsibilities = $4,
                organization_unit_id = $5
            WHERE user_id = $6 AND organization_unit_id = $7
-             AND (ended_at IS NULL OR ended_at > CURRENT_DATE)"#,
+             AND (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < coalesce(ended_at, 'infinity'::date)"#,
     )
     .bind(input.position_code)
     .bind(input.position_title)
@@ -179,9 +255,9 @@ pub async fn remove_member(
     let mut tx = pool.begin().await?;
     lock_member_user(&mut tx, user_id).await?;
     sqlx::query(
-        "UPDATE organization_members SET ended_at = CURRENT_DATE
+        "UPDATE organization_members SET ended_at = greatest(started_at, CURRENT_DATE)
          WHERE user_id = $1 AND organization_unit_id = $2
-           AND (ended_at IS NULL OR ended_at > CURRENT_DATE)",
+           AND (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < coalesce(ended_at, 'infinity'::date)",
     )
     .bind(user_id)
     .bind(organization_unit_id)
@@ -191,21 +267,55 @@ pub async fn remove_member(
     Ok(())
 }
 
-pub(super) async fn lock_member_user(tx: &mut Transaction<'_, Postgres>, user_id: Uuid) -> Result<(), AppError> {
+pub(super) async fn lock_member_user(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> Result<(), AppError> {
     let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR UPDATE")
-        .bind(user_id).fetch_optional(&mut **tx).await?;
-    if found.is_none() { return Err(AppError::NotFound("ไม่พบบุคลากร".into())); }
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    if found.is_none() {
+        return Err(AppError::NotFound("ไม่พบบุคลากร".into()));
+    }
     Ok(())
 }
 
-async fn already_member_in_transaction(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, unit_id: Uuid) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2 AND (ended_at IS NULL OR ended_at>CURRENT_DATE))")
-        .bind(user_id).bind(unit_id).fetch_one(&mut **tx).await?)
+async fn already_member_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    unit_id: Uuid,
+) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT EXISTS (
+        SELECT 1 FROM organization_members WHERE user_id = $1 AND organization_unit_id = $2
+          AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
+          AND started_at < coalesce(ended_at, 'infinity'::date)
+    )"#,
+    )
+    .bind(user_id)
+    .bind(unit_id)
+    .fetch_one(&mut **tx)
+    .await?)
 }
 
-async fn clear_primary_in_domain(tx: &mut Transaction<'_, Postgres>, user_id: Uuid, unit_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("UPDATE organization_members m SET is_primary=false FROM organization_units existing_unit, organization_units selected_unit WHERE m.organization_unit_id=existing_unit.id AND selected_unit.id=$2 AND m.user_id=$1 AND m.is_primary IS TRUE AND (m.ended_at IS NULL OR m.ended_at>CURRENT_DATE) AND (existing_unit.unit_type='subject_group')=(selected_unit.unit_type='subject_group')")
-        .bind(user_id).bind(unit_id).execute(&mut **tx).await?;
+async fn clear_primary_in_domain(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    unit_id: Uuid,
+    started_at: Option<NaiveDate>,
+    ended_at: Option<NaiveDate>,
+) -> Result<(), AppError> {
+    sqlx::query(r#"UPDATE organization_members m SET is_primary = false
+        FROM organization_units existing_unit, organization_units selected_unit
+        WHERE m.organization_unit_id = existing_unit.id AND selected_unit.id = $2
+          AND m.user_id = $1 AND m.is_primary IS TRUE
+          AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
+          AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
+          AND m.started_at < coalesce($4::date, 'infinity'::date)
+          AND coalesce($3::date, CURRENT_DATE) < coalesce(m.ended_at, 'infinity'::date)
+          AND (existing_unit.unit_type = 'subject_group') = (selected_unit.unit_type = 'subject_group')"#)
+        .bind(user_id).bind(unit_id).bind(started_at).bind(ended_at).execute(&mut **tx).await?;
     Ok(())
 }
 

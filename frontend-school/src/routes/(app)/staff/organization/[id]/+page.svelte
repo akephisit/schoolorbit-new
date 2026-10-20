@@ -66,7 +66,6 @@
 	let allDepartments: OrganizationUnit[] = $state([]);
 	let childDepts: OrganizationUnit[] = $state([]);
 	let deptMembers: OrganizationMemberItem[] = $state([]);
-	const displayedMembers = $derived(organizationPeople(allMembers, deptId));
 	let delegations: DelegationItem[] = $state([]);
 	let activeTab = $state<DetailTab>('members');
 	let showEditDialog = $state(false);
@@ -83,6 +82,8 @@
 		membersLoaded = $state(false),
 		membersError = $state(''),
 		allMembers: OrganizationMemberItem[] = $state([]);
+	const displayedMembers = $derived(organizationPeople(allMembers, deptId));
+
 	let delegationsLoading = $state(false),
 		delegationsLoaded = $state(false),
 		delegationsError = $state('');
@@ -204,7 +205,11 @@
 
 	let detailTabs = $derived.by(() => {
 		const tabs: { id: DetailTab; label: string; count?: number }[] = [
-			{ id: 'members', label: 'สมาชิก', count: membersLoaded ? displayedMembers.length : undefined },
+			{
+				id: 'members',
+				label: 'สมาชิก',
+				count: membersLoaded ? displayedMembers.length : undefined
+			},
 			{ id: 'permissions', label: 'สิทธิ์ตามตำแหน่ง' },
 			{
 				id: 'children',
@@ -677,6 +682,7 @@
 								onRefresh={loadMembers}
 								organizationUnitId={deptId}
 								childUnits={childDepts}
+								organizationUnits={allDepartments}
 								canAssignMembers={canAssignOrganizationMembers}
 								onChanged={loadMembers}
 							/>{/key}

@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { organizationPrimaryError, organizationPrimaryLabel, setOrganizationPrimary } from '#lib/features/staff/organization-members.js';
+	import {
+		organizationPrimaryError,
+		organizationPrimaryLabel,
+		setOrganizationPrimary
+	} from '#lib/features/staff/organization-members.js';
 	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '#lib/forms/staff-career.js';
 	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -271,7 +275,7 @@
 		loadingOrganizationUnits = true;
 		organizationError = '';
 		const result = await captureRouteLoad(
-			listOrganizationUnits(undefined, { signal: ticket.signal }).then((reply) =>
+			listOrganizationUnits({ include_inactive: true }, { signal: ticket.signal }).then((reply) =>
 				requireApiData(reply, 'โหลดตัวเลือกหน่วยงานไม่สำเร็จ')
 			),
 			'โหลดตัวเลือกหน่วยงานไม่สำเร็จ'
@@ -279,7 +283,13 @@
 		if (!organizationRequest.isCurrent(ticket.revision)) return;
 		loadingOrganizationUnits = false;
 		if (result.ok) {
-			organizationUnits = result.data;
+			organizationUnits = result.data.filter(
+				(unit) =>
+					unit.is_active ||
+					formData.organization_assignments.some(
+						(assignment) => assignment.organization_unit_id === unit.id
+					)
+			);
 			organizationsLoaded = true;
 		} else organizationError = result.error;
 	}
@@ -325,7 +335,11 @@
 			formData.organization_assignments.length
 		)
 			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
-		else errors.organization_units = organizationPrimaryError(formData.organization_assignments, organizationUnits);
+		else
+			errors.organization_units = organizationPrimaryError(
+				formData.organization_assignments,
+				organizationUnits
+			);
 		if (!errors.organization_units) delete errors.organization_units;
 		return Object.keys(errors).length === 0;
 	}
@@ -349,14 +363,25 @@
 			(_, i) => i !== index
 		);
 		if (removed?.is_primary) {
-			const type = organizationUnits.find((unit) => unit.id === removed.organization_unit_id)?.unit_type === 'subject_group';
-			const replacement = formData.organization_assignments.findIndex((item) => (organizationUnits.find((unit) => unit.id === item.organization_unit_id)?.unit_type === 'subject_group') === type);
+			const type =
+				organizationUnits.find((unit) => unit.id === removed.organization_unit_id)?.unit_type ===
+				'subject_group';
+			const replacement = formData.organization_assignments.findIndex(
+				(item) =>
+					(organizationUnits.find((unit) => unit.id === item.organization_unit_id)?.unit_type ===
+						'subject_group') ===
+					type
+			);
 			if (replacement >= 0) setPrimaryOrganizationUnit(replacement);
 		}
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
-		formData.organization_assignments = setOrganizationPrimary(formData.organization_assignments, index, organizationUnits);
+		formData.organization_assignments = setOrganizationPrimary(
+			formData.organization_assignments,
+			index,
+			organizationUnits
+		);
 	}
 
 	// Submit form
@@ -1036,10 +1061,16 @@
 												<div>
 													<div class="flex items-center gap-2 cursor-pointer">
 														<Checkbox
-															aria-label={`สังกัดหลักหน่วยงานที่ ${i + 1}`} checked={dept.is_primary}
+															aria-label={`สังกัดหลักหน่วยงานที่ ${i + 1}`}
+															checked={dept.is_primary}
 															onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 														/>
-														<span class="text-sm">{organizationPrimaryLabel(dept.organization_unit_id, organizationUnits)}</span>
+														<span class="text-sm"
+															>{organizationPrimaryLabel(
+																dept.organization_unit_id,
+																organizationUnits
+															)}</span
+														>
 													</div>
 												</div>
 											</div>

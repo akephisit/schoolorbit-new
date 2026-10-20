@@ -215,14 +215,30 @@ test('multiple roles in a group render once while preserving titles and same-nam
 });
 
 test('parent roster deduplicates sources across every depth without promoting inherited heads', () => {
-	const groups = publicPersonnelGroups([
-		department('parent', 'management_group', [member('direct', 'head'), member('shared', 'member')]),
-		department('child', 'division', [member('shared', 'head'), member('deep', 'head')], 'parent'),
-		department('leaf', 'division', [member('shared', 'member')], 'child')
-	], 'management_group');
-	assert.deepEqual(groups[0].leaders.map((person) => person.member.personKey), ['direct']);
-	assert.deepEqual(groups[0].members.map((person) => person.member.personKey), ['shared', 'deep']);
-	assert.deepEqual(groups[0].members[0].responsibilities.map((source) => source.unitId).sort(), ['child', 'leaf', 'parent']);
+	const groups = publicPersonnelGroups(
+		[
+			department('parent', 'management_group', [
+				member('direct', 'head'),
+				member('shared', 'member')
+			]),
+			department('child', 'division', [member('shared', 'head'), member('deep', 'head')], 'parent'),
+			department('leaf', 'division', [member('shared', 'member')], 'child')
+		],
+		'management_group'
+	);
+	assert.deepEqual(
+		groups[0].leaders.map((person) => person.member.personKey),
+		['direct']
+	);
+	assert.deepEqual(
+		groups[0].members.map((person) => person.member.personKey),
+		['shared', 'deep']
+	);
+	assert.deepEqual(groups[0].members[0].responsibilities.map((source) => source.unitId).sort(), [
+		'child',
+		'leaf',
+		'parent'
+	]);
 });
 
 test('public learning areas follow every actual registry linkage including linked activity divisions and vacant custom areas', () => {
@@ -232,7 +248,23 @@ test('public learning areas follow every actual registry linkage including linke
 	}));
 	const unlinked = { ...department('legacy-subject', 'subject_group', []), learningAreaId: null };
 	const groups = publicPersonnelGroups([...linked, unlinked], 'subject_group');
-	assert.deepEqual(groups.map((group) => group.unit.id), linked.map((item) => item.id));
+	assert.deepEqual(
+		groups.map((group) => group.unit.id),
+		linked.map((item) => item.id)
+	);
 	assert.equal(groups[11].unit.unitType, 'division');
 	assert.equal(publicPersonnelGroups(linked, 'management_group').length, 0);
+});
+
+test('linked activity divisions retain inherited administration membership and registry discovery', () => {
+	const activity = {
+		...department('activity', 'division', [member('activity-head', 'head')], 'admin'),
+		learningAreaId: 'activity-registry'
+	};
+	const units = [department('admin', 'management_group', []), activity];
+	const admin = publicPersonnelGroups(units, 'management_group')[0];
+	assert.equal(admin.leaders.length, 0);
+	assert.equal(admin.members[0].member.personKey, 'activity-head');
+	assert.equal(admin.children[0].unit.id, 'activity');
+	assert.equal(publicPersonnelGroups(units, 'subject_group')[0].unit.id, 'activity');
 });

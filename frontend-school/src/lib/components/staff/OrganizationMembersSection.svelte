@@ -6,7 +6,11 @@
 		type OrganizationMemberItem,
 		type OrganizationUnit
 	} from '#lib/api/staff.js';
-	import { organizationPeople, type OrganizationPerson } from '#lib/features/staff/organization-members.js';
+	import {
+		organizationPeople,
+		organizationPrimaryLabel,
+		type OrganizationPerson
+	} from '#lib/features/staff/organization-members.js';
 	import { organizationDetailHref } from '#lib/navigation/organization.js';
 	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import {
@@ -42,6 +46,7 @@
 	interface Props {
 		organizationUnitId: string;
 		childUnits?: OrganizationUnit[];
+		organizationUnits?: OrganizationUnit[];
 		canAssignMembers?: boolean;
 		members: OrganizationMemberItem[];
 		loadingMembers: boolean;
@@ -60,6 +65,7 @@
 	const {
 		organizationUnitId,
 		childUnits = [],
+		organizationUnits = [],
 		canAssignMembers = undefined,
 		onChanged,
 		members,
@@ -69,7 +75,6 @@
 		onRefresh
 	}: Props = $props();
 
-	const availableStaff = $derived(staffResults.filter((staff) => !members.some((member) => member.user_id === staff.id && member.organization_unit_id === (addForm.target_unit_id || organizationUnitId)) || staff.id === addForm.user_id));
 	const includeChildren = $derived(childUnits.length > 0);
 	const canManageMembers = $derived(canAssignMembers ?? $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
@@ -117,6 +122,16 @@
 	let editSubmitting = $state(false);
 	let removingMemberId = $state('');
 
+	const availableStaff = $derived(
+		staffResults.filter(
+			(staff) =>
+				!members.some(
+					(member) =>
+						member.user_id === staff.id &&
+						member.organization_unit_id === (addForm.target_unit_id || organizationUnitId)
+				) || staff.id === addForm.user_id
+		)
+	);
 	const positionRank = Object.fromEntries(
 		positionOptions.map((position, index) => [position.value, index])
 	) as Record<PositionCode, number>;
@@ -162,9 +177,23 @@
 	});
 
 	const unitOptions = $derived([
-		{ id: organizationUnitId, name: 'หน่วยงานหลัก' },
-		...childUnits.map((unit) => ({ id: unit.id, name: unit.name }))
+		...new Map(
+			[
+				{ id: organizationUnitId, name: 'หน่วยงานหลัก' },
+				...childUnits.map((unit) => ({ id: unit.id, name: unit.name })),
+				...members.map((member) => ({
+					id: member.organization_unit_id,
+					name: member.organization_unit_name
+				}))
+			].map((unit) => [unit.id, unit])
+		).values()
 	]);
+
+	function primaryLabel(unitId: string) {
+		return organizationUnits.some((unit) => unit.id === unitId)
+			? organizationPrimaryLabel(unitId, organizationUnits)
+			: 'สังกัดหลักในประเภทเดียวกัน';
+	}
 
 	async function loadStaffOptions(query: string) {
 		if (!showAddDialog || !canManageMembers || !canReadPicker) return;
@@ -475,7 +504,7 @@
 						<div class="grid gap-2">
 							{#each group.members as member (member.user_id)}
 								<div
-									class="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-3"
+									class="flex flex-col items-start justify-between gap-3 rounded-md border bg-background px-3 py-3 sm:flex-row"
 								>
 									<div class="flex min-w-0 items-center gap-3">
 										<div
@@ -486,14 +515,18 @@
 										<div class="min-w-0">
 											<p class="break-words text-sm font-medium">{member.name}</p>
 											<div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-												<span>{organizationPositionLabel(member.position_code)}{member.isDirect ? "" : "จากหน่วยงานย่อย"}</span>
+												<span
+													>{organizationPositionLabel(member.position_code)}{member.isDirect
+														? ''
+														: 'จากหน่วยงานย่อย'}</span
+												>
 												{#if includeChildren}
 													<span>·</span>
 													<span class="text-primary/80">{member.organization_unit_name}</span>
 												{/if}
 												{#if member.is_primary}
 													<span>·</span>
-													<span>สังกัดหลัก</span>
+													<span>{primaryLabel(member.organization_unit_id)}</span>
 												{/if}
 											</div>
 										</div>
@@ -502,11 +535,37 @@
 									<div class="min-w-0 space-y-2 text-xs" aria-label={`สังกัดต้นทาง ${member.name}`}>
 										{#each member.sourceAssignments as source (source.organization_unit_id)}
 											<div class="flex flex-wrap items-center gap-1">
-												<Button variant="link" size="sm" class="h-auto whitespace-normal p-0 text-left text-xs" href={organizationDetailHref(source.organization_unit_id, { search: '' })}>{source.organization_unit_name}</Button>
-												<span>· {organizationPositionLabel(source.position_code)}{source.is_primary ? ' · สังกัดหลัก' : ''}</span>
+												<Button
+													variant="link"
+													size="sm"
+													class="h-auto max-w-full whitespace-normal break-words p-0 text-left text-xs"
+													href={organizationDetailHref(source.organization_unit_id, { search: '' })}
+													>{source.organization_unit_name}</Button
+												>
+												<span
+													>· {source.position_title?.trim() ||
+														organizationPositionLabel(source.position_code)}{source.is_primary
+														? ` · ${primaryLabel(source.organization_unit_id)}`
+														: ''}</span
+												>
 												{#if canManageMembers}
-													<Button variant="ghost" size="sm" onclick={() => openEdit(source)} aria-label={`แก้ไขสมาชิก ${source.name} ใน ${source.organization_unit_name}`} disabled={editSubmitting || addSubmitting || !!removingMemberId}><Pencil class="h-3.5 w-3.5" /></Button>
-													<Button variant="ghost" size="sm" class="text-destructive" onclick={() => handleRemove(source)} aria-label={`ลบสมาชิก ${source.name} จาก ${source.organization_unit_name}`} disabled={editSubmitting || addSubmitting || !!removingMemberId}><Trash2 class="h-3.5 w-3.5" /></Button>
+													<Button
+														variant="ghost"
+														size="sm"
+														onclick={() => openEdit(source)}
+														aria-label={`แก้ไขสมาชิก ${source.name} ใน ${source.organization_unit_name}`}
+														disabled={editSubmitting || addSubmitting || !!removingMemberId}
+														><Pencil class="h-3.5 w-3.5" /></Button
+													>
+													<Button
+														variant="ghost"
+														size="sm"
+														class="text-destructive"
+														onclick={() => handleRemove(source)}
+														aria-label={`ลบสมาชิก ${source.name} จาก ${source.organization_unit_name}`}
+														disabled={editSubmitting || addSubmitting || !!removingMemberId}
+														><Trash2 class="h-3.5 w-3.5" /></Button
+													>
 												{/if}
 											</div>
 										{/each}
@@ -609,11 +668,14 @@
 				<div class="space-y-2">
 					<Label>หน่วยงานที่สังกัด</Label>
 					<Select.Root type="single" bind:value={addForm.target_unit_id}>
-						<Select.Trigger class="w-full">{unitOptionLabel(addForm.target_unit_id)}</Select.Trigger
+						<Select.Trigger class="h-auto min-h-9 w-full whitespace-normal text-left"
+							>{unitOptionLabel(addForm.target_unit_id)}</Select.Trigger
 						>
 						<Select.Content>
 							{#each unitOptions as option (option.id)}
-								<Select.Item value={option.id}>{option.name}</Select.Item>
+								<Select.Item value={option.id} class="whitespace-normal break-words"
+									>{option.name}</Select.Item
+								>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -637,7 +699,7 @@
 			<div class="flex items-start gap-3 rounded-md border p-3">
 				<Checkbox id="add-primary" bind:checked={addForm.is_primary} class="mt-0.5" />
 				<Label for="add-primary" class="cursor-pointer leading-5">
-					เป็นสังกัดหลักของบุคลากรนี้
+					{primaryLabel(addForm.target_unit_id || organizationUnitId)}ของบุคลากรนี้
 				</Label>
 			</div>
 		</div>
@@ -663,12 +725,14 @@
 				<div class="space-y-2">
 					<Label>หน่วยงานที่สังกัด</Label>
 					<Select.Root type="single" bind:value={editForm.new_organization_unit_id}>
-						<Select.Trigger class="w-full">
+						<Select.Trigger class="h-auto min-h-9 w-full whitespace-normal text-left">
 							{unitOptionLabel(editForm.new_organization_unit_id)}
 						</Select.Trigger>
 						<Select.Content>
 							{#each unitOptions as option (option.id)}
-								<Select.Item value={option.id}>{option.name}</Select.Item>
+								<Select.Item value={option.id} class="whitespace-normal break-words"
+									>{option.name}</Select.Item
+								>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -691,7 +755,9 @@
 
 			<div class="flex items-start gap-3 rounded-md border p-3">
 				<Checkbox id="edit-primary" bind:checked={editForm.is_primary} class="mt-0.5" />
-				<Label for="edit-primary" class="cursor-pointer leading-5">เป็นสังกัดหลัก</Label>
+				<Label for="edit-primary" class="cursor-pointer leading-5"
+					>{primaryLabel(editForm.new_organization_unit_id || organizationUnitId)}</Label
+				>
 			</div>
 		</div>
 

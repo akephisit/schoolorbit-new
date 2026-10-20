@@ -190,8 +190,12 @@ export async function deleteOrganizationUnit(unitId: string): Promise<ApiRespons
 }
 
 /** Permanently remove an empty, unreferenced management group. */
-export async function deleteOrganizationUnitPermanently(unitId: string): Promise<ApiResponse<EmptyData>> {
-	return apiClient.delete<EmptyData>(`/api/organization/units/${encodeURIComponent(unitId)}/permanent`);
+export async function deleteOrganizationUnitPermanently(
+	unitId: string
+): Promise<ApiResponse<EmptyData>> {
+	return apiClient.delete<EmptyData>(
+		`/api/organization/units/${encodeURIComponent(unitId)}/permanent`
+	);
 }
 
 // ===================================================================

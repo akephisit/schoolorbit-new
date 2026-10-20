@@ -5389,7 +5389,11 @@ mod tests {
             ),
         ];
         let mut expected = expected.to_vec();
-        expected.push(("/api/organization/units/{id}/permanent", "delete", "deleteOrganizationUnitPermanently"));
+        expected.push((
+            "/api/organization/units/{id}/permanent",
+            "delete",
+            "deleteOrganizationUnitPermanently",
+        ));
         assert_eq!(expected.len(), 33);
         assert_operations(&document, &expected);
 

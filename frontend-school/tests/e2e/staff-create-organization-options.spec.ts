@@ -172,7 +172,9 @@ test('all six positions can be reviewed and submitted with full-depth organizati
 	}
 	await page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 6', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 4', exact: true }).click();
-	await expect(page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 6', exact: true })).toBeChecked();
+	await expect(
+		page.getByRole('checkbox', { name: 'สังกัดหลักหน่วยงานที่ 6', exact: true })
+	).toBeChecked();
 	await next(page);
 	const review = page.getByTestId('staff-create-review');
 	for (const [index, [, label]] of positions.entries())

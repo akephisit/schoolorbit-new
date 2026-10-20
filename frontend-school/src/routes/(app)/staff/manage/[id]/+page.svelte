@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { organizationPrimaryLabelForType } from '#lib/features/staff/organization-members.js';
 	import StaffLicensePreview from '#lib/components/staff/StaffLicensePreview.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { PERSONNEL_TYPE_LABELS, formatCareerDate } from '#lib/forms/staff-career.js';
@@ -516,11 +517,9 @@
 												</p>
 											</div>
 											{#if dept.is_primary}
-												<span
-													class="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-full"
+												<Badge class="shrink-0"
+													>{organizationPrimaryLabelForType(dept.unit_type)}</Badge
 												>
-													สังกัดหลัก
-												</span>
 											{/if}
 										</div>
 									</div>

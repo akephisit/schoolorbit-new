@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onDestroy, tick, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { organizationPeople } from '#lib/features/staff/organization-members.js';
+	import {
+		organizationPeople,
+		type OrganizationPerson
+	} from '#lib/features/staff/organization-members.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { requireApiData } from '#lib/api/client.js';
@@ -26,7 +29,7 @@
 		listOrganizationUnits,
 		updateOrganizationUnit
 	} from '#lib/api/staff.js';
-	import type { OrganizationMemberItem, OrganizationUnit } from '#lib/api/staff.js';
+	import type { OrganizationUnit } from '#lib/api/staff.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -100,7 +103,7 @@
 	let permanentDeleteError = $state('');
 	let permanentDeletePending = $state(false);
 
-	let selectedMembers = $state<OrganizationMemberItem[]>([]);
+	let selectedMembers = $state<OrganizationPerson[]>([]);
 	let selectedMembersLoading = $state(false);
 	let selectedMembersUnitId = $state('');
 	let selectedMembersError = $state(''),
@@ -217,8 +220,8 @@
 		selectedMembersLoading = true;
 		selectedMembersError = '';
 		const result = await captureRouteLoad(
-			listOrganizationMembers(unitId, { include_children: true }, { signal: ticket.signal }).then((reply) =>
-				requireApiData(reply, 'โหลดสมาชิกไม่สำเร็จ')
+			listOrganizationMembers(unitId, { include_children: true }, { signal: ticket.signal }).then(
+				(reply) => requireApiData(reply, 'โหลดสมาชิกไม่สำเร็จ')
 			),
 			'โหลดสมาชิกไม่สำเร็จ'
 		);
@@ -288,7 +291,15 @@
 
 	async function handlePermanentDelete() {
 		const unit = deletingUnit;
-		if (!unit || !canDeleteOrganizationUnit || unit.is_system || unit.unit_type !== 'management_group' || unit.subject_group_id || permanentDeletePending) return;
+		if (
+			!unit ||
+			!canDeleteOrganizationUnit ||
+			unit.is_system ||
+			unit.unit_type !== 'management_group' ||
+			unit.subject_group_id ||
+			permanentDeletePending
+		)
+			return;
 		permanentDeletePending = true;
 		permanentDeleteError = '';
 		try {
@@ -300,7 +311,8 @@
 			toast.success('ลบกลุ่มบริหารสำเร็จ');
 			if (selectedUnit?.id === unit.id || selectedUnitId === unit.id) await showHierarchy();
 		} catch (cause) {
-			if (!disposed) permanentDeleteError = cause instanceof Error ? cause.message : 'ลบกลุ่มบริหารไม่สำเร็จ';
+			if (!disposed)
+				permanentDeleteError = cause instanceof Error ? cause.message : 'ลบกลุ่มบริหารไม่สำเร็จ';
 		} finally {
 			if (!disposed) permanentDeletePending = false;
 		}
@@ -700,7 +712,15 @@
 												: 'เปิดใช้งาน'}</Button
 										>{/if}
 									{#if canDeleteOrganizationUnit && selectedUnit.unit_type === 'management_group' && !selectedUnit.is_system && !selectedUnit.subject_group_id}
-										<Button size="sm" variant="destructive" disabled={statusMutationPending || permanentDeletePending} onclick={() => { deletingUnit = selectedUnit; permanentDeleteError = ''; }}><Trash2 class="size-4" />ลบกลุ่มบริหารถาวร</Button>
+										<Button
+											size="sm"
+											variant="destructive"
+											disabled={statusMutationPending || permanentDeletePending}
+											onclick={() => {
+												deletingUnit = selectedUnit;
+												permanentDeleteError = '';
+											}}><Trash2 class="size-4" />ลบกลุ่มบริหารถาวร</Button
+										>
 									{/if}
 								</Card.Content>
 							</Card.Root>
@@ -790,6 +810,12 @@
 															<p class="break-words text-sm font-medium">{member.name}</p>
 															<p class="text-xs text-muted-foreground">
 																{member.position_title || positionLabel(member.position_code)}
+																{#if !member.isDirect || member.sourceAssignments.length > 1}<span
+																		class="block break-words"
+																		>จาก {member.sourceAssignments
+																			.map((source) => source.organization_unit_name)
+																			.join(' · ')}</span
+																	>{/if}
 															</p>
 														</div>
 														{#if member.is_primary}
@@ -858,16 +884,34 @@
 	</DialogContent>
 </Dialog>
 
-<AlertDialog.Root open={deletingUnit !== null} onOpenChange={(open) => { if (!open && !permanentDeletePending) deletingUnit = null; }}>
+<AlertDialog.Root
+	open={deletingUnit !== null}
+	onOpenChange={(open) => {
+		if (!open && !permanentDeletePending) deletingUnit = null;
+	}}
+>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>ลบกลุ่มบริหารถาวร</AlertDialog.Title>
-			<AlertDialog.Description>ลบ “{deletingUnit?.name}” ออกจากระบบ การดำเนินการนี้ย้อนกลับไม่ได้ ลบได้เฉพาะกลุ่มที่ไม่มีหน่วยงานย่อย สมาชิก ประวัติ หรือข้อมูลอ้างอิง หากยังมีข้อมูลให้ใช้การปิดใช้งานแทน</AlertDialog.Description>
+			<AlertDialog.Description
+				>ลบ “{deletingUnit?.name}” ออกจากระบบ การดำเนินการนี้ย้อนกลับไม่ได้
+				ลบได้เฉพาะกลุ่มที่ไม่มีหน่วยงานย่อย สมาชิก ประวัติ หรือข้อมูลอ้างอิง
+				หากยังมีข้อมูลให้ใช้การปิดใช้งานแทน</AlertDialog.Description
+			>
 		</AlertDialog.Header>
-		{#if permanentDeleteError}<PageState variant="error" title="ลบกลุ่มบริหารไม่สำเร็จ" description={permanentDeleteError} />{/if}
+		{#if permanentDeleteError}<PageState
+				variant="error"
+				title="ลบกลุ่มบริหารไม่สำเร็จ"
+				description={permanentDeleteError}
+			/>{/if}
 		<AlertDialog.Footer>
-			<Button variant="outline" disabled={permanentDeletePending} onclick={() => (deletingUnit = null)}>ยกเลิก</Button>
-			<Button variant="destructive" disabled={permanentDeletePending} onclick={handlePermanentDelete}>{permanentDeletePending ? 'กำลังลบ...' : 'ยืนยันลบถาวร'}</Button>
+			<AlertDialog.Cancel disabled={permanentDeletePending}>ยกเลิก</AlertDialog.Cancel>
+			<Button
+				variant="destructive"
+				disabled={permanentDeletePending}
+				onclick={handlePermanentDelete}
+				>{permanentDeletePending ? 'กำลังลบ...' : 'ยืนยันลบถาวร'}</Button
+			>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>

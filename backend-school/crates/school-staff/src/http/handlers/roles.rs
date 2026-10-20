@@ -391,9 +391,16 @@ pub async fn delete_organization_unit_permanently(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     context.actor.require_permission(codes::ROLES_DELETE_ALL)?;
     organization_unit_service::delete_organization_unit_permanently(
-        &context.tenant.pool, unit_id, context.actor.user_id,
-    ).await?;
-    state.auth_runtime.invalidate_permission_tenant(&context.tenant.subdomain);
-    state.auth_runtime.notify_all_permissions_changed(&context.tenant.subdomain);
+        &context.tenant.pool,
+        unit_id,
+        context.actor.user_id,
+    )
+    .await?;
+    state
+        .auth_runtime
+        .invalidate_permission_tenant(&context.tenant.subdomain);
+    state
+        .auth_runtime
+        .notify_all_permissions_changed(&context.tenant.subdomain);
     Ok(Json(ApiResponse::empty_with_message("ลบหน่วยงานอย่างถาวรสำเร็จ")).into_response())
 }
