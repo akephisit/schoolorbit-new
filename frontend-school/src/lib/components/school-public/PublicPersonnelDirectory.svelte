@@ -44,7 +44,7 @@
 				{#each group.leaders as person (person.member.personKey)}<li
 						class="w-1/2 px-2 sm:w-1/3 lg:w-1/4"
 					>
-						<PublicPersonPortrait {person} />
+						<PublicPersonPortrait {person} showUnit />
 					</li>{/each}
 			</ul>
 		{/if}
@@ -56,7 +56,7 @@
 				{#each group.members as person (person.member.personKey)}<li
 						class="w-1/2 min-w-0 px-2 sm:w-1/3 lg:w-1/4"
 					>
-						<PublicPersonPortrait {person} />
+						<PublicPersonPortrait {person} showUnit />
 					</li>{/each}
 			</ul>
 		{:else if !group.leaders.length}

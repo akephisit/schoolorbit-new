@@ -144,6 +144,7 @@ ORDER BY CASE g.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2
 #[derive(Debug, FromRow)]
 struct OrganizationRow {
     id: Uuid,
+    learning_area_id: Option<Uuid>,
     parent_id: Option<Uuid>,
     name: String,
     unit_type: String,
@@ -161,6 +162,7 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
         let index = *indices.entry(row.id).or_insert_with(|| {
             units.push(PublicOrganizationUnit {
                 id: row.id,
+                learning_area_id: row.learning_area_id,
                 parent_id: row.parent_id,
                 name: row.name,
                 unit_type: row.unit_type,
@@ -187,12 +189,13 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
-SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
+SELECT o.id, learning_area.id AS learning_area_id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
     CASE WHEN u.id IS NOT NULL THEN md5('school-public-directory:' || u.id::text) END AS person_key,
     CASE WHEN u.id IS NOT NULL THEN u.display_name END AS member_name,
     CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title,
     CASE WHEN profile.id IS NOT NULL THEN m.id END AS avatar_member_id
 FROM organization_units o
+LEFT JOIN subject_groups learning_area ON learning_area.id = o.subject_group_id AND learning_area.is_active
 LEFT JOIN organization_members m ON m.organization_unit_id = o.id
     AND m.started_at <= CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
 LEFT JOIN user_display_names u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
@@ -267,6 +270,7 @@ mod tests {
         let id = Uuid::new_v4();
         let result = organization_from_rows(vec![OrganizationRow {
             id,
+            learning_area_id: None,
             parent_id: None,
             name: "โรงเรียนทดสอบ".into(),
             unit_type: "school".into(),
@@ -287,6 +291,7 @@ mod tests {
         let id = Uuid::new_v4();
         let row = |person_key: &str, position: &str| OrganizationRow {
             id,
+            learning_area_id: None,
             parent_id: None,
             name: "กลุ่มบริหารทดสอบ".into(),
             unit_type: "management_group".into(),

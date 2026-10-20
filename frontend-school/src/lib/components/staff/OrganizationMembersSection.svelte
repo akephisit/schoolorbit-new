@@ -6,6 +6,8 @@
 		type OrganizationMemberItem,
 		type OrganizationUnit
 	} from '#lib/api/staff.js';
+	import { organizationPeople, type OrganizationPerson } from '#lib/features/staff/organization-members.js';
+	import { organizationDetailHref } from '#lib/navigation/organization.js';
 	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import {
 		organizationPositionOptions as positionOptions,
@@ -52,7 +54,7 @@
 	type MemberGroup = {
 		key: string;
 		title: string;
-		members: OrganizationMemberItem[];
+		members: OrganizationPerson[];
 	};
 
 	const {
@@ -67,6 +69,7 @@
 		onRefresh
 	}: Props = $props();
 
+	const availableStaff = $derived(staffResults.filter((staff) => !members.some((member) => member.user_id === staff.id && member.organization_unit_id === (addForm.target_unit_id || organizationUnitId)) || staff.id === addForm.user_id));
 	const includeChildren = $derived(childUnits.length > 0);
 	const canManageMembers = $derived(canAssignMembers ?? $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
@@ -118,15 +121,16 @@
 		positionOptions.map((position, index) => [position.value, index])
 	) as Record<PositionCode, number>;
 
-	const activeMemberCount = $derived(members.length);
+	const people = $derived(organizationPeople(members, organizationUnitId));
+	const activeMemberCount = $derived(people.length);
 	const leaderCount = $derived(
-		members.filter((member) =>
+		people.filter((member) =>
 			['director', 'deputy_director', 'head'].includes(member.position_code)
 		).length
 	);
 
 	const groupedMembers = $derived.by(() => {
-		const sortedMembers = [...members].sort((a, b) => {
+		const sortedMembers = [...people].sort((a, b) => {
 			const rankA = positionRank[a.position_code as PositionCode] ?? 99;
 			const rankB = positionRank[b.position_code as PositionCode] ?? 99;
 			return rankA - rankB || a.name.localeCompare(b.name, 'th');
@@ -177,10 +181,7 @@
 			);
 			if (requestId !== staffSearchRequestId || !pickerRequest.isCurrent(ticket.revision)) return;
 
-			const activeMemberIds = new Set(members.map((member) => member.user_id));
-			staffResults = res.filter(
-				(staff) => !activeMemberIds.has(staff.id) || staff.id === addForm.user_id
-			);
+			staffResults = res;
 		} catch (error) {
 			if (requestId !== staffSearchRequestId || !pickerRequest.isCurrent(ticket.revision)) return;
 			console.error('Failed to load staff options:', error);
@@ -472,7 +473,7 @@
 						</div>
 
 						<div class="grid gap-2">
-							{#each group.members as member (member.user_id + '-' + member.organization_unit_id)}
+							{#each group.members as member (member.user_id)}
 								<div
 									class="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-3"
 								>
@@ -485,7 +486,7 @@
 										<div class="min-w-0">
 											<p class="break-words text-sm font-medium">{member.name}</p>
 											<div class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-												<span>{organizationPositionLabel(member.position_code)}</span>
+												<span>{organizationPositionLabel(member.position_code)}{member.isDirect ? "" : "จากหน่วยงานย่อย"}</span>
 												{#if includeChildren}
 													<span>·</span>
 													<span class="text-primary/80">{member.organization_unit_name}</span>
@@ -498,29 +499,18 @@
 										</div>
 									</div>
 
-									{#if canManageMembers}
-										<div class="flex shrink-0 items-center gap-1">
-											<Button
-												variant="ghost"
-												size="sm"
-												onclick={() => openEdit(member)}
-												aria-label={`แก้ไขสมาชิก ${member.name}`}
-												disabled={editSubmitting || addSubmitting || !!removingMemberId}
-											>
-												<Pencil class="h-3.5 w-3.5" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="sm"
-												class="text-destructive hover:text-destructive"
-												onclick={() => handleRemove(member)}
-												aria-label={`ลบสมาชิก ${member.name}`}
-												disabled={editSubmitting || addSubmitting || !!removingMemberId}
-											>
-												<Trash2 class="h-3.5 w-3.5" />
-											</Button>
-										</div>
-									{/if}
+									<div class="min-w-0 space-y-2 text-xs" aria-label={`สังกัดต้นทาง ${member.name}`}>
+										{#each member.sourceAssignments as source (source.organization_unit_id)}
+											<div class="flex flex-wrap items-center gap-1">
+												<Button variant="link" size="sm" class="h-auto whitespace-normal p-0 text-left text-xs" href={organizationDetailHref(source.organization_unit_id, { search: '' })}>{source.organization_unit_name}</Button>
+												<span>· {organizationPositionLabel(source.position_code)}{source.is_primary ? ' · สังกัดหลัก' : ''}</span>
+												{#if canManageMembers}
+													<Button variant="ghost" size="sm" onclick={() => openEdit(source)} aria-label={`แก้ไขสมาชิก ${source.name} ใน ${source.organization_unit_name}`} disabled={editSubmitting || addSubmitting || !!removingMemberId}><Pencil class="h-3.5 w-3.5" /></Button>
+													<Button variant="ghost" size="sm" class="text-destructive" onclick={() => handleRemove(source)} aria-label={`ลบสมาชิก ${source.name} จาก ${source.organization_unit_name}`} disabled={editSubmitting || addSubmitting || !!removingMemberId}><Trash2 class="h-3.5 w-3.5" /></Button>
+												{/if}
+											</div>
+										{/each}
+									</div>
 								</div>
 							{/each}
 						</div>
@@ -588,13 +578,13 @@
 										actionLabel="ลองอีกครั้ง"
 										onaction={() => loadStaffOptions(staffSearch)}
 									/>
-								{:else if staffResults.length === 0}
+								{:else if availableStaff.length === 0}
 									<div class="py-6 text-center text-sm text-muted-foreground">
 										ไม่พบรายชื่อบุคลากร
 									</div>
 								{:else}
 									<Command.Group>
-										{#each staffResults as staff (staff.id)}
+										{#each availableStaff as staff (staff.id)}
 											<Command.Item
 												value={staffOptionValue(staff)}
 												onSelect={() => selectStaff(staff)}

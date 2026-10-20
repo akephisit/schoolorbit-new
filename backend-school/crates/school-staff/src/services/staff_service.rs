@@ -276,26 +276,22 @@ async fn validate_active_organization_assignments(
         return Ok(());
     }
 
-    let valid_unit_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id
-         FROM organization_units
-         WHERE id = ANY($1)
-           AND is_active = true
-         ORDER BY id
-         FOR SHARE",
-    )
-    .bind(&requested_unit_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!(%error, "failed to validate staff organization assignments");
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานที่ระบุได้".to_string())
-    })?;
-
-    if valid_unit_ids.len() != requested_unit_ids.len() {
-        return Err(AppError::BadRequest(
-            "หน่วยงานที่ระบุไม่มีอยู่หรือถูกปิดใช้งาน".to_string(),
-        ));
+    let valid_units: Vec<(Uuid, bool)> = sqlx::query_as(
+        "SELECT id, unit_type = 'subject_group' FROM organization_units
+         WHERE id = ANY($1) AND is_active = true ORDER BY id FOR SHARE",
+    ).bind(&requested_unit_ids).fetch_all(&mut **tx).await?;
+    if valid_units.len() != requested_unit_ids.len() {
+        return Err(AppError::BadRequest("หน่วยงานที่ระบุไม่มีอยู่หรือถูกปิดใช้งาน".into()));
+    }
+    let mut primary_domains = std::collections::HashSet::new();
+    for row in organization_assignments_to_bulk_rows(assignments) {
+        if row.is_primary {
+            let learning_area = valid_units.iter().find(|(id, _)| *id == row.organization_unit_id)
+                .map(|(_, learning_area)| *learning_area).unwrap_or(false);
+            if !primary_domains.insert(learning_area) {
+                return Err(AppError::ValidationError("กำหนดสังกัดหลักได้ประเภทละหนึ่งหน่วยงาน: กลุ่มสาระและฝ่ายบริหาร".into()));
+            }
+        }
     }
 
     Ok(())
@@ -429,7 +425,7 @@ pub async fn list_staff(
             sqlx::query_as::<_, (Uuid, String)>(
                 "SELECT om.user_id, ou.name FROM organization_members om
                  JOIN organization_units ou ON ou.id = om.organization_unit_id
-                 WHERE om.user_id = ANY($1) AND om.ended_at IS NULL
+                 WHERE om.user_id = ANY($1) AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
                  ORDER BY om.is_primary DESC, ou.name, ou.id"
             )
             .bind(&ids)
@@ -590,7 +586,7 @@ pub async fn get_staff_profile(
                 om.position_code, om.position_title, om.is_primary, om.responsibilities
          FROM organization_members om
          JOIN organization_units ou ON om.organization_unit_id = ou.id
-         WHERE om.user_id = $1 AND om.ended_at IS NULL
+         WHERE om.user_id = $1 AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
          ORDER BY om.is_primary DESC",
     )
     .bind(staff_id)
@@ -904,6 +900,8 @@ pub async fn update_staff(
         AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
     })?;
 
+    super::organization_member_service::lock_member_user(&mut tx, staff_id).await?;
+
     if let Some(role_ids) = &payload.role_ids {
         validate_active_staff_roles(&mut tx, role_ids).await?;
     }
@@ -1145,7 +1143,7 @@ pub async fn get_public_staff_profile(
         "SELECT ou.id, ou.code, ou.name, om.position_code, om.position_title
          FROM organization_members om
          JOIN organization_units ou ON om.organization_unit_id = ou.id
-         WHERE om.user_id = $1",
+         WHERE om.user_id = $1 AND ou.is_active AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)",
     )
     .bind(staff_id)
     .fetch_all(pool)

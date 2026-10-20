@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { organizationPrimaryError, organizationPrimaryLabel, setOrganizationPrimary } from '#lib/features/staff/organization-members.js';
 	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '#lib/forms/staff-career.js';
 	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -324,8 +325,8 @@
 			formData.organization_assignments.length
 		)
 			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
-		else if (formData.organization_assignments.filter((item) => item.is_primary).length !== 1)
-			errors.organization_units = 'กรุณาระบุสังกัดหลัก 1 หน่วยงาน';
+		else errors.organization_units = organizationPrimaryError(formData.organization_assignments, organizationUnits);
+		if (!errors.organization_units) delete errors.organization_units;
 		return Object.keys(errors).length === 0;
 	}
 	// OrganizationUnit management
@@ -343,18 +344,19 @@
 	}
 
 	function removeOrganizationUnit(index: number) {
-		const removedPrimary = formData.organization_assignments[index]?.is_primary;
+		const removed = formData.organization_assignments[index];
 		formData.organization_assignments = formData.organization_assignments.filter(
 			(_, i) => i !== index
 		);
-		if (removedPrimary && formData.organization_assignments.length) setPrimaryOrganizationUnit(0);
+		if (removed?.is_primary) {
+			const type = organizationUnits.find((unit) => unit.id === removed.organization_unit_id)?.unit_type === 'subject_group';
+			const replacement = formData.organization_assignments.findIndex((item) => (organizationUnits.find((unit) => unit.id === item.organization_unit_id)?.unit_type === 'subject_group') === type);
+			if (replacement >= 0) setPrimaryOrganizationUnit(replacement);
+		}
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
-		formData.organization_assignments = formData.organization_assignments.map((dept, i) => ({
-			...dept,
-			is_primary: i === index
-		}));
+		formData.organization_assignments = setOrganizationPrimary(formData.organization_assignments, index, organizationUnits);
 	}
 
 	// Submit form
@@ -1034,10 +1036,10 @@
 												<div>
 													<div class="flex items-center gap-2 cursor-pointer">
 														<Checkbox
-															checked={dept.is_primary}
+															aria-label={`สังกัดหลักหน่วยงานที่ ${i + 1}`} checked={dept.is_primary}
 															onCheckedChange={() => setPrimaryOrganizationUnit(i)}
 														/>
-														<span class="text-sm">สังกัดหลัก</span>
+														<span class="text-sm">{organizationPrimaryLabel(dept.organization_unit_id, organizationUnits)}</span>
 													</div>
 												</div>
 											</div>

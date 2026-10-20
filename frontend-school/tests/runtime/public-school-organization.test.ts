@@ -11,6 +11,7 @@ const unit = (id: string, parentId: string | null) => ({
 	parentId,
 	name: id,
 	unitType: 'unit',
+	learningAreaId: null,
 	members: []
 });
 test('public tree preserves hierarchy, input order, orphan units and vacant members', () => {
@@ -85,6 +86,7 @@ const department = (
 ) => ({
 	...unit(id, parentId),
 	unitType,
+	learningAreaId: unitType === 'subject_group' ? `area-${id}` : null,
 	members
 });
 
@@ -173,7 +175,7 @@ test('directories keep every leaf member, vacant work, nested groups and subject
 	);
 	assert.deepEqual(
 		groups[0].members.map((p) => p.member.personKey),
-		['head', 'staff']
+		['head', 'work-head', 'nested-head', 'staff', 'work-staff', 'leaf-staff']
 	);
 	assert.deepEqual(
 		groups[0].children.map((g) => g.unit.id),
@@ -181,7 +183,7 @@ test('directories keep every leaf member, vacant work, nested groups and subject
 	);
 	assert.deepEqual(
 		groups[0].children[0].members.map((p) => p.member.personKey),
-		['work-staff']
+		['nested-head', 'work-staff', 'leaf-staff']
 	);
 	assert.equal(groups[0].children[0].children[0].leaders[0].member.personKey, 'leaf-staff');
 	const subjects = publicPersonnelGroups(units, 'subject_group');
@@ -210,4 +212,27 @@ test('multiple roles in a group render once while preserving titles and same-nam
 		groups[0].members.map((p) => p.member.personKey),
 		['two']
 	);
+});
+
+test('parent roster deduplicates sources across every depth without promoting inherited heads', () => {
+	const groups = publicPersonnelGroups([
+		department('parent', 'management_group', [member('direct', 'head'), member('shared', 'member')]),
+		department('child', 'division', [member('shared', 'head'), member('deep', 'head')], 'parent'),
+		department('leaf', 'division', [member('shared', 'member')], 'child')
+	], 'management_group');
+	assert.deepEqual(groups[0].leaders.map((person) => person.member.personKey), ['direct']);
+	assert.deepEqual(groups[0].members.map((person) => person.member.personKey), ['shared', 'deep']);
+	assert.deepEqual(groups[0].members[0].responsibilities.map((source) => source.unitId).sort(), ['child', 'leaf', 'parent']);
+});
+
+test('public learning areas follow every actual registry linkage including linked activity divisions and vacant custom areas', () => {
+	const linked = Array.from({ length: 12 }, (_, index) => ({
+		...department(`custom-${index}`, index === 11 ? 'division' : 'subject_group', []),
+		learningAreaId: `registry-${index}`
+	}));
+	const unlinked = { ...department('legacy-subject', 'subject_group', []), learningAreaId: null };
+	const groups = publicPersonnelGroups([...linked, unlinked], 'subject_group');
+	assert.deepEqual(groups.map((group) => group.unit.id), linked.map((item) => item.id));
+	assert.equal(groups[11].unit.unitType, 'division');
+	assert.equal(publicPersonnelGroups(linked, 'management_group').length, 0);
 });

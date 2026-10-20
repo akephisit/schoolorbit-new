@@ -68,6 +68,10 @@ pub fn protected_routes() -> Router<StaffHttpState> {
                 .delete(handlers::roles::deactivate_organization_unit),
         )
         .route(
+            "/organization/units/{id}/permanent",
+            delete(handlers::roles::delete_organization_unit_permanently),
+        )
+        .route(
             "/organization/units/{id}/permissions",
             get(handlers::organization_permissions::get_organization_permissions)
                 .put(handlers::organization_permissions::update_organization_permissions),

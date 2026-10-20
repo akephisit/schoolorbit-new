@@ -55,7 +55,7 @@ pub struct UpdateMemberRequest {
     tag = "organization",
     params(
         ("id" = Uuid, Path, description = "Organization unit ID"),
-        ("include_children" = Option<bool>, Query, description = "Include direct child units")
+        ("include_children" = Option<bool>, Query, description = "Include all active administrative descendants; assignments retain their source unit")
     ),
     responses(
         (status = 200, description = "Organization members", body = ApiResponse<Vec<OrganizationMemberItem>>),

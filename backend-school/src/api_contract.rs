@@ -812,6 +812,7 @@ use utoipa::OpenApi;
         school_staff::http::handlers::roles::create_organization_unit,
         school_staff::http::handlers::roles::update_organization_unit,
         school_staff::http::handlers::roles::deactivate_organization_unit,
+        school_staff::http::handlers::roles::delete_organization_unit_permanently,
         school_staff::http::handlers::organization_permissions::get_organization_permissions,
         school_staff::http::handlers::organization_permissions::update_organization_permissions,
         school_staff::http::handlers::organization_delegations::list_delegatable_permissions,
@@ -5387,7 +5388,9 @@ mod tests {
                 "removeOrganizationMember",
             ),
         ];
-        assert_eq!(expected.len(), 32);
+        let mut expected = expected.to_vec();
+        expected.push(("/api/organization/units/{id}/permanent", "delete", "deleteOrganizationUnitPermanently"));
+        assert_eq!(expected.len(), 33);
         assert_operations(&document, &expected);
 
         let mut operation_ids = HashSet::new();
