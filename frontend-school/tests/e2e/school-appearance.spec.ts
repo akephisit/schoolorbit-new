@@ -17,6 +17,8 @@ import type {
 } from '../../src/lib/api/admission.js';
 import {
 	FONTS,
+	DEFAULT_APPEARANCE,
+	appearanceTokens,
 	contrastRatio,
 	type SchoolAppearanceResponse
 } from '../../src/lib/appearance/model.js';
@@ -657,11 +659,49 @@ test('a blocked appearance stylesheet preserves readable defaults and does not b
 	expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain(
 		'system-ui'
 	);
-	expect(
-		await page.evaluate(() =>
-			getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()
-		)
-	).toBe('#167166');
+	const defaults = appearanceTokens(DEFAULT_APPEARANCE, 'light');
+	const fallback = await page.evaluate(() => {
+		const css = getComputedStyle(document.documentElement);
+		return {
+			primary: css.getPropertyValue('--primary').trim(),
+			fill: css.getPropertyValue('--primary-fill').trim(),
+			card: css.getPropertyValue('--card').trim(),
+			background: css.getPropertyValue('--background').trim()
+		};
+	});
+	expect(fallback.primary).toBe(defaults.primary);
+	expect(fallback.fill).toBe('#167166');
+	const buttonColors = await page
+		.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })
+		.evaluate((element) => {
+			const css = getComputedStyle(element);
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 1;
+			const context = canvas.getContext('2d')!;
+			const hex = (color: string) => {
+				context.fillStyle = color;
+				context.fillRect(0, 0, 1, 1);
+				return (
+					'#' +
+					Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3))
+						.map((channel) => channel.toString(16).padStart(2, '0'))
+						.join('')
+				);
+			};
+			return {
+				background: hex(css.backgroundColor),
+				foreground: hex(css.color),
+				border: hex(css.borderTopColor)
+			};
+		});
+	expect(buttonColors.background).toBe(fallback.fill);
+	expect(contrastRatio(buttonColors.foreground, buttonColors.background)).toBeGreaterThanOrEqual(
+		4.5
+	);
+	for (const surface of [fallback.card, fallback.background]) {
+		expect(contrastRatio(fallback.primary, surface)).toBeGreaterThanOrEqual(4.5);
+		expect(contrastRatio(buttonColors.border, surface)).toBeGreaterThanOrEqual(3);
+	}
 	expect(
 		fixture.requests.filter((request) => request.path === '/api/school/public/appearance')
 	).toHaveLength(0);
@@ -887,8 +927,14 @@ for (const [index, font] of FONTS.entries()) {
 			path: testInfo.outputPath(`course-codes-${font.value}-desktop.png`),
 			fullPage: true
 		});
-		const input = page.locator('#new-subject-code');
+		await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+		const createDialog = page.getByRole('dialog', { name: 'เพิ่มรายวิชา', exact: true });
+		const input = createDialog.getByLabel('เพิ่มรหัสรายวิชา', { exact: true });
+		await input.fill('ค21102');
+		await expect(input).toHaveValue('ค21102');
 		await expect(input).toHaveCSS('font-family', `"${font.family}", sans-serif`);
+		await createDialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		await expect(createDialog).toHaveCount(0);
 		await page.getByRole('button', { name: 'เปิด ค21101', exact: true }).click();
 		await expectSchoolFont(
 			page,
@@ -899,8 +945,9 @@ for (const [index, font] of FONTS.entries()) {
 		await page.setViewportSize({ width: 390, height: 844 });
 		const card = page
 			.getByTestId('catalog-subjects-ready')
-			.getByRole('button')
-			.filter({ has: page.getByText('คณิตศาสตร์ทดสอบ', { exact: true }) });
+			.getByRole('list', { name: 'รายวิชา', exact: true })
+			.getByRole('listitem')
+			.filter({ has: page.getByRole('heading', { name: 'คณิตศาสตร์ทดสอบ', exact: true }) });
 		await expectSchoolFont(page, card.getByText('ค21101', { exact: true }), font.family);
 		await expectSchoolFont(page, card.getByText('1.5', { exact: true }), font.family);
 		await page.screenshot({
