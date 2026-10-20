@@ -78,12 +78,25 @@ for (const width of [390, 1440])
 		await page.setViewportSize({ width, height: 900 });
 		await page.route('https://fonts.**', (route) => route.abort());
 		await page.goto(`${fixture.baseUrl}/management-groups`);
-		const roster = page.getByRole('list', { name: 'สมาชิก กลุ่มบริหารทดสอบ', exact: true });
-		await expect(roster.getByTestId('public-person')).toHaveCount(3);
-		await expect(roster.getByText('สมาชิกหลายงาน', { exact: true })).toHaveCount(1);
-		await expect(roster).toContainText('งานต้นทาง');
-		await expect(roster).toContainText('งานชั้นลึก');
-		await expect(roster).toContainText('หัวหน้ากิจกรรม');
+		const parentPortraits = page.locator('#unit-admin > ul').getByTestId('public-person');
+		await expect(parentPortraits).toHaveCount(3);
+		const sharedPerson = parentPortraits.filter({
+			has: page.getByText('สมาชิกหลายงาน', { exact: true })
+		});
+		await expect(sharedPerson).toHaveCount(1);
+		await expect(sharedPerson).toContainText('งานต้นทาง');
+		await expect(sharedPerson).toContainText('งานชั้นลึก');
+		await expect(parentPortraits.getByText('หัวหน้ากิจกรรม', { exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารทดสอบ', exact: true })
+				.getByTestId('public-person')
+		).toHaveCount(2);
+		await expect(
+			page
+				.getByRole('list', { name: 'ผู้รับผิดชอบ กลุ่มบริหารทดสอบ', exact: true })
+				.getByTestId('public-person')
+		).toHaveCount(1);
 		await page.goto(`${fixture.baseUrl}/subject-groups`);
 		const navigation = page.getByRole('navigation', { name: 'เลือกกลุ่มสาระ', exact: true });
 		await expect(navigation.getByRole('link')).toHaveCount(12);

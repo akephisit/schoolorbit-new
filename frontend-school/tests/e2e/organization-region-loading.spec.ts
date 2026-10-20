@@ -284,8 +284,8 @@ test('ordinary detail links preload their destination and preserve one primary r
 	await expect(page).toHaveURL(new RegExp(`${firstUnit}(?:\\?|$)`));
 	await expect(page.getByTestId('organization-unit')).toContainText('หน่วยงานแรก');
 	await page
+		.getByTestId('organization-structure')
 		.getByRole('link', { name: /หน่วยงานสอง/ })
-		.first()
 		.click();
 	await expect(page).toHaveURL(new RegExp(`${secondUnit}$`));
 	await expect(page.getByTestId('organization-members')).toContainText('สมาชิกสอง');
