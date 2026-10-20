@@ -50,25 +50,32 @@ async fn catalog_snapshot(pool: &PgPool) -> Value {
         .fetch_one(pool).await.unwrap()
 }
 
+async fn unrelated_snapshot(pool: &PgPool) -> Value {
+    sqlx::query_scalar("SELECT jsonb_build_object('subjects',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM subjects s WHERE code LIKE 'UNRELATED-%'),'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM subject_versions v JOIN subjects s ON s.id=v.subject_id WHERE s.code LIKE 'UNRELATED-%'),'grades',(SELECT jsonb_agg(to_jsonb(g) ORDER BY g.subject_id,grade_level_id) FROM subject_version_grade_levels g JOIN subject_versions v ON v.id=g.subject_id JOIN subjects s ON s.id=v.subject_id WHERE s.code LIKE 'UNRELATED-%'))")
+        .fetch_one(pool).await.unwrap()
+}
+
 #[tokio::test]
 async fn subject_revision_migration_preserves_history_and_pinned_references() {
     let pool = prepare_core_fixture_through("subject_revision_migration", 130).await;
     for index in 0..27 {
-        catalog::create_subject(
+        let (id, values) = new_subject(&pool, &format!("UNRELATED-{index}")).await;
+        publish(
             &pool,
-            CreateCatalogSubjectRequest {
-                code: format!("UNRELATED-{index}"),
-                subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
-            },
+            catalog::create_subject_version(&pool, id, values)
+                .await
+                .unwrap(),
         )
-        .await
-        .unwrap();
+        .await;
     }
+    let unrelated_before = unrelated_snapshot(&pool).await;
     let before = catalog_snapshot(&pool).await;
     let pins = pinned_snapshot(&pool).await;
     apply_migrations_through(&pool, 131).await.unwrap();
     assert_eq!(before, catalog_snapshot(&pool).await);
     assert_eq!(pins, pinned_snapshot(&pool).await);
+    apply_migrations_through(&pool, 131).await.unwrap();
+    assert_eq!(before, catalog_snapshot(&pool).await);
     let old_id:Uuid = sqlx::query_scalar("SELECT d.subject_version_id FROM course_offering_details d JOIN curriculum_course_requirements r ON r.subject_version_id=d.subject_version_id LIMIT 1").fetch_one(&pool).await.unwrap();
     let old = catalog::get_subject_version(&pool, old_id).await.unwrap();
     let old_json = serde_json::to_value(&old).unwrap();
@@ -96,6 +103,7 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
             .await
             .unwrap();
     assert_eq!(unrelated, 27);
+    assert_eq!(unrelated_before, unrelated_snapshot(&pool).await);
     assert!(
         sqlx::query("UPDATE subject_versions SET name_th='changed' WHERE id=$1")
             .bind(old.id)
@@ -112,7 +120,8 @@ async fn subject_revision_migration_preserves_history_and_pinned_references() {
         .unwrap_err()
         .to_string()
         .contains("PUBLISHED_VERSION_IMMUTABLE"));
-    let activity_overlap = sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err();
+    assert!(sqlx::query("UPDATE activity_versions SET name='changed' WHERE id=(SELECT id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1)").execute(&pool).await.unwrap_err().to_string().contains("PUBLISHED_VERSION_IMMUTABLE"));
+    let activity_overlap = sqlx::query("INSERT INTO activity_versions SELECT (jsonb_populate_record(NULL::activity_versions,to_jsonb(v)||jsonb_build_object('id',gen_random_uuid(),'version_no',version_no+10,'status','draft','name','overlap-fixture-131'))).* FROM activity_versions v ORDER BY id LIMIT 1").execute(&pool).await.unwrap_err();
     assert!(
         activity_overlap
             .to_string()
@@ -256,17 +265,27 @@ async fn subject_revision_concurrent_creates_and_updates_keep_one_semantic_draft
         )
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    let mut race_values = a.clone();
+    race_values.name_th = "แข่งเผยแพร่".into();
+    let race_draft = catalog::create_subject_version(&pool, id, race_values.clone())
+        .await
+        .unwrap();
+    race_values.description = Some("แก้ไขพร้อมเผยแพร่".into());
     let (left, right) = tokio::join!(
         catalog::publish_subject_version(
             &pool,
-            original.id,
+            race_draft.id,
             PublishVersionRequest {
-                row_version: original.row_version
+                row_version: race_draft.row_version
             }
         ),
-        catalog::update_subject_version(&pool, original.id, update(a, original.row_version))
+        catalog::update_subject_version(
+            &pool,
+            race_draft.id,
+            update(race_values, race_draft.row_version)
+        )
     );
-    assert!(left.is_err() || right.is_err());
+    assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
 }
 
 #[tokio::test]

@@ -1736,3 +1736,14 @@ duplicates with unordered grade sets and canonical decimal equality, allows hist
 restoration, serializes concurrent commands, and selects current/upcoming revisions with
 exclusive effective ends. Historical migration 041 overlap coverage remains valid before
 131; activity overlap and published immutability protections remain in force.
+The subject new-version form retains the source snapshot dates, description and term
+when prefilled, preserves the working draft on background refresh, and allows same-day
+grade-only changes. The provider returns the existing conflict response for exact semantic
+duplicates. Run the synthetic `subject-catalog-workspace.spec.ts` Playwright workflow
+against an owned local preview for the form and history behavior.
+From `frontend-school`, also run the typed draft helper cases explicitly (the generic
+static suite does not include this runtime target):
+
+```bash
+node --experimental-strip-types --test tests/runtime/catalog-version-draft.test.ts
+```

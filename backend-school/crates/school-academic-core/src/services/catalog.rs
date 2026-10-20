@@ -346,7 +346,7 @@ pub async fn publish_subject_version(
         ));
     }
     let values = subject_version_content(&version);
-    if validate_canonical_decimal(&version.credit, 2)? <= 0.into() {
+    if validate_canonical_decimal(&version.credit, 2)? <= sqlx::types::BigDecimal::from(0) {
         return Err(AppError::ValidationError(
             "หน่วยกิตต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));

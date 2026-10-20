@@ -15,15 +15,13 @@
 		rowVersion: number;
 	};
 
-	export type { CatalogVersionDraft } from '#lib/academic-core/catalog-version-draft.js';
+	export type CatalogVersionDraft =
+		import('#lib/academic-core/catalog-version-draft.js').CatalogVersionDraft;
 </script>
 
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import {
-		createCatalogVersionDraft,
-		type CatalogVersionDraft
-	} from '#lib/academic-core/catalog-version-draft.js';
+	import { createCatalogVersionDraft } from '#lib/academic-core/catalog-version-draft.js';
 	import type { SubjectVersion } from '#lib/api/academic-core.js';
 	import type { GradeLevelOption } from '#lib/api/academic-core.js';
 	import {

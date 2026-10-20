@@ -63,7 +63,7 @@ test('new subject and post-save defaults are independent empty drafts', () => {
 	assert.equal(draft.name, '');
 	assert.equal(draft.exactValue, '1.00');
 	assert.match(draft.effectiveFrom, /^\d{4}-\d{2}-\d{2}$/);
-	assert.deepEqual(draft.gradeLevelIds, []);
+	assert.equal(draft.gradeLevelIds.length, 0);
 	draft.gradeLevelIds.push('grade-1');
 	assert.deepEqual(createCatalogVersionDraft().gradeLevelIds, []);
 });

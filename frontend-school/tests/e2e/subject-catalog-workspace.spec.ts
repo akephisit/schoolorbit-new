@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
 	chooseSubjectDate,
@@ -472,7 +473,7 @@ for (const width of [1029, 390]) {
 	for (const mode of ['light', 'dark'] as const) {
 		test(`${width}px ${mode}: readable list, create dialog and version form use school appearance`, async ({
 			page
-		}) => {
+		}, testInfo) => {
 			await page.setViewportSize({ width, height: 888 });
 			const requests = await installSubjectCatalog(page, subjectFixture(), { mode });
 			await page.goto(subjectPath);
@@ -485,8 +486,9 @@ for (const width of [1029, 390]) {
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);
-			await mkdir('/workspace/artifacts/staff-catalog-facility', { recursive: true });
-			const prefix = `/workspace/artifacts/staff-catalog-facility/subjects-${width}-${mode}`;
+			const artifactDir = process.env.E2E_ARTIFACT_DIR ?? testInfo.outputPath('screenshots');
+			await mkdir(artifactDir, { recursive: true });
+			const prefix = path.join(artifactDir, `subjects-${width}-${mode}`);
 			await page.screenshot({ path: `${prefix}-list.png`, fullPage: true, animations: 'disabled' });
 			if (width === 1029) {
 				const scroll = page
@@ -542,6 +544,25 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	page
 }) => {
 	const fixture = subjectFixture(2);
+	fixture.grades.push(
+		{
+			...subjectGrade,
+			id: 'grade-2',
+			code: 'M2',
+			name: 'มัธยมศึกษาปีที่ 2',
+			short_name: 'ม.2',
+			level_order: 2
+		},
+		{
+			...subjectGrade,
+			id: 'grade-3',
+			code: 'M3',
+			name: 'มัธยมศึกษาปีที่ 3',
+			short_name: 'ม.3',
+			level_order: 3
+		}
+	);
+	const otherSubject = structuredClone(fixture.items[1]);
 	const source = fixture.items[0].displayVersion!;
 	source.description = 'คำอธิบายที่เก็บไว้';
 	source.termCode = '1';
@@ -549,8 +570,8 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	const original = structuredClone(source);
 	const future = {
 		...source,
-		id: 'future-v3',
-		versionNo: 3,
+		id: 'future-v2',
+		versionNo: 2,
 		effectiveFrom: '2027-05-01',
 		effectiveUntil: null,
 		nameTh: 'รุ่นอนาคต'
@@ -572,7 +593,11 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	);
 	await expect(page.getByRole('button', { name: /แก้ไขรุ่น|คัดลอกรุ่น/ })).toHaveCount(0);
 	await form.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ }).click();
-	await page.getByRole('option', { name: /มัธยมศึกษาปีที่ 1/ }).click();
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือกระดับชั้น มัธยมศึกษาปีที่ 1' })
+	).toBeChecked();
+	await page.getByRole('option', { name: /มัธยมศึกษาปีที่ 2/ }).click();
+	await page.getByRole('option', { name: /มัธยมศึกษาปีที่ 3/ }).click();
 	await page.keyboard.press('Escape');
 	await form.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
 	await expect.poll(() => requests.writes.length).toBe(1);
@@ -583,7 +608,7 @@ test('grade-only same-day revisions prefill the displayed published source and p
 		description: original.description,
 		effectiveFrom: original.effectiveFrom,
 		effectiveUntil: original.effectiveUntil,
-		gradeLevelIds: [],
+		gradeLevelIds: [subjectGrade.id, 'grade-2', 'grade-3'],
 		hoursPerSemester: 60,
 		periodsPerWeek: 3,
 		subjectType: 'BASIC',
@@ -597,7 +622,13 @@ test('grade-only same-day revisions prefill the displayed published source and p
 	);
 	await page.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveAccessibleName(`ค00001 · ${original.nameTh}`);
-	await expect(page.getByRole('dialog').getByText('v3', { exact: true }).first()).toBeVisible();
+	await expect(
+		page.getByRole('dialog').locator('[data-slot="badge"]').filter({ hasText: /^v3$/ })
+	).toBeVisible();
+	expect(fixture.histories.get(source.subjectId)!.find((item) => item.id === original.id)).toEqual(
+		original
+	);
+	expect(fixture.items[1]).toEqual(otherSubject);
 	await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
 	await openSubjectDetails(page, 'ค00002');
 	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('รายวิชาทดสอบ 02');
@@ -616,7 +647,7 @@ test('server semantic duplicate errors preserve the prefilled revision and refre
 			if (url.pathname.endsWith('/versions') && route.request().method() === 'POST') {
 				await failSubject(
 					route,
-					400,
+					409,
 					'ข้อมูลรุ่นนี้เหมือนกับรุ่นที่มีอยู่ กรุณาปรับข้อมูลก่อนสร้างรุ่นใหม่'
 				);
 				return true;

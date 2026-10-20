@@ -80,6 +80,7 @@ export function subjectFixture(count = 3, readOnly = false) {
 			canManage: false
 		}
 	];
+	const grades = [subjectGrade];
 	const histories = new Map<string, SubjectVersion[]>();
 	const items = Array.from({ length: count }, (_, index): CatalogSubjectOverviewItem => {
 		const id = `subject-${index + 1}`;
@@ -110,11 +111,12 @@ export function subjectFixture(count = 3, readOnly = false) {
 	return {
 		items,
 		groups,
+		grades,
 		histories,
 		overview: (): CatalogSubjectOverview => ({
 			items,
 			subjectGroupOptions: groups,
-			gradeLevelOptions: [subjectGrade]
+			gradeLevelOptions: grades
 		})
 	};
 }
@@ -339,7 +341,7 @@ export async function fillSubjectVersion(page: Page, name: string) {
 	await page.getByLabel('ชั่วโมงรวมต่อภาคเรียน', { exact: true }).fill('60');
 	await page.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ }).click();
 	const grade = page.getByRole('option', { name: /มัธยมศึกษาปีที่ 1/ });
-	if ((await grade.getAttribute('aria-selected')) !== 'true') await grade.click();
+	if (!(await grade.getByRole('checkbox').isChecked())) await grade.click();
 	await page.keyboard.press('Escape');
 	await chooseSubjectDate(page);
 }
