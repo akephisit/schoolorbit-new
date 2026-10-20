@@ -15,20 +15,14 @@
 		rowVersion: number;
 	};
 
-	export type CatalogVersionDraft = {
-		name: string;
-		secondaryName: string;
-		exactValue: string;
-		totalValue: string;
-		standardPeriodsPerWeek: string;
-		effectiveFrom: string;
-		effectiveUntil: string;
-		gradeLevelIds: string[];
-		classification: string;
-	};
+	export type CatalogVersionDraft =
+		import('#lib/academic-core/catalog-version-draft.js').CatalogVersionDraft;
 </script>
 
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { createCatalogVersionDraft } from '#lib/academic-core/catalog-version-draft.js';
+	import type { SubjectVersion } from '#lib/api/academic-core.js';
 	import type { GradeLevelOption } from '#lib/api/academic-core.js';
 	import {
 		SCHEDULING_MODE_OPTIONS,
@@ -52,6 +46,7 @@
 		code,
 		items,
 		gradeLevelOptions = [],
+		sourceVersion = null,
 		canManage = false,
 		onCreate,
 		onPublish
@@ -60,27 +55,19 @@
 		code: string;
 		items: CatalogVersionItem[];
 		gradeLevelOptions?: GradeLevelOption[];
+		sourceVersion?: SubjectVersion | null;
 		canManage?: boolean;
 		onCreate: (draft: CatalogVersionDraft) => Promise<void>;
 		onPublish: (id: string, rowVersion: number) => Promise<void>;
 	} = $props();
 
-	let draft = $state<CatalogVersionDraft>({
-		name: '',
-		secondaryName: '',
-		exactValue: '1.00',
-		totalValue: '20.00',
-		standardPeriodsPerWeek: '1',
-		effectiveFrom: new Intl.DateTimeFormat('en-CA', {
-			timeZone: 'Asia/Bangkok',
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit'
-		}).format(new Date()),
-		effectiveUntil: '',
-		gradeLevelIds: [],
-		classification: ''
-	});
+	// Snapshot only when this keyed history mounts; refreshed props must not overwrite edits.
+	let draft = $state<CatalogVersionDraft>(
+		untrack(() => createCatalogVersionDraft(kind === 'subject' ? sourceVersion : null))
+	);
+	let sourceRevision = $state(
+		untrack(() => (kind === 'subject' ? sourceVersion?.versionNo : null))
+	);
 	// Keep canonical decimals as strings, including intermediate typing such as `1.`.
 	const positiveDecimalPattern = '(?=.*[1-9])(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
 	const positiveIntegerPattern = '(?=.*[1-9])[0-9]+(\\.0+)?';
@@ -110,7 +97,10 @@
 		errorMessage = '';
 		try {
 			await onCreate({ ...draft, classification: selectedClassification });
-			draft = { ...draft, name: '', secondaryName: '', effectiveUntil: '' };
+			if (kind === 'subject') {
+				draft = createCatalogVersionDraft();
+				sourceRevision = null;
+			} else draft = { ...draft, name: '', secondaryName: '', effectiveUntil: '' };
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรุ่นใหม่ไม่สำเร็จ';
 		} finally {
@@ -209,6 +199,9 @@
 				<GitBranchPlus class="size-5 text-primary" />
 				<h2 class="font-semibold">สร้างรุ่นใหม่</h2>
 			</div>
+			{#if sourceRevision}<p class="text-xs text-muted-foreground">
+					เริ่มจากรุ่นที่เผยแพร่ v{sourceRevision} · ปรับข้อมูลแล้วบันทึกเป็นรุ่นใหม่
+				</p>{/if}
 			<fieldset disabled={busy} class="min-w-0 space-y-3">
 				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
 					<div class="space-y-1.5">

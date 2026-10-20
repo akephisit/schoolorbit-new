@@ -80,6 +80,7 @@ export function subjectFixture(count = 3, readOnly = false) {
 			canManage: false
 		}
 	];
+	const grades = [subjectGrade];
 	const histories = new Map<string, SubjectVersion[]>();
 	const items = Array.from({ length: count }, (_, index): CatalogSubjectOverviewItem => {
 		const id = `subject-${index + 1}`;
@@ -110,11 +111,12 @@ export function subjectFixture(count = 3, readOnly = false) {
 	return {
 		items,
 		groups,
+		grades,
 		histories,
 		overview: (): CatalogSubjectOverview => ({
 			items,
 			subjectGroupOptions: groups,
-			gradeLevelOptions: [subjectGrade]
+			gradeLevelOptions: grades
 		})
 	};
 }
@@ -313,6 +315,21 @@ export async function openSubjectDetails(page: Page, code = 'ค00001') {
 
 export async function chooseSubjectDate(page: Page, date = '2026-10-21') {
 	await page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true }).click();
+	const target = new Date(`${date}T12:00:00Z`);
+	await page.getByRole('button', { name: 'เลือกเดือน', exact: true }).click();
+	await page
+		.getByRole('option', {
+			name: new Intl.DateTimeFormat('th-TH', { month: 'short', timeZone: 'UTC' }).format(target),
+			exact: true
+		})
+		.click();
+	await page.getByRole('button', { name: 'เลือกปี', exact: true }).click();
+	await page
+		.getByRole('option', {
+			name: new Intl.DateTimeFormat('th-TH', { year: 'numeric', timeZone: 'UTC' }).format(target),
+			exact: true
+		})
+		.click();
 	await page.locator(`[data-bits-day][data-value="${date}"]`).click();
 }
 
@@ -323,7 +340,8 @@ export async function fillSubjectVersion(page: Page, name: string) {
 	await page.getByLabel('คาบมาตรฐานต่อสัปดาห์', { exact: true }).fill('3');
 	await page.getByLabel('ชั่วโมงรวมต่อภาคเรียน', { exact: true }).fill('60');
 	await page.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ }).click();
-	await page.getByRole('option', { name: /มัธยมศึกษาปีที่ 1/ }).click();
+	const grade = page.getByRole('option', { name: /มัธยมศึกษาปีที่ 1/ });
+	if (!(await grade.getByRole('checkbox').isChecked())) await grade.click();
 	await page.keyboard.press('Escape');
 	await chooseSubjectDate(page);
 }

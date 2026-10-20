@@ -1722,3 +1722,28 @@ copy-only actions, explicit and inherited review, first-assignee completion and 
 settings. The wizard covers narrow/desktop light/dark layouts; these intercepted APIs do not
 establish database authorization or deployed delivery. Retain the Workflow disposable database
 coverage for recipient resolution, graph completion, review constraints and replay safety.
+
+Subject catalog revision regression coverage uses the existing disposable PostgreSQL runner:
+
+```bash
+./scripts/test_backend_school.sh subject_revision -- --test-threads=2
+./scripts/test_backend_school.sh catalog_overview -- --test-threads=2
+```
+
+These fixtures verify migration 131 preserves published history, pinned curriculum/offering
+references and unrelated subjects, permits same-year/same-date revisions, rejects semantic
+duplicates with unordered grade sets and canonical decimal equality, allows historical
+restoration, serializes concurrent commands, and selects current/upcoming revisions with
+exclusive effective ends. Historical migration 041 overlap coverage remains valid before
+131; activity overlap and published immutability protections remain in force.
+The subject new-version form retains the source snapshot dates, description and term
+when prefilled, preserves the working draft on background refresh, and allows same-day
+grade-only changes. The provider returns the existing conflict response for exact semantic
+duplicates. Run the synthetic `subject-catalog-workspace.spec.ts` Playwright workflow
+against an owned local preview for the form and history behavior.
+From `frontend-school`, also run the typed draft helper cases explicitly (the generic
+static suite does not include this runtime target):
+
+```bash
+node --experimental-strip-types --test tests/runtime/catalog-version-draft.test.ts
+```

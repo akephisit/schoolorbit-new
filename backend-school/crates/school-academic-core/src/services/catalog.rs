@@ -210,6 +210,7 @@ pub async fn create_subject_version(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชา".to_string()))?;
+    ensure_subject_revision_differs(&mut transaction, subject_id, None, &request).await?;
     let version_no: i32 = sqlx::query_scalar(
         "SELECT COALESCE(max(version_no), 0) + 1 FROM subject_versions WHERE subject_id = $1",
     )
@@ -277,6 +278,7 @@ pub async fn update_subject_version(
     validate_subject_version(&values)?;
     let credit = validate_canonical_decimal(&values.credit, 2)?;
     let mut transaction = pool.begin().await?;
+    let subject_id = lock_subject_for_version(&mut transaction, id).await?;
     let status: super::super::models::VersionStatus =
         sqlx::query_scalar("SELECT status FROM subject_versions WHERE id = $1 FOR UPDATE")
             .bind(id)
@@ -284,12 +286,14 @@ pub async fn update_subject_version(
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
     ensure_draft_version(status)?;
+    ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
+    let start_year_id = resolve_start_year(&mut transaction, values.effective_from).await?;
     let result = sqlx::query(
         r#"
         UPDATE subject_versions SET name_th = $1, name_en = $2, credit = $3,
             hours_per_semester = $4, type = $5, description = $6,
             effective_from = $7, effective_until = $8, term = $9,
-            periods_per_week = $10,
+            periods_per_week = $10, start_academic_year_id = $13,
             row_version = row_version + 1, updated_at = now()
         WHERE id = $11 AND row_version = $12 AND status = 'draft'
         "#,
@@ -306,6 +310,7 @@ pub async fn update_subject_version(
     .bind(values.periods_per_week)
     .bind(id)
     .bind(row_version)
+    .bind(start_year_id)
     .execute(&mut *transaction)
     .await
     .map_err(map_version_write_error)?;
@@ -324,34 +329,42 @@ pub async fn publish_subject_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
-    let (credit_positive, hours_positive, periods_positive): (bool, Option<bool>, Option<bool>) =
-        sqlx::query_as(
-            r#"SELECT credit > 0,
-                      hours_per_semester > 0,
-                      periods_per_week > 0
-               FROM subject_versions
-               WHERE id = $1"#,
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
-    if !credit_positive {
+    parse_row_version(request.row_version)?;
+    let mut transaction = pool.begin().await?;
+    let subject_id = lock_subject_for_version(&mut transaction, id).await?;
+    let version: SubjectVersion = sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
+        "version.id = $1",
+        "version.id",
+    )))
+    .bind(id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    ensure_draft_version(version.status)?;
+    if version.row_version != request.row_version {
+        return Err(AppError::Conflict(
+            "เวอร์ชันรายวิชาถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+        ));
+    }
+    let values = subject_version_content(&version);
+    if validate_canonical_decimal(&version.credit, 2)? <= sqlx::types::BigDecimal::from(0) {
         return Err(AppError::ValidationError(
             "หน่วยกิตต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
-    if periods_positive != Some(true) {
+    if !version.periods_per_week.is_some_and(|value| value > 0) {
         return Err(AppError::ValidationError(
             "ระบุคาบมาตรฐานต่อสัปดาห์ให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
-    if hours_positive != Some(true) {
+    if !version.hours_per_semester.is_some_and(|value| value > 0) {
         return Err(AppError::ValidationError(
             "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันรายวิชา".to_string(),
         ));
     }
-    publish_version(pool, "subject_versions", id, request.row_version).await?;
+    ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
+    sqlx::query("UPDATE subject_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1")
+        .bind(id).execute(&mut *transaction).await?;
+    transaction.commit().await?;
     get_subject_version(pool, id).await
 }
 
@@ -1050,15 +1063,46 @@ fn select_subject_display(
         .iter()
         .filter(|version| version.status == VersionStatus::Draft)
         .count() as i64;
-    let display = select_display_version(
-        versions
-            .iter()
-            .filter(|version| version.status == VersionStatus::Published),
-        today,
-        |version| version.effective_from,
-        |version| version.effective_until,
-        |version| version.version_no,
-    );
+    let published = versions
+        .iter()
+        .filter(|version| version.status == VersionStatus::Published)
+        .collect::<Vec<_>>();
+    let display = published
+        .iter()
+        .copied()
+        .filter(|version| {
+            version.effective_from <= today
+                && version.effective_until.is_none_or(|until| today < until)
+        })
+        .max_by_key(|version| (version.effective_from, version.version_no))
+        .map(|version| (version, CatalogDisplayState::Current))
+        .or_else(|| {
+            published
+                .iter()
+                .copied()
+                .filter(|version| version.effective_from > today)
+                .min_by_key(|version| {
+                    (
+                        version.effective_from,
+                        std::cmp::Reverse(version.version_no),
+                    )
+                })
+                .map(|version| (version, CatalogDisplayState::Upcoming))
+        })
+        .or_else(|| {
+            published
+                .iter()
+                .copied()
+                .filter(|version| version.effective_until.is_some_and(|until| until <= today))
+                .max_by_key(|version| {
+                    (
+                        version.effective_until,
+                        version.effective_from,
+                        version.version_no,
+                    )
+                })
+                .map(|version| (version, CatalogDisplayState::Expired))
+        });
     match display {
         Some((version, state)) => (Some(version.clone()), state, draft_count),
         None => (None, CatalogDisplayState::Unpublished, draft_count),
@@ -1239,6 +1283,88 @@ async fn ensure_subject_exists(pool: &PgPool, id: Uuid) -> Result<(), AppError> 
     }
 }
 
+// Every subject-version command locks the stable identity before reading revision content.
+// This orders create, draft updates and publication without mutating published history.
+async fn lock_subject_for_version(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+) -> Result<Uuid, AppError> {
+    sqlx::query_scalar("SELECT subject.id FROM subjects subject JOIN subject_versions version ON version.subject_id = subject.id WHERE version.id = $1 FOR UPDATE OF subject")
+        .bind(id).fetch_optional(&mut **transaction).await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
+}
+
+fn subject_version_content(version: &SubjectVersion) -> CreateSubjectVersionRequest {
+    CreateSubjectVersionRequest {
+        name_th: version.name_th.clone(),
+        name_en: version.name_en.clone(),
+        credit: version.credit.clone(),
+        hours_per_semester: version.hours_per_semester,
+        subject_type: version.subject_type.clone(),
+        description: version.description.clone(),
+        effective_from: version.effective_from,
+        effective_until: version.effective_until,
+        term_code: version.term_code.clone(),
+        periods_per_week: version.periods_per_week,
+        grade_level_ids: version.grade_level_ids.clone(),
+    }
+}
+
+async fn ensure_subject_revision_differs(
+    transaction: &mut Transaction<'_, Postgres>,
+    subject_id: Uuid,
+    excluded_id: Option<Uuid>,
+    request: &CreateSubjectVersionRequest,
+) -> Result<(), AppError> {
+    let mut grades = request.grade_level_ids.clone();
+    grades.sort_unstable();
+    grades.dedup();
+    // Compare the revision applicable at the requested date, rather than every historical
+    // revision: restoring A after B remains valid. Other drafts participate regardless of date.
+    let duplicate: bool = sqlx::query_scalar(
+        r#"WITH applicable AS (
+            SELECT id FROM subject_versions
+            WHERE subject_id = $1 AND status = 'published'
+              AND ($2::uuid IS NULL OR id <> $2)
+              AND effective_from <= $3 AND (effective_until IS NULL OR $3 < effective_until)
+            ORDER BY effective_from DESC, version_no DESC LIMIT 1
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM subject_versions version
+            WHERE subject_id = $1 AND ($2::uuid IS NULL OR id <> $2)
+              AND (status = 'draft' OR id IN (SELECT id FROM applicable))
+              AND name_th = $4 AND name_en IS NOT DISTINCT FROM $5
+              AND credit = $6 AND hours_per_semester IS NOT DISTINCT FROM $7
+              AND type = $8 AND description IS NOT DISTINCT FROM $9
+              AND effective_from = $3 AND effective_until IS NOT DISTINCT FROM $10
+              AND term IS NOT DISTINCT FROM $11 AND periods_per_week IS NOT DISTINCT FROM $12
+              AND ARRAY(SELECT grade_level_id FROM subject_version_grade_levels
+                        WHERE subject_id = version.id ORDER BY grade_level_id) = $13::uuid[]
+        )"#,
+    )
+    .bind(subject_id)
+    .bind(excluded_id)
+    .bind(request.effective_from)
+    .bind(request.name_th.trim())
+    .bind(&request.name_en)
+    .bind(validate_canonical_decimal(&request.credit, 2)?)
+    .bind(request.hours_per_semester)
+    .bind(request.subject_type.trim())
+    .bind(&request.description)
+    .bind(request.effective_until)
+    .bind(&request.term_code)
+    .bind(request.periods_per_week)
+    .bind(grades)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if duplicate {
+        return Err(AppError::Conflict(
+            "ข้อมูลเวอร์ชันรายวิชาซ้ำกับเวอร์ชันที่ใช้อยู่หรือฉบับร่าง".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn resolve_start_year(
     transaction: &mut Transaction<'_, Postgres>,
     effective_from: chrono::NaiveDate,
@@ -1262,6 +1388,9 @@ async fn replace_subject_grade_levels(
         .bind(version_id)
         .execute(&mut **transaction)
         .await?;
+    let mut grade_level_ids = grade_level_ids;
+    grade_level_ids.sort_unstable();
+    grade_level_ids.dedup();
     for grade_level_id in grade_level_ids {
         sqlx::query(
             "INSERT INTO subject_version_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)",

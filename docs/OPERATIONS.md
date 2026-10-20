@@ -293,6 +293,21 @@ Tracking is operational roster policy and does not change immutable opening or t
 
 Deploy the backend, generated API contracts and frontend through the normal maintenance and all-tenant migration gates. An older binary can read the expanded schema, but must not be restored once automatic tracking is enabled: it cannot maintain that invariant. Recover with a compatible forward fix; never delete membership history or alter migration checksums to roll back.
 
+## Subject catalog revisions
+
+Deploy [migration 131](../backend-school/migrations/131_subject_catalog_revisions.sql) with
+its matching catalog provider through the normal universal maintenance and all-tenant
+migration gates. It removes subject-only legacy code/year uniqueness and overlapping-range
+rejection without changing historical rows, pinned curriculum/offering version IDs, activity
+range guards or published immutability. New same-date revisions become the default only
+through the subject provider's date and revision selection; prior pinned consumers retain
+their versions.
+
+After migration 131, pre-revision School writers are prohibited: they do not enforce semantic
+duplicate rejection under the stable-subject lock. Keep maintenance active on failure and
+recover with the matching release or a compatible forward fix. Do not restore an older writer,
+recreate the removed guards, repair tenant content in the migration, or edit SQLx history.
+
 ## Attendance rollout and retention
 
 Migration [101](../backend-school/migrations/101_attendance.sql) introduces the attendance owner; [104](../backend-school/migrations/104_attendance_rosters_expand.sql) and [105](../backend-school/migrations/105_attendance_sparse_results_cutover.sql) establish its sparse-result model. Deploy the backend, generated contracts and School frontend through the coordinated maintenance and all-tenant migration gates described below. In the selected academic term, save the central attendance settings, choose counted weekdays/calendar overrides, and assign device operators. Calendar selection controls reports and teacher digests; captures and individual notices remain available on unselected days. Opening a round is read-only. Save persists only explicit changed results; missing results stay unchecked, and absence always requires an explicit check. A saved round retains its compact participant roster so later academic changes cannot rewrite that round's expected coverage.

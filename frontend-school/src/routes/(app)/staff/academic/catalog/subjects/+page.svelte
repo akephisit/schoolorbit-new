@@ -13,6 +13,7 @@
 		type CatalogSubjectOverviewItem,
 		type SubjectVersion
 	} from '#lib/api/academic-core.js';
+	import { subjectVersionSource } from '#lib/academic-core/catalog-version-draft.js';
 	import { CATALOG_SUBJECT_OVERVIEW_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
 	import {
 		CATALOG_DISPLAY_STATE_OPTIONS,
@@ -343,14 +344,14 @@
 			nameTh: draft.name,
 			nameEn: draft.secondaryName || null,
 			credit: draft.exactValue,
-			description: null,
+			description: draft.description ?? null,
 			effectiveFrom: draft.effectiveFrom,
 			effectiveUntil: draft.effectiveUntil || null,
 			gradeLevelIds: draft.gradeLevelIds,
 			hoursPerSemester: Number.parseInt(draft.totalValue, 10),
 			periodsPerWeek: Number.parseInt(draft.standardPeriodsPerWeek, 10),
 			subjectType: draft.classification,
-			termCode: null
+			termCode: draft.termCode ?? null
 		});
 		await reconcileSubjectMutation(subjectId);
 	}
@@ -848,6 +849,7 @@
 						/>{/if}
 					{#if !historyError || versions.length > 0}{#key selected.subject.id}<CatalogVersionHistory
 								kind="subject"
+								sourceVersion={subjectVersionSource(selected.displayVersion, versions)}
 								code={selected.subject.code}
 								items={versions.map((item) => ({
 									id: item.id,
