@@ -209,9 +209,27 @@ for (const { name, appearance } of appearances) {
 					await selected(page.getByTestId(name));
 				for (const name of ['surface-checkbox', 'surface-switch']) {
 					const control = page.getByTestId(name);
+					await expect(control).not.toBeChecked();
+					const knob = control.locator('[data-slot="switch-thumb"]');
+					if (name === 'surface-switch' && mode === 'dark') {
+						const off = await paint(knob);
+						expect(
+							contrastRatio(off.background, off.surface),
+							`unchecked switch ${width}px: ${JSON.stringify(off)}`
+						).toBeGreaterThanOrEqual(3);
+					}
 					await control.click();
 					await expect(control).toBeChecked();
 					await visibleControl(control);
+					if (name === 'surface-switch' && mode === 'dark') {
+						await settle(control);
+						await settle(knob);
+						const on = await paint(knob);
+						expect(
+							contrastRatio(on.background, on.surface),
+							`checked switch ${width}px: ${JSON.stringify(on)}`
+						).toBeGreaterThanOrEqual(3);
+					}
 				}
 				const primary = await readable(page.getByTestId('primary-button'));
 				if (appearance.primary) expect(primary.background).toBe(appearance.primary);
