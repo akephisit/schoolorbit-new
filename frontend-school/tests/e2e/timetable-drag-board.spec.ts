@@ -151,7 +151,7 @@ test('preserves multiline special-period titles while creating, editing, and dis
 	const editTitle = page.locator('#timetable-block-title');
 	await expect(editTitle).toHaveValue(title);
 	expect(await editTitle.evaluate((element) => element.tagName)).toBe('TEXTAREA');
-	await page.getByRole('button', { name: 'ปิด' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'ปิด', exact: true }).click();
 
 	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
 	const createTitle = page.locator('#structural-title');
