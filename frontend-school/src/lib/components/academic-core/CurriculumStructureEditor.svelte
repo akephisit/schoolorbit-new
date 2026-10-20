@@ -6,7 +6,12 @@
 		CurriculumStructureWorkspace,
 		CurriculumTermSlotInput
 	} from '#lib/api/academic-core.js';
-	import { appendSelectedCatalogRequirements, existingCourseVersions, selectableCatalogOption, type StagedCurriculumRequirement } from '#lib/academic-core/curriculum-catalog-selection.js';
+	import {
+		appendSelectedCatalogRequirements,
+		existingCourseVersions,
+		selectableCatalogOption,
+		type StagedCurriculumRequirement
+	} from '#lib/academic-core/curriculum-catalog-selection.js';
 	import { formatEffectiveRange } from '#lib/academic-core/catalog-presentation.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import CurriculumTermSlotEditor from '#lib/components/academic-core/CurriculumTermSlotEditor.svelte';
@@ -106,8 +111,8 @@
 	);
 	let selectionReady = $derived(
 		workspace.programs.some((program) => program.id === selectedProgramId) &&
-		workspace.gradeLevels.some((grade) => grade.id === selectedGradeId) &&
-		workspace.termSlots.some((slot) => slot.id === selectedTermSlotId)
+			workspace.gradeLevels.some((grade) => grade.id === selectedGradeId) &&
+			workspace.termSlots.some((slot) => slot.id === selectedTermSlotId)
 	);
 	let selectionGuidance = $derived(
 		!selectedProgramId
@@ -185,11 +190,18 @@
 		gradeLevelId: selectedGradeId,
 		termSlotId: selectedTermSlotId
 	});
-	let catalogChoices = $derived(filteredCatalog.map((option) => ({
-		option,
-		existingVersions: existingCourseVersions(option, selectionContext, stagedRequirements,
-			managementOptions.catalogVersions, workspace.requirements)
-	})));
+	let catalogChoices = $derived(
+		filteredCatalog.map((option) => ({
+			option,
+			existingVersions: existingCourseVersions(
+				option,
+				selectionContext,
+				stagedRequirements,
+				managementOptions.catalogVersions,
+				workspace.requirements
+			)
+		}))
+	);
 
 	function selectContext(field: 'program' | 'grade' | 'term', value: string) {
 		selectedCatalogIds = [];
@@ -200,8 +212,14 @@
 
 	function addSelected() {
 		if (!selectionReady) return;
-		const next = appendSelectedCatalogRequirements(stagedRequirements, selectedCatalogIds,
-			selectionContext, managementOptions.catalogVersions, workspace.requirements, requirementKind);
+		const next = appendSelectedCatalogRequirements(
+			stagedRequirements,
+			selectedCatalogIds,
+			selectionContext,
+			managementOptions.catalogVersions,
+			workspace.requirements,
+			requirementKind
+		);
 		if (next.length !== stagedRequirements.length) replaceStaged(next);
 		selectedCatalogIds = [];
 	}
@@ -330,23 +348,39 @@
 			{/if}
 
 			<div class="grid gap-3 rounded-xl border bg-card p-3 lg:grid-cols-3">
-				<Select.Root type="single" value={selectedProgramId} onValueChange={(value) => selectContext('program', value)}>
-					<Select.Trigger aria-label="แผนการเรียนที่จะจัดโครงสร้าง">{selectedProgramName}</Select.Trigger>
+				<Select.Root
+					type="single"
+					value={selectedProgramId}
+					onValueChange={(value) => selectContext('program', value)}
+				>
+					<Select.Trigger aria-label="แผนการเรียนที่จะจัดโครงสร้าง"
+						>{selectedProgramName}</Select.Trigger
+					>
 					<Select.Content>
 						{#each workspace.programs as program (program.id)}
 							<Select.Item value={program.id}>{program.nameTh}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Select.Root type="single" value={selectedGradeId} onValueChange={(value) => selectContext('grade', value)}>
-					<Select.Trigger aria-label="ระดับชั้นที่จะจัดโครงสร้าง">{selectedGradeName}</Select.Trigger>
+				<Select.Root
+					type="single"
+					value={selectedGradeId}
+					onValueChange={(value) => selectContext('grade', value)}
+				>
+					<Select.Trigger aria-label="ระดับชั้นที่จะจัดโครงสร้าง"
+						>{selectedGradeName}</Select.Trigger
+					>
 					<Select.Content>
 						{#each workspace.gradeLevels as grade (grade.id)}
 							<Select.Item value={grade.id}>{grade.name}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Select.Root type="single" value={selectedTermSlotId} onValueChange={(value) => selectContext('term', value)}>
+				<Select.Root
+					type="single"
+					value={selectedTermSlotId}
+					onValueChange={(value) => selectContext('term', value)}
+				>
 					<Select.Trigger aria-label="ภาคเรียนที่จะจัดโครงสร้าง">{selectedTermName}</Select.Trigger>
 					<Select.Content>
 						{#each workspace.termSlots as slot (slot.id)}
@@ -371,9 +405,16 @@
 						<Search class="absolute left-3 top-2.5 size-4 text-muted-foreground" />
 						<Input bind:value={search} class="pl-9" placeholder="ค้นหารหัสหรือชื่อ" />
 					</div>
-					<Select.Root type="single" value={resourceKind} onValueChange={(value) => {
-						if (value === 'all' || value === 'course' || value === 'activity') { resourceKind = value; selectedCatalogIds = []; }
-					}}>
+					<Select.Root
+						type="single"
+						value={resourceKind}
+						onValueChange={(value) => {
+							if (value === 'all' || value === 'course' || value === 'activity') {
+								resourceKind = value;
+								selectedCatalogIds = [];
+							}
+						}}
+					>
 						<Select.Trigger>
 							{resourceKind === 'all'
 								? 'ทั้งหมด'
@@ -401,8 +442,17 @@
 										>{option.code}</span
 									>
 									<span class="block text-sm">{option.name}</span>
-									<span class="block text-xs text-muted-foreground">v{option.versionNo} · {formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}</span>
-									{#if existingVersions.length}<span class="block text-xs text-muted-foreground">มีรายวิชานี้แล้ว · {existingVersions.map((version) => `v${version}`).join(', ')}</span>{/if}
+									<span class="block text-xs text-muted-foreground"
+										>v{option.versionNo} · {formatEffectiveRange(
+											option.effectiveFrom,
+											option.effectiveUntil
+										)}</span
+									>
+									{#if existingVersions.length}<span class="block text-xs text-muted-foreground"
+											>มีรายวิชานี้แล้ว · {existingVersions
+												.map((version) => `v${version}`)
+												.join(', ')}</span
+										>{/if}
 								</span>
 							</label>
 						{/each}
@@ -462,7 +512,9 @@
 												{option?.code ?? source?.code}
 											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>
-											<div class="text-xs text-muted-foreground">v{source?.versionNo ?? option?.versionNo}</div>
+											<div class="text-xs text-muted-foreground">
+												v{source?.versionNo ?? option?.versionNo}
+											</div>
 										</Table.Cell>
 										<Table.Cell>
 											<Select.Root

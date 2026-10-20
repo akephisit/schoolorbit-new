@@ -1620,3 +1620,7 @@ pub async fn subject_groups_for_versions(
     .fetch_all(pool)
     .await?)
 }
+
+#[cfg(test)]
+#[path = "catalog_revision_selection_tests.rs"]
+mod revision_selection_tests;

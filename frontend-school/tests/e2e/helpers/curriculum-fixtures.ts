@@ -1,3 +1,5 @@
+import type { CurriculumStructureWorkspace } from '../../../src/lib/api/academic-core.js';
+
 export const ids = {
 	year: '12000000-0000-4000-8000-000000000401',
 	futureYear: '12000000-0000-4000-8000-000000000402',
@@ -58,7 +60,9 @@ export function curriculumVersion(id: string, status: 'draft' | 'published' = 'p
 	};
 }
 
-export function curriculumStructure(version = curriculumVersion(ids.curriculumVersion)) {
+export function curriculumStructure(
+	version = curriculumVersion(ids.curriculumVersion)
+): CurriculumStructureWorkspace {
 	return {
 		level: version,
 		rowVersion: version.rowVersion,
@@ -121,7 +125,7 @@ export function curriculumStructure(version = curriculumVersion(ids.curriculumVe
 				metrics: {
 					credit: '0.50',
 					totalHours: '20',
-					weeklyUnit: 'periods_per_week',
+					weeklyUnit: 'period',
 					weeklyValue: '1'
 				},
 				displayOrder: 1

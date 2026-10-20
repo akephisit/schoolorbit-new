@@ -1747,3 +1747,23 @@ static suite does not include this runtime target):
 ```bash
 node --experimental-strip-types --test tests/runtime/catalog-version-draft.test.ts
 ```
+
+Curriculum additions and preserved subject revisions use these focused disposable fixtures:
+
+```bash
+./scripts/test_backend_school.sh curriculum_current_subject -- --test-threads=2
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core --lib revision_selection_tests
+```
+
+The provider cases cover Bangkok midnight, same-day revision ordering and exclusive ends.
+Database cases exercise old/current option metadata, no future/expired/draft fallback,
+unchanged existing and copied version IDs, explicit replacement, grandfathered duplicate
+buckets, atomic stale-publication rejection under stable-subject locks, and activity parity.
+Run affected curriculum structure/copy and curriculum permission cases alongside them.
+Regenerate and check/test API contracts after DTO changes; compile affected Core/HTTP
+consumers both with default features and `api-docs`. These fixtures never use tenant data.
+From `frontend-school`, run `node --experimental-strip-types --test
+tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser workflow
+`tests/e2e/curriculum-catalog-revisions.spec.ts` against an owned local preview. The
+fixtures cover current-only additions, preserved pinned-version labels, explicit replacement,
+legacy duplicate buckets and conflict retention in the editor and read-only tables.
