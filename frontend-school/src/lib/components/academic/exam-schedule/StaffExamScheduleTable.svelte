@@ -28,8 +28,8 @@
 	}
 </script>
 
-<div class="hidden min-w-0 md:block">
-	<Table.Root class="min-w-[1040px]">
+<div class="hidden min-w-0 overflow-hidden rounded-xl border bg-card md:block">
+	<Table.Root class="min-w-[960px]" aria-label="ตารางสอบ">
 		<Table.Header>
 			<Table.Row>
 				<Table.Head scope="col" class="bg-muted sticky top-0 z-10 w-44 text-center">
@@ -100,7 +100,7 @@
 	{#each groupStaffScheduleRowsByDay(rows) as group, index (group.examDate)}
 		<Collapsible.Root open={index === 0} class="overflow-hidden rounded-xl border bg-card">
 			<Collapsible.Trigger
-				class="flex w-full items-center justify-between gap-3 p-4 text-left font-medium"
+				class="flex w-full items-center justify-between gap-3 p-3 text-left font-medium"
 			>
 				<span>
 					{formatStaffExamDate(group.examDate)}
@@ -115,36 +115,42 @@
 					<ChevronDown class="size-4" aria-hidden="true" />
 				</span>
 			</Collapsible.Trigger>
-			<Collapsible.Content class="divide-y border-t">
-				{#each group.rows as row (row.session.sessionId)}
-					<div class="grid gap-2 p-4 text-sm">
-						<div>
-							<span class="text-muted-foreground">เวลา:</span>
-							<span class="tabular-nums">
-								{formatStaffExamTime(row.session.startsAt)}–{formatStaffExamTime(
-									row.session.endsAt
-								)}
-							</span>
-						</div>
-						<div>
-							<span class="text-muted-foreground">วิชา:</span>
-							<span class="font-medium">{row.session.subjectName}</span>
-							<span class="text-xs text-muted-foreground">({row.session.subjectCode})</span>
-						</div>
-						<div>
-							<span class="text-muted-foreground">ชั้นเรียน:</span>
-							{row.session.homeroomName}
-						</div>
-						<div>
-							<span class="text-muted-foreground">ห้องสอบ:</span>
-							{roomLabel(row.session)}
-						</div>
-						<div>
-							<span class="text-muted-foreground">กรรมการ:</span>
-							{invigilatorLabel(row.session.invigilators)}
-						</div>
-					</div>
-				{/each}
+			<Collapsible.Content>
+				<ul class="divide-y border-t">
+					{#each group.rows as row (row.session.sessionId)}
+						<li class="grid gap-1.5 p-3 text-sm">
+							<div>
+								<span class="text-muted-foreground">เวลา:</span>
+								<span class="tabular-nums">
+									{formatStaffExamTime(row.session.startsAt)}–{formatStaffExamTime(
+										row.session.endsAt
+									)}
+								</span>
+							</div>
+							<div>
+								<span class="text-muted-foreground">วิชา:</span>
+								<span class="font-medium">{row.session.subjectName}</span>
+								<span class="text-xs text-muted-foreground">({row.session.subjectCode})</span>
+							</div>
+							<div>
+								<span class="text-muted-foreground">ประเภทการสอบ:</span>
+								{row.session.assessmentPhaseName}
+							</div>
+							<div>
+								<span class="text-muted-foreground">ชั้นเรียน:</span>
+								{row.session.gradeLevelName} · {row.session.homeroomName}
+							</div>
+							<div>
+								<span class="text-muted-foreground">ห้องสอบ:</span>
+								{roomLabel(row.session)}
+							</div>
+							<div>
+								<span class="text-muted-foreground">กรรมการ:</span>
+								{invigilatorLabel(row.session.invigilators)}
+							</div>
+						</li>
+					{/each}
+				</ul>
 			</Collapsible.Content>
 		</Collapsible.Root>
 	{/each}

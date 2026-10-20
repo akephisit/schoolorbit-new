@@ -37,8 +37,8 @@
 	}
 </script>
 
-<div class="hidden min-w-0 md:block">
-	<Table.Root class="min-w-[860px]">
+<div class="hidden min-w-0 overflow-hidden rounded-xl border bg-card md:block">
+	<Table.Root class="min-w-[860px]" aria-label="กรรมการคุมสอบ">
 		<Table.Header>
 			<Table.Row>
 				<Table.Head scope="col" class="bg-muted sticky top-0 z-10 w-44 text-center">
@@ -93,7 +93,10 @@
 						{:else}
 							<div class="flex flex-wrap gap-1.5">
 								{#each row.assignment.invigilators as invigilator (invigilator.staffId)}
-									<Badge variant={invigilator.staffId === currentStaffId ? 'default' : 'outline'}>
+									<Badge
+										class="max-w-full whitespace-normal"
+										variant={invigilator.staffId === currentStaffId ? 'default' : 'outline'}
+									>
 										{invigilator.displayName}
 										{#if invigilator.staffId === currentStaffId}
 											<span class="sr-only">ผู้ใช้ปัจจุบัน</span>
@@ -114,7 +117,7 @@
 	{#each groupStaffInvigilatorRowsByDay(rows) as group, index (group.examDate)}
 		<Collapsible.Root open={index === 0} class="overflow-hidden rounded-xl border bg-card">
 			<Collapsible.Trigger
-				class="flex w-full items-center justify-between gap-3 p-4 text-left font-medium"
+				class="flex w-full items-center justify-between gap-3 p-3 text-left font-medium"
 			>
 				<span>
 					{formatStaffExamDate(group.examDate)}
@@ -129,35 +132,40 @@
 					<ChevronDown class="size-4" aria-hidden="true" />
 				</span>
 			</Collapsible.Trigger>
-			<Collapsible.Content class="divide-y border-t">
-				{#each group.rows as row (row.assignment.assignmentId)}
-					<div class={cn('grid gap-2 p-4 text-sm', row.isCurrentUser && 'bg-primary/5')}>
-						<div class="font-medium">{row.assignment.homeroomName}</div>
-						<div>
-							<span class="text-muted-foreground">ห้องสอบ:</span>
-							{roomLabel(row.assignment)}
-						</div>
-						<div>
-							<span class="text-muted-foreground">เวลา:</span>
-							<span class="tabular-nums">{assignmentTimeRanges(row.assignment.sessions)}</span>
-						</div>
-						<div class="flex flex-wrap items-center gap-1.5">
-							<span class="mr-1 text-muted-foreground">กรรมการ:</span>
-							{#if row.assignment.invigilators.length === 0}
-								<span>ยังไม่กำหนด</span>
-							{:else}
-								{#each row.assignment.invigilators as invigilator (invigilator.staffId)}
-									<Badge variant={invigilator.staffId === currentStaffId ? 'default' : 'outline'}>
-										{invigilator.displayName}
-										{#if invigilator.staffId === currentStaffId}
-											<span aria-hidden="true"> · ฉัน</span>
-										{/if}
-									</Badge>
-								{/each}
-							{/if}
-						</div>
-					</div>
-				{/each}
+			<Collapsible.Content>
+				<ul class="divide-y border-t">
+					{#each group.rows as row (row.assignment.assignmentId)}
+						<li class={cn('grid gap-1.5 p-3 text-sm', row.isCurrentUser && 'bg-primary/5')}>
+							<div class="font-medium">{row.assignment.homeroomName}</div>
+							<div>
+								<span class="text-muted-foreground">ห้องสอบ:</span>
+								{roomLabel(row.assignment)}
+							</div>
+							<div>
+								<span class="text-muted-foreground">เวลา:</span>
+								<span class="tabular-nums">{assignmentTimeRanges(row.assignment.sessions)}</span>
+							</div>
+							<div class="flex flex-wrap items-center gap-1.5">
+								<span class="mr-1 text-muted-foreground">กรรมการ:</span>
+								{#if row.assignment.invigilators.length === 0}
+									<span>ยังไม่กำหนด</span>
+								{:else}
+									{#each row.assignment.invigilators as invigilator (invigilator.staffId)}
+										<Badge
+											class="max-w-full whitespace-normal"
+											variant={invigilator.staffId === currentStaffId ? 'default' : 'outline'}
+										>
+											{invigilator.displayName}
+											{#if invigilator.staffId === currentStaffId}
+												<span aria-hidden="true"> · ฉัน</span>
+											{/if}
+										</Badge>
+									{/each}
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
 			</Collapsible.Content>
 		</Collapsible.Root>
 	{/each}
