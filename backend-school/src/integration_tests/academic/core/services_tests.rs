@@ -32,6 +32,9 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[path = "subject_revision_tests.rs"]
+mod subject_revision_tests;
+
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);

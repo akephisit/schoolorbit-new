@@ -10,6 +10,7 @@ import {
 	subjectApi,
 	subjectFixture,
 	subjectGate,
+	subjectGrade,
 	subjectName,
 	subjectPath,
 	subjectVersion
@@ -106,7 +107,10 @@ for (const [instant, expectedDate, dateLabel] of [
 	test(`version decimals retain keyboard input and default to Bangkok day ${expectedDate}`, async ({
 		page
 	}) => {
-		const requests = await installSubjectCatalog(page, subjectFixture(1));
+		const fixture = subjectFixture(1);
+		fixture.items[0].displayVersion = null;
+		fixture.histories.set(fixture.items[0].subject.id, []);
+		const requests = await installSubjectCatalog(page, fixture);
 		await page.clock.setFixedTime(new Date(instant));
 		await page.goto(subjectPath);
 		await openSubjectDetails(page);
@@ -533,3 +537,110 @@ for (const width of [1029, 390]) {
 		});
 	}
 }
+
+test('grade-only same-day revisions prefill the displayed published source and preserve the original', async ({
+	page
+}) => {
+	const fixture = subjectFixture(2);
+	const source = fixture.items[0].displayVersion!;
+	source.description = 'คำอธิบายที่เก็บไว้';
+	source.termCode = '1';
+	source.effectiveUntil = '2027-03-31';
+	const original = structuredClone(source);
+	const future = {
+		...source,
+		id: 'future-v3',
+		versionNo: 3,
+		effectiveFrom: '2027-05-01',
+		effectiveUntil: null,
+		nameTh: 'รุ่นอนาคต'
+	};
+	fixture.histories.get(source.subjectId)!.unshift(future);
+	const requests = await installSubjectCatalog(page, fixture);
+	await page.goto(subjectPath);
+	await openSubjectDetails(page);
+	const form = page.getByRole('form', { name: 'สร้างรุ่นใหม่' });
+	await expect(form).toContainText('เริ่มจากรุ่นที่เผยแพร่ v1');
+	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue(original.nameTh);
+	await expect(form.getByLabel('ชื่อภาษาอังกฤษ', { exact: true })).toHaveValue(original.nameEn!);
+	await expect(form.getByLabel('หน่วยกิต', { exact: true })).toHaveValue('1.50');
+	await expect(
+		form.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+	).toContainText('1 พ.ค. 2569');
+	await expect(form.getByRole('button', { name: 'เลือกวันที่สิ้นสุด', exact: true })).toContainText(
+		'31 มี.ค. 2570'
+	);
+	await expect(page.getByRole('button', { name: /แก้ไขรุ่น|คัดลอกรุ่น/ })).toHaveCount(0);
+	await form.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ }).click();
+	await page.getByRole('option', { name: /มัธยมศึกษาปีที่ 1/ }).click();
+	await page.keyboard.press('Escape');
+	await form.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	await expect.poll(() => requests.writes.length).toBe(1);
+	expect(requests.writes[0].body).toEqual({
+		nameTh: original.nameTh,
+		nameEn: original.nameEn,
+		credit: original.credit,
+		description: original.description,
+		effectiveFrom: original.effectiveFrom,
+		effectiveUntil: original.effectiveUntil,
+		gradeLevelIds: [],
+		hoursPerSemester: 60,
+		periodsPerWeek: 3,
+		subjectType: 'BASIC',
+		termCode: '1'
+	});
+	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('');
+	await form.dispatchEvent('submit');
+	expect(requests.writes).toHaveLength(1);
+	expect(fixture.histories.get(source.subjectId)!.find((item) => item.id === original.id)).toEqual(
+		original
+	);
+	await page.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
+	await expect(page.getByRole('dialog')).toHaveAccessibleName(`ค00001 · ${original.nameTh}`);
+	await expect(page.getByRole('dialog').getByText('v3', { exact: true }).first()).toBeVisible();
+	await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+	await openSubjectDetails(page, 'ค00002');
+	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('รายวิชาทดสอบ 02');
+	await expect(form.getByRole('combobox', { name: /เลือกระดับชั้นสำหรับ/ })).toContainText(
+		subjectGrade.short_name
+	);
+	expect(requests.pageErrors).toEqual([]);
+});
+
+test('server semantic duplicate errors preserve the prefilled revision and refreshes preserve unsaved edits', async ({
+	page
+}) => {
+	const fixture = subjectFixture(1);
+	const requests = await installSubjectCatalog(page, fixture, {
+		onRequest: async (route, url) => {
+			if (url.pathname.endsWith('/versions') && route.request().method() === 'POST') {
+				await failSubject(
+					route,
+					400,
+					'ข้อมูลรุ่นนี้เหมือนกับรุ่นที่มีอยู่ กรุณาปรับข้อมูลก่อนสร้างรุ่นใหม่'
+				);
+				return true;
+			}
+			return false;
+		}
+	});
+	await page.goto(subjectPath);
+	await openSubjectDetails(page);
+	const form = page.getByRole('form', { name: 'สร้างรุ่นใหม่' });
+	await form.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	await expect(form.getByRole('alert')).toContainText('กรุณาปรับข้อมูลก่อนสร้างรุ่นใหม่');
+	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue(subjectName);
+	await form.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('แบบร่างที่ยังไม่บันทึก');
+	await page.getByRole('button', { name: 'กลุ่มสาระของรายวิชา', exact: true }).click();
+	await page.getByRole('option', { name: 'วิทยาศาสตร์และเทคโนโลยี', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกกลุ่มสาระ', exact: true }).click();
+	await expect.poll(requests.overviewReads).toBe(2);
+	await expect(page.getByTestId('catalog-subjects-ready')).toHaveAttribute('aria-busy', 'false');
+	await expect(form.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue(
+		'แบบร่างที่ยังไม่บันทึก'
+	);
+	await expect(
+		form.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+	).toContainText('1 พ.ค. 2569');
+	expect(requests.pageErrors).toEqual([]);
+});
