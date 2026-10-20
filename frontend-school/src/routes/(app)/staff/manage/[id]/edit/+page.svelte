@@ -1,5 +1,8 @@
 <script lang="ts">
 	import {
+		organizationAssignmentDraft,
+		organizationAssignmentInput,
+		type OrganizationAssignmentDraft,
 		organizationPrimaryError,
 		organizationPrimaryLabel,
 		setOrganizationPrimary
@@ -133,12 +136,7 @@
 		personnel: staffPersonnelDraft(null),
 
 		// Organization Units
-		organization_assignments: [] as Array<{
-			organization_unit_id: string;
-			position_code: string;
-			is_primary: boolean;
-			responsibilities: string;
-		}>
+		organization_assignments: [] as OrganizationAssignmentDraft[]
 	});
 
 	let selectedPosition =
@@ -227,13 +225,7 @@
 				hired_date: staff.hired_date || '',
 				status: staff.status,
 				personnel: staffPersonnelDraft(staff.staff_info),
-				organization_assignments:
-					staff.organization_units?.map((d) => ({
-						organization_unit_id: d.id,
-						position_code: d.position_code || 'member',
-						is_primary: d.is_primary || false,
-						responsibilities: d.responsibilities || ''
-					})) || []
+				organization_assignments: staff.organization_units?.map(organizationAssignmentDraft) || []
 			};
 			originalForm = structuredClone($state.snapshot(formData));
 		}
@@ -351,6 +343,8 @@
 			{
 				organization_unit_id: '',
 				position_code: 'member',
+				position_title: null,
+				storedResponsibilities: null,
 				is_primary: isFirst,
 				responsibilities: ''
 			}
@@ -461,7 +455,9 @@
 			);
 			if (hrPatch) payload.staff_info = hrPatch;
 			if (organizationsChanged)
-				payload.organization_assignments = formData.organization_assignments;
+				payload.organization_assignments = formData.organization_assignments.map(
+					organizationAssignmentInput
+				);
 
 			const result = await updateStaff(owner, payload);
 			if (!current()) return;

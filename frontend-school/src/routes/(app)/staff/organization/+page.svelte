@@ -300,6 +300,8 @@
 			permanentDeletePending
 		)
 			return;
+		unitsRequest.abort();
+		loading = false;
 		permanentDeletePending = true;
 		permanentDeleteError = '';
 		try {
@@ -473,7 +475,7 @@
 <PageShell
 	title="โครงสร้างโรงเรียน"
 	description="ดูกลุ่มบริหาร ฝ่าย/งาน และกลุ่มสาระการเรียนรู้"
-	contentClass="space-y-4"
+	contentClass="flex flex-col gap-4 [&>*]:mt-0"
 >
 	<nav aria-label="ประเภทโครงสร้าง" class="flex flex-wrap gap-2">
 		{#if canReadOrganization}<Button

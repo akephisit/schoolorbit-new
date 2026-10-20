@@ -59,6 +59,170 @@ async fn observe_blocked_backend(pool: &PgPool, blocker: i32, expected_waiter: O
     .expect("second backend must actually wait on the held transaction")
 }
 
+async fn workflow_selector_reference_cases(pool: &PgPool, actor: Uuid) {
+    use sqlx::types::Json;
+    let mut targets = Vec::new();
+    for _ in 0..5 {
+        targets.push(unit(pool, None).await);
+    }
+    let selector =
+        |target: Uuid| serde_json::json!({"kind":"organization_unit","organizationUnitId":target});
+    let template = Uuid::now_v7();
+    let current = serde_json::json!({"steps":[{"recipients":[selector(targets[0])]}]});
+    sqlx::query("INSERT INTO process_templates(id,code,version,definition,created_by) VALUES($1,$2,1,$3,$4)")
+        .bind(template).bind(format!("selector-{template}")).bind(Json(&current)).bind(actor).execute(pool).await.unwrap();
+    let historical = serde_json::json!({"steps":[{"recipients":[selector(targets[1])]}]});
+    sqlx::query("INSERT INTO process_template_versions(template_id,version,definition,created_by) VALUES($1,1,$2,$3)")
+        .bind(template).bind(Json(&historical)).bind(actor).execute(pool).await.unwrap();
+    let instance = Uuid::now_v7();
+    let directed =
+        serde_json::json!({"directed":{"assignments":[{"selector":selector(targets[2])}]}});
+    sqlx::query("INSERT INTO process_instances(id,source_module,source_type,source_id,revision,definition,created_by) VALUES($1,'fixture','fixture',$2,1,$3,$4)")
+        .bind(instance).bind(Uuid::now_v7()).bind(Json(&directed)).bind(actor).execute(pool).await.unwrap();
+    let revision =
+        serde_json::json!({"steps":[{"definition":{"recipients":[selector(targets[3])]}}]});
+    sqlx::query(
+        "INSERT INTO process_instance_revisions(instance_id,revision,definition) VALUES($1,1,$2)",
+    )
+    .bind(instance)
+    .bind(Json(&revision))
+    .execute(pool)
+    .await
+    .unwrap();
+    let compact = targets[4].simple().to_string().to_uppercase();
+    let settings = serde_json::json!({"defaultFirstRecipient":{"kind":"organization_unit","organizationUnitId":compact}});
+    sqlx::query("INSERT INTO correspondence_routing_settings(register,revision,definition,updated_by) VALUES('incoming',1,$1,$2)")
+        .bind(Json(&settings)).bind(actor).execute(pool).await.unwrap();
+    for target in &targets {
+        assert!(
+            matches!(units::delete_organization_unit_permanently(pool,*target,actor).await,Err(AppError::Conflict(message)) if message.contains("กระบวนงาน")),
+            "every functional JSON owner prevents orphaning its unit selector"
+        );
+    }
+    let stored: Json<serde_json::Value> = sqlx::query_scalar(
+        "SELECT definition FROM correspondence_routing_settings WHERE register='incoming'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored.0, settings,
+        "typed UUID comparison never rewrites preserved JSON bytes"
+    );
+    let missing = serde_json::json!({"defaultReviewer":selector(Uuid::now_v7())});
+    let missing_error = sqlx::query(
+        "UPDATE correspondence_routing_settings SET definition=$1 WHERE register='incoming'",
+    )
+    .bind(Json(&missing))
+    .execute(pool)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        missing_error.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    let invalid = sqlx::query(
+        "SELECT * FROM organization_selector_unit_ids('{\"organizationUnitId\":42}'::jsonb)",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        invalid.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    for invalid in [
+        serde_json::json!({"organizationUnitId":{}}),
+        serde_json::json!({"organizationUnitId":[]}),
+        serde_json::json!({"organizationUnitId":true}),
+    ] {
+        let error = sqlx::query("SELECT * FROM organization_selector_unit_ids($1)")
+            .bind(Json(&invalid))
+            .fetch_all(pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("23514")
+        );
+    }
+    let null_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT * FROM organization_selector_unit_ids('{\"organizationUnitId\":null}'::jsonb)",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(null_ids.is_empty());
+    let urn = serde_json::json!({"organizationUnitId":format!("urn:uuid:{}",targets[0])});
+    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT * FROM organization_selector_unit_ids($1)")
+        .bind(Json(&urn))
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![targets[0]]);
+
+    // Delete-first: the JSON writer must really wait on the unit lock, then reject absence.
+    let delete_first = unit(pool, None).await;
+    let mut deleter = pool.begin().await.unwrap();
+    let deletion_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *deleter)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM organization_units WHERE id=$1 FOR UPDATE")
+        .bind(delete_first)
+        .execute(&mut *deleter)
+        .await
+        .unwrap();
+    let mut writer_connection = pool.acquire().await.unwrap();
+    let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *writer_connection)
+        .await
+        .unwrap();
+    let definition = serde_json::json!({"defaultReviewer":selector(delete_first)});
+    let writer = tokio::spawn(async move {
+        sqlx::query("INSERT INTO correspondence_routing_settings(register,revision,definition,updated_by) VALUES('internal',1,$1,$2)").bind(Json(&definition)).bind(actor).execute(&mut *writer_connection).await
+    });
+    observe_blocked_backend(pool, deletion_pid, Some(writer_pid)).await;
+    assert!(!writer.is_finished());
+    sqlx::query("DELETE FROM organization_units WHERE id=$1")
+        .bind(delete_first)
+        .execute(&mut *deleter)
+        .await
+        .unwrap();
+    deleter.commit().await.unwrap();
+    assert_eq!(
+        writer
+            .await
+            .unwrap()
+            .unwrap_err()
+            .as_database_error()
+            .unwrap()
+            .code()
+            .as_deref(),
+        Some("23503")
+    );
+
+    // Writer-first: the service waits for the KEY SHARE guard and then sees the committed JSON.
+    let writer_first = unit(pool, None).await;
+    let mut settings_writer = pool.begin().await.unwrap();
+    let settings_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *settings_writer)
+        .await
+        .unwrap();
+    let definition = serde_json::json!({"defaultReviewer":selector(writer_first)});
+    sqlx::query("INSERT INTO correspondence_routing_settings(register,revision,definition,updated_by) VALUES('internal',1,$1,$2)").bind(Json(&definition)).bind(actor).execute(&mut *settings_writer).await.unwrap();
+    let delete_pool = pool.clone();
+    let deletion = tokio::spawn(async move {
+        units::delete_organization_unit_permanently(&delete_pool, writer_first, actor).await
+    });
+    observe_blocked_backend(pool, settings_pid, None).await;
+    assert!(!deletion.is_finished());
+    settings_writer.commit().await.unwrap();
+    assert!(
+        matches!(deletion.await.unwrap(),Err(AppError::Conflict(message)) if message.contains("กระบวนงาน"))
+    );
+}
+
 #[tokio::test]
 async fn organization_membership_recursive_display_is_cycle_safe_current_and_permission_neutral() {
     let pool = fixture("org_member_recursive").await;
@@ -189,9 +353,9 @@ async fn organization_membership_primary_domains_isolate_selection_and_raw_concu
         organization_unit_id: a,
         user_id: moving_user,
         position_code: position.into(),
-        position_title: None,
+        position_title: Some("ตำแหน่งเฉพาะ".into()),
         is_primary: true,
-        responsibilities: None,
+        responsibilities: Some("ความรับผิดชอบเฉพาะ".into()),
         new_organization_unit_id: target,
     };
     members::update_member(&pool, input(a, "head"))
@@ -201,6 +365,17 @@ async fn organization_membership_primary_domains_isolate_selection_and_raw_concu
     assert!(
         retained,
         "same-unit role edit preserves source identity and start date"
+    );
+    let fields: (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT position_title,responsibilities FROM organization_members WHERE id=$1",
+    )
+    .bind(source_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        fields,
+        (Some("ตำแหน่งเฉพาะ".into()), Some("ความรับผิดชอบเฉพาะ".into()))
     );
     add(&pool, moving_user, b, false).await;
     assert!(matches!(
@@ -382,7 +557,7 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
     let admin = unit(&pool, None).await;
     let historical = unit(&pool, None).await;
     let future = unit(&pool, None).await;
-    let payload:CreateStaffRequest=serde_json::from_value(serde_json::json!({"username":format!("bulk{}",Uuid::now_v7()),"password":"Test1234!","title":"นาย","first_name":"ทดสอบ","last_name":"บุคลากร","role_ids":[],"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":true},{"organization_unit_id":admin,"position_code":"member","is_primary":true}]})).unwrap();
+    let payload:CreateStaffRequest=serde_json::from_value(serde_json::json!({"username":format!("bulk{}",Uuid::now_v7()),"password":"Test1234!","title":"นาย","first_name":"ทดสอบ","last_name":"บุคลากร","role_ids":[],"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":true},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
     let user = staff_service::create_staff(&pool, payload, actor)
         .await
         .unwrap();
@@ -398,7 +573,7 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
         .execute(&pool)
         .await
         .unwrap();
-    let assignments = serde_json::json!([{"organization_unit_id":area,"position_code":"member","is_primary":true},{"organization_unit_id":admin,"position_code":"member","is_primary":true},{"organization_unit_id":future,"position_code":"member","is_primary":false}]);
+    let assignments = serde_json::json!([{"organization_unit_id":area,"position_code":"member","is_primary":true},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true},{"organization_unit_id":future,"position_code":"member","is_primary":false}]);
     let original:Vec<(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,bool)>=sqlx::query_as("SELECT id,started_at,ended_at,is_primary FROM organization_members WHERE user_id=$1 ORDER BY id").bind(user).fetch_all(&pool).await.unwrap();
     for _ in 0..2 {
         let update: UpdateStaffRequest = serde_json::from_value(
@@ -414,7 +589,13 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
         original, saved,
         "unchanged saves preserve IDs, dates, flags and ended history"
     );
-    let update:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","is_primary":true}]})).unwrap();
+    let fields:(Option<String>,Option<String>)=sqlx::query_as("SELECT position_title,responsibilities FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2").bind(user).bind(admin).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        fields,
+        (Some("ตำแหน่งเดิม".into()), Some("ภาระงานเดิม".into())),
+        "whole-staff round trips retain custom assignment facts, including inactive sources"
+    );
+    let update:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
     staff_service::update_staff(&pool, user, update, actor)
         .await
         .unwrap();
@@ -426,7 +607,7 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
             .unwrap();
     assert!(cancelled);
     // A cancelled future empty interval must stay absent on the next edit/save.
-    let repeat:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","is_primary":true}]})).unwrap();
+    let repeat:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
     staff_service::update_staff(&pool, user, repeat, actor)
         .await
         .unwrap();
@@ -463,6 +644,27 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
         same_id, restored_id,
         "same-day explicit reassignment reuses stable unique identity"
     );
+    let old_admin:(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,Option<String>,Option<String>)=sqlx::query_as("SELECT id,started_at,ended_at,position_title,responsibilities FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2").bind(user).bind(admin).fetch_one(&pool).await.unwrap();
+    let active_admin = unit(&pool, None).await;
+    let takeover:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":false},{"organization_unit_id":active_admin,"position_code":"member","is_primary":true},{"organization_unit_id":same_day,"position_code":"member","is_primary":false}]})).unwrap();
+    staff_service::update_staff(&pool, user, takeover, actor)
+        .await
+        .unwrap();
+    let retained_admin:(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,Option<String>,Option<String>)=sqlx::query_as("SELECT id,started_at,ended_at,position_title,responsibilities FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2").bind(user).bind(admin).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        old_admin, retained_admin,
+        "active primary takeover retains inactive source identity, dates and custom facts"
+    );
+    let flags:Vec<(Uuid,bool)>=sqlx::query_as("SELECT organization_unit_id,is_primary FROM organization_members WHERE user_id=$1 AND organization_unit_id=ANY($2)").bind(user).bind([admin,active_admin].as_slice()).fetch_all(&pool).await.unwrap();
+    assert!(flags.contains(&(admin, false)) && flags.contains(&(active_admin, true)));
+    let promote_inactive:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
+    assert!(
+        matches!(
+            staff_service::update_staff(&pool, user, promote_inactive, actor).await,
+            Err(AppError::Conflict(_))
+        ),
+        "retaining an inactive assignment never permits a new promotion"
+    );
     pool.close().await;
 }
 
@@ -487,6 +689,10 @@ async fn organization_membership_permanent_delete_blocks_all_reference_kinds_and
     let u = person(&pool).await;
     add(&pool, u, child, false).await;
     members::remove_member(&pool, child, u).await.unwrap();
+    members::remove_member(&pool, child, u).await.unwrap();
+    members::remove_member(&pool, child, Uuid::now_v7())
+        .await
+        .unwrap();
     assert!(
         matches!(
             units::delete_organization_unit_permanently(&pool, child, actor).await,
@@ -616,6 +822,32 @@ async fn organization_membership_permanent_delete_blocks_all_reference_kinds_and
     .await
     .unwrap();
     assert!(retained);
+    // Same-actor membership writer holds the user first; deletion must wait before unit lock.
+    let own_unit = unit(&pool, None).await;
+    let mut member_writer = pool.begin().await.unwrap();
+    let member_writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *member_writer)
+        .await
+        .unwrap();
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+        .bind(actor)
+        .execute(&mut *member_writer)
+        .await
+        .unwrap();
+    let delete_pool = pool.clone();
+    let own_deletion = tokio::spawn(async move {
+        units::delete_organization_unit_permanently(&delete_pool, own_unit, actor).await
+    });
+    let waiter = observe_blocked_backend(&pool, member_writer_pid, None).await;
+    assert_ne!(waiter, member_writer_pid);
+    assert!(!own_deletion.is_finished());
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,'member')").bind(actor).bind(own_unit).execute(&mut *member_writer).await.unwrap();
+    member_writer.commit().await.unwrap();
+    assert!(
+        matches!(own_deletion.await.unwrap(), Err(AppError::Conflict(_))),
+        "same-actor lock order resolves as a linked-reference conflict, never deadlock"
+    );
+    workflow_selector_reference_cases(&pool, actor).await;
     pool.close().await;
 }
 
@@ -655,6 +887,15 @@ async fn organization_membership_migration_preserves_flags_and_refuses_ambiguous
     .fetch_all(&pool)
     .await
     .unwrap();
+    let orphan_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO process_templates(id,code,version,definition) VALUES($1,'legacy-selector',1,$2)")
+        .bind(orphan_id).bind(sqlx::types::Json(serde_json::json!({"steps":[{"recipients":[{"kind":"organization_unit","organizationUnitId":Uuid::now_v7()}]}]}))).execute(&pool).await.unwrap();
+    let orphan_error = migrate_through(&pool, 132).await.unwrap_err();
+    assert!(orphan_error
+        .to_string()
+        .contains("ORGANIZATION_132_WORKFLOW_SELECTOR_ORPHANS"));
+    sqlx::query("UPDATE process_templates SET definition=$2 WHERE id=$1").bind(orphan_id)
+        .bind(sqlx::types::Json(serde_json::json!({"steps":[{"recipients":[{"kind":"organization_unit","organizationUnitId":a.simple().to_string().to_uppercase()}]}]}))).execute(&pool).await.unwrap();
     migrate_through(&pool, 132).await.unwrap();
     migrate_through(&pool, 132).await.unwrap();
     let after: Vec<String> = sqlx::query_scalar(

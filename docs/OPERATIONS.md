@@ -1735,6 +1735,22 @@ do not restore an older binary against the migrated schema. Confirm one owner pe
 newly created groups in catalog choices, separate member/grant controls and automatic codes
 before ending maintenance.
 
+Migration [132](../backend-school/migrations/132_organization_membership_domains.sql) preserves
+existing membership identities, dates and chosen primary flags while allowing separate learning-area
+and administration primaries. Display aggregation does not create ancestor memberships or grant
+ancestor permissions. Overlapping primary intervals within one domain, malformed Workflow unit
+selectors or selectors pointing to missing units block the migration with bounded finding codes;
+inspect only safe aggregate/error evidence, remediate the affected source explicitly and rerun the
+canonical runner. Never guess a missing primary, discard a selector or change applied SQLx history.
+
+Deploy migration 132, backend, generated API contracts and frontend together under universal
+maintenance. After any tenant applies 132, retain compatible writers and recover by rolling forward:
+old writers assume one global primary and may replace dated membership history. Do not restart an
+older binary against the migrated schema. Permanent unit deletion is separate from deactivation;
+it refuses the school root, linked learning areas, every foreign-key reference and the functional
+Workflow selectors guarded by this migration. Existing history remains authoritative and must not
+be purged to make deletion succeed.
+
 ## Correspondence processes and signing evidence
 
 Migration 121 is additive and preserves existing workflow windows and work assignments.

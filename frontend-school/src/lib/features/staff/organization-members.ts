@@ -1,4 +1,9 @@
-import type { OrganizationMemberItem, OrganizationUnit } from '#lib/api/staff.js';
+import type {
+	OrganizationMemberItem,
+	OrganizationUnit,
+	OrganizationUnitResponse,
+	UpdateStaffRequest
+} from '#lib/api/staff.js';
 import { organizationPositionOptions } from './organization-positions.ts';
 
 export type OrganizationPerson = OrganizationMemberItem & {
@@ -87,4 +92,39 @@ export function organizationPrimaryError(
 				: 'ระบุสังกัดบริหารหลักได้ไม่เกิน 1 หน่วยงาน';
 	}
 	return '';
+}
+
+export type OrganizationAssignmentDraft = {
+	organization_unit_id: string;
+	position_code: string;
+	position_title: string | null;
+	is_primary: boolean;
+	responsibilities: string;
+	storedResponsibilities: string | null;
+};
+export function organizationAssignmentDraft(
+	source: OrganizationUnitResponse
+): OrganizationAssignmentDraft {
+	return {
+		organization_unit_id: source.id,
+		position_code: source.position_code || 'member',
+		position_title: source.position_title,
+		is_primary: source.is_primary || false,
+		responsibilities: source.responsibilities ?? '',
+		storedResponsibilities: source.responsibilities
+	};
+}
+export function organizationAssignmentInput(
+	draft: OrganizationAssignmentDraft
+): NonNullable<UpdateStaffRequest['organization_assignments']>[number] {
+	return {
+		organization_unit_id: draft.organization_unit_id,
+		position_code: draft.position_code,
+		position_title: draft.position_title,
+		is_primary: draft.is_primary,
+		responsibilities:
+			draft.responsibilities === (draft.storedResponsibilities ?? '')
+				? draft.storedResponsibilities
+				: draft.responsibilities
+	};
 }

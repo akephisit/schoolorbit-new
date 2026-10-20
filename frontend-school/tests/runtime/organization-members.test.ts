@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	organizationAssignmentDraft,
+	organizationAssignmentInput,
 	organizationPeople,
 	organizationPrimaryError,
 	setOrganizationPrimary
@@ -105,5 +107,39 @@ test('primary administration and learning area selections remain independent, ac
 			units
 		),
 		/อย่างน้อย/
+	);
+});
+
+test('bulk primary edits preserve unedited custom titles and nullable source responsibilities', () => {
+	const source = {
+		id: 'inactive-area',
+		code: 'SYNTHETIC',
+		name: 'สังกัดเดิม',
+		category: 'academic',
+		unit_type: 'subject_group',
+		subject_group_id: 'area',
+		position_code: 'head',
+		position_title: 'หัวหน้างานที่กำหนดเอง',
+		is_primary: false,
+		responsibilities: null
+	};
+	const draft = organizationAssignmentDraft(source);
+	draft.is_primary = true;
+	assert.deepEqual(organizationAssignmentInput(draft), {
+		organization_unit_id: source.id,
+		position_code: 'head',
+		position_title: source.position_title,
+		is_primary: true,
+		responsibilities: null
+	});
+	const nonempty = organizationAssignmentDraft({ ...source, responsibilities: 'หน้าที่ต้นทาง' });
+	nonempty.is_primary = true;
+	assert.equal(organizationAssignmentInput(nonempty).responsibilities, 'หน้าที่ต้นทาง');
+	nonempty.responsibilities = '';
+	assert.equal(organizationAssignmentInput(nonempty).responsibilities, '');
+	assert.equal(
+		organizationAssignmentInput(organizationAssignmentDraft({ ...source, responsibilities: '' }))
+			.responsibilities,
+		''
 	);
 });

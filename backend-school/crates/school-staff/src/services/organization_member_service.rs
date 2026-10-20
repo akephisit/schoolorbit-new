@@ -253,7 +253,9 @@ pub async fn remove_member(
     user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
-    lock_member_user(&mut tx, user_id).await?;
+    if !try_lock_member_user(&mut tx, user_id).await? {
+        return Ok(());
+    }
     sqlx::query(
         "UPDATE organization_members SET ended_at = greatest(started_at, CURRENT_DATE)
          WHERE user_id = $1 AND organization_unit_id = $2
@@ -267,15 +269,22 @@ pub async fn remove_member(
     Ok(())
 }
 
-pub(super) async fn lock_member_user(
+async fn try_lock_member_user(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR UPDATE")
         .bind(user_id)
         .fetch_optional(&mut **tx)
         .await?;
-    if found.is_none() {
+    Ok(found.is_some())
+}
+
+pub(super) async fn lock_member_user(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    if !try_lock_member_user(tx, user_id).await? {
         return Err(AppError::NotFound("ไม่พบบุคลากร".into()));
     }
     Ok(())

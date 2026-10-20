@@ -402,7 +402,8 @@ async fn validate_active_organization_assignments(
               AND m.started_at < coalesce(m.ended_at, 'infinity'::date)
               AND m.position_code = requested.position_code
               AND m.position_title IS NOT DISTINCT FROM requested.position_title
-              AND m.is_primary = requested.is_primary
+              AND (m.is_primary = requested.is_primary
+                   OR (m.is_primary IS TRUE AND requested.is_primary IS FALSE))
               AND m.responsibilities IS NOT DISTINCT FROM requested.responsibilities
         )
         FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::bool[], $5::text[])

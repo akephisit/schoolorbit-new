@@ -55115,6 +55115,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "learningAreaId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "members": {
             "items": {
               "$ref": "#/components/schemas/PublicOrganizationMember"
@@ -55137,6 +55144,7 @@
         },
         "required": [
           "id",
+          "learningAreaId",
           "parentId",
           "name",
           "unitType",
@@ -109155,7 +109163,7 @@
             }
           },
           {
-            "description": "Include direct child units",
+            "description": "Include all active administrative descendants; assignments retain their source unit",
             "in": "query",
             "name": "include_children",
             "required": false,
@@ -109406,6 +109414,78 @@
               }
             },
             "description": "Membership not found"
+          }
+        },
+        "tags": [
+          "organization"
+        ]
+      }
+    },
+    "/api/organization/units/{id}/permanent": {
+      "delete": {
+        "operationId": "deleteOrganizationUnitPermanently",
+        "parameters": [
+          {
+            "description": "Organization unit ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Unreferenced administrative unit permanently deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Organization unit not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Protected unit or linked records prevent deletion"
           }
         },
         "tags": [

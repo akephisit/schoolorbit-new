@@ -284,6 +284,8 @@
 		const current = () => !disposed && epoch === ownerEpoch;
 		const body = {
 			position_code: editForm.position_code,
+			position_title: member.position_title,
+			responsibilities: member.responsibilities,
 			is_primary: editForm.is_primary,
 			new_organization_unit_id:
 				includeChildren && editForm.new_organization_unit_id !== member.organization_unit_id
@@ -445,7 +447,7 @@
 				<Badge variant="outline">{membersLoaded ? activeMemberCount : '—'} คน</Badge>
 				<Badge variant="secondary">{membersLoaded ? leaderCount : '—'} ผู้บริหาร/หัวหน้า</Badge>
 				{#if includeChildren}
-					<Badge variant="outline">รวม {childUnits.length} หน่วยงานย่อย</Badge>
+					<Badge variant="outline">รวมหน่วยงานย่อยทุกระดับ</Badge>
 				{/if}
 			</div>
 		</div>
@@ -605,6 +607,7 @@
 								type="button"
 								variant="outline"
 								role="combobox"
+								aria-label="เลือกบุคลากร"
 								aria-expanded={staffPickerOpen}
 								class="w-full justify-between font-normal"
 								{...props}

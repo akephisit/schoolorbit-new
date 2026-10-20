@@ -524,6 +524,15 @@ pub async fn delete_organization_unit_permanently(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
+    // Audit takes an actor FK lock. Acquire it before unit locks, matching membership
+    // writers' user-first order so deleting an actor's own unit cannot deadlock.
+    let actor: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR KEY SHARE")
+        .bind(actor_user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if actor.is_none() {
+        return Err(AppError::NotFound("ไม่พบผู้ดำเนินการ".into()));
+    }
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
         .execute(&mut *tx)
         .await?;
@@ -549,6 +558,7 @@ pub async fn delete_organization_unit_permanently(
             "permissions" => "สิทธิ์ของหน่วยงาน",
             "delegations" => "ประวัติการมอบหมายสิทธิ์",
             "roles" => "บทบาทที่อ้างอิงหน่วยงาน",
+            "workflow_records" => "กระบวนงานหรือการกำหนดเส้นทางที่อ้างอิงหน่วยงาน",
             _ => "ข้อมูลการปฏิบัติงานที่อ้างอิงหน่วยงาน",
         };
         return Err(AppError::Conflict(format!(

@@ -499,7 +499,7 @@
 							>{/if}
 						{#if staff.organization_units.length > 0}
 							<div class="space-y-3">
-								{#each staff.organization_units as dept (dept.id)}
+								{#each staff.organization_units as dept, index (dept.id + ':' + index)}
 									<div
 										class="px-4 py-3 rounded-lg border border-border {dept.is_primary
 											? 'bg-primary/5 border-primary/30'
