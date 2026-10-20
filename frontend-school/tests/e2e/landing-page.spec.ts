@@ -869,7 +869,12 @@ test('all current positions are grouped and retain custom position titles', asyn
 			.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
 			.getByTestId('public-person')
 	).toHaveCount(9);
-	await expect(page.getByText('ครูฝ่ายวิชาการ', { exact: true })).toBeVisible();
+	const customTitlePerson = page
+		.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
+		.getByTestId('public-person')
+		.filter({ has: page.getByText('สมาชิก หนึ่ง', { exact: true }) });
+	await expect(customTitlePerson).toHaveCount(1);
+	await expect(customTitlePerson.getByText(/^ครูฝ่ายวิชาการ\s*กลุ่มบริหารวิชาการ$/)).toBeVisible();
 });
 
 test('branding shares one read, and the hero crest follows text height without a frame', async ({
@@ -1040,7 +1045,7 @@ for (const width of [320, 375, 768, 1280]) {
 		await expect(
 			page
 				.getByRole('list', { name: 'สมาชิก กลุ่มบริหารวิชาการ', exact: true })
-				.getByText('เจ้าหน้าที่วัดผล', { exact: true })
+				.getByText(/^เจ้าหน้าที่วัดผล\s*งานวัดผล$/)
 		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'กลุ่มสาระคณิตศาสตร์', exact: true })
