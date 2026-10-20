@@ -149,10 +149,6 @@ test('chosen fills remain exact with readable text, hover and boundaries across 
 						tokens.secondary,
 						tokens.accent
 					]) {
-						assert.ok(
-							contrastRatio(tokens.input, surface) >= 3,
-							`${mode} ${primary} input boundary on ${surface}`
-						);
 						for (const text of [tokens.foreground, tokens.mutedForeground])
 							assert.ok(
 								contrastRatio(text, surface) >= 4.5,
@@ -181,20 +177,31 @@ test('chosen fills remain exact with readable text, hover and boundaries across 
 	}
 });
 
-test('canvas, cards, trays, selection and hover remain separate with extreme custom brands', () => {
+test('neutral surfaces and quiet outlines follow the pre-appearance design across school brands', () => {
 	for (const mode of ['light', 'dark'] as const) {
+		const baseline = appearanceTokens(DEFAULT_APPEARANCE, mode);
 		for (const palette of ['teal', 'blue', 'purple'] as const) {
 			for (const primary of [null, '#ffffff', '#000000', '#dbeafe', '#fce7f3']) {
 				const tokens = appearanceTokens({ ...DEFAULT_APPEARANCE, palette, primary }, mode);
-				assert.ok(
-					contrastRatio(tokens.background, tokens.card) >= 1.1,
-					`${mode} ${palette} canvas/card`
-				);
+				for (const role of [
+					'background',
+					'card',
+					'secondary',
+					'muted',
+					'accent',
+					'border',
+					'input'
+				] as const)
+					assert.equal(
+						tokens[role],
+						baseline[role],
+						`${mode} ${palette} ${primary} neutral ${role}`
+					);
+				assert.notEqual(tokens.background, tokens.card);
 				assert.notEqual(tokens.muted, tokens.card);
-				assert.notEqual(tokens.muted, tokens.secondary);
+				assert.equal(tokens.secondary, tokens.muted);
 				assert.notEqual(tokens.secondary, tokens.accent);
-				assert.notEqual(tokens.accent, tokens.card);
-				assert.notEqual(tokens.input, tokens.border);
+				assert.equal(tokens.input, tokens.border);
 			}
 		}
 	}

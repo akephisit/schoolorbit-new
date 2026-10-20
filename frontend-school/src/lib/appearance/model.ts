@@ -5,21 +5,21 @@ export const PALETTES = [
 		label: 'เขียวอมฟ้า',
 		description: 'อบอุ่น สงบ เป็นมิตร',
 		primary: '#167166',
-		background: '#edf2f1'
+		background: '#f9fcff'
 	},
 	{
 		value: 'blue',
 		label: 'น้ำเงิน',
 		description: 'ชัดเจน น่าเชื่อถือ',
 		primary: '#245fc2',
-		background: '#edf1f8'
+		background: '#f9fcff'
 	},
 	{
 		value: 'purple',
 		label: 'ม่วง',
 		description: 'ร่วมสมัย มีเอกลักษณ์',
 		primary: '#7850a5',
-		background: '#f2eef6'
+		background: '#f9fcff'
 	}
 ] as const;
 export const FONTS = [
@@ -110,18 +110,14 @@ export function contrastRatio(first: string, second: string): number {
 }
 export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	const dark = mode === 'dark';
-	const palette = PALETTES.find((item) => item.value === appearance.palette) ?? PALETTES[0];
 	const requested = palettePrimary(appearance);
-	const card = dark ? '#1c2631' : '#ffffff';
-	const background = dark ? '#111820' : palette.background;
-	const foreground = dark ? '#e8edf4' : '#202d3d';
-	const primaryForeground = dark ? '#111820' : '#ffffff';
-	const muted = dark ? '#273440' : '#e4eaf0';
-	const surfaces = (primary: string) => ({
-		secondary: mix(card, primary, dark ? 0.18 : 0.14),
-		accent: mix(card, primary, dark ? 0.08 : 0.06),
-		welcome: mix(card, primary, dark ? 0.12 : 0.09)
-	});
+	const card = dark ? '#0e171e' : '#ffffff';
+	const background = dark ? '#040c13' : '#f9fcff';
+	const foreground = dark ? '#e9f0f5' : '#0e171e';
+	const primaryForeground = dark ? '#040c13' : '#ffffff';
+	const muted = dark ? '#19232a' : '#ecf3f8';
+	// Neutral visual roles follow the pre-appearance design, independently of school brand.
+	const surfaces = { secondary: muted, accent: dark ? '#14242f' : '#e3f1fb', welcome: muted };
 	let primary = requested;
 	for (let step = 0; step <= 100; step++) {
 		primary = mix(requested, dark ? '#ffffff' : '#000000', step / 100);
@@ -129,7 +125,7 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 			card,
 			background,
 			muted,
-			...Object.values(surfaces(primary)),
+			...Object.values(surfaces),
 			// Reusable low-opacity selected/status treatments can sit on neutral trays or hovered rows.
 			mix(muted, primary, 0.2)
 		];
@@ -141,14 +137,8 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		)
 			break;
 	}
-	// Tint with the readable accent so white/black brand fills still have visible surface roles.
-	const tinted = surfaces(primary);
-	const controlSurfaces = [card, background, muted, ...Object.values(tinted)];
-	let input = foreground;
-	for (let step = 30; step <= 100; step++) {
-		input = mix(card, foreground, step / 100);
-		if (controlSurfaces.every((surface) => contrastRatio(input, surface) >= 3)) break;
-	}
+	const controlSurfaces = [card, background, muted, ...Object.values(surfaces)];
+	const border = dark ? '#252f37' : '#d8dfe4';
 	const primaryFillForeground =
 		contrastRatio(requested, '#000000') >= contrastRatio(requested, '#ffffff')
 			? '#000000'
@@ -188,11 +178,11 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		background,
 		foreground,
 		card,
-		...tinted,
+		...surfaces,
 		muted,
-		border: dark ? '#3a4858' : '#d2dbe4',
-		input,
-		mutedForeground: dark ? '#bac5d2' : '#526174',
+		border,
+		input: border,
+		mutedForeground: dark ? '#85919a' : '#59656e',
 		warning: statusInk(dark ? '#efc37c' : '#98651b'),
 		warningSurface: dark ? '#453d2c' : '#fcf3df',
 		destructive: statusInk(dark ? '#f4a49a' : '#b54441'),

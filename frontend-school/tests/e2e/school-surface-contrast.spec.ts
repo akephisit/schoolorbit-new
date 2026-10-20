@@ -84,13 +84,19 @@ async function paint(locator: Locator) {
 		return { background, foreground, border: hex(), surface, shadow: css.boxShadow };
 	});
 }
-async function boundary(locator: Locator) {
+async function visibleControl(locator: Locator) {
 	await expect(locator).toBeVisible();
 	const colors = await paint(locator);
-	expect(
-		contrastRatio(colors.border, colors.surface),
-		JSON.stringify(colors)
-	).toBeGreaterThanOrEqual(3);
+	const outline = await locator.evaluate((element) => {
+		const css = getComputedStyle(element);
+		return { width: Number.parseFloat(css.borderTopWidth), style: css.borderTopStyle };
+	});
+	// Quiet outlined controls use one thin line; filled secondary controls identify their surface.
+	if (outline.width > 0) {
+		expect(outline.width).toBe(1);
+		expect(outline.style).toBe('solid');
+		expect(colors.border).not.toBe(colors.surface);
+	} else expect(colors.background).not.toBe(colors.surface);
 	return colors;
 }
 async function readable(locator: Locator) {
@@ -121,11 +127,19 @@ async function settle(locator: Locator) {
 async function selected(locator: Locator) {
 	await settle(locator);
 	const before = await readable(locator);
-	expect(before.shadow).toContain('inset');
+	expect(before.shadow).not.toContain('inset');
+	expect(
+		await locator.evaluate(
+			(element) =>
+				element.getAttribute('aria-pressed') === 'true' ||
+				element.getAttribute('aria-current') === 'page' ||
+				['active', 'on'].includes(element.getAttribute('data-state') ?? '')
+		)
+	).toBe(true);
 	await locator.hover();
 	await settle(locator);
 	await expect.poll(async () => (await paint(locator)).background).toBe(before.background);
-	expect((await paint(locator)).shadow).toContain('inset');
+	expect((await paint(locator)).shadow).not.toContain('inset');
 }
 async function open(page: Page, path: string, mode: 'light' | 'dark', width: number) {
 	await page.setViewportSize({ width, height: 1000 });
@@ -146,7 +160,7 @@ async function open(page: Page, path: string, mode: 'light' | 'dark', width: num
 }
 
 for (const { name, appearance } of appearances) {
-	test(`${name} shared controls keep visible boundaries, focus and selected markers`, async ({
+	test(`${name} shared controls keep quiet surfaces, visible focus and selected states`, async ({
 		page
 	}) => {
 		test.setTimeout(120_000);
@@ -155,7 +169,7 @@ for (const { name, appearance } of appearances) {
 			for (const width of widths) {
 				await open(page, '/__appearance-primitives', mode, width);
 				const card = await paint(page.getByTestId('controls-card'));
-				expect(contrastRatio(card.background, card.surface)).toBeGreaterThanOrEqual(1.1);
+				expect(card.background).not.toBe(card.surface);
 				expect((await paint(page.getByTestId('controls-tray'))).background).not.toBe(
 					card.background
 				);
@@ -170,7 +184,7 @@ for (const { name, appearance } of appearances) {
 					'surface-switch',
 					'tray-input'
 				])
-					await boundary(page.getByTestId(name));
+					await visibleControl(page.getByTestId(name));
 				for (const name of [
 					'surface-outline',
 					'surface-secondary',
@@ -181,7 +195,9 @@ for (const { name, appearance } of appearances) {
 				await expect(page.getByTestId('surface-disabled')).toBeDisabled();
 				const input = page.getByTestId('surface-input');
 				await input.focus();
-				expect((await boundary(input)).shadow).not.toBe('none');
+				const focus = await visibleControl(input);
+				expect(focus.shadow).not.toBe('none');
+				expect(contrastRatio(focus.border, focus.surface)).toBeGreaterThanOrEqual(3);
 				await page.keyboard.type('รายการทดสอบ');
 				await expect(input).toHaveValue('รายการทดสอบ');
 				for (const name of ['surface-secondary', 'surface-pressed']) {
@@ -195,11 +211,12 @@ for (const { name, appearance } of appearances) {
 					const control = page.getByTestId(name);
 					await control.click();
 					await expect(control).toBeChecked();
-					await boundary(control);
+					await visibleControl(control);
 				}
 				const primary = await readable(page.getByTestId('primary-button'));
 				if (appearance.primary) expect(primary.background).toBe(appearance.primary);
-				await boundary(page.getByTestId('primary-button'));
+				const fill = await visibleControl(page.getByTestId('primary-button'));
+				expect(contrastRatio(fill.border, fill.surface)).toBeGreaterThanOrEqual(3);
 			}
 	});
 }
@@ -355,7 +372,7 @@ for (const { name, appearance } of appearances) {
 				const kind = page.getByRole('group', { name: 'ประเภทรอบเช็คชื่อ' });
 				await selected(kind.getByRole('button', { name: 'เข้าโรงเรียน', exact: true }));
 				const unselected = kind.getByRole('button', { name: 'รายคาบ', exact: true }),
-					ordinary = await boundary(unselected);
+					ordinary = await visibleControl(unselected);
 				await unselected.hover();
 				await expect
 					.poll(async () => (await paint(unselected)).background)
@@ -407,9 +424,7 @@ for (const { name, appearance } of appearances) {
 						await settle(status);
 						const hover = await readable(status);
 						expect(hover.foreground).toBe(before.foreground);
-						expect(hover.shadow).toContain('inset');
-						const ink = await status.evaluate((element) => getComputedStyle(element).color);
-						expect(hover.shadow).toContain(ink);
+						expect(hover.shadow).not.toContain('inset');
 						expect(
 							await status.evaluate((element) => getComputedStyle(element).backgroundColor)
 						).toBe(expected);
@@ -428,11 +443,12 @@ for (const { name, appearance } of appearances) {
 				expect(chosen.background).not.toBe(neutral.background);
 				const reason = page.getByLabel('เหตุผลแก้ไข / งดคาบ', { exact: true });
 				await reason.fill('ปรับผลจากข้อมูลทดสอบ');
-				await boundary(reason);
+				await visibleControl(reason);
 				const save = page.getByRole('button', { name: 'บันทึก', exact: true });
 				await expect(save).toBeEnabled();
 				await readable(save);
-				await boundary(save);
+				const saveColors = await visibleControl(save);
+				expect(contrastRatio(saveColors.border, saveColors.surface)).toBeGreaterThanOrEqual(3);
 				if (width === widths[0]) {
 					const count = writes.length;
 					await save.click();
@@ -500,3 +516,45 @@ for (const role of ['public', 'staff', 'student'] as const) {
 			}
 	});
 }
+
+// A bounded preview of the restored neutral design; workflow and broad brand coverage stay above.
+test('minimal restored preview shows login and attendance at desktop and mobile', async ({
+	page
+}, testInfo) => {
+	test.setTimeout(90_000);
+	fixture.set({ appearance: { ...DEFAULT_APPEARANCE, palette: 'blue' }, revision: 9 });
+	for (const width of [1543, 390]) {
+		await open(page, '/login', 'light', width);
+		const login = page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true });
+		await expect(login).toBeVisible();
+		await readable(login);
+		await page.screenshot({
+			path: screenshotPath(testInfo, `login-light-${width}.png`),
+			fullPage: true
+		});
+	}
+	await mockAttendanceSurface(page);
+	for (const mode of modes)
+		for (const width of [1543, 390]) {
+			await open(page, attendancePath, mode, width);
+			if (width < 1280) {
+				await page.getByRole('button', { name: 'รอบเช็คชื่อ', exact: true }).click();
+				await page.getByRole('option', { name: /08:00.*เข้าโรงเรียน ม.1\/1/ }).click();
+			} else await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน ม.1\/1/ }).click();
+			const result = page
+				.getByRole('group', { name: 'ผลของ นักเรียนทดสอบ', exact: true })
+				.getByRole('radio', { name: 'มา', exact: true });
+			await result.click();
+			await expect(result).toBeChecked();
+			await settle(result);
+			await readable(result);
+			await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+			await page.getByRole('main').evaluate((element) => {
+				element.scrollTop = 0;
+			});
+			await page.screenshot({
+				path: screenshotPath(testInfo, `attendance-${mode}-${width}.png`),
+				fullPage: true
+			});
+		}
+});

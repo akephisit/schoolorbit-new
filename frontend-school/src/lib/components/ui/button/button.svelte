@@ -13,9 +13,9 @@
 				destructive:
 					'bg-destructive hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 text-destructive-foreground shadow-xs',
 				outline:
-					'border-input bg-card hover:bg-accent hover:text-accent-foreground border shadow-xs aria-pressed:bg-secondary aria-pressed:border-primary aria-pressed:font-semibold aria-pressed:shadow-[inset_0_-2px_0_var(--primary)] aria-pressed:hover:bg-secondary aria-[current=page]:bg-secondary aria-[current=page]:border-primary aria-[current=page]:font-semibold aria-[current=page]:shadow-[inset_0_-2px_0_var(--primary)] aria-[current=page]:hover:bg-secondary',
+					'border-input bg-card hover:bg-accent hover:text-accent-foreground border shadow-xs aria-pressed:bg-secondary aria-pressed:hover:bg-secondary aria-[current=page]:bg-secondary aria-[current=page]:hover:bg-secondary',
 				secondary:
-					'border border-input bg-secondary text-secondary-foreground hover:bg-accent shadow-xs aria-pressed:border-primary aria-pressed:font-semibold aria-pressed:shadow-[inset_0_-2px_0_var(--primary)] aria-pressed:hover:bg-secondary aria-[current=page]:border-primary aria-[current=page]:font-semibold aria-[current=page]:shadow-[inset_0_-2px_0_var(--primary)] aria-[current=page]:hover:bg-secondary',
+					'bg-secondary text-secondary-foreground hover:bg-accent shadow-xs aria-pressed:hover:bg-secondary aria-[current=page]:hover:bg-secondary',
 				ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
 				link: 'text-primary underline-offset-4 hover:underline'
 			},

@@ -7,37 +7,37 @@
 :root {
 	--radius: 0.625rem;
 	/* Default school appearance fallback - Light Mode */
-	--background: #edf2f1;
-	--foreground: #202d3d;
+	--background: #f9fcff;
+	--foreground: #0e171e;
 	--card: #ffffff;
-	--card-foreground: #202d3d;
+	--card-foreground: #0e171e;
 	--popover: #ffffff;
-	--popover-foreground: #202d3d;
+	--popover-foreground: #0e171e;
 	/* Primary: default school teal */
-	--primary: #136057;
+	--primary: #14665c;
 	--primary-foreground: #ffffff;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
 	--primary-fill-border: #167166;
 	/* Secondary: selected control surface */
-	--secondary: #dee9e7;
-	--secondary-foreground: #202d3d;
+	--secondary: #ecf3f8;
+	--secondary-foreground: #0e171e;
 	/* Muted: neutral tray surface */
-	--muted: #e4eaf0;
-	--muted-foreground: #526174;
+	--muted: #ecf3f8;
+	--muted-foreground: #59656e;
 	/* Accent: interactive hover surface */
-	--accent: #f1f5f5;
-	--accent-foreground: #202d3d;
+	--accent: #e3f1fb;
+	--accent-foreground: #0e171e;
 	/* Destructive: Warm Red */
-	--destructive: #913634;
+	--destructive: #9a3a37;
 	--destructive-foreground: #ffffff;
-	--success: #266140;
-	--warning: #754e15;
-	/* Subtle dividers and contrast-checked control boundaries */
-	--border: #d2dbe4;
-	--input: #7e858e;
-	--ring: #136057;
+	--success: #276442;
+	--warning: #7b5216;
+	/* Quiet pre-appearance dividers and control outlines */
+	--border: #d8dfe4;
+	--input: #d8dfe4;
+	--ring: #14665c;
 	/* Charts: Educational Color Palette */
 	--chart-1: oklch(0.55 0.2 250);
 	/* Blue */
@@ -51,17 +51,17 @@
 	/* Red-Orange */
 	/* Sidebar Colors */
 	--sidebar: #ffffff;
-	--sidebar-foreground: #202d3d;
-	--sidebar-primary: #136057;
+	--sidebar-foreground: #0e171e;
+	--sidebar-primary: #14665c;
 	--sidebar-primary-foreground: #ffffff;
-	--sidebar-accent: #f1f5f5;
-	--sidebar-accent-foreground: #202d3d;
-	--sidebar-border: #d2dbe4;
-	--sidebar-ring: #136057;
+	--sidebar-accent: #e3f1fb;
+	--sidebar-accent-foreground: #0e171e;
+	--sidebar-border: #d8dfe4;
+	--sidebar-ring: #14665c;
 	--warning-surface: #fcf3df;
 	--destructive-surface: #fbecea;
 	--success-surface: #e9f3eb;
-	--welcome: #eaf1f0;
+	--welcome: #ecf3f8;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;
@@ -70,37 +70,37 @@
 
 .dark {
 	/* Default school appearance fallback - Dark Mode */
-	--background: #111820;
-	--foreground: #e8edf4;
-	--card: #1c2631;
-	--card-foreground: #e8edf4;
-	--popover: #1c2631;
-	--popover-foreground: #e8edf4;
+	--background: #040c13;
+	--foreground: #e9f0f5;
+	--card: #0e171e;
+	--card-foreground: #e9f0f5;
+	--popover: #0e171e;
+	--popover-foreground: #e9f0f5;
 	/* Primary: readable default school teal */
-	--primary: #a4c8c3;
-	--primary-foreground: #111820;
+	--primary: #7dafa9;
+	--primary-foreground: #040c13;
 	--primary-fill: #167166;
 	--primary-fill-foreground: #ffffff;
 	--primary-fill-hover: #14685e;
-	--primary-fill-border: #a4c8c3;
+	--primary-fill-border: #7dafa9;
 	/* Secondary: selected control surface */
-	--secondary: #34434b;
-	--secondary-foreground: #e8edf4;
+	--secondary: #19232a;
+	--secondary-foreground: #e9f0f5;
 	/* Muted: neutral tray surface */
-	--muted: #273440;
-	--muted-foreground: #bac5d2;
+	--muted: #19232a;
+	--muted-foreground: #85919a;
 	/* Accent: interactive hover surface */
-	--accent: #27333d;
-	--accent-foreground: #e8edf4;
+	--accent: #14242f;
+	--accent-foreground: #e9f0f5;
 	/* Destructive: Softer Red for Dark Mode */
-	--destructive: #f5aca3;
+	--destructive: #f4a49a;
 	--destructive-foreground: #39201d;
 	--success: #91d4ac;
 	--warning: #efc37c;
 	/* Borders & Inputs */
-	--border: #3a4858;
-	--input: #868d96;
-	--ring: #a4c8c3;
+	--border: #252f37;
+	--input: #252f37;
+	--ring: #7dafa9;
 	/* Charts: Vibrant but Comfortable */
 	--chart-1: oklch(0.6 0.22 250);
 	--chart-2: oklch(0.65 0.2 160);
@@ -108,18 +108,18 @@
 	--chart-4: oklch(0.65 0.22 290);
 	--chart-5: oklch(0.65 0.2 30);
 	/* Sidebar Colors for Dark Mode */
-	--sidebar: #1c2631;
-	--sidebar-foreground: #e8edf4;
-	--sidebar-primary: #a4c8c3;
-	--sidebar-primary-foreground: #111820;
-	--sidebar-accent: #27333d;
-	--sidebar-accent-foreground: #e8edf4;
-	--sidebar-border: #3a4858;
-	--sidebar-ring: #a4c8c3;
+	--sidebar: #0e171e;
+	--sidebar-foreground: #e9f0f5;
+	--sidebar-primary: #7dafa9;
+	--sidebar-primary-foreground: #040c13;
+	--sidebar-accent: #14242f;
+	--sidebar-accent-foreground: #e9f0f5;
+	--sidebar-border: #252f37;
+	--sidebar-ring: #7dafa9;
 	--warning-surface: #453d2c;
 	--destructive-surface: #4a3531;
 	--success-surface: #243c2d;
-	--welcome: #2c3943;
+	--welcome: #19232a;
 	--school-page-gap: 1.5rem;
 	--school-page-padding: 1.5rem;
 	--school-card-padding: 1.5rem;
