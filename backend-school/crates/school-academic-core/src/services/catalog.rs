@@ -24,6 +24,86 @@ const SUBJECT_COLUMNS: &str =
 const ACTIVITY_COLUMNS: &str =
     "id, code, activity_type, owning_organization_unit_id, archived_at, row_version, created_at, updated_at";
 
+/// The school civil date used for subject catalog eligibility.
+pub fn subject_catalog_today() -> NaiveDate {
+    subject_catalog_date_at(chrono::Utc::now())
+}
+
+fn subject_catalog_date_at(now: chrono::DateTime<chrono::Utc>) -> NaiveDate {
+    now.with_timezone(&chrono_tz::Asia::Bangkok).date_naive()
+}
+
+#[derive(sqlx::FromRow)]
+struct SubjectRevisionSelection {
+    id: Uuid,
+    subject_id: Uuid,
+    version_no: i32,
+    effective_from: NaiveDate,
+    effective_until: Option<NaiveDate>,
+}
+
+fn select_current_subject_revision<'a, T: 'a>(
+    versions: impl Iterator<Item = &'a T>,
+    today: NaiveDate,
+    dates: impl Fn(&T) -> (NaiveDate, Option<NaiveDate>, i32),
+) -> Option<&'a T> {
+    versions
+        .filter(|version| {
+            let (from, until, _) = dates(version);
+            from <= today && until.is_none_or(|until| today < until)
+        })
+        .max_by_key(|version| {
+            let (from, _, revision) = dates(version);
+            (from, revision)
+        })
+}
+
+/// Current published IDs only: no upcoming/expired fallback. Callers making a write
+/// decision hold the affected stable-subject locks until their transaction commits.
+pub async fn current_subject_version_ids<'e, E>(
+    executor: E,
+    subject_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Uuid>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let versions = sqlx::query_as::<_, SubjectRevisionSelection>(
+        "SELECT id,subject_id,version_no,effective_from,effective_until FROM subject_versions WHERE subject_id=ANY($1) AND status='published'",
+    ).bind(subject_ids).fetch_all(executor).await?;
+    let mut grouped = HashMap::<Uuid, Vec<SubjectRevisionSelection>>::new();
+    for version in versions {
+        grouped.entry(version.subject_id).or_default().push(version);
+    }
+    let today = subject_catalog_today();
+    Ok(grouped
+        .iter()
+        .filter_map(|(subject_id, versions)| {
+            select_current_subject_revision(versions.iter(), today, |version| {
+                (
+                    version.effective_from,
+                    version.effective_until,
+                    version.version_no,
+                )
+            })
+            .map(|version| (*subject_id, version.id))
+        })
+        .collect())
+}
+
+/// Match the lock used by subject revision commands, in a deterministic multi-subject order.
+pub async fn lock_subjects_for_revision_selection(
+    transaction: &mut Transaction<'_, Postgres>,
+    subject_ids: &[Uuid],
+) -> Result<(), AppError> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM subjects WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+    )
+    .bind(subject_ids)
+    .fetch_all(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
 pub fn owner_allowed(filter: &AcademicResourceListFilter, owner: Option<Uuid>) -> bool {
     filter.includes_school_owned
         || owner.is_some_and(|owner_id| filter.allowed_organization_unit_ids().contains(&owner_id))
@@ -1067,42 +1147,41 @@ fn select_subject_display(
         .iter()
         .filter(|version| version.status == VersionStatus::Published)
         .collect::<Vec<_>>();
-    let display = published
-        .iter()
-        .copied()
-        .filter(|version| {
-            version.effective_from <= today
-                && version.effective_until.is_none_or(|until| today < until)
-        })
-        .max_by_key(|version| (version.effective_from, version.version_no))
-        .map(|version| (version, CatalogDisplayState::Current))
-        .or_else(|| {
-            published
-                .iter()
-                .copied()
-                .filter(|version| version.effective_from > today)
-                .min_by_key(|version| {
-                    (
-                        version.effective_from,
-                        std::cmp::Reverse(version.version_no),
-                    )
-                })
-                .map(|version| (version, CatalogDisplayState::Upcoming))
-        })
-        .or_else(|| {
-            published
-                .iter()
-                .copied()
-                .filter(|version| version.effective_until.is_some_and(|until| until <= today))
-                .max_by_key(|version| {
-                    (
-                        version.effective_until,
-                        version.effective_from,
-                        version.version_no,
-                    )
-                })
-                .map(|version| (version, CatalogDisplayState::Expired))
-        });
+    let display = select_current_subject_revision(published.iter().copied(), today, |version| {
+        (
+            version.effective_from,
+            version.effective_until,
+            version.version_no,
+        )
+    })
+    .map(|version| (version, CatalogDisplayState::Current))
+    .or_else(|| {
+        published
+            .iter()
+            .copied()
+            .filter(|version| version.effective_from > today)
+            .min_by_key(|version| {
+                (
+                    version.effective_from,
+                    std::cmp::Reverse(version.version_no),
+                )
+            })
+            .map(|version| (version, CatalogDisplayState::Upcoming))
+    })
+    .or_else(|| {
+        published
+            .iter()
+            .copied()
+            .filter(|version| version.effective_until.is_some_and(|until| until <= today))
+            .max_by_key(|version| {
+                (
+                    version.effective_until,
+                    version.effective_from,
+                    version.version_no,
+                )
+            })
+            .map(|version| (version, CatalogDisplayState::Expired))
+    });
     match display {
         Some((version, state)) => (Some(version.clone()), state, draft_count),
         None => (None, CatalogDisplayState::Unpublished, draft_count),
@@ -1541,3 +1620,7 @@ pub async fn subject_groups_for_versions(
     .fetch_all(pool)
     .await?)
 }
+
+#[cfg(test)]
+#[path = "catalog_revision_selection_tests.rs"]
+mod revision_selection_tests;

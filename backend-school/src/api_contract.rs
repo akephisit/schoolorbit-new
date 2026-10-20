@@ -4192,6 +4192,35 @@ mod tests {
     }
 
     #[test]
+    fn curriculum_current_subject_metadata_is_typed_without_changing_save_inputs() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+        for schema in [
+            "CurriculumCatalogVersionOption",
+            "CurriculumStructureRequirement",
+        ] {
+            assert_eq!(schemas[schema]["properties"]["catalogId"]["format"], "uuid");
+            assert!(schemas[schema]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("catalogId")));
+        }
+        assert_eq!(
+            schemas["CurriculumCatalogVersionOption"]["properties"]["selectableForNewRequirement"]
+                ["type"],
+            "boolean"
+        );
+        assert_eq!(
+            schemas["CurriculumStructureRequirement"]["properties"]["versionNo"]["type"],
+            "integer"
+        );
+        let input = &schemas["CurriculumStructureRequirementInput"]["properties"];
+        assert!(input.get("catalogId").is_none());
+        assert!(input.get("versionNo").is_none());
+        assert_eq!(input["catalogVersionId"]["format"], "uuid");
+    }
+
+    #[test]
     fn curriculum_alignment_and_selected_program_copy_are_typed() {
         let document = school_api_value().expect("document should serialize");
         assert!(document["paths"]["/api/academic/delivery/page-view"].is_null());

@@ -303,6 +303,14 @@ range guards or published immutability. New same-date revisions become the defau
 through the subject provider's date and revision selection; prior pinned consumers retain
 their versions.
 
+Curriculum additions use the catalog provider's current published subject revision on
+Bangkok's civil date. Deploy the matching backend, generated contracts and frontend together
+under normal maintenance. Existing curriculum rows, published snapshots, copied programs
+and actual delivery references retain their version IDs; no migration or automatic upgrade
+is part of this rule. Refresh stale options after a conflict and explicitly replace an old
+row when a new revision is wanted. Historical duplicate subject buckets may be retained or
+reduced, but a new tuple cannot introduce another version into a duplicate bucket.
+
 After migration 131, pre-revision School writers are prohibited: they do not enforce semantic
 duplicate rejection under the stable-subject lock. Keep maintenance active on failure and
 recover with the matching release or a compatible forward fix. Do not restore an older writer,

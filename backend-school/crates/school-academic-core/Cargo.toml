@@ -12,6 +12,7 @@ api-docs = [
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 hex = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }

@@ -1,3 +1,5 @@
+import type { CurriculumStructureWorkspace } from '../../../src/lib/api/academic-core.js';
+
 export const ids = {
 	year: '12000000-0000-4000-8000-000000000401',
 	futureYear: '12000000-0000-4000-8000-000000000402',
@@ -10,6 +12,7 @@ export const ids = {
 	grade: '72000000-0000-4000-8000-000000000401',
 	homeroom: '82000000-0000-4000-8000-000000000401',
 	requirement: '92000000-0000-4000-8000-000000000401',
+	catalog: 'a1000000-0000-4000-8000-000000000401',
 	catalogVersion: 'a2000000-0000-4000-8000-000000000401',
 	offering: 'b2000000-0000-4000-8000-000000000401',
 	extraOffering: 'b2000000-0000-4000-8000-000000000402',
@@ -57,7 +60,9 @@ export function curriculumVersion(id: string, status: 'draft' | 'published' = 'p
 	};
 }
 
-export function curriculumStructure(version = curriculumVersion(ids.curriculumVersion)) {
+export function curriculumStructure(
+	version = curriculumVersion(ids.curriculumVersion)
+): CurriculumStructureWorkspace {
 	return {
 		level: version,
 		rowVersion: version.rowVersion,
@@ -111,6 +116,8 @@ export function curriculumStructure(version = curriculumVersion(ids.curriculumVe
 				termSlotId: 'e2000000-0000-4000-8000-000000000401',
 				resourceKind: 'course',
 				catalogVersionId: ids.catalogVersion,
+				catalogId: ids.catalog,
+				versionNo: 1,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				requirementKind: 'required',
@@ -118,7 +125,7 @@ export function curriculumStructure(version = curriculumVersion(ids.curriculumVe
 				metrics: {
 					credit: '0.50',
 					totalHours: '20',
-					weeklyUnit: 'periods_per_week',
+					weeklyUnit: 'period',
 					weeklyValue: '1'
 				},
 				displayOrder: 1

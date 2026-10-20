@@ -49,6 +49,7 @@ export type ProgramComparisonCell = {
 export type ProgramComparisonRow = {
 	key: string;
 	catalogVersionId: string;
+	versionNo: number;
 	resourceKind: CurriculumStructureRequirement['resourceKind'];
 	section: CurriculumDocumentSection;
 	code: string;
@@ -161,6 +162,7 @@ export function buildProgramComparison(
 		const row = rows.get(key) ?? {
 			key,
 			catalogVersionId: requirement.catalogVersionId,
+			versionNo: requirement.versionNo,
 			resourceKind: requirement.resourceKind,
 			section: requirement.section,
 			code: requirement.code,

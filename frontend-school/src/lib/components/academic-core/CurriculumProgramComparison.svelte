@@ -51,6 +51,7 @@
 							<Table.Cell class="align-top">
 								<div class="text-xs font-semibold text-primary tabular-nums">{row.code}</div>
 								<div class="mt-1 font-medium">{row.name}</div>
+								<div class="mt-1 text-xs text-muted-foreground">v{row.versionNo}</div>
 								{#if row.isDifferent}
 									<div class="mt-1 text-xs text-amber-700 dark:text-amber-400">
 										ข้อมูลต่างกันระหว่างแผน

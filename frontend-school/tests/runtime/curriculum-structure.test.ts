@@ -105,6 +105,8 @@ function workspace(): CurriculumStructureWorkspace {
 				termSlotId: 'term-1',
 				resourceKind: 'course',
 				catalogVersionId: 'subject-1',
+				catalogId: 'subject-stable-1',
+				versionNo: 1,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				section: 'basic_course',
@@ -131,6 +133,8 @@ function workspace(): CurriculumStructureWorkspace {
 				termSlotId: 'term-1',
 				resourceKind: 'course',
 				catalogVersionId: 'subject-2',
+				catalogId: 'subject-stable-2',
+				versionNo: 2,
 				code: 'ว21201',
 				name: 'วิทยาศาสตร์เพิ่มเติม',
 				section: 'additional_course',
@@ -157,6 +161,8 @@ function workspace(): CurriculumStructureWorkspace {
 				termSlotId: 'term-2',
 				resourceKind: 'course',
 				catalogVersionId: 'subject-1',
+				catalogId: 'subject-stable-1',
+				versionNo: 1,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				section: 'basic_course',
@@ -202,6 +208,7 @@ test('curriculum comparison keeps program assignments independent', () => {
 	assert.deepEqual(mathematics?.cells['program-a']?.termNames, ['ภาคเรียนที่ 1']);
 	assert.deepEqual(mathematics?.cells['program-b']?.termNames, ['ภาคเรียนที่ 2']);
 	assert.equal(mathematics?.isDifferent, true);
+	assert.equal(mathematics?.versionNo, 1);
 });
 
 test('curriculum validation notices collapse duplicate API rows into unique render keys', () => {
