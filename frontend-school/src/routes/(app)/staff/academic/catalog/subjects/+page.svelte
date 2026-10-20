@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
 		createCatalogSubject,
@@ -24,30 +24,21 @@
 		matchesCatalogSearch,
 		optionLabel
 	} from '#lib/academic-core/catalog-presentation.js';
-	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
+	import CatalogVersionHistory, {
+		type CatalogVersionDraft
+	} from '#lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from '@lucide/svelte';
 	import type { PageProps } from './$types';
-
-	type VersionDraft = {
-		name: string;
-		secondaryName: string;
-		exactValue: string;
-		totalValue: string;
-		standardPeriodsPerWeek: string;
-		effectiveFrom: string;
-		effectiveUntil: string;
-		gradeLevelIds: string[];
-		classification: string;
-	};
 
 	const allValue = 'all';
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
@@ -64,6 +55,10 @@
 	let errorMessage = $state('');
 	let mutationError = $state('');
 	let creating = $state(false);
+	let createOpen = $state(false);
+	let filtersOpen = $state(false);
+	let pageNumber = $state(1);
+	const pageSize = 25;
 	let code = $state('');
 	let subjectGroupValue = $state('');
 	let search = $state('');
@@ -76,6 +71,11 @@
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	let historyRevision = 0;
 	let pendingOpenSubjectId = '';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		historyRevision += 1;
+	});
 
 	let subjectItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
@@ -119,6 +119,51 @@
 			})
 	);
 
+	let hasFilters = $derived(
+		search.trim() !== '' ||
+			[typeFilter, subjectGroupFilter, gradeFilter, stateFilter].some((value) => value !== allValue)
+	);
+	let activeFilterLabels = $derived(
+		[
+			typeFilter === allValue ? '' : optionLabel(SUBJECT_TYPE_OPTIONS, typeFilter),
+			subjectGroupFilter === allValue
+				? ''
+				: (subjectGroupOptions.find((option) => option.subjectGroupId === subjectGroupFilter)
+						?.name ?? ''),
+			gradeFilter === allValue
+				? ''
+				: (gradeLevelOptions.find((level) => level.id === gradeFilter)?.name ?? ''),
+			stateFilter === allValue ? '' : displayStateLabel(stateFilter)
+		].filter(Boolean)
+	);
+	let pageCount = $derived(Math.max(1, Math.ceil(filteredSubjects.length / pageSize)));
+	let visibleSubjects = $derived(
+		filteredSubjects.slice((pageNumber - 1) * pageSize, pageNumber * pageSize)
+	);
+
+	function clearFilters() {
+		search = '';
+		typeFilter = allValue;
+		subjectGroupFilter = allValue;
+		gradeFilter = allValue;
+		stateFilter = allValue;
+		pageNumber = 1;
+	}
+
+	function selectState(value: string) {
+		const option = CATALOG_DISPLAY_STATE_OPTIONS.find((item) => item.value === value);
+		if (value === allValue || option) {
+			stateFilter = option?.value ?? allValue;
+			pageNumber = 1;
+		}
+	}
+
+	function subjectGroupName(id: string): string {
+		return (
+			subjectGroupOptions.find((option) => option.subjectGroupId === id)?.name ?? 'ไม่พบกลุ่มสาระ'
+		);
+	}
+
 	function loadOverview() {
 		return invalidate(CATALOG_SUBJECT_OVERVIEW_DEPENDENCY);
 	}
@@ -138,6 +183,7 @@
 						const latest = result.data;
 						const selectedId = selected?.subject.id;
 						overview = latest;
+						pageNumber = 1;
 						if (
 							!latest.subjectGroupOptions.some(
 								(option) => option.canManage && option.subjectGroupId === subjectGroupValue
@@ -184,8 +230,8 @@
 		historyLoading = true;
 		try {
 			const loaded = await listSubjectVersions(item.subject.id);
-			subjectHistoryCache.set(item.subject.id, loaded);
 			if (currentHistoryRevision !== historyRevision) return;
+			subjectHistoryCache.set(item.subject.id, loaded);
 			versions = loaded;
 		} catch (error) {
 			if (currentHistoryRevision === historyRevision) {
@@ -196,7 +242,7 @@
 		}
 	}
 
-	async function reloadSelectedHistory() {
+	async function reloadSelectedHistory(refreshOverview = true) {
 		if (!selected) return;
 		const currentHistoryRevision = ++historyRevision;
 		const subjectId = selected.subject.id;
@@ -205,10 +251,10 @@
 		historyError = '';
 		try {
 			const loaded = await listSubjectVersions(subjectId);
-			subjectHistoryCache.set(subjectId, loaded);
 			if (currentHistoryRevision !== historyRevision) return;
+			subjectHistoryCache.set(subjectId, loaded);
 			versions = loaded;
-			await loadOverview();
+			if (refreshOverview) await loadOverview();
 		} catch (error) {
 			if (currentHistoryRevision === historyRevision) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
@@ -218,8 +264,21 @@
 		}
 	}
 
+	function setSheetOpen(open: boolean) {
+		sheetOpen = open;
+		if (!open) historyRevision += 1;
+	}
+
+	async function reconcileSubjectMutation(subjectId: string) {
+		if (disposed) return;
+		subjectHistoryCache.delete(subjectId);
+		if (sheetOpen && selected?.subject.id === subjectId) await reloadSelectedHistory();
+		else await loadOverview();
+	}
+
 	async function addSubject(event: SubmitEvent) {
 		event.preventDefault();
+		if (creating || !canCreate) return;
 		if (!selectedSubjectGroup) {
 			mutationError = 'กรุณาเลือกกลุ่มสาระของรายวิชา';
 			return;
@@ -232,6 +291,7 @@
 				subjectGroupId: selectedSubjectGroup.subjectGroupId
 			});
 			code = '';
+			createOpen = false;
 			pendingOpenSubjectId = created.id;
 			await loadOverview();
 		} catch (error) {
@@ -241,9 +301,10 @@
 		}
 	}
 
-	async function addVersion(draft: VersionDraft) {
-		if (!selected) return;
-		await createSubjectVersion(selected.subject.id, {
+	async function addVersion(draft: CatalogVersionDraft) {
+		if (!selected?.canManage) return;
+		const subjectId = selected.subject.id;
+		await createSubjectVersion(subjectId, {
 			nameTh: draft.name,
 			nameEn: draft.secondaryName || null,
 			credit: draft.exactValue,
@@ -256,11 +317,11 @@
 			subjectType: draft.classification,
 			termCode: null
 		});
-		await reloadSelectedHistory();
+		await reconcileSubjectMutation(subjectId);
 	}
 
 	async function saveSubjectGroup() {
-		if (!selected || !editingSubjectGroupValue) return;
+		if (!selected?.canManage || !editingSubjectGroupValue || subjectMetadataSaving) return;
 		subjectMetadataSaving = true;
 		subjectMetadataError = '';
 		try {
@@ -279,8 +340,10 @@
 	}
 
 	async function publish(id: string, rowVersion: number) {
+		if (!selected?.canManage) return;
+		const subjectId = selected.subject.id;
 		await publishSubjectVersion(id, { rowVersion });
-		await reloadSelectedHistory();
+		await reconcileSubjectMutation(subjectId);
 	}
 
 	function gradeLevelsFor(version: SubjectVersion) {
@@ -290,8 +353,16 @@
 
 <PageShell
 	title="ทะเบียนรายวิชา"
-	description="ดูรหัส ชื่อ ประเภท ระดับชั้น หน่วยกิต และรุ่นที่ใช้อยู่ได้ในหน้าเดียว"
+	description="รหัส ชื่อ ประเภท ระดับชั้น และภาระการเรียนของรายวิชา"
 >
+	{#snippet actions()}
+		{#if canCreate}<Button
+				onclick={() => {
+					mutationError = '';
+					createOpen = true;
+				}}><Plus class="size-4" aria-hidden="true" />เพิ่มรายวิชา</Button
+			>{/if}
+	{/snippet}
 	{#if loading && !overview}
 		<PageSkeleton variant="table" rows={7} />
 	{:else if errorMessage && !overview}
@@ -300,313 +371,354 @@
 			title="โหลดทะเบียนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadOverview()}
+			onaction={loadOverview}
 		/>
 	{:else}
 		<div
-			class="relative space-y-5"
+			class="relative min-w-0 space-y-4"
 			aria-label="ทะเบียนรายวิชา"
 			aria-busy={loading}
 			data-testid="catalog-subjects-ready"
 		>
-			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
-				<div class="flex flex-col gap-4 border-b bg-muted/25 p-4 lg:flex-row lg:items-end">
-					<div class="min-w-0 flex-1">
-						<div class="mb-2 flex items-center gap-2 text-sm font-medium">
-							<SlidersHorizontal class="size-4 text-primary" /> ค้นหาและกรองรายวิชา
-						</div>
-						<div class="relative">
-							<Search
-								class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-							/>
-							<Label class="sr-only" for="subject-search">ค้นหารายวิชา</Label>
-							<Input
-								id="subject-search"
-								class="ps-9"
-								bind:value={search}
-								placeholder="ค้นหารหัส ชื่อไทย หรือชื่ออังกฤษ"
-							/>
-						</div>
+			<section
+				class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+				aria-label="ค้นหาและกรองรายวิชา"
+			>
+				<div class="flex items-center gap-3">
+					<div class="relative min-w-0 flex-1">
+						<Search
+							class="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+							aria-hidden="true"
+						/>
+						<Label class="sr-only" for="subject-search">ค้นหารายวิชา</Label>
+						<Input
+							id="subject-search"
+							class="ps-9"
+							bind:value={
+								() => search,
+								(value) => {
+									search = value;
+									pageNumber = 1;
+								}
+							}
+							placeholder="รหัส ชื่อ หรือกลุ่มสาระ"
+						/>
 					</div>
-					<div class="grid gap-3 sm:grid-cols-2 lg:w-[820px] lg:grid-cols-4">
-						<Select.Root type="single" bind:value={typeFilter}>
-							<Select.Trigger aria-label="กรองประเภทรายวิชา" class="w-full">
-								{typeFilter === allValue
-									? 'ทุกประเภท'
-									: optionLabel(SUBJECT_TYPE_OPTIONS, typeFilter)}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={allValue}>ทุกประเภท</Select.Item>
-								{#each SUBJECT_TYPE_OPTIONS as option (option.value)}
-									<Select.Item value={option.value}>{option.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<Select.Root type="single" bind:value={subjectGroupFilter}>
-							<Select.Trigger aria-label="กรองกลุ่มสาระ" class="w-full">
-								{subjectGroupFilter === allValue
-									? 'ทุกกลุ่มสาระ'
-									: (subjectGroupOptions.find(
-											(option) => option.subjectGroupId === subjectGroupFilter
-										)?.name ?? 'ทุกกลุ่มสาระ')}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={allValue}>ทุกกลุ่มสาระ</Select.Item>
-								{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}
-									<Select.Item value={option.subjectGroupId}>{option.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<Select.Root type="single" bind:value={gradeFilter}>
-							<Select.Trigger aria-label="กรองระดับชั้น" class="w-full">
-								{gradeFilter === allValue
-									? 'ทุกระดับชั้น'
-									: (gradeLevelOptions.find((level) => level.id === gradeFilter)?.name ??
-										'ทุกระดับชั้น')}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={allValue}>ทุกระดับชั้น</Select.Item>
-								{#each gradeLevelOptions as option (option.id)}
-									<Select.Item value={option.id}>{option.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<Select.Root type="single" bind:value={stateFilter}>
-							<Select.Trigger aria-label="กรองสถานะ" class="w-full">
-								{stateFilter === allValue ? 'ทุกสถานะ' : displayStateLabel(stateFilter)}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={allValue}>ทุกสถานะ</Select.Item>
-								{#each CATALOG_DISPLAY_STATE_OPTIONS as option (option.value)}
-									<Select.Item value={option.value}>{option.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
-
-				{#if canCreate}
-					<form
-						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(180px,280px)_minmax(260px,420px)_auto] sm:items-end"
-						onsubmit={addSubject}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-expanded={filtersOpen}
+						aria-controls="subject-filters"
+						onclick={() => (filtersOpen = !filtersOpen)}
+						><SlidersHorizontal
+							class="size-4"
+							aria-hidden="true"
+						/>ตัวกรอง{#if activeFilterLabels.length}<Badge variant="secondary"
+								>{activeFilterLabels.length}</Badge
+							>{/if}</Button
 					>
-						<div class="min-w-0 flex-1 sm:max-w-xs">
-							<Label for="new-subject-code">เพิ่มรหัสรายวิชา</Label>
-							<Input
-								id="new-subject-code"
-								class="mt-1.5 uppercase tabular-nums"
-								bind:value={code}
-								placeholder="เช่น ค21101"
-								required
-							/>
-						</div>
-						<div class="min-w-0">
-							<Label for="new-subject-group">กลุ่มสาระ</Label>
-							<Select.Root type="single" bind:value={subjectGroupValue}>
-								<Select.Trigger id="new-subject-group" class="mt-1.5 w-full">
-									{selectedSubjectGroup?.name ?? 'เลือกกลุ่มสาระ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each subjectGroupOptions as option (option.subjectGroupId)}
-										<Select.Item value={option.subjectGroupId}>
-											{option.name}
-										</Select.Item>
-									{/each}
-								</Select.Content>
+					{#if hasFilters}<Button variant="ghost" size="sm" onclick={clearFilters}
+							>ล้างตัวกรอง</Button
+						>{/if}
+				</div>
+				{#if filtersOpen}
+					<div id="subject-filters" class="grid gap-3 border-t pt-3 sm:grid-cols-2 xl:grid-cols-4">
+						<div class="space-y-1.5">
+							<Label for="subject-type-filter">ประเภท</Label>
+							<Select.Root
+								type="single"
+								bind:value={
+									() => typeFilter,
+									(value) => {
+										typeFilter = value;
+										pageNumber = 1;
+									}
+								}
+							>
+								<Select.Trigger
+									id="subject-type-filter"
+									aria-label="กรองประเภทรายวิชา"
+									class="w-full"
+									>{typeFilter === allValue
+										? 'ทุกประเภท'
+										: optionLabel(SUBJECT_TYPE_OPTIONS, typeFilter)}</Select.Trigger
+								>
+								<Select.Content
+									><Select.Item value={allValue}>ทุกประเภท</Select.Item
+									>{#each SUBJECT_TYPE_OPTIONS as option (option.value)}<Select.Item
+											value={option.value}>{option.label}</Select.Item
+										>{/each}</Select.Content
+								>
 							</Select.Root>
 						</div>
-						<Button type="submit" disabled={creating}>
-							<Plus class="size-4" />
-							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มรายวิชา'}
-						</Button>
-						{#if mutationError}
-							<p role="alert" class="text-sm text-destructive sm:col-span-3">{mutationError}</p>
-						{/if}
-					</form>
+						<div class="space-y-1.5">
+							<Label for="subject-group-filter">กลุ่มสาระ</Label>
+							<Select.Root
+								type="single"
+								bind:value={
+									() => subjectGroupFilter,
+									(value) => {
+										subjectGroupFilter = value;
+										pageNumber = 1;
+									}
+								}
+							>
+								<Select.Trigger id="subject-group-filter" aria-label="กรองกลุ่มสาระ" class="w-full"
+									>{subjectGroupFilter === allValue
+										? 'ทุกกลุ่มสาระ'
+										: subjectGroupName(subjectGroupFilter)}</Select.Trigger
+								>
+								<Select.Content
+									><Select.Item value={allValue}>ทุกกลุ่มสาระ</Select.Item
+									>{#each subjectGroupOptions as option (option.subjectGroupId)}<Select.Item
+											value={option.subjectGroupId}>{option.name}</Select.Item
+										>{/each}</Select.Content
+								>
+							</Select.Root>
+						</div>
+						<div class="space-y-1.5">
+							<Label for="subject-grade-filter">ระดับชั้น</Label>
+							<Select.Root
+								type="single"
+								bind:value={
+									() => gradeFilter,
+									(value) => {
+										gradeFilter = value;
+										pageNumber = 1;
+									}
+								}
+							>
+								<Select.Trigger id="subject-grade-filter" aria-label="กรองระดับชั้น" class="w-full"
+									>{gradeFilter === allValue
+										? 'ทุกระดับชั้น'
+										: (gradeLevelOptions.find((level) => level.id === gradeFilter)?.name ??
+											'ทุกระดับชั้น')}</Select.Trigger
+								>
+								<Select.Content
+									><Select.Item value={allValue}>ทุกระดับชั้น</Select.Item
+									>{#each gradeLevelOptions as option (option.id)}<Select.Item value={option.id}
+											>{option.name}</Select.Item
+										>{/each}</Select.Content
+								>
+							</Select.Root>
+						</div>
+						<div class="space-y-1.5">
+							<Label for="subject-state-filter">สถานะ</Label>
+							<Select.Root type="single" bind:value={() => stateFilter, selectState}>
+								<Select.Trigger id="subject-state-filter" aria-label="กรองสถานะ" class="w-full"
+									>{stateFilter === allValue
+										? 'ทุกสถานะ'
+										: displayStateLabel(stateFilter)}</Select.Trigger
+								>
+								<Select.Content
+									><Select.Item value={allValue}>ทุกสถานะ</Select.Item
+									>{#each CATALOG_DISPLAY_STATE_OPTIONS as option (option.value)}<Select.Item
+											value={option.value}>{option.label}</Select.Item
+										>{/each}</Select.Content
+								>
+							</Select.Root>
+						</div>
+					</div>
 				{/if}
+				{#if activeFilterLabels.length}<p class="text-xs text-muted-foreground">
+						{activeFilterLabels.join(' · ')}
+					</p>{/if}
+			</section>
 
+			<section class="min-w-0 overflow-hidden rounded-xl border bg-card" aria-label="รายการรายวิชา">
+				<div class="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:px-4">
+					<h2 class="text-sm font-semibold">รายการรายวิชา</h2>
+					<span class="text-xs text-muted-foreground"
+						>{filteredSubjects.length} จาก {subjectItems.length} รายวิชา</span
+					>
+				</div>
 				{#if subjectItems.length === 0}
 					<PageState
-						class="m-4 border-0 shadow-none"
 						title="ยังไม่มีรายวิชาในทะเบียน"
-						description="เพิ่มรหัสรายวิชา แล้วสร้างรายละเอียดรุ่นแรกเมื่อพร้อม"
+						description={canCreate
+							? 'เลือกเพิ่มรายวิชา แล้วสร้างรายละเอียดรุ่นแรกเมื่อพร้อม'
+							: 'รายวิชาที่คุณมีสิทธิ์ดูจะแสดงที่นี่'}
 					/>
 				{:else if filteredSubjects.length === 0}
 					<PageState
-						class="m-4 border-0 shadow-none"
 						title="ไม่พบรายวิชาที่ตรงกับตัวกรอง"
-						description="ลองเปลี่ยนคำค้นหา ประเภท ระดับชั้น หรือสถานะ"
+						description="ลองเปลี่ยนคำค้นหาหรือล้างตัวกรอง"
+						actionLabel="ล้างตัวกรอง"
+						onaction={clearFilters}
 					/>
 				{:else}
 					<div class="hidden md:block">
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head class="w-[150px] ps-5">รหัส</Table.Head>
-									<Table.Head>ชื่อรายวิชา</Table.Head>
-									<Table.Head>กลุ่มสาระ</Table.Head>
-									<Table.Head>ประเภท</Table.Head>
-									<Table.Head>ระดับชั้น</Table.Head>
-									<Table.Head class="text-end">หน่วยกิต</Table.Head>
-									<Table.Head class="min-w-[190px]">ภาระการเรียน</Table.Head>
-									<Table.Head>สถานะ</Table.Head>
-									<Table.Head class="w-12"><span class="sr-only">เปิดรายละเอียด</span></Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each filteredSubjects as item (item.subject.id)}
-									<Table.Row>
-										<Table.Cell class="border-s-4 border-s-primary ps-5 font-semibold tabular-nums">
-											{item.subject.code}
-										</Table.Cell>
-										<Table.Cell class="max-w-[280px] whitespace-normal">
+						<Table.Root class="min-w-[1120px]" aria-label="ทะเบียนรายวิชา">
+							<Table.Header
+								><Table.Row
+									><Table.Head scope="col">รหัส / ชื่อรายวิชา</Table.Head><Table.Head scope="col"
+										>กลุ่มสาระ</Table.Head
+									><Table.Head scope="col">ประเภท</Table.Head><Table.Head scope="col"
+										>ระดับชั้น</Table.Head
+									><Table.Head scope="col" class="text-end">หน่วยกิต</Table.Head><Table.Head
+										scope="col">ภาระการเรียน</Table.Head
+									><Table.Head scope="col">สถานะ</Table.Head><Table.Head scope="col"
+										><span class="sr-only">รายละเอียด</span></Table.Head
+									></Table.Row
+								></Table.Header
+							>
+							<Table.Body
+								>{#each visibleSubjects as item (item.subject.id)}<Table.Row>
+										<Table.Cell class="min-w-60 whitespace-normal"
+											><Button
+												variant="link"
+												class="h-auto justify-start p-0 text-start"
+												onclick={() => openSubject(item)}>{item.subject.code}</Button
+											>
 											<p class="font-medium">
 												{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}
 											</p>
-											{#if item.displayVersion?.nameEn}
-												<p class="text-xs text-muted-foreground">{item.displayVersion.nameEn}</p>
-											{/if}
-											{#if item.displayVersion}
-												<p class="mt-1 text-xs text-muted-foreground">
-													{formatEffectiveRange(
+											{#if item.displayVersion?.nameEn}<p class="text-xs text-muted-foreground">
+													{item.displayVersion.nameEn}
+												</p>{/if}{#if item.displayVersion}<p
+													class="mt-1 text-xs text-muted-foreground"
+												>
+													v{item.displayVersion.versionNo} · {formatEffectiveRange(
 														item.displayVersion.effectiveFrom,
 														item.displayVersion.effectiveUntil
 													)}
-												</p>
-											{/if}
-										</Table.Cell>
-										<Table.Cell class="max-w-[240px] whitespace-normal">
-											{subjectGroupOptions.find(
-												(option) => option.subjectGroupId === item.subject.subjectGroupId
-											)?.name ?? 'ไม่พบกลุ่มสาระ'}
-										</Table.Cell>
-										<Table.Cell
+												</p>{/if}</Table.Cell
+										>
+										<Table.Cell class="min-w-36 whitespace-normal"
+											>{subjectGroupName(item.subject.subjectGroupId)}</Table.Cell
+										>
+										<Table.Cell class="min-w-32 whitespace-normal"
 											>{optionLabel(
 												SUBJECT_TYPE_OPTIONS,
 												item.displayVersion?.subjectType
 											)}</Table.Cell
 										>
-										<Table.Cell class="max-w-[220px] whitespace-normal"
+										<Table.Cell class="min-w-28 whitespace-normal"
 											>{gradeLevelSummary(item.gradeLevels)}</Table.Cell
 										>
 										<Table.Cell class="text-end tabular-nums"
 											>{item.displayVersion?.credit ?? '—'}</Table.Cell
 										>
-										<Table.Cell>
-											{#if item.displayVersion}
-												<p class="font-medium tabular-nums">
+										<Table.Cell class="min-w-36 whitespace-normal"
+											>{#if item.displayVersion}<p class="tabular-nums">
 													{item.displayVersion.periodsPerWeek ?? '—'} คาบ/สัปดาห์
 												</p>
-												<p class="text-xs text-muted-foreground tabular-nums">
-													รวม {item.displayVersion.hoursPerSemester ?? '—'} ชม./ภาคเรียน
-												</p>
-											{:else}
-												—
-											{/if}
-										</Table.Cell>
-										<Table.Cell>
-											<div class="flex flex-wrap gap-1.5">
-												<Badge variant="outline" class={displayStateClass(item.displayState)}>
-													{displayStateLabel(item.displayState)}
-												</Badge>
-												{#if item.draftCount > 0}<Badge variant="secondary"
+												<p class="text-xs text-muted-foreground">
+													{item.displayVersion.hoursPerSemester ?? '—'} ชม./ภาคเรียน
+												</p>{:else}—{/if}</Table.Cell
+										>
+										<Table.Cell
+											><div class="flex flex-wrap gap-1.5">
+												<Badge variant="outline" class={displayStateClass(item.displayState)}
+													>{displayStateLabel(item.displayState)}</Badge
+												>{#if item.draftCount > 0}<Badge variant="secondary"
 														>ร่าง {item.draftCount}</Badge
+													>{/if}{#if item.subject.archivedAt}<Badge variant="secondary"
+														>เก็บถาวร</Badge
 													>{/if}
-												{#if item.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge
-													>{/if}
-											</div>
-										</Table.Cell>
-										<Table.Cell>
-											<Button
+											</div></Table.Cell
+										>
+										<Table.Cell
+											><Button
 												variant="ghost"
-												size="icon"
+												size="icon-sm"
 												aria-label={`เปิด ${item.subject.code}`}
 												onclick={() => openSubject(item)}
-											>
-												<ArrowUpRight class="size-4" />
-											</Button>
-										</Table.Cell>
-									</Table.Row>
-								{/each}
-							</Table.Body>
+												><ArrowUpRight class="size-4" aria-hidden="true" /></Button
+											></Table.Cell
+										>
+									</Table.Row>{/each}</Table.Body
+							>
 						</Table.Root>
 					</div>
-
-					<div class="grid gap-3 p-4 md:hidden">
-						{#each filteredSubjects as item (item.subject.id)}
-							<button
-								type="button"
-								class="rounded-xl border border-s-4 border-s-primary bg-background p-4 text-start shadow-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								onclick={() => openSubject(item)}
-							>
+					<ul class="divide-y md:hidden" aria-label="รายวิชา">
+						{#each visibleSubjects as item (item.subject.id)}<li class="space-y-2 p-3">
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0">
-										<p class="text-sm font-semibold text-primary tabular-nums">
-											{item.subject.code}
-										</p>
-										<h2 class="mt-1 font-medium">
+										<Button
+											variant="link"
+											class="h-auto justify-start p-0 text-start"
+											onclick={() => openSubject(item)}>{item.subject.code}</Button
+										>
+										<h3 class="text-sm font-medium">
 											{item.displayVersion?.nameTh ?? 'ยังไม่มีรายละเอียดรุ่น'}
-										</h2>
+										</h3>
+										{#if item.displayVersion?.nameEn}<p class="text-xs text-muted-foreground">
+												{item.displayVersion.nameEn}
+											</p>{/if}
 									</div>
-									<ArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										aria-label={`เปิด ${item.subject.code}`}
+										onclick={() => openSubject(item)}
+										><ArrowUpRight class="size-4" aria-hidden="true" /></Button
+									>
 								</div>
-								<div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-									<div>
-										<p class="text-xs text-muted-foreground">ประเภท</p>
-										<p>{optionLabel(SUBJECT_TYPE_OPTIONS, item.displayVersion?.subjectType)}</p>
+								<p class="text-xs text-muted-foreground">
+									{subjectGroupName(item.subject.subjectGroupId)} · {optionLabel(
+										SUBJECT_TYPE_OPTIONS,
+										item.displayVersion?.subjectType
+									)}
+								</p>
+								<dl class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+									<div class="flex gap-1">
+										<dt class="text-muted-foreground">หน่วยกิต</dt>
+										<dd>{item.displayVersion?.credit ?? '—'}</dd>
 									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">กลุ่มสาระ</p>
-										<p>
-											{subjectGroupOptions.find(
-												(option) => option.subjectGroupId === item.subject.subjectGroupId
-											)?.name ?? 'ไม่พบกลุ่มสาระ'}
-										</p>
+									<div class="flex gap-1">
+										<dt class="text-muted-foreground">คาบ/สัปดาห์</dt>
+										<dd>{item.displayVersion?.periodsPerWeek ?? '—'}</dd>
 									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">หน่วยกิต</p>
-										<p class="tabular-nums">{item.displayVersion?.credit ?? '—'}</p>
+									<div class="flex gap-1">
+										<dt class="text-muted-foreground">ชม./ภาคเรียน</dt>
+										<dd>{item.displayVersion?.hoursPerSemester ?? '—'}</dd>
 									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">คาบมาตรฐานต่อสัปดาห์</p>
-										<p class="tabular-nums">{item.displayVersion?.periodsPerWeek ?? '—'}</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ชั่วโมงรวมต่อภาคเรียน</p>
-										<p class="tabular-nums">{item.displayVersion?.hoursPerSemester ?? '—'}</p>
-									</div>
-									<div class="col-span-2">
-										<p class="text-xs text-muted-foreground">ระดับชั้น</p>
-										<p>{gradeLevelSummary(item.gradeLevels)}</p>
-									</div>
-									{#if item.displayVersion}
-										<div class="col-span-2">
-											<p class="text-xs text-muted-foreground">ช่วงที่มีผล</p>
-											<p>
-												{formatEffectiveRange(
-													item.displayVersion.effectiveFrom,
-													item.displayVersion.effectiveUntil
-												)}
-											</p>
-										</div>
-									{/if}
-								</div>
-								<div class="mt-3 flex flex-wrap gap-1.5">
+								</dl>
+								<p class="text-xs">{gradeLevelSummary(item.gradeLevels)}</p>
+								{#if item.displayVersion}<p class="text-xs text-muted-foreground">
+										v{item.displayVersion.versionNo} · {formatEffectiveRange(
+											item.displayVersion.effectiveFrom,
+											item.displayVersion.effectiveUntil
+										)}
+									</p>{/if}
+								<div class="flex flex-wrap gap-1.5">
 									<Badge variant="outline" class={displayStateClass(item.displayState)}
 										>{displayStateLabel(item.displayState)}</Badge
-									>
-									{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
+									>{#if item.draftCount > 0}<Badge variant="secondary">ร่าง {item.draftCount}</Badge
+										>{/if}{#if item.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge
 										>{/if}
-									{#if item.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge>{/if}
 								</div>
-							</button>
-						{/each}
-					</div>
+							</li>{/each}
+					</ul>
+					{#if pageCount > 1}<nav
+							class="flex flex-wrap items-center justify-between gap-3 border-t p-3"
+							aria-label="หน้ารายวิชา"
+						>
+							<span class="text-xs text-muted-foreground"
+								>หน้า {pageNumber} / {pageCount} · {(pageNumber - 1) * pageSize + 1}–{Math.min(
+									pageNumber * pageSize,
+									filteredSubjects.length
+								)} จาก {filteredSubjects.length}</span
+							>
+							<div class="flex gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={pageNumber === 1}
+									onclick={() => (pageNumber -= 1)}>ก่อนหน้า</Button
+								><Button
+									variant="outline"
+									size="sm"
+									disabled={pageNumber === pageCount}
+									onclick={() => (pageNumber += 1)}>ถัดไป</Button
+								>
+							</div>
+						</nav>{/if}
 				{/if}
 			</section>
-
 			<p class="text-xs text-muted-foreground">
-				แสดง {filteredSubjects.length} จาก {subjectItems.length} รายวิชา · ทะเบียนนี้เป็นข้อมูลกลาง ไม่ผูกกับภาคเรียนบนแถบด้านบน
+				ข้อมูลกลางรายวิชา ไม่ผูกกับภาคเรียนที่เลือกบนแถบด้านบน
 			</p>
 			{#if errorMessage}<div
 					role="alert"
@@ -619,100 +731,158 @@
 	{/if}
 </PageShell>
 
-<Sheet.Root bind:open={sheetOpen}>
-	<Sheet.Content class="w-full overflow-y-auto sm:max-w-5xl">
-		<Sheet.Header class="pe-8 text-start">
-			<Sheet.Title class="flex items-center gap-2">
-				<BookOpen class="size-5 text-primary" />
-				<span class="tabular-nums">{selected?.subject.code ?? 'รายวิชา'}</span>
-				{#if selected?.displayVersion}<span class="font-sans"
-						>· {selected.displayVersion.nameTh}</span
-					>{/if}
-			</Sheet.Title>
-			<Sheet.Description>
-				{#if selected?.displayVersion}
-					{formatEffectiveRange(
-						selected.displayVersion.effectiveFrom,
-						selected.displayVersion.effectiveUntil
-					)}
-				{:else}
-					ยังไม่มีรายละเอียดรุ่น เลือกสร้างรุ่นแรกได้ด้านล่าง
-				{/if}
-			</Sheet.Description>
-		</Sheet.Header>
-		{#if historyLoading}
-			<PageSkeleton variant="cards" rows={3} />
-		{:else if historyError}
-			<PageState variant="error" title="โหลดประวัติไม่สำเร็จ" description={historyError} />
-		{:else if selected}
-			<section class="mb-4 rounded-xl border bg-muted/20 p-4">
-				<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-					<div class="min-w-0 flex-1">
-						<Label for="subject-affiliation">กลุ่มสาระของรายวิชา</Label>
-						{#if selected.canManage}
-							<Select.Root type="single" bind:value={editingSubjectGroupValue}>
-								<Select.Trigger id="subject-affiliation" class="mt-1.5 w-full">
-									{subjectGroupOptions.find(
-										(option) => option.subjectGroupId === editingSubjectGroupValue
-									)?.name ?? 'เลือกกลุ่มสาระ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}
-										<Select.Item value={option.subjectGroupId}>{option.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						{:else}
-							<p id="subject-affiliation" class="mt-1.5 font-medium">
-								{subjectGroupOptions.find(
-									(option) => option.subjectGroupId === selected?.subject.subjectGroupId
-								)?.name ?? 'ไม่พบกลุ่มสาระ'}
-							</p>
-						{/if}
-						<p class="mt-1 text-xs text-muted-foreground">
-							หน่วยงานผู้รับผิดชอบและรายการเปิดสอนจะอ้างอิงจากกลุ่มสาระนี้โดยอัตโนมัติ
-						</p>
-					</div>
-					{#if selected.canManage}
-						<Button
+<Sheet.Root bind:open={() => sheetOpen, setSheetOpen}>
+	<Sheet.Content class="w-full overflow-y-auto p-4 sm:max-w-5xl sm:p-6">
+		<Sheet.Header class="pe-8 text-start"
+			><Sheet.Title class="flex flex-wrap items-center gap-2"
+				><BookOpen class="size-5 shrink-0 text-primary" aria-hidden="true" /><span
+					>{selected?.subject.code ?? 'รายวิชา'}</span
+				>{#if selected?.displayVersion}<span>· {selected.displayVersion.nameTh}</span
+					>{/if}</Sheet.Title
+			><Sheet.Description
+				>{selected?.displayVersion
+					? formatEffectiveRange(
+							selected.displayVersion.effectiveFrom,
+							selected.displayVersion.effectiveUntil
+						)
+					: 'ยังไม่มีรายละเอียดรุ่น สร้างรุ่นแรกได้ด้านล่าง'}</Sheet.Description
+			></Sheet.Header
+		>
+		{#if selected}
+			<div class="flex flex-wrap gap-2">
+				<Badge variant="outline" class={displayStateClass(selected.displayState)}
+					>{displayStateLabel(selected.displayState)}</Badge
+				>{#if selected.displayVersion}<Badge variant="secondary"
+						>v{selected.displayVersion.versionNo}</Badge
+					>{/if}{#if selected.subject.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge>{/if}
+			</div>
+			<section
+				class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+				aria-label="กลุ่มสาระของรายวิชา"
+			>
+				{#if selected.canManage}<div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+						<div class="min-w-0 flex-1 space-y-1.5">
+							<Label for="subject-affiliation">กลุ่มสาระของรายวิชา</Label><Select.Root
+								type="single"
+								bind:value={editingSubjectGroupValue}
+								disabled={subjectMetadataSaving}
+								><Select.Trigger id="subject-affiliation" class="w-full"
+									>{subjectGroupName(editingSubjectGroupValue)}</Select.Trigger
+								><Select.Content
+									>{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}<Select.Item
+											value={option.subjectGroupId}>{option.name}</Select.Item
+										>{/each}</Select.Content
+								></Select.Root
+							>
+						</div>
+						<LoadingButton
 							type="button"
 							variant="outline"
-							disabled={subjectMetadataSaving ||
-								editingSubjectGroupValue === selected.subject.subjectGroupId}
+							loading={subjectMetadataSaving}
+							loadingLabel="กำลังบันทึก..."
+							disabled={editingSubjectGroupValue === selected.subject.subjectGroupId}
 							onclick={saveSubjectGroup}
+							><Save class="size-4" aria-hidden="true" />บันทึกกลุ่มสาระ</LoadingButton
 						>
-							<Save class="size-4" />
-							{subjectMetadataSaving ? 'กำลังบันทึก...' : 'บันทึกกลุ่มสาระ'}
-						</Button>
-					{/if}
-				</div>
-				{#if subjectMetadataError}
-					<p role="alert" class="mt-2 text-sm text-destructive">{subjectMetadataError}</p>
-				{/if}
+					</div>
+				{:else}<dl>
+						<dt class="text-xs text-muted-foreground">กลุ่มสาระของรายวิชา</dt>
+						<dd class="mt-1 text-sm font-medium">
+							{subjectGroupName(selected.subject.subjectGroupId)}
+						</dd>
+					</dl>{/if}
+				{#if subjectMetadataError}<p role="alert" class="text-sm text-destructive">
+						{subjectMetadataError}
+					</p>{/if}
 			</section>
-			<CatalogVersionHistory
-				kind="subject"
-				code={selected.subject.code}
-				items={versions.map((item) => ({
-					id: item.id,
-					versionNo: item.versionNo,
-					name: item.nameTh,
-					secondaryName: item.nameEn,
-					exactValue: item.credit,
-					totalValue: item.hoursPerSemester?.toString() ?? '',
-					standardPeriodsPerWeek: item.periodsPerWeek,
-					effectiveFrom: item.effectiveFrom,
-					effectiveUntil: item.effectiveUntil,
-					classification: item.subjectType,
-					gradeLevels: gradeLevelsFor(item),
-					status: item.status,
-					rowVersion: item.rowVersion
-				}))}
-				{gradeLevelOptions}
-				canManage={selected.canManage}
-				onCreate={addVersion}
-				onPublish={publish}
-			/>
+			<div aria-busy={historyLoading} data-testid="subject-history-region">
+				{#if historyLoading && versions.length === 0}<PageSkeleton variant="cards" rows={3} />
+				{:else}
+					{#if historyError}<PageState
+							variant="error"
+							title="โหลดประวัติไม่สำเร็จ"
+							description={historyError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => reloadSelectedHistory(false)}
+						/>{/if}
+					{#if !historyError || versions.length > 0}{#key selected.subject.id}<CatalogVersionHistory
+								kind="subject"
+								code={selected.subject.code}
+								items={versions.map((item) => ({
+									id: item.id,
+									versionNo: item.versionNo,
+									name: item.nameTh,
+									secondaryName: item.nameEn,
+									exactValue: item.credit,
+									totalValue: item.hoursPerSemester?.toString() ?? '',
+									standardPeriodsPerWeek: item.periodsPerWeek,
+									effectiveFrom: item.effectiveFrom,
+									effectiveUntil: item.effectiveUntil,
+									classification: item.subjectType,
+									gradeLevels: gradeLevelsFor(item),
+									status: item.status,
+									rowVersion: item.rowVersion
+								}))}
+								{gradeLevelOptions}
+								canManage={selected.canManage}
+								onCreate={addVersion}
+								onPublish={publish}
+							/>{/key}{/if}
+				{/if}
+			</div>
 		{/if}
 	</Sheet.Content>
 </Sheet.Root>
+
+<Dialog.Root bind:open={createOpen}>
+	<Dialog.Content
+		class="sm:max-w-md"
+		onInteractOutside={(event) => {
+			if (creating) event.preventDefault();
+		}}
+		onEscapeKeydown={(event) => {
+			if (creating) event.preventDefault();
+		}}
+		showCloseButton={!creating}
+	>
+		<Dialog.Header
+			><Dialog.Title>เพิ่มรายวิชา</Dialog.Title><Dialog.Description
+				>เพิ่มรหัสและกลุ่มสาระ แล้วกำหนดรายละเอียดรายวิชาในรุ่นแรก</Dialog.Description
+			></Dialog.Header
+		>
+		<form class="space-y-4" onsubmit={addSubject}>
+			<div class="space-y-1.5">
+				<Label for="new-subject-code">เพิ่มรหัสรายวิชา</Label><Input
+					id="new-subject-code"
+					class="uppercase"
+					bind:value={code}
+					placeholder="เช่น ค21101"
+					required
+					disabled={creating}
+				/>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="new-subject-group">กลุ่มสาระ</Label><Select.Root
+					type="single"
+					bind:value={subjectGroupValue}
+					disabled={creating}
+					><Select.Trigger id="new-subject-group" class="w-full"
+						>{selectedSubjectGroup?.name ?? 'เลือกกลุ่มสาระ'}</Select.Trigger
+					><Select.Content
+						>{#each manageableSubjectGroupOptions as option (option.subjectGroupId)}<Select.Item
+								value={option.subjectGroupId}>{option.name}</Select.Item
+							>{/each}</Select.Content
+					></Select.Root
+				>
+			</div>
+			{#if mutationError}<p role="alert" class="text-sm text-destructive">{mutationError}</p>{/if}
+			<Dialog.Footer
+				><Button variant="outline" disabled={creating} onclick={() => (createOpen = false)}
+					>ยกเลิก</Button
+				><LoadingButton type="submit" loading={creating} loadingLabel="กำลังเพิ่ม..."
+					>เพิ่มและกำหนดรายละเอียด</LoadingButton
+				></Dialog.Footer
+			>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
