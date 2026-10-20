@@ -11,5 +11,9 @@ sqlx = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
+[dev-dependencies]
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+
 [lints]
 workspace = true

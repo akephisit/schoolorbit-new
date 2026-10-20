@@ -269,6 +269,30 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
+    #[test]
+    fn push_payload_serializes_notification_identity_and_browser_fields() {
+        let id = Uuid::now_v7();
+        let value = serde_json::to_value(PushPayload {
+            id,
+            title: "หัวข้อ",
+            body: "ข้อความ",
+            link: Some("/staff/work"),
+        })
+        .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"id":id.to_string(),"title":"หัวข้อ","body":"ข้อความ","link":"/staff/work"})
+        );
+        let value = serde_json::to_value(PushPayload {
+            id,
+            title: "หัวข้อ",
+            body: "ข้อความ",
+            link: None,
+        })
+        .unwrap();
+        assert!(value["link"].is_null());
+    }
+
     #[tokio::test]
     async fn subscription_failure_propagates_after_all_siblings_and_terminal_removal_succeeds() {
         let attempted = std::sync::atomic::AtomicUsize::new(0);

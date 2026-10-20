@@ -98,6 +98,11 @@ export function permissionScopeToneClass(tone: PermissionMeta['tone']): string {
 }
 
 const MODULE_LABELS: Record<string, string> = {
+	[PERMISSION_MODULES.CORRESPONDENCE]: 'สารบรรณ',
+	[PERMISSION_MODULES.PROCESS]: 'กระบวนการพิจารณา',
+	[PERMISSION_MODULES.STUDENT_CARE]: 'ระบบดูแลช่วยเหลือนักเรียน',
+	[PERMISSION_MODULES.STUDENT_CARE_CONFIG]: 'ตั้งค่าระบบดูแลช่วยเหลือนักเรียน',
+	[PERMISSION_MODULES.STUDENT_CARE_SENSITIVE]: 'ข้อมูลละเอียดอ่อนในระบบดูแลช่วยเหลือนักเรียน',
 	[PERMISSION_MODULES.STAFF_PROFILE]: 'ข้อมูลบุคลากร',
 	[PERMISSION_MODULES.STAFF_PII]: 'ข้อมูลส่วนบุคคลของบุคลากร',
 	[PERMISSION_MODULES.STAFF]: 'จัดการบุคลากร',
@@ -139,6 +144,9 @@ const MODULE_LABELS: Record<string, string> = {
 	[PERMISSION_MODULES.BEHAVIOR]: 'คะแนนความประพฤติ',
 	[PERMISSION_MODULES.BEHAVIOR_CLEANUP]: 'จัดการประวัติคะแนนความประพฤติ',
 	[PERMISSION_MODULES.SUPPLY_CATALOG]: 'ทะเบียนพัสดุ',
+	[PERMISSION_MODULES.BUDGET]: 'แผนงบประมาณ',
+	[PERMISSION_MODULES.BUDGET_PAYMENT]: 'การจ่ายเงินงบประมาณ',
+	[PERMISSION_MODULES.BUDGET_ADJUSTMENT]: 'การปรับงบประมาณและเงินยืม',
 	[PERMISSION_MODULES.STAFF_LEAVE]: 'การลาและออกนอกโรงเรียน'
 };
 

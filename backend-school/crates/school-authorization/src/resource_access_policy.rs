@@ -531,3 +531,60 @@ mod tests {
         );
     }
 }
+
+/// Accept a bounded recipient snapshot under the same effective-grant and origin-unit policy.
+/// Direct scopes cover the source; otherwise the union of exact/tree grants must cover every unit.
+pub async fn eligible_active_staff_for_resource_on_connection(
+    connection: &mut sqlx::PgConnection,
+    users: &[Uuid],
+    required: &[&str],
+    permissions: ResourceAccessPermissions,
+    target: &ResourceAccessTarget,
+) -> Result<Vec<Uuid>, AppError> {
+    use std::collections::{BTreeSet, HashMap};
+    if users.len() > 1000 {
+        return Err(AppError::ValidationError("ผู้รับมากเกินขอบเขต".into()));
+    }
+    let actors = crate::permissions::active_staff_actors_on_connection(connection, users).await?;
+    let mut covered = HashMap::<Uuid, BTreeSet<Uuid>>::new();
+    for (code, tree) in [
+        (permissions.organization_unit, false),
+        (permissions.organization_tree, true),
+    ] {
+        if let Some(code) = code {
+            let candidates = actors
+                .iter()
+                .filter(|a| {
+                    a.has_all_permissions(required)
+                        && a.has_permission(code)
+                        && can_access_direct_resource(a, permissions, target).is_none()
+                })
+                .map(|a| a.user_id)
+                .collect::<Vec<_>>();
+            for (user, unit) in crate::organization_scope::exact_units_for_users_on_connection(
+                connection,
+                &candidates,
+                code,
+                tree,
+            )
+            .await?
+            {
+                covered.entry(user).or_default().insert(unit);
+            }
+        }
+    }
+    Ok(actors
+        .into_iter()
+        .filter(|a| {
+            a.has_all_permissions(required)
+                && (can_access_direct_resource(a, permissions, target).is_some()
+                    || (!target.organization_unit_ids.is_empty()
+                        && target.organization_unit_ids.iter().all(|id| {
+                            covered
+                                .get(&a.user_id)
+                                .is_some_and(|units| units.contains(id))
+                        })))
+        })
+        .map(|a| a.user_id)
+        .collect())
+}

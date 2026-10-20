@@ -127,6 +127,15 @@ pub async fn upload_file(
         .await
         .map_err(map_platform_error)?;
 
+    let budget_actor = if purpose == FilePurpose::BudgetEvidence {
+        Some(
+            actor_tenant_context_from_session(&state.auth_runtime, &session)
+                .await
+                .map(|fresh| fresh.actor),
+        )
+    } else {
+        None
+    };
     record_upload_relation_or_request_cleanup(
         state.file_platform.as_ref(),
         &repository,
@@ -134,6 +143,7 @@ pub async fn upload_file(
         purpose,
         resource_id,
         context.actor.user_id,
+        budget_actor,
     )
     .await?;
 
@@ -159,8 +169,22 @@ async fn record_upload_relation_or_request_cleanup(
     purpose: FilePurpose,
     resource_id: Option<Uuid>,
     actor_user_id: Uuid,
+    budget_actor: Option<Result<school_authorization::ActorContext, school_errors::AppError>>,
 ) -> Result<(), AppError> {
     let relation_result = match purpose {
+        FilePurpose::BudgetEvidence => Some(match budget_actor {
+            Some(Ok(actor)) => match resource_id {
+                Some(id) => {
+                    school_budget::files::record_upload(repository.pool(), &actor, id, file_id)
+                        .await
+                }
+                None => Err(school_errors::AppError::BadRequest("ต้องระบุคำขอ".into())),
+            },
+            Some(Err(error)) => Err(error),
+            None => Err(school_errors::AppError::InternalServerError(
+                "budget_upload_acceptance_context_missing".into(),
+            )),
+        }),
         FilePurpose::StaffLeaveEvidence => Some(
             school_staff::leave::files::record_upload(
                 repository.pool(),
@@ -356,6 +380,15 @@ pub async fn delete_file(
         .await
         .map_err(map_platform_error)?;
     let domain_delete_guard = match file.purpose {
+        FilePurpose::BudgetEvidence => Some(
+            school_budget::files::delete_guard(
+                &context.tenant.pool,
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => Some(
             school_staff::leave::files::delete_guard(
                 &context.tenant.pool,
@@ -666,6 +699,7 @@ mod tests {
             FilePurpose::SchoolFont,
             None,
             actor_id,
+            None,
         )
         .await
         .expect("central school-font dispatch should persist its staging relation");
@@ -689,6 +723,7 @@ mod tests {
             FilePurpose::SchoolFont,
             Some(template_id),
             actor_id,
+            None,
         )
         .await
         .expect("template school-font dispatch should persist its staging relation");
@@ -711,6 +746,7 @@ mod tests {
             FilePurpose::SchoolFont,
             Some(Uuid::new_v4()),
             actor_id,
+            None,
         )
         .await
         .expect_err("a missing exact template must reject relation recording");

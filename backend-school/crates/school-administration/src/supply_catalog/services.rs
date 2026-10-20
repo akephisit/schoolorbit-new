@@ -949,3 +949,45 @@ mod tests {
         assert_eq!(edit_distance("", "abc"), 3);
     }
 }
+
+/// Coherent name/unit/price snapshot for an application-bound consumer. Locks follow
+/// catalog writers: item before its selected price version. Consumers retain values.
+#[derive(Debug, Clone)]
+pub struct SupplyPriceSnapshot {
+    pub item_id: Uuid,
+    pub version_id: Uuid,
+    pub revision: i64,
+    pub name: String,
+    pub unit: String,
+    pub price_satang: i64,
+}
+pub async fn price_snapshot_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    item_id: Uuid,
+    version_id: Uuid,
+) -> Result<SupplyPriceSnapshot, AppError> {
+    require_action(actor, SupplyAction::Read, None, false)?;
+    let (id, name, unit): (Uuid, String, String) =
+        sqlx::query_as("SELECT id,name,unit FROM supply_items WHERE id=$1 FOR SHARE")
+            .bind(item_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(missing)?;
+    let (version_id, revision, price_satang): (Uuid, i64, i64) = sqlx::query_as(
+        "SELECT id,revision,price_satang FROM supply_item_versions WHERE id=$1 AND item_id=$2 FOR SHARE",
+    )
+    .bind(version_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(missing)?;
+    Ok(SupplyPriceSnapshot {
+        item_id: id,
+        version_id,
+        revision,
+        name,
+        unit,
+        price_satang,
+    })
+}
