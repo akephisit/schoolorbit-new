@@ -5,21 +5,21 @@ export const PALETTES = [
 		label: 'เขียวอมฟ้า',
 		description: 'อบอุ่น สงบ เป็นมิตร',
 		primary: '#167166',
-		background: '#f6f7f3'
+		background: '#edf2f1'
 	},
 	{
 		value: 'blue',
 		label: 'น้ำเงิน',
 		description: 'ชัดเจน น่าเชื่อถือ',
 		primary: '#245fc2',
-		background: '#f3f6fb'
+		background: '#edf1f8'
 	},
 	{
 		value: 'purple',
 		label: 'ม่วง',
 		description: 'ร่วมสมัย มีเอกลักษณ์',
 		primary: '#7850a5',
-		background: '#f8f5fa'
+		background: '#f2eef6'
 	}
 ] as const;
 export const FONTS = [
@@ -112,19 +112,20 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 	const dark = mode === 'dark';
 	const palette = PALETTES.find((item) => item.value === appearance.palette) ?? PALETTES[0];
 	const requested = palettePrimary(appearance);
-	const card = dark ? '#1d302a' : '#ffffff';
-	const background = dark ? '#152521' : palette.background;
-	const foreground = dark ? '#e8efe8' : '#203a37';
-	const primaryForeground = dark ? '#142b25' : '#ffffff';
+	const card = dark ? '#1c2631' : '#ffffff';
+	const background = dark ? '#111820' : palette.background;
+	const foreground = dark ? '#e8edf4' : '#202d3d';
+	const primaryForeground = dark ? '#111820' : '#ffffff';
+	const muted = dark ? '#273440' : '#e4eaf0';
 	const surfaces = (primary: string) => ({
-		secondary: mix(card, primary, dark ? 0.12 : 0.08),
-		accent: mix(card, primary, dark ? 0.15 : 0.08),
+		secondary: mix(card, primary, dark ? 0.18 : 0.14),
+		accent: mix(card, primary, dark ? 0.08 : 0.06),
 		welcome: mix(card, primary, dark ? 0.12 : 0.09)
 	});
 	let primary = requested;
 	for (let step = 0; step <= 100; step++) {
 		primary = mix(requested, dark ? '#ffffff' : '#000000', step / 100);
-		const candidateSurfaces = [card, background, ...Object.values(surfaces(requested))];
+		const candidateSurfaces = [card, background, muted, ...Object.values(surfaces(primary))];
 		if (
 			contrastRatio(primary, primaryForeground) >= 4.5 &&
 			contrastRatio(mix(primary, card, 0.1), primaryForeground) >= 4.5 &&
@@ -133,7 +134,14 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		)
 			break;
 	}
-	const tinted = surfaces(requested);
+	// Tint with the readable accent so white/black brand fills still have visible surface roles.
+	const tinted = surfaces(primary);
+	const controlSurfaces = [card, background, muted, ...Object.values(tinted)];
+	let input = foreground;
+	for (let step = 30; step <= 100; step++) {
+		input = mix(card, foreground, step / 100);
+		if (controlSurfaces.every((surface) => contrastRatio(input, surface) >= 3)) break;
+	}
 	const primaryFillForeground =
 		contrastRatio(requested, '#000000') >= contrastRatio(requested, '#ffffff')
 			? '#000000'
@@ -143,9 +151,7 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		primaryFillForeground === '#ffffff' ? '#000000' : '#ffffff',
 		0.08
 	);
-	const primaryFillBorder = [card, background].some(
-		(surface) => contrastRatio(requested, surface) < 3
-	)
+	const primaryFillBorder = controlSurfaces.some((surface) => contrastRatio(requested, surface) < 3)
 		? primary
 		: requested;
 	return {
@@ -163,8 +169,10 @@ export function appearanceTokens(appearance: Appearance, mode: PreviewMode) {
 		foreground,
 		card,
 		...tinted,
-		border: dark ? '#354b3e' : '#e0e7df',
-		mutedForeground: dark ? '#afc1b4' : '#61746d',
+		muted,
+		border: dark ? '#3a4858' : '#d2dbe4',
+		input,
+		mutedForeground: dark ? '#bac5d2' : '#526174',
 		warning: dark ? '#efc37c' : '#98651b',
 		warningSurface: dark ? '#453d2c' : '#fcf3df',
 		destructive: dark ? '#f4a49a' : '#b54441',
@@ -192,14 +200,14 @@ export function appearanceStyle(appearance: Appearance, mode: PreviewMode): stri
 		'primary-fill-border': tokens.primaryFillBorder,
 		secondary: tokens.secondary,
 		'secondary-foreground': tokens.foreground,
-		muted: tokens.secondary,
+		muted: tokens.muted,
 		'muted-foreground': tokens.mutedForeground,
 		accent: tokens.accent,
 		'accent-foreground': tokens.foreground,
 		destructive: tokens.destructive,
 		'destructive-foreground': tokens.destructiveForeground,
 		border: tokens.border,
-		input: tokens.border,
+		input: tokens.input,
 		ring: tokens.primary,
 		warning: tokens.warning,
 		'warning-surface': tokens.warningSurface,
