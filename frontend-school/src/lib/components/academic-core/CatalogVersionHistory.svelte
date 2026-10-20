@@ -71,11 +71,20 @@
 		exactValue: '1.00',
 		totalValue: '20.00',
 		standardPeriodsPerWeek: '1',
-		effectiveFrom: '',
+		effectiveFrom: new Intl.DateTimeFormat('en-CA', {
+			timeZone: 'Asia/Bangkok',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		}).format(new Date()),
 		effectiveUntil: '',
 		gradeLevelIds: [],
 		classification: ''
 	});
+	// Keep canonical decimals as strings, including intermediate typing such as `1.`.
+	const positiveDecimalPattern = '(?=.*[1-9])(0|[1-9][0-9]*)(\\.[0-9]{1,2})?';
+	const positiveIntegerPattern = '(?=.*[1-9])[0-9]+(\\.0+)?';
+
 	let pendingAction = $state<string | null>(null);
 	let busy = $derived(pendingAction !== null);
 	let errorAction = $state<'create' | 'publish'>('create');
@@ -91,7 +100,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (busy || !canManage) return;
+		if (busy || !canManage || !(event.currentTarget as HTMLFormElement).reportValidity()) return;
 		errorAction = 'create';
 		if (!draft.effectiveFrom) {
 			errorMessage = 'กรุณาเลือกวันที่เริ่มใช้';
@@ -231,14 +240,10 @@
 							</Label>
 							<Input
 								id={`${code}-version-exact`}
-								type="number"
-								min="0.01"
-								step="0.01"
+								type="text"
+								pattern={positiveDecimalPattern}
 								inputmode="decimal"
-								bind:value={
-									() => draft.exactValue,
-									(value) => (draft.exactValue = value == null ? '' : String(value))
-								}
+								bind:value={draft.exactValue}
 								required
 							/>
 						</div>
@@ -247,14 +252,10 @@
 								<Label for={`${code}-version-periods`}>คาบมาตรฐานต่อสัปดาห์</Label>
 								<Input
 									id={`${code}-version-periods`}
-									type="number"
-									min="1"
-									step="1"
+									type="text"
+									pattern={positiveIntegerPattern}
 									inputmode="numeric"
-									bind:value={
-										() => draft.standardPeriodsPerWeek,
-										(value) => (draft.standardPeriodsPerWeek = value == null ? '' : String(value))
-									}
+									bind:value={draft.standardPeriodsPerWeek}
 									required
 								/>
 							</div>
@@ -263,14 +264,10 @@
 							<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
 							<Input
 								id={`${code}-version-total`}
-								type="number"
-								min={kind === 'subject' ? '1' : '0.01'}
-								step={kind === 'subject' ? '1' : '0.01'}
+								type="text"
+								pattern={kind === 'subject' ? positiveIntegerPattern : positiveDecimalPattern}
 								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
-								bind:value={
-									() => draft.totalValue,
-									(value) => (draft.totalValue = value == null ? '' : String(value))
-								}
+								bind:value={draft.totalValue}
 								required
 							/>
 						</div>
