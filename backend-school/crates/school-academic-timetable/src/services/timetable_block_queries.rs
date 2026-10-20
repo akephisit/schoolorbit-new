@@ -53,6 +53,7 @@ struct GroupRow {
     code: String,
     name: String,
     homeroom_ids: Vec<Uuid>,
+    homeroom_names: Vec<String>,
     room_id: Option<Uuid>,
     room_code: Option<String>,
     room_name: Option<String>,
@@ -666,6 +667,12 @@ pub(crate) async fn get_blocks_on_connection(
         r#"SELECT target.id, target.block_id, target.learning_group_id,
                   target.learning_offering_id, learning_group.code, learning_group.name,
                   target.homeroom_ids,
+                  ARRAY(
+                      SELECT homeroom.name
+                      FROM homerooms homeroom
+                      WHERE homeroom.id = ANY(target.homeroom_ids)
+                      ORDER BY array_position(target.homeroom_ids, homeroom.id)
+                  ) AS homeroom_names,
                   target.room_id, room.code AS room_code, room.name_th AS room_name,
                   target.row_version, target.is_active
            FROM academic_timetable_block_groups target
@@ -776,6 +783,7 @@ pub(crate) async fn get_blocks_on_connection(
                 code: row.code,
                 name: row.name,
                 homeroom_ids: row.homeroom_ids,
+                homeroom_names: row.homeroom_names,
                 room_id: row.room_id,
                 room_code: row.room_code,
                 room_name: row.room_name,

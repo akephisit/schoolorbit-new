@@ -180,7 +180,12 @@
 	});
 </script>
 
-<PageShell title="ตารางสอน" description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}>
+<PageShell
+	title="ตารางสอน"
+	description={userName ? `ครู${userName}` : 'ตารางสอนของฉัน'}
+	class="flex h-full min-h-0 flex-col"
+	contentClass="flex min-h-0 flex-1 flex-col"
+>
 	{#snippet actions()}
 		<Button variant="outline" size="sm" disabled={!canDownloadPdf} onclick={downloadPdf}>
 			{#if isExportingPdf}<Loader2 class="animate-spin" />{:else}<Download />{/if}
@@ -207,7 +212,11 @@
 	{:else if blocks.length === 0}
 		<PageState title="ยังไม่มีตารางสอน" description="ยังไม่มีคาบสอนของคุณในภาคเรียนนี้" />
 	{:else}
-		<div class="relative" aria-busy={loading} data-testid="personal-timetable-ready">
+		<div
+			class="relative flex min-h-0 min-w-0 flex-1 flex-col"
+			aria-busy={loading}
+			data-testid="personal-timetable-ready"
+		>
 			{#if errorMessage}
 				<div
 					role="alert"
@@ -217,7 +226,12 @@
 					<Button variant="outline" size="sm" onclick={() => loadTimetable()}>ลองอีกครั้ง</Button>
 				</div>
 			{/if}
-			<OwnTimetableWorkspace {blocks} {periods} days={schoolDays} />
+			<OwnTimetableWorkspace
+				{blocks}
+				{periods}
+				days={schoolDays}
+				currentStaffId={$authStore.user?.id ?? ''}
+			/>
 		</div>
 	{/if}
 </PageShell>

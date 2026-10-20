@@ -41,6 +41,7 @@ function block(
 				code: groupId,
 				name: groupId,
 				homeroomIds,
+				homeroomNames: homeroomIds.map((id) => (id === 'homeroom-1' ? 'ม.1/1' : 'ม.1/2')),
 				instructors: teacherIds.map((teacherId, orderIndex) => ({
 					teacherId,
 					displayName: teacherId,

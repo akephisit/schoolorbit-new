@@ -202,6 +202,10 @@ export function createOptimisticTimetableBlock(
 					code: group.code,
 					name: group.name,
 					homeroomIds: group.homeroomIds,
+					homeroomNames: [...new Set(group.homeroomIds)].flatMap((homeroomId) => {
+						const homeroom = workspace.homerooms.find((item) => item.id === homeroomId);
+						return homeroom ? [homeroom.name] : [];
+					}),
 					instructors: instructorIds.map((teacherId, index) => {
 						const eligible = group.eligibleInstructors.find(
 							(teacher) => teacher.teacherId === teacherId

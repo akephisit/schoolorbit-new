@@ -767,6 +767,23 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
 
 The staff exam and own-timetable workspace fixtures use synthetic read-only staff data. They cover compact context controls, responsive results in light/dark themes, filters and empty states, keyboard navigation, school appearance, and the absence of management requests or writes. Exam cases also verify all four tabs, round changes, mobile assessment phases, and actual personal duty duration.
 
+For staff self-service timetable readability, run the focused display/PDF helpers and browser
+workflow from `frontend-school`:
+
+```bash
+node --test tests/static/staff-own-timetable-display.test.mjs tests/static/timetable-pdf-class-label.test.mjs tests/static/timetable-block-display.test.mjs tests/static/staff-own-timetable-pdf.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium --workers=1
+```
+
+The grid fixture covers 390/614/1029/1533px in light/dark themes: equal content-safe daily
+period rows, full multiline titles, consistent card tones, actual class labels without group
+aliases, current-instructor-only synchronized targets, no weekly detail controls, and contained
+scrolling with native wheel/touch and keyboard navigation. It checks main/document geometry
+at scroll boundaries and keeps view/day choices without additional reads. The pure helper
+fixtures preserve student/parent shared-label hiding and existing PDF shared-period rules;
+PDF class names use the real projection when no external class directory is supplied.
+Screenshots use `/workspace/artifacts/staff-timetable-refinement/`.
+
 Subject catalog and facility workspace fixtures exercise compact filters and bounded results, create/detail forms, scoped capabilities, error and pending draft retention, and late-response ownership on mobile/desktop in both themes. Subject version fixtures also check decimal-string payloads and publication revisions; the two subject-version cases in `academic-core-cutover.spec.ts` cover published-history preservation and conflict draft retention with the current overview, Sheet, grade selector and DatePicker.
 
 Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
