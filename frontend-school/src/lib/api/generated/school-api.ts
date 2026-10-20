@@ -17428,6 +17428,7 @@ export interface components {
 		/** @enum {string} */
 		BudgetReportMetric: 'planned' | 'current' | 'paid';
 		BudgetReportQuery: {
+			exportScope?: boolean | null;
 			/** Format: uuid */
 			fiscalYearId?: string | null;
 			metric?: null | components['schemas']['BudgetReportMetric'];
@@ -48293,6 +48294,7 @@ export interface operations {
 			query?: never;
 			header?: never;
 			path: {
+				exportScope: boolean | null;
 				fiscalYearId: string | null;
 				metric: null | components['schemas']['BudgetReportMetric'];
 				organizationUnitId: string | null;
@@ -49012,6 +49014,7 @@ export interface operations {
 			query?: never;
 			header?: never;
 			path: {
+				exportScope: boolean | null;
 				fiscalYearId: string | null;
 				metric: null | components['schemas']['BudgetReportMetric'];
 				organizationUnitId: string | null;

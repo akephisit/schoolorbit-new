@@ -1,4 +1,10 @@
-import { canReadBudget, budgetRoutePermissions } from '#lib/budget/access.js';
+import {
+	canReadBudget,
+	budgetRoutePermissions,
+	budgetExportPermissions
+} from '#lib/budget/access.js';
+import { get } from 'svelte/store';
+import { can } from '#lib/stores/permissions.js';
 import type { PageLoad } from './$types';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import { budgetRead } from '#lib/budget/route-data.js';
@@ -20,13 +26,19 @@ export const _meta = {
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
 	const filters = budgetFilters(url);
-	const query = { fiscalYearId: filters.fiscalYearId || undefined };
+	const query = {
+		fiscalYearId: filters.fiscalYearId || undefined
+	};
 	return {
 		query,
 		requestKey: JSON.stringify(query),
 		record: budgetRead(
 			canReadBudget,
-			() => getBudgetDashboard({ requestFetch: fetch, query }),
+			() =>
+				getBudgetDashboard({
+					requestFetch: fetch,
+					query: { ...query, exportScope: get(can).hasAny(...budgetExportPermissions) || undefined }
+				}),
 			null
 		),
 		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null)

@@ -17,5 +17,8 @@
 		id={data.id}
 		source={budgetSource(data.record, identity)}
 		processSource={budgetSource(data.process, identity)}
+		fromSource={budgetSource(data.fromProject, identity)}
+		toSource={budgetSource(data.toProject, identity)}
+		catalogsSource={budgetSource(data.catalogs, identity)}
 		returnTo={data.returnTo}
 	/>{/key}

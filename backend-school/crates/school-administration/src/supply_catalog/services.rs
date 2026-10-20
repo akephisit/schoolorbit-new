@@ -968,13 +968,12 @@ pub async fn price_snapshot_in_transaction(
     version_id: Uuid,
 ) -> Result<SupplyPriceSnapshot, AppError> {
     require_action(actor, SupplyAction::Read, None, false)?;
-    let (id, name, unit): (Uuid, String, String) = sqlx::query_as(
-        "SELECT id,name,unit FROM supply_items WHERE id=$1 FOR SHARE",
-    )
-    .bind(item_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(missing)?;
+    let (id, name, unit): (Uuid, String, String) =
+        sqlx::query_as("SELECT id,name,unit FROM supply_items WHERE id=$1 FOR SHARE")
+            .bind(item_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(missing)?;
     let (version_id, revision, price_satang): (Uuid, i64, i64) = sqlx::query_as(
         "SELECT id,revision,price_satang FROM supply_item_versions WHERE id=$1 AND item_id=$2 FOR SHARE",
     )
@@ -983,5 +982,12 @@ pub async fn price_snapshot_in_transaction(
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(missing)?;
-    Ok(SupplyPriceSnapshot { item_id: id, version_id, revision, name, unit, price_satang })
+    Ok(SupplyPriceSnapshot {
+        item_id: id,
+        version_id,
+        revision,
+        name,
+        unit,
+        price_satang,
+    })
 }

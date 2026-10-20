@@ -20,6 +20,12 @@ export const budgetUpdatePermissions = [
 	PERMISSIONS.BUDGET_UPDATE_ORGANIZATION_TREE,
 	PERMISSIONS.BUDGET_UPDATE_SCHOOL
 ] as const;
+export const budgetExportPermissions = [
+	PERMISSIONS.BUDGET_DOWNLOAD_OWN,
+	PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_UNIT,
+	PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_TREE,
+	PERMISSIONS.BUDGET_DOWNLOAD_SCHOOL
+] as const;
 export function canReadBudget(): boolean {
 	return get(can).hasAny(...budgetReadPermissions);
 }

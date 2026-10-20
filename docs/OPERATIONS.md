@@ -1148,6 +1148,47 @@ promotion succeeds.
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
+### Budget workspace rollout and recovery
+
+Migration [129](../backend-school/migrations/129_budget_workspace.sql) adds budget settings,
+projects/activities/lines, accepted plans, reservations, payments, adjustments and ledger ownership.
+Migration [130](../backend-school/migrations/130_budget_history_ownership.sql) preserves immutable
+plan-attempt ownership and adjustment revision documents. Its backfill records only the known
+current adjustment revision; it cannot recover earlier drafts. Ambiguous or unmappable process
+attempt history refuses migration and requires diagnosis rather than guessed ownership.
+
+Deploy matching School backend, generated contracts and frontend through the coordinated release
+under Maintenance Mode. Rehearse on disposable tenant copies and retain protected recovery points;
+run the central all-tenant migration path and require every tenant at the exact compiled migration
+timeline with no pending or failed migration before readiness and authenticated deployed acceptance.
+Synchronize permissions/menu through their existing owner. Follow the [budget verification
+recipes](./TESTING.md#budget-workspace) and reconcile ledger totals, process transitions and private
+evidence before reopening traffic.
+
+Structural additivity of 129 does not permit old binaries: the migration owner's strict compiled
+history check rejects a timeline different from its embedded versions/checksums. Once 129 applies,
+pre-129 School binaries are prohibited; after 130, only binaries matching that complete timeline
+may run. Persisted `budget_evidence` purpose values also make older FilePurpose handling unsafe.
+If migration or acceptance fails, retain maintenance and repair forward with a matching release.
+Never edit an applied migration, its checksum or SQLx history to force readiness. Restoring a
+protected recovery point needs a reviewed procedure accounting for writes since that point; do not
+restore an old binary onto the advanced schema.
+
+First configure fiscal years, funding sources, expense categories and approval steps at
+`/staff/budget/settings` using an authorized settings account, then create projects at
+`/staff/budget/projects`. Organization units/staff come from their existing directories. Fiscal
+year is independent of the academic header; fiscal year and responsible organization are fixed
+after the first accepted plan. The dashboard is `/staff/budget`, requests/payment work is under
+`/staff/budget/requests`, adjustments under `/staff/budget/adjustments`, and exports/reconciliation
+under `/staff/budget/reports`. Projects/activities use names without user-entered codes.
+
+The authoritative spend ceiling is each project/activity/funding-source/expense-category
+allocation: current budget equals planned plus adjusted, and available equals current minus
+reserved minus paid. Approved credits can fund spending above an individual line estimate;
+preserve consumed line dimensions and accepted history when amending. Money uses integer satang
+strings, quantities permit at most three decimals, and multiplication rounds half up once to
+satang. Payment requires a voucher number; evidence attachments are optional and remain private.
+
 ### Curriculum editions, educational levels and recovery boundary
 
 Migrations 091/092 replace calendar bounds with a Buddhist revision year and reconcile the verified five-plan secondary-school migration shape. Migration [093](../backend-school/migrations/093_curriculum_edition_levels.sql) establishes one school-owned edition above its educational levels and study programs. It groups only matching known revision year, edition name and publication status; unknown years stay isolated and versionless roots become drafts requiring an explicit year before publication. Existing version UUIDs become level UUIDs. Program, requirement, room, student-year and admission references remain stable; the locked transaction verifies exact requirement content and records `curriculum.edition_hierarchy.reconciled` before committing. Ambiguous duplicate level membership refuses migration.

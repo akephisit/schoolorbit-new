@@ -229,7 +229,11 @@ impl FromRef<AppState> for school_staff::leave::http::LeaveHttpState {
 }
 
 impl FromRef<AppState> for school_budget::http::BudgetHttpState {
-    fn from_ref(state:&AppState)->Self {
-        Self { auth_runtime:state.auth_runtime.clone(), catalog:&crate::adapters::budget::BUDGET_CATALOG, work_event_channel:state.work_event_channel.clone() }
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            catalog: &crate::adapters::budget::BUDGET_CATALOG,
+            work_event_channel: state.work_event_channel.clone(),
+        }
     }
 }

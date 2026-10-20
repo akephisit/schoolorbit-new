@@ -1,16 +1,29 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { getBudgetHistory, type BudgetHistoryPage } from '#lib/api/budget.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
 	import { dateLabel } from '#lib/budget/presentation.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
-	let { kind, id }: { kind: 'projects' | 'requests' | 'adjustments'; id: string } = $props();
+	let {
+		kind,
+		id,
+		revision
+	}: { kind: 'projects' | 'requests' | 'adjustments'; id: string; revision: number } = $props();
 	const region = new BudgetRegion<BudgetHistoryPage>();
-	let opened = false,
+	let opened = $state(false),
+		loadedRevision = $state(-1),
 		offset = $state(0);
 	const labels: Record<string, string> = {
 		created: 'สร้างฉบับร่าง',
+		saved: 'แก้ไขฉบับร่าง',
+		amendment_started: 'เริ่มแก้ไขแผน',
+		payment_recorded: 'บันทึกการจ่ายเงิน',
+		refund_recorded: 'คืนเงิน',
+		closed: 'ปิดคำขอ',
+		rejected: 'ไม่อนุมัติ',
+		returned: 'ส่งกลับแก้ไข',
+		reviewed: 'ตรวจสอบแล้ว',
 		updated: 'แก้ไขฉบับร่าง',
 		submitted: 'ส่งพิจารณา',
 		approved: 'อนุมัติ',
@@ -27,16 +40,19 @@
 		offset = next;
 		region.retry((signal) => getBudgetHistory(kind, id, { signal, query: { limit: 20, offset } }));
 	}
+	$effect(() => {
+		if (opened && loadedRevision !== revision) {
+			loadedRevision = revision;
+			untrack(() => load(0));
+		}
+	});
 	onDestroy(() => region.dispose());
 </script>
 
 <details
 	class="rounded-xl border bg-card p-3 sm:p-4"
 	ontoggle={(event) => {
-		if (event.currentTarget.open && !opened) {
-			opened = true;
-			load();
-		}
+		opened = event.currentTarget.open;
 	}}
 >
 	<summary class="cursor-pointer font-semibold">ประวัติการดำเนินการ</summary>

@@ -5,10 +5,14 @@
 	import {
 		getBudgetAdjustment,
 		getBudgetProcess,
+		getBudgetProject,
+		getBudgetCatalogs,
 		submitBudgetAdjustment,
 		actOnBudgetAdjustment,
 		type BudgetAdjustmentDetail,
-		type BudgetProcessDetail
+		type BudgetProcessDetail,
+		type BudgetProjectWorkspace,
+		type BudgetCatalogs
 	} from '#lib/api/budget.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
@@ -16,6 +20,7 @@
 	import { adjustmentLabels } from '#lib/budget/presentation.js';
 	import { money } from '#lib/budget/money.js';
 	import { message } from '#lib/budget/drafts.js';
+	import { acceptedAllocation } from '#lib/budget/adjustment-context.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -31,26 +36,98 @@
 		id,
 		source,
 		processSource,
+		fromSource,
+		toSource,
+		catalogsSource,
 		returnTo
 	}: {
 		id: string;
 		source: Promise<RouteLoadResult<BudgetAdjustmentDetail | null>>;
 		processSource: Promise<RouteLoadResult<BudgetProcessDetail | null>>;
+		fromSource: Promise<RouteLoadResult<BudgetProjectWorkspace | null>>;
+		toSource: Promise<RouteLoadResult<BudgetProjectWorkspace | null>>;
+		catalogsSource: Promise<RouteLoadResult<BudgetCatalogs | null>>;
 		returnTo: string;
 	} = $props();
 	const region = new BudgetRegion<BudgetAdjustmentDetail | null>(),
+		fromProject = new BudgetRegion<BudgetProjectWorkspace | null>(),
+		toProject = new BudgetRegion<BudgetProjectWorkspace | null>(),
+		catalogs = new BudgetRegion<BudgetCatalogs | null>(),
 		intent = new BudgetMutationIntent();
+	const lookupController = new AbortController();
+	const fiscalYear = $derived(
+		catalogs.value?.fiscalYears.find((year) => year.id === region.value?.fiscalYearId)
+	);
+	const fromAllocation = $derived(
+		region.value
+			? acceptedAllocation(
+					region.value.from,
+					region.value.fiscalYearId,
+					fromProject.value,
+					catalogs.value
+				)
+			: null
+	);
+	const toAllocation = $derived(
+		region.value
+			? acceptedAllocation(
+					region.value.to,
+					region.value.fiscalYearId,
+					toProject.value,
+					catalogs.value
+				)
+			: null
+	);
+	const allocationReady = $derived(
+		!!region.value &&
+			!!fiscalYear &&
+			!catalogs.error &&
+			(region.value.kind === 'add' || (!!fromAllocation && !fromProject.error)) &&
+			(region.value.kind === 'reduce' || (!!toAllocation && !toProject.error))
+	);
 	let pending = $state(false),
 		error = $state(''),
 		editing = $state(false),
 		repaying = $state(false),
 		nextProcess = $state<Promise<RouteLoadResult<BudgetProcessDetail | null>> | null>(null),
 		disposed = false;
-	$effect.pre(() => region.consume(source));
+	$effect.pre(() => {
+		region.consume(source);
+		fromProject.consume(fromSource);
+		toProject.consume(toSource);
+		catalogs.consume(catalogsSource);
+	});
 	onDestroy(() => {
 		disposed = true;
 		region.dispose();
+		fromProject.dispose();
+		toProject.dispose();
+		catalogs.dispose();
+		lookupController.abort();
 	});
+	function patch(value: BudgetAdjustmentDetail) {
+		const previous = region.value;
+		region.patch(value);
+		if (
+			previous?.from?.projectId === value.from?.projectId &&
+			previous?.to?.projectId === value.to?.projectId
+		)
+			return;
+		const reads: Partial<Record<string, Promise<BudgetProjectWorkspace>>> = {};
+		for (const [ref, target] of [
+			[value.from, fromProject],
+			[value.to, toProject]
+		] as const) {
+			target.patch(null);
+			if (!ref) continue;
+			let read = reads[ref.projectId];
+			if (!read) {
+				read = getBudgetProject(ref.projectId, { signal: lookupController.signal });
+				reads[ref.projectId] = read;
+			}
+			target.consume(captureRouteLoad(read, 'โหลดรายละเอียดงบประมาณไม่สำเร็จ'));
+		}
+	}
 	async function submit() {
 		const value = region.value;
 		if (!value || pending) return;
@@ -60,7 +137,7 @@
 			const basis = { expectedRevision: value.revision };
 			const result = await submitBudgetAdjustment(id, { ...basis, requestId: intent.for(basis) });
 			if (!disposed) {
-				region.patch(result);
+				patch(result);
 				nextProcess = captureRouteLoad(getBudgetProcess('adjustments', id), 'โหลดขั้นตอนไม่สำเร็จ');
 			}
 		} catch (cause) {
@@ -106,6 +183,25 @@
 				<StatusBadge status={detail.status} />
 				<p class="text-xl font-semibold tabular-nums">{money(detail.amountSatang)} บาท</p>
 				<p>{detail.reason}</p>
+				<section aria-label="ปีงบประมาณของรายการ" class="space-y-2" aria-busy={catalogs.loading}>
+					{#if catalogs.error}<PageState
+							variant="error"
+							title="โหลดปีงบประมาณและหมวดรายการไม่สำเร็จ"
+							description={catalogs.error}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => catalogs.retry((signal) => getBudgetCatalogs({ signal }))}
+						/>{/if}
+					{#if catalogs.loading && !catalogs.value}<PageSkeleton
+							variant="form"
+							rows={1}
+						/>{:else if fiscalYear}<p class="text-sm">
+							ปีงบประมาณ <strong>{fiscalYear.name}</strong>
+						</p>{:else if !catalogs.error}<PageState
+							variant="permission"
+							title="ไม่พบปีงบประมาณของรายการ"
+							description="ติดต่อผู้ดูแลเพื่อตรวจสอบปีงบประมาณก่อนพิจารณารายการ"
+						/>{/if}
+				</section>
 				{#if detail.kind === 'loan'}<p class="text-sm">
 						เงินยืมค้างคืน <strong>{money(detail.loanOutstandingSatang)} บาท</strong>
 					</p>{/if}
@@ -130,17 +226,74 @@
 				description={error}
 			/>{/if}
 	</section>
+	{#if region.value}<div class="grid gap-3 lg:grid-cols-2">
+			{#each [{ side: 'from' as const, title: 'งบประมาณต้นทาง (หักออก)', ref: region.value.from, project: fromProject, allocation: fromAllocation }, { side: 'to' as const, title: 'งบประมาณปลายทาง (รับเข้า)', ref: region.value.to, project: toProject, allocation: toAllocation }] as context (context.side)}{#if context.ref}<section
+						class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+						aria-label={context.title}
+						aria-busy={context.project.loading}
+					>
+						<h2 class="font-semibold">{context.title}</h2>
+						{#if context.project.error}<PageState
+								variant="error"
+								title="โหลดรายละเอียดงบประมาณไม่สำเร็จ"
+								description={context.project.error}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => {
+									const ref = context.ref;
+									if (ref)
+										context.project.retry((signal) => getBudgetProject(ref.projectId, { signal }));
+								}}
+							/>{/if}{#if context.project.loading && !context.project.value}<PageSkeleton
+								variant="form"
+								rows={4}
+							/>{:else if context.allocation}<dl class="grid gap-3 sm:grid-cols-2">
+								<div>
+									<dt class="text-sm text-muted-foreground">โครงการ</dt>
+									<dd class="font-medium">{context.allocation.projectName}</dd>
+								</div>
+								<div>
+									<dt class="text-sm text-muted-foreground">กิจกรรม</dt>
+									<dd>{context.allocation.activityTitle}</dd>
+								</div>
+								<div>
+									<dt class="text-sm text-muted-foreground">แหล่งเงิน</dt>
+									<dd>{context.allocation.fundName}</dd>
+								</div>
+								<div>
+									<dt class="text-sm text-muted-foreground">หมวดรายจ่าย</dt>
+									<dd>{context.allocation.categoryName}</dd>
+								</div>
+							</dl>{:else if !context.project.error && !catalogs.loading && !catalogs.error}<PageState
+								variant="permission"
+								title="ยังยืนยันรายการงบประมาณไม่ได้"
+								description="ตรวจสอบสิทธิ์และรายการในแผนที่อนุมัติ หรือขอให้ผู้รับผิดชอบแก้ไขรายการก่อนพิจารณา"
+							/>{/if}
+					</section>{/if}{/each}
+		</div>
+		{#if !allocationReady && region.value.capabilities.canAct}<PageState
+				variant="permission"
+				title="ตรวจสอบรายละเอียดงบประมาณก่อนพิจารณา"
+				description="ต้องแสดงปีงบประมาณ กิจกรรม แหล่งเงิน และหมวดรายจ่ายของรายการให้ครบก่อนยืนยันการพิจารณา"
+			/>{/if}{/if}
 	{#if region.value}<WorkflowPanel
 			source={nextProcess ?? processSource}
 			kind="adjustments"
 			{id}
 			revision={region.value.revision}
-			canAct={region.value.capabilities.canAct && $can.has(PERMISSIONS.BUDGET_APPROVE_ASSIGNED)}
+			canAct={allocationReady &&
+				region.value.capabilities.canAct &&
+				$can.has(PERMISSIONS.BUDGET_APPROVE_ASSIGNED)}
 			onaction={async (input) => {
+				if (!allocationReady)
+					throw new Error('ตรวจสอบรายละเอียดงบประมาณต้นทางและปลายทางให้ครบก่อนพิจารณา');
 				const value = await actOnBudgetAdjustment(id, input);
-				if (!disposed) region.patch(value);
+				if (!disposed) patch(value);
 			}}
-		/>{/if}{#if region.value}<History kind="adjustments" {id} />{/if}</PageShell
+		/>{/if}{#if region.value}<History
+			kind="adjustments"
+			{id}
+			revision={region.value.revision}
+		/>{/if}</PageShell
 >
 <Dialog.Root
 	open={editing || repaying}
@@ -163,7 +316,7 @@
 				}}
 				onsaved={(value) => {
 					if (repaying) void goto(`/staff/budget/adjustments/${value.id}`);
-					else region.patch(value);
+					else patch(value);
 					editing = false;
 					repaying = false;
 				}}

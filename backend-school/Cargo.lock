@@ -4386,7 +4386,9 @@ dependencies = [
  "dashmap",
  "school-errors",
  "school-permissions",
+ "school-test-db",
  "sqlx",
+ "tokio",
  "tracing",
  "uuid",
 ]

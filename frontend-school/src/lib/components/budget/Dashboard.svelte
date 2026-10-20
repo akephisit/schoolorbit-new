@@ -18,6 +18,7 @@
 	import { message } from '#lib/budget/drafts.js';
 	import { saveDownload } from '#lib/budget/download.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { budgetExportPermissions } from '#lib/budget/access.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -39,6 +40,8 @@
 		query: BudgetReportQuery;
 		reports?: boolean;
 	} = $props();
+	const exportPreview = $derived(reports && $can.hasAny(...budgetExportPermissions));
+	const scopedQuery = $derived({ ...query, exportScope: exportPreview || undefined });
 	const region = new BudgetRegion<BudgetDashboard | null>(),
 		catalogs = new BudgetRegion<BudgetCatalogs | null>();
 	let exporting = $state(false),
@@ -61,7 +64,7 @@
 		exporting = true;
 		exportError = '';
 		try {
-			const blob = await exportBudgetReport({ ...query, metric }, controller.signal);
+			const blob = await exportBudgetReport({ ...scopedQuery, metric }, controller.signal);
 			if (!controller.signal.aborted) saveDownload(blob, 'รายงานงบประมาณ.csv');
 		} catch (cause) {
 			if (!controller.signal.aborted) exportError = message(cause);
@@ -74,9 +77,13 @@
 <PageShell title={reports ? 'รายงานงบประมาณ' : 'ภาพรวมงบประมาณ'} contentClass="space-y-4">
 	{#snippet actions()}{#if reports && $can.hasAny(PERMISSIONS.BUDGET_DOWNLOAD_OWN, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_UNIT, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_TREE, PERMISSIONS.BUDGET_DOWNLOAD_SCHOOL)}<LoadingButton
 				loading={exporting}
+				disabled={!region.value}
 				onclick={download}>ส่งออก CSV</LoadingButton
 			>{/if}{/snippet}
 	<Navigation /><ReadAccessNotice />
+	{#if reports && exportPreview}<p class="text-sm text-muted-foreground">
+			รายงานนี้แสดงเฉพาะข้อมูลที่คุณมีสิทธิ์ดูและส่งออก
+		</p>{/if}
 	<section class="rounded-xl border bg-card p-3 sm:p-4" aria-label="เลือกปีงบประมาณ">
 		{#if catalogs.error}<PageState
 				variant="error"
@@ -136,7 +143,8 @@
 				title="โหลดสรุปงบประมาณไม่สำเร็จ"
 				description={region.error}
 				actionLabel="ลองอีกครั้ง"
-				onaction={() => region.retry((signal) => getBudgetDashboard({ signal, query }))}
+				onaction={() =>
+					region.retry((signal) => getBudgetDashboard({ signal, query: scopedQuery }))}
 			/>{/if}{#if region.loading && !region.value}<TableSkeleton
 				columns={6}
 			/>{:else if region.value}<dl class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

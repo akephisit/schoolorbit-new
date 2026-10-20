@@ -1,17 +1,181 @@
 //! Budget relationships lock project → request → file; Files owns bytes, scans and cleanup.
-use crate::{models::BudgetFileSnapshot,queries,repository,policy};
+use crate::{models::BudgetFileSnapshot, policy, queries, repository};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::{access::FilePolicyAction,platform_types::{FilePurpose,FileVisibility},repository::PlatformFile};
+use school_file_platform::{
+    access::FilePolicyAction,
+    platform_types::{FilePurpose, FileVisibility},
+    repository::PlatformFile,
+};
 use school_permissions::registry::codes;
-use sqlx::{PgPool,Postgres,Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
-fn upload_allowed(a:&ActorContext,r:&repository::RequestRecord)->bool{(r.owner_id==a.user_id&&matches!(r.status.as_str(),"draft"|"returned")&&a.has_permission(codes::BUDGET_UPDATE_OWN))||(matches!(r.status.as_str(),"approved"|"closed")&&a.has_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL))}
-pub async fn authorize_create(pool:&PgPool,a:&ActorContext,resource:Option<Uuid>)->Result<Uuid,AppError>{let id=resource.ok_or_else(repository::denied)?;let r=repository::request(pool,id).await?;queries::require_request_read(pool,a,&r).await?;if !upload_allowed(a,&r){return Err(repository::denied());}Ok(a.user_id)}
+fn upload_allowed(a: &ActorContext, r: &repository::RequestRecord) -> bool {
+    (r.owner_id == a.user_id
+        && matches!(r.status.as_str(), "draft" | "returned")
+        && a.has_permission(codes::BUDGET_UPDATE_OWN))
+        || (matches!(r.status.as_str(), "approved" | "closed")
+            && a.has_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL))
+}
+pub async fn authorize_create(
+    pool: &PgPool,
+    a: &ActorContext,
+    resource: Option<Uuid>,
+) -> Result<Uuid, AppError> {
+    let id = resource.ok_or_else(repository::denied)?;
+    let r = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &r).await?;
+    if !upload_allowed(a, &r) {
+        return Err(repository::denied());
+    }
+    Ok(a.user_id)
+}
 /// Called after external upload with refreshed session/permission context; never trusts pre-upload state.
-pub async fn record_upload(pool:&PgPool,a:&ActorContext,id:Uuid,file:Uuid)->Result<(),AppError>{let old=repository::request(pool,id).await?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;if !upload_allowed(a,&r){return Err(repository::denied());}sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE").bind(file).fetch_optional(&mut *tx).await?;let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2 AND owner_user_id=$2 AND purpose_code='budget_evidence' AND visibility='private' AND deleted_at IS NULL AND retention_class='temporary' AND expires_at>now() AND lifecycle_status NOT IN('delete_requested','deleted','rejected'))").bind(file).bind(a.user_id).fetch_one(&mut *tx).await?;if !valid{return Err(repository::denied());}sqlx::query("INSERT INTO budget_file_uploads(file_id,request_id,uploaded_by) VALUES($1,$2,$3)").bind(file).bind(id).bind(a.user_id).execute(&mut *tx).await?;tx.commit().await?;Ok(())}
-pub async fn authorize_existing(pool:&PgPool,a:&ActorContext,file:&PlatformFile,action:FilePolicyAction,resource:Option<Uuid>)->Result<(),AppError>{if file.purpose!=FilePurpose::BudgetEvidence||file.visibility!=FileVisibility::Private||action!=FilePolicyAction::Read{return Err(repository::denied());}let id=resource.ok_or_else(repository::denied)?;let r=repository::request(pool,id).await?;queries::require_request_read(pool,a,&r).await?;let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM budget_file_links WHERE request_id=$1 AND file_id=$2) OR EXISTS(SELECT 1 FROM budget_file_uploads WHERE request_id=$1 AND file_id=$2 AND uploaded_by=$3)").bind(id).bind(file.id).bind(a.user_id).fetch_one(pool).await?;if !allowed{return Err(repository::denied());}Ok(())}
-pub async fn delete_guard<'a>(pool:&'a PgPool,a:&ActorContext,file:&PlatformFile,resource:Option<Uuid>)->Result<Transaction<'a,Postgres>,AppError>{let id=resource.ok_or_else(repository::denied)?;let old=repository::request(pool,id).await?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;if !upload_allowed(a,&r){return Err(repository::denied());}let allowed:Option<bool>=sqlx::query_scalar("SELECT created_by=$2 AND owner_user_id=$2 AND purpose_code='budget_evidence' AND visibility='private' AND retention_class='temporary' AND EXISTS(SELECT 1 FROM budget_file_uploads u WHERE u.request_id=$3 AND u.file_id=f.id AND u.uploaded_by=$2) AND NOT EXISTS(SELECT 1 FROM budget_file_links l WHERE l.file_id=f.id) FROM files f WHERE id=$1 FOR UPDATE").bind(file.id).bind(a.user_id).bind(id).fetch_optional(&mut *tx).await?;if allowed!=Some(true){return Err(repository::denied());}Ok(tx)}
-pub(crate) async fn validate_evidence(tx:&mut Transaction<'_,Postgres>,actor:Uuid,id:Uuid,files:&[Uuid])->Result<Vec<BudgetFileSnapshot>,AppError>{let mut ids=files.to_vec();ids.sort();ids.dedup();if files.len()>20||ids.len()!=files.len(){return Err(crate::money::invalid("แนบหลักฐานได้ไม่เกิน 20 ไฟล์และต้องไม่ซ้ำ"));}let rows:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=ANY($1) AND f.purpose_code='budget_evidence' AND f.visibility='private' AND f.lifecycle_status='ready' AND v.scan_status='clean' AND f.deleted_at IS NULL AND ((f.created_by=$3 AND f.owner_user_id=$3 AND f.retention_class='temporary' AND f.expires_at>now() AND EXISTS(SELECT 1 FROM budget_file_uploads u WHERE u.file_id=f.id AND u.request_id=$2 AND u.uploaded_by=$3)) OR EXISTS(SELECT 1 FROM budget_file_links l WHERE l.request_id=$2 AND l.file_id=f.id)) ORDER BY f.id FOR UPDATE OF f").bind(&ids).bind(id).bind(actor).fetch_all(&mut **tx).await?;if rows.len()!=ids.len(){return Err(crate::money::invalid("หลักฐานไม่พร้อมใช้งาน หมดอายุ หรือไม่ได้อัปโหลดสำหรับคำขอนี้"));}Ok(rows.into_iter().map(|(file_id,version_id,checksum)|BudgetFileSnapshot{file_id,version_id,checksum}).collect())}
-pub(crate) async fn retain(tx:&mut Transaction<'_,Postgres>,request:Uuid,revision:i64,files:&[BudgetFileSnapshot])->Result<(),AppError>{let ids=files.iter().map(|f|f.file_id).collect::<Vec<_>>();let versions=files.iter().map(|f|f.version_id).collect::<Vec<_>>();let sums=files.iter().map(|f|f.checksum.clone()).collect::<Vec<_>>();sqlx::query("INSERT INTO budget_file_links(request_id,revision,file_id,version_id,checksum) SELECT $1,$2,* FROM unnest($3::uuid[],$4::uuid[],$5::text[])").bind(request).bind(revision).bind(&ids).bind(versions).bind(sums).execute(&mut **tx).await?;sqlx::query("UPDATE files SET retention_class='standard',expires_at=NULL,updated_at=now() WHERE id=ANY($1)").bind(ids).execute(&mut **tx).await?;Ok(())}
-#[cfg(test)]mod tests{use super::*;#[test]fn evidence_acceptance_is_state_and_capability_specific(){let owner=Uuid::now_v7();let a=ActorContext{user_id:owner,permissions:vec![codes::BUDGET_UPDATE_OWN.into()]};let r=repository::RequestRecord{id:Uuid::now_v7(),project_id:Uuid::now_v7(),activity_id:Uuid::now_v7(),owner_id:owner,revision:1,status:"submitted".into(),document:sqlx::types::Json(crate::models::BudgetSpendingRequestInput{activity_id:Uuid::now_v7(),title:"test".into(),lines:vec![],evidence_file_ids:vec![]}),instance_id:None,created_at:chrono::Utc::now()};assert!(!upload_allowed(&a,&r));let mut r=r;r.status="draft".into();assert!(upload_allowed(&a,&r));}}
+pub async fn record_upload(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    file: Uuid,
+) -> Result<(), AppError> {
+    let old = repository::request(pool, id).await?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    if !upload_allowed(a, &r) {
+        return Err(repository::denied());
+    }
+    sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+        .bind(file)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2 AND owner_user_id=$2 AND purpose_code='budget_evidence' AND visibility='private' AND deleted_at IS NULL AND retention_class='temporary' AND expires_at>now() AND lifecycle_status NOT IN('delete_requested','deleted','rejected'))").bind(file).bind(a.user_id).fetch_one(&mut *tx).await?;
+    if !valid {
+        return Err(repository::denied());
+    }
+    sqlx::query("INSERT INTO budget_file_uploads(file_id,request_id,uploaded_by) VALUES($1,$2,$3)")
+        .bind(file)
+        .bind(id)
+        .bind(a.user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+pub async fn authorize_existing(
+    pool: &PgPool,
+    a: &ActorContext,
+    file: &PlatformFile,
+    action: FilePolicyAction,
+    resource: Option<Uuid>,
+) -> Result<(), AppError> {
+    if file.purpose != FilePurpose::BudgetEvidence
+        || file.visibility != FileVisibility::Private
+        || action != FilePolicyAction::Read
+    {
+        return Err(repository::denied());
+    }
+    let id = resource.ok_or_else(repository::denied)?;
+    let r = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &r).await?;
+    let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM budget_file_links WHERE request_id=$1 AND file_id=$2) OR EXISTS(SELECT 1 FROM budget_file_uploads WHERE request_id=$1 AND file_id=$2 AND uploaded_by=$3)").bind(id).bind(file.id).bind(a.user_id).fetch_one(pool).await?;
+    if !allowed {
+        return Err(repository::denied());
+    }
+    Ok(())
+}
+pub async fn delete_guard<'a>(
+    pool: &'a PgPool,
+    a: &ActorContext,
+    file: &PlatformFile,
+    resource: Option<Uuid>,
+) -> Result<Transaction<'a, Postgres>, AppError> {
+    let id = resource.ok_or_else(repository::denied)?;
+    let old = repository::request(pool, id).await?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    if !upload_allowed(a, &r) {
+        return Err(repository::denied());
+    }
+    let allowed:Option<bool>=sqlx::query_scalar("SELECT created_by=$2 AND owner_user_id=$2 AND purpose_code='budget_evidence' AND visibility='private' AND retention_class='temporary' AND EXISTS(SELECT 1 FROM budget_file_uploads u WHERE u.request_id=$3 AND u.file_id=f.id AND u.uploaded_by=$2) AND NOT EXISTS(SELECT 1 FROM budget_file_links l WHERE l.file_id=f.id) FROM files f WHERE id=$1 FOR UPDATE").bind(file.id).bind(a.user_id).bind(id).fetch_optional(&mut *tx).await?;
+    if allowed != Some(true) {
+        return Err(repository::denied());
+    }
+    Ok(tx)
+}
+pub(crate) async fn validate_evidence(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    files: &[Uuid],
+) -> Result<Vec<BudgetFileSnapshot>, AppError> {
+    let mut ids = files.to_vec();
+    ids.sort();
+    ids.dedup();
+    if files.len() > 20 || ids.len() != files.len() {
+        return Err(crate::money::invalid("แนบหลักฐานได้ไม่เกิน 20 ไฟล์และต้องไม่ซ้ำ"));
+    }
+    let rows:Vec<(Uuid,Uuid,String)>=sqlx::query_as("SELECT f.id,v.id,v.checksum FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=ANY($1) AND f.purpose_code='budget_evidence' AND f.visibility='private' AND f.lifecycle_status='ready' AND v.scan_status='clean' AND f.deleted_at IS NULL AND ((f.created_by=$3 AND f.owner_user_id=$3 AND f.retention_class='temporary' AND f.expires_at>now() AND EXISTS(SELECT 1 FROM budget_file_uploads u WHERE u.file_id=f.id AND u.request_id=$2 AND u.uploaded_by=$3)) OR EXISTS(SELECT 1 FROM budget_file_links l WHERE l.request_id=$2 AND l.file_id=f.id)) ORDER BY f.id FOR UPDATE OF f").bind(&ids).bind(id).bind(actor).fetch_all(&mut **tx).await?;
+    if rows.len() != ids.len() {
+        return Err(crate::money::invalid(
+            "หลักฐานไม่พร้อมใช้งาน หมดอายุ หรือไม่ได้อัปโหลดสำหรับคำขอนี้",
+        ));
+    }
+    Ok(rows
+        .into_iter()
+        .map(|(file_id, version_id, checksum)| BudgetFileSnapshot {
+            file_id,
+            version_id,
+            checksum,
+        })
+        .collect())
+}
+pub(crate) async fn retain(
+    tx: &mut Transaction<'_, Postgres>,
+    request: Uuid,
+    revision: i64,
+    files: &[BudgetFileSnapshot],
+) -> Result<(), AppError> {
+    let ids = files.iter().map(|f| f.file_id).collect::<Vec<_>>();
+    let versions = files.iter().map(|f| f.version_id).collect::<Vec<_>>();
+    let sums = files.iter().map(|f| f.checksum.clone()).collect::<Vec<_>>();
+    sqlx::query("INSERT INTO budget_file_links(request_id,revision,file_id,version_id,checksum) SELECT $1,$2,* FROM unnest($3::uuid[],$4::uuid[],$5::text[])").bind(request).bind(revision).bind(&ids).bind(versions).bind(sums).execute(&mut **tx).await?;
+    sqlx::query("UPDATE files SET retention_class='standard',expires_at=NULL,updated_at=now() WHERE id=ANY($1)").bind(ids).execute(&mut **tx).await?;
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn evidence_acceptance_is_state_and_capability_specific() {
+        let owner = Uuid::now_v7();
+        let a = ActorContext {
+            user_id: owner,
+            permissions: vec![codes::BUDGET_UPDATE_OWN.into()],
+        };
+        let r = repository::RequestRecord {
+            id: Uuid::now_v7(),
+            project_id: Uuid::now_v7(),
+            activity_id: Uuid::now_v7(),
+            owner_id: owner,
+            revision: 1,
+            status: "submitted".into(),
+            document: sqlx::types::Json(crate::models::BudgetSpendingRequestInput {
+                activity_id: Uuid::now_v7(),
+                title: "test".into(),
+                lines: vec![],
+                evidence_file_ids: vec![],
+            }),
+            instance_id: None,
+            created_at: chrono::Utc::now(),
+        };
+        assert!(!upload_allowed(&a, &r));
+        let mut r = r;
+        r.status = "draft".into();
+        assert!(upload_allowed(&a, &r));
+    }
+}

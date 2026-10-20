@@ -128,8 +128,14 @@ pub async fn upload_file(
         .map_err(map_platform_error)?;
 
     let budget_actor = if purpose == FilePurpose::BudgetEvidence {
-        Some(actor_tenant_context_from_session(&state.auth_runtime, &session).await.map(|fresh| fresh.actor))
-    } else { None };
+        Some(
+            actor_tenant_context_from_session(&state.auth_runtime, &session)
+                .await
+                .map(|fresh| fresh.actor),
+        )
+    } else {
+        None
+    };
     record_upload_relation_or_request_cleanup(
         state.file_platform.as_ref(),
         &repository,
@@ -168,11 +174,16 @@ async fn record_upload_relation_or_request_cleanup(
     let relation_result = match purpose {
         FilePurpose::BudgetEvidence => Some(match budget_actor {
             Some(Ok(actor)) => match resource_id {
-                Some(id) => school_budget::files::record_upload(repository.pool(), &actor, id, file_id).await,
+                Some(id) => {
+                    school_budget::files::record_upload(repository.pool(), &actor, id, file_id)
+                        .await
+                }
                 None => Err(school_errors::AppError::BadRequest("ต้องระบุคำขอ".into())),
             },
             Some(Err(error)) => Err(error),
-            None => Err(school_errors::AppError::InternalServerError("budget_upload_acceptance_context_missing".into())),
+            None => Err(school_errors::AppError::InternalServerError(
+                "budget_upload_acceptance_context_missing".into(),
+            )),
         }),
         FilePurpose::StaffLeaveEvidence => Some(
             school_staff::leave::files::record_upload(
@@ -369,7 +380,15 @@ pub async fn delete_file(
         .await
         .map_err(map_platform_error)?;
     let domain_delete_guard = match file.purpose {
-        FilePurpose::BudgetEvidence => Some(school_budget::files::delete_guard(&context.tenant.pool,&context.actor,&file,query.resource_id).await?),
+        FilePurpose::BudgetEvidence => Some(
+            school_budget::files::delete_guard(
+                &context.tenant.pool,
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => Some(
             school_staff::leave::files::delete_guard(
                 &context.tenant.pool,

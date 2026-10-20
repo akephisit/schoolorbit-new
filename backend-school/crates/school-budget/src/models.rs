@@ -7,20 +7,56 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum BudgetStatus { Draft, Submitted, Returned, Approved, Rejected, Closed }
+pub enum BudgetStatus {
+    Draft,
+    Submitted,
+    Returned,
+    Approved,
+    Rejected,
+    Closed,
+}
 impl BudgetStatus {
-    pub fn as_str(self) -> &'static str { match self { Self::Draft=>"draft", Self::Submitted=>"submitted", Self::Returned=>"returned", Self::Approved=>"approved", Self::Rejected=>"rejected", Self::Closed=>"closed" } }
-    pub fn editable(self) -> bool { matches!(self, Self::Draft | Self::Returned) }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Submitted => "submitted",
+            Self::Returned => "returned",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+            Self::Closed => "closed",
+        }
+    }
+    pub fn editable(self) -> bool {
+        matches!(self, Self::Draft | Self::Returned)
+    }
 }
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum BudgetAdjustmentKind { Add, Reduce, Transfer, Loan, Repayment }
+pub enum BudgetAdjustmentKind {
+    Add,
+    Reduce,
+    Transfer,
+    Loan,
+    Repayment,
+}
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum BudgetResourceKind { Project, Request, Adjustment }
-impl BudgetResourceKind { pub fn as_str(self)-> &'static str { match self { Self::Project=>"project", Self::Request=>"request", Self::Adjustment=>"adjustment" } } }
+pub enum BudgetResourceKind {
+    Project,
+    Request,
+    Adjustment,
+}
+impl BudgetResourceKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Request => "request",
+            Self::Adjustment => "adjustment",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
@@ -605,6 +641,7 @@ pub struct BudgetListQuery {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema, utoipa::IntoParams))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetReportQuery {
+    pub export_scope: Option<bool>,
     pub metric: Option<BudgetReportMetric>,
     pub fiscal_year_id: Option<Uuid>,
     pub project_id: Option<Uuid>,
@@ -645,12 +682,27 @@ pub struct UpdateBudgetAdjustmentRequest {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct BudgetCatalogItemInput { pub id: Option<Uuid>, pub name: String, pub active: bool }
+pub struct BudgetCatalogItemInput {
+    pub id: Option<Uuid>,
+    pub name: String,
+    pub active: bool,
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct BudgetFiscalYearInput { pub id: Option<Uuid>, pub name: String, pub start_date: NaiveDate, pub end_date: NaiveDate, pub active: bool }
+pub struct BudgetFiscalYearInput {
+    pub id: Option<Uuid>,
+    pub name: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub active: bool,
+}
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum BudgetReportMetric { #[default] Planned, Current, Paid }
+pub enum BudgetReportMetric {
+    #[default]
+    Planned,
+    Current,
+    Paid,
+}

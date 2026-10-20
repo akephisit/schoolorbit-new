@@ -190,6 +190,7 @@
 			{#if editing}<PlanEditor
 					workspace={value}
 					onsaved={patch}
+					onreconciled={(value) => region.patch(value)}
 					oncancel={() => (editing = false)}
 				/>{:else}<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="font-semibold">
@@ -281,7 +282,7 @@
 			}}
 		/>{/if}
 	<RequestList source={requestsSource} {query} embedded />
-	{#if region.value}<History kind="projects" {id} />{/if}
+	{#if region.value}<History kind="projects" {id} revision={region.value.project.revision} />{/if}
 </PageShell>
 <Dialog.Root bind:open={metadataOpen}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"

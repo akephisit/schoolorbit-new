@@ -1,30 +1,741 @@
-use crate::{models::*,money::{self,invalid,text},policy,process::{self,Source},queries,repository::{self,Delta,RequestRecord},settings,files};
+use crate::{
+    files,
+    models::*,
+    money::{self, invalid, text},
+    policy,
+    process::{self, Source},
+    queries,
+    repository::{self, Delta, RequestRecord},
+    settings,
+};
 use chrono::Utc;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::{types::Json,PgPool,Postgres,Transaction};
+use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;
-fn validate_lines(lines:&[BudgetRequestLineInput])->Result<(),AppError>{if lines.is_empty()||lines.len()>100||lines.iter().map(|x|x.plan_line_id).collect::<BTreeSet<_>>().len()!=lines.len(){return Err(invalid("คำขอต้องมี 1–100 รายการและรายการไม่ซ้ำ"));}money::sum(lines.iter().map(|l|money::positive_money(&l.amount_satang)).collect::<Result<Vec<_>,_>>()?)?;Ok(())}
-async fn replace_lines(tx:&mut Transaction<'_,Postgres>,r:&RequestRecord,plan:&BudgetPlanSnapshot)->Result<(),AppError>{
- validate_lines(&r.document.lines)?;let activity=plan.activities.iter().find(|x|x.id==r.activity_id).ok_or_else(||invalid("ไม่พบกิจกรรมในแผนอนุมัติ"))?;
- let mut rows=vec![];for l in &r.document.lines{let p=activity.lines.iter().find(|x|x.id==l.plan_line_id).ok_or_else(||invalid("รายการไม่ได้อยู่ในกิจกรรมที่อนุมัติ"))?;let amount=money::positive_money(&l.amount_satang)?;rows.push((p,l,amount));}
- sqlx::query("DELETE FROM budget_request_lines WHERE request_id=$1").bind(r.id).execute(&mut **tx).await?;
- let ids=rows.iter().map(|(p,_,_)|p.id).collect::<Vec<_>>();let funds=rows.iter().map(|(p,_,_)|p.fund_id).collect::<Vec<_>>();let categories=rows.iter().map(|(p,_,_)|p.expense_category_id).collect::<Vec<_>>();let amounts=rows.iter().map(|(_,_,n)|*n).collect::<Vec<_>>();let names=rows.iter().map(|(p,_,_)|p.description.clone()).collect::<Vec<_>>();let units=rows.iter().map(|(p,_,_)|p.unit.clone()).collect::<Vec<_>>();
- sqlx::query("INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute(&mut **tx).await?;Ok(())
+fn validate_lines(lines: &[BudgetRequestLineInput]) -> Result<(), AppError> {
+    if lines.is_empty()
+        || lines.len() > 100
+        || lines
+            .iter()
+            .map(|x| x.plan_line_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != lines.len()
+    {
+        return Err(invalid("คำขอต้องมี 1–100 รายการและรายการไม่ซ้ำ"));
+    }
+    money::sum(
+        lines
+            .iter()
+            .map(|l| money::positive_money(&l.amount_satang))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?;
+    Ok(())
 }
-pub async fn create(pool:&PgPool,a:&ActorContext,project_id:Uuid,input:SaveBudgetSpendingRequestRequest)->Result<BudgetSpendingRequestDetail,AppError>{
- a.require_permission(codes::BUDGET_CREATE_OWN)?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,project_id).await?;policy::require_read_in_transaction(&mut tx,a,&p,&read_scope).await?;if !policy::direct(&read_scope,a.user_id,a.user_id,p.document.project.organization_unit_id){return Err(repository::denied());}let id=Uuid::now_v7();if let Some(old)=repository::claim(&mut tx,a.user_id,input.request_id,"request_create",id,&(project_id,&input)).await?{tx.commit().await?;return queries::request_detail(pool,a,old).await;}repository::revision(p.revision,input.expected_revision)?;if !input.evidence_file_ids.is_empty(){return Err(invalid("สร้างคำขอก่อนอัปโหลดหลักฐาน"));}let plan=repository::accepted(&mut tx,&p).await?;let doc=BudgetSpendingRequestInput{activity_id:input.activity_id,title:text(&input.title,250)?,lines:input.lines,evidence_file_ids:vec![]};let r=RequestRecord{id,project_id,activity_id:doc.activity_id,owner_id:a.user_id,revision:1,status:"draft".into(),document:Json(doc),instance_id:None,created_at:Utc::now()};sqlx::query("INSERT INTO budget_requests(id,project_id,activity_id,owner_id,revision,status,document) VALUES($1,$2,$3,$4,1,'draft',$5)").bind(id).bind(project_id).bind(r.activity_id).bind(a.user_id).bind(&r.document).execute(&mut *tx).await?;replace_lines(&mut tx,&r,&plan).await?;repository::store_request(&mut tx,&r).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,1,"created",None).await?;tx.commit().await?;queries::request_detail(pool,a,id).await
+async fn replace_lines(
+    tx: &mut Transaction<'_, Postgres>,
+    r: &RequestRecord,
+    plan: &BudgetPlanSnapshot,
+) -> Result<(), AppError> {
+    validate_lines(&r.document.lines)?;
+    let activity = plan
+        .activities
+        .iter()
+        .find(|x| x.id == r.activity_id)
+        .ok_or_else(|| invalid("ไม่พบกิจกรรมในแผนอนุมัติ"))?;
+    let mut rows = vec![];
+    for l in &r.document.lines {
+        let p = activity
+            .lines
+            .iter()
+            .find(|x| x.id == l.plan_line_id)
+            .ok_or_else(|| invalid("รายการไม่ได้อยู่ในกิจกรรมที่อนุมัติ"))?;
+        let amount = money::positive_money(&l.amount_satang)?;
+        rows.push((p, l, amount));
+    }
+    sqlx::query("DELETE FROM budget_request_lines WHERE request_id=$1")
+        .bind(r.id)
+        .execute(&mut **tx)
+        .await?;
+    let ids = rows.iter().map(|(p, _, _)| p.id).collect::<Vec<_>>();
+    let funds = rows.iter().map(|(p, _, _)| p.fund_id).collect::<Vec<_>>();
+    let categories = rows
+        .iter()
+        .map(|(p, _, _)| p.expense_category_id)
+        .collect::<Vec<_>>();
+    let amounts = rows.iter().map(|(_, _, n)| *n).collect::<Vec<_>>();
+    let names = rows
+        .iter()
+        .map(|(p, _, _)| p.description.clone())
+        .collect::<Vec<_>>();
+    let units = rows
+        .iter()
+        .map(|(p, _, _)| p.unit.clone())
+        .collect::<Vec<_>>();
+    sqlx::query("INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute(&mut **tx).await?;
+    Ok(())
 }
-pub async fn save(pool:&PgPool,a:&ActorContext,id:Uuid,input:SaveBudgetSpendingRequestRequest)->Result<BudgetSpendingRequestDetail,AppError>{let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let read_scope=policy::read_scope(pool,a,false).await?;let update_scope=policy::update_scope(pool,a).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;queries::require_request_update_with_scope(a,&r,&p,&update_scope)?;if repository::claim(&mut tx,a.user_id,input.request_id,"request_save",id,&(id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if !repository::parse_status(&r.status)?.editable()||input.activity_id!=r.activity_id{return Err(repository::stale());}let plan=repository::accepted(&mut tx,&p).await?;files::validate_evidence(&mut tx,a.user_id,id,&input.evidence_file_ids).await?;r.document=Json(BudgetSpendingRequestInput{activity_id:r.activity_id,title:text(&input.title,250)?,lines:input.lines,evidence_file_ids:input.evidence_file_ids});replace_lines(&mut tx,&r,&plan).await?;r.revision+=1;repository::store_request(&mut tx,&r).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,"saved",None).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-pub async fn submit(pool:&PgPool,a:&ActorContext,id:Uuid,input:BudgetMutationRequest)->Result<BudgetSpendingRequestDetail,AppError>{let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let read_scope=policy::read_scope(pool,a,false).await?;let update_scope=policy::update_scope(pool,a).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;queries::require_request_update_with_scope(a,&r,&p,&update_scope)?;if repository::claim(&mut tx,a.user_id,input.request_id,"request_submit",id,&(id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if !repository::parse_status(&r.status)?.editable(){return Err(repository::stale());}let route=settings::routing(&mut tx).await?;let plan=repository::accepted(&mut tx,&p).await?;replace_lines(&mut tx,&r,&plan).await?;let evidence=files::validate_evidence(&mut tx,a.user_id,id,&r.document.evidence_file_ids).await?;let s=Source{resource_type:"budget_request",resource_id:id,owner_id:r.owner_id,actor_id:a.user_id};let i=process::start(&mut tx,a,&s,input.request_id,route.request_template_id,r.document.title.clone(),format!("/staff/budget/requests/{id}")).await?;r.instance_id=Some(i.id);r.status="submitted".into();r.revision+=1;repository::store_request(&mut tx,&r).await?;files::retain(&mut tx,id,r.revision,&evidence).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,"submitted",None).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-async fn reserve(tx:&mut Transaction<'_,Postgres>,a:&ActorContext,r:&RequestRecord,p:&repository::ProjectRecord)->Result<(),AppError>{let plan=repository::accepted(tx,p).await?;let activity=plan.activities.iter().find(|x|x.id==r.activity_id).ok_or_else(||invalid("กิจกรรมไม่ได้อยู่ในแผนอนุมัติล่าสุด"))?;let rows=repository::request_lines(tx,r.id).await?;for l in rows{let line=activity.lines.iter().find(|x|x.id==l.plan_line_id).ok_or_else(||invalid("รายการไม่ได้อยู่ในแผนอนุมัติล่าสุด"))?;if line.fund_id!=l.fund_id||line.expense_category_id!=l.expense_category_id{return Err(invalid("หมวดรายการแผนเปลี่ยนแล้ว กรุณาคืนคำขอแก้ไข"));}let allocation=BudgetAllocationRef{project_id:r.project_id,activity_id:r.activity_id,fund_id:l.fund_id,expense_category_id:l.expense_category_id};repository::post(tx,a.user_id,&allocation,Delta{reserved:l.amount,..Default::default()},"request_approval",r.id).await?;sqlx::query("UPDATE budget_request_lines SET reserved=amount WHERE request_id=$1 AND plan_line_id=$2").bind(r.id).bind(l.plan_line_id).execute(&mut **tx).await?;}Ok(())}
-pub async fn act(pool:&PgPool,a:&ActorContext,id:Uuid,input:BudgetActionRequest)->Result<BudgetSpendingRequestDetail,AppError>{let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;if repository::claim(&mut tx,a.user_id,input.request_id,"request_action",id,&(id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if r.status!="submitted"{return Err(repository::stale());}let s=Source{resource_type:"budget_request",resource_id:id,owner_id:r.owner_id,actor_id:a.user_id};let i=process::act(&mut tx,a,&s,r.instance_id,&input).await?;let status=process::status(&i);if status==BudgetStatus::Approved{reserve(&mut tx,a,&r,&p).await?;}r.status=status.as_str().into();r.revision+=1;repository::store_request(&mut tx,&r).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,status.as_str(),input.comment).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-fn allocations(input:&[BudgetPaymentAllocationInput])->Result<i64,AppError>{if input.is_empty()||input.len()>100||input.iter().map(|x|x.plan_line_id).collect::<BTreeSet<_>>().len()!=input.len(){return Err(invalid("รายการจ่ายหรือคืนเงินต้องมี 1–100 รายการไม่ซ้ำ"));}money::sum(input.iter().map(|x|money::positive_money(&x.amount_satang)).collect::<Result<Vec<_>,_>>()?)}
-pub async fn pay(pool:&PgPool,a:&ActorContext,id:Uuid,input:CreateBudgetPaymentRequest)->Result<BudgetSpendingRequestDetail,AppError>{a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let total=allocations(&input.allocations)?;let voucher=text(&input.voucher_number,150)?;if let Some(n)=&input.note{text(n,4000)?;}let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;let payment_id=Uuid::now_v7();if repository::claim(&mut tx,a.user_id,input.request_id,"request_pay",payment_id,&(id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if r.status!="approved"{return Err(repository::stale());}let evidence=files::validate_evidence(&mut tx,a.user_id,id,&input.evidence_file_ids).await?;let rows=repository::request_lines(&mut tx,id).await?;for x in &input.allocations{let l=rows.iter().find(|l|l.plan_line_id==x.plan_line_id).ok_or_else(||invalid("รายการจ่ายไม่ได้อยู่ในคำขอ"))?;let n=money::positive_money(&x.amount_satang)?;if n>l.reserved{return Err(AppError::Conflict("ยอดจ่ายเกินยอดผูกพันคงเหลือ".into()));}repository::post(&mut tx,a.user_id,&BudgetAllocationRef{project_id:r.project_id,activity_id:r.activity_id,fund_id:l.fund_id,expense_category_id:l.expense_category_id},Delta{reserved:-n,paid:n,..Default::default()},"payment",payment_id).await?;sqlx::query("UPDATE budget_request_lines SET reserved=reserved-$3,paid=paid+$3 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(n).execute(&mut *tx).await?;}
- let payment=BudgetPayment{id:payment_id,request_id:id,paid_on:input.paid_on,voucher_number:voucher,note:input.note,total_satang:total.to_string(),allocations:input.allocations.clone(),evidence:evidence.clone(),created_by:a.user_id,created_at:Utc::now(),refunds:vec![]};sqlx::query("INSERT INTO budget_payments(id,request_id,document) VALUES($1,$2,$3)").bind(payment_id).bind(id).bind(Json(payment)).execute(&mut *tx).await?;let ids=input.allocations.iter().map(|x|x.plan_line_id).collect::<Vec<_>>();let amounts=input.allocations.iter().map(|x|money::positive_money(&x.amount_satang)).collect::<Result<Vec<_>,_>>()?;sqlx::query("INSERT INTO budget_payment_lines(payment_id,request_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(payment_id).bind(id).bind(ids).bind(amounts).execute(&mut *tx).await?;r.revision+=1;repository::store_request(&mut tx,&r).await?;files::retain(&mut tx,id,r.revision,&evidence).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,"payment_recorded",Some(payment_id.to_string())).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-pub async fn refund(pool:&PgPool,a:&ActorContext,id:Uuid,payment_id:Uuid,input:RefundBudgetPaymentRequest)->Result<BudgetSpendingRequestDetail,AppError>{a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let total=allocations(&input.allocations)?;let reason=text(&input.reason,4000)?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;let refund_id=Uuid::now_v7();if repository::claim(&mut tx,a.user_id,input.request_id,"request_refund",refund_id,&(id,payment_id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if !matches!(r.status.as_str(),"approved"|"closed"){return Err(repository::stale());}let payment:Option<Uuid>=sqlx::query_scalar("SELECT id FROM budget_payments WHERE id=$1 AND request_id=$2 FOR UPDATE").bind(payment_id).bind(id).fetch_optional(&mut *tx).await?;if payment.is_none(){return Err(invalid("ไม่พบการจ่ายเงินของคำขอนี้"));}let count:i64=sqlx::query_scalar("SELECT count(*) FROM budget_refunds WHERE payment_id=$1").bind(payment_id).fetch_one(&mut *tx).await?;if count>=100{return Err(invalid("การจ่ายหนึ่งรายการคืนเงินได้ไม่เกิน 100 ครั้ง"));}let evidence=files::validate_evidence(&mut tx,a.user_id,id,&input.evidence_file_ids).await?;let rows=repository::request_lines(&mut tx,id).await?;for x in &input.allocations{let l=rows.iter().find(|l|l.plan_line_id==x.plan_line_id).ok_or_else(||invalid("รายการคืนเงินไม่ได้อยู่ในคำขอ"))?;let n=money::positive_money(&x.amount_satang)?;let remaining:Option<i64>=sqlx::query_scalar("SELECT p.amount-coalesce((SELECT sum(f.amount) FROM budget_refund_lines f WHERE f.payment_id=p.payment_id AND f.plan_line_id=p.plan_line_id),0)::bigint FROM budget_payment_lines p WHERE p.payment_id=$1 AND p.plan_line_id=$2").bind(payment_id).bind(l.plan_line_id).fetch_optional(&mut *tx).await?;if remaining.is_none_or(|left|n>left)||n>l.paid{return Err(invalid("ยอดคืนเงินเกินยอดจ่ายเดิมที่ยังไม่ได้คืน"));}let restored=if r.status=="approved"{n}else{0};repository::post(&mut tx,a.user_id,&BudgetAllocationRef{project_id:r.project_id,activity_id:r.activity_id,fund_id:l.fund_id,expense_category_id:l.expense_category_id},Delta{reserved:restored,paid:-n,..Default::default()},"refund",refund_id).await?;sqlx::query("UPDATE budget_request_lines SET reserved=reserved+$3,paid=paid-$4 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(restored).bind(n).execute(&mut *tx).await?;}
- let refund=BudgetRefund{id:refund_id,payment_id,refunded_on:input.refunded_on,reason:reason.clone(),total_satang:total.to_string(),allocations:input.allocations.clone(),evidence:evidence.clone(),created_by:a.user_id,created_at:Utc::now()};sqlx::query("INSERT INTO budget_refunds(id,payment_id,request_id,document) VALUES($1,$2,$3,$4)").bind(refund_id).bind(payment_id).bind(id).bind(Json(refund)).execute(&mut *tx).await?;let ids=input.allocations.iter().map(|x|x.plan_line_id).collect::<Vec<_>>();let amounts=input.allocations.iter().map(|x|money::positive_money(&x.amount_satang)).collect::<Result<Vec<_>,_>>()?;sqlx::query("INSERT INTO budget_refund_lines(refund_id,payment_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(refund_id).bind(payment_id).bind(ids).bind(amounts).execute(&mut *tx).await?;r.revision+=1;repository::store_request(&mut tx,&r).await?;files::retain(&mut tx,id,r.revision,&evidence).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,"refund_recorded",Some(reason)).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-pub async fn close(pool:&PgPool,a:&ActorContext,id:Uuid,input:CloseBudgetRequestRequest)->Result<BudgetSpendingRequestDetail,AppError>{a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;let old=repository::request(pool,id).await?;queries::require_request_read(pool,a,&old).await?;let reason=text(&input.reason,4000)?;let read_scope=policy::read_scope(pool,a,false).await?;let mut tx=pool.begin().await?;let p=repository::lock_project(&mut tx,old.project_id).await?;let mut r=repository::lock_request(&mut tx,id).await?;queries::require_request_read_in_transaction(&mut tx,a,&r,&p,&read_scope).await?;if repository::claim(&mut tx,a.user_id,input.request_id,"request_close",id,&(id,&input)).await?.is_some(){tx.commit().await?;return queries::request_detail(pool,a,id).await;}repository::revision(r.revision,input.expected_revision)?;if r.status!="approved"{return Err(repository::stale());}for l in repository::request_lines(&mut tx,id).await?{repository::post(&mut tx,a.user_id,&BudgetAllocationRef{project_id:r.project_id,activity_id:r.activity_id,fund_id:l.fund_id,expense_category_id:l.expense_category_id},Delta{reserved:-l.reserved,..Default::default()},"request_close",id).await?;}sqlx::query("UPDATE budget_request_lines SET reserved=0 WHERE request_id=$1").bind(id).execute(&mut *tx).await?;r.status="closed".into();r.revision+=1;repository::store_request(&mut tx,&r).await?;repository::history(&mut tx,a,BudgetResourceKind::Request,id,r.revision,"closed",Some(reason)).await?;tx.commit().await?;queries::request_detail(pool,a,id).await}
-#[cfg(test)]mod tests{use super::*;#[test]fn financial_allocations_reject_duplicates_and_zero(){let id=Uuid::now_v7();let x=BudgetPaymentAllocationInput{plan_line_id:id,amount_satang:"1".into()};assert!(allocations(&[x.clone(),x]).is_err());assert!(allocations(&[BudgetPaymentAllocationInput{plan_line_id:id,amount_satang:"0".into()}]).is_err());}}
+pub async fn create(
+    pool: &PgPool,
+    a: &ActorContext,
+    project_id: Uuid,
+    input: SaveBudgetSpendingRequestRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    a.require_permission(codes::BUDGET_CREATE_OWN)?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, project_id).await?;
+    policy::require_read_in_transaction(&mut tx, a, &p, &read_scope).await?;
+    if !policy::direct(
+        &read_scope,
+        a.user_id,
+        a.user_id,
+        p.document.project.organization_unit_id,
+    ) {
+        return Err(repository::denied());
+    }
+    let id = Uuid::now_v7();
+    if let Some(old) = repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_create",
+        id,
+        &(project_id, &input),
+    )
+    .await?
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, old).await;
+    }
+    repository::revision(p.revision, input.expected_revision)?;
+    if !input.evidence_file_ids.is_empty() {
+        return Err(invalid("สร้างคำขอก่อนอัปโหลดหลักฐาน"));
+    }
+    let plan = repository::accepted(&mut tx, &p).await?;
+    let doc = BudgetSpendingRequestInput {
+        activity_id: input.activity_id,
+        title: text(&input.title, 250)?,
+        lines: input.lines,
+        evidence_file_ids: vec![],
+    };
+    let r = RequestRecord {
+        id,
+        project_id,
+        activity_id: doc.activity_id,
+        owner_id: a.user_id,
+        revision: 1,
+        status: "draft".into(),
+        document: Json(doc),
+        instance_id: None,
+        created_at: Utc::now(),
+    };
+    sqlx::query("INSERT INTO budget_requests(id,project_id,activity_id,owner_id,revision,status,document) VALUES($1,$2,$3,$4,1,'draft',$5)").bind(id).bind(project_id).bind(r.activity_id).bind(a.user_id).bind(&r.document).execute(&mut *tx).await?;
+    replace_lines(&mut tx, &r, &plan).await?;
+    repository::store_request(&mut tx, &r).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        1,
+        "created",
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+pub async fn save(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    input: SaveBudgetSpendingRequestRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let update_scope = policy::update_scope(pool, a).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    queries::require_request_update_with_scope(a, &r, &p, &update_scope)?;
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_save",
+        id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if !repository::parse_status(&r.status)?.editable() || input.activity_id != r.activity_id {
+        return Err(repository::stale());
+    }
+    let plan = repository::accepted(&mut tx, &p).await?;
+    files::validate_evidence(&mut tx, a.user_id, id, &input.evidence_file_ids).await?;
+    r.document = Json(BudgetSpendingRequestInput {
+        activity_id: r.activity_id,
+        title: text(&input.title, 250)?,
+        lines: input.lines,
+        evidence_file_ids: input.evidence_file_ids,
+    });
+    replace_lines(&mut tx, &r, &plan).await?;
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        "saved",
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+pub async fn submit(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    input: BudgetMutationRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let update_scope = policy::update_scope(pool, a).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    queries::require_request_update_with_scope(a, &r, &p, &update_scope)?;
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_submit",
+        id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if !repository::parse_status(&r.status)?.editable() {
+        return Err(repository::stale());
+    }
+    let route = settings::routing(&mut tx).await?;
+    let plan = repository::accepted(&mut tx, &p).await?;
+    replace_lines(&mut tx, &r, &plan).await?;
+    let evidence =
+        files::validate_evidence(&mut tx, a.user_id, id, &r.document.evidence_file_ids).await?;
+    let s = Source {
+        resource_type: "budget_request",
+        resource_id: id,
+        owner_id: r.owner_id,
+        actor_id: a.user_id,
+    };
+    let i = process::start(
+        &mut tx,
+        a,
+        &s,
+        input.request_id,
+        route.request_template_id,
+        r.document.title.clone(),
+        format!("/staff/budget/requests/{id}"),
+    )
+    .await?;
+    r.instance_id = Some(i.id);
+    r.status = "submitted".into();
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    files::retain(&mut tx, id, r.revision, &evidence).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        "submitted",
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+async fn reserve(
+    tx: &mut Transaction<'_, Postgres>,
+    a: &ActorContext,
+    r: &RequestRecord,
+    p: &repository::ProjectRecord,
+) -> Result<(), AppError> {
+    let plan = repository::accepted(tx, p).await?;
+    let activity = plan
+        .activities
+        .iter()
+        .find(|x| x.id == r.activity_id)
+        .ok_or_else(|| invalid("กิจกรรมไม่ได้อยู่ในแผนอนุมัติล่าสุด"))?;
+    let rows = repository::request_lines(tx, r.id).await?;
+    for l in rows {
+        let line = activity
+            .lines
+            .iter()
+            .find(|x| x.id == l.plan_line_id)
+            .ok_or_else(|| invalid("รายการไม่ได้อยู่ในแผนอนุมัติล่าสุด"))?;
+        if line.fund_id != l.fund_id || line.expense_category_id != l.expense_category_id {
+            return Err(invalid("หมวดรายการแผนเปลี่ยนแล้ว กรุณาคืนคำขอแก้ไข"));
+        }
+        let allocation = BudgetAllocationRef {
+            project_id: r.project_id,
+            activity_id: r.activity_id,
+            fund_id: l.fund_id,
+            expense_category_id: l.expense_category_id,
+        };
+        repository::post(
+            tx,
+            a.user_id,
+            &allocation,
+            Delta {
+                reserved: l.amount,
+                ..Default::default()
+            },
+            "request_approval",
+            r.id,
+        )
+        .await?;
+        sqlx::query("UPDATE budget_request_lines SET reserved=amount WHERE request_id=$1 AND plan_line_id=$2").bind(r.id).bind(l.plan_line_id).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+pub async fn act(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    input: BudgetActionRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_action",
+        id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if r.status != "submitted" {
+        return Err(repository::stale());
+    }
+    let s = Source {
+        resource_type: "budget_request",
+        resource_id: id,
+        owner_id: r.owner_id,
+        actor_id: a.user_id,
+    };
+    let i = process::act(&mut tx, a, &s, r.instance_id, &input).await?;
+    let status = process::status(&i);
+    if status == BudgetStatus::Approved {
+        reserve(&mut tx, a, &r, &p).await?;
+    }
+    r.status = status.as_str().into();
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        process::history_action(input.action, status),
+        input.comment,
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+fn allocations(input: &[BudgetPaymentAllocationInput]) -> Result<i64, AppError> {
+    if input.is_empty()
+        || input.len() > 100
+        || input
+            .iter()
+            .map(|x| x.plan_line_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != input.len()
+    {
+        return Err(invalid("รายการจ่ายหรือคืนเงินต้องมี 1–100 รายการไม่ซ้ำ"));
+    }
+    money::sum(
+        input
+            .iter()
+            .map(|x| money::positive_money(&x.amount_satang))
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+}
+pub async fn pay(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    input: CreateBudgetPaymentRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let total = allocations(&input.allocations)?;
+    let voucher = text(&input.voucher_number, 150)?;
+    if let Some(n) = &input.note {
+        text(n, 4000)?;
+    }
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    let payment_id = Uuid::now_v7();
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_pay",
+        payment_id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if r.status != "approved" {
+        return Err(repository::stale());
+    }
+    let evidence =
+        files::validate_evidence(&mut tx, a.user_id, id, &input.evidence_file_ids).await?;
+    let rows = repository::request_lines(&mut tx, id).await?;
+    for x in &input.allocations {
+        let l = rows
+            .iter()
+            .find(|l| l.plan_line_id == x.plan_line_id)
+            .ok_or_else(|| invalid("รายการจ่ายไม่ได้อยู่ในคำขอ"))?;
+        let n = money::positive_money(&x.amount_satang)?;
+        if n > l.reserved {
+            return Err(AppError::Conflict("ยอดจ่ายเกินยอดผูกพันคงเหลือ".into()));
+        }
+        repository::post(
+            &mut tx,
+            a.user_id,
+            &BudgetAllocationRef {
+                project_id: r.project_id,
+                activity_id: r.activity_id,
+                fund_id: l.fund_id,
+                expense_category_id: l.expense_category_id,
+            },
+            Delta {
+                reserved: -n,
+                paid: n,
+                ..Default::default()
+            },
+            "payment",
+            payment_id,
+        )
+        .await?;
+        sqlx::query("UPDATE budget_request_lines SET reserved=reserved-$3,paid=paid+$3 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(n).execute(&mut *tx).await?;
+    }
+    let payment = BudgetPayment {
+        id: payment_id,
+        request_id: id,
+        paid_on: input.paid_on,
+        voucher_number: voucher,
+        note: input.note,
+        total_satang: total.to_string(),
+        allocations: input.allocations.clone(),
+        evidence: evidence.clone(),
+        created_by: a.user_id,
+        created_at: Utc::now(),
+        refunds: vec![],
+    };
+    sqlx::query("INSERT INTO budget_payments(id,request_id,document) VALUES($1,$2,$3)")
+        .bind(payment_id)
+        .bind(id)
+        .bind(Json(payment))
+        .execute(&mut *tx)
+        .await?;
+    let ids = input
+        .allocations
+        .iter()
+        .map(|x| x.plan_line_id)
+        .collect::<Vec<_>>();
+    let amounts = input
+        .allocations
+        .iter()
+        .map(|x| money::positive_money(&x.amount_satang))
+        .collect::<Result<Vec<_>, _>>()?;
+    sqlx::query("INSERT INTO budget_payment_lines(payment_id,request_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(payment_id).bind(id).bind(ids).bind(amounts).execute(&mut *tx).await?;
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    files::retain(&mut tx, id, r.revision, &evidence).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        "payment_recorded",
+        Some(payment_id.to_string()),
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+pub async fn refund(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    payment_id: Uuid,
+    input: RefundBudgetPaymentRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let total = allocations(&input.allocations)?;
+    let reason = text(&input.reason, 4000)?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    let refund_id = Uuid::now_v7();
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_refund",
+        refund_id,
+        &(id, payment_id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if !matches!(r.status.as_str(), "approved" | "closed") {
+        return Err(repository::stale());
+    }
+    let payment: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM budget_payments WHERE id=$1 AND request_id=$2 FOR UPDATE",
+    )
+    .bind(payment_id)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if payment.is_none() {
+        return Err(invalid("ไม่พบการจ่ายเงินของคำขอนี้"));
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM budget_refunds WHERE payment_id=$1")
+        .bind(payment_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if count >= 100 {
+        return Err(invalid("การจ่ายหนึ่งรายการคืนเงินได้ไม่เกิน 100 ครั้ง"));
+    }
+    let evidence =
+        files::validate_evidence(&mut tx, a.user_id, id, &input.evidence_file_ids).await?;
+    let rows = repository::request_lines(&mut tx, id).await?;
+    for x in &input.allocations {
+        let l = rows
+            .iter()
+            .find(|l| l.plan_line_id == x.plan_line_id)
+            .ok_or_else(|| invalid("รายการคืนเงินไม่ได้อยู่ในคำขอ"))?;
+        let n = money::positive_money(&x.amount_satang)?;
+        let remaining:Option<i64>=sqlx::query_scalar("SELECT p.amount-coalesce((SELECT sum(f.amount) FROM budget_refund_lines f WHERE f.payment_id=p.payment_id AND f.plan_line_id=p.plan_line_id),0)::bigint FROM budget_payment_lines p WHERE p.payment_id=$1 AND p.plan_line_id=$2").bind(payment_id).bind(l.plan_line_id).fetch_optional(&mut *tx).await?;
+        if remaining.is_none_or(|left| n > left) || n > l.paid {
+            return Err(invalid("ยอดคืนเงินเกินยอดจ่ายเดิมที่ยังไม่ได้คืน"));
+        }
+        let restored = if r.status == "approved" { n } else { 0 };
+        repository::post(
+            &mut tx,
+            a.user_id,
+            &BudgetAllocationRef {
+                project_id: r.project_id,
+                activity_id: r.activity_id,
+                fund_id: l.fund_id,
+                expense_category_id: l.expense_category_id,
+            },
+            Delta {
+                reserved: restored,
+                paid: -n,
+                ..Default::default()
+            },
+            "refund",
+            refund_id,
+        )
+        .await?;
+        sqlx::query("UPDATE budget_request_lines SET reserved=reserved+$3,paid=paid-$4 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(restored).bind(n).execute(&mut *tx).await?;
+    }
+    let refund = BudgetRefund {
+        id: refund_id,
+        payment_id,
+        refunded_on: input.refunded_on,
+        reason: reason.clone(),
+        total_satang: total.to_string(),
+        allocations: input.allocations.clone(),
+        evidence: evidence.clone(),
+        created_by: a.user_id,
+        created_at: Utc::now(),
+    };
+    sqlx::query(
+        "INSERT INTO budget_refunds(id,payment_id,request_id,document) VALUES($1,$2,$3,$4)",
+    )
+    .bind(refund_id)
+    .bind(payment_id)
+    .bind(id)
+    .bind(Json(refund))
+    .execute(&mut *tx)
+    .await?;
+    let ids = input
+        .allocations
+        .iter()
+        .map(|x| x.plan_line_id)
+        .collect::<Vec<_>>();
+    let amounts = input
+        .allocations
+        .iter()
+        .map(|x| money::positive_money(&x.amount_satang))
+        .collect::<Result<Vec<_>, _>>()?;
+    sqlx::query("INSERT INTO budget_refund_lines(refund_id,payment_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(refund_id).bind(payment_id).bind(ids).bind(amounts).execute(&mut *tx).await?;
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    files::retain(&mut tx, id, r.revision, &evidence).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        "refund_recorded",
+        Some(reason),
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+pub async fn close(
+    pool: &PgPool,
+    a: &ActorContext,
+    id: Uuid,
+    input: CloseBudgetRequestRequest,
+) -> Result<BudgetSpendingRequestDetail, AppError> {
+    a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
+    let old = repository::request(pool, id).await?;
+    queries::require_request_read(pool, a, &old).await?;
+    let reason = text(&input.reason, 4000)?;
+    let read_scope = policy::read_scope(pool, a, false).await?;
+    let mut tx = pool.begin().await?;
+    let p = repository::lock_project(&mut tx, old.project_id).await?;
+    let mut r = repository::lock_request(&mut tx, id).await?;
+    queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
+    if repository::claim(
+        &mut tx,
+        a.user_id,
+        input.request_id,
+        "request_close",
+        id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return queries::request_detail(pool, a, id).await;
+    }
+    repository::revision(r.revision, input.expected_revision)?;
+    if r.status != "approved" {
+        return Err(repository::stale());
+    }
+    for l in repository::request_lines(&mut tx, id).await? {
+        repository::post(
+            &mut tx,
+            a.user_id,
+            &BudgetAllocationRef {
+                project_id: r.project_id,
+                activity_id: r.activity_id,
+                fund_id: l.fund_id,
+                expense_category_id: l.expense_category_id,
+            },
+            Delta {
+                reserved: -l.reserved,
+                ..Default::default()
+            },
+            "request_close",
+            id,
+        )
+        .await?;
+    }
+    sqlx::query("UPDATE budget_request_lines SET reserved=0 WHERE request_id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    r.status = "closed".into();
+    r.revision += 1;
+    repository::store_request(&mut tx, &r).await?;
+    repository::history(
+        &mut tx,
+        a,
+        BudgetResourceKind::Request,
+        id,
+        r.revision,
+        "closed",
+        Some(reason),
+    )
+    .await?;
+    tx.commit().await?;
+    queries::request_detail(pool, a, id).await
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn financial_allocations_reject_duplicates_and_zero() {
+        let id = Uuid::now_v7();
+        let x = BudgetPaymentAllocationInput {
+            plan_line_id: id,
+            amount_satang: "1".into(),
+        };
+        assert!(allocations(&[x.clone(), x]).is_err());
+        assert!(allocations(&[BudgetPaymentAllocationInput {
+            plan_line_id: id,
+            amount_satang: "0".into()
+        }])
+        .is_err());
+    }
+}

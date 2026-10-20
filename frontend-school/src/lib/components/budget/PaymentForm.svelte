@@ -3,6 +3,8 @@
 	import {
 		createBudgetPayment,
 		refundBudgetPayment,
+		getBudgetRequest,
+		listBudgetPayments,
 		type BudgetPayment,
 		type BudgetSpendingRequestDetail
 	} from '#lib/api/budget.js';
@@ -17,21 +19,30 @@
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import EvidenceEditor from './EvidenceEditor.svelte';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	let {
 		detail,
 		payment,
 		lineNames = {},
 		oncancel,
+		onreconciled,
 		onsaved
 	}: {
 		detail: BudgetSpendingRequestDetail;
 		payment?: BudgetPayment;
 		lineNames?: Record<string, string>;
 		oncancel: () => void;
+		onreconciled: (value: BudgetSpendingRequestDetail) => void;
 		onsaved: (value: BudgetSpendingRequestDetail) => void;
 	} = $props();
-	const expectedRevision = untrack(() => detail.request.revision),
-		lines = untrack(() => paymentLines(detail, payment));
+	let expectedRevision = $state(untrack(() => detail.request.revision)),
+		lines = $state(untrack(() => paymentLines(detail, payment)));
+	let conflict = $state(false),
+		reloading = $state(false),
+		reviewed = $state(false),
+		latest = $state<BudgetSpendingRequestDetail | null>(null),
+		conflictReadError = $state('');
 	let paidOn = $state<string | undefined>(),
 		voucher = $state(''),
 		note = $state(''),
@@ -45,6 +56,13 @@
 		error = $state(''),
 		disposed = false;
 	const intent = new BudgetMutationIntent();
+	const controller = new AbortController();
+	const canUseLatest = $derived(
+		!!latest &&
+			(payment
+				? ['approved', 'closed'].includes(latest.request.status)
+				: latest.capabilities.canPay)
+	);
 	const total = $derived.by(() => {
 		try {
 			return sumSatang(Object.values(amounts).filter(Boolean).map(toSatang));
@@ -54,10 +72,56 @@
 	});
 	onDestroy(() => {
 		disposed = true;
+		controller.abort();
 	});
+	async function reloadOriginalPayment() {
+		if (!payment) return undefined;
+		let offset = 0,
+			total = Number.POSITIVE_INFINITY;
+		while (offset < total) {
+			const page = await listBudgetPayments(detail.request.id, {
+				signal: controller.signal,
+				query: { limit: 100, offset }
+			});
+			total = Math.min(total, page.total);
+			const original = page.items.find((item) => item.id === payment.id);
+			if (original) return original;
+			if (page.limit <= 0) break;
+			offset += page.limit;
+		}
+		throw new Error('ไม่พบการจ่ายเงินเดิม กรุณาตรวจสอบสิทธิ์และเปิดรายการอีกครั้ง');
+	}
+	async function reloadCurrent() {
+		reloading = true;
+		reviewed = false;
+		conflictReadError = '';
+		try {
+			const [value, original] = await Promise.all([
+				getBudgetRequest(detail.request.id, { signal: controller.signal }),
+				reloadOriginalPayment()
+			]);
+			if (!disposed) {
+				latest = value;
+				lines = paymentLines(value, original);
+				onreconciled(value);
+			}
+		} catch (cause) {
+			if (!disposed) conflictReadError = message(cause);
+		} finally {
+			if (!disposed) reloading = false;
+		}
+	}
+	function acceptCurrent() {
+		if (!latest || !reviewed || !canUseLatest) return;
+		expectedRevision = latest.request.revision;
+		conflict = false;
+		latest = null;
+		error = '';
+		intent.clear();
+	}
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (pending || uploading) return;
+		if (pending || uploading || conflict) return;
 		error = '';
 		try {
 			if (!paidOn || !validDate(paidOn)) throw new Error('เลือกวันที่ทำรายการ');
@@ -87,7 +151,14 @@
 			}
 			if (!disposed) onsaved(result);
 		} catch (cause) {
-			if (!disposed) error = message(cause);
+			if (!disposed) {
+				error = message(cause);
+				if (cause instanceof ApiClientError && cause.status === 409) {
+					conflict = true;
+					latest = null;
+					reviewed = false;
+				}
+			}
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -95,6 +166,35 @@
 </script>
 
 <form onsubmit={save} class="space-y-4" data-testid="budget-payment-form">
+	{#if conflict}<section
+			class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+			aria-label="ทบทวนยอดล่าสุด"
+		>
+			<h2 class="font-semibold">ยอดหรือสถานะคำขอมีการเปลี่ยนแปลง</h2>
+			<p class="text-sm">ข้อมูลที่กรอกยังอยู่ กรุณาโหลดยอดล่าสุดและตรวจสอบก่อนยืนยันอีกครั้ง</p>
+			<Button type="button" variant="outline" disabled={reloading} onclick={reloadCurrent}
+				>{reloading ? 'กำลังโหลดยอดล่าสุด…' : 'โหลดยอดล่าสุดและเก็บข้อมูลที่กรอก'}</Button
+			>{#if conflictReadError}<PageState
+					variant="error"
+					title="โหลดยอดล่าสุดไม่สำเร็จ"
+					description={conflictReadError}
+				/>{/if}{#if latest}<p class="text-sm">
+					คำขอฉบับล่าสุดที่ {latest.request.revision} · จ่ายแล้ว {money(latest.request.paidSatang)} บาท
+				</p>
+				{#if canUseLatest}<div class="flex items-start gap-2">
+						<Checkbox id="budget-payment-review-latest" bind:checked={reviewed} /><Label
+							for="budget-payment-review-latest"
+							>ฉันตรวจสอบยอดคงเหลือล่าสุดและรายการที่ต้องการบันทึกแล้ว</Label
+						>
+					</div>
+					<Button type="button" variant="outline" disabled={!reviewed} onclick={acceptCurrent}
+						>ยืนยันใช้ยอดล่าสุด</Button
+					>{:else}<PageState
+						variant="permission"
+						title="สถานะล่าสุดไม่อนุญาตให้ทำรายการนี้"
+						description="ตรวจสอบสถานะคำขอกับผู้รับผิดชอบก่อนดำเนินการต่อ"
+					/>{/if}{/if}
+		</section>{/if}
 	<div class="grid gap-3 sm:grid-cols-2">
 		<div class="space-y-2">
 			<Label for="budget-payment-date">{payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'} *</Label
@@ -160,7 +260,7 @@
 	<div class="flex justify-end gap-2">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending || uploading}
 			>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={uploading}
+		><LoadingButton type="submit" loading={pending} disabled={uploading || conflict}
 			>{payment ? 'ยืนยันคืนเงิน' : 'บันทึกการจ่ายเงิน'}</LoadingButton
 		>
 	</div>

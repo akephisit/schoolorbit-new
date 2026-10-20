@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { mockStaffHome, id, actor } from './staff-home-route-data';
+import { mockStaffHome, id, actor, firstStaff } from './staff-home-route-data';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
 import type {
 	BudgetProjectWorkspace,
@@ -8,7 +8,8 @@ import type {
 	BudgetPayment,
 	BudgetAdjustmentDetail,
 	BudgetSettings,
-	BudgetDashboard
+	BudgetDashboard,
+	BudgetHistoryPage
 } from '../../../src/lib/api/budget';
 
 export const budgetProjectId = id(810),
@@ -131,6 +132,11 @@ export async function mockBudget(
 		hold?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		fail?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		failMutation?: boolean;
+		withRequest?: boolean;
+		stalePlan?: boolean;
+		stalePayment?: boolean;
+		exportFiltered?: boolean;
+		reviewer?: boolean;
 	} = {}
 ) {
 	await mockStaffHome(page, { permissions: options.permissions ?? budgetPermissions });
@@ -150,17 +156,119 @@ export async function mockBudget(
 		adjustments: BudgetAdjustmentDetail[] = [],
 		reads: string[] = [],
 		writes: { path: string; payload: Record<string, unknown> }[] = [];
+	const history: BudgetHistoryPage['items'] = [];
+	if (options.withRequest) {
+		const activity = workspace.acceptedPlan!.activities[0],
+			line = activity.lines[0];
+		request = {
+			request: {
+				id: budgetRequestId,
+				projectId: budgetProjectId,
+				activityId: activity.id,
+				ownerId: actor,
+				title: 'คำขอทดสอบ',
+				revision: 1,
+				status: 'approved',
+				totalSatang: '1000',
+				reservedSatang: '1000',
+				paidSatang: '0',
+				remainingSatang: '1000',
+				createdAt: '2026-10-20T01:00:00Z'
+			},
+			lines: [
+				{
+					planLineId: line.id,
+					description: line.description,
+					unit: line.unit,
+					fundId: line.fundId,
+					fundName: 'เงินอุดหนุน',
+					expenseCategoryId: line.expenseCategoryId,
+					expenseCategoryName: 'วัสดุ',
+					amountSatang: '1000',
+					reservedSatang: '1000',
+					paidSatang: '0'
+				}
+			],
+			evidenceFileIds: [],
+			capabilities: {
+				...workspace.capabilities,
+				canEdit: false,
+				canSubmit: false,
+				canPay: true,
+				canClose: true
+			}
+		};
+	}
+	let role: 'requester' | 'reviewer' = options.reviewer ? 'reviewer' : 'requester';
+	const effectivePermissions = () =>
+		role === 'reviewer'
+			? [PERMISSIONS.BUDGET_READ_ASSIGNED, PERMISSIONS.BUDGET_APPROVE_ASSIGNED]
+			: (options.permissions ?? budgetPermissions);
+	function syncCapabilities() {
+		const requester = role === 'requester',
+			permissions = effectivePermissions();
+		workspace.capabilities = {
+			...workspace.capabilities,
+			canEdit:
+				requester &&
+				['draft', 'returned'].includes(workspace.project.status) &&
+				permissions.includes(PERMISSIONS.BUDGET_UPDATE_OWN),
+			canSubmit:
+				requester &&
+				['draft', 'returned'].includes(workspace.project.status) &&
+				permissions.includes(PERMISSIONS.BUDGET_UPDATE_OWN),
+			canAct: !requester && workspace.project.status === 'submitted',
+			canAmend:
+				requester &&
+				workspace.project.status === 'approved' &&
+				permissions.includes(PERMISSIONS.BUDGET_UPDATE_OWN),
+			canCreateRequest:
+				requester && !!workspace.acceptedPlan && permissions.includes(PERMISSIONS.BUDGET_CREATE_OWN)
+		};
+		if (request)
+			request.capabilities = {
+				...request.capabilities,
+				canEdit: requester && ['draft', 'returned'].includes(request.request.status),
+				canSubmit: requester && ['draft', 'returned'].includes(request.request.status),
+				canAct: !requester && request.request.status === 'submitted',
+				canPay: requester && request.request.status === 'approved',
+				canClose: requester && request.request.status === 'approved'
+			};
+		for (const adjustment of adjustments)
+			adjustment.capabilities = {
+				...adjustment.capabilities,
+				canEdit: requester && ['draft', 'returned'].includes(adjustment.status),
+				canSubmit: requester && ['draft', 'returned'].includes(adjustment.status),
+				canAct: !requester && adjustment.status === 'submitted'
+			};
+	}
 	let mutationFailed = false,
+		stalePlanConsumed = false,
+		stalePaymentConsumed = false,
 		initialFailed = false,
 		release = () => {};
 	const held = new Promise<void>((resolve) => (release = resolve));
-	const reply = (route: Route, data: unknown, status = 200) =>
-		route.fulfill({
+	const reply = (route: Route, data: unknown, status = 200) => {
+		syncCapabilities();
+		return route.fulfill({
 			status,
 			contentType: 'application/json',
 			headers: { 'X-CSRF-Token': 'synthetic-csrf' },
 			body: JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data })
 		});
+	};
+	await page.route('**/api/auth/me', (route) =>
+		reply(route, {
+			id: role === 'requester' ? actor : firstStaff,
+			username: `budget-${role}`,
+			firstName: role === 'requester' ? 'ผู้ขอ' : 'ผู้พิจารณา',
+			lastName: 'ทดสอบ',
+			displayName: role === 'requester' ? 'ผู้ขอ ทดสอบ' : 'ผู้พิจารณา ทดสอบ',
+			userType: 'staff',
+			status: 'active',
+			permissions: effectivePermissions()
+		})
+	);
 	const pageData = <T>(items: T[], url: URL) => {
 		const limit = Number(url.searchParams.get('limit') ?? 20),
 			offset = Number(url.searchParams.get('offset') ?? 0);
@@ -189,10 +297,10 @@ export async function mockBudget(
 							title: 'อนุมัติ',
 							kind: 'approve',
 							completionPolicy: 'all',
-							recipients: [{ kind: 'user', userId: actor }],
+							recipients: [{ kind: 'user', userId: firstStaff }],
 							requiresComment: false
 						},
-						recipients: [{ userId: actor, displayName: 'ผู้พิจารณาทดสอบ' }]
+						recipients: [{ userId: firstStaff, displayName: 'ผู้พิจารณาทดสอบ' }]
 					}
 				],
 				createdAt: '2026-10-20T01:00:00Z',
@@ -278,11 +386,94 @@ export async function mockBudget(
 			}
 		}
 		const payload = method === 'GET' ? {} : req.postDataJSON();
+		if (method === 'POST' && path.endsWith('/actions') && role === 'requester')
+			return reply(route, 'ไม่สามารถพิจารณารายการของตนเอง', 403);
 		if (method !== 'GET') {
 			writes.push({ path, payload });
 			if (options.failMutation && !mutationFailed) {
 				mutationFailed = true;
 				return reply(route, 'บันทึกไม่สำเร็จชั่วคราว', 503);
+			}
+			if (
+				options.stalePlan &&
+				!stalePlanConsumed &&
+				method === 'PUT' &&
+				path === `/api/budget/projects/${budgetProjectId}`
+			) {
+				stalePlanConsumed = true;
+				workspace.project.revision++;
+				workspace.project.name = 'ชื่อโครงการจากอีกคน';
+				workspace.activities[0].title = 'กิจกรรมจากอีกคน';
+				return reply(route, 'แผนเปลี่ยนแปลงแล้ว กรุณาตรวจสอบฉบับล่าสุด', 409);
+			}
+			if (
+				options.stalePayment &&
+				!stalePaymentConsumed &&
+				path === `/api/budget/requests/${budgetRequestId}/payments`
+			) {
+				stalePaymentConsumed = true;
+				request!.request.revision++;
+				request!.request.reservedSatang = '500';
+				request!.request.paidSatang = '500';
+				request!.request.remainingSatang = '500';
+				request!.lines[0].reservedSatang = '500';
+				request!.lines[0].paidSatang = '500';
+				payments.push({
+					id: id(860),
+					requestId: budgetRequestId,
+					paidOn: '2026-10-20',
+					voucherNumber: 'PV-OTHER',
+					note: null,
+					totalSatang: '500',
+					allocations: [{ planLineId: request!.lines[0].planLineId, amountSatang: '500' }],
+					evidence: [],
+					createdBy: firstStaff,
+					createdAt: '2026-10-20T01:00:00Z',
+					refunds: []
+				});
+				return reply(route, 'มีการจ่ายเงินจากอีกคน กรุณาตรวจสอบยอดล่าสุด', 409);
+			}
+			const action =
+				method === 'PUT'
+					? 'saved'
+					: path.endsWith('/amendments')
+						? 'amendment_started'
+						: path.endsWith('/payments')
+							? 'payment_recorded'
+							: path.endsWith('/refunds')
+								? 'refund_recorded'
+								: path.endsWith('/close')
+									? 'closed'
+									: path.endsWith('/submit')
+										? 'submitted'
+										: path.endsWith('/actions')
+											? payload.action === 'return_for_revision'
+												? 'returned'
+												: payload.action === 'reject'
+													? 'rejected'
+													: 'approved'
+											: null;
+			if (action) {
+				const resourceKind = path.includes('/requests/')
+					? 'request'
+					: path.includes('/adjustments/')
+						? 'adjustment'
+						: 'project';
+				history.unshift({
+					id: id(1000 + history.length),
+					resourceKind,
+					resourceId:
+						resourceKind === 'request'
+							? budgetRequestId
+							: resourceKind === 'project'
+								? budgetProjectId
+								: path.split('/')[4],
+					revision: Number(payload.expectedRevision ?? 0) + 1,
+					action,
+					actorId: role === 'requester' ? actor : firstStaff,
+					comment: payload.reason ?? payload.comment ?? null,
+					createdAt: '2026-10-20T01:00:00Z'
+				});
 			}
 		}
 		if (path.endsWith('/catalogs')) return reply(route, budgetCatalogs);
@@ -306,13 +497,34 @@ export async function mockBudget(
 				};
 			return reply(route, settings);
 		}
-		if (path.endsWith('/dashboard')) return reply(route, dashboard());
+		if (path.endsWith('/dashboard')) {
+			const result = dashboard();
+			if (options.exportFiltered && url.searchParams.get('exportScope') === 'true') {
+				result.rows = result.rows.slice(0, 1);
+				result.totals = {
+					...result.totals,
+					plannedSatang: '358800',
+					currentSatang: '358800',
+					availableSatang: '358800'
+				};
+			}
+			return reply(route, result);
+		}
 		if (path.endsWith('/reports/export'))
 			return route.fulfill({
 				contentType: 'text/csv',
-				body: 'โครงการ,กิจกรรม,เงินอุดหนุน/วัสดุ,เงินอุดหนุน/ครุภัณฑ์,เงินพัฒนาผู้เรียน/วัสดุ,รวม\nโครงการคณิตศาสตร์,รวม,3588.00,3040.00,3300.00,9928.00'
+				body: options.exportFiltered
+					? 'โครงการ,กิจกรรม,เงินอุดหนุน/วัสดุ,รวม\nโครงการคณิตศาสตร์,กิจกรรมที่หนึ่ง,3588.00,3588.00'
+					: 'โครงการ,กิจกรรม,เงินอุดหนุน/วัสดุ,เงินอุดหนุน/ครุภัณฑ์,เงินพัฒนาผู้เรียน/วัสดุ,รวม\nโครงการคณิตศาสตร์,รวม,3588.00,3040.00,3300.00,9928.00'
 			});
-		if (path.endsWith('/history')) return reply(route, pageData([], url));
+		if (path.endsWith('/history'))
+			return reply(
+				route,
+				pageData(
+					history.filter((item) => item.resourceId === path.split('/').at(-2)),
+					url
+				)
+			);
 		if (path.endsWith('/process')) {
 			const resource = path.includes('/projects/')
 				? 'project'
@@ -636,6 +848,18 @@ export async function mockBudget(
 		get request() {
 			return request;
 		},
-		payments
+		payments,
+		adjustments,
+		history,
+		async asReviewer() {
+			role = 'reviewer';
+			syncCapabilities();
+			await page.reload();
+		},
+		async asRequester() {
+			role = 'requester';
+			syncCapabilities();
+			await page.reload();
+		}
 	};
 }

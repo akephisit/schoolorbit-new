@@ -32983,6 +32983,12 @@
       },
       "BudgetReportQuery": {
         "properties": {
+          "exportScope": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "fiscalYearId": {
             "format": "uuid",
             "type": [
@@ -98519,6 +98525,17 @@
         "parameters": [
           {
             "in": "path",
+            "name": "exportScope",
+            "required": true,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "in": "path",
             "name": "metric",
             "required": true,
             "schema": {
@@ -99690,6 +99707,17 @@
       "get": {
         "operationId": "exportBudgetReport",
         "parameters": [
+          {
+            "in": "path",
+            "name": "exportScope",
+            "required": true,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
           {
             "in": "path",
             "name": "metric",

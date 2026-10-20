@@ -1473,6 +1473,43 @@ not be reproduced without prior publisher authorization; manual-result mode does
 provide questionnaire content or invented norms. Follow `.rules` section 11 for generated
 contract/permission, Svelte/TypeScript, focused lint and production-build checks.
 
+## Budget workspace
+
+Budget planning, reservations, payments and the append-only financial ledger belong to
+[`school-budget`](../backend-school/crates/school-budget/src/lib.rs). From the repository root,
+run its package suite through the owned disposable PostgreSQL runner:
+
+```bash
+./scripts/test_backend_school.sh --package school-budget -- --test-threads=4
+```
+
+The focused fixtures exercise plan approval/amendments, exact money and quantity rounding,
+allocation credits above an individual line estimate, concurrent balance checks, partial payments,
+closure release, adjustments/loans, ledger reconciliation, denied access and transaction rollback.
+Include migration 130 attempt ownership and known adjustment-revision preservation in release
+verification; unknown prior draft documents must never be fabricated. Select affected provider,
+HTTP, API/permission-contract and workspace checks under `.rules` section 11 in addition to this
+domain suite; a package result alone does not prove browser or deployed behavior.
+
+From `frontend-school`, using the pinned repository Node version and a ready loopback frontend:
+
+```bash
+node --test tests/static/budget-money.test.mjs tests/static/budget-drafts.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts --project=chromium --workers=1
+```
+
+Helper tests cover integer-satang strings beyond safe browser integers, at-most-three-decimal
+quantities, one exact half-up rounding step, mutation intent, drafts and pivot totals. The browser
+spec uses synthetic intercepted APIs for the minimal project form, plan/request/payment flow,
+regional retry, permissions, settings identities, explicit bulk defaults, amendment context,
+allocation choices and mobile/desktop light/dark reports. It is not evidence of real tenant
+transactions or private object storage. For deployed acceptance use an isolated disposable budget
+project and authorized accounts in a test tenant: reconcile reservations, paid/available balances,
+adjustments, outstanding loans and exports; confirm optional evidence remains private and payment
+requires a voucher number. Exercise actual allowed/denied evidence reads and process transitions
+without logging private file grants or contents. Record commands and observed results separately;
+these recipes do not claim that any check has passed.
+
 ## Supply catalog
 
 Supply catalog ownership is in `backend-school/crates/school-administration/src/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:

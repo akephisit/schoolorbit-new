@@ -329,7 +329,7 @@
 				>
 			</div>{:else if !payments.error}<PageState title="ยังไม่มีการจ่ายเงิน" />{/if}
 	</section>
-	{#if region.value}<History kind="requests" {id} />{/if}
+	{#if region.value}<History kind="requests" {id} revision={region.value.request.revision} />{/if}
 </PageShell>
 <Dialog.Root bind:open={editing}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
@@ -371,6 +371,10 @@
 				detail={region.value}
 				payment={refund ?? undefined}
 				{lineNames}
+				onreconciled={(value) => {
+					region.patch(value);
+					loadPayments();
+				}}
 				oncancel={() => {
 					paying = false;
 					refund = null;

@@ -1855,9 +1855,11 @@ test('frontend application code routes business API calls through apiClient', as
 		/\.(svelte|ts)$/.test(file)
 	);
 	const deploymentStatusPath = 'frontend-school/src/lib/deployment/maintenance.ts';
+	const appearanceStylesheetPath = 'frontend-school/src/routes/school-appearance.css/+server.ts';
 	const allowedFetchFiles = new Set([
 		'frontend-school/src/lib/api/client.ts',
 		deploymentStatusPath,
+		appearanceStylesheetPath,
 		'frontend-school/src/lib/utils/pdf.ts',
 		'frontend-school/src/service-worker.ts'
 	]);
@@ -1880,6 +1882,44 @@ test('frontend application code routes business API calls through apiClient', as
 	assert.match(deploymentStatus, /fetch\(`\$\{backendUrl\}\/deployment-status`/);
 	assert.match(deploymentStatus, /credentials:\s*'omit'/);
 	assert.match(deploymentStatus, /cache:\s*'no-store'/);
+	const appearanceStylesheet = await readFile(
+		path.join(repoRoot, appearanceStylesheetPath),
+		'utf8'
+	);
+	assert.equal(
+		appearanceStylesheet.match(/\bfetch\s*\(/g)?.length,
+		1,
+		'Only the reviewed public transport adapter may call SvelteKit fetch'
+	);
+	assert.match(
+		appearanceStylesheet,
+		/import \{ publicRequestFromOrigin \} from '#lib\/api\/client\.js'/
+	);
+	assert.match(
+		appearanceStylesheet,
+		/import \{ getPublicSchoolAppearance \} from '#lib\/appearance\/api\.js'/
+	);
+	assert.match(
+		appearanceStylesheet,
+		/getPublicSchoolAppearance\(\{[\s\S]*publicRequestFromOrigin\(async \(input, init\) =>/
+	);
+	assert.match(
+		appearanceStylesheet,
+		/const response = await fetch\(input, \{[\s\S]*\.\.\.init,[\s\S]*redirect:\s*'manual',[\s\S]*credentials:\s*'omit'/
+	);
+	assert.match(
+		appearanceStylesheet,
+		/if \(response\.status >= 300 && response\.status < 400\) \{\s*await response\.body\?\.cancel\(\);\s*throw new Error\('Appearance endpoint redirected'\);/
+	);
+	assert.match(appearanceStylesheet, /\}, url\.origin\)/);
+	const appearanceApi = await readFile(
+		path.join(repoRoot, 'frontend-school/src/lib/appearance/api.ts'),
+		'utf8'
+	);
+	assert.match(
+		appearanceApi,
+		/getPublicSchoolAppearance\(options:[\s\S]*?apiClient\.getPublic<SchoolAppearanceResponse>\('\/api\/school\/public\/appearance', options\)/
+	);
 });
 
 test('web push notifications favor fresh visible Android notifications', async () => {
@@ -1896,7 +1936,14 @@ test('web push notifications favor fresh visible Android notifications', async (
 	);
 	const badgeAlphaStats = await readPngAlphaStats(notificationBadge);
 
-	assert.match(backendNotificationService, /"id":\s*notification_id/);
+	assert.match(
+		backendNotificationService,
+		/serde_json::to_vec\(&PushPayload\s*\{\s*id:\s*notification_id,/
+	);
+	assert.match(
+		backendNotificationService,
+		/#\[derive\(serde::Serialize\)\]\s*struct PushPayload<'a>\s*\{\s*id:\s*Uuid,/
+	);
 	assert.doesNotMatch(serviceWorker, /tag:\s*['"]push-notification-v1['"]/);
 	assert.doesNotMatch(serviceWorker, /options\.tag\s*=/);
 	assert.doesNotMatch(serviceWorker, /renotify:/);
