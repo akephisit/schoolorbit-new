@@ -109,7 +109,8 @@
 		title: string | null;
 		learningGroupName: string;
 		homeroomName: string;
-		roomCode: string | null;
+		roomName: string | null;
+		roomId: string | null;
 	};
 	type TemplateFormState = {
 		title: string;
@@ -990,7 +991,8 @@
 	function timetableLabel(entry: TimetableTeachingBlockGroup): string {
 		const title = entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
 		const period = entry.periodName ? ` ${entry.periodName}` : '';
-		const room = entry.roomCode ? ` ห้อง ${entry.roomCode}` : '';
+		const roomName = entry.roomName?.trim() || (entry.roomId ? 'ไม่พบชื่อห้อง' : null);
+		const room = roomName ? ` ${roomName}` : '';
 		const classroom = entry.homeroomName ? ` ${entry.homeroomName}` : '';
 		return `${entry.dayOfWeek}${period} - ${title}${classroom}${room}`;
 	}
@@ -1118,7 +1120,8 @@
 					title: block.title,
 					learningGroupName: group.name,
 					homeroomName: group.name,
-					roomCode: group.roomCode
+					roomName: group.roomName,
+					roomId: group.roomId
 				}))
 		);
 	}
@@ -2532,9 +2535,9 @@
 																				<p class="mt-1 text-xs text-muted-foreground">
 																					{entry.homeroomName ?? '-'}
 																				</p>
-																				{#if entry.roomCode}
+																				{#if entry.roomName?.trim() || entry.roomId}
 																					<p class="text-xs text-muted-foreground">
-																						ห้อง {entry.roomCode}
+																						{entry.roomName?.trim() || 'ไม่พบชื่อห้อง'}
 																					</p>
 																				{/if}
 																			</button>

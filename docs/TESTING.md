@@ -701,7 +701,7 @@ PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run build
 PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -- --host 127.0.0.1 --port 4173
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/subject-catalog-workspace.spec.ts tests/e2e/facility-workspace.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/subject-catalog-workspace.spec.ts tests/e2e/facility-workspace.spec.ts tests/e2e/facility-region-loading.spec.ts tests/e2e/table-layout.spec.ts --project=chromium --workers=1
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-foundation-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts tests/e2e/curriculum-publications.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-year-collections-route-loading.spec.ts --project=chromium
@@ -724,6 +724,33 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-score
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-home-region-loading.spec.ts tests/e2e/staff-role-region-loading.spec.ts --project=chromium --workers=2
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-management-region-loading.spec.ts tests/e2e/supervision-queues-region-loading.spec.ts tests/e2e/supervision-detail-region-loading.spec.ts --project=chromium --workers=2
 ```
+
+The facility fixtures cover building-to-room navigation, deep links/history and retained academic
+context, lazy and cancelled region reads, separate unassigned rooms, name-only filtering before
+client pagination, exact mutation permissions, failure/retry and stale-draft ownership. Room and
+building edit fixtures assert omitted hidden fields preserve stored metadata, including zero room
+capacity. The shared-table geometry cases verify matching logical header/body edge spacing against
+the root font size, readable local overflow, and existing PersonalTimetable `p-0`/responsive padding
+overrides. Facility CRUD and geometry run at mobile/desktop sizes in light/dark themes; intercepted
+APIs establish browser behavior, not database authorization or production acceptance. Run the
+focused source guards with `node --test tests/static/facility-region-loading.test.mjs
+tests/static/frontend-layout-components.test.mjs tests/static/documentation-policy.test.mjs`.
+
+Physical room-name projections share the existing timetable contracts and display helpers. From
+`frontend-school`, run `npm run generate:api-contracts`, `npm run check:api-contracts` and
+`npm run test:api-contracts`, followed by:
+
+```bash
+node --test tests/static/timetable-block-display.test.mjs tests/static/daily-teaching-display.test.mjs tests/static/academic-timetable-pdf.test.mjs tests/static/timetable-teacher-load-export.test.mjs tests/static/staff-own-timetable-pdf.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/timetable-drag-board.spec.ts tests/e2e/timetable-whole-school-overview.spec.ts tests/e2e/timetable-daily-overview-layout.spec.ts tests/e2e/academic-timetable-pdf.spec.ts tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts tests/e2e/academic-teacher-change-handoff.spec.ts --project=chromium --workers=1
+```
+
+From the repository root, use `./scripts/test_backend_school.sh timetable_block_service_tests --
+--nocapture` for the disposable database projection fixtures and `cargo test --manifest-path
+backend-school/Cargo.toml -p school-academic-lifecycle room_label_tests` for unique name matching.
+The projection fixtures distinguish physical room names from technical codes across group,
+homeroom and daily timetable responses while retaining physical IDs; the matching cases reject
+blank or ambiguous names. Keep the repository's existing toolchain and database-runner setup.
 
 Run the cross-domain mocked acceptance together against a ready local production preview:
 

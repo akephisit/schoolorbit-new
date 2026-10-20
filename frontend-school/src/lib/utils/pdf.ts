@@ -85,11 +85,12 @@ const timetableResourceName = (block: TimetableBlock) =>
 	block.offeringName ?? block.title ?? 'กิจกรรม';
 
 const blockRoom = (block: TimetableBlock) => {
-	const group = block.groups.find((item) => item.roomId || item.roomCode);
-	const homeroom = block.homerooms.find((item) => item.roomId || item.roomCode);
+	const target =
+		block.groups.find((item) => item.roomId || item.roomName) ??
+		block.homerooms.find((item) => item.roomId || item.roomName);
 	return {
-		id: group?.roomId ?? homeroom?.roomId ?? null,
-		code: group?.roomCode ?? homeroom?.roomCode ?? null
+		id: target?.roomId ?? null,
+		name: target?.roomName ?? null
 	};
 };
 
@@ -308,7 +309,7 @@ export interface TimetablePage {
 	timetableBlocks: TimetableBlock[];
 	viewMode?: 'CLASSROOM' | 'INSTRUCTOR';
 	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
-	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ block roomCode (รหัสสั้น) */
+	 *  ถ้าไม่ส่งมาจะใช้ชื่อห้องจาก block */
 	roomNames?: Record<string, string>;
 	/** Homeroom ID → short class name, separate from the learning group name. */
 	homeroomNames?: Record<string, string>;
@@ -554,11 +555,11 @@ function buildPageContent(
 						}
 					}
 
-					// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
+					// ชื่อห้องจากรายการห้องหรือข้อมูล block
 					// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
 					const room = blockRoom(block);
-					const roomFullName = room.id ? roomNames?.[room.id] : undefined;
-					const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
+					const roomFullName = (room.id ? roomNames?.[room.id]?.trim() : null) || room.name?.trim();
+					const roomDisplay = roomFullName || (room.id ? 'ไม่พบชื่อห้อง' : null);
 					if (roomDisplay) {
 						stack.push({
 							text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
@@ -866,10 +867,10 @@ function buildMiniTable(
 						}
 					}
 
-					// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
+					// ชื่อห้องจากรายการห้องหรือข้อมูล block
 					const room = blockRoom(block);
-					const roomFullName = room.id ? roomNames?.[room.id] : undefined;
-					const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
+					const roomFullName = (room.id ? roomNames?.[room.id]?.trim() : null) || room.name?.trim();
+					const roomDisplay = roomFullName || (room.id ? 'ไม่พบชื่อห้อง' : null);
 					if (roomDisplay) {
 						stack.push({
 							text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),

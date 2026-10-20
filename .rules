@@ -742,6 +742,13 @@ Apply these details to the selected pattern; they describe new or coherently cha
 
 Before adding a route, name its pattern, primary action, data/permission/context owners, and loading/empty/error/pending states in the working agreement. If no existing pattern fits, explain the workflow need and define the smallest coherent extension at the shared owner rather than silently inventing a new visual system.
 
+#### Ordinary tables and physical room labels
+
+- Ordinary School tables use the shared [Table.Head](frontend-school/src/lib/components/ui/table/table-head.svelte) and [Table.Cell](frontend-school/src/lib/components/ui/table/table-cell.svelte) owners and lower-priority [layout CSS density defaults](frontend-school/src/routes/layout.css) for matching logical first/last column edge padding. Consumer spacing utilities can override those defaults for specialized layouts. Keep the executable defaults as the source of truth; header and body content align, internal spacing and vertical density remain consistent, and consumers do not patch ordinary edge spacing independently.
+- Dense timetable, calendar and other specialized grids may own their necessary spacing exception. State that exception in the working agreement. Keep readable column widths and local horizontal overflow instead of squeezing table content or overflowing the page.
+- Physical rooms are displayed and searched by their human-readable names throughout lists, pickers and related workflows. Retain room/building codes as technical stored metadata and relationships, without exposing them as ordinary labels or edit fields. Academic homeroom/class identity codes are a separate domain and retain their established meaning.
+- The [facility workspace](frontend-school/src/routes/%28app%29/staff/facility/buildings/+page.svelte) owns building-to-room navigation and URL context; its result components own compact building/room presentation. Hidden legacy room English names and floors remain stored when ordinary room forms edit visible fields.
+
 #### Selected School reference pages
 
 These reviewed references guide the matching page responsibility. Inspect the current component, loader, and relevant tests before reuse; the applicability rules still govern each changed boundary. A reference's approval does not make all of its domain behavior appropriate for another feature.

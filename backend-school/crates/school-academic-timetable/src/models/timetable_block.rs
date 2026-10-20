@@ -107,6 +107,8 @@ pub struct TimetableBlockGroup {
     pub room_id: Option<Uuid>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub room_code: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub room_name: Option<String>,
     pub instructors: Vec<TimetableBlockInstructor>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub sync_status: Option<TimetableBlockSyncStatus>,
@@ -126,6 +128,8 @@ pub struct TimetableBlockHomeroom {
     pub room_id: Option<Uuid>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub room_code: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub room_name: Option<String>,
     pub row_version: i64,
     pub is_active: bool,
 }

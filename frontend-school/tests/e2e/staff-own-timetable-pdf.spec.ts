@@ -3,7 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { expectRoundedTimetablePdf } from './timetable-pdf-assertions';
 
-import { makeTimetableBlock, timetableIds } from './timetable-test-harness';
+import {
+	makeTimetableBlock,
+	makeStructuralTimetableBlock,
+	timetableIds
+} from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -155,12 +159,24 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const pendingTimetableRoute = await timetableRequest;
 	await expect(downloadButton).toBeDisabled();
 
+	const missingRoomName = makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
+		code: 'ว21101',
+		name: 'วิทยาศาสตร์วันจันทร์'
+	});
+	missingRoomName.groups[0].roomName = null;
+	const otherRoom = makeStructuralTimetableBlock('other-room-target', timetableIds.period1, 'อื่น')
+		.homerooms[0];
+	missingRoomName.homerooms = [
+		{
+			...otherRoom,
+			roomId: timetableIds.roomB,
+			roomName: 'ห้องอื่นที่ไม่ควรแสดง',
+			roomCode: 'LAB-2'
+		}
+	];
 	await fulfillJson(pendingTimetableRoute, [
 		{
-			...makeTimetableBlock(timetableIds.blockB, timetableIds.period1, {
-				code: 'ว21101',
-				name: 'วิทยาศาสตร์วันจันทร์'
-			}),
+			...missingRoomName,
 			academicTermId: '30000000-0000-4000-8000-000000000001',
 			academicYearId: '20000000-0000-4000-8000-000000000001',
 			dayOfWeek: 'MON'
@@ -204,6 +220,9 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	expect(text).toContain('เสาร์');
 	expect(text).toContain('วิทยาศาสตร์วันจันทร์');
 	expect(text).toContain('คณิตศาสตร์พื้นฐาน');
+	expect(text).toContain('ห้องคณิตศาสตร์');
+	expect(text).toContain('ไม่พบชื่อห้อง');
+	expect(text).not.toMatch(/MATH-1|LAB-2|ห้องอื่นที่ไม่ควรแสดง/);
 	expect(text).not.toContain('ม.1/1คณิตศาสตร์');
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();

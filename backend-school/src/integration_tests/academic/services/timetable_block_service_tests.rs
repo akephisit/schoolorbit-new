@@ -409,6 +409,11 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
             .fetch_one(&pool)
             .await
             .expect("fixture must include an active room");
+    sqlx::query("UPDATE rooms SET name_th='ห้องคณิตศาสตร์ทดสอบ',code='INTERNAL-MATH-001' WHERE id=$1")
+        .bind(preferred_room_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
         r#"INSERT INTO learning_group_preferred_rooms (
                learning_group_id, academic_term_id, academic_year_id, room_id, rank
@@ -452,7 +457,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         learning_group_id: group_id,
         day_of_week: "MON".to_string(),
         bell_schedule_period_id: period_id,
-        room_id: None,
+        room_id: Some(preferred_room_id),
         instructor_ids: vec![teacher_id],
         note: None,
     };
@@ -461,6 +466,15 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .await
         .expect("ordinary placement must succeed");
     assert_eq!(block.groups.len(), 1);
+    assert_eq!(block.groups[0].room_id, Some(preferred_room_id));
+    assert_eq!(
+        block.groups[0].room_name.as_deref(),
+        Some("ห้องคณิตศาสตร์ทดสอบ")
+    );
+    assert_eq!(
+        block.groups[0].room_code.as_deref(),
+        Some("INTERNAL-MATH-001")
+    );
     assert_eq!(block.groups[0].instructors.len(), 1);
     assert_eq!(block.groups[0].instructors[0].teacher_id, teacher_id);
 
@@ -842,6 +856,22 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .groups
         .iter()
         .any(|entry| entry.learning_group_id == group.learning_group_id));
+    let physical_room_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM rooms WHERE status='ACTIVE' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE rooms SET name_th='ห้องวิทยาศาสตร์ทดสอบ',code='INTERNAL-SCI-002' WHERE id=$1")
+        .bind(physical_room_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_timetable_block_groups SET room_id=$2 WHERE id=$1")
+        .bind(group.id)
+        .bind(physical_room_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let structural = timetable_block_service::create_structural_blocks(
         &pool,
         actor_id,
@@ -859,12 +889,15 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
             teacher_ids: Vec::new(),
             all_homerooms: false,
             all_teachers: false,
-            room_id: None,
+            room_id: Some(physical_room_id),
         },
     )
     .await
     .unwrap();
     let removed = &structural[0].homerooms[0];
+    assert_eq!(removed.room_id, Some(physical_room_id));
+    assert_eq!(removed.room_name.as_deref(), Some("ห้องวิทยาศาสตร์ทดสอบ"));
+    assert_eq!(removed.room_code.as_deref(), Some("INTERNAL-SCI-002"));
     let changed = timetable_block_service::remove_target(
         &pool,
         actor_id,
@@ -901,6 +934,22 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     .await
     .unwrap();
     let teacher_id = group.instructors[0].teacher_id;
+    let projected_entry = daily
+        .teachers
+        .iter()
+        .flat_map(|teacher| &teacher.periods)
+        .flat_map(|period| &period.entries)
+        .find(|entry| entry.learning_group_id == Some(group.learning_group_id))
+        .expect("assigned group must be projected into daily teaching");
+    assert_eq!(projected_entry.room_id, Some(physical_room_id));
+    assert_eq!(
+        projected_entry.room_name.as_deref(),
+        Some("ห้องวิทยาศาสตร์ทดสอบ")
+    );
+    assert_eq!(
+        projected_entry.room_code.as_deref(),
+        Some("INTERNAL-SCI-002")
+    );
     assert!(daily
         .teachers
         .iter()

@@ -1148,7 +1148,8 @@
 					>
 						<Select.Trigger class="w-full" disabled={!facilityLoaded}>
 							{#if selectedFacilityRoomId}
-								{facilityRooms.find((r) => r.id === selectedFacilityRoomId)?.name_th ?? '—'}
+								{facilityRooms.find((r) => r.id === selectedFacilityRoomId)?.name_th?.trim() ||
+									'ไม่พบชื่อห้อง'}
 							{:else}
 								— เลือกห้อง —
 							{/if}
@@ -1156,7 +1157,9 @@
 						<Select.Content>
 							{#each facilityRooms as room (room.id)}
 								<Select.Item value={room.id}>
-									{room.name_th}{room.code ? ` (${room.code})` : ''} · {room.capacity} คน
+									{room.name_th.trim() || 'ไม่พบชื่อห้อง'}{room.building_name
+										? ` · ${room.building_name}`
+										: ''} · {room.capacity} คน
 								</Select.Item>
 							{/each}
 						</Select.Content>

@@ -2270,15 +2270,13 @@
 						<Select.Trigger class="w-full" aria-label="เลือกห้องเรียน">
 							{editRoomId === noRoomValue
 								? 'ไม่ระบุห้อง'
-								: (controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name ??
-									'เลือกห้อง')}
+								: controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name.trim() ||
+									'ไม่พบชื่อห้อง'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
 							{#each controller?.workspace.rooms ?? [] as room (room.id)}
-								<Select.Item value={room.id}
-									>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
-								>
+								<Select.Item value={room.id}>{room.name.trim() || 'ไม่พบชื่อห้อง'}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -2375,15 +2373,14 @@
 								<Select.Trigger class="w-full" aria-label="เลือกห้องสำหรับคาบพิเศษ">
 									{structuralForm.roomId === noRoomValue
 										? 'ไม่ระบุห้อง'
-										: (controller?.workspace.rooms.find((room) => room.id === structuralForm.roomId)
-												?.name ?? 'เลือกห้อง')}
+										: controller?.workspace.rooms
+												.find((room) => room.id === structuralForm.roomId)
+												?.name.trim() || 'ไม่พบชื่อห้อง'}
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
 									{#each controller?.workspace.rooms ?? [] as room (room.id)}
-										<Select.Item value={room.id}
-											>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
-										>
+										<Select.Item value={room.id}>{room.name.trim() || 'ไม่พบชื่อห้อง'}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>

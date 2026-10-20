@@ -25,7 +25,9 @@ function entry(overrides = {}) {
 		entryType: 'activity',
 		isTeamTeaching: false,
 		note: null,
-		roomCode: null,
+		roomCode: 'INTERNAL-ROOM-CODE',
+		roomId: overrides.roomName ? `room-${overrides.roomName}` : null,
+		roomName: null,
 		subjectCode: null,
 		subjectGroupName: null,
 		subjectName: null,
@@ -51,29 +53,29 @@ test('merges synchronized entries that share one activity slot', () => {
 
 test('sorts synchronized locations naturally by classroom then physical room', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ entryId: 'entry-10', homeroomNames: ['ม.1/10'], roomCode: '120' }),
-		entry({ entryId: 'entry-2b', homeroomNames: ['ม.1/2'], roomCode: '115' }),
-		entry({ entryId: 'entry-2a', homeroomNames: ['ม.1/2'], roomCode: '101' }),
-		entry({ entryId: 'entry-duplicate', homeroomNames: ['ม.1/2'], roomCode: '101' })
+		entry({ entryId: 'entry-10', homeroomNames: ['ม.1/10'], roomName: '120' }),
+		entry({ entryId: 'entry-2b', homeroomNames: ['ม.1/2'], roomName: '115' }),
+		entry({ entryId: 'entry-2a', homeroomNames: ['ม.1/2'], roomName: '101' }),
+		entry({ entryId: 'entry-duplicate', homeroomNames: ['ม.1/2'], roomName: '101' })
 	]);
 
 	assert.deepEqual(groups[0].locations, [
 		{
-			key: 'ม.1/2\u0000101',
+			key: 'ม.1/2\u0000room-101',
 			homeroomNames: ['ม.1/2'],
-			roomCode: '101',
+			roomName: '101',
 			label: 'ม.1/2 / 101'
 		},
 		{
-			key: 'ม.1/2\u0000115',
+			key: 'ม.1/2\u0000room-115',
 			homeroomNames: ['ม.1/2'],
-			roomCode: '115',
+			roomName: '115',
 			label: 'ม.1/2 / 115'
 		},
 		{
-			key: 'ม.1/10\u0000120',
+			key: 'ม.1/10\u0000room-120',
 			homeroomNames: ['ม.1/10'],
-			roomCode: '120',
+			roomName: '120',
 			label: 'ม.1/10 / 120'
 		}
 	]);
@@ -141,10 +143,10 @@ test('preserves the first occurrence order when later synchronized entries merge
 
 test('deduplicates classroom and room labels without discarding entries', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ roomCode: '101' }),
-		entry({ entryId: 'entry-b', roomCode: '101' }),
-		entry({ entryId: 'entry-c', homeroomNames: [], roomCode: 'หอประชุม' }),
-		entry({ entryId: 'entry-d', homeroomNames: [], roomCode: null })
+		entry({ roomName: '101' }),
+		entry({ entryId: 'entry-b', roomName: '101' }),
+		entry({ entryId: 'entry-c', homeroomNames: [], roomName: 'หอประชุม' }),
+		entry({ entryId: 'entry-d', homeroomNames: [], roomName: null })
 	]);
 
 	assert.deepEqual(groups[0].classroomLabels, ['ป.1/1 / 101', 'หอประชุม']);
@@ -154,8 +156,8 @@ test('deduplicates classroom and room labels without discarding entries', () => 
 
 test('falls back to an entry count when a synchronized group has no classroom labels', () => {
 	const groups = groupDailyTeachingEntries([
-		entry({ homeroomNames: [], roomCode: null }),
-		entry({ entryId: 'entry-b', homeroomNames: [], roomCode: null })
+		entry({ homeroomNames: [], roomName: null }),
+		entry({ entryId: 'entry-b', homeroomNames: [], roomName: null })
 	]);
 
 	assert.equal(displayGroupCountLabel(groups[0]), '2 รายการ');
@@ -283,8 +285,23 @@ test('summarizes compact targets instead of rendering long classroom lists', () 
 			activitySchedulingMode: null,
 			homeroomNames: ['ม.1/1', 'ม.1/2'],
 			learningGroupName: 'ม.1/1 · คณิตศาสตร์พื้นฐาน',
-			roomCode: '116'
+			roomName: '116'
 		})
 	])[0];
-	assert.equal(dailyTeachingCompactGroupMeta(course), 'ม.1/1 +1 · ห้อง 116');
+	assert.equal(dailyTeachingCompactGroupMeta(course), 'ม.1/1 +1 · 116');
+});
+
+test('physical room names display independently from codes and distinct room IDs remain separate', () => {
+	const groups = groupDailyTeachingEntries([
+		entry({ entryId: 'a', roomId: 'room-a', roomName: 'ห้องวิทยาศาสตร์', roomCode: 'SCI-A' }),
+		entry({ entryId: 'b', roomId: 'room-b', roomName: 'ห้องวิทยาศาสตร์', roomCode: 'SCI-B' }),
+		entry({ entryId: 'c', roomId: 'room-c', roomName: null, roomCode: 'SECRET-ROOM-C' })
+	]);
+	assert.equal(groups[0].locations.length, 3);
+	assert.deepEqual(
+		groups[0].classroomLabels.filter((label) => label.includes('ห้องวิทยาศาสตร์')),
+		['ป.1/1 / ห้องวิทยาศาสตร์', 'ป.1/1 / ห้องวิทยาศาสตร์']
+	);
+	assert.ok(groups[0].classroomLabels.includes('ป.1/1 / ไม่พบชื่อห้อง'));
+	assert.doesNotMatch(groups[0].classroomLabels.join(' '), /SCI-A|SCI-B|SECRET-ROOM-C|room-c/);
 });

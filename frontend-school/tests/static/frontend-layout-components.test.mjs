@@ -642,3 +642,16 @@ test('self-service and system pages use shared app page shell', async () => {
 		);
 	}
 });
+
+test('ordinary table logical edge defaults stay below specialized consumer utilities', async () => {
+	const css = await readProjectFile('src/routes/layout.css');
+	const head = await readProjectFile('src/lib/components/ui/table/table-head.svelte');
+	const cell = await readProjectFile('src/lib/components/ui/table/table-cell.svelte');
+	const timetable = await readProjectFile('src/lib/components/student/PersonalTimetable.svelte');
+	assert.match(css, /@layer base \{[\s\S]*padding-inline: 0\.5rem/);
+	assert.match(css, /\[data-slot='table-cell'\]:first-child,[\s\S]*padding-inline-start: 1\.25rem/);
+	assert.match(css, /\[data-slot='table-cell'\]:last-child,[\s\S]*padding-inline-end: 1\.25rem/);
+	for (const primitive of [head, cell])
+		assert.doesNotMatch(primitive, /(?:first:ps-|last:pe-|\bpx-2\b)/);
+	assert.match(timetable, /p-0[\s\S]*md:p-2/);
+});

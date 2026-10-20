@@ -377,7 +377,8 @@ for (const width of [390, 1029]) {
 			await expect(details).toBeVisible();
 			await expect(details.getByText(longSubject, { exact: true })).toBeVisible();
 			await expect(details.getByText(longGroup, { exact: true })).toBeVisible();
-			await expect(details.getByText('MATH-1', { exact: true })).toBeVisible();
+			await expect(details.getByText('ห้องคณิตศาสตร์', { exact: true })).toBeVisible();
+			await expect(details).not.toContainText('MATH-1');
 			await expect(details.getByText(/วันจันทร์ · คาบ 1/)).toBeVisible();
 			for (const text of [longSubject, longGroup]) {
 				const geometry = await details.getByText(text, { exact: true }).evaluate((element) => ({

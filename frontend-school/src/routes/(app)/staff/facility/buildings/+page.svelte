@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import type { PageProps } from './$types';
 	import { authStore } from '#lib/stores/auth.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
@@ -31,11 +34,10 @@
 	import { PageSkeleton, PageState, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 
-	import { Building as BuildingIcon, DoorOpen, Plus, Search } from '@lucide/svelte';
+	import { DoorOpen, Plus, Search } from '@lucide/svelte';
 
 	// Constants
 	const ROOM_TYPES = [
@@ -52,7 +54,14 @@
 	let loading = $state(true);
 	let buildings = $state<Building[]>([]);
 	let rooms = $state<Room[]>([]);
-	let activeTab = $state('buildings');
+	const currentUrl = $derived(page.shallow?.url ?? page.url);
+	const selectedBuildingId = $derived(currentUrl.searchParams.get('buildingId'));
+	const isUnassigned = $derived(selectedBuildingId === 'unassigned');
+	const selectedBuilding = $derived(
+		buildings.find((building) => building.id === selectedBuildingId)
+	);
+	const roomContextValid = $derived(isUnassigned || !!selectedBuilding);
+	const roomsOpened = $derived(selectedBuildingId !== null);
 	const canReadFacility = $derived($can.has(PERMISSIONS.FACILITY_READ_ALL));
 	const canCreateFacility = $derived($can.has(PERMISSIONS.FACILITY_CREATE_ALL));
 	const canUpdateFacility = $derived($can.has(PERMISSIONS.FACILITY_UPDATE_ALL));
@@ -66,30 +75,36 @@
 	const pageSize = 25;
 	const filteredBuildings = $derived(
 		buildings.filter((building) =>
-			[building.code, building.name_th, building.name_en, building.description].some((value) =>
+			[building.name_th, building.name_en].some((value) =>
 				value?.toLocaleLowerCase().includes(buildingSearch.trim().toLocaleLowerCase())
 			)
+		)
+	);
+	const filteredRooms = $derived(
+		rooms.filter((room) =>
+			room.name_th.toLocaleLowerCase().includes(searchTerm.trim().toLocaleLowerCase())
 		)
 	);
 	const currentBuildingPage = $derived(
 		Math.min(buildingPage, Math.max(1, Math.ceil(filteredBuildings.length / pageSize)))
 	);
 	const currentRoomPage = $derived(
-		Math.min(roomPage, Math.max(1, Math.ceil(rooms.length / pageSize)))
+		Math.min(roomPage, Math.max(1, Math.ceil(filteredRooms.length / pageSize)))
 	);
 	const visibleBuildings = $derived(
 		filteredBuildings.slice((currentBuildingPage - 1) * pageSize, currentBuildingPage * pageSize)
 	);
 	const visibleRooms = $derived(
-		rooms.slice((currentRoomPage - 1) * pageSize, currentRoomPage * pageSize)
+		filteredRooms.slice((currentRoomPage - 1) * pageSize, currentRoomPage * pageSize)
 	);
-	let selectedBuildingFilter = $state('all');
 
 	// Dialogs
 	let showBuildingDialog = $state(false);
 	let showRoomDialog = $state(false);
 	let showDeleteDialog = $state(false);
-	let submitting = $state(false);
+	let pendingDraft = $state<number | null>(null);
+	let draftEpoch = $state(0);
+	const pendingWrites = new SvelteSet<string>();
 	let buildingSubmitError = $state('');
 	let roomSubmitError = $state('');
 	let deleteError = $state('');
@@ -97,6 +112,22 @@
 	// Editing
 	let editingItem = $state<Building | Room | null>(null);
 	let deleteTarget = $state<{ type: 'building' | 'room'; id: string; name: string } | null>(null);
+	const activeOperationKey = $derived(
+		showDeleteDialog && deleteTarget
+			? mutationKey(deleteTarget.type, deleteTarget.id)
+			: showBuildingDialog
+				? mutationKey('building', editingItem?.id)
+				: showRoomDialog
+					? mutationKey('room', editingItem?.id)
+					: null
+	);
+	const submitting = $derived(
+		pendingDraft === draftEpoch ||
+			(activeOperationKey !== null && pendingWrites.has(activeOperationKey))
+	);
+	function mutationKey(type: 'building' | 'room', target?: string) {
+		return `${type}:${target ?? `new:${draftEpoch}`}`;
+	}
 
 	let { data }: PageProps = $props();
 	const source = $derived(data.buildings),
@@ -109,10 +140,9 @@
 		roomsError = $state('');
 	let owner = '',
 		ownerEpoch = 0,
-		draftEpoch = 0,
 		activeRoomsKey = '',
 		disposed = false;
-	const roomFiltersKey = $derived(`${selectedBuildingFilter}|${searchTerm.trim()}`);
+	const roomFiltersKey = $derived(selectedBuildingId ?? '');
 	function applyBuildings(result: Awaited<typeof data.buildings>, revision: number) {
 		if (!buildingsRequest.isCurrent(revision)) return;
 		loading = false;
@@ -136,7 +166,7 @@
 				showBuildingDialog = false;
 				showRoomDialog = false;
 				showDeleteDialog = false;
-				submitting = false;
+				pendingDraft = null;
 				buildingSubmitError = roomSubmitError = deleteError = '';
 			}
 			const ticket = buildingsRequest.begin();
@@ -156,14 +186,23 @@
 				showRoomDialog = false;
 			if (!canDeleteFacility) showDeleteDialog = false;
 			ownerEpoch++;
-			submitting = false;
+			pendingDraft = null;
 		});
 	});
 	$effect.pre(() => {
-		const opened = activeTab === 'rooms',
+		const opened = roomsOpened && roomContextValid,
 			allowed = canReadFacility,
 			key = roomFiltersKey;
 		untrack(() => {
+			if (activeRoomsKey !== key) {
+				activeRoomsKey = key;
+				searchTerm = '';
+				roomPage = 1;
+				showBuildingDialog = showRoomDialog = showDeleteDialog = false;
+				draftEpoch++;
+				rooms = [];
+				roomsLoaded = false;
+			}
 			if (!opened || !allowed) {
 				roomsRequest.abort();
 				rooms = [];
@@ -171,11 +210,6 @@
 				roomsLoading = false;
 				roomsError = '';
 				return;
-			}
-			if (activeRoomsKey !== key) {
-				activeRoomsKey = key;
-				rooms = [];
-				roomsLoaded = false;
 			}
 			void refreshRooms();
 		});
@@ -205,15 +239,14 @@
 		);
 	}
 	async function refreshRooms() {
-		if (!canReadFacility || activeTab !== 'rooms' || disposed) return;
+		if (!canReadFacility || !roomsOpened || !roomContextValid || disposed) return;
 		const ticket = roomsRequest.begin();
 		roomsLoading = true;
 		roomsError = '';
 		const result = await captureRouteLoad(
 			listRooms(
 				{
-					building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter,
-					search: searchTerm.trim() || undefined
+					building_id: isUnassigned ? undefined : (selectedBuildingId ?? undefined)
 				},
 				{ signal: ticket.signal }
 			),
@@ -222,7 +255,9 @@
 		if (!roomsRequest.isCurrent(ticket.revision)) return;
 		roomsLoading = false;
 		if (result.ok) {
-			rooms = result.data.data;
+			rooms = isUnassigned
+				? result.data.data.filter((room) => room.building_id === null)
+				: result.data.data;
 			roomsLoaded = true;
 		} else roomsError = result.error;
 	}
@@ -231,16 +266,13 @@
 		buildings = buildings.some((item) => item.id === building.id)
 			? buildings.map((item) => (item.id === building.id ? building : item))
 			: [...buildings, building];
-		buildings = buildings.sort((a, b) =>
-			(a.code ?? a.name_th).localeCompare(b.code ?? b.name_th, 'th')
-		);
+		buildings = buildings.sort((a, b) => a.name_th.localeCompare(b.name_th, 'th'));
 		rooms = rooms.map((room) =>
 			room.building_id === building.id ? { ...room, building_name: building.name_th } : room
 		);
 	}
 
 	function removeBuilding(id: string) {
-		if (selectedBuildingFilter === id) selectedBuildingFilter = 'all';
 		buildings = buildings.filter((building) => building.id !== id);
 		rooms = rooms
 			.map((room) =>
@@ -250,13 +282,10 @@
 	}
 
 	function roomMatchesCurrentFilters(room: Room) {
-		if (selectedBuildingFilter !== 'all' && room.building_id !== selectedBuildingFilter)
-			return false;
-		const query = searchTerm.trim().toLowerCase();
-		if (!query) return true;
-		return [room.name_th, room.code]
-			.filter(Boolean)
-			.some((value) => value!.toLowerCase().includes(query));
+		return (
+			roomsOpened &&
+			(isUnassigned ? room.building_id === null : room.building_id === selectedBuildingId)
+		);
 	}
 
 	function replaceRoom(room: Room) {
@@ -268,7 +297,7 @@
 		rooms = rooms.some((item) => item.id === room.id)
 			? rooms.map((item) => (item.id === room.id ? room : item))
 			: [...rooms, room];
-		rooms = rooms.sort((a, b) => (a.code ?? a.name_th).localeCompare(b.code ?? b.name_th, 'th'));
+		rooms = rooms.sort((a, b) => a.name_th.localeCompare(b.name_th, 'th'));
 	}
 
 	function removeRoom(id: string) {
@@ -279,9 +308,11 @@
 	async function handleSaveBuilding(e: SubmitEvent) {
 		e.preventDefault();
 		const target = editingItem?.id;
+		const operationKey = mutationKey('building', target);
 		if (
 			disposed ||
 			submitting ||
+			pendingWrites.has(operationKey) ||
 			!showBuildingDialog ||
 			!buildingsLoaded ||
 			(target ? !canUpdateFacility : !canCreateFacility)
@@ -296,24 +327,20 @@
 		const payload = {
 			name_th: String(formData.get('name_th') ?? ''),
 			name_en: String(formData.get('name_en') ?? ''),
-			code: String(formData.get('code') ?? ''),
 			description: String(formData.get('description') ?? '')
 		};
 		buildingSubmitError = '';
 		buildingsRequest.abort();
 		loading = false;
-		submitting = true;
+		pendingWrites.add(operationKey);
+		pendingDraft = draft;
 		try {
 			const saved = (target ? await updateBuilding(target, payload) : await createBuilding(payload))
 				.data;
 			if (!current()) return;
 			buildingsRequest.abort();
 			loading = false;
-			roomsRequest.abort();
-			roomsLoading = false;
 			replaceBuilding(saved);
-			// A building rename also changes joined names used by the visible room list.
-			if (activeTab === 'rooms' && !roomsLoaded) await refreshRooms();
 			if (ownsDraft()) {
 				toast.success(target ? 'บันทึกข้อมูลอาคารสำเร็จ' : 'เพิ่มอาคารสำเร็จ');
 				showBuildingDialog = false;
@@ -322,15 +349,18 @@
 			if (ownsDraft())
 				buildingSubmitError = error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ';
 		} finally {
-			if (current()) submitting = false;
+			pendingWrites.delete(operationKey);
+			if (pendingDraft === draft) pendingDraft = null;
 		}
 	}
 	async function handleSaveRoom(e: SubmitEvent) {
 		e.preventDefault();
 		const target = editingItem?.id;
+		const operationKey = mutationKey('room', target);
 		if (
 			disposed ||
 			submitting ||
+			pendingWrites.has(operationKey) ||
 			!showRoomDialog ||
 			!buildingsLoaded ||
 			buildingsError ||
@@ -338,7 +368,8 @@
 		)
 			return;
 		const epoch = ownerEpoch,
-			draft = draftEpoch;
+			draft = draftEpoch,
+			mutationContext = selectedBuildingId;
 		const current = () =>
 			!disposed && epoch === ownerEpoch && (target ? canUpdateFacility : canCreateFacility);
 		const ownsDraft = () => current() && draft === draftEpoch && showRoomDialog;
@@ -348,12 +379,9 @@
 		try {
 			payload = {
 				name_th: String(formData.get('name_th') ?? ''),
-				name_en: String(formData.get('name_en') ?? ''),
-				code: String(formData.get('code') ?? ''),
 				room_type: String(formData.get('room_type') ?? ''),
 				building_id: String(formData.get('building_id') ?? '') || undefined,
 				capacity: optionalInteger(formData.get('capacity'), 'ความจุ'),
-				floor: optionalInteger(formData.get('floor'), 'ชั้น'),
 				description: String(formData.get('description') ?? '')
 			};
 		} catch (error) {
@@ -362,14 +390,17 @@
 		}
 		roomsRequest.abort();
 		roomsLoading = false;
-		submitting = true;
+		pendingWrites.add(operationKey);
+		pendingDraft = draft;
 		try {
 			const saved = (target ? await updateRoom(target, payload) : await createRoom(payload)).data;
 			if (!current()) return;
-			roomsRequest.abort();
-			roomsLoading = false;
-			if (roomsLoaded) replaceRoom(saved);
-			else if (activeTab === 'rooms') await refreshRooms();
+			if (mutationContext === selectedBuildingId || roomMatchesCurrentFilters(saved)) {
+				roomsRequest.abort();
+				roomsLoading = false;
+				if (roomsLoaded) replaceRoom(saved);
+				else if (roomsOpened && roomContextValid) await refreshRooms();
+			} else removeRoom(saved.id);
 			if (ownsDraft()) {
 				toast.success(target ? 'บันทึกข้อมูลห้องสำเร็จ' : 'เพิ่มห้องสำเร็จ');
 				showRoomDialog = false;
@@ -377,30 +408,49 @@
 		} catch (error) {
 			if (ownsDraft()) roomSubmitError = error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ';
 		} finally {
-			if (current()) submitting = false;
+			pendingWrites.delete(operationKey);
+			if (pendingDraft === draft) pendingDraft = null;
 		}
 	}
 	async function handleDelete() {
 		const target = deleteTarget;
-		if (!target || !canDeleteFacility || disposed || submitting || !showDeleteDialog) return;
+		const operationKey = target ? mutationKey(target.type, target.id) : '';
+		if (
+			pendingWrites.has(operationKey) ||
+			!target ||
+			!canDeleteFacility ||
+			disposed ||
+			submitting ||
+			!showDeleteDialog
+		)
+			return;
 		const epoch = ownerEpoch,
-			draft = draftEpoch;
+			draft = draftEpoch,
+			mutationContext = selectedBuildingId;
 		const current = () => !disposed && epoch === ownerEpoch && canDeleteFacility;
 		const ownsDraft = () => current() && draft === draftEpoch && showDeleteDialog;
 		deleteError = '';
-		submitting = true;
+		pendingWrites.add(operationKey);
+		pendingDraft = draft;
 		try {
 			if (target.type === 'building') await deleteBuilding(target.id);
 			else await deleteRoom(target.id);
 			if (!current()) return;
-			roomsRequest.abort();
-			roomsLoading = false;
+			if (mutationContext === selectedBuildingId) {
+				roomsRequest.abort();
+				roomsLoading = false;
+			}
 			if (target.type === 'building') {
 				buildingsRequest.abort();
 				loading = false;
 				removeBuilding(target.id);
 			} else removeRoom(target.id);
-			if (activeTab === 'rooms' && !roomsLoaded) await refreshRooms();
+			if (
+				roomsOpened &&
+				roomContextValid &&
+				(!roomsLoaded || (target.type === 'building' && isUnassigned))
+			)
+				await refreshRooms();
 			if (ownsDraft()) {
 				toast.success(target.type === 'building' ? 'ลบอาคารสำเร็จ' : 'ลบห้องสำเร็จ');
 				showDeleteDialog = false;
@@ -409,7 +459,8 @@
 			if (ownsDraft())
 				deleteError = error instanceof Error ? error.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)';
 		} finally {
-			if (current()) submitting = false;
+			pendingWrites.delete(operationKey);
+			if (pendingDraft === draft) pendingDraft = null;
 		}
 	}
 
@@ -419,6 +470,16 @@
 		const result = Number(text);
 		if (!Number.isInteger(result)) throw new Error(`${label}ต้องเป็นจำนวนเต็ม`);
 		return result;
+	}
+
+	function buildingHref(id?: string) {
+		const url = new URL(currentUrl.href);
+		if (id) url.searchParams.set('buildingId', id);
+		else url.searchParams.delete('buildingId');
+		return url.pathname + url.search;
+	}
+	function openBuilding(building: Building) {
+		void goto(buildingHref(building.id), { shallow: true, reset: false });
 	}
 
 	// Helpers
@@ -435,7 +496,7 @@
 		showBuildingDialog = true;
 	}
 	function openAddRoom() {
-		if (!buildingsLoaded || buildingsError || !canCreateFacility) return;
+		if (!roomContextValid || !buildingsLoaded || buildingsError || !canCreateFacility) return;
 		editingItem = null;
 		roomSubmitError = '';
 		showRoomDialog = true;
@@ -468,7 +529,7 @@
 				formBuildingId = room.building_id || '';
 				formRoomType = room.room_type || 'GENERAL';
 			} else {
-				formBuildingId = (selectedBuildingFilter !== 'all' ? selectedBuildingFilter : '') || '';
+				formBuildingId = isUnassigned ? '' : (selectedBuildingId ?? '');
 				formRoomType = 'GENERAL';
 			}
 		}
@@ -511,14 +572,26 @@
 	{/if}
 {/snippet}
 
-<PageShell title="จัดการอาคารสถานที่" description="อาคาร ห้องเรียน และห้องปฏิบัติการ">
+<PageShell
+	title={roomsOpened
+		? isUnassigned
+			? 'ห้องที่ยังไม่จัดอาคาร'
+			: (selectedBuilding?.name_th ?? 'ไม่พบอาคาร')
+		: 'จัดการอาคารสถานที่'}
+	description={roomsOpened
+		? selectedBuilding?.description || undefined
+		: 'อาคาร ห้องเรียน และห้องปฏิบัติการ'}
+	backHref={roomsOpened ? buildingHref() : undefined}
+	backLabel="กลับรายการอาคาร"
+	backPreload={false}
+>
 	{#snippet actions()}
-		{#if canReadFacility && canCreateFacility}
+		{#if canReadFacility && canCreateFacility && (!roomsOpened || roomContextValid)}
 			<Button
 				size="sm"
-				disabled={!buildingsLoaded || (activeTab === 'rooms' && !!buildingsError)}
-				onclick={activeTab === 'rooms' ? openAddRoom : openAddBuilding}
-				><Plus class="size-4" />{activeTab === 'rooms' ? 'เพิ่มห้อง' : 'เพิ่มอาคาร'}</Button
+				disabled={!buildingsLoaded || !!buildingsError}
+				onclick={roomsOpened ? openAddRoom : openAddBuilding}
+				><Plus class="size-4" />{roomsOpened ? 'เพิ่มห้อง' : 'เพิ่มอาคาร'}</Button
 			>
 		{/if}
 	{/snippet}
@@ -529,107 +602,82 @@
 			description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลอาคารสถานที่ก่อนจึงจะแสดงรายการอาคารและห้องได้"
 		/>
 	{:else}
-		<Tabs.Root bind:value={activeTab}>
-			<Tabs.List
-				><Tabs.Trigger value="buildings"><BuildingIcon class="size-4" />อาคาร</Tabs.Trigger
-				><Tabs.Trigger value="rooms"
-					><DoorOpen class="size-4" />ห้องเรียน/ห้องปฏิบัติการ</Tabs.Trigger
-				></Tabs.List
-			>
-			<Tabs.Content value="buildings" class="space-y-3 pt-3">
-				<section class="min-w-0 space-y-3" data-testid="facility-buildings" aria-busy={loading}>
+		{#if !roomsOpened}
+			<section class="min-w-0 space-y-3" data-testid="facility-buildings" aria-busy={loading}>
+				<div class="relative max-w-md">
+					<Search
+						class="pointer-events-none absolute top-2.5 start-3 size-4 text-muted-foreground"
+					/><Input
+						aria-label="ค้นหาอาคาร"
+						placeholder="ค้นหาชื่ออาคาร"
+						class="ps-9"
+						bind:value={buildingSearch}
+						oninput={() => (buildingPage = 1)}
+					/>
+				</div>
+				{#if buildingsError}<PageState
+						variant="error"
+						title="โหลดอาคารไม่สำเร็จ"
+						description={buildingsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={loadBuildings}
+					/>{/if}
+				{#if loading && !buildingsLoaded}<div role="status" aria-label="กำลังโหลดอาคาร">
+						<PageSkeleton variant="table" rows={4} columns={3} />
+					</div>
+				{:else if buildingsLoaded && filteredBuildings.length === 0}<PageState
+						title={buildingSearch.trim() ? 'ไม่พบอาคารที่ค้นหา' : 'ไม่พบข้อมูลอาคาร'}
+						description={buildingSearch.trim()
+							? 'ลองเปลี่ยนชื่อที่ค้นหา'
+							: 'เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ'}
+					/>
+				{:else if buildingsLoaded}<BuildingResults
+						items={visibleBuildings}
+						canUpdate={canUpdateFacility}
+						canDelete={canDeleteFacility}
+						onopen={openBuilding}
+						onedit={openEditBuilding}
+						ondelete={(item) => confirmDelete('building', item)}
+					/>{@render pagination(
+						filteredBuildings.length,
+						currentBuildingPage,
+						(value) => (buildingPage = value),
+						'หน้ารายการอาคาร'
+					)}{/if}
+				<a
+					href={buildingHref('unassigned')}
+					data-sveltekit-preload-data="off"
+					class="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium hover:bg-muted"
+					><DoorOpen class="size-4 shrink-0" />ห้องที่ยังไม่จัดอาคาร</a
+				>
+			</section>
+		{:else}
+			<section class="min-w-0 space-y-3" data-testid="facility-rooms" aria-busy={roomsLoading}>
+				{#if buildingsError}<PageState
+						variant="error"
+						title="โหลดอาคารไม่สำเร็จ"
+						description={buildingsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={loadBuildings}
+					/>{/if}
+				{#if loading && !buildingsLoaded}<div role="status" aria-label="กำลังโหลดอาคาร">
+						<PageSkeleton variant="table" rows={4} columns={3} />
+					</div>
+				{:else if buildingsLoaded && !roomContextValid}<PageState
+						title="ไม่พบอาคารที่เลือก"
+						description="อาคารนี้อาจถูกลบแล้ว กลับไปเลือกรายการอาคารหรือดูห้องที่ยังไม่จัดอาคาร"
+					/>
+				{:else if roomContextValid}
 					<div class="relative max-w-md">
 						<Search
-							class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
+							class="pointer-events-none absolute top-2.5 start-3 size-4 text-muted-foreground"
 						/><Input
-							aria-label="ค้นหาอาคาร"
-							placeholder="ค้นหาชื่ออาคารหรือรหัส"
-							class="pl-9"
-							bind:value={buildingSearch}
-							oninput={() => (buildingPage = 1)}
+							aria-label="ค้นหาห้อง"
+							placeholder="ค้นหาชื่อห้อง"
+							class="ps-9"
+							bind:value={searchTerm}
+							oninput={() => (roomPage = 1)}
 						/>
-					</div>
-					{#if buildingsError}<PageState
-							variant="error"
-							title="โหลดอาคารไม่สำเร็จ"
-							description={buildingsError}
-							actionLabel="ลองอีกครั้ง"
-							onaction={loadBuildings}
-						/>{/if}
-					{#if loading && !buildingsLoaded}<div role="status" aria-label="กำลังโหลดอาคาร">
-							<PageSkeleton variant="table" rows={4} columns={4} />
-						</div>
-					{:else if buildingsLoaded && filteredBuildings.length === 0}<PageState
-							title={buildingSearch.trim() ? 'ไม่พบอาคารที่ค้นหา' : 'ไม่พบข้อมูลอาคาร'}
-							description={buildingSearch.trim()
-								? 'ลองเปลี่ยนชื่อหรือรหัสที่ค้นหา'
-								: 'เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ'}
-						/>
-					{:else if buildingsLoaded}<BuildingResults
-							items={visibleBuildings}
-							canUpdate={canUpdateFacility}
-							canDelete={canDeleteFacility}
-							onedit={openEditBuilding}
-							ondelete={(item) => confirmDelete('building', item)}
-						/>{@render pagination(
-							filteredBuildings.length,
-							currentBuildingPage,
-							(page) => (buildingPage = page),
-							'หน้ารายการอาคาร'
-						)}{/if}
-				</section>
-			</Tabs.Content>
-			<Tabs.Content value="rooms" class="space-y-3 pt-3">
-				<section class="min-w-0 space-y-3" data-testid="facility-rooms" aria-busy={roomsLoading}>
-					<div data-testid="facility-building-options">
-						{#if loading && !buildingsLoaded}<p
-								class="text-sm text-muted-foreground"
-								role="status"
-								aria-label="กำลังโหลดตัวเลือกอาคาร"
-							>
-								กำลังโหลดตัวเลือกอาคาร
-							</p>{/if}
-						{#if buildingsError}<PageState
-								variant="error"
-								title="โหลดตัวเลือกอาคารไม่สำเร็จ"
-								description={buildingsError}
-								actionLabel="ลองอีกครั้ง"
-								onaction={loadBuildings}
-							/>{/if}
-					</div>
-					<div class="flex flex-col gap-2 sm:flex-row">
-						<Select.Root
-							type="single"
-							bind:value={selectedBuildingFilter}
-							onValueChange={() => (roomPage = 1)}
-							disabled={!buildingsLoaded || !!buildingsError}
-						>
-							<Select.Trigger class="w-full min-w-0 sm:w-56" aria-label="เลือกอาคารสำหรับห้อง"
-								><span class="truncate"
-									>{selectedBuildingFilter === 'all'
-										? 'ทุกอาคาร'
-										: (buildings.find((building) => building.id === selectedBuildingFilter)
-												?.name_th ?? 'เลือกอาคาร')}</span
-								></Select.Trigger
-							>
-							<Select.Content
-								><Select.Item value="all">ทุกอาคาร</Select.Item
-								>{#each buildings as building (building.id)}<Select.Item value={building.id}
-										>{building.name_th}</Select.Item
-									>{/each}</Select.Content
-							>
-						</Select.Root>
-						<div class="relative min-w-0 flex-1 sm:max-w-md">
-							<Search
-								class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
-							/><Input
-								aria-label="ค้นหาห้อง"
-								placeholder="ค้นหาชื่อห้องหรือรหัส"
-								class="pl-9"
-								bind:value={searchTerm}
-								oninput={() => (roomPage = 1)}
-							/>
-						</div>
 					</div>
 					{#if roomsError}<PageState
 							variant="error"
@@ -639,13 +687,13 @@
 							onaction={refreshRooms}
 						/>{/if}
 					{#if roomsLoading && !roomsLoaded}<div role="status" aria-label="กำลังโหลดห้อง">
-							<PageSkeleton variant="table" rows={4} columns={6} />
+							<PageSkeleton variant="table" rows={4} columns={5} />
 						</div>
-					{:else if roomsLoaded && rooms.length === 0}<PageState
-							title="ไม่พบข้อมูลห้อง"
-							description={searchTerm.trim() || selectedBuildingFilter !== 'all'
-								? 'ลองเปลี่ยนคำค้นหาหรืออาคารที่เลือก'
-								: 'เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร'}
+					{:else if roomsLoaded && filteredRooms.length === 0}<PageState
+							title={searchTerm.trim() ? 'ไม่พบห้องที่ค้นหา' : 'ไม่พบข้อมูลห้อง'}
+							description={searchTerm.trim()
+								? 'ลองเปลี่ยนชื่อที่ค้นหา'
+								: 'เพิ่มห้องเรียนหรือห้องปฏิบัติการในรายการนี้'}
 						/>
 					{:else if roomsLoaded}<RoomResults
 							items={visibleRooms}
@@ -655,14 +703,14 @@
 							onedit={openEditRoom}
 							ondelete={(item) => confirmDelete('room', item)}
 						/>{@render pagination(
-							rooms.length,
+							filteredRooms.length,
 							currentRoomPage,
-							(page) => (roomPage = page),
+							(value) => (roomPage = value),
 							'หน้ารายการห้อง'
 						)}{/if}
-				</section>
-			</Tabs.Content>
-		</Tabs.Root>
+				{/if}
+			</section>
+		{/if}
 
 		{#if canCreateFacility || canUpdateFacility}
 			<Dialog.Root bind:open={showBuildingDialog}>
@@ -673,25 +721,15 @@
 						></Dialog.Header
 					>
 					<form onsubmit={handleSaveBuilding} class="space-y-4">
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="space-y-2">
-								<Label for="building-code">รหัสอาคาร</Label><Input
-									id="building-code"
-									name="code"
-									value={editingItem?.code || ''}
-									placeholder="เช่น BLD1"
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for="building-name-th"
-									>ชื่ออาคาร (ไทย) <span class="text-destructive">*</span></Label
-								><Input
-									id="building-name-th"
-									name="name_th"
-									value={editingItem?.name_th || ''}
-									required
-								/>
-							</div>
+						<div class="space-y-2">
+							<Label for="building-name-th"
+								>ชื่ออาคาร (ไทย) <span class="text-destructive">*</span></Label
+							><Input
+								id="building-name-th"
+								name="name_th"
+								value={editingItem?.name_th || ''}
+								required
+							/>
 						</div>
 						<div class="space-y-2">
 							<Label for="building-name-en">ชื่ออาคาร (อังกฤษ)</Label><Input
@@ -767,10 +805,7 @@
 									></Select.Root
 								><input type="hidden" name="room_type" value={formRoomType} />
 							</div>
-							<div class="space-y-2">
-								<Label for="room-code">รหัส / เลขห้อง <span class="text-destructive">*</span></Label
-								><Input id="room-code" name="code" value={editingItem?.code || ''} required />
-							</div>
+
 							<div class="space-y-2">
 								<Label for="room-name-th"
 									>ชื่อห้อง (ไทย) <span class="text-destructive">*</span></Label
@@ -781,22 +816,7 @@
 									required
 								/>
 							</div>
-							<div class="space-y-2 sm:col-span-2">
-								<Label for="room-name-en">ชื่อห้อง (อังกฤษ)</Label><Input
-									id="room-name-en"
-									name="name_en"
-									value={editingItem?.name_en || ''}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for="room-floor">ชั้น</Label><Input
-									id="room-floor"
-									type="number"
-									step="1"
-									name="floor"
-									value={editingRoom?.floor?.toString() ?? ''}
-								/>
-							</div>
+
 							<div class="space-y-2">
 								<Label for="room-capacity">ความจุ (คน)</Label><Input
 									id="room-capacity"
@@ -860,7 +880,12 @@
 							onclick={(event) => {
 								event.preventDefault();
 								void handleDelete();
-							}}>{submitting ? 'กำลังลบ...' : 'ยืนยันลบ'}</AlertDialog.Action
+							}}
+							>{pendingDraft === draftEpoch
+								? 'กำลังลบ...'
+								: submitting
+									? 'รอรายการก่อนหน้า...'
+									: 'ยืนยันลบ'}</AlertDialog.Action
 						></AlertDialog.Footer
 					>
 				</AlertDialog.Content>

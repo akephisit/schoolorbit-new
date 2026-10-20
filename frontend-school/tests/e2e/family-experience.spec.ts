@@ -91,7 +91,8 @@ function blocks(): TimetableBlock[] {
 				code: 'M1-1',
 				name: 'ชั้นที่ต้องซ่อน',
 				roomId: id(822),
-				roomCode: 'ห้องที่ต้องซ่อน',
+				roomCode: 'INTERNAL-HIDDEN-ROOM',
+				roomName: 'ห้องที่ต้องซ่อน',
 				isActive: true,
 				rowVersion: 1
 			}

@@ -90,6 +90,7 @@ export function editTimetableBlockOptimistically(
 				...group,
 				roomId: editsGroupRoom ? edit.roomId : group.roomId,
 				roomCode: editsGroupRoom ? (room?.code ?? null) : group.roomCode,
+				roomName: editsGroupRoom ? (room?.name ?? null) : group.roomName,
 				instructors:
 					edit.instructorIds === null
 						? group.instructors
@@ -118,6 +119,7 @@ export function editTimetableBlockOptimistically(
 				? {
 						...homeroom,
 						roomId: edit.roomId,
+						roomName: room?.name ?? null,
 						roomCode: room?.code ?? null
 					}
 				: homeroom
@@ -215,6 +217,7 @@ export function createOptimisticTimetableBlock(
 						};
 					}),
 					roomId: dragSource.candidate.roomId,
+					roomName: room?.name ?? null,
 					roomCode: room?.code ?? null,
 					rowVersion: 0,
 					isActive: true,
@@ -249,6 +252,7 @@ export function createOptimisticTimetableBlock(
 							code: homeroom.code,
 							name: homeroom.name,
 							roomId: dragSource.candidate.roomId,
+							roomName: room?.name ?? null,
 							roomCode: room?.code ?? null,
 							rowVersion: 0,
 							isActive: true

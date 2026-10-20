@@ -211,5 +211,14 @@
 	[data-slot='table-cell'],
 	[data-slot='table-head'] {
 		padding-block: var(--school-cell-padding, 0.5rem);
+		padding-inline: 0.5rem;
+	}
+	[data-slot='table-cell']:first-child,
+	[data-slot='table-head']:first-child {
+		padding-inline-start: 1.25rem;
+	}
+	[data-slot='table-cell']:last-child,
+	[data-slot='table-head']:last-child {
+		padding-inline-end: 1.25rem;
 	}
 }

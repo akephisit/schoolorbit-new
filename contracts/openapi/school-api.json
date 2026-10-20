@@ -40739,6 +40739,19 @@
               "null"
             ]
           },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "subjectId": {
             "format": "uuid",
             "type": [
@@ -40763,6 +40776,8 @@
           "entryId",
           "entryType",
           "homeroomNames",
+          "roomId",
+          "roomName",
           "isTeamTeaching"
         ],
         "type": "object"
@@ -63278,6 +63293,12 @@
               "null"
             ]
           },
+          "roomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -63302,6 +63323,7 @@
           "homeroomIds",
           "roomId",
           "roomCode",
+          "roomName",
           "instructors",
           "syncStatus",
           "rowVersion",
@@ -63341,6 +63363,12 @@
               "null"
             ]
           },
+          "roomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -63353,6 +63381,7 @@
           "name",
           "roomId",
           "roomCode",
+          "roomName",
           "rowVersion",
           "isActive"
         ],
