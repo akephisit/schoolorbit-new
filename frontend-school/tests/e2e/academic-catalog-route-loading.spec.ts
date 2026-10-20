@@ -6,8 +6,6 @@ import type {
 	CreateActivityVersionRequest
 } from '../../src/lib/api/academic-core.js';
 
-import { chooseSubjectDate } from './fixtures/subject-catalog';
-
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
@@ -436,8 +434,9 @@ for (const width of [375, 1440]) {
 			animations: 'disabled'
 		});
 		await page.getByRole('dialog').getByLabel('ชื่อภาษาไทย').fill('กิจกรรมทดสอบวันที่');
-		await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่' }).click();
-		await expect(page.getByRole('dialog')).toContainText('กรุณาเลือกวันที่เริ่มใช้');
+		await expect(
+			page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+		).not.toContainText('เลือกวันเริ่มใช้');
 		await page.screenshot({
 			path: testInfo.outputPath(`activity-validation-${width}.png`),
 			animations: 'disabled'
@@ -628,9 +627,12 @@ test('edited activity version hours remain decimal strings and required blanks d
 			.evaluate((input: HTMLInputElement) => input.validity.valueMissing)
 	).toBe(true);
 	expect(writes).toEqual([]);
-	await page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true }).fill('1.75');
-	await page.getByLabel('ชั่วโมงรวมต่อภาคเรียน', { exact: true }).fill('35.25');
-	await chooseSubjectDate(page);
+	await page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true }).pressSequentially('1.75');
+	const totalHours = page.getByLabel('ชั่วโมงรวมต่อภาคเรียน', { exact: true });
+	await totalHours.clear();
+	await totalHours.pressSequentially('35.25');
+	await expect(page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true })).toHaveValue('1.75');
+	await expect(totalHours).toHaveValue('35.25');
 	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
 	await expect(
 		page
@@ -644,7 +646,7 @@ test('edited activity version hours remain decimal strings and required blanks d
 			hoursPerWeek: '1.75',
 			hoursPerTerm: '35.25',
 			schedulingMode: 'synchronized',
-			effectiveFrom: '2026-10-21',
+			effectiveFrom: '2026-10-20',
 			effectiveUntil: null,
 			gradeLevelIds: [],
 			termCode: null

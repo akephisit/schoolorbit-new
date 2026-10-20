@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import {
+	chooseSubjectDate,
 	failSubject,
 	fillSubjectVersion,
 	installSubjectCatalog,
@@ -95,6 +96,93 @@ test('create failure preserves its draft and rejects duplicate pending submissio
 	await expect(page.getByRole('dialog', { name: 'คทดสอบ99', exact: true })).toBeVisible();
 	await expect.poll(() => requests.historyReads.get('subject-created')).toBe(1);
 	expect(requests.writes).toHaveLength(2);
+	expect(requests.pageErrors).toEqual([]);
+});
+
+for (const [instant, expectedDate, dateLabel] of [
+	['2026-10-20T16:59:00Z', '2026-10-20', '20 ต.ค. 2569'],
+	['2026-10-20T17:01:00Z', '2026-10-21', '21 ต.ค. 2569']
+] as const) {
+	test(`version decimals retain keyboard input and default to Bangkok day ${expectedDate}`, async ({
+		page
+	}) => {
+		const requests = await installSubjectCatalog(page, subjectFixture(1));
+		await page.clock.setFixedTime(new Date(instant));
+		await page.goto(subjectPath);
+		await openSubjectDetails(page);
+		await expect(
+			page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+		).toContainText(dateLabel);
+		await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('รุ่นทศนิยม');
+		const credit = page.getByLabel('หน่วยกิต', { exact: true });
+		await credit.clear();
+		await credit.pressSequentially('1');
+		await credit.pressSequentially('.');
+		await expect(credit).toHaveValue('1.');
+		await credit.pressSequentially('5');
+		await expect(credit).toHaveValue('1.5');
+		await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+		await expect.poll(() => requests.writes.length).toBe(1);
+		expect(requests.writes[0].body).toMatchObject({ credit: '1.5', effectiveFrom: expectedDate });
+		expect(requests.pageErrors).toEqual([]);
+	});
+}
+
+test('invalid version values block writes and failed saves preserve exact decimals and chosen date', async ({
+	page
+}) => {
+	let attempts = 0;
+	const requests = await installSubjectCatalog(page, subjectFixture(1), {
+		onRequest: async (route, url) => {
+			if (
+				url.pathname.endsWith('/versions') &&
+				route.request().method() === 'POST' &&
+				++attempts === 1
+			) {
+				await failSubject(route, 409, 'บันทึกรุ่นไม่สำเร็จ');
+				return true;
+			}
+			return false;
+		}
+	});
+	await page.clock.setFixedTime(new Date('2026-10-20T17:01:00Z'));
+	await page.goto(subjectPath);
+	await openSubjectDetails(page);
+	await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('แบบร่างทศนิยม');
+	const credit = page.getByLabel('หน่วยกิต', { exact: true });
+	const save = page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true });
+	for (const value of ['', '0', '-1', '1.234', '1.', '.']) {
+		await credit.clear();
+		await credit.pressSequentially(value);
+		expect(await credit.evaluate((element: HTMLInputElement) => element.checkValidity())).toBe(
+			false
+		);
+		await save.click();
+		expect(requests.writes).toEqual([]);
+	}
+	await credit.clear();
+	await credit.pressSequentially('1.50');
+	for (const label of ['คาบมาตรฐานต่อสัปดาห์', 'ชั่วโมงรวมต่อภาคเรียน']) {
+		const input = page.getByLabel(label, { exact: true });
+		await input.clear();
+		await input.pressSequentially('1.5');
+		await save.click();
+		expect(requests.writes).toEqual([]);
+		await input.clear();
+		await input.pressSequentially('2');
+	}
+	await chooseSubjectDate(page, '2026-10-23');
+	await save.click();
+	await expect(page.getByRole('form', { name: 'สร้างรุ่นใหม่' }).getByRole('alert')).toBeVisible();
+	await expect(credit).toHaveValue('1.50');
+	await expect(page.getByLabel('ชื่อภาษาไทย', { exact: true })).toHaveValue('แบบร่างทศนิยม');
+	await expect(
+		page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+	).toContainText('23 ต.ค. 2569');
+	await save.click();
+	await expect.poll(() => requests.writes.length).toBe(2);
+	for (const write of requests.writes)
+		expect(write.body).toMatchObject({ credit: '1.50', effectiveFrom: '2026-10-23' });
 	expect(requests.pageErrors).toEqual([]);
 });
 
@@ -420,8 +508,9 @@ for (const width of [1029, 390]) {
 			await page.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 			await openSubjectDetails(page);
 			await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('แบบร่างสำหรับตรวจรูปแบบ');
-			await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
-			await expect(page.getByRole('alert')).toContainText('กรุณาเลือกวันที่เริ่มใช้');
+			await expect(
+				page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้', exact: true })
+			).not.toContainText('เลือกวันเริ่มใช้');
 			await expect(page.getByLabel('หน่วยกิต', { exact: true })).toHaveCSS(
 				'font-family',
 				/School Noto Sans Thai/
