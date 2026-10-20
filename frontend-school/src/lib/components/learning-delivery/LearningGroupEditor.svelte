@@ -56,8 +56,8 @@
 	const roomOptions = $derived(
 		managementOptions.rooms.map((room) => ({
 			id: room.id,
-			label: room.name_th,
-			description: [room.code, room.building_name].filter(Boolean).join(' · ')
+			label: room.name_th.trim() || 'ไม่พบชื่อห้อง',
+			description: room.building_name ?? undefined
 		}))
 	);
 	const teacherOptions = $derived(

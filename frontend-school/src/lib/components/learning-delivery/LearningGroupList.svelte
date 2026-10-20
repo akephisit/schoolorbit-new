@@ -167,8 +167,8 @@
 						bind:value={preferredRoomId}
 						options={managementOptions.rooms.map((room) => ({
 							id: room.id,
-							label: room.name_th,
-							description: [room.code, room.building_name].filter(Boolean).join(' · ')
+							label: room.name_th.trim() || 'ไม่พบชื่อห้อง',
+							description: room.building_name ?? undefined
 						}))}
 						placeholder="ยังไม่กำหนดห้อง"
 						searchPlaceholder="ค้นหาชื่อหรือรหัสห้อง..."

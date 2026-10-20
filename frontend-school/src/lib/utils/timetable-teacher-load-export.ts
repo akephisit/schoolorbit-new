@@ -481,7 +481,9 @@ function blockRoomNames(
 	const targets = groups.length ? groups : entry.homerooms.filter((target) => target.isActive);
 	return uniqueNonEmpty(
 		targets.flatMap((target) =>
-			target.roomId ? [rooms.get(target.roomId) ?? target.roomCode ?? ''] : []
+			target.roomId
+				? [rooms.get(target.roomId)?.trim() || target.roomName?.trim() || 'ไม่พบชื่อห้อง']
+				: []
 		)
 	);
 }

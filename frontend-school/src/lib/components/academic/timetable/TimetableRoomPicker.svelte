@@ -23,7 +23,7 @@
 	const availableRooms = $derived(rooms.filter((room) => room.status.toUpperCase() === 'ACTIVE'));
 
 	function roomLabel(room: TimetableBlockWorkspaceRoom): string {
-		return room.code ? `${room.code} · ${room.name}` : room.name;
+		return room.name.trim() || 'ไม่พบชื่อห้อง';
 	}
 </script>
 

@@ -698,6 +698,15 @@ fn prospective_delivery_options(
     options
 }
 
+fn unique_room_label_suggestion(
+    options: &[TermPreparationMappingOption],
+    source_label: &str,
+) -> Option<Uuid> {
+    let mut matching = options.iter().filter(|option| option.label == source_label);
+    let first = matching.next()?;
+    matching.next().is_none().then_some(first.id)
+}
+
 async fn mapping_requirements(
     tx: &mut Transaction<'_, Postgres>,
     context: &ContextRow,
@@ -754,10 +763,14 @@ async fn mapping_requirements(
             options_cache.insert(kind, options.clone());
             options
         };
-        let label_suggestion = options
-            .iter()
-            .find(|option| option.label == source_label)
-            .map(|option| option.id);
+        let label_suggestion = if kind == TermPreparationMappingKind::Room {
+            unique_room_label_suggestion(&options, &source_label)
+        } else {
+            options
+                .iter()
+                .find(|option| option.label == source_label)
+                .map(|option| option.id)
+        };
         let stable_suggestion =
             seed_suggestion.filter(|id| options.iter().any(|option| option.id == *id));
         let suggested_target_id = stable_suggestion.or(label_suggestion);
@@ -1012,7 +1025,7 @@ async fn add_timetable_mapping_seeds(
            JOIN users teacher ON teacher.id=used.teacher_id ORDER BY source_id"#))
         .bind(context.source_term_id).fetch_all(&mut **tx).await?));
     result.push((TermPreparationMappingKind::Room, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
-        r#"SELECT DISTINCT room.id AS source_id, coalesce(room.code || ' · ','') || room.name_th AS source_label,
+        r#"SELECT DISTINCT room.id AS source_id, room.name_th AS source_label,
                   CASE WHEN room.status='ACTIVE' THEN room.id END AS suggested_target_id
            FROM source_version JOIN (
                SELECT block.timetable_version_id,bg.room_id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups bg ON bg.block_id=block.id WHERE bg.room_id IS NOT NULL AND bg.is_active
@@ -1075,7 +1088,7 @@ async fn add_exam_mapping_seeds(
            ORDER BY source_id"#,
     ).bind(context.source_term_id).bind(context.target_year_id).fetch_all(&mut **tx).await?));
     result.push((TermPreparationMappingKind::Room, sqlx::query_as(
-        r#"SELECT DISTINCT room.id AS source_id, coalesce(room.code || ' · ','') || room.name_th AS source_label,
+        r#"SELECT DISTINCT room.id AS source_id, room.name_th AS source_label,
                   CASE WHEN room.status='ACTIVE' THEN room.id END AS suggested_target_id
            FROM academic_exam_day_room_assignments assignment
            JOIN academic_exam_days day ON day.id=assignment.exam_day_id JOIN rooms room ON room.id=assignment.room_id
@@ -1103,7 +1116,7 @@ async fn load_target_options(
             "SELECT id,name FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY name,id LIMIT 500",
         ).bind(context.target_year_id).fetch_all(&mut **tx).await?,
         TermPreparationMappingKind::Room => sqlx::query_as(
-            "SELECT id,coalesce(code || ' · ','') || name_th FROM rooms WHERE status='ACTIVE' ORDER BY 2,id LIMIT 2000",
+            "SELECT id,name_th FROM rooms WHERE status='ACTIVE' ORDER BY 2,id LIMIT 2000",
         ).fetch_all(&mut **tx).await?,
         TermPreparationMappingKind::BellPeriod => sqlx::query_as(
             r#"SELECT period.id,period.order_index::text || ' · ' || coalesce(period.name,to_char(period.start_time,'HH24:MI')) FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id WHERE term.id=$1 AND period.is_active ORDER BY period.order_index,period.id"#,
@@ -1456,4 +1469,29 @@ async fn apply_supervision(
     external
         .apply_supervision_preparation(tx, actor, context, &mappings.entities, &mappings.dates)
         .await
+}
+
+#[cfg(test)]
+mod room_label_tests {
+    use super::*;
+
+    #[test]
+    fn room_name_suggestions_require_one_matching_identity() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        let mut options = vec![TermPreparationMappingOption {
+            id: first,
+            label: "ห้องวิทยาศาสตร์".into(),
+        }];
+        assert_eq!(
+            unique_room_label_suggestion(&options, "ห้องวิทยาศาสตร์"),
+            Some(first)
+        );
+        assert_eq!(unique_room_label_suggestion(&options, "ห้องสมุด"), None);
+        options.push(TermPreparationMappingOption {
+            id: second,
+            label: "ห้องวิทยาศาสตร์".into(),
+        });
+        assert_eq!(unique_room_label_suggestion(&options, "ห้องวิทยาศาสตร์"), None);
+    }
 }

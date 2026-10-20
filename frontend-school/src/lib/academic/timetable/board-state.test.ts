@@ -49,6 +49,7 @@ function block(
 				})),
 				roomId,
 				roomCode: null,
+				roomName: null,
 				rowVersion: 1,
 				isActive: true,
 				syncStatus: null

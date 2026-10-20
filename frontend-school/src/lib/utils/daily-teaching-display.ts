@@ -20,7 +20,7 @@ export type DailyTeachingEntryCardPresentation = {
 export interface DailyTeachingDisplayLocation {
 	key: string;
 	homeroomNames: string[];
-	roomCode: string | null;
+	roomName: string | null;
 	label: string;
 }
 
@@ -60,15 +60,15 @@ function textOrNull(value: string | null | undefined): string | null {
 
 function locationFromEntry(entry: DailyTeachingEntry): DailyTeachingDisplayLocation | null {
 	const homeroomNames = entry.homeroomNames.map(textOrNull).filter((name) => name !== null);
-	const roomCode = textOrNull(entry.roomCode);
-	if (homeroomNames.length === 0 && !roomCode) return null;
+	const roomName = textOrNull(entry.roomName) ?? (entry.roomId ? 'ไม่พบชื่อห้อง' : null);
+	if (homeroomNames.length === 0 && !roomName) return null;
 	const homeroomLabel = homeroomNames.join(', ');
 
 	return {
-		key: `${homeroomLabel}\u0000${roomCode ?? ''}`,
+		key: `${homeroomLabel}\u0000${entry.roomId ?? ''}`,
 		homeroomNames,
-		roomCode,
-		label: [homeroomLabel, roomCode].filter(Boolean).join(' / ')
+		roomName,
+		label: [homeroomLabel, roomName].filter(Boolean).join(' / ')
 	};
 }
 
@@ -79,7 +79,7 @@ function compareLocations(
 	return (
 		Number(left.homeroomNames.length === 0) - Number(right.homeroomNames.length === 0) ||
 		thaiNaturalCollator.compare(left.homeroomNames.join(', '), right.homeroomNames.join(', ')) ||
-		thaiNaturalCollator.compare(left.roomCode ?? '', right.roomCode ?? '') ||
+		thaiNaturalCollator.compare(left.roomName ?? '', right.roomName ?? '') ||
 		left.key.localeCompare(right.key)
 	);
 }
@@ -190,8 +190,8 @@ export function dailyTeachingCompactGroupMeta(group: DailyTeachingDisplayGroup):
 		homeroomNames.length > 0
 			? `${homeroomNames[0]}${homeroomNames.length > 1 ? ` +${homeroomNames.length - 1}` : ''}`
 			: textOrNull(entry.learningGroupName);
-	const roomLabel = textOrNull(entry.roomCode);
-	return [targetLabel, roomLabel ? `ห้อง ${roomLabel}` : null].filter(Boolean).join(' · ');
+	const roomLabel = textOrNull(entry.roomName) ?? (entry.roomId ? 'ไม่พบชื่อห้อง' : null);
+	return [targetLabel, roomLabel].filter(Boolean).join(' · ');
 }
 
 export function dailyTeachingTableMinWidth(periodCount: number): number {

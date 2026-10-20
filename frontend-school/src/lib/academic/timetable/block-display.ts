@@ -59,9 +59,13 @@ export function buildTimetableBlockDisplay(
 		...block.groups.map((group) => group.name),
 		...block.homerooms.map((homeroom) => homeroom.name)
 	]);
-	const roomCodes = unique([
-		...block.groups.map((group) => group.roomCode),
-		...block.homerooms.map((homeroom) => homeroom.roomCode)
+	const roomNames = unique([
+		...block.groups.map(
+			(group) => group.roomName?.trim() || (group.roomId ? 'ไม่พบชื่อห้อง' : null)
+		),
+		...block.homerooms.map(
+			(homeroom) => homeroom.roomName?.trim() || (homeroom.roomId ? 'ไม่พบชื่อห้อง' : null)
+		)
 	]);
 	const homeroomCount = targetHomeroomCount(block);
 
@@ -72,7 +76,7 @@ export function buildTimetableBlockDisplay(
 		scopeLabel:
 			surface === 'scheduler' && shared && homeroomCount > 0 ? `${homeroomCount} ห้อง` : null,
 		groupLabel: shared ? null : groupNames.join(', ') || null,
-		roomLabel: shared ? null : roomCodes.join(', ') || null
+		roomLabel: shared ? null : roomNames.join(', ') || 'ไม่ระบุห้อง'
 	};
 }
 

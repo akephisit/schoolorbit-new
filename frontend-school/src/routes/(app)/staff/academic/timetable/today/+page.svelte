@@ -532,11 +532,13 @@
 					<p class="text-muted-foreground mt-2 text-sm">
 						{entrySubtitle(entry) || 'ไม่มีข้อมูลกลุ่มเรียน'}
 					</p>
-					{#if entry.note}<p class="mt-2 text-sm">{entry.note}</p>{/if}{#if entry.roomCode}<p
+					{#if entry.note}<p class="mt-2 text-sm">
+							{entry.note}
+						</p>{/if}{#if entry.roomName?.trim() || entry.roomId}<p
 							class="mt-2 flex items-center gap-1 text-sm"
 						>
 							<MapPin class="size-4" />
-							{entry.roomCode}
+							{entry.roomName?.trim() || 'ไม่พบชื่อห้อง'}
 						</p>{/if}
 				</div>
 			{/each}

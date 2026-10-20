@@ -771,6 +771,7 @@ mod tests {
                 name: "ม.1/1".into(),
                 room_id: None,
                 room_code: None,
+                room_name: None,
                 row_version: 1,
                 is_active: true,
             }],

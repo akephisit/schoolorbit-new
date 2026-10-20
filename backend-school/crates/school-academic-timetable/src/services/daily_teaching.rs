@@ -82,6 +82,10 @@ pub struct DailyTeachingEntry {
     pub learning_group_name: Option<String>,
     pub homeroom_names: Vec<String>,
     pub room_code: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub room_id: Option<Uuid>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub room_name: Option<String>,
     pub title: Option<String>,
     pub note: Option<String>,
     pub is_team_teaching: bool,
@@ -123,6 +127,8 @@ struct EntrySeed {
     learning_group_name: Option<String>,
     homeroom_names: Vec<String>,
     room_code: Option<String>,
+    room_id: Option<Uuid>,
+    room_name: Option<String>,
     title: Option<String>,
     note: Option<String>,
     instructor_count: i64,
@@ -268,6 +274,8 @@ pub async fn get_daily_teaching_overview(
                       )
                   END AS homeroom_names,
                   room.code AS room_code,
+                  room.id AS room_id,
+                  room.name_th AS room_name,
                   block.title,
                   block.note,
                   (
@@ -363,6 +371,8 @@ fn build_overview(
                 learning_group_name: entry.learning_group_name,
                 homeroom_names: entry.homeroom_names,
                 room_code: entry.room_code,
+                room_id: entry.room_id,
+                room_name: entry.room_name,
                 title: entry.title,
                 note: entry.note,
                 is_team_teaching: entry.instructor_count > 1,

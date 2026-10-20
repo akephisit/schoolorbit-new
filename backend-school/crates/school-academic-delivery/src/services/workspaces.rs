@@ -1256,7 +1256,7 @@ pub async fn delivery_management_options(
            FROM rooms room
            LEFT JOIN buildings building ON building.id = room.building_id
            WHERE room.status = 'ACTIVE'
-           ORDER BY building.code NULLS LAST, room.floor NULLS FIRST, room.code ASC
+           ORDER BY building.name_th NULLS LAST, room.floor NULLS FIRST, room.name_th, room.id
            LIMIT $1"#,
     )
     .bind((MAX_LOOKUP_OPTIONS + 1) as i64)

@@ -55,6 +55,7 @@ struct GroupRow {
     homeroom_ids: Vec<Uuid>,
     room_id: Option<Uuid>,
     room_code: Option<String>,
+    room_name: Option<String>,
     row_version: i64,
     is_active: bool,
 }
@@ -77,6 +78,7 @@ struct HomeroomRow {
     name: String,
     room_id: Option<Uuid>,
     room_code: Option<String>,
+    room_name: Option<String>,
     row_version: i64,
     is_active: bool,
 }
@@ -664,7 +666,7 @@ pub(crate) async fn get_blocks_on_connection(
         r#"SELECT target.id, target.block_id, target.learning_group_id,
                   target.learning_offering_id, learning_group.code, learning_group.name,
                   target.homeroom_ids,
-                  target.room_id, room.code AS room_code,
+                  target.room_id, room.code AS room_code, room.name_th AS room_name,
                   target.row_version, target.is_active
            FROM academic_timetable_block_groups target
            JOIN learning_groups learning_group ON learning_group.id = target.learning_group_id
@@ -696,7 +698,7 @@ pub(crate) async fn get_blocks_on_connection(
     let homeroom_rows: Vec<HomeroomRow> = sqlx::query_as(
         r#"SELECT target.id, target.block_id, target.homeroom_id,
                   homeroom.code, homeroom.name, target.room_id,
-                  room.code AS room_code, target.row_version, target.is_active
+                  room.code AS room_code, room.name_th AS room_name, target.row_version, target.is_active
            FROM academic_timetable_block_homerooms target
            JOIN homerooms homeroom ON homeroom.id = target.homeroom_id
            LEFT JOIN rooms room ON room.id = target.room_id
@@ -776,6 +778,7 @@ pub(crate) async fn get_blocks_on_connection(
                 homeroom_ids: row.homeroom_ids,
                 room_id: row.room_id,
                 room_code: row.room_code,
+                room_name: row.room_name,
                 instructors: instructors_by_group.remove(&row.id).unwrap_or_default(),
                 sync_status: sync_by_group
                     .get(&(row.block_id, row.learning_group_id))
@@ -796,6 +799,7 @@ pub(crate) async fn get_blocks_on_connection(
                 name: row.name,
                 room_id: row.room_id,
                 room_code: row.room_code,
+                room_name: row.room_name,
                 row_version: row.row_version,
                 is_active: row.is_active,
             });

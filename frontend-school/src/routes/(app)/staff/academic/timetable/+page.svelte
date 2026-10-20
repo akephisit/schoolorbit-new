@@ -2276,9 +2276,7 @@
 						<Select.Content>
 							<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
 							{#each controller?.workspace.rooms ?? [] as room (room.id)}
-								<Select.Item value={room.id}
-									>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
-								>
+								<Select.Item value={room.id}>{room.name.trim() || 'ไม่พบชื่อห้อง'}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -2381,9 +2379,7 @@
 								<Select.Content>
 									<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
 									{#each controller?.workspace.rooms ?? [] as room (room.id)}
-										<Select.Item value={room.id}
-											>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
-										>
+										<Select.Item value={room.id}>{room.name.trim() || 'ไม่พบชื่อห้อง'}</Select.Item>
 									{/each}
 								</Select.Content>
 							</Select.Root>

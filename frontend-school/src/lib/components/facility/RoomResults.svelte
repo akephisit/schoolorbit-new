@@ -43,41 +43,29 @@
 	class="hidden overflow-hidden rounded-lg border bg-card md:block"
 	data-testid="facility-rooms-table"
 >
-	<Table.Root class="min-w-[46rem] table-fixed">
+	<Table.Root class="min-w-[36rem] table-fixed">
 		<Table.Header
 			><Table.Row
-				><Table.Head class="w-20">รหัสห้อง</Table.Head><Table.Head>ชื่อห้อง</Table.Head><Table.Head
-					class="w-32">ประเภท</Table.Head
-				><Table.Head>อาคาร / ชั้น</Table.Head><Table.Head class="w-16 text-center"
-					>ความจุ</Table.Head
-				>{#if canUpdate || canDelete}<Table.Head class="w-24 text-right">จัดการ</Table.Head
+				><Table.Head>ชื่อห้อง</Table.Head><Table.Head class="w-32">ประเภท</Table.Head><Table.Head
+					class="w-20 text-center">ความจุ</Table.Head
+				><Table.Head>รายละเอียด</Table.Head>{#if canUpdate || canDelete}<Table.Head
+						class="w-24 text-end">จัดการ</Table.Head
 					>{/if}</Table.Row
 			></Table.Header
 		>
 		<Table.Body
 			>{#each items as item (item.id)}<Table.Row>
-					<Table.Cell class="break-words whitespace-normal text-xs tabular-nums"
-						>{item.code || '—'}</Table.Cell
-					>
-					<Table.Cell class="whitespace-normal"
-						><p class="break-words font-medium">{item.name_th}</p>
-						{#if item.name_en}<p class="mt-1 break-words text-xs text-muted-foreground">
-								{item.name_en}
-							</p>{/if}</Table.Cell
-					>
+					<Table.Cell class="break-words whitespace-normal font-medium">{item.name_th}</Table.Cell>
 					<Table.Cell
 						><Badge variant="outline" class="whitespace-normal"
 							>{roomTypes.find((type) => type.value === item.room_type)?.label ??
 								item.room_type}</Badge
 						></Table.Cell
 					>
-					<Table.Cell class="whitespace-normal"
-						><p class="break-words">{item.building_name || 'ไม่ระบุอาคาร'}</p>
-						{#if item.floor !== null}<p class="mt-1 text-xs text-muted-foreground">
-								ชั้น {item.floor}
-							</p>{/if}</Table.Cell
-					>
 					<Table.Cell class="text-center tabular-nums">{item.capacity}</Table.Cell>
+					<Table.Cell class="break-words whitespace-normal text-muted-foreground"
+						>{item.description || '—'}</Table.Cell
+					>
 					{#if canUpdate || canDelete}<Table.Cell>{@render actions(item)}</Table.Cell>{/if}
 				</Table.Row>{/each}</Table.Body
 		>
@@ -90,26 +78,16 @@
 >
 	{#each items as item (item.id)}<li class="space-y-2 p-3">
 			<div class="flex items-start justify-between gap-2">
-				<div class="min-w-0">
-					<p class="break-words text-xs text-muted-foreground">{item.code || 'ไม่ระบุรหัส'}</p>
-					<h2 class="mt-1 break-words text-sm font-semibold">{item.name_th}</h2>
-					{#if item.name_en}<p class="mt-1 break-words text-xs text-muted-foreground">
-							{item.name_en}
-						</p>{/if}
-				</div>
+				<h2 class="min-w-0 break-words text-sm font-semibold">{item.name_th}</h2>
 				{@render actions(item)}
 			</div>
-			<Badge variant="outline"
-				>{roomTypes.find((type) => type.value === item.room_type)?.label ?? item.room_type}</Badge
-			>
-			<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-				<dt class="text-muted-foreground">อาคาร / ชั้น</dt>
-				<dd class="min-w-0 break-words">
-					{item.building_name || 'ไม่ระบุอาคาร'}{#if item.floor !== null}
-						· ชั้น {item.floor}{/if}
-				</dd>
-				<dt class="text-muted-foreground">ความจุ</dt>
-				<dd class="tabular-nums">{item.capacity} คน</dd>
-			</dl>
+			<div class="flex flex-wrap items-center gap-2 text-xs">
+				<Badge variant="outline"
+					>{roomTypes.find((type) => type.value === item.room_type)?.label ?? item.room_type}</Badge
+				><span class="tabular-nums">{item.capacity} คน</span>
+			</div>
+			{#if item.description}<p class="break-words text-sm text-muted-foreground">
+					{item.description}
+				</p>{/if}
 		</li>{/each}
 </ul>

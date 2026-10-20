@@ -19043,6 +19043,9 @@ export interface components {
 			offeringName?: string | null;
 			roomCode?: string | null;
 			/** Format: uuid */
+			roomId: string | null;
+			roomName: string | null;
+			/** Format: uuid */
 			subjectId?: string | null;
 			subjectVersionDisplayLabel?: string | null;
 			title?: string | null;
@@ -25356,6 +25359,7 @@ export interface components {
 			roomCode: string | null;
 			/** Format: uuid */
 			roomId: string | null;
+			roomName: string | null;
 			/** Format: int64 */
 			rowVersion: number;
 			syncStatus: null | components['schemas']['TimetableBlockSyncStatus'];
@@ -25371,6 +25375,7 @@ export interface components {
 			roomCode: string | null;
 			/** Format: uuid */
 			roomId: string | null;
+			roomName: string | null;
 			/** Format: int64 */
 			rowVersion: number;
 		};

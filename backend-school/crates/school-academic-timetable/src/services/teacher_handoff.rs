@@ -597,9 +597,7 @@ async fn load_affected_entries(
                     AS offering_label,
                   block.day_of_week, block.bell_schedule_period_id,
                   period.name AS period_label,
-                  CASE WHEN room.id IS NULL THEN NULL
-                       ELSE concat_ws(' · ', nullif(room.code, ''), room.name_th)
-                  END AS room_label
+                  room.name_th AS room_label
            FROM academic_timetable_block_groups block_group
            JOIN academic_timetable_blocks block ON block.id = block_group.block_id
            JOIN learning_groups learning_group ON learning_group.id = block_group.learning_group_id
