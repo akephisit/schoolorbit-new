@@ -50,6 +50,7 @@ function homeroom(index) {
 		name: `ม.1/${index}`,
 		roomId: `room-${index}`,
 		roomCode: `10${index}`,
+		roomName: `ห้อง ${index}`,
 		isActive: true,
 		rowVersion: 1
 	};
@@ -101,6 +102,7 @@ test('personal timetable hides shared activity classroom and room lists', () => 
 					instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
 					roomId: 'room-1',
 					roomCode: '101',
+					roomName: 'ห้องคณิตศาสตร์',
 					isActive: true,
 					rowVersion: 1,
 					syncStatus: 'linked'
@@ -115,6 +117,7 @@ test('personal timetable hides shared activity classroom and room lists', () => 
 					instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
 					roomId: 'room-2',
 					roomCode: '102',
+					roomName: 'ห้องวิทยาศาสตร์',
 					isActive: true,
 					rowVersion: 1,
 					syncStatus: 'linked'
@@ -159,6 +162,7 @@ test('ordinary course keeps the teacher classroom and room information', () => {
 					instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
 					roomId: 'room-1',
 					roomCode: '101',
+					roomName: 'ห้องคณิตศาสตร์',
 					isActive: true,
 					rowVersion: 1,
 					syncStatus: null
@@ -174,7 +178,7 @@ test('ordinary course keeps the teacher classroom and room information', () => {
 		teacherLabel: 'ครูหนึ่ง',
 		scopeLabel: null,
 		groupLabel: 'ม.1/1 คณิตศาสตร์',
-		roomLabel: '101'
+		roomLabel: 'ห้องคณิตศาสตร์'
 	});
 });
 
@@ -191,6 +195,7 @@ test('scheduler target label omits a redundant homeroom label in homeroom view',
 				instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
 				roomId: 'room-1',
 				roomCode: '101',
+				roomName: 'ห้องคณิตศาสตร์',
 				isActive: true,
 				rowVersion: 1,
 				syncStatus: null
@@ -221,6 +226,7 @@ test('scheduler target label shows only homerooms in teacher view', () => {
 				instructors: [teacher('teacher-1', 'ครูหนึ่ง')],
 				roomId: 'room-1',
 				roomCode: '101',
+				roomName: 'ห้องคณิตศาสตร์',
 				isActive: true,
 				rowVersion: 1,
 				syncStatus: null
@@ -236,4 +242,31 @@ test('scheduler target label shows only homerooms in teacher view', () => {
 		),
 		'ม.1/1'
 	);
+});
+
+test('scheduler and personal displays never fall back to physical room codes', () => {
+	const input = block({
+		groups: [
+			{
+				name: 'กลุ่มหนึ่ง',
+				homeroomIds: [],
+				instructors: [],
+				roomId: 'physical-room-a',
+				roomName: 'ห้องคณิตศาสตร์',
+				roomCode: 'INTERNAL-A'
+			}
+		]
+	});
+	for (const surface of ['scheduler', 'personal']) {
+		assert.equal(
+			displayModule.buildTimetableBlockDisplay(input, surface).roomLabel,
+			'ห้องคณิตศาสตร์'
+		);
+		input.groups[0].roomName = null;
+		assert.equal(
+			displayModule.buildTimetableBlockDisplay(input, surface).roomLabel,
+			'ไม่พบชื่อห้อง'
+		);
+		input.groups[0].roomName = 'ห้องคณิตศาสตร์';
+	}
 });

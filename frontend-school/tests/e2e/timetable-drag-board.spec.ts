@@ -79,7 +79,7 @@ test('preselects the first preferred room and lets the scheduler override it bef
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	const teacherPicker = trayCard.getByRole('button', { name: /เลือกครู/ });
 	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
-	await expect(roomPicker).toContainText('LAB-2');
+	await expect(roomPicker).toContainText('ห้องปฏิบัติการ 2');
 	await expect(trayCard).not.toContainText('M1-1-A');
 	const remainingCount = trayCard.getByText('1/1', { exact: true });
 	await expect(remainingCount).toBeVisible();
@@ -93,14 +93,15 @@ test('preselects the first preferred room and lets the scheduler override it bef
 	expect(teacherBox!.x).toBeCloseTo(roomBox!.x, 1);
 	expect(roomBox!.y).toBeGreaterThanOrEqual(teacherBox!.y + teacherBox!.height + 4);
 	await roomPicker.click();
-	await page.getByRole('option', { name: /MATH-1/ }).click();
-	await expect(roomPicker).toContainText('MATH-1');
+	await page.getByRole('option', { name: /ห้องคณิตศาสตร์/ }).click();
+	await expect(roomPicker).toContainText('ห้องคณิตศาสตร์');
+	await expect(roomPicker).not.toContainText('MATH-1');
 
 	await trayCard.locator('button').first().click();
 	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
 
 	await expect(page.locator(`article[data-block-id="${timetableIds.createdBlock}"]`)).toContainText(
-		'MATH-1'
+		'ห้องคณิตศาสตร์'
 	);
 	expect(mock.lastCreateBody()).toMatchObject({ roomId: timetableIds.room });
 });
@@ -426,12 +427,12 @@ test('saves edited room in the background while another lesson can still be drag
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
-	await page.getByRole('option', { name: /LAB-2/ }).click();
+	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
 	const editedCard = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	await expect(dialog).toHaveCount(0, { timeout: 300 });
-	await expect(editedCard).toContainText('LAB-2', { timeout: 300 });
+	await expect(editedCard).toContainText('ห้องปฏิบัติการ 2', { timeout: 300 });
 	await expect(editedCard.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible({
 		timeout: 300
 	});
@@ -466,12 +467,12 @@ test('restores the previous room when a background detail save fails', async ({ 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'เลือกห้องเรียน' }).click();
-	await page.getByRole('option', { name: /LAB-2/ }).click();
+	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึก' }).click();
 
 	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
-	await expect(card).toContainText('LAB-2', { timeout: 300 });
-	await expect(card).toContainText('MATH-1', { timeout: 3000 });
+	await expect(card).toContainText('ห้องปฏิบัติการ 2', { timeout: 300 });
+	await expect(card).toContainText('ห้องคณิตศาสตร์', { timeout: 3000 });
 	await expect(
 		page.getByRole('alert').filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
@@ -838,7 +839,7 @@ test('reserves selected teachers when placing a synchronized activity and edits 
 	expect(teacherBox!.x).toBeCloseTo(roomBox!.x, 1);
 	expect(roomBox!.y).toBeGreaterThanOrEqual(teacherBox!.y + teacherBox!.height + 4);
 	await roomPicker.click();
-	await page.getByRole('option', { name: /LAB-2/ }).click();
+	await page.getByRole('option', { name: /ห้องปฏิบัติการ 2/ }).click();
 	await teacherPicker.click();
 	await page.getByRole('button', { name: 'ครูทุกคน', exact: true }).click();
 	await page.keyboard.press('Escape');

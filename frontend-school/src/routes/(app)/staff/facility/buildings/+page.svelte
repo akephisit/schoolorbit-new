@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { PageProps } from './$types';
@@ -103,8 +104,7 @@
 	let showDeleteDialog = $state(false);
 	let pendingDraft = $state<number | null>(null);
 	let draftEpoch = $state(0);
-	const submitting = $derived(pendingDraft === draftEpoch);
-	const pendingWrites = new Set<string>();
+	const pendingWrites = new SvelteSet<string>();
 	let buildingSubmitError = $state('');
 	let roomSubmitError = $state('');
 	let deleteError = $state('');
@@ -112,6 +112,22 @@
 	// Editing
 	let editingItem = $state<Building | Room | null>(null);
 	let deleteTarget = $state<{ type: 'building' | 'room'; id: string; name: string } | null>(null);
+	const activeOperationKey = $derived(
+		showDeleteDialog && deleteTarget
+			? mutationKey(deleteTarget.type, deleteTarget.id)
+			: showBuildingDialog
+				? mutationKey('building', editingItem?.id)
+				: showRoomDialog
+					? mutationKey('room', editingItem?.id)
+					: null
+	);
+	const submitting = $derived(
+		pendingDraft === draftEpoch ||
+			(activeOperationKey !== null && pendingWrites.has(activeOperationKey))
+	);
+	function mutationKey(type: 'building' | 'room', target?: string) {
+		return `${type}:${target ?? `new:${draftEpoch}`}`;
+	}
 
 	let { data }: PageProps = $props();
 	const source = $derived(data.buildings),
@@ -292,7 +308,7 @@
 	async function handleSaveBuilding(e: SubmitEvent) {
 		e.preventDefault();
 		const target = editingItem?.id;
-		const operationKey = `building:${target ?? 'new'}`;
+		const operationKey = mutationKey('building', target);
 		if (
 			disposed ||
 			submitting ||
@@ -340,7 +356,7 @@
 	async function handleSaveRoom(e: SubmitEvent) {
 		e.preventDefault();
 		const target = editingItem?.id;
-		const operationKey = `room:${target ?? 'new'}`;
+		const operationKey = mutationKey('room', target);
 		if (
 			disposed ||
 			submitting ||
@@ -398,7 +414,7 @@
 	}
 	async function handleDelete() {
 		const target = deleteTarget;
-		const operationKey = target ? `${target.type}:${target.id}` : '';
+		const operationKey = target ? mutationKey(target.type, target.id) : '';
 		if (
 			pendingWrites.has(operationKey) ||
 			!target ||

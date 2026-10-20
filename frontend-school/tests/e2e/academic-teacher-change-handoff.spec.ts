@@ -94,7 +94,7 @@ function entry(entryId: string, periodId: string, periodLabel: string, afterTeac
 		dayOfWeek: 'monday',
 		bellSchedulePeriodId: periodId,
 		periodLabel,
-		roomLabel: 'M101 · ห้อง ม.1/1',
+		roomLabel: 'ห้อง ม.1/1',
 		beforeInstructors: [
 			{ instructorId: ids.teacherA, displayName: 'ครูเอ คนเดิม', role: 'primary' }
 		],

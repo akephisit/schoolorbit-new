@@ -41,8 +41,8 @@ function room(index: number): Room {
 		updated_at: timestamp
 	};
 }
-async function openRooms(page: Page) {
-	await page.getByRole('tab', { name: 'ห้องเรียน/ห้องปฏิบัติการ', exact: true }).click();
+async function openRooms(page: Page, name = 'อาคารแรก') {
+	await page.getByRole('button', { name, exact: true }).click();
 	await expect(page.getByTestId('facility-rooms')).toContainText('ห้อง');
 }
 async function noOverflow(page: Page) {
@@ -55,7 +55,7 @@ async function noOverflow(page: Page) {
 async function screenshot(page: Page, part: string, width: number, theme: string) {
 	await noOverflow(page);
 	await page.screenshot({
-		path: `/workspace/artifacts/staff-catalog-facility/facility-${part}-${width}-${theme}.png`,
+		path: `/workspace/artifacts/facility-room-names/facility-${part}-${width}-${theme}.png`,
 		fullPage: true,
 		animations: 'disabled'
 	});
@@ -63,33 +63,34 @@ async function screenshot(page: Page, part: string, width: number, theme: string
 
 for (const width of [390, 1029]) {
 	for (const theme of ['light', 'dark']) {
-		test(`compact facility tabs and full CRUD at ${width}px in ${theme}`, async ({ page }) => {
+		test(`compact building-to-room navigation and full CRUD at ${width}px in ${theme}`, async ({
+			page
+		}) => {
 			await page.setViewportSize({ width, height: 888 });
 			const api = await mockFacility(page, {
 				buildings: [building(0), building(1)],
 				rooms: [room(0), room(1)]
 			});
+			await page.addInitScript(
+				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
+				theme
+			);
 			await page.goto(path);
 			await expect(page.getByTestId('facility-buildings')).toContainText(longName);
-			await page.evaluate(
-				(dark) => document.documentElement.classList.toggle('dark', dark),
-				theme === 'dark'
-			);
+			await expect
+				.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
+				.toBe(theme === 'dark');
 			const buildings = page.getByTestId(
 				width < 768 ? 'facility-buildings-list' : 'facility-buildings-table'
 			);
 			await expect(buildings).toBeVisible();
-			const code = buildings.getByText(longCode, { exact: true });
-			const geometry = await code.evaluate((element) => ({
-				width: element.clientWidth,
-				fullWidth: element.scrollWidth
-			}));
-			expect(geometry.fullWidth).toBeLessThanOrEqual(geometry.width + 1);
+			await expect(buildings).not.toContainText(longCode);
+			await expect(page.getByRole('tab')).toHaveCount(0);
 			expect(api.count(roomsPath)).toBe(0);
 			await screenshot(page, 'buildings', width, theme);
 			await page.getByRole('button', { name: 'เพิ่มอาคาร', exact: true }).tap();
 			let dialog = page.getByRole('dialog', { name: 'เพิ่มอาคารใหม่', exact: true });
-			await dialog.getByLabel('รหัสอาคาร', { exact: true }).fill('NEW-B');
+			await expect(dialog.locator('input[name=code]')).toHaveCount(0);
 			await dialog.getByLabel('ชื่ออาคาร (ไทย)').fill('อาคารเพิ่มใหม่');
 			await dialog.getByLabel('ชื่ออาคาร (อังกฤษ)').fill('New building');
 			await dialog.getByLabel('รายละเอียด', { exact: true }).fill('รายละเอียดอาคารใหม่');
@@ -105,14 +106,15 @@ for (const width of [390, 1029]) {
 			await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
 			await expect(dialog).toHaveCount(0);
 			await expect(buildings).toContainText('อาคารแก้ไขใหม่');
-			await openRooms(page);
+			await openRooms(page, longName);
 			const rooms = page.getByTestId(width < 768 ? 'facility-rooms-list' : 'facility-rooms-table');
 			await expect(rooms).toBeVisible();
-			await expect(rooms).toContainText('ชั้น 0');
-			const roomCodeGeometry = await rooms
-				.getByText(`ROOM-${longCode}`, { exact: true })
-				.evaluate((element) => ({ width: element.clientWidth, fullWidth: element.scrollWidth }));
-			expect(roomCodeGeometry.fullWidth).toBeLessThanOrEqual(roomCodeGeometry.width + 1);
+			await expect(rooms).not.toContainText(`ROOM-${longCode}`);
+			await expect(rooms).not.toContainText('Learning room');
+			await expect(rooms).toContainText('รายละเอียดห้องทดสอบ');
+			await expect(
+				page.getByRole('heading', { level: 1, name: longName, exact: true })
+			).toBeVisible();
 			await screenshot(page, 'rooms', width, theme);
 			await page.getByRole('button', { name: 'เพิ่มห้อง', exact: true }).click();
 			dialog = page.getByRole('dialog', { name: 'เพิ่มห้องใหม่', exact: true });
@@ -135,10 +137,10 @@ for (const width of [390, 1029]) {
 			expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(
 				dialogBox.x + dialogBox.width - 16
 			);
-			await dialog.getByLabel('รหัส / เลขห้อง').fill('NEW-R');
+			await expect(
+				dialog.locator('input[name=code], input[name=name_en], input[name=floor]')
+			).toHaveCount(0);
 			await dialog.getByLabel('ชื่อห้อง (ไทย)').fill('ห้องเพิ่มใหม่');
-			await dialog.getByLabel('ชื่อห้อง (อังกฤษ)').fill('New room preserved');
-			await dialog.getByLabel('ชั้น', { exact: true }).fill('0');
 			await dialog.getByLabel('ความจุ (คน)', { exact: true }).fill('0');
 			const box = (await dialog.boundingBox())!;
 			expect(box.width).toBeLessThanOrEqual(width - 16);
@@ -147,28 +149,25 @@ for (const width of [390, 1029]) {
 			await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
 			await expect(dialog).toHaveCount(0);
 			expect(api.writes.at(-1)?.payload).toMatchObject({
-				floor: 0,
 				capacity: 0,
-				name_en: 'New room preserved'
+				building_id: building(0).id
 			});
 			await rooms.getByRole('button', { name: 'แก้ไขห้อง ห้องเพิ่มใหม่', exact: true }).click();
 			dialog = page.getByRole('dialog', { name: 'แก้ไขห้อง', exact: true });
-			await expect(dialog.getByLabel('ชื่อห้อง (อังกฤษ)')).toHaveValue('New room preserved');
-			await expect(dialog.getByLabel('ชั้น', { exact: true })).toHaveValue('0');
+			await expect(dialog.getByLabel('ความจุ (คน)', { exact: true })).toHaveValue('0');
 			await dialog.getByLabel('ชื่อห้อง (ไทย)').fill('ห้องแก้ไขใหม่');
 			await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
 			await expect(dialog).toHaveCount(0);
 			expect(api.writes.at(-1)?.payload).toMatchObject({
-				floor: 0,
 				capacity: 0,
-				name_en: 'New room preserved'
+				building_id: building(0).id
 			});
 			await rooms.getByRole('button', { name: 'ลบห้อง ห้องแก้ไขใหม่', exact: true }).click();
 			let confirmation = page.getByRole('alertdialog', { name: 'ยืนยันการลบ', exact: true });
 			await confirmation.getByRole('button', { name: 'ยืนยันลบ', exact: true }).click();
 			await expect(confirmation).toHaveCount(0);
 			await expect(rooms).not.toContainText('ห้องแก้ไขใหม่');
-			await page.getByRole('tab', { name: 'อาคาร', exact: true }).click();
+			await page.getByRole('link', { name: 'กลับรายการอาคาร', exact: true }).click();
 			await buildings.getByRole('button', { name: 'ลบอาคาร อาคารแก้ไขใหม่', exact: true }).click();
 			confirmation = page.getByRole('alertdialog', { name: 'ยืนยันการลบ', exact: true });
 			await confirmation.getByRole('button', { name: 'ยืนยันลบ', exact: true }).click();
@@ -260,10 +259,10 @@ for (const capability of ['read', 'create', 'update', 'delete']) {
 				capability === 'create' ? 1 : 0
 			);
 			await expect(page.getByRole('button', { name: new RegExp(`^แก้ไข${kind} `) })).toHaveCount(
-				capability === 'update' ? 2 : 0
+				capability === 'update' ? (kind === 'ห้อง' ? 1 : 2) : 0
 			);
 			await expect(page.getByRole('button', { name: new RegExp(`^ลบ${kind} `) })).toHaveCount(
-				capability === 'delete' ? 2 : 0
+				capability === 'delete' ? (kind === 'ห้อง' ? 1 : 2) : 0
 			);
 		}
 		expect(api.writes).toHaveLength(0);
@@ -283,11 +282,12 @@ test('client pages cover the complete filtered dataset without extra reads', asy
 		.getByRole('button', { name: 'ถัดไป' })
 		.click();
 	await expect(buildings.getByRole('row')).toHaveCount(7);
-	await page.getByRole('textbox', { name: 'ค้นหาอาคาร', exact: true }).fill('building-30');
+	await page.getByRole('textbox', { name: 'ค้นหาอาคาร', exact: true }).fill('อาคารทดสอบ 30');
 	await expect(buildings).toContainText('อาคารทดสอบ 30');
 	await expect(buildings.getByRole('row')).toHaveCount(2);
 	expect(api.count(buildingsPath)).toBe(1);
-	await openRooms(page);
+	await page.getByLabel('ค้นหาอาคาร', { exact: true }).fill('');
+	await openRooms(page, longName);
 	const rooms = page.getByTestId('facility-rooms-table');
 	await expect(rooms.getByRole('row')).toHaveCount(26);
 	await page
@@ -296,25 +296,25 @@ test('client pages cover the complete filtered dataset without extra reads', asy
 		.click();
 	await expect(rooms.getByRole('row')).toHaveCount(7);
 	expect(api.count(roomsPath)).toBe(1);
-	await page.getByRole('textbox', { name: 'ค้นหาห้อง', exact: true }).fill('room-30');
+	await page.getByRole('textbox', { name: 'ค้นหาห้อง', exact: true }).fill('ห้องทดสอบ 30');
 	await expect(rooms).toContainText('ห้องทดสอบ 30');
 	await expect(rooms.getByRole('row')).toHaveCount(2);
-	expect(api.count(roomsPath)).toBe(2);
+	expect(api.count(roomsPath)).toBe(1);
 	await noOverflow(page);
 });
 
-test('empty facility tabs remain usable and malformed numeric input cannot write', async ({
+test('empty building and unassigned-room regions remain usable and malformed capacity cannot write', async ({
 	page
 }) => {
 	const api = await mockFacility(page, { buildings: [], rooms: [] });
 	await page.goto(path);
 	await expect(page.getByText('ไม่พบข้อมูลอาคาร', { exact: true })).toBeVisible();
-	await openRooms(page);
+	await page.getByRole('link', { name: 'ห้องที่ยังไม่จัดอาคาร', exact: true }).click();
 	await expect(page.getByText('ไม่พบข้อมูลห้อง', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มห้อง', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('รหัส / เลขห้อง').fill('R-1');
 	await dialog.getByLabel('ชื่อห้อง (ไทย)').fill('ร่างห้อง');
+	await expect(dialog.getByLabel('ความจุ (คน)', { exact: true })).toHaveValue('40');
 	await dialog.getByLabel('ความจุ (คน)', { exact: true }).fill('1.5');
 	await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
 	expect(
@@ -325,3 +325,185 @@ test('empty facility tabs remain usable and malformed numeric input cannot write
 	await expect(dialog.getByLabel('ชื่อห้อง (ไทย)')).toHaveValue('ร่างห้อง');
 	expect(api.writes).toHaveLength(0);
 });
+
+test('editing visible fields preserves stored codes, room English names, floor and zero capacity', async ({
+	page
+}) => {
+	const originalBuilding = building(0),
+		originalRoom = room(0);
+	const api = await mockFacility(page, { buildings: [originalBuilding], rooms: [originalRoom] });
+	await page.goto(path);
+	await page.getByRole('button', { name: `แก้ไขอาคาร ${longName}`, exact: true }).click();
+	let dialog = page.getByRole('dialog');
+	await expect(dialog.locator('input[name=code]')).toHaveCount(0);
+	await dialog.getByLabel('รายละเอียด', { exact: true }).fill('รายละเอียดใหม่');
+	await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.writes.at(-1)?.payload).not.toHaveProperty('code');
+	expect(api.snapshot().buildings[0].code).toBe(originalBuilding.code);
+	await openRooms(page, longName);
+	await page
+		.getByRole('button', { name: `แก้ไขห้อง ${originalRoom.name_th}`, exact: true })
+		.click();
+	dialog = page.getByRole('dialog');
+	await expect(
+		dialog.locator('input[name=code], input[name=name_en], input[name=floor]')
+	).toHaveCount(0);
+	await expect(dialog.getByLabel('ความจุ (คน)', { exact: true })).toHaveValue('0');
+	await dialog.getByLabel('ชื่อห้อง (ไทย)').fill('ห้องเปลี่ยนชื่อ');
+	await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	for (const hidden of ['code', 'name_en', 'floor'])
+		expect(api.writes.at(-1)?.payload).not.toHaveProperty(hidden);
+	expect(api.snapshot().rooms[0]).toMatchObject({
+		id: originalRoom.id,
+		name_th: 'ห้องเปลี่ยนชื่อ',
+		code: originalRoom.code,
+		name_en: originalRoom.name_en,
+		floor: 0,
+		capacity: 0,
+		building_id: originalBuilding.id
+	});
+	expect(api.count(buildingsPath)).toBe(1);
+	expect(api.count(roomsPath)).toBe(1);
+});
+
+test('unassigned rooms filter the complete authorized result before name search and pagination', async ({
+	page
+}) => {
+	const assigned = Array.from({ length: 31 }, (_, index) => room(index));
+	const unassigned = assigned.map((item, index) => ({
+		...item,
+		id: id(900 + index),
+		building_id: null,
+		building_name: null,
+		name_th: `ห้องรอจัดอาคาร ${index}`
+	}));
+	const api = await mockFacility(page, {
+		buildings: [building(0)],
+		rooms: assigned.flatMap((item, index) => [item, unassigned[index]])
+	});
+	await page.goto(path);
+	expect(api.count(roomsPath)).toBe(0);
+	await page.getByRole('link', { name: 'ห้องที่ยังไม่จัดอาคาร', exact: true }).click();
+	const rooms = page.getByTestId('facility-rooms-table');
+	await expect(rooms.getByRole('row')).toHaveCount(26);
+	await expect(rooms.locator('tbody tr td:first-child')).toHaveText(
+		Array.from({ length: 25 }, (_, index) => `ห้องรอจัดอาคาร ${index}`)
+	);
+	await page
+		.getByRole('navigation', { name: 'หน้ารายการห้อง' })
+		.getByRole('button', { name: 'ถัดไป', exact: true })
+		.click();
+	await expect(rooms.getByRole('row')).toHaveCount(7);
+	await expect(rooms.locator('tbody tr td:first-child')).toHaveText(
+		Array.from({ length: 6 }, (_, index) => `ห้องรอจัดอาคาร ${25 + index}`)
+	);
+	await page.getByLabel('ค้นหาห้อง', { exact: true }).fill('ห้องรอจัดอาคาร 30');
+	await expect(rooms.getByRole('row')).toHaveCount(2);
+	await expect(rooms).toContainText('ห้องรอจัดอาคาร 30');
+	await page.getByLabel('ค้นหาห้อง', { exact: true }).fill('room-30');
+	await expect(page.getByText('ไม่พบห้องที่ค้นหา', { exact: true })).toBeVisible();
+	expect(api.count(roomsPath)).toBe(1);
+	expect(api.reads.find((url) => url.pathname === roomsPath)?.searchParams.has('building_id')).toBe(
+		false
+	);
+	expect(api.reads.find((url) => url.pathname === roomsPath)?.searchParams.has('search')).toBe(
+		false
+	);
+});
+
+for (const kind of ['building', 'room'] as const) {
+	test(`dismissed ${kind} creation does not block another draft or close it after reverse completion`, async ({
+		page
+	}) => {
+		const api = await mockFacility(page, { hold: 'mutation' });
+		const label = kind === 'building' ? 'อาคาร' : 'ห้อง';
+		await page.goto(path);
+		if (kind === 'room') await openRooms(page);
+		await page.getByRole('button', { name: `เพิ่ม${label}`, exact: true }).click();
+		let dialog = page.getByRole('dialog');
+		await dialog.locator('input[name=name_th]').fill('ร่างสร้างก่อนหน้า');
+		await dialog.locator('form').evaluate((element) => {
+			const form = element as HTMLFormElement;
+			form.requestSubmit();
+			form.requestSubmit();
+		});
+		await expect.poll(() => api.count('mutation')).toBe(1);
+		await expect(
+			dialog.getByRole('button', { name: 'กำลังบันทึก...', exact: true })
+		).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		await page.getByRole('button', { name: `เพิ่ม${label}`, exact: true }).click();
+		dialog = page.getByRole('dialog');
+		await dialog.locator('input[name=name_th]').fill('ร่างสร้างถัดมา');
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		await dialog.locator('form').evaluate((element) => {
+			const form = element as HTMLFormElement;
+			form.requestSubmit();
+			form.requestSubmit();
+		});
+		await expect.poll(() => api.count('mutation')).toBe(2);
+		await expect(dialog).toHaveCount(0);
+		const region = page.getByTestId(kind === 'building' ? 'facility-buildings' : 'facility-rooms');
+		await expect(region).toContainText('ร่างสร้างถัดมา');
+		await expect(region).not.toContainText('ร่างสร้างก่อนหน้า');
+		await page.getByRole('button', { name: `เพิ่ม${label}`, exact: true }).click();
+		dialog = page.getByRole('dialog');
+		await dialog.locator('input[name=name_th]').fill('ร่างล่าสุดที่ยังไม่บันทึก');
+		api.release();
+		await expect(region).toContainText('ร่างสร้างก่อนหน้า');
+		await expect(region).toContainText('ร่างสร้างถัดมา');
+		await expect(dialog.locator('input[name=name_th]')).toHaveValue('ร่างล่าสุดที่ยังไม่บันทึก');
+		await expect(dialog.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+		expect(api.count('mutation')).toBe(2);
+		const items = kind === 'building' ? api.snapshot().buildings : api.snapshot().rooms;
+		expect(
+			items.filter((item) => ['ร่างสร้างก่อนหน้า', 'ร่างสร้างถัดมา'].includes(item.name_th))
+		).toHaveLength(2);
+	});
+}
+
+for (const action of ['update', 'delete'] as const) {
+	test(`reopening the same building during a pending ${action} displays busy state and recovers`, async ({
+		page
+	}) => {
+		const api = await mockFacility(page, { hold: 'mutation' });
+		await page.goto(path);
+		await page.getByRole('button', { name: 'แก้ไขอาคาร อาคารแรก', exact: true }).click();
+		let dialog = page.getByRole('dialog');
+		await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+		await expect.poll(() => api.count('mutation')).toBe(1);
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		await page
+			.getByRole('button', {
+				name: `${action === 'update' ? 'แก้ไข' : 'ลบ'}อาคาร อาคารแรก`,
+				exact: true
+			})
+			.click();
+		if (action === 'update') {
+			dialog = page.getByRole('dialog');
+			await expect(
+				dialog.getByRole('button', { name: 'กำลังบันทึก...', exact: true })
+			).toBeDisabled();
+			await dialog
+				.locator('form')
+				.evaluate((element) => (element as HTMLFormElement).requestSubmit());
+		} else {
+			dialog = page.getByRole('alertdialog');
+			await expect(dialog.getByRole('button', { name: 'กำลังลบ...', exact: true })).toBeDisabled();
+		}
+		expect(api.count('mutation')).toBe(1);
+		api.release();
+		const save = dialog.getByRole('button', {
+			name: action === 'update' ? 'บันทึก' : 'ยืนยันลบ',
+			exact: true
+		});
+		await expect(save).toBeEnabled();
+		await save.click();
+		await expect(dialog).toHaveCount(0);
+		expect(api.count('mutation')).toBe(2);
+	});
+}

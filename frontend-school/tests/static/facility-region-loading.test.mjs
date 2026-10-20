@@ -2,14 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 const source = (path) => readFile(new URL(`../../src/${path}`, import.meta.url), 'utf8');
-test('facility route owns default buildings while the inactive rooms tab stays lazy', async () => {
+test('facility route owns default buildings while the unopened buildings keep room reads lazy', async () => {
 	const loader = await source('routes/(app)/staff/facility/buildings/+page.ts');
 	assert.match(loader, /listBuildings\(\{ requestFetch: fetch \}\)/);
 	assert.match(loader, /school:app-identity/);
 	assert.doesNotMatch(loader, /listRooms/);
 	const page = await source('routes/(app)/staff/facility/buildings/+page.svelte');
 	assert.doesNotMatch(page, /onMount/);
-	assert.match(page, /activeTab === 'rooms'/);
+	assert.match(page, /roomsOpened && roomContextValid/);
+	assert.match(page, /searchParams.get\('buildingId'\)/);
+	assert.doesNotMatch(page, /Tabs\./);
 	assert.match(page, /roomsRequest/);
 	assert.match(page, /\$effect\.pre/);
 });

@@ -702,6 +702,9 @@ fn unique_room_label_suggestion(
     options: &[TermPreparationMappingOption],
     source_label: &str,
 ) -> Option<Uuid> {
+    if source_label.trim().is_empty() {
+        return None;
+    }
     let mut matching = options.iter().filter(|option| option.label == source_label);
     let first = matching.next()?;
     matching.next().is_none().then_some(first.id)
@@ -1493,5 +1496,10 @@ mod room_label_tests {
             label: "ห้องวิทยาศาสตร์".into(),
         });
         assert_eq!(unique_room_label_suggestion(&options, "ห้องวิทยาศาสตร์"), None);
+        let blank = vec![TermPreparationMappingOption {
+            id: first,
+            label: " ".into(),
+        }];
+        assert_eq!(unique_room_label_suggestion(&blank, " "), None);
     }
 }

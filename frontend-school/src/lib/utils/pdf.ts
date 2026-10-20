@@ -85,11 +85,12 @@ const timetableResourceName = (block: TimetableBlock) =>
 	block.offeringName ?? block.title ?? 'กิจกรรม';
 
 const blockRoom = (block: TimetableBlock) => {
-	const group = block.groups.find((item) => item.roomId || item.roomName);
-	const homeroom = block.homerooms.find((item) => item.roomId || item.roomName);
+	const target =
+		block.groups.find((item) => item.roomId || item.roomName) ??
+		block.homerooms.find((item) => item.roomId || item.roomName);
 	return {
-		id: group?.roomId ?? homeroom?.roomId ?? null,
-		name: group?.roomName ?? homeroom?.roomName ?? null
+		id: target?.roomId ?? null,
+		name: target?.roomName ?? null
 	};
 };
 
@@ -554,7 +555,7 @@ function buildPageContent(
 						}
 					}
 
-					// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
+					// ชื่อห้องจากรายการห้องหรือข้อมูล block
 					// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
 					const room = blockRoom(block);
 					const roomFullName = (room.id ? roomNames?.[room.id]?.trim() : null) || room.name?.trim();

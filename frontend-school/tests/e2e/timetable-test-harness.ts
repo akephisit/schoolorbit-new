@@ -147,6 +147,7 @@ export function makeTimetableBlock(
 	const roomId = options.roomId === undefined ? timetableIds.room : options.roomId;
 	const roomCode =
 		roomId === timetableIds.roomB ? 'LAB-2' : roomId === timetableIds.room ? 'MATH-1' : null;
+	const roomName = physicalRoomName(roomId);
 	const blockGroupId =
 		groupId === timetableIds.groupA ? timetableIds.blockGroupA : timetableIds.blockGroupB;
 	return {
@@ -179,6 +180,7 @@ export function makeTimetableBlock(
 				instructors: instructors(options.instructorIds ?? [timetableIds.teacherA]),
 				roomId,
 				roomCode,
+				roomName,
 				rowVersion: 1,
 				isActive: true,
 				syncStatus: null
@@ -221,6 +223,7 @@ export function makeSynchronizedTimetableBlock(
 				code: 'M1-1',
 				name: 'ม.1/1',
 				roomId,
+				roomName: physicalRoomName(roomId),
 				roomCode:
 					roomId === timetableIds.roomB ? 'LAB-2' : roomId === timetableIds.room ? 'MATH-1' : null,
 				rowVersion: 1,
@@ -256,6 +259,7 @@ export function makeStructuralTimetableBlock(
 				name: 'ม.1/1',
 				roomId: null,
 				roomCode: null,
+				roomName: null,
 				rowVersion: 1,
 				isActive: true
 			}
@@ -705,6 +709,12 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							existing.schedulingMode === 'synchronized'
 								? group.roomId
 								: nextRoomId,
+						roomName:
+							nextRoomId === undefined ||
+							existing.blockKind === 'structural' ||
+							existing.schedulingMode === 'synchronized'
+								? group.roomName
+								: physicalRoomName(nextRoomId),
 						roomCode:
 							nextRoomId === undefined ||
 							existing.blockKind === 'structural' ||
@@ -719,6 +729,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 							(existing.blockKind !== 'structural' && existing.schedulingMode !== 'synchronized')
 								? homeroom.roomId
 								: nextRoomId,
+						roomName:
+							nextRoomId === undefined ||
+							(existing.blockKind !== 'structural' && existing.schedulingMode !== 'synchronized')
+								? homeroom.roomName
+								: physicalRoomName(nextRoomId),
 						roomCode:
 							nextRoomId === undefined ||
 							(existing.blockKind !== 'structural' && existing.schedulingMode !== 'synchronized')
@@ -798,4 +813,12 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			sourceIssues = issues;
 		}
 	};
+}
+
+function physicalRoomName(roomId: string | null | undefined): string | null {
+	return roomId === timetableIds.roomB
+		? 'ห้องปฏิบัติการ 2'
+		: roomId === timetableIds.room
+			? 'ห้องคณิตศาสตร์'
+			: null;
 }

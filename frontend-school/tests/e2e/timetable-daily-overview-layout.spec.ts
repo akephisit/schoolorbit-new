@@ -55,6 +55,8 @@ function activityEntry(index: number, homeroomNames: string[]) {
 		offeringId: activityOfferingId,
 		offeringName: 'กิจกรรมโฮมรูม',
 		roomCode: null,
+		roomId: null,
+		roomName: null,
 		subjectId: null,
 		subjectVersionDisplayLabel: null,
 		title: longActivityTitle
@@ -85,6 +87,8 @@ function courseEntry() {
 		offeringId: timetableIds.offeringA,
 		offeringName: 'คณิตศาสตร์พื้นฐาน',
 		roomCode: '116',
+		roomId: timetableIds.room,
+		roomName: 'ห้องคณิตศาสตร์',
 		subjectId: '72000000-0000-4000-8000-000000000202',
 		subjectVersionDisplayLabel: 'ค21101 คณิตศาสตร์พื้นฐาน',
 		title: null
@@ -190,11 +194,14 @@ test('shows only compact lesson context while keeping full details available', a
 	expect(titleLayout).toEqual({ overflow: 'hidden', whiteSpace: 'nowrap', isTruncated: true });
 
 	const courseCell = table.getByRole('cell').filter({ hasText: 'ค21101' });
-	await expect(courseCell.getByText('ม.1/1 · ห้อง 116', { exact: true })).toBeVisible();
+	await expect(courseCell.getByText('ม.1/1 · ห้องคณิตศาสตร์', { exact: true })).toBeVisible();
 	await expect(courseCell).not.toContainText('ม.1/1 · คณิตศาสตร์พื้นฐาน');
+	await expect(courseCell).not.toContainText('116');
 
 	await courseCell.getByRole('button').click();
 	await expect(page.getByRole('dialog')).toContainText('คณิตศาสตร์พื้นฐาน');
+	await expect(page.getByRole('dialog')).toContainText('ห้องคณิตศาสตร์');
+	await expect(page.getByRole('dialog')).not.toContainText('116');
 	await expect(page.getByRole('dialog')).toContainText('ม.1/1');
 	await page.keyboard.press('Escape');
 

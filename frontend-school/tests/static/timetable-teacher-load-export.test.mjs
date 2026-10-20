@@ -42,6 +42,7 @@ function entry(overrides = {}) {
 				instructors: [instructor()],
 				roomId: null,
 				roomCode: null,
+				roomName: null,
 				rowVersion: 1,
 				isActive: true,
 				syncStatus: null
@@ -251,6 +252,15 @@ describe('timetable teacher load export helpers', () => {
 		assert.equal(a.roomName, 'ห้องคณิตศาสตร์');
 		assert.equal(b.homeroomName, 'ม.1/2');
 		assert.equal(b.roomName, 'ห้องวิทยาศาสตร์');
+	});
+	it('uses projected physical room names and a safe placeholder when lookup metadata is unavailable', () => {
+		const named = entry();
+		named.groups[0].roomId = 'physical-room';
+		named.groups[0].roomName = 'ห้องคณิตศาสตร์';
+		named.groups[0].roomCode = 'INTERNAL-MATH';
+		assert.equal(exportRows([named]).detailRows[0].roomName, 'ห้องคณิตศาสตร์');
+		named.groups[0].roomName = null;
+		assert.equal(exportRows([named]).detailRows[0].roomName, 'ไม่พบชื่อห้อง');
 	});
 	it('shows linked teachers their own groups and reserved teachers the activity targets', () => {
 		const rows = exportRows([

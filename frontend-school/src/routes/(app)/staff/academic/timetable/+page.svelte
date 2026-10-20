@@ -2270,8 +2270,8 @@
 						<Select.Trigger class="w-full" aria-label="เลือกห้องเรียน">
 							{editRoomId === noRoomValue
 								? 'ไม่ระบุห้อง'
-								: (controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name ??
-									'เลือกห้อง')}
+								: controller?.workspace.rooms.find((room) => room.id === editRoomId)?.name.trim() ||
+									'ไม่พบชื่อห้อง'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
@@ -2373,8 +2373,9 @@
 								<Select.Trigger class="w-full" aria-label="เลือกห้องสำหรับคาบพิเศษ">
 									{structuralForm.roomId === noRoomValue
 										? 'ไม่ระบุห้อง'
-										: (controller?.workspace.rooms.find((room) => room.id === structuralForm.roomId)
-												?.name ?? 'เลือกห้อง')}
+										: controller?.workspace.rooms
+												.find((room) => room.id === structuralForm.roomId)
+												?.name.trim() || 'ไม่พบชื่อห้อง'}
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>

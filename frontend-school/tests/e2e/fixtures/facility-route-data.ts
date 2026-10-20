@@ -74,7 +74,8 @@ export async function mockFacility(
 				path = url.pathname,
 				method = route.request().method();
 			const kind = method !== 'GET' ? 'mutation' : path;
-			counts.set(kind, (counts.get(kind) ?? 0) + 1);
+			const ordinal = (counts.get(kind) ?? 0) + 1;
+			counts.set(kind, ordinal);
 			if (method === 'GET') reads.push(url);
 			else
 				writes.push({
@@ -88,11 +89,11 @@ export async function mockFacility(
 						(!url.searchParams.get('building_id') ||
 							room.building_id === url.searchParams.get('building_id')) &&
 						(!url.searchParams.get('search') ||
-							[room.name_th, room.code].join(' ').includes(url.searchParams.get('search')!))
+							room.name_th.includes(url.searchParams.get('search')!))
 				)
 				.map((room) => ({ ...room }));
-			if (options.hold === kind && counts.get(kind) === (options.holdAt ?? 1)) await held;
-			if (options.fail === kind && counts.get(kind) === (options.failAt ?? 1))
+			if (options.hold === kind && ordinal === (options.holdAt ?? 1)) await held;
+			if (options.fail === kind && ordinal === (options.failAt ?? 1))
 				return reply(route, 'ส่วนนี้ไม่พร้อม', 503);
 			if (method === 'GET') return reply(route, path === buildingsPath ? buildings : roomSnapshot);
 			const resourceId = path.split('/').at(-1);
@@ -107,12 +108,13 @@ export async function mockFacility(
 					return reply(route, {});
 				}
 				const payload = route.request().postDataJSON();
+				const existing = buildings.find((building) => building.id === resourceId);
 				const saved: Building = {
-					...buildings.find((building) => building.id === resourceId),
-					id: method === 'POST' ? id(214) : resourceId!,
+					...existing,
+					id: method === 'POST' ? id(10000 + ordinal) : resourceId!,
 					name_th: payload.name_th,
 					name_en: payload.name_en || null,
-					code: payload.code || null,
+					code: payload.code ?? existing?.code ?? null,
 					description: payload.description || null,
 					created_at: timestamp,
 					updated_at: timestamp
@@ -128,17 +130,20 @@ export async function mockFacility(
 				return reply(route, {});
 			}
 			const payload = route.request().postDataJSON();
+			const existing = rooms.find((room) => room.id === resourceId);
+			const savedBuildingId = payload.building_id ?? existing?.building_id ?? null;
 			const saved: Room = {
-				...rooms.find((room) => room.id === resourceId),
+				...existing,
 				...payload,
-				id: method === 'POST' ? id(215) : resourceId!,
-				building_id: payload.building_id ?? null,
+				id: method === 'POST' ? id(20000 + ordinal) : resourceId!,
+				building_id: savedBuildingId,
 				building_name:
-					buildings.find((building) => building.id === payload.building_id)?.name_th ?? null,
+					buildings.find((building) => building.id === savedBuildingId)?.name_th ?? null,
 				status: 'active',
-				name_en: payload.name_en || null,
-				code: payload.code || null,
-				floor: payload.floor ?? null,
+				name_en: payload.name_en ?? existing?.name_en ?? null,
+				code: payload.code ?? existing?.code ?? null,
+				floor: payload.floor ?? existing?.floor ?? null,
+				capacity: payload.capacity ?? existing?.capacity ?? 40,
 				description: payload.description || null,
 				created_at: timestamp,
 				updated_at: timestamp
@@ -147,5 +152,15 @@ export async function mockFacility(
 			return reply(route, saved);
 		}
 	);
-	return { ...base, reads, writes, release, count: (path: string) => counts.get(path) ?? 0 };
+	return {
+		...base,
+		reads,
+		writes,
+		release,
+		count: (path: string) => counts.get(path) ?? 0,
+		snapshot: () => ({
+			buildings: buildings.map((item) => ({ ...item })),
+			rooms: rooms.map((item) => ({ ...item }))
+		})
+	};
 }

@@ -75,7 +75,9 @@
 	);
 
 	function roomName(id: string) {
-		return managementOptions.rooms.find((room) => room.id === id)?.name_th ?? 'ห้องที่เลิกใช้งาน';
+		return (
+			managementOptions.rooms.find((room) => room.id === id)?.name_th?.trim() || 'ไม่พบชื่อห้อง'
+		);
 	}
 
 	function teacherName(id: string) {
@@ -197,7 +199,7 @@
 							bind:value={selectedRoomId}
 							options={roomOptions.filter((room) => !details.preferredRoomIds.includes(room.id))}
 							placeholder="เลือกห้องเรียน"
-							searchPlaceholder="ค้นหาชื่อหรือรหัสห้อง..."
+							searchPlaceholder="ค้นหาชื่อห้อง..."
 							disabled={!canManage}
 						/>
 					</div>

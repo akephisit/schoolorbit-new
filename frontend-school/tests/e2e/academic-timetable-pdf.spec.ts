@@ -49,6 +49,7 @@ for (const width of [1543, 390]) {
 			);
 			special.homerooms[0].roomId = timetableIds.room;
 			special.homerooms[0].roomCode = 'MATH-1';
+			special.homerooms[0].roomName = 'ห้องคณิตศาสตร์';
 			await installTimetableMock(page, {
 				permissions: ['academic_timetable.read.school'],
 				requestedWorkspaceVersion: true,
@@ -140,6 +141,7 @@ for (const width of [1543, 390]) {
 				const text = await pdfText(download);
 				expect(text).toContain('ค21101');
 				expect(text).toContain('ห้องคณิตศาสตร์');
+				expect(text).not.toMatch(/MATH-1|LAB-2/);
 				if (view === 'ชั้น' || view === 'โรงเรียน') {
 					expect(text).toContain('ว21101');
 					expect(text).toContain('ครูพิสิษฐสกุลทดสอบ,ครูสายใจสกุลทดสอบ');

@@ -29,6 +29,7 @@ function workspace() {
 		homeroomIds: [homeroomId],
 		roomId,
 		roomCode: roomId,
+		roomName: roomId ? 'ห้องคณิตศาสตร์' : null,
 		name: id,
 		isActive: true,
 		instructors: [{ teacherId, displayName: teacherId }]
