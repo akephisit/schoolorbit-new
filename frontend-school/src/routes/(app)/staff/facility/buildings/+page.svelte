@@ -9,6 +9,7 @@
 	import {
 		type Building,
 		type Room,
+		type CreateRoomRequest,
 		listBuildings,
 		listRooms,
 		createBuilding,
@@ -19,28 +20,22 @@
 		deleteRoom
 	} from '#lib/api/facility.js';
 
-	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import BuildingResults from '#lib/components/facility/BuildingResults.svelte';
+	import RoomResults from '#lib/components/facility/RoomResults.svelte';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageSkeleton, PageState, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
 
-	import {
-		Building as BuildingIcon,
-		DoorOpen,
-		Plus,
-		Search,
-		Settings,
-		Trash2
-	} from '@lucide/svelte';
+	import { Building as BuildingIcon, DoorOpen, Plus, Search } from '@lucide/svelte';
 
 	// Constants
 	const ROOM_TYPES = [
@@ -62,10 +57,32 @@
 	const canCreateFacility = $derived($can.has(PERMISSIONS.FACILITY_CREATE_ALL));
 	const canUpdateFacility = $derived($can.has(PERMISSIONS.FACILITY_UPDATE_ALL));
 	const canDeleteFacility = $derived($can.has(PERMISSIONS.FACILITY_DELETE_ALL));
-	const canMutateFacility = $derived(canUpdateFacility || canDeleteFacility);
 
 	// Filters
 	let searchTerm = $state('');
+	let buildingSearch = $state('');
+	let buildingPage = $state(1);
+	let roomPage = $state(1);
+	const pageSize = 25;
+	const filteredBuildings = $derived(
+		buildings.filter((building) =>
+			[building.code, building.name_th, building.name_en, building.description].some((value) =>
+				value?.toLocaleLowerCase().includes(buildingSearch.trim().toLocaleLowerCase())
+			)
+		)
+	);
+	const currentBuildingPage = $derived(
+		Math.min(buildingPage, Math.max(1, Math.ceil(filteredBuildings.length / pageSize)))
+	);
+	const currentRoomPage = $derived(
+		Math.min(roomPage, Math.max(1, Math.ceil(rooms.length / pageSize)))
+	);
+	const visibleBuildings = $derived(
+		filteredBuildings.slice((currentBuildingPage - 1) * pageSize, currentBuildingPage * pageSize)
+	);
+	const visibleRooms = $derived(
+		rooms.slice((currentRoomPage - 1) * pageSize, currentRoomPage * pageSize)
+	);
 	let selectedBuildingFilter = $state('all');
 
 	// Dialogs
@@ -73,6 +90,9 @@
 	let showRoomDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let submitting = $state(false);
+	let buildingSubmitError = $state('');
+	let roomSubmitError = $state('');
+	let deleteError = $state('');
 
 	// Editing
 	let editingItem = $state<Building | Room | null>(null);
@@ -117,6 +137,7 @@
 				showRoomDialog = false;
 				showDeleteDialog = false;
 				submitting = false;
+				buildingSubmitError = roomSubmitError = deleteError = '';
 			}
 			const ticket = buildingsRequest.begin();
 			loading = true;
@@ -129,6 +150,11 @@
 		const permissions = `${canCreateFacility}|${canUpdateFacility}|${canDeleteFacility}`;
 		untrack(() => {
 			void permissions;
+			if (showBuildingDialog && (editingItem ? !canUpdateFacility : !canCreateFacility))
+				showBuildingDialog = false;
+			if (showRoomDialog && (editingItem ? !canUpdateFacility : !canCreateFacility))
+				showRoomDialog = false;
+			if (!canDeleteFacility) showDeleteDialog = false;
 			ownerEpoch++;
 			submitting = false;
 		});
@@ -273,6 +299,7 @@
 			code: String(formData.get('code') ?? ''),
 			description: String(formData.get('description') ?? '')
 		};
+		buildingSubmitError = '';
 		buildingsRequest.abort();
 		loading = false;
 		submitting = true;
@@ -292,7 +319,8 @@
 				showBuildingDialog = false;
 			}
 		} catch (error) {
-			if (ownsDraft()) toast.error(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ');
+			if (ownsDraft())
+				buildingSubmitError = error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ';
 		} finally {
 			if (current()) submitting = false;
 		}
@@ -315,16 +343,23 @@
 			!disposed && epoch === ownerEpoch && (target ? canUpdateFacility : canCreateFacility);
 		const ownsDraft = () => current() && draft === draftEpoch && showRoomDialog;
 		const formData = new FormData(e.target as HTMLFormElement);
-		const payload = {
-			name_th: String(formData.get('name_th') ?? ''),
-			name_en: String(formData.get('name_en') ?? ''),
-			code: String(formData.get('code') ?? ''),
-			room_type: String(formData.get('room_type') ?? ''),
-			building_id: String(formData.get('building_id') ?? '') || undefined,
-			capacity: parseInt(String(formData.get('capacity'))) || 40,
-			floor: parseInt(String(formData.get('floor'))) || undefined,
-			description: String(formData.get('description') ?? '')
-		};
+		let payload: CreateRoomRequest;
+		roomSubmitError = '';
+		try {
+			payload = {
+				name_th: String(formData.get('name_th') ?? ''),
+				name_en: String(formData.get('name_en') ?? ''),
+				code: String(formData.get('code') ?? ''),
+				room_type: String(formData.get('room_type') ?? ''),
+				building_id: String(formData.get('building_id') ?? '') || undefined,
+				capacity: optionalInteger(formData.get('capacity'), 'ความจุ'),
+				floor: optionalInteger(formData.get('floor'), 'ชั้น'),
+				description: String(formData.get('description') ?? '')
+			};
+		} catch (error) {
+			roomSubmitError = error instanceof Error ? error.message : 'ตรวจสอบข้อมูลตัวเลข';
+			return;
+		}
 		roomsRequest.abort();
 		roomsLoading = false;
 		submitting = true;
@@ -340,7 +375,7 @@
 				showRoomDialog = false;
 			}
 		} catch (error) {
-			if (ownsDraft()) toast.error(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ');
+			if (ownsDraft()) roomSubmitError = error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ';
 		} finally {
 			if (current()) submitting = false;
 		}
@@ -352,6 +387,7 @@
 			draft = draftEpoch;
 		const current = () => !disposed && epoch === ownerEpoch && canDeleteFacility;
 		const ownsDraft = () => current() && draft === draftEpoch && showDeleteDialog;
+		deleteError = '';
 		submitting = true;
 		try {
 			if (target.type === 'building') await deleteBuilding(target.id);
@@ -371,31 +407,43 @@
 			}
 		} catch (error) {
 			if (ownsDraft())
-				toast.error(error instanceof Error ? error.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
+				deleteError = error instanceof Error ? error.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)';
 		} finally {
 			if (current()) submitting = false;
 		}
+	}
+
+	function optionalInteger(value: FormDataEntryValue | null, label: string): number | undefined {
+		const text = String(value ?? '').trim();
+		if (!text) return undefined;
+		const result = Number(text);
+		if (!Number.isInteger(result)) throw new Error(`${label}ต้องเป็นจำนวนเต็ม`);
+		return result;
 	}
 
 	// Helpers
 	function openAddBuilding() {
 		if (!buildingsLoaded || !canCreateFacility) return;
 		editingItem = null;
+		buildingSubmitError = '';
 		showBuildingDialog = true;
 	}
 	function openEditBuilding(b: Building) {
 		if (!canUpdateFacility) return;
 		editingItem = b;
+		buildingSubmitError = '';
 		showBuildingDialog = true;
 	}
 	function openAddRoom() {
 		if (!buildingsLoaded || buildingsError || !canCreateFacility) return;
 		editingItem = null;
+		roomSubmitError = '';
 		showRoomDialog = true;
 	}
 	function openEditRoom(r: Room) {
 		if (!buildingsLoaded || buildingsError || !canUpdateFacility) return;
 		editingItem = r;
+		roomSubmitError = '';
 		showRoomDialog = true;
 	}
 	function confirmDelete(type: 'building' | 'room', item: Building | Room) {
@@ -405,6 +453,7 @@
 			id: item.id,
 			name: item.name_th
 		};
+		deleteError = '';
 		showDeleteDialog = true;
 	}
 
@@ -431,10 +480,48 @@
 	);
 </script>
 
-<PageShell
-	title="จัดการอาคารสถานที่"
-	description="ข้อมูลอาคาร (Buildings) และห้องเรียน (Rooms) สำหรับใช้งานในระบบ"
->
+{#snippet pagination(
+	total: number,
+	current: number,
+	onchange: (page: number) => void,
+	label: string
+)}
+	{#if total > pageSize}
+		<nav
+			class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+			aria-label={label}
+		>
+			<span class="tabular-nums"
+				>{(current - 1) * pageSize + 1}–{Math.min(current * pageSize, total)} จาก {total}</span
+			>
+			<div class="flex items-center gap-2">
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={current <= 1}
+					onclick={() => onchange(current - 1)}>ก่อนหน้า</Button
+				><Button
+					variant="outline"
+					size="sm"
+					disabled={current * pageSize >= total}
+					onclick={() => onchange(current + 1)}>ถัดไป</Button
+				>
+			</div>
+		</nav>
+	{/if}
+{/snippet}
+
+<PageShell title="จัดการอาคารสถานที่" description="อาคาร ห้องเรียน และห้องปฏิบัติการ">
+	{#snippet actions()}
+		{#if canReadFacility && canCreateFacility}
+			<Button
+				size="sm"
+				disabled={!buildingsLoaded || (activeTab === 'rooms' && !!buildingsError)}
+				onclick={activeTab === 'rooms' ? openAddRoom : openAddBuilding}
+				><Plus class="size-4" />{activeTab === 'rooms' ? 'เพิ่มห้อง' : 'เพิ่มอาคาร'}</Button
+			>
+		{/if}
+	{/snippet}
 	{#if !canReadFacility}
 		<PageState
 			variant="permission"
@@ -442,19 +529,26 @@
 			description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลอาคารสถานที่ก่อนจึงจะแสดงรายการอาคารและห้องได้"
 		/>
 	{:else}
-		<Tabs.Root value={activeTab} onValueChange={(v) => (activeTab = v)}>
-			<Tabs.List>
-				<Tabs.Trigger value="buildings" class="flex gap-2">
-					<BuildingIcon class="w-4 h-4" /> อาคาร
-				</Tabs.Trigger>
-				<Tabs.Trigger value="rooms" class="flex gap-2">
-					<DoorOpen class="w-4 h-4" /> ห้องเรียน/ห้องปฏิบัติการ
-				</Tabs.Trigger>
-			</Tabs.List>
-
-			<!-- Buildings Tab -->
-			<Tabs.Content value="buildings" class="space-y-4 pt-4">
-				<section data-testid="facility-buildings" aria-busy={loading}>
+		<Tabs.Root bind:value={activeTab}>
+			<Tabs.List
+				><Tabs.Trigger value="buildings"><BuildingIcon class="size-4" />อาคาร</Tabs.Trigger
+				><Tabs.Trigger value="rooms"
+					><DoorOpen class="size-4" />ห้องเรียน/ห้องปฏิบัติการ</Tabs.Trigger
+				></Tabs.List
+			>
+			<Tabs.Content value="buildings" class="space-y-3 pt-3">
+				<section class="min-w-0 space-y-3" data-testid="facility-buildings" aria-busy={loading}>
+					<div class="relative max-w-md">
+						<Search
+							class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
+						/><Input
+							aria-label="ค้นหาอาคาร"
+							placeholder="ค้นหาชื่ออาคารหรือรหัส"
+							class="pl-9"
+							bind:value={buildingSearch}
+							oninput={() => (buildingPage = 1)}
+						/>
+					</div>
 					{#if buildingsError}<PageState
 							variant="error"
 							title="โหลดอาคารไม่สำเร็จ"
@@ -462,102 +556,37 @@
 							actionLabel="ลองอีกครั้ง"
 							onaction={loadBuildings}
 						/>{/if}
-					{#if canCreateFacility}
-						<div class="flex justify-end">
-							<Button onclick={openAddBuilding} disabled={!buildingsLoaded}>
-								<Plus class="w-4 h-4 mr-2" /> เพิ่มอาคาร
-							</Button>
+					{#if loading && !buildingsLoaded}<div role="status" aria-label="กำลังโหลดอาคาร">
+							<PageSkeleton variant="table" rows={4} columns={4} />
 						</div>
-					{/if}
-
-					<Card.Root>
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head class="w-[100px]">รหัส</Table.Head>
-									<Table.Head>ชื่ออาคาร</Table.Head>
-									<Table.Head>รายละเอียด</Table.Head>
-									{#if canMutateFacility}
-										<Table.Head class="text-right">จัดการ</Table.Head>
-									{/if}
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#if loading && !buildingsLoaded}
-									<Table.Row>
-										<Table.Cell colspan={canMutateFacility ? 4 : 3} class="p-0">
-											<div role="status" aria-label="กำลังโหลดอาคาร">
-												<PageSkeleton
-													variant="table"
-													rows={4}
-													columns={canMutateFacility ? 4 : 3}
-												/>
-											</div>
-										</Table.Cell>
-									</Table.Row>
-								{:else if buildingsLoaded && buildings.length === 0}
-									<Table.Row>
-										<Table.Cell colspan={canMutateFacility ? 4 : 3} class="h-24">
-											<PageState
-												title="ไม่พบข้อมูลอาคาร"
-												description="เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ"
-												actionLabel={canCreateFacility ? 'เพิ่มอาคาร' : undefined}
-												onaction={openAddBuilding}
-											/>
-										</Table.Cell>
-									</Table.Row>
-								{:else if buildingsLoaded}
-									{#each buildings as b (b.id)}
-										<Table.Row>
-											<Table.Cell class="text-xs tabular-nums">{b.code || '-'}</Table.Cell>
-											<Table.Cell>
-												<div class="font-medium">{b.name_th}</div>
-												{#if b.name_en}<div class="text-xs text-muted-foreground">
-														{b.name_en}
-													</div>{/if}
-											</Table.Cell>
-											<Table.Cell class="text-muted-foreground text-sm"
-												>{b.description || '-'}</Table.Cell
-											>
-											{#if canMutateFacility}
-												<Table.Cell class="text-right">
-													{#if canUpdateFacility}
-														<Button
-															variant="ghost"
-															size="icon"
-															aria-label={`แก้ไขอาคาร ${b.name_th}`}
-															onclick={() => openEditBuilding(b)}
-														>
-															<Settings class="w-4 h-4" />
-														</Button>
-													{/if}
-													{#if canDeleteFacility}
-														<Button
-															variant="ghost"
-															size="icon"
-															class="text-destructive"
-															aria-label={`ลบอาคาร ${b.name_th}`}
-															onclick={() => confirmDelete('building', b)}
-														>
-															<Trash2 class="w-4 h-4" />
-														</Button>
-													{/if}
-												</Table.Cell>
-											{/if}
-										</Table.Row>
-									{/each}
-								{/if}
-							</Table.Body>
-						</Table.Root>
-					</Card.Root>
+					{:else if buildingsLoaded && filteredBuildings.length === 0}<PageState
+							title={buildingSearch.trim() ? 'ไม่พบอาคารที่ค้นหา' : 'ไม่พบข้อมูลอาคาร'}
+							description={buildingSearch.trim()
+								? 'ลองเปลี่ยนชื่อหรือรหัสที่ค้นหา'
+								: 'เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ'}
+						/>
+					{:else if buildingsLoaded}<BuildingResults
+							items={visibleBuildings}
+							canUpdate={canUpdateFacility}
+							canDelete={canDeleteFacility}
+							onedit={openEditBuilding}
+							ondelete={(item) => confirmDelete('building', item)}
+						/>{@render pagination(
+							filteredBuildings.length,
+							currentBuildingPage,
+							(page) => (buildingPage = page),
+							'หน้ารายการอาคาร'
+						)}{/if}
 				</section>
 			</Tabs.Content>
-
-			<!-- Rooms Tab -->
-			<Tabs.Content value="rooms" class="space-y-4 pt-4">
-				<section data-testid="facility-rooms" aria-busy={roomsLoading}>
+			<Tabs.Content value="rooms" class="space-y-3 pt-3">
+				<section class="min-w-0 space-y-3" data-testid="facility-rooms" aria-busy={roomsLoading}>
 					<div data-testid="facility-building-options">
-						{#if loading && !buildingsLoaded}<p role="status" aria-label="กำลังโหลดตัวเลือกอาคาร">
+						{#if loading && !buildingsLoaded}<p
+								class="text-sm text-muted-foreground"
+								role="status"
+								aria-label="กำลังโหลดตัวเลือกอาคาร"
+							>
 								กำลังโหลดตัวเลือกอาคาร
 							</p>{/if}
 						{#if buildingsError}<PageState
@@ -568,7 +597,40 @@
 								onaction={loadBuildings}
 							/>{/if}
 					</div>
-
+					<div class="flex flex-col gap-2 sm:flex-row">
+						<Select.Root
+							type="single"
+							bind:value={selectedBuildingFilter}
+							onValueChange={() => (roomPage = 1)}
+							disabled={!buildingsLoaded || !!buildingsError}
+						>
+							<Select.Trigger class="w-full min-w-0 sm:w-56" aria-label="เลือกอาคารสำหรับห้อง"
+								><span class="truncate"
+									>{selectedBuildingFilter === 'all'
+										? 'ทุกอาคาร'
+										: (buildings.find((building) => building.id === selectedBuildingFilter)
+												?.name_th ?? 'เลือกอาคาร')}</span
+								></Select.Trigger
+							>
+							<Select.Content
+								><Select.Item value="all">ทุกอาคาร</Select.Item
+								>{#each buildings as building (building.id)}<Select.Item value={building.id}
+										>{building.name_th}</Select.Item
+									>{/each}</Select.Content
+							>
+						</Select.Root>
+						<div class="relative min-w-0 flex-1 sm:max-w-md">
+							<Search
+								class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
+							/><Input
+								aria-label="ค้นหาห้อง"
+								placeholder="ค้นหาชื่อห้องหรือรหัส"
+								class="pl-9"
+								bind:value={searchTerm}
+								oninput={() => (roomPage = 1)}
+							/>
+						</div>
+					</div>
 					{#if roomsError}<PageState
 							variant="error"
 							title="โหลดห้องไม่สำเร็จ"
@@ -576,288 +638,233 @@
 							actionLabel="ลองอีกครั้ง"
 							onaction={refreshRooms}
 						/>{/if}
-					<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
-						<div class="w-[200px]">
-							<Select.Root
-								type="single"
-								bind:value={selectedBuildingFilter}
-								disabled={!buildingsLoaded || !!buildingsError}
-							>
-								<Select.Trigger class="w-full" aria-label="เลือกอาคารสำหรับห้อง">
-									{selectedBuildingFilter === 'all'
-										? 'ทุกอาคาร'
-										: buildings.find((b) => b.id === selectedBuildingFilter)?.name_th ||
-											'เลือกอาคาร'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="all">ทุกอาคาร</Select.Item>
-									{#each buildings as b (b.id)}
-										<Select.Item value={b.id}>{b.name_th}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+					{#if roomsLoading && !roomsLoaded}<div role="status" aria-label="กำลังโหลดห้อง">
+							<PageSkeleton variant="table" rows={4} columns={6} />
 						</div>
-						<div class="relative w-[300px]">
-							<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-							<Input placeholder="ค้นหาชื่อห้อง/รหัส..." class="pl-8" bind:value={searchTerm} />
-						</div>
-						{#if canCreateFacility}
-							<div class="ml-auto">
-								<Button onclick={openAddRoom} disabled={!buildingsLoaded || !!buildingsError}>
-									<Plus class="w-4 h-4 mr-2" /> เพิ่มห้อง
-								</Button>
-							</div>
-						{/if}
-					</div>
-
-					<Card.Root>
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head class="w-[100px]">รหัสห้อง</Table.Head>
-									<Table.Head>ชื่อห้อง</Table.Head>
-									<Table.Head>ประเภท</Table.Head>
-									<Table.Head>อาคาร/ชั้น</Table.Head>
-									<Table.Head class="text-center">ความจุ</Table.Head>
-									{#if canMutateFacility}
-										<Table.Head class="text-right">จัดการ</Table.Head>
-									{/if}
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#if roomsLoading && !roomsLoaded}
-									<Table.Row>
-										<Table.Cell colspan={canMutateFacility ? 6 : 5} class="p-0">
-											<div role="status" aria-label="กำลังโหลดห้อง">
-												<PageSkeleton
-													variant="table"
-													rows={4}
-													columns={canMutateFacility ? 6 : 5}
-												/>
-											</div>
-										</Table.Cell>
-									</Table.Row>
-								{:else if roomsLoaded && rooms.length === 0}
-									<Table.Row>
-										<Table.Cell colspan={canMutateFacility ? 6 : 5} class="h-24">
-											<PageState
-												title="ไม่พบข้อมูลห้อง"
-												description="เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร"
-												actionLabel={canCreateFacility ? 'เพิ่มห้อง' : undefined}
-												onaction={openAddRoom}
-											/>
-										</Table.Cell>
-									</Table.Row>
-								{:else if roomsLoaded}
-									{#each rooms as r (r.id)}
-										<Table.Row>
-											<Table.Cell class="font-bold">{r.code || '-'}</Table.Cell>
-											<Table.Cell>
-												<div class="font-medium">{r.name_th}</div>
-												{#if r.name_en}<div class="text-xs text-muted-foreground">
-														{r.name_en}
-													</div>{/if}
-											</Table.Cell>
-											<Table.Cell>
-												<Badge variant="outline">
-													{ROOM_TYPES.find((t) => t.value === r.room_type)?.label || r.room_type}
-												</Badge>
-											</Table.Cell>
-											<Table.Cell>
-												<div class="text-sm">{r.building_name || '-'}</div>
-												{#if r.floor}<div class="text-xs text-muted-foreground">
-														ชั้น {r.floor}
-													</div>{/if}
-											</Table.Cell>
-											<Table.Cell class="text-center">{r.capacity}</Table.Cell>
-											{#if canMutateFacility}
-												<Table.Cell class="text-right">
-													{#if canUpdateFacility}
-														<Button
-															variant="ghost"
-															size="icon"
-															aria-label={`แก้ไขห้อง ${r.name_th}`}
-															onclick={() => openEditRoom(r)}
-														>
-															<Settings class="w-4 h-4" />
-														</Button>
-													{/if}
-													{#if canDeleteFacility}
-														<Button
-															variant="ghost"
-															size="icon"
-															class="text-destructive"
-															aria-label={`ลบห้อง ${r.name_th}`}
-															onclick={() => confirmDelete('room', r)}
-														>
-															<Trash2 class="w-4 h-4" />
-														</Button>
-													{/if}
-												</Table.Cell>
-											{/if}
-										</Table.Row>
-									{/each}
-								{/if}
-							</Table.Body>
-						</Table.Root>
-					</Card.Root>
+					{:else if roomsLoaded && rooms.length === 0}<PageState
+							title="ไม่พบข้อมูลห้อง"
+							description={searchTerm.trim() || selectedBuildingFilter !== 'all'
+								? 'ลองเปลี่ยนคำค้นหาหรืออาคารที่เลือก'
+								: 'เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร'}
+						/>
+					{:else if roomsLoaded}<RoomResults
+							items={visibleRooms}
+							roomTypes={ROOM_TYPES}
+							canUpdate={canUpdateFacility}
+							canDelete={canDeleteFacility}
+							onedit={openEditRoom}
+							ondelete={(item) => confirmDelete('room', item)}
+						/>{@render pagination(
+							rooms.length,
+							currentRoomPage,
+							(page) => (roomPage = page),
+							'หน้ารายการห้อง'
+						)}{/if}
 				</section>
 			</Tabs.Content>
 		</Tabs.Root>
 
-		<!-- Building Dialog -->
 		{#if canCreateFacility || canUpdateFacility}
 			<Dialog.Root bind:open={showBuildingDialog}>
-				<Dialog.Content>
-					<Dialog.Header>
-						<Dialog.Title>{editingItem ? 'แก้ไขอาคาร' : 'เพิ่มอาคารใหม่'}</Dialog.Title>
-					</Dialog.Header>
-					<form onsubmit={handleSaveBuilding} class="space-y-4 py-4">
-						<div class="grid grid-cols-2 gap-4">
+				<Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+					<Dialog.Header
+						><Dialog.Title>{editingItem ? 'แก้ไขอาคาร' : 'เพิ่มอาคารใหม่'}</Dialog.Title
+						><Dialog.Description>ระบุชื่ออาคารและข้อมูลที่ใช้จัดกลุ่มห้อง</Dialog.Description
+						></Dialog.Header
+					>
+					<form onsubmit={handleSaveBuilding} class="space-y-4">
+						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="space-y-2">
-								<Label>รหัสอาคาร (Code)</Label>
-								<Input name="code" value={editingItem?.code || ''} placeholder="เช่น BLD1" />
-							</div>
-						</div>
-						<div class="space-y-2">
-							<Label>ชื่ออาคาร (TH) <span class="text-red-500">*</span></Label>
-							<Input
-								name="name_th"
-								value={editingItem?.name_th || ''}
-								required
-								placeholder="เช่น อาคารเฉลิมพระเกียรติ"
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label>ชื่ออาคาร (EN)</Label>
-							<Input
-								name="name_en"
-								value={editingItem?.name_en || ''}
-								placeholder="Ex. Building 1"
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label>รายละเอียด</Label>
-							<Input name="description" value={editingItem?.description || ''} />
-						</div>
-
-						<Dialog.Footer>
-							<Button variant="outline" type="button" onclick={() => (showBuildingDialog = false)}
-								>ยกเลิก</Button
-							>
-							<Button type="submit" disabled={submitting}>บันทึก</Button>
-						</Dialog.Footer>
-					</form>
-				</Dialog.Content>
-			</Dialog.Root>
-		{/if}
-
-		<!-- Room Dialog -->
-		{#if canCreateFacility || canUpdateFacility}
-			<Dialog.Root bind:open={showRoomDialog}>
-				<Dialog.Content class="sm:max-w-[600px]">
-					<Dialog.Header>
-						<Dialog.Title>{editingItem ? 'แก้ไขห้อง' : 'เพิ่มห้องใหม่'}</Dialog.Title>
-					</Dialog.Header>
-					<form onsubmit={handleSaveRoom} class="space-y-4 py-4">
-						<div class="grid grid-cols-2 gap-4">
-							<div class="space-y-2">
-								<Label>อาคาร <span class="text-red-500">*</span></Label>
-								<Select.Root type="single" bind:value={formBuildingId}>
-									<Select.Trigger class="w-full">
-										{buildings.find((b) => b.id === formBuildingId)?.name_th || 'เลือกอาคาร'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each buildings as b (b.id)}
-											<Select.Item value={b.id}>{b.name_th}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<input type="hidden" name="building_id" value={formBuildingId} />
+								<Label for="building-code">รหัสอาคาร</Label><Input
+									id="building-code"
+									name="code"
+									value={editingItem?.code || ''}
+									placeholder="เช่น BLD1"
+								/>
 							</div>
 							<div class="space-y-2">
-								<Label>ประเภทห้อง</Label>
-								<Select.Root type="single" bind:value={formRoomType}>
-									<Select.Trigger class="w-full">
-										{ROOM_TYPES.find((t) => t.value === formRoomType)?.label}
-									</Select.Trigger>
-									<Select.Content>
-										{#each ROOM_TYPES as t (t.value)}
-											<Select.Item value={t.value}>{t.label}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<input type="hidden" name="room_type" value={formRoomType} />
-							</div>
-						</div>
-
-						<div class="grid grid-cols-3 gap-4">
-							<div class="col-span-1 space-y-2">
-								<Label>รหัส/เลขห้อง <span class="text-red-500">*</span></Label>
-								<Input name="code" value={editingItem?.code || ''} required placeholder="301" />
-							</div>
-							<div class="col-span-2 space-y-2">
-								<Label>ชื่อห้อง (TH) <span class="text-red-500">*</span></Label>
-								<Input
+								<Label for="building-name-th"
+									>ชื่ออาคาร (ไทย) <span class="text-destructive">*</span></Label
+								><Input
+									id="building-name-th"
 									name="name_th"
 									value={editingItem?.name_th || ''}
 									required
-									placeholder="ห้องเรียน 301"
 								/>
 							</div>
 						</div>
-
-						<div class="grid grid-cols-2 gap-4">
-							<div class="space-y-2">
-								<Label>ชั้น</Label>
-								<Input type="number" name="floor" value={editingRoom?.floor?.toString() || ''} />
-							</div>
-							<div class="space-y-2">
-								<Label>ความจุ (คน)</Label>
-								<Input
-									type="number"
-									name="capacity"
-									value={editingRoom?.capacity?.toString() || '40'}
-								/>
-							</div>
-						</div>
-
 						<div class="space-y-2">
-							<Label>รายละเอียดเพิ่มเติม</Label>
-							<Input name="description" value={editingItem?.description || ''} />
+							<Label for="building-name-en">ชื่ออาคาร (อังกฤษ)</Label><Input
+								id="building-name-en"
+								name="name_en"
+								value={editingItem?.name_en || ''}
+							/>
 						</div>
-
-						<Dialog.Footer>
-							<Button variant="outline" type="button" onclick={() => (showRoomDialog = false)}
+						<div class="space-y-2">
+							<Label for="building-description">รายละเอียด</Label><Textarea
+								id="building-description"
+								name="description"
+								value={editingItem?.description || ''}
+								rows={3}
+							/>
+						</div>
+						{#if buildingSubmitError}<p
+								role="alert"
+								class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+							>
+								{buildingSubmitError}
+							</p>{/if}
+						<Dialog.Footer
+							><Button variant="outline" type="button" onclick={() => (showBuildingDialog = false)}
 								>ยกเลิก</Button
+							><LoadingButton
+								type="submit"
+								loading={submitting}
+								loadingLabel="กำลังบันทึก..."
+								disabled={!buildingsLoaded ||
+									(editingItem ? !canUpdateFacility : !canCreateFacility)}>บันทึก</LoadingButton
+							></Dialog.Footer
+						>
+					</form>
+				</Dialog.Content>
+			</Dialog.Root>
+			<Dialog.Root bind:open={showRoomDialog}>
+				<Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
+					<Dialog.Header
+						><Dialog.Title>{editingItem ? 'แก้ไขห้อง' : 'เพิ่มห้องใหม่'}</Dialog.Title
+						><Dialog.Description
+							>ระบุห้อง อาคาร และความจุสำหรับการใช้งานในโรงเรียน</Dialog.Description
+						></Dialog.Header
+					>
+					<form onsubmit={handleSaveRoom} class="space-y-4">
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="min-w-0 space-y-2">
+								<Label for="room-building">อาคาร</Label><Select.Root
+									type="single"
+									bind:value={formBuildingId}
+									><Select.Trigger id="room-building" class="w-full min-w-0"
+										><span class="truncate"
+											>{buildings.find((building) => building.id === formBuildingId)?.name_th ||
+												'ไม่ระบุอาคาร'}</span
+										></Select.Trigger
+									><Select.Content
+										>{#each buildings as building (building.id)}<Select.Item value={building.id}
+												>{building.name_th}</Select.Item
+											>{/each}</Select.Content
+									></Select.Root
+								><input type="hidden" name="building_id" value={formBuildingId} />
+							</div>
+							<div class="space-y-2">
+								<Label for="room-type">ประเภทห้อง</Label><Select.Root
+									type="single"
+									bind:value={formRoomType}
+									><Select.Trigger id="room-type" class="w-full"
+										>{ROOM_TYPES.find((type) => type.value === formRoomType)?.label}</Select.Trigger
+									><Select.Content
+										>{#each ROOM_TYPES as type (type.value)}<Select.Item value={type.value}
+												>{type.label}</Select.Item
+											>{/each}</Select.Content
+									></Select.Root
+								><input type="hidden" name="room_type" value={formRoomType} />
+							</div>
+							<div class="space-y-2">
+								<Label for="room-code">รหัส / เลขห้อง <span class="text-destructive">*</span></Label
+								><Input id="room-code" name="code" value={editingItem?.code || ''} required />
+							</div>
+							<div class="space-y-2">
+								<Label for="room-name-th"
+									>ชื่อห้อง (ไทย) <span class="text-destructive">*</span></Label
+								><Input
+									id="room-name-th"
+									name="name_th"
+									value={editingItem?.name_th || ''}
+									required
+								/>
+							</div>
+							<div class="space-y-2 sm:col-span-2">
+								<Label for="room-name-en">ชื่อห้อง (อังกฤษ)</Label><Input
+									id="room-name-en"
+									name="name_en"
+									value={editingItem?.name_en || ''}
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for="room-floor">ชั้น</Label><Input
+									id="room-floor"
+									type="number"
+									step="1"
+									name="floor"
+									value={editingRoom?.floor?.toString() ?? ''}
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for="room-capacity">ความจุ (คน)</Label><Input
+									id="room-capacity"
+									type="number"
+									step="1"
+									name="capacity"
+									value={editingRoom?.capacity?.toString() ?? '40'}
+								/>
+							</div>
+						</div>
+						<div class="space-y-2">
+							<Label for="room-description">รายละเอียดเพิ่มเติม</Label><Textarea
+								id="room-description"
+								name="description"
+								value={editingItem?.description || ''}
+								rows={3}
+							/>
+						</div>
+						{#if roomSubmitError}<p
+								role="alert"
+								class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 							>
-							<Button type="submit" disabled={submitting || !buildingsLoaded || !!buildingsError}
-								>บันทึก</Button
-							>
-						</Dialog.Footer>
+								{roomSubmitError}
+							</p>{/if}
+						<Dialog.Footer
+							><Button variant="outline" type="button" onclick={() => (showRoomDialog = false)}
+								>ยกเลิก</Button
+							><LoadingButton
+								type="submit"
+								loading={submitting}
+								loadingLabel="กำลังบันทึก..."
+								disabled={!buildingsLoaded ||
+									!!buildingsError ||
+									(editingItem ? !canUpdateFacility : !canCreateFacility)}>บันทึก</LoadingButton
+							></Dialog.Footer
+						>
 					</form>
 				</Dialog.Content>
 			</Dialog.Root>
 		{/if}
-
-		<!-- Delete Confirm -->
 		{#if canDeleteFacility}
-			<Dialog.Root bind:open={showDeleteDialog}>
-				<Dialog.Content>
-					<Dialog.Header>
-						<Dialog.Title>ยืนยันการลบ</Dialog.Title>
-						<Dialog.Description>
-							คุณต้องการลบ "{deleteTarget?.name}" ใช่หรือไม่? การกระทำนี้ไม่สามารถเรียกคืนได้
-						</Dialog.Description>
-					</Dialog.Header>
-					<Dialog.Footer>
-						<Button variant="outline" onclick={() => (showDeleteDialog = false)}>ยกเลิก</Button>
-						<Button variant="destructive" onclick={handleDelete} disabled={submitting}
-							>ยืนยันลบ</Button
+			<AlertDialog.Root bind:open={showDeleteDialog}>
+				<AlertDialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+					<AlertDialog.Header
+						><AlertDialog.Title>ยืนยันการลบ</AlertDialog.Title><AlertDialog.Description
+							class="break-words"
+							>ลบ “{deleteTarget?.name}” หรือไม่? การกระทำนี้ไม่สามารถเรียกคืนได้{#if deleteTarget?.type === 'building'}
+								ห้องในอาคารจะยังอยู่และแสดงเป็นไม่ระบุอาคาร{/if}</AlertDialog.Description
+						></AlertDialog.Header
+					>
+					{#if deleteError}<p
+							role="alert"
+							class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 						>
-					</Dialog.Footer>
-				</Dialog.Content>
-			</Dialog.Root>
+							{deleteError}
+						</p>{/if}
+					<AlertDialog.Footer
+						><AlertDialog.Cancel>ยกเลิก</AlertDialog.Cancel><AlertDialog.Action
+							variant="destructive"
+							disabled={submitting}
+							onclick={(event) => {
+								event.preventDefault();
+								void handleDelete();
+							}}>{submitting ? 'กำลังลบ...' : 'ยืนยันลบ'}</AlertDialog.Action
+						></AlertDialog.Footer
+					>
+				</AlertDialog.Content>
+			</AlertDialog.Root>
 		{/if}
 	{/if}
 </PageShell>

@@ -1,6 +1,12 @@
 import { expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type { CatalogActivityOverview } from '../../src/lib/api/academic-core.js';
+import type {
+	ActivityVersion,
+	CatalogActivityOverview,
+	CreateActivityVersionRequest
+} from '../../src/lib/api/academic-core.js';
+
+import { chooseSubjectDate } from './fixtures/subject-catalog';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -217,15 +223,17 @@ for (const entry of [
 			page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
 		).toBeVisible();
 		expect(historyReads).toBe(0);
-		if (entry.kind === 'subject') await page.getByLabel(entry.codeLabel).fill(entry.code);
-		else {
+		if (entry.kind === 'subject') {
+			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+			await page.getByLabel(entry.codeLabel).fill(entry.code);
+		} else {
 			await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
 			await expect(page.getByLabel('เพิ่มรหัสกิจกรรม')).toHaveCount(0);
 		}
 		try {
 			await page
 				.getByRole('button', {
-					name: entry.kind === 'activity' ? 'เพิ่มและกำหนดรายละเอียด' : entry.buttonLabel
+					name: 'เพิ่มและกำหนดรายละเอียด'
 				})
 				.click();
 			if (entry.kind === 'activity') {
@@ -252,7 +260,7 @@ for (const entry of [
 		} finally {
 			refreshGate.release();
 		}
-		await expect(page.getByRole('dialog')).toBeVisible();
+		await expect(page.getByRole('dialog', { name: entry.code, exact: true })).toBeVisible();
 		await expect.poll(() => historyReads).toBe(1);
 		expect(writes).toBe(1);
 		expect(requests.otherCatalogReads).toBe(0);
@@ -560,4 +568,86 @@ test('activity history failure retries lazily without reloading the overview', a
 	await expect(page.getByRole('dialog')).toContainText('ประวัติรุ่นกิจกรรม');
 	expect(historyReads).toBe(2);
 	expect(requests.primary).toBe(1);
+});
+
+test('edited activity version hours remain decimal strings and required blanks do not submit', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-20T05:00:00Z'));
+	const versions: ActivityVersion[] = [{ ...namedActivityOverview.items[0].displayVersion }];
+	const writes: CreateActivityVersionRequest[] = [];
+	await mockCatalog(
+		page,
+		activityOverviewPath,
+		namedActivityOverview,
+		Promise.resolve(),
+		async (route, url) => {
+			if (url.pathname === `${'/api/academic/catalog/activities'}/${activityId}/versions`) {
+				if (route.request().method() === 'GET') await fulfill(route, versions);
+				else if (route.request().method() === 'POST') {
+					const payload: CreateActivityVersionRequest = route.request().postDataJSON();
+					writes.push(payload);
+					if (
+						typeof payload.hoursPerWeek !== 'string' ||
+						typeof payload.hoursPerTerm !== 'string'
+					) {
+						await route.fulfill({
+							status: 400,
+							contentType: 'application/json',
+							body: JSON.stringify({
+								success: false,
+								error: 'Activity hours must be JSON decimal strings'
+							})
+						});
+					} else {
+						const created: ActivityVersion = {
+							...versions[0],
+							...payload,
+							id: 'new-activity-version',
+							versionNo: 2,
+							status: 'draft',
+							publishedAt: null
+						};
+						versions.unshift(created);
+						await fulfill(route, created);
+					}
+				}
+				return true;
+			}
+			return false;
+		}
+	);
+	await page.goto(activityPath);
+	await page.getByRole('button', { name: /เปิดรายละเอียด ชุมนุมวิทยาศาสตร์/ }).click();
+	await page.getByLabel('ชื่อภาษาไทย', { exact: true }).fill('กิจกรรมฉบับทดสอบ');
+	await page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true }).fill('');
+	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	expect(
+		await page
+			.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true })
+			.evaluate((input: HTMLInputElement) => input.validity.valueMissing)
+	).toBe(true);
+	expect(writes).toEqual([]);
+	await page.getByLabel('ชั่วโมงต่อสัปดาห์', { exact: true }).fill('1.75');
+	await page.getByLabel('ชั่วโมงรวมต่อภาคเรียน', { exact: true }).fill('35.25');
+	await chooseSubjectDate(page);
+	await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่', exact: true }).click();
+	await expect(
+		page
+			.getByRole('region', { name: 'ประวัติรุ่น', exact: true })
+			.getByRole('heading', { name: 'กิจกรรมฉบับทดสอบ', exact: true })
+	).toBeVisible();
+	expect(writes).toEqual([
+		{
+			name: 'กิจกรรมฉบับทดสอบ',
+			description: null,
+			hoursPerWeek: '1.75',
+			hoursPerTerm: '35.25',
+			schedulingMode: 'synchronized',
+			effectiveFrom: '2026-10-21',
+			effectiveUntil: null,
+			gradeLevelIds: [],
+			termCode: null
+		}
+	]);
 });

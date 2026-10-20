@@ -39,8 +39,8 @@
 		versionStatusLabel
 	} from '#lib/academic-core/catalog-presentation.js';
 	import GradeLevelMultiSelect from '#lib/components/academic-core/GradeLevelMultiSelect.svelte';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -76,7 +76,9 @@
 		gradeLevelIds: [],
 		classification: ''
 	});
-	let busy = $state(false);
+	let pendingAction = $state<string | null>(null);
+	let busy = $derived(pendingAction !== null);
+	let errorAction = $state<'create' | 'publish'>('create');
 	let errorMessage = $state('');
 	let classificationOptions = $derived(
 		kind === 'subject' ? SUBJECT_TYPE_OPTIONS : SCHEDULING_MODE_OPTIONS
@@ -89,11 +91,13 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		if (busy || !canManage) return;
+		errorAction = 'create';
 		if (!draft.effectiveFrom) {
 			errorMessage = 'กรุณาเลือกวันที่เริ่มใช้';
 			return;
 		}
-		busy = true;
+		pendingAction = 'create';
 		errorMessage = '';
 		try {
 			await onCreate({ ...draft, classification: selectedClassification });
@@ -101,40 +105,49 @@
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรุ่นใหม่ไม่สำเร็จ';
 		} finally {
-			busy = false;
+			pendingAction = null;
 		}
 	}
 
 	async function publish(item: CatalogVersionItem) {
-		busy = true;
+		if (busy || !canManage || item.status !== 'draft') return;
+		errorAction = 'publish';
+		pendingAction = item.id;
 		errorMessage = '';
 		try {
 			await onPublish(item.id, item.rowVersion);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'เผยแพร่รุ่นไม่สำเร็จ';
 		} finally {
-			busy = false;
+			pendingAction = null;
 		}
 	}
 </script>
 
-<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-	<section class="rounded-xl border bg-card">
-		<header class="flex items-center gap-2 border-b px-5 py-4">
+<div class="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+	<section class="min-w-0 rounded-xl border bg-card" aria-label="ประวัติรุ่น">
+		<header class="flex items-center gap-2 border-b p-3 sm:p-4">
 			<History class="size-5 text-primary" />
 			<div>
 				<h2 class="font-semibold">ประวัติรุ่น{kind === 'subject' ? ` · ${code}` : 'กิจกรรม'}</h2>
 				<p class="text-xs text-muted-foreground">รุ่นที่เผยแพร่แล้วจะไม่ถูกแก้ทับ</p>
 			</div>
 		</header>
+		{#if errorMessage && errorAction === 'publish'}<p
+				role="alert"
+				class="border-b p-3 text-sm text-destructive"
+			>
+				{errorMessage}
+			</p>{/if}
 		<div class="divide-y">
 			{#each items as item (item.id)}
-				<article class="grid gap-3 px-5 py-4 sm:grid-cols-[52px_1fr_auto] sm:items-center">
-					<div class="text-center">
-						<p class="text-lg font-semibold tabular-nums">v{item.versionNo}</p>
-						<p class="text-[10px] uppercase text-muted-foreground">version</p>
-					</div>
+				<article
+					class="grid min-w-0 gap-3 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start sm:p-4"
+				>
 					<div>
+						<p class="text-lg font-semibold tabular-nums">v{item.versionNo}</p>
+					</div>
+					<div class="min-w-0">
 						<div class="flex flex-wrap items-center gap-2">
 							<h3 class="font-medium">{item.name}</h3>
 							<Badge variant={item.status === 'published' ? 'default' : 'secondary'}
@@ -162,11 +175,13 @@
 							{/if}
 						</div>
 					</div>
-					{#if canManage && item.status === 'draft'}<Button
+					{#if canManage && item.status === 'draft'}<LoadingButton
 							size="sm"
 							variant="outline"
 							disabled={busy}
-							onclick={() => publish(item)}><CheckCircle2 class="size-4" /> เผยแพร่</Button
+							loading={pendingAction === item.id}
+							loadingLabel="กำลังเผยแพร่..."
+							onclick={() => publish(item)}><CheckCircle2 class="size-4" /> เผยแพร่</LoadingButton
 						>{/if}
 				</article>
 			{:else}
@@ -176,129 +191,160 @@
 	</section>
 
 	{#if canManage}
-		<form class="space-y-3 rounded-xl border bg-card p-5" onsubmit={submit}>
+		<form
+			class="min-w-0 space-y-4 rounded-xl border bg-card p-3 sm:p-4"
+			onsubmit={submit}
+			aria-label="สร้างรุ่นใหม่"
+		>
 			<div class="flex items-center gap-2">
 				<GitBranchPlus class="size-5 text-primary" />
 				<h2 class="font-semibold">สร้างรุ่นใหม่</h2>
 			</div>
-			<div class="space-y-1.5">
-				<Label for={`${code}-version-name`}>ชื่อภาษาไทย</Label><Input
-					id={`${code}-version-name`}
-					bind:value={draft.name}
-					required
-				/>
-			</div>
-			<div class="space-y-1.5">
-				<Label for={`${code}-version-en`}
-					>{kind === 'subject' ? 'ชื่อภาษาอังกฤษ' : 'คำอธิบาย'}</Label
-				><Input id={`${code}-version-en`} bind:value={draft.secondaryName} />
-			</div>
-			<div class="space-y-3 rounded-xl border border-primary/15 bg-primary/[0.035] p-3">
-				<div>
-					<p class="text-sm font-medium">
-						{kind === 'subject' ? 'ภาระการเรียนตามหลักสูตร' : 'ชั่วโมงกิจกรรมทางการ'}
-					</p>
-					<p class="text-xs text-muted-foreground">
-						ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน
-					</p>
-				</div>
-				<div class="grid gap-3 sm:grid-cols-2">
-					<div class={kind === 'subject' ? 'space-y-1.5 sm:col-span-2' : 'space-y-1.5'}>
-						<Label for={`${code}-version-exact`}>
-							{kind === 'subject' ? 'หน่วยกิต' : 'ชั่วโมงต่อสัปดาห์'}
-						</Label>
-						<Input
-							id={`${code}-version-exact`}
-							type="number"
-							min="0.01"
-							step="0.01"
-							inputmode="decimal"
-							bind:value={draft.exactValue}
+			<fieldset disabled={busy} class="min-w-0 space-y-3">
+				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+					<div class="space-y-1.5">
+						<Label for={`${code}-version-name`}>ชื่อภาษาไทย</Label><Input
+							id={`${code}-version-name`}
+							bind:value={draft.name}
 							required
 						/>
 					</div>
-					{#if kind === 'subject'}
+					<div class="space-y-1.5">
+						<Label for={`${code}-version-en`}
+							>{kind === 'subject' ? 'ชื่อภาษาอังกฤษ' : 'คำอธิบาย'}</Label
+						><Input id={`${code}-version-en`} bind:value={draft.secondaryName} />
+					</div>
+				</div>
+				<div class="space-y-3 rounded-xl border border-primary/15 bg-primary/5 p-3">
+					<div>
+						<p class="text-sm font-medium">
+							{kind === 'subject' ? 'ภาระการเรียนตามหลักสูตร' : 'ชั่วโมงกิจกรรมทางการ'}
+						</p>
+						<p class="text-xs text-muted-foreground">
+							ค่าชุดนี้จะแสดงในหลักสูตร และใช้เป็นค่าเริ่มต้นเมื่อเปิดสอน
+						</p>
+					</div>
+					<div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-2">
 						<div class="space-y-1.5">
-							<Label for={`${code}-version-periods`}>คาบมาตรฐานต่อสัปดาห์</Label>
+							<Label for={`${code}-version-exact`}>
+								{kind === 'subject' ? 'หน่วยกิต' : 'ชั่วโมงต่อสัปดาห์'}
+							</Label>
 							<Input
-								id={`${code}-version-periods`}
+								id={`${code}-version-exact`}
 								type="number"
-								min="1"
-								step="1"
-								inputmode="numeric"
-								bind:value={draft.standardPeriodsPerWeek}
+								min="0.01"
+								step="0.01"
+								inputmode="decimal"
+								bind:value={
+									() => draft.exactValue,
+									(value) => (draft.exactValue = value == null ? '' : String(value))
+								}
 								required
 							/>
 						</div>
-					{/if}
+						{#if kind === 'subject'}
+							<div class="space-y-1.5">
+								<Label for={`${code}-version-periods`}>คาบมาตรฐานต่อสัปดาห์</Label>
+								<Input
+									id={`${code}-version-periods`}
+									type="number"
+									min="1"
+									step="1"
+									inputmode="numeric"
+									bind:value={
+										() => draft.standardPeriodsPerWeek,
+										(value) => (draft.standardPeriodsPerWeek = value == null ? '' : String(value))
+									}
+									required
+								/>
+							</div>
+						{/if}
+						<div class="space-y-1.5">
+							<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
+							<Input
+								id={`${code}-version-total`}
+								type="number"
+								min={kind === 'subject' ? '1' : '0.01'}
+								step={kind === 'subject' ? '1' : '0.01'}
+								inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
+								bind:value={
+									() => draft.totalValue,
+									(value) => (draft.totalValue = value == null ? '' : String(value))
+								}
+								required
+							/>
+						</div>
+					</div>
+				</div>
+				<div class="space-y-1.5">
+					<Label for={`${code}-version-class`}
+						>{kind === 'subject' ? 'ประเภทรายวิชา' : 'รูปแบบจัดกิจกรรม'}</Label
+					>
+					<Select.Root
+						type="single"
+						value={selectedClassification}
+						disabled={busy}
+						onValueChange={(value) => (draft.classification = value)}
+					>
+						<Select.Trigger id={`${code}-version-class`} class="w-full">
+							{optionLabel(classificationOptions, selectedClassification, 'เลือกประเภท')}
+						</Select.Trigger>
+						<Select.Content>
+							{#each classificationOptions as option (option.value)}
+								<Select.Item value={option.value}>{option.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1.5">
+					<Label>ระดับชั้นที่ใช้</Label>
+					<GradeLevelMultiSelect
+						bind:value={draft.gradeLevelIds}
+						options={gradeLevelOptions}
+						disabled={busy}
+						ariaLabel={`เลือกระดับชั้นสำหรับ ${code}`}
+					/>
+					<p class="text-xs text-muted-foreground">ไม่เลือก หมายถึงใช้ได้กับทุกระดับชั้น</p>
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
 					<div class="space-y-1.5">
-						<Label for={`${code}-version-total`}>ชั่วโมงรวมต่อภาคเรียน</Label>
-						<Input
-							id={`${code}-version-total`}
-							type="number"
-							min={kind === 'subject' ? '1' : '0.01'}
-							step={kind === 'subject' ? '1' : '0.01'}
-							inputmode={kind === 'subject' ? 'numeric' : 'decimal'}
-							bind:value={draft.totalValue}
+						<Label for={`${code}-version-from`}>เริ่มใช้</Label>
+						<DatePicker
+							id={`${code}-version-from`}
+							bind:value={draft.effectiveFrom}
+							disabled={busy}
+							placeholder="เลือกวันเริ่มใช้"
+							ariaLabel="เลือกวันที่เริ่มใช้"
 							required
 						/>
 					</div>
+					<div class="space-y-1.5">
+						<Label for={`${code}-version-until`}>สิ้นสุด</Label>
+						<DatePicker
+							id={`${code}-version-until`}
+							bind:value={draft.effectiveUntil}
+							disabled={busy}
+							placeholder="ไม่กำหนดวันสิ้นสุด"
+							ariaLabel="เลือกวันที่สิ้นสุด"
+							clearable
+						/>
+					</div>
 				</div>
-			</div>
-			<div class="space-y-1.5">
-				<Label for={`${code}-version-class`}
-					>{kind === 'subject' ? 'ประเภทรายวิชา' : 'รูปแบบจัดกิจกรรม'}</Label
+			</fieldset>
+			{#if errorMessage && errorAction === 'create'}<p
+					role="alert"
+					class="text-sm text-destructive"
 				>
-				<Select.Root
-					type="single"
-					value={selectedClassification}
-					onValueChange={(value) => (draft.classification = value)}
-				>
-					<Select.Trigger id={`${code}-version-class`} class="w-full">
-						{optionLabel(classificationOptions, selectedClassification, 'เลือกประเภท')}
-					</Select.Trigger>
-					<Select.Content>
-						{#each classificationOptions as option (option.value)}
-							<Select.Item value={option.value}>{option.label}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="space-y-1.5">
-				<Label>ระดับชั้นที่ใช้</Label>
-				<GradeLevelMultiSelect
-					bind:value={draft.gradeLevelIds}
-					options={gradeLevelOptions}
-					ariaLabel={`เลือกระดับชั้นสำหรับ ${code}`}
-				/>
-				<p class="text-xs text-muted-foreground">ไม่เลือก หมายถึงใช้ได้กับทุกระดับชั้น</p>
-			</div>
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1.5">
-					<Label for={`${code}-version-from`}>เริ่มใช้</Label>
-					<DatePicker
-						id={`${code}-version-from`}
-						bind:value={draft.effectiveFrom}
-						placeholder="เลือกวันเริ่มใช้"
-						ariaLabel="เลือกวันที่เริ่มใช้"
-						required
-					/>
-				</div>
-				<div class="space-y-1.5">
-					<Label for={`${code}-version-until`}>สิ้นสุด</Label>
-					<DatePicker
-						id={`${code}-version-until`}
-						bind:value={draft.effectiveUntil}
-						placeholder="ไม่กำหนดวันสิ้นสุด"
-						ariaLabel="เลือกวันที่สิ้นสุด"
-						clearable
-					/>
-				</div>
-			</div>
-			<Button class="w-full" type="submit" disabled={busy}
-				><GitBranchPlus class="size-4" /> บันทึกร่างรุ่นใหม่</Button
+					{errorMessage}
+				</p>{/if}
+			<LoadingButton
+				class="w-full"
+				type="submit"
+				loading={pendingAction === 'create'}
+				disabled={busy}
+				loadingLabel="กำลังบันทึกร่าง..."
+				><GitBranchPlus class="size-4" aria-hidden="true" />บันทึกร่างรุ่นใหม่</LoadingButton
 			>
-			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 		</form>
 	{/if}
 </div>

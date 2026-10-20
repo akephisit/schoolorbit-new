@@ -14,6 +14,8 @@ export async function mockFacility(
 		fail?: string;
 		failAt?: number;
 		permissions?: string[];
+		buildings?: Building[];
+		rooms?: Room[];
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -25,33 +27,37 @@ export async function mockFacility(
 		]
 	});
 	const timestamp = '2026-10-01T00:00:00Z';
-	let buildings: Building[] = [buildingId, secondBuilding].map((value, index) => ({
-		id: value,
-		name_th: index ? 'อาคารสอง' : 'อาคารแรก',
-		name_en: null,
-		code: String(index + 1),
-		description: null,
-		created_at: timestamp,
-		updated_at: timestamp
-	}));
-	let rooms: Room[] = buildings.map((building, index) => ({
-		id: id(212 + index),
-		building_id: building.id,
-		name_th: index ? 'ห้องสอง' : 'ห้องแรก',
-		name_en: null,
-		code: String(101 + index),
-		room_type: 'GENERAL',
-		capacity: 40,
-		floor: 1,
-		status: 'active',
-		description: null,
-		created_at: timestamp,
-		updated_at: timestamp,
-		building_name: building.name_th
-	}));
+	let buildings: Building[] =
+		options.buildings ??
+		[buildingId, secondBuilding].map((value, index) => ({
+			id: value,
+			name_th: index ? 'อาคารสอง' : 'อาคารแรก',
+			name_en: null,
+			code: String(index + 1),
+			description: null,
+			created_at: timestamp,
+			updated_at: timestamp
+		}));
+	let rooms: Room[] =
+		options.rooms ??
+		buildings.map((building, index) => ({
+			id: id(212 + index),
+			building_id: building.id,
+			name_th: index ? 'ห้องสอง' : 'ห้องแรก',
+			name_en: null,
+			code: String(101 + index),
+			room_type: 'GENERAL',
+			capacity: 40,
+			floor: 1,
+			status: 'active',
+			description: null,
+			created_at: timestamp,
+			updated_at: timestamp,
+			building_name: building.name_th
+		}));
 	const counts = new Map<string, number>(),
 		reads: URL[] = [],
-		writes: { path: string; method: string }[] = [];
+		writes: { path: string; method: string; payload?: Record<string, unknown> }[] = [];
 	let release = () => {};
 	const held = new Promise<void>((resolve) => {
 		release = resolve;
@@ -70,7 +76,12 @@ export async function mockFacility(
 			const kind = method !== 'GET' ? 'mutation' : path;
 			counts.set(kind, (counts.get(kind) ?? 0) + 1);
 			if (method === 'GET') reads.push(url);
-			else writes.push({ path, method });
+			else
+				writes.push({
+					path,
+					method,
+					payload: method === 'DELETE' ? undefined : route.request().postDataJSON()
+				});
 			const roomSnapshot = rooms
 				.filter(
 					(room) =>
