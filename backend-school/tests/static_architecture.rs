@@ -561,7 +561,21 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 35] = [
+    let approved_graph: [(&str, &[&str]); 36] = [
+        (
+            "school-budget",
+            &[
+                "school-auth",
+                "school-auth-http",
+                "school-authorization",
+                "school-errors",
+                "school-file-platform",
+                "school-http",
+                "school-notifications",
+                "school-permissions",
+                "school-workflow",
+            ],
+        ),
         (
             "school-student-care",
             &[
@@ -788,6 +802,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth",
                 "school-auth-http",
                 "school-authorization",
+                "school-budget",
                 "school-certificates",
                 "school-errors",
                 "school-file-platform",
@@ -1139,9 +1154,17 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         assert!(certificate_dependencies.contains(required));
     }
     assert!(!certificate_dependencies.contains("school-test-db"));
-    for runtime_manifest in [&permissions, &migrations, &errors, &http, &authorization] {
+    for runtime_manifest in [&permissions, &migrations, &errors, &http] {
         assert!(!runtime_manifest.contains("school-test-db"));
     }
+    assert!(
+        !school_dependencies_in_section(&authorization, "dependencies").contains("school-test-db")
+    );
+    assert_eq!(
+        school_dependencies_in_section(&authorization, "dev-dependencies"),
+        BTreeSet::from(["school-test-db".to_string()]),
+        "Authorization may use its owned database fixture only as a dev dependency"
+    );
     assert!(!manifest_dir().join("src/db/permission_cache.rs").exists());
     assert!(!manifest_dir().join("src/middleware/permission.rs").exists());
 
@@ -8129,6 +8152,72 @@ fn file_platform_object_keys_can_only_be_constructed_by_the_purpose_registry() {
     }
 }
 
+fn image_decoder_boundary_violation(file_name: &str, source: &str) -> Option<&'static str> {
+    let mut source = strip_comments(&strip_cfg_test_modules(source));
+    if file_name == "crates/school-file-platform/src/share_image.rs" {
+        // Only this compile-time asset can bypass upload inspection. Keep the
+        // exception bound to its immutable bytes, owner and single decoder call.
+        const ASSET: &str =
+            "const BACKGROUND: &[u8] = include_bytes!(\"../assets/school-share-background.png\");";
+        const DECODE: &str = "image::load_from_memory_with_format(BACKGROUND, ImageFormat::Png)";
+        if !source.contains(ASSET) || source.matches(DECODE).count() != 1 {
+            return Some("bundled background must retain its exact asset and decoder");
+        }
+        let structural = lexical_mask(&source, false).structural;
+        if Regex::new(r"\bBACKGROUND\b")
+            .unwrap()
+            .find_iter(&structural)
+            .count()
+            != 2
+        {
+            return Some("bundled background must not have alternate or shadow bindings");
+        }
+        if !source.contains("let inspected = inspect_file(FilePurpose::SchoolLogo, source)?;")
+            || !source.contains("ImageProcessor::decode_inspected_image(&inspected)")
+            || Regex::new(r"\binspected\b")
+                .unwrap()
+                .find_iter(&structural)
+                .count()
+                != 2
+        {
+            return Some("untrusted crest must retain its inspected payload decoder");
+        }
+        source = source.replacen(DECODE, "validated_bundled_background()", 1);
+    }
+    if source.contains("image::load_from_memory") || source.contains("ImageReader") {
+        Some("bypasses the validated image decoder boundary")
+    } else {
+        None
+    }
+}
+
+#[test]
+fn bundled_background_exception_cannot_admit_untrusted_image_decoders() {
+    let owner = "crates/school-file-platform/src/share_image.rs";
+    let source = read_source(manifest_dir().join(owner));
+    assert_eq!(image_decoder_boundary_violation(owner, &source), None);
+    for changed in [
+        source.replace("school-share-background.png", "untrusted.png"),
+        source.replace(
+            "load_from_memory_with_format(BACKGROUND,",
+            "load_from_memory_with_format(source,",
+        ),
+        source.replace(
+            "let decoded = image::",
+            "let BACKGROUND = source; let decoded = image::",
+        ),
+        format!("{source}\nfn bypass(source: &[u8]) {{ image::load_from_memory(source); }}"),
+        format!("{source}\nfn bypass() {{ ImageReader::new(); }}"),
+        source.replace(
+            "let inspected = inspect_file(FilePurpose::SchoolLogo, source)?;",
+            "let inspected = source;",
+        ),
+    ] {
+        assert!(image_decoder_boundary_violation(owner, &changed).is_some());
+    }
+    assert!(image_decoder_boundary_violation("src/untrusted_images.rs", &source).is_some());
+}
+
 #[test]
 fn file_platform_derivatives_require_the_validated_payload_boundary() {
     let inspector =
@@ -8158,12 +8247,18 @@ fn file_platform_derivatives_require_the_validated_payload_boundary() {
         if file_name == "crates/school-file-platform/src/file_inspector.rs" {
             continue;
         }
-        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
+        let source = read_source(&file);
         assert!(
-            !source.contains("image::load_from_memory") && !source.contains("ImageReader"),
-            "{file_name} bypasses the validated image decoder boundary"
+            image_decoder_boundary_violation(&file_name, &source).is_none(),
+            "{file_name}: {:?}",
+            image_decoder_boundary_violation(&file_name, &source)
         );
     }
+    assert!(fs::read(
+        workspace_crate_dir("school-file-platform").join("assets/school-share-background.png")
+    )
+    .unwrap()
+    .starts_with(b"\x89PNG\r\n\x1a\n"));
 }
 
 #[test]
