@@ -48,6 +48,7 @@ function matrixFixture() {
 			name: 'กิจกรรมชุมนุม',
 			code: 'HIDDEN-ACTIVITY-CODE',
 			resourceKind: 'activity',
+			hasNewerCurrentVersion: false,
 			section: 'student_development',
 			subjectGroupId: null,
 			subjectGroupOrder: null,
@@ -350,6 +351,7 @@ test('numeric section, term and annual summaries align school hours while annual
 			name: 'กิจกรรม',
 			code: 'HIDDEN-ACTIVITY',
 			resourceKind: 'activity',
+			hasNewerCurrentVersion: false,
 			section: 'student_development',
 			subjectGroupId: null,
 			subjectGroupOrder: null,
@@ -621,10 +623,12 @@ test('staged section headings preserve duplicate rows and moving one course stay
 		code: 'HIDDEN-ACTIVITY',
 		name: 'กิจกรรม',
 		resourceKind: 'activity',
+		hasNewerCurrentVersion: false,
 		section: 'student_development',
 		subjectGroupId: null,
 		subjectGroupOrder: null,
-		displayOrder: 3
+		displayOrder: 3,
+		metrics: { credit: null, weeklyUnit: 'hour', weeklyValue: '1.50', totalHours: '30' }
 	});
 	const state = await installCurriculumCatalog(page, fixture);
 	await openCurriculumEditor(page);
@@ -677,14 +681,22 @@ for (const width of [390, 1543])
 				code: 'HIDDEN-ACTIVITY',
 				name: 'กิจกรรมพัฒนาผู้เรียน',
 				resourceKind: 'activity',
+				hasNewerCurrentVersion: false,
 				section: 'student_development',
 				subjectGroupId: null,
 				subjectGroupOrder: null,
-				displayOrder: 4
+				displayOrder: 4,
+				metrics: { credit: null, weeklyUnit: 'hour', weeklyValue: '1.50', totalHours: '30' }
 			});
 			const state = await installCurriculumCatalog(page, fixture, { mode });
 			await openCurriculumEditor(page);
 			const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
+			await expect
+				.poll(() => editor.evaluate((node) => Math.round(node.getBoundingClientRect().right)))
+				.toBe(width);
+			await expect
+				.poll(() => editor.evaluate((node) => node.getBoundingClientRect().left))
+				.toBeGreaterThanOrEqual(0);
 			await expect(editor.getByRole('region', { name: 'รายการในหลักสูตร' })).toBeVisible();
 			await expect(
 				editor.getByRole('region', { name: 'เพิ่มแผนการเรียน', exact: true })
@@ -697,7 +709,17 @@ for (const width of [390, 1543])
 				return Math.abs((title.top + title.bottom) / 2 - (settings.top + settings.bottom) / 2);
 			});
 			expect(headerGeometry).toBeLessThan(3);
+			const activityRow = editor
+				.getByRole('region', { name: 'รายการในหลักสูตร' })
+				.getByRole('row')
+				.filter({ hasText: 'กิจกรรมพัฒนาผู้เรียน' })
+				.filter({ has: page.getByRole('button', { name: 'เลื่อนรายการขึ้น', exact: true }) });
+			await expect(activityRow).toHaveCount(1);
+			await expect(activityRow).not.toContainText('หน่วยกิต');
+			await expect(activityRow).toContainText('30 ชม.');
+			await expect(activityRow.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
 			await page.screenshot({
+				animations: 'disabled',
 				path: testInfo.outputPath(`editor-default-${width}-${mode}.png`),
 				fullPage: true
 			});
@@ -707,6 +729,7 @@ for (const width of [390, 1543])
 			).toBeVisible();
 			await expect(editor.getByRole('region', { name: 'รายการในหลักสูตร' })).toHaveCount(0);
 			await page.screenshot({
+				animations: 'disabled',
 				path: testInfo.outputPath(`editor-settings-${width}-${mode}.png`),
 				fullPage: true
 			});
