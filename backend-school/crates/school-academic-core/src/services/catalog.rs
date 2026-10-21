@@ -58,12 +58,19 @@ fn select_current_subject_revision<'a, T: 'a>(
         })
 }
 
-/// Current published IDs only: no upcoming/expired fallback. Callers making a write
-/// decision hold the affected stable-subject locks until their transaction commits.
-pub async fn current_subject_version_ids<'e, E>(
+/// Provider-selected current published revision for one stable subject.
+#[derive(Debug, Clone, Copy)]
+pub struct CurrentSubjectRevision {
+    pub id: Uuid,
+    pub version_no: i32,
+}
+
+/// Current published metadata only: no upcoming/expired fallback. Callers making a
+/// write decision hold stable-subject locks until their transaction commits.
+pub async fn current_subject_revisions<'e, E>(
     executor: E,
     subject_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Uuid>, AppError>
+) -> Result<HashMap<Uuid, CurrentSubjectRevision>, AppError>
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
@@ -85,8 +92,31 @@ where
                     version.version_no,
                 )
             })
-            .map(|version| (*subject_id, version.id))
+            .map(|version| {
+                (
+                    *subject_id,
+                    CurrentSubjectRevision {
+                        id: version.id,
+                        version_no: version.version_no,
+                    },
+                )
+            })
         })
+        .collect())
+}
+
+/// ID-only adapter for current revision admission decisions.
+pub async fn current_subject_version_ids<'e, E>(
+    executor: E,
+    subject_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Uuid>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    Ok(current_subject_revisions(executor, subject_ids)
+        .await?
+        .into_iter()
+        .map(|(subject_id, revision)| (subject_id, revision.id))
         .collect())
 }
 
