@@ -21,13 +21,15 @@
 		label,
 		selectedKeys,
 		disabled = false,
-		onselect
+		onselect,
+		onresolve
 	}: {
 		id: string;
 		label: string;
 		selectedKeys: string[];
 		disabled?: boolean;
 		onselect: (recipient: Recipient, label: string) => void;
+		onresolve: (items: { recipient: Recipient; label: string }[]) => void;
 	} = $props();
 	let open = $state(false),
 		search = $state(''),
@@ -64,6 +66,16 @@
 						if (!request.isCurrent(ticket.revision)) return;
 						staff = people;
 						units = organizations;
+						onresolve([
+							...people.map((person) => ({
+								recipient: { kind: 'user' as const, userId: person.id },
+								label: person.name
+							})),
+							...organizations.map((unit) => ({
+								recipient: { kind: 'organization_unit' as const, organizationUnitId: unit.id },
+								label: `หน่วยงาน: ${unit.name}`
+							}))
+						]);
 						loading = false;
 					},
 					(cause) => {
@@ -113,7 +125,7 @@
 				>{/snippet}</Popover.Trigger
 		>
 		<Popover.Content class="w-[min(28rem,calc(100vw-2rem))] p-0" align="start" collisionPadding={8}>
-			<Command.Root shouldFilter={false}>
+			<Command.Root shouldFilter={false} label={`ค้นหา${label}`}>
 				<Command.Input
 					aria-label={`ค้นหา${label}`}
 					placeholder="พิมพ์ชื่อบุคลากรหรือหน่วยงาน"

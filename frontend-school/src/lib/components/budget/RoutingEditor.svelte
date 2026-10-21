@@ -141,6 +141,16 @@
 				selectedKeys={(step.recipients ?? []).map(recipientKey)}
 				{disabled}
 				onselect={(recipient, name) => addRecipient(step, recipient, name)}
+				onresolve={(items) => {
+					labels = {
+						...labels,
+						...Object.fromEntries(
+							items
+								.filter((item) => currentKeys.includes(recipientKey(item.recipient)))
+								.map((item) => [recipientKey(item.recipient), item.label])
+						)
+					};
+				}}
 			/>
 			<ul class="space-y-2">
 				{#each step.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li

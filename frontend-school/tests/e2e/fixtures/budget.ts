@@ -230,7 +230,8 @@ export async function mockBudget(
 					requestSteps: [],
 					adjustmentSteps: []
 				};
-	const lookupReads: string[] = [];
+	const lookupReads: string[] = [],
+		lookupCompletions: string[] = [];
 	const retainedRows: BudgetDashboard['rows'] = [];
 	const payments: BudgetPayment[] = [],
 		adjustments: BudgetAdjustmentDetail[] = [],
@@ -443,7 +444,22 @@ export async function mockBudget(
 			const url = new URL(route.request().url());
 			lookupReads.push(url.pathname + url.search);
 			const search = url.searchParams.get('search') ?? '';
+			const limit = Number(url.searchParams.get('limit') ?? 50);
+			const items =
+				kind === 'staff'
+					? staffOptions
+					: organizationOptions.filter(
+							(unit) => url.searchParams.get('activeOnly') !== 'true' || unit.is_active
+						);
+			const result = structuredClone(
+				items
+					.filter((item) =>
+						item.name.toLocaleLowerCase('th').includes(search.toLocaleLowerCase('th'))
+					)
+					.slice(0, limit)
+			);
 			if (options.holdLookup?.kind === kind && options.holdLookup.search === search) await held;
+			lookupCompletions.push(url.pathname + url.search);
 			if (
 				!lookupFailed &&
 				options.failLookup?.kind === kind &&
@@ -452,21 +468,7 @@ export async function mockBudget(
 				lookupFailed = true;
 				return reply(route, 'บริการค้นหาผู้พิจารณายังไม่พร้อม', 503);
 			}
-			const limit = Number(url.searchParams.get('limit') ?? 50);
-			const items =
-				kind === 'staff'
-					? staffOptions
-					: organizationOptions.filter(
-							(unit) => url.searchParams.get('activeOnly') !== 'true' || unit.is_active
-						);
-			return reply(
-				route,
-				items
-					.filter((item) =>
-						item.name.toLocaleLowerCase('th').includes(search.toLocaleLowerCase('th'))
-					)
-					.slice(0, limit)
-			);
+			return reply(route, result);
 		});
 	let fileNumber = 880;
 	await page.route('**/api/files', (route) =>
@@ -966,6 +968,7 @@ export async function mockBudget(
 	return {
 		reads,
 		lookupReads,
+		lookupCompletions,
 		writes,
 		release,
 		get workspace() {
