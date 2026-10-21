@@ -1373,6 +1373,7 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     ReplaceCurriculumTermSlotsRequest,
     ReplaceStudyProgramOrderRequest,
     StudyProgramOrderResult,
+    StudyProgramRowVersion,
     CurriculumStructureRequirementInput,
     ReplaceCurriculumStructureRequest,
     AcademicSetupWorkspace,
@@ -4192,6 +4193,48 @@ mod tests {
                 "missing schema {schema}"
             );
         }
+    }
+
+    #[test]
+    fn curriculum_program_order_is_typed_with_explicit_before_revisions() {
+        let document = school_api_value().unwrap();
+        let operation =
+            &document["paths"]["/api/academic/curriculum-levels/{id}/program-order"]["put"];
+        assert_eq!(operation["operationId"], "replaceStudyProgramOrder");
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ReplaceStudyProgramOrderRequest"
+        );
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_StudyProgramOrderResult"
+        );
+        for status in ["400", "401", "403", "404", "409"] {
+            assert_eq!(
+                operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse"
+            );
+        }
+        let schemas = &document["components"]["schemas"];
+        for name in ["StudyProgram", "StudyProgramOption"] {
+            assert_eq!(
+                schemas[name]["properties"]["displayOrder"]["type"],
+                "integer"
+            );
+            assert!(schemas[name]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("displayOrder")));
+        }
+        assert_eq!(
+            schemas["StudyProgramOrderResult"]["properties"]["previousProgramRowVersions"]["items"]
+                ["$ref"],
+            "#/components/schemas/StudyProgramRowVersion"
+        );
+        assert_eq!(
+            schemas["ReplaceStudyProgramOrderRequest"]["additionalProperties"],
+            false
+        );
     }
 
     #[test]

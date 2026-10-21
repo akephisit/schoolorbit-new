@@ -2,8 +2,8 @@ use super::super::models::{
     CopyStudyProgramRequest, CreateCurriculumLevelRequest, CreateCurriculumRequest,
     CreateStudyProgramRequest, CurriculumEdition, CurriculumLevel, PublishCurriculumRequest,
     ReplaceStudyProgramOrderRequest, StudyProgram, StudyProgramOption, StudyProgramOrderResult,
-    UpdateCurriculumLevelRequest, UpdateCurriculumRequest, UpdateStudyProgramRequest,
-    VersionStatus,
+    StudyProgramRowVersion, UpdateCurriculumLevelRequest, UpdateCurriculumRequest,
+    UpdateStudyProgramRequest, VersionStatus,
 };
 use super::parse_row_version;
 use school_authorization::AcademicResourceListFilter;
@@ -360,6 +360,13 @@ pub async fn replace_program_order(
             "ชุดแผนการเรียนเปลี่ยนแล้ว กรุณาโหลดใหม่".into(),
         ));
     }
+    let previous_program_row_versions = programs
+        .iter()
+        .map(|program| StudyProgramRowVersion {
+            id: program.id,
+            row_version: program.row_version,
+        })
+        .collect();
     let current = programs
         .iter()
         .map(|program| program.id)
@@ -378,6 +385,7 @@ pub async fn replace_program_order(
     tx.commit().await?;
     Ok(StudyProgramOrderResult {
         programs,
+        previous_program_row_versions,
         row_version,
     })
 }
@@ -690,5 +698,23 @@ mod removed_default_contract_tests {
         assert!(serde_json::from_value::<UpdateStudyProgramRequest>(update.clone()).is_ok());
         update["isDefault"] = false.into();
         assert!(serde_json::from_value::<UpdateStudyProgramRequest>(update).is_err());
+    }
+}
+
+#[cfg(test)]
+mod program_order_contract_tests {
+    #[test]
+    fn curriculum_program_order_request_is_strict_and_uses_level_revision() {
+        let mut request = serde_json::json!({"draftId":uuid::Uuid::new_v4(),"rowVersion":9,"studyProgramIds":[uuid::Uuid::new_v4()]});
+        let parsed = serde_json::from_value::<crate::models::ReplaceStudyProgramOrderRequest>(
+            request.clone(),
+        )
+        .unwrap();
+        assert_eq!(parsed.row_version, 9);
+        request["isDefault"] = true.into();
+        assert!(
+            serde_json::from_value::<crate::models::ReplaceStudyProgramOrderRequest>(request)
+                .is_err()
+        );
     }
 }

@@ -942,8 +942,17 @@ pub struct ReplaceStudyProgramOrderRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
+pub struct StudyProgramRowVersion {
+    pub id: Uuid,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
 pub struct StudyProgramOrderResult {
     pub programs: Vec<StudyProgram>,
+    pub previous_program_row_versions: Vec<StudyProgramRowVersion>,
     pub row_version: i64,
 }
 

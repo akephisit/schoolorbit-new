@@ -2238,16 +2238,19 @@ pub async fn replace_study_program_order(
         CurriculumAction::Manage,
     )
     .await?;
+    let previous_level_version = request.row_version;
     let value = curriculum::replace_program_order(&context.tenant.pool, id, request).await?;
-    signal_core_changed(
-        &state,
-        &session,
-        &context.actor,
-        "curriculum",
-        Some(id),
-        None,
-        None,
-    );
+    if value.row_version != previous_level_version {
+        signal_core_changed(
+            &state,
+            &session,
+            &context.actor,
+            "curriculum",
+            Some(id),
+            None,
+            None,
+        );
+    }
     Ok(ok(value))
 }
 

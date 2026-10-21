@@ -4229,6 +4229,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
             "CurriculumAction::Read",
         ),
         ("replace_curriculum_term_slots", "CurriculumAction::Manage"),
+        ("replace_study_program_order", "CurriculumAction::Manage"),
         ("list_study_programs", "CurriculumAction::Read"),
         ("create_study_program", "CurriculumAction::Manage"),
         ("copy_study_program", "CurriculumAction::Manage"),

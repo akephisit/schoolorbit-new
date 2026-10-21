@@ -92,6 +92,7 @@ export function curriculumStructure(
 				id: ids.program,
 				curriculumLevelId: version.id,
 				code: 'DEFAULT',
+				displayOrder: 0,
 				nameTh: 'แผนการเรียนพื้นฐาน',
 				nameEn: null,
 				status: version.status,

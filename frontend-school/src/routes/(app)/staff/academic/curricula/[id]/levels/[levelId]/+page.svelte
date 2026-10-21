@@ -6,6 +6,7 @@
 		type HomeroomDeliveryWorkspace
 	} from '#lib/api/learning-delivery.js';
 	import { untrack } from 'svelte';
+	import { orderedCurriculumPrograms } from '#lib/academic-core/curriculum-program-order.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getCurriculumStructureWorkspace,
@@ -14,12 +15,14 @@
 		createStudyProgram,
 		replaceCurriculumStructure,
 		replaceCurriculumTermSlots,
+		replaceStudyProgramOrder,
 		type CurriculumStructureWorkspace,
 		type CurriculumManagementOptions,
 		type CurriculumEdition,
 		type CreateStudyProgramRequest,
 		type CurriculumStructureRequirementInput,
-		type CurriculumTermSlotInput
+		type CurriculumTermSlotInput,
+		type StudyProgramOrderSnapshot
 	} from '#lib/api/academic-core.js';
 	import CurriculumProgramComparison from '#lib/components/academic-core/CurriculumProgramComparison.svelte';
 	import CurriculumTermDocument from '#lib/components/academic-core/CurriculumTermDocument.svelte';
@@ -66,7 +69,7 @@
 				.filter((term) => showingAllTerms || termSlotIds.includes(term.id))
 				.map((term) => term.id);
 		}
-		workspace = result;
+		workspace = { ...result, programs: orderedCurriculumPrograms(result.programs) };
 		if (gradeLevelId !== 'all' && !result.gradeLevels.some((g) => g.id === gradeLevelId))
 			gradeLevelId = result.gradeLevels[0]?.id ?? '';
 		if (!result.programs.some((p) => p.id === studyProgramId))
@@ -178,19 +181,47 @@
 		mutationRevision++;
 		apply(result);
 	}
-	async function saveSlots(slots: CurriculumTermSlotInput[]) {
+	async function saveSlots(rowVersion: number, slots: CurriculumTermSlotInput[]) {
 		if (!workspace) return;
 		const draftId = workspace.level.draftId;
 		if (!draftId) return;
 		const selected = workspace.level;
 		const result = await replaceCurriculumTermSlots(workspace.level.id, {
-			rowVersion: workspace.level.rowVersion,
+			rowVersion,
 			draftId,
 			slots
 		});
 		if (data.levelId !== selected.id || workspace?.level.draftId !== selected.draftId) return;
 		mutationRevision++;
 		apply(result);
+	}
+	function patchProgramOrder(result: StudyProgramOrderSnapshot, levelId: string, draftId: string) {
+		if (data.levelId !== levelId || workspace?.level.draftId !== draftId) return;
+		mutationRevision++;
+		workspace = {
+			...workspace,
+			programs: orderedCurriculumPrograms(result.programs),
+			rowVersion: result.rowVersion,
+			level: { ...workspace.level, rowVersion: result.rowVersion }
+		};
+	}
+	async function saveProgramOrder(rowVersion: number, studyProgramIds: string[]) {
+		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
+		const { id, draftId } = workspace.level;
+		const result = await replaceStudyProgramOrder(id, { draftId, rowVersion, studyProgramIds });
+		patchProgramOrder(result, id, draftId);
+		return result;
+	}
+	async function reviewProgramOrder() {
+		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
+		const { id, draftId } = workspace.level;
+		const latest = await getCurriculumStructureWorkspace(id, { ...data.view });
+		const result: StudyProgramOrderSnapshot = {
+			programs: latest.programs,
+			rowVersion: latest.level.rowVersion
+		};
+		patchProgramOrder(result, id, draftId);
+		return result;
 	}
 	async function createProgram(request: CreateStudyProgramRequest) {
 		if (!workspace) return;
@@ -336,5 +367,7 @@
 		onSaveStructure={saveStructure}
 		onSaveTermSlots={saveSlots}
 		onCreateProgram={createProgram}
+		onSaveProgramOrder={saveProgramOrder}
+		onReviewProgramOrder={reviewProgramOrder}
 		onClose={() => (editorOpen = false)}
 	/>{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { orderedCurriculumProgramOptions } from '#lib/academic-core/curriculum-program-order.js';
 	import type { LearningOfferingOverviewItem } from '#lib/api/learning-delivery.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -39,14 +40,15 @@
 		);
 	});
 	let programOptions = $derived.by(() => {
-		const values: Array<[string, string]> = [];
-		for (const item of items)
-			for (const program of item.studyPrograms)
-				if (!values.some(([id]) => id === program.id))
-					values.push([program.id, `${program.levelName} · ${program.name}`]);
-		return values.sort((left, right) =>
-			left[1].localeCompare(right[1], 'th-TH', { numeric: true })
-		);
+		const programs = items
+			.flatMap((item) => item.studyPrograms)
+			.filter(
+				(program, index, all) => all.findIndex((candidate) => candidate.id === program.id) === index
+			);
+		return orderedCurriculumProgramOptions(programs).map((program): [string, string] => [
+			program.id,
+			`${program.levelName} · ${program.name}`
+		]);
 	});
 	let filteredItems = $derived.by(() => {
 		const query = search.trim().toLocaleLowerCase('th-TH');

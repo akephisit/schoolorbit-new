@@ -47,7 +47,7 @@ fn version_request(
 }
 
 async fn fixture(name: &str) -> Fixture {
-    let pool = prepare_core_fixture_through(name, 133).await;
+    let pool = prepare_core_fixture_through(name, 134).await;
     let grades: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(grades.len(), 3);
@@ -285,7 +285,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     ));
     let other_tenant =
         school_test_db::create_named_test_pool("curriculum_current_subject_other_tenant").await;
-    apply_migrations_through(&other_tenant, 131).await.unwrap();
+    apply_migrations_through(&other_tenant, 134).await.unwrap();
     assert!(matches!(
         curriculum_structure::replace_program_structure(
             &other_tenant,

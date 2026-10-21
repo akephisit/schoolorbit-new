@@ -13045,6 +13045,7 @@ export interface components {
 		};
 		ApiResponse_StudyProgramOrderResult: {
 			data: {
+				previousProgramRowVersions: components['schemas']['StudyProgramRowVersion'][];
 				programs: components['schemas']['StudyProgram'][];
 				/** Format: int64 */
 				rowVersion: number;
@@ -25451,7 +25452,14 @@ export interface components {
 			revisionYear?: number | null;
 		};
 		StudyProgramOrderResult: {
+			previousProgramRowVersions: components['schemas']['StudyProgramRowVersion'][];
 			programs: components['schemas']['StudyProgram'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		StudyProgramRowVersion: {
+			/** Format: uuid */
+			id: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};

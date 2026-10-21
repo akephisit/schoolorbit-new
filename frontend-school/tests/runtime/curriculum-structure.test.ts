@@ -65,6 +65,7 @@ function workspace(): CurriculumStructureWorkspace {
 				id: 'program-a',
 				curriculumLevelId: 'version-1',
 				code: 'GENERAL',
+				displayOrder: 1,
 				nameTh: 'แผนทั่วไป',
 				status: 'draft',
 				rowVersion: 1,
@@ -75,6 +76,7 @@ function workspace(): CurriculumStructureWorkspace {
 				id: 'program-b',
 				curriculumLevelId: 'version-1',
 				code: 'SCI-MATH',
+				displayOrder: 2,
 				nameTh: 'วิทย์–คณิต',
 				status: 'draft',
 				rowVersion: 1,
@@ -380,4 +382,45 @@ test('old-status is preserved per requirement directly from server current metad
 		).length,
 		1
 	);
+});
+
+test('school weekly hours add teaching periods and activity hours in one concrete term without converting stored values', () => {
+	const first = workspace().requirements[0];
+	const activity = {
+		...first,
+		resourceKind: 'activity' as const,
+		metrics: { ...first.metrics, weeklyUnit: 'hour' as const, weeklyValue: '3' }
+	};
+	assert.deepEqual(
+		curriculumTotals([{ ...first, metrics: { ...first.metrics, weeklyValue: '32' } }, activity])
+			.weeklySchoolHours,
+		{ value: '35.00', partial: false }
+	);
+	assert.equal(first.metrics.weeklyUnit, 'period');
+	assert.deepEqual(
+		curriculumTotals([{ ...first, metrics: { ...first.metrics, weeklyValue: null } }])
+			.weeklySchoolHours,
+		{ value: '—', partial: true }
+	);
+	assert.deepEqual(
+		curriculumTotals([
+			{ ...first, metrics: { ...first.metrics, weeklyValue: '0.10' } },
+			{ ...activity, metrics: { ...activity.metrics, weeklyValue: '0.20' } }
+		]).weeklySchoolHours,
+		{ value: '0.30', partial: false }
+	);
+	assert.deepEqual(curriculumTotals([]).weeklySchoolHours, { value: '0.00', partial: false });
+});
+
+test('school weekly hours are unavailable across terms, grades or programs without marking the scope incomplete', () => {
+	const first = workspace().requirements[0];
+	for (const other of [
+		{ ...first, termSlotId: 'term-2' },
+		{ ...first, gradeLevel: { ...first.gradeLevel, id: 'grade-2' } },
+		{ ...first, studyProgramId: 'program-b' }
+	]) {
+		const totals = curriculumTotals([first, other]);
+		assert.deepEqual(totals.weeklySchoolHours, { value: '—', partial: false });
+		assert.deepEqual(totals.weeklyPeriods, { value: '6.00', partial: false });
+	}
 });
