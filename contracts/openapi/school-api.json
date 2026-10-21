@@ -8833,6 +8833,40 @@
         ],
         "type": "object"
       },
+      "ApiResponse_CurriculumCreditCriteriaResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "criteria": {
+                "items": {
+                  "$ref": "#/components/schemas/CurriculumCreditCriterion"
+                },
+                "type": "array"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "criteria",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_CurriculumDraftDiscardPreview": {
         "properties": {
           "data": {
@@ -9002,6 +9036,16 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "creditCriteria": {
+                "items": {
+                  "$ref": "#/components/schemas/CurriculumCreditCriterion"
+                },
+                "type": "array"
+              },
+              "creditCriteriaRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
               "description": {
                 "type": [
                   "string",
@@ -9080,6 +9124,8 @@
               "code",
               "nameTh",
               "gradeLevelIds",
+              "creditCriteria",
+              "creditCriteriaRowVersion",
               "isActive",
               "rowVersion",
               "migrated",
@@ -23475,6 +23521,16 @@
                   "format": "date-time",
                   "type": "string"
                 },
+                "creditCriteria": {
+                  "items": {
+                    "$ref": "#/components/schemas/CurriculumCreditCriterion"
+                  },
+                  "type": "array"
+                },
+                "creditCriteriaRowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
                 "description": {
                   "type": [
                     "string",
@@ -23553,6 +23609,8 @@
                 "code",
                 "nameTh",
                 "gradeLevelIds",
+                "creditCriteria",
+                "creditCriteriaRowVersion",
                 "isActive",
                 "rowVersion",
                 "migrated",
@@ -42062,6 +42120,16 @@
           "code": {
             "type": "string"
           },
+          "creditCategory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CurriculumCourseCreditCategory"
+              }
+            ]
+          },
           "effectiveFrom": {
             "format": "date",
             "type": "string"
@@ -42115,6 +42183,13 @@
         ],
         "type": "object"
       },
+      "CurriculumCourseCreditCategory": {
+        "enum": [
+          "basic",
+          "additional"
+        ],
+        "type": "string"
+      },
       "CurriculumCreateOptions": {
         "properties": {
           "gradeLevels": {
@@ -42126,6 +42201,71 @@
         },
         "required": [
           "gradeLevels"
+        ],
+        "type": "object"
+      },
+      "CurriculumCreditCriteriaComparison": {
+        "enum": [
+          "equal",
+          "minimum"
+        ],
+        "type": "string"
+      },
+      "CurriculumCreditCriteriaResult": {
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumCreditCriterion"
+            },
+            "type": "array"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "criteria",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "CurriculumCreditCriteriaScope": {
+        "enum": [
+          "annual",
+          "level"
+        ],
+        "type": "string"
+      },
+      "CurriculumCreditCriterion": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison": {
+            "$ref": "#/components/schemas/CurriculumCreditCriteriaComparison"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "gradeLevelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CurriculumCreditCriteriaScope"
+          },
+          "targetCredits": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "comparison",
+          "targetCredits",
+          "enabled",
+          "gradeLevelIds"
         ],
         "type": "object"
       },
@@ -42368,6 +42508,16 @@
             "format": "date-time",
             "type": "string"
           },
+          "creditCriteria": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumCreditCriterion"
+            },
+            "type": "array"
+          },
+          "creditCriteriaRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
           "description": {
             "type": [
               "string",
@@ -42446,6 +42596,8 @@
           "code",
           "nameTh",
           "gradeLevelIds",
+          "creditCriteria",
+          "creditCriteriaRowVersion",
           "isActive",
           "rowVersion",
           "migrated",
@@ -42875,6 +43027,16 @@
           },
           "code": {
             "type": "string"
+          },
+          "creditCategory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CurriculumCourseCreditCategory"
+              }
+            ]
           },
           "displayOrder": {
             "format": "int32",
@@ -56629,6 +56791,31 @@
         "required": [
           "periods",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "ReplaceCurriculumCreditCriteriaRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/CurriculumCreditCriterion"
+            },
+            "type": "array"
+          },
+          "draftId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draftId",
+          "rowVersion",
+          "criteria"
         ],
         "type": "object"
       },
@@ -75050,6 +75237,98 @@
               }
             },
             "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/curriculum-levels/{id}/credit-criteria": {
+      "put": {
+        "operationId": "replaceCurriculumCreditCriteria",
+        "parameters": [
+          {
+            "description": "Resource identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceCurriculumCreditCriteriaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumCreditCriteriaResult"
+                }
+              }
+            },
+            "description": "Saved basic-credit criteria and independent criteria revision"
           },
           "400": {
             "content": {

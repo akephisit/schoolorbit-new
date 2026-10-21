@@ -663,6 +663,7 @@ use utoipa::OpenApi;
         school_academic_http::core::handlers::get_curriculum_structure_workspace,
         school_academic_http::core::handlers::replace_curriculum_term_slots,
         school_academic_http::core::handlers::replace_study_program_order,
+        school_academic_http::core::handlers::replace_curriculum_credit_criteria,
         school_academic_http::core::handlers::list_study_programs,
         school_academic_http::core::handlers::create_study_program,
         school_academic_http::core::handlers::get_study_program,
@@ -1364,6 +1365,12 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     CurriculumTermSlot,
     CatalogWeeklyUnit,
     CurriculumDocumentSection,
+    CurriculumCourseCreditCategory,
+    CurriculumCreditCriterion,
+    CurriculumCreditCriteriaScope,
+    CurriculumCreditCriteriaComparison,
+    ReplaceCurriculumCreditCriteriaRequest,
+    CurriculumCreditCriteriaResult,
     CatalogCurriculumMetrics,
     CurriculumStructureRequirement,
     CurriculumValidationNotice,
@@ -4192,6 +4199,46 @@ mod tests {
                 !document["components"]["schemas"][schema].is_null(),
                 "missing schema {schema}"
             );
+        }
+    }
+
+    #[test]
+    fn curriculum_credit_criteria_use_an_independent_typed_contract() {
+        let document = school_api_value().unwrap();
+        let operation =
+            &document["paths"]["/api/academic/curriculum-levels/{id}/credit-criteria"]["put"];
+        assert_eq!(operation["operationId"], "replaceCurriculumCreditCriteria");
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ReplaceCurriculumCreditCriteriaRequest"
+        );
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_CurriculumCreditCriteriaResult"
+        );
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["ReplaceCurriculumCreditCriteriaRequest"]["additionalProperties"],
+            false
+        );
+        assert!(schemas["CurriculumCreditCriterion"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("gradeLevelIds")));
+        for property in ["creditCriteria", "creditCriteriaRowVersion"] {
+            assert!(schemas["CurriculumLevel"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!(property)));
+        }
+        for name in [
+            "CurriculumStructureRequirement",
+            "CurriculumCatalogVersionOption",
+        ] {
+            assert!(!schemas[name]["properties"]["creditCategory"].is_null());
+        }
+        for status in ["400", "401", "403", "404", "409"] {
+            assert!(!operation["responses"][status].is_null());
         }
     }
 

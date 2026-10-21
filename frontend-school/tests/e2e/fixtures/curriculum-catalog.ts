@@ -4,7 +4,8 @@ import type {
 	CurriculumStructureRequirement,
 	ReplaceCurriculumStructureRequest,
 	ReplaceCurriculumTermSlotsRequest,
-	ReplaceStudyProgramOrderRequest
+	ReplaceStudyProgramOrderRequest,
+	ReplaceCurriculumCreditCriteriaRequest
 } from '../../../src/lib/api/academic-core.js';
 import { DEFAULT_APPEARANCE, schoolAppearanceCss } from '../../../src/lib/appearance/model.js';
 import {
@@ -67,7 +68,8 @@ export function curriculumCatalogFixture(
 		effectiveUntil: null,
 		selectableForNewRequirement: true,
 		gradeLevelIds: workspace.gradeLevels.map((grade) => grade.id),
-		section: 'basic_course'
+		section: 'basic_course',
+		creditCategory: 'basic'
 	};
 	const old = {
 		...current,
@@ -99,6 +101,7 @@ export function curriculumCatalogFixture(
 			id: 'activity-v1',
 			catalogId: 'activity-stable',
 			resourceKind: 'activity',
+			creditCategory: null,
 			section: 'student_development',
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
@@ -110,6 +113,7 @@ export function curriculumCatalogFixture(
 			id: 'activity-v2',
 			catalogId: 'activity-stable',
 			resourceKind: 'activity',
+			creditCategory: null,
 			section: 'student_development',
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
@@ -155,6 +159,7 @@ export async function installCurriculumCatalog(
 		mode?: 'light' | 'dark';
 		failSaveOnce?: boolean;
 		failOrderOnce?: boolean;
+		failCriteriaOnce?: boolean;
 		concurrentStructureOnOrder?: boolean;
 		concurrentSlotsOnOrderConflict?: boolean;
 	} = {}
@@ -164,6 +169,7 @@ export async function installCurriculumCatalog(
 	const unexpected: string[] = [];
 	let saveAttempts = 0;
 	let orderAttempts = 0;
+	let criteriaAttempts = 0;
 	let concurrentStructureApplied = false;
 	let structureReads = 0;
 	page.on('pageerror', (error) => errors.push(error.message));
@@ -210,6 +216,37 @@ export async function installCurriculumCatalog(
 			}
 			if (path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/management-options`)
 				return reply(route, fixture.managementOptions);
+			if (
+				path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/credit-criteria` &&
+				method === 'PUT'
+			) {
+				const body: ReplaceCurriculumCreditCriteriaRequest = request.postDataJSON();
+				if (
+					(options.failCriteriaOnce && ++criteriaAttempts === 1) ||
+					body.rowVersion !== fixture.workspace.level.creditCriteriaRowVersion
+				)
+					return reply(
+						route,
+						'เกณฑ์หน่วยกิตเปลี่ยนไปแล้ว กรุณาตรวจสอบข้อมูลล่าสุด ร่างนี้ยังอยู่',
+						409
+					);
+				if (
+					body.criteria.some(
+						(criterion) =>
+							criterion.gradeLevelIds.length !== fixture.workspace.level.gradeLevelIds.length ||
+							!criterion.gradeLevelIds.every((id) =>
+								fixture.workspace.level.gradeLevelIds.includes(id)
+							)
+					)
+				)
+					return reply(route, 'ชั้นที่ครอบคลุมเปลี่ยนไปแล้ว', 409);
+				fixture.workspace.level.creditCriteria = body.criteria;
+				fixture.workspace.level.creditCriteriaRowVersion++;
+				return reply(route, {
+					criteria: body.criteria,
+					rowVersion: fixture.workspace.level.creditCriteriaRowVersion
+				});
+			}
 			if (
 				path.startsWith('/api/academic/study-programs/') &&
 				path.endsWith('/structure') &&

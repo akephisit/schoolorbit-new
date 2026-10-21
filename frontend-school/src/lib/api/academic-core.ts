@@ -52,6 +52,10 @@ export type CurriculumCreateOptions = Schemas['CurriculumCreateOptions'];
 export type CurriculumManagementOptions = Schemas['CurriculumManagementOptions'];
 export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOption'];
 export type CurriculumLevel = Schemas['CurriculumLevel'];
+export type CurriculumCreditCriterion = Schemas['CurriculumCreditCriterion'];
+export type ReplaceCurriculumCreditCriteriaRequest =
+	Schemas['ReplaceCurriculumCreditCriteriaRequest'];
+export type CurriculumCreditCriteriaResult = Schemas['CurriculumCreditCriteriaResult'];
 export type CurriculumLevelView = Schemas['CurriculumLevelView'];
 export type StudyProgram = Schemas['StudyProgram'];
 export type ReplaceStudyProgramOrderRequest = Schemas['ReplaceStudyProgramOrderRequest'];
@@ -403,6 +407,17 @@ export const createStudyProgram = (curriculumLevelId: string, body: CreateStudyP
 			body
 		),
 		'สร้างแผนการเรียนไม่สำเร็จ'
+	);
+export const replaceCurriculumCreditCriteria = (
+	curriculumLevelId: string,
+	body: ReplaceCurriculumCreditCriteriaRequest
+) =>
+	academicData(
+		apiClient.put<CurriculumCreditCriteriaResult>(
+			`/api/academic/curriculum-levels/${requiredContext(curriculumLevelId, 'ระดับการศึกษา')}/credit-criteria`,
+			body
+		),
+		'บันทึกเกณฑ์หน่วยกิตไม่สำเร็จ'
 	);
 export const replaceStudyProgramOrder = (
 	curriculumLevelId: string,

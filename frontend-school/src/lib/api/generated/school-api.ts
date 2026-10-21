@@ -581,6 +581,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/curriculum-levels/{id}/credit-criteria': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['replaceCurriculumCreditCriteria'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-levels/{id}/management-options': {
 		parameters: {
 			query?: never;
@@ -10861,6 +10877,15 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CurriculumCreditCriteriaResult: {
+			data: {
+				criteria: components['schemas']['CurriculumCreditCriterion'][];
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CurriculumDraftDiscardPreview: {
 			data: {
 				/** Format: int64 */
@@ -10916,6 +10941,9 @@ export interface components {
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
+				creditCriteria: components['schemas']['CurriculumCreditCriterion'][];
+				/** Format: int64 */
+				creditCriteriaRowVersion: number;
 				description?: string | null;
 				/** Format: uuid */
 				draftId?: string | null;
@@ -14815,6 +14843,9 @@ export interface components {
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
+				creditCriteria: components['schemas']['CurriculumCreditCriterion'][];
+				/** Format: int64 */
+				creditCriteriaRowVersion: number;
 				description?: string | null;
 				/** Format: uuid */
 				draftId?: string | null;
@@ -19870,6 +19901,7 @@ export interface components {
 			/** Format: uuid */
 			catalogId: string;
 			code: string;
+			creditCategory?: null | components['schemas']['CurriculumCourseCreditCategory'];
 			/** Format: date */
 			effectiveFrom: string;
 			/** Format: date */
@@ -19884,8 +19916,26 @@ export interface components {
 			/** Format: int32 */
 			versionNo: number;
 		};
+		/** @enum {string} */
+		CurriculumCourseCreditCategory: 'basic' | 'additional';
 		CurriculumCreateOptions: {
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
+		};
+		/** @enum {string} */
+		CurriculumCreditCriteriaComparison: 'equal' | 'minimum';
+		CurriculumCreditCriteriaResult: {
+			criteria: components['schemas']['CurriculumCreditCriterion'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		/** @enum {string} */
+		CurriculumCreditCriteriaScope: 'annual' | 'level';
+		CurriculumCreditCriterion: {
+			comparison: components['schemas']['CurriculumCreditCriteriaComparison'];
+			enabled: boolean;
+			gradeLevelIds: string[];
+			scope: components['schemas']['CurriculumCreditCriteriaScope'];
+			targetCredits: string;
 		};
 		/** @enum {string} */
 		CurriculumDeliveryAlignmentState:
@@ -19963,6 +20013,9 @@ export interface components {
 			code: string;
 			/** Format: date-time */
 			createdAt: string;
+			creditCriteria: components['schemas']['CurriculumCreditCriterion'][];
+			/** Format: int64 */
+			creditCriteriaRowVersion: number;
 			description?: string | null;
 			/** Format: uuid */
 			draftId?: string | null;
@@ -20096,6 +20149,7 @@ export interface components {
 			/** Format: uuid */
 			catalogVersionId: string;
 			code: string;
+			creditCategory?: null | components['schemas']['CurriculumCourseCreditCategory'];
 			/** Format: int32 */
 			displayOrder: number;
 			gradeLevel: components['schemas']['GradeLevelLookupItem'];
@@ -23989,6 +24043,13 @@ export interface components {
 		};
 		ReplaceBellSchedulePeriodsRequest: {
 			periods: components['schemas']['BellSchedulePeriodInput'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		ReplaceCurriculumCreditCriteriaRequest: {
+			criteria: components['schemas']['CurriculumCreditCriterion'][];
+			/** Format: uuid */
+			draftId: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};
@@ -31198,6 +31259,78 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_StudyProgram'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision or publication conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceCurriculumCreditCriteria: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceCurriculumCreditCriteriaRequest'];
+			};
+		};
+		responses: {
+			/** @description Saved basic-credit criteria and independent criteria revision */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumCreditCriteriaResult'];
 				};
 			};
 			/** @description Validation failed */

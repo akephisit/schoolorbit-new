@@ -1,3 +1,4 @@
+import type { CreditCriterionAssessment } from '../academic-core/curriculum-credit-criteria.ts';
 import { orderedCurriculumPrograms } from '../academic-core/curriculum-program-order.ts';
 import type {
 	CurriculumDocumentSection,
@@ -15,6 +16,8 @@ export const ALL_GRADES = 'all';
 export type MetricTotal = { value: string; partial: boolean };
 export type CurriculumTotals = {
 	credits: MetricTotal;
+	basicCredits: MetricTotal;
+	additionalCredits: MetricTotal;
 	hours: MetricTotal;
 	weeklyPeriods: MetricTotal;
 	weeklyHours: MetricTotal;
@@ -88,7 +91,10 @@ export function curriculumWeeklySchoolHours(
 	);
 }
 export type CurriculumSummaryMetrics = {
+	basicAssessment?: CreditCriterionAssessment | null;
 	credits: MetricTotal;
+	basicCredits: MetricTotal;
+	additionalCredits: MetricTotal;
 	weekly: MetricTotal | null;
 	hours: MetricTotal;
 };
@@ -103,6 +109,8 @@ export function curriculumSummaryMetrics(
 ): CurriculumSummaryMetrics {
 	return {
 		credits: totals.credits,
+		basicCredits: totals.basicCredits,
+		additionalCredits: totals.additionalCredits,
 		weekly: weekly ? totals.weeklySchoolHours : null,
 		hours: totals.hours
 	};
@@ -112,9 +120,20 @@ export function curriculumTotals(
 ): CurriculumTotals {
 	const courses = rows.filter((row) => row.resourceKind === 'course');
 	const activities = rows.filter((row) => row.resourceKind === 'activity');
+	const unknownCategory = courses.some(
+		(row) => row.creditCategory !== 'basic' && row.creditCategory !== 'additional'
+	);
+	function categoryTotal(category: 'basic' | 'additional'): MetricTotal {
+		const total = sum(
+			courses.filter((row) => row.creditCategory === category).map((row) => row.metrics.credit)
+		);
+		return { ...total, partial: total.partial || unknownCategory };
+	}
 	return {
 		weeklySchoolHours: curriculumWeeklySchoolHours(rows),
 		credits: sum(courses.map((row) => row.metrics.credit)),
+		basicCredits: categoryTotal('basic'),
+		additionalCredits: categoryTotal('additional'),
 		hours: sum(rows.map((row) => row.metrics.totalHours)),
 		weeklyPeriods: sum(
 			courses.map((row) => (row.metrics.weeklyUnit === 'period' ? row.metrics.weeklyValue : null))
@@ -122,6 +141,19 @@ export function curriculumTotals(
 		weeklyHours: sum(
 			activities.map((row) => (row.metrics.weeklyUnit === 'hour' ? row.metrics.weeklyValue : null))
 		)
+	};
+}
+export function compareCurriculumCredits(
+	actual: string,
+	target: string
+): { relation: number; difference: string } | null {
+	const left = decimal(actual),
+		right = decimal(target);
+	if (left === null || right === null) return null;
+	const delta = left - right;
+	return {
+		relation: delta < 0n ? -1 : delta > 0n ? 1 : 0,
+		difference: format(delta < 0n ? -delta : delta)
 	};
 }
 export function matrixCellKey(programId: string, termId: string): string {

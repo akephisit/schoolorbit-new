@@ -816,6 +816,9 @@ pub struct CurriculumLevel {
     pub name_en: Option<String>,
     pub description: Option<String>,
     pub grade_level_ids: Vec<Uuid>,
+    #[sqlx(json)]
+    pub credit_criteria: Vec<CurriculumCreditCriterion>,
+    pub credit_criteria_row_version: i64,
     pub is_active: bool,
     pub row_version: i64,
     pub migrated: bool,
@@ -824,6 +827,59 @@ pub struct CurriculumLevel {
     pub edition_name: String,
     pub revision_year: Option<i32>,
     pub status: VersionStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumCreditCriteriaScope {
+    Annual,
+    Level,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CurriculumCreditCriteriaComparison {
+    Equal,
+    Minimum,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumCreditCriterion {
+    pub scope: CurriculumCreditCriteriaScope,
+    pub comparison: CurriculumCreditCriteriaComparison,
+    pub target_credits: String,
+    pub enabled: bool,
+    pub grade_level_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceCurriculumCreditCriteriaRequest {
+    pub draft_id: Uuid,
+    pub row_version: i64,
+    pub criteria: Vec<CurriculumCreditCriterion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumCreditCriteriaResult {
+    pub criteria: Vec<CurriculumCreditCriterion>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum CurriculumCourseCreditCategory {
+    Basic,
+    Additional,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -990,6 +1046,7 @@ pub struct CurriculumCatalogVersionOption {
     pub effective_until: Option<NaiveDate>,
     pub grade_level_ids: Vec<Uuid>,
     pub section: CurriculumDocumentSection,
+    pub credit_category: Option<CurriculumCourseCreditCategory>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1064,6 +1121,7 @@ pub struct CurriculumStructureRequirement {
     pub code: String,
     pub name: String,
     pub section: CurriculumDocumentSection,
+    pub credit_category: Option<CurriculumCourseCreditCategory>,
     pub subject_group_id: Option<Uuid>,
     pub subject_group_order: Option<i32>,
     pub requirement_kind: RequirementKind,

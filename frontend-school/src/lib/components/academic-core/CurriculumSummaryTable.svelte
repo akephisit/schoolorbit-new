@@ -1,14 +1,17 @@
 <script lang="ts">
 	import type { CurriculumSummaryRow, MetricTotal } from '#lib/academic/curriculum-structure.js';
+	import CurriculumCreditCriterionIndicator from './CurriculumCreditCriterionIndicator.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	let {
 		programs,
 		rows,
-		label
+		label,
+		creditBreakdown = false
 	}: {
 		programs: readonly { id: string; nameTh: string }[];
 		rows: readonly CurriculumSummaryRow[];
 		label: string;
+		creditBreakdown?: boolean;
 	} = $props();
 </script>
 
@@ -25,13 +28,20 @@
 			<Table.Row>
 				<Table.Head rowspan={2} class="min-w-44 whitespace-normal">{label}</Table.Head>
 				{#each programs as program (program.id)}<Table.Head
-						colspan={3}
+						colspan={creditBreakdown ? 5 : 3}
 						scope="colgroup"
 						class="border-l text-center whitespace-normal">{program.nameTh}</Table.Head
 					>{/each}
 			</Table.Row>
 			<Table.Row
 				>{#each programs as program (program.id)}
+					{#if creditBreakdown}
+						<Table.Head class="min-w-24 border-l text-center whitespace-normal"
+							>หน่วยกิตพื้นฐาน</Table.Head
+						>
+						<Table.Head class="min-w-24 text-center whitespace-normal">หน่วยกิตเพิ่มเติม</Table.Head
+						>
+					{/if}
 					<Table.Head class="min-w-24 border-l text-center whitespace-normal"
 						>หน่วยกิตรวม</Table.Head
 					>
@@ -44,6 +54,18 @@
 			>{#each rows as row (row.key)}<Table.Row>
 					<Table.Cell class="whitespace-normal">{row.label}</Table.Cell>
 					{#each programs as program (program.id)}{@const totals = row.totals[program.id]}
+						{#if creditBreakdown}
+							<Table.Cell class="border-l text-center tabular-nums"
+								>{@render metric(
+									totals?.basicCredits ?? null
+								)}{#if totals?.basicAssessment}<CurriculumCreditCriterionIndicator
+										assessment={totals.basicAssessment}
+									/>{/if}</Table.Cell
+							>
+							<Table.Cell class="text-center tabular-nums"
+								>{@render metric(totals?.additionalCredits ?? null)}</Table.Cell
+							>
+						{/if}
 						<Table.Cell class="border-l text-center tabular-nums"
 							>{@render metric(totals?.credits ?? null)}</Table.Cell
 						>

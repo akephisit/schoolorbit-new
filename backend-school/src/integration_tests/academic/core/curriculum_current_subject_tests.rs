@@ -47,7 +47,7 @@ fn version_request(
 }
 
 async fn fixture(name: &str) -> Fixture {
-    let pool = prepare_core_fixture_through(name, 134).await;
+    let pool = prepare_core_fixture_through(name, 135).await;
     let grades: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(grades.len(), 3);
@@ -285,7 +285,7 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
     ));
     let other_tenant =
         school_test_db::create_named_test_pool("curriculum_current_subject_other_tenant").await;
-    apply_migrations_through(&other_tenant, 134).await.unwrap();
+    apply_migrations_through(&other_tenant, 135).await.unwrap();
     assert!(matches!(
         curriculum_structure::replace_program_structure(
             &other_tenant,
@@ -758,4 +758,92 @@ async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_pr
         .all(|item| !item.has_newer_current_version));
     assert_eq!(before, snapshot(&f).await);
     assert!(expired.version_no > f.v1.version_no);
+}
+
+#[tokio::test]
+async fn curriculum_credit_category_unknown_published_pin_stays_unknown_after_new_revision() {
+    use school_academic_core::models::{
+        CurriculumCourseCreditCategory, CurriculumDocumentSection, CurriculumViewQuery,
+    };
+    use school_academic_core::services::curriculum_publications;
+    let f = fixture("curriculum_credit_category_unknown_pin").await;
+    let mut unknown = version_request(
+        "รายวิชาพื้นฐานชื่อนี้ไม่กำหนดประเภท",
+        f.grade,
+        f.v1.effective_from,
+        None,
+    );
+    unknown.subject_type = "LEGACY-UNKNOWN".into();
+    let unknown = publish(
+        &f.pool,
+        catalog::create_subject_version(&f.pool, f.subject, unknown)
+            .await
+            .unwrap(),
+    )
+    .await;
+    let saved = save(&f, vec![row(&f, unknown.id)]).await.unwrap();
+    assert_eq!(saved.requirements[0].credit_category, None);
+    assert_eq!(
+        saved.requirements[0].section,
+        CurriculumDocumentSection::BasicCourse
+    );
+    let edition = curriculum::get(&f.pool, f.edition).await.unwrap();
+    let published = curriculum::publish(
+        &f.pool,
+        f.edition,
+        PublishCurriculumRequest {
+            draft_id: edition.draft_id.unwrap(),
+            row_version: edition.row_version,
+            change_note: "Preserve unknown catalog classification".into(),
+        },
+        fixture_actor(&f.pool).await,
+    )
+    .await
+    .unwrap();
+    let newer = revision(&f, "ชื่อเดียวกันไม่เปลี่ยนประเภทเก่า").await;
+    let pinned = curriculum_publications::read_workspace(
+        &f.pool,
+        f.level,
+        &CurriculumViewQuery {
+            publication_id: published.current_publication_id,
+            draft_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(pinned.requirements[0].catalog_version_id, unknown.id);
+    assert_eq!(pinned.requirements[0].credit_category, None);
+    let options = workspaces::curriculum_management_options(
+        &f.pool,
+        f.level,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        options
+            .catalog_versions
+            .iter()
+            .find(|option| option.id == unknown.id)
+            .unwrap()
+            .credit_category,
+        None
+    );
+    assert_eq!(
+        options
+            .catalog_versions
+            .iter()
+            .find(|option| option.id == newer.id)
+            .unwrap()
+            .credit_category,
+        Some(CurriculumCourseCreditCategory::Basic)
+    );
+    assert!(options
+        .catalog_versions
+        .iter()
+        .filter(|option| option.resource_kind == RequirementResourceKind::Activity)
+        .all(|option| option.credit_category.is_none()));
 }

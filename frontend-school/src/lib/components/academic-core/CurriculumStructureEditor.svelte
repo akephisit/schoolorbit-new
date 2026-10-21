@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type {
 		CreateStudyProgramRequest,
+		CurriculumCreditCriterion,
+		CurriculumCreditCriteriaResult,
 		CurriculumManagementOptions,
 		CurriculumStructureRequirementInput,
 		CurriculumStructureWorkspace,
@@ -16,6 +18,12 @@
 		selectableCatalogOption,
 		type StagedCurriculumRequirement
 	} from '#lib/academic-core/curriculum-catalog-selection.js';
+	import CurriculumCreditCriteriaSettings from './CurriculumCreditCriteriaSettings.svelte';
+	import {
+		sameCoveredGrades,
+		validateCreditCriteria
+	} from '#lib/academic-core/curriculum-credit-criteria.js';
+	import { curriculumMetric } from '#lib/academic/curriculum-structure.js';
 	import { formatEffectiveRange } from '#lib/academic-core/catalog-presentation.js';
 	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -56,6 +64,8 @@
 		onCreateProgram,
 		onSaveProgramOrder,
 		onReviewProgramOrder,
+		onSaveCreditCriteria,
+		onReviewCreditCriteria,
 		onClose
 	}: {
 		workspace: CurriculumStructureWorkspace;
@@ -75,6 +85,11 @@
 			studyProgramIds: string[]
 		) => Promise<StudyProgramOrderResult>;
 		onReviewProgramOrder: () => Promise<StudyProgramOrderSnapshot>;
+		onSaveCreditCriteria: (
+			rowVersion: number,
+			criteria: CurriculumCreditCriterion[]
+		) => Promise<CurriculumCreditCriteriaResult>;
+		onReviewCreditCriteria: () => Promise<CurriculumCreditCriteriaResult>;
 		onClose: () => void;
 	} = $props();
 	type StagedRequirement = StagedCurriculumRequirement;
@@ -125,6 +140,63 @@
 	}
 	function initialLevelRevision() {
 		return workspace.level.rowVersion;
+	}
+	function initialCreditCriteria() {
+		return structuredClone(workspace.level.creditCriteria);
+	}
+	function initialCreditCriteriaRevision() {
+		return workspace.level.creditCriteriaRowVersion;
+	}
+	let criteriaDraft = $state.raw<CurriculumCreditCriterion[]>(initialCreditCriteria());
+	let criteriaBaseline = $state.raw<CurriculumCreditCriterion[]>(initialCreditCriteria());
+	let criteriaRowVersion = $state(initialCreditCriteriaRevision());
+	let criteriaSaving = $state(false);
+	let criteriaError = $state('');
+	let criteriaConflict = $state(false);
+	let criteriaDirty = $derived(
+		JSON.stringify(criteriaDraft) !== JSON.stringify(criteriaBaseline) ||
+			criteriaDraft.some(
+				(criterion) => !sameCoveredGrades(criterion.gradeLevelIds, workspace.level.gradeLevelIds)
+			)
+	);
+	async function saveCreditCriteria() {
+		if (criteriaSaving || criteriaConflict || !criteriaDirty) return;
+		criteriaError = validateCreditCriteria(criteriaDraft);
+		if (criteriaError) return;
+		criteriaSaving = true;
+		try {
+			const result = await onSaveCreditCriteria(
+				criteriaRowVersion,
+				criteriaDraft.map((criterion) => ({
+					...criterion,
+					targetCredits: curriculumMetric(criterion.targetCredits),
+					gradeLevelIds: [...workspace.level.gradeLevelIds]
+				}))
+			);
+			criteriaDraft = structuredClone(result.criteria);
+			criteriaBaseline = structuredClone(result.criteria);
+			criteriaRowVersion = result.rowVersion;
+		} catch (error) {
+			criteriaConflict = error instanceof ApiClientError && error.status === 409;
+			criteriaError = error instanceof Error ? error.message : 'บันทึกเกณฑ์ไม่สำเร็จ';
+		} finally {
+			criteriaSaving = false;
+		}
+	}
+	async function reviewCreditCriteria() {
+		if (criteriaSaving) return;
+		criteriaSaving = true;
+		try {
+			const result = await onReviewCreditCriteria();
+			criteriaBaseline = structuredClone(result.criteria);
+			criteriaRowVersion = result.rowVersion;
+			criteriaConflict = false;
+			criteriaError = '';
+		} catch (error) {
+			criteriaError = error instanceof Error ? error.message : 'โหลดเกณฑ์ไม่สำเร็จ';
+		} finally {
+			criteriaSaving = false;
+		}
 	}
 	let settingsOpen = $state(false);
 	let orderIds = $state<string[]>(initialOrder());
@@ -527,6 +599,23 @@
 						>
 					</div>
 				</section>
+				<CurriculumCreditCriteriaSettings
+					criteria={criteriaDraft}
+					currentCriteria={criteriaBaseline}
+					grades={workspace.gradeLevels}
+					coveredGradeIds={workspace.level.gradeLevelIds}
+					saving={criteriaSaving}
+					dirty={criteriaDirty}
+					error={criteriaError}
+					conflict={criteriaConflict}
+					onchange={(criteria) => (criteriaDraft = criteria)}
+					onsave={saveCreditCriteria}
+					onreview={reviewCreditCriteria}
+					onreset={() => {
+						criteriaDraft = structuredClone(criteriaBaseline);
+						criteriaError = '';
+					}}
+				/>
 				<CurriculumTermSlotEditor slots={stagedSlots} onchange={(slots) => (stagedSlots = slots)} />
 				{#if slotsDirty}<div
 						class="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted p-3 text-sm"

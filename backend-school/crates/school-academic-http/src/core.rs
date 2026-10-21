@@ -173,6 +173,10 @@ pub fn routes() -> Router<AcademicHttpState> {
             put(handlers::replace_curriculum_term_slots),
         )
         .route(
+            "/curriculum-levels/{id}/credit-criteria",
+            put(handlers::replace_curriculum_credit_criteria),
+        )
+        .route(
             "/curriculum-levels/{id}/program-order",
             put(handlers::replace_study_program_order),
         )
