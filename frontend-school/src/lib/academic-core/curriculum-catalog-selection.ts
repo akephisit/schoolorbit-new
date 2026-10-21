@@ -1,5 +1,4 @@
 import { curriculumSections } from '../academic/curriculum-structure.ts';
-import { moveCurriculumItem } from './curriculum-program-order.ts';
 import type {
 	CurriculumManagementOptions,
 	CurriculumStructureRequirement,
@@ -143,34 +142,4 @@ export function groupStagedRequirements(
 			.filter((item) => stagedRequirementSection(item, options, originals) === section.id)
 			.sort((a, b) => a.displayOrder - b.displayOrder)
 	}));
-}
-export function moveStagedRequirementWithinSection(
-	requirements: readonly StagedCurriculumRequirement[],
-	target: StagedCurriculumRequirement,
-	direction: -1 | 1,
-	options: CurriculumCatalogOption[],
-	originals: CurriculumStructureRequirement[]
-): StagedCurriculumRequirement[] {
-	const section = stagedRequirementSection(target, options, originals);
-	const rows = requirements
-		.filter(
-			(item) =>
-				item.studyProgramId === target.studyProgramId &&
-				item.gradeLevelId === target.gradeLevelId &&
-				item.termSlotId === target.termSlotId &&
-				stagedRequirementSection(item, options, originals) === section
-		)
-		.sort((a, b) => a.displayOrder - b.displayOrder);
-	const index = rows.indexOf(target);
-	if (index < 0 || index + direction < 0 || index + direction >= rows.length)
-		return [...requirements];
-	const moved = moveCurriculumItem(rows, index, index + direction);
-	const positions = rows.map((row) => row.displayOrder);
-	const uniquePositions = new Set(positions).size === positions.length;
-	return requirements.map((item) => {
-		const position = moved.indexOf(item);
-		return position < 0
-			? item
-			: { ...item, displayOrder: uniquePositions ? positions[position] : position + 1 };
-	});
 }
