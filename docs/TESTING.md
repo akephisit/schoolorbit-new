@@ -1512,14 +1512,14 @@ From `frontend-school`, using the pinned repository Node version and a ready loo
 
 ```bash
 node --test tests/static/budget-money.test.mjs tests/static/budget-drafts.test.mjs
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts tests/e2e/budget-settings.spec.ts --project=chromium --workers=1
 ```
 
 Helper tests cover integer-satang strings beyond safe browser integers, at-most-three-decimal
 quantities, one exact half-up rounding step, mutation intent, drafts and pivot totals. The browser
 spec uses synthetic intercepted APIs for the minimal project form, plan/request/payment flow,
 regional retry, permissions, settings identities, explicit bulk defaults, amendment context,
-allocation choices and mobile/desktop light/dark reports. It is not evidence of real tenant
+allocation choices and mobile/desktop light/dark reports. Settings fixtures also cover adding routing steps, remote recipient search and selection, draft retention and retry, and aligned controls on mobile/desktop in both themes. It is not evidence of real tenant
 transactions or private object storage. For deployed acceptance use an isolated disposable budget
 project and authorized accounts in a test tenant: reconcile reservations, paid/available balances,
 adjustments, outstanding loans and exports; confirm optional evidence remains private and payment

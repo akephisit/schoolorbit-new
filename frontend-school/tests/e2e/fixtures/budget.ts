@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { StaffLookupItem, OrganizationUnitLookupItem } from '../../../src/lib/api/lookup';
 import type { MenuGroup } from '../../../src/lib/api/menu';
 import { mockStaffHome, id, actor, firstStaff } from './staff-home-route-data';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
@@ -192,6 +193,11 @@ export async function mockBudget(
 	page: Page,
 	options: {
 		permissions?: string[];
+		settings?: BudgetSettings;
+		staffOptions?: StaffLookupItem[];
+		organizationOptions?: OrganizationUnitLookupItem[];
+		failLookup?: { kind: 'staff' | 'organization-units'; search?: string };
+		holdLookup?: { kind: 'staff' | 'organization-units'; search: string };
 		approved?: boolean;
 		hold?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		fail?: 'dashboard' | 'projects' | 'requests' | 'payments';
@@ -215,13 +221,17 @@ export async function mockBudget(
 	);
 	let workspace = budgetWorkspace(options.approved ?? true),
 		request: BudgetSpendingRequestDetail | null = null,
-		settings: BudgetSettings = {
-			...structuredClone(budgetCatalogs),
-			revision: 1,
-			planSteps: [],
-			requestSteps: [],
-			adjustmentSteps: []
-		};
+		settings: BudgetSettings = options.settings
+			? structuredClone(options.settings)
+			: {
+					...structuredClone(budgetCatalogs),
+					revision: 1,
+					planSteps: [],
+					requestSteps: [],
+					adjustmentSteps: []
+				};
+	const lookupReads: string[] = [],
+		lookupCompletions: string[] = [];
 	const retainedRows: BudgetDashboard['rows'] = [];
 	const payments: BudgetPayment[] = [],
 		adjustments: BudgetAdjustmentDetail[] = [],
@@ -416,12 +426,50 @@ export async function mockBudget(
 			}
 		};
 	}
-	await page.route('**/api/lookup/organization-units*', (route) =>
-		reply(route, [{ id: budgetOrgId, name: 'กลุ่มสาระคณิตศาสตร์', code: 'MATH' }])
-	);
-	await page.route('**/api/lookup/staff*', (route) =>
-		reply(route, [{ id: actor, name: 'ผู้พิจารณาทดสอบ' }])
-	);
+	let lookupFailed = false;
+	const staffOptions: StaffLookupItem[] = options.staffOptions ?? [
+		{ id: actor, name: 'ผู้พิจารณาทดสอบ' }
+	];
+	const organizationOptions: OrganizationUnitLookupItem[] = options.organizationOptions ?? [
+		{
+			id: budgetOrgId,
+			name: 'กลุ่มสาระคณิตศาสตร์',
+			code: 'MATH',
+			display_order: 1,
+			is_active: true
+		}
+	];
+	for (const kind of ['staff', 'organization-units'] as const)
+		await page.route(`**/api/lookup/${kind}*`, async (route) => {
+			const url = new URL(route.request().url());
+			lookupReads.push(url.pathname + url.search);
+			const search = url.searchParams.get('search') ?? '';
+			const limit = Number(url.searchParams.get('limit') ?? 50);
+			const items =
+				kind === 'staff'
+					? staffOptions
+					: organizationOptions.filter(
+							(unit) => url.searchParams.get('activeOnly') !== 'true' || unit.is_active
+						);
+			const result = structuredClone(
+				items
+					.filter((item) =>
+						item.name.toLocaleLowerCase('th').includes(search.toLocaleLowerCase('th'))
+					)
+					.slice(0, limit)
+			);
+			if (options.holdLookup?.kind === kind && options.holdLookup.search === search) await held;
+			lookupCompletions.push(url.pathname + url.search);
+			if (
+				!lookupFailed &&
+				options.failLookup?.kind === kind &&
+				(options.failLookup.search === undefined || options.failLookup.search === search)
+			) {
+				lookupFailed = true;
+				return reply(route, 'บริการค้นหาผู้พิจารณายังไม่พร้อม', 503);
+			}
+			return reply(route, result);
+		});
 	let fileNumber = 880;
 	await page.route('**/api/files', (route) =>
 		reply(route, {
@@ -919,6 +967,8 @@ export async function mockBudget(
 	});
 	return {
 		reads,
+		lookupReads,
+		lookupCompletions,
 		writes,
 		release,
 		get workspace() {

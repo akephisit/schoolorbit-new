@@ -165,22 +165,25 @@
 										disabled={pending}
 									/>
 								</div>
-								<div class="flex items-center gap-2">
-									<Checkbox
-										id={`budget-year-active-${index}`}
-										bind:checked={year.active}
-										disabled={pending}
-									/><Label for={`budget-year-active-${index}`}>เปิดใช้งาน</Label
-									>{#if !year.id}<Button
-											type="button"
-											variant="ghost"
-											size="sm"
+								<div class="space-y-2">
+									<p class="text-sm font-medium">สถานะ</p>
+									<div class="flex h-9 items-center gap-2">
+										<Checkbox
+											id={`budget-year-active-${index}`}
+											bind:checked={year.active}
 											disabled={pending}
-											onclick={() => {
-												if (draft)
-													draft.fiscalYears = draft.fiscalYears.filter((_, i) => i !== index);
-											}}>นำออก</Button
-										>{/if}
+										/><Label for={`budget-year-active-${index}`}>เปิดใช้งาน</Label
+										>{#if !year.id}<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												disabled={pending}
+												onclick={() => {
+													if (draft)
+														draft.fiscalYears = draft.fiscalYears.filter((_, i) => i !== index);
+												}}>นำออก</Button
+											>{/if}
+									</div>
 								</div>
 							</Card.Content></Card.Root
 						>{/each}<Button
@@ -205,33 +208,36 @@
 							</p>
 						</div>
 						{#each draft[collection.key] as item, index (index)}<Card.Root
-								><Card.Content class="flex flex-wrap items-end gap-4">
-									<div class="min-w-0 flex-1 space-y-2">
-										<Label for={`budget-${collection.key}-${index}`}>ชื่อ{collection.label} *</Label
-										><Input
-											id={`budget-${collection.key}-${index}`}
-											bind:value={item.name}
-											disabled={pending}
-										/>
+								><Card.Content
+									class="grid min-w-0 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]"
+								>
+									<Label class="sm:col-span-2" for={`budget-${collection.key}-${index}`}
+										>ชื่อ{collection.label} *</Label
+									><Input
+										id={`budget-${collection.key}-${index}`}
+										bind:value={item.name}
+										disabled={pending}
+									/>
+									<div class="flex w-full flex-wrap items-center justify-between gap-3">
+										<div class="flex items-center gap-2">
+											<Checkbox
+												id={`budget-${collection.key}-active-${index}`}
+												bind:checked={item.active}
+												disabled={pending}
+											/><Label for={`budget-${collection.key}-active-${index}`}>เปิดใช้งาน</Label>
+										</div>
+										{#if !item.id}<Button
+												type="button"
+												variant="ghost"
+												disabled={pending}
+												onclick={() => {
+													if (draft)
+														draft[collection.key] = draft[collection.key].filter(
+															(_, i) => i !== index
+														);
+												}}>นำออก</Button
+											>{/if}
 									</div>
-									<div class="flex items-center gap-2">
-										<Checkbox
-											id={`budget-${collection.key}-active-${index}`}
-											bind:checked={item.active}
-											disabled={pending}
-										/><Label for={`budget-${collection.key}-active-${index}`}>เปิดใช้งาน</Label>
-									</div>
-									{#if !item.id}<Button
-											type="button"
-											variant="ghost"
-											disabled={pending}
-											onclick={() => {
-												if (draft)
-													draft[collection.key] = draft[collection.key].filter(
-														(_, i) => i !== index
-													);
-											}}>นำออก</Button
-										>{/if}
 								</Card.Content></Card.Root
 							>{/each}<Button
 							type="button"
