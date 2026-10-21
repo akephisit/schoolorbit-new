@@ -1,12 +1,7 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { ProcessTemplateStep } from '#lib/api/budget.js';
-	import {
-		lookupStaff,
-		lookupOrganizationUnits,
-		type StaffLookupItem,
-		type OrganizationUnitLookupItem
-	} from '#lib/api/lookup.js';
+	import { lookupStaff, lookupOrganizationUnits } from '#lib/api/lookup.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { message } from '#lib/budget/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -15,109 +10,92 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import Choice from './Choice.svelte';
+	import RecipientPicker from './RecipientPicker.svelte';
+	type Recipient = NonNullable<ProcessTemplateStep['recipients']>[number];
 	let {
 		steps = $bindable([]),
 		prefix,
 		disabled = false
 	}: { steps?: ProcessTemplateStep[]; prefix: string; disabled?: boolean } = $props();
-	let staff = $state<StaffLookupItem[]>([]),
-		organizations = $state<OrganizationUnitLookupItem[]>([]),
-		targets = $state<string[]>([]),
-		search = $state(''),
-		error = $state(''),
-		loading = $state(true);
+	let labels = $state<Record<string, string>>({}),
+		labelError = $state('');
 	const request = new LatestRequest();
-	async function load() {
+	const initialRecipients = untrack(() => steps.flatMap((step) => step.recipients ?? []));
+	function recipientKey(recipient: Recipient) {
+		return recipient.kind === 'user'
+			? `user:${recipient.userId}`
+			: recipient.kind === 'organization_unit'
+				? `organization_unit:${recipient.organizationUnitId}`
+				: `organization_position:${recipient.organizationUnitId}:${recipient.positionCode}`;
+	}
+	const currentKeys = $derived(steps.flatMap((step) => (step.recipients ?? []).map(recipientKey)));
+	$effect(() => {
+		const keys = currentKeys;
+		untrack(() => {
+			labels = Object.fromEntries(Object.entries(labels).filter(([key]) => keys.includes(key)));
+		});
+	});
+	async function loadSelectedLabels() {
+		if (!initialRecipients.length) return;
 		const ticket = request.begin();
-		loading = true;
-		error = '';
+		labelError = '';
 		try {
-			const [users, units] = await Promise.all([
-				lookupStaff({ activeOnly: true, search, limit: 100 }, { signal: ticket.signal }),
-				lookupOrganizationUnits({ activeOnly: true, search, limit: 100 }, { signal: ticket.signal })
+			const [people, units] = await Promise.all([
+				initialRecipients.some((item) => item.kind === 'user')
+					? lookupStaff({ activeOnly: true, limit: 100 }, { signal: ticket.signal })
+					: Promise.resolve([]),
+				initialRecipients.some((item) => item.kind === 'organization_unit')
+					? lookupOrganizationUnits({ activeOnly: true, limit: 100 }, { signal: ticket.signal })
+					: Promise.resolve([])
 			]);
-			if (request.isCurrent(ticket.revision)) {
-				staff = [...staff.filter((item) => !users.some((user) => user.id === item.id)), ...users];
-				organizations = [
-					...organizations.filter((item) => !units.some((unit) => unit.id === item.id)),
-					...units
-				];
-			}
+			if (!request.isCurrent(ticket.revision)) return;
+			const resolved = [
+				...people.map((person) => [`user:${person.id}`, person.name]),
+				...units.map((unit) => [`organization_unit:${unit.id}`, `หน่วยงาน: ${unit.name}`])
+			];
+			labels = {
+				...Object.fromEntries(resolved.filter(([key]) => currentKeys.includes(key))),
+				...labels
+			};
 		} catch (cause) {
-			if (request.isCurrent(ticket.revision)) error = message(cause);
-		} finally {
-			if (request.isCurrent(ticket.revision)) loading = false;
+			if (request.isCurrent(ticket.revision)) labelError = message(cause);
 		}
 	}
 	$effect.pre(() => {
 		untrack(() => {
-			void load();
+			void loadSelectedLabels();
 		});
 	});
 	onDestroy(() => request.abort());
-	const options = $derived([
-		...staff.map((user) => ({ value: `user:${user.id}`, label: user.name })),
-		...organizations.map((unit) => ({
-			value: `organization_unit:${unit.id}`,
-			label: `หน่วยงาน: ${unit.name}`
-		}))
-	]);
-	function addRecipient(index: number) {
-		const target = targets[index];
-		if (!target) return;
-		const [kind, id] = target.split(':');
-		const recipient =
-			kind === 'user'
-				? { kind: 'user' as const, userId: id }
-				: { kind: 'organization_unit' as const, organizationUnitId: id };
-		const current = steps[index].recipients ?? [];
+	function addRecipient(step: ProcessTemplateStep, recipient: Recipient, name: string) {
 		if (
-			!current.some(
-				(item) =>
-					item.kind === recipient.kind &&
-					item.userId === recipient.userId &&
-					item.organizationUnitId === recipient.organizationUnitId
-			)
+			disabled ||
+			(step.recipients ?? []).some((item) => recipientKey(item) === recipientKey(recipient))
 		)
-			steps[index].recipients = [...current, recipient];
-		targets[index] = '';
+			return;
+		labels[recipientKey(recipient)] = name;
+		step.recipients = [...(step.recipients ?? []), recipient];
 	}
-	function recipientLabel(recipient: NonNullable<ProcessTemplateStep['recipients']>[number]) {
-		return recipient.kind === 'user'
-			? (staff.find((user) => user.id === recipient.userId)?.name ?? 'บุคลากรที่เลือก')
-			: recipient.kind === 'organization_unit'
-				? `หน่วยงาน: ${organizations.find((unit) => unit.id === recipient.organizationUnitId)?.name ?? 'หน่วยงานที่เลือก'}`
-				: `ตำแหน่ง ${recipient.positionCode ?? ''}`;
+	function recipientLabel(recipient: Recipient, index: number) {
+		return (
+			labels[recipientKey(recipient)] ??
+			(recipient.kind === 'organization_position'
+				? `ตำแหน่ง ${recipient.positionCode ?? ''}`
+				: `${recipient.kind === 'user' ? 'บุคลากร' : 'หน่วยงาน'}เดิมรายการที่ ${index + 1} (ยังไม่พบชื่อ)`)
+		);
 	}
 </script>
 
 <div class="space-y-4">
-	<div class="flex flex-wrap items-end gap-2">
-		<div class="min-w-0 flex-1 space-y-2">
-			<Label for={`${prefix}-search`}>ค้นหาผู้พิจารณาหรือหน่วยงาน</Label><Input
-				id={`${prefix}-search`}
-				bind:value={search}
-				{disabled}
-				onkeydown={(event) => {
-					if (event.key === 'Enter') {
-						event.preventDefault();
-						void load();
-					}
-				}}
-			/>
-		</div>
-		<Button type="button" variant="outline" disabled={disabled || loading} onclick={load}
-			>ค้นหา</Button
-		>
-	</div>
-	{#if error}<PageState
+	{#if labelError}<PageState
 			variant="error"
-			title="โหลดผู้พิจารณาไม่สำเร็จ"
-			description={error}
+			title="โหลดชื่อผู้พิจารณาเดิมไม่สำเร็จ"
+			description={labelError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={load}
-		/>{/if}{#each steps as step, index (index)}<section
+			onaction={loadSelectedLabels}
+		/>{/if}{#each steps as step, index (step)}<section
 			class="space-y-4 rounded-lg border bg-muted/20 p-4"
+			aria-label={`ขั้นตอนที่ ${index + 1}`}
 		>
 			<div class="flex flex-wrap items-end gap-3">
 				<div class="min-w-0 flex-1 space-y-2">
@@ -157,28 +135,19 @@
 					{disabled}
 				/>
 			</div>
-			<div class="flex flex-wrap items-end gap-3">
-				<div class="min-w-0 flex-1">
-					<Choice
-						id={`${prefix}-recipient-${index}`}
-						label="เพิ่มผู้พิจารณา"
-						bind:value={targets[index]}
-						{options}
-						disabled={disabled || loading}
-					/>
-				</div>
-				<Button
-					type="button"
-					variant="outline"
-					disabled={disabled || !targets[index]}
-					onclick={() => addRecipient(index)}>เพิ่ม</Button
-				>
-			</div>
+			<RecipientPicker
+				id={`${prefix}-recipient-${index}`}
+				label={`เพิ่มผู้พิจารณาขั้นตอนที่ ${index + 1}`}
+				selectedKeys={(step.recipients ?? []).map(recipientKey)}
+				{disabled}
+				onselect={(recipient, name) => addRecipient(step, recipient, name)}
+			/>
 			<ul class="space-y-2">
 				{#each step.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li
-						class="flex items-center justify-between gap-2 text-sm"
+						class="flex items-center justify-between gap-3 text-sm"
 					>
-						<span>{recipientLabel(recipient)}</span><Button
+						<span class="min-w-0 break-words">{recipientLabel(recipient, recipientIndex)}</span
+						><Button
 							type="button"
 							variant="ghost"
 							size="sm"
