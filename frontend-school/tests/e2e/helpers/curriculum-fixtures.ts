@@ -50,6 +50,8 @@ export function curriculumVersion(id: string, status: 'draft' | 'published' = 'p
 		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
 		nameEn: null,
 		gradeLevelIds: [ids.grade],
+		creditCriteria: [],
+		creditCriteriaRowVersion: 1,
 		description: null,
 		status,
 		isActive: true,
@@ -123,6 +125,7 @@ export function curriculumStructure(
 				name: 'คณิตศาสตร์พื้นฐาน',
 				requirementKind: 'required',
 				section: 'basic_course',
+				creditCategory: 'basic',
 				subjectGroupId: 'math-group',
 				subjectGroupOrder: 1,
 				metrics: {

@@ -6,6 +6,10 @@
 		type HomeroomDeliveryWorkspace
 	} from '#lib/api/learning-delivery.js';
 	import { untrack } from 'svelte';
+	import {
+		sameCoveredGrades,
+		preserveNewerCreditCriteria
+	} from '#lib/academic-core/curriculum-credit-criteria.js';
 	import { orderedCurriculumPrograms } from '#lib/academic-core/curriculum-program-order.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
@@ -16,6 +20,9 @@
 		replaceCurriculumStructure,
 		replaceCurriculumTermSlots,
 		replaceStudyProgramOrder,
+		replaceCurriculumCreditCriteria,
+		type CurriculumCreditCriterion,
+		type CurriculumCreditCriteriaResult,
 		type CurriculumStructureWorkspace,
 		type CurriculumManagementOptions,
 		type CurriculumEdition,
@@ -56,6 +63,11 @@
 	const editorRequest = new LatestRequest();
 	const alignmentRequest = new LatestRequest();
 	const programOrderReviewRequest = new LatestRequest();
+	const creditCriteriaReviewRequest = new LatestRequest();
+	function abortEditorReviews() {
+		programOrderReviewRequest.abort();
+		creditCriteriaReviewRequest.abort();
+	}
 	let canManage = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && !!workspace?.level.draftId
 	);
@@ -70,7 +82,11 @@
 				.filter((term) => showingAllTerms || termSlotIds.includes(term.id))
 				.map((term) => term.id);
 		}
-		workspace = { ...result, programs: orderedCurriculumPrograms(result.programs) };
+		workspace = {
+			...result,
+			level: preserveNewerCreditCriteria(workspace?.level ?? null, result.level),
+			programs: orderedCurriculumPrograms(result.programs)
+		};
 		if (gradeLevelId !== 'all' && !result.gradeLevels.some((g) => g.id === gradeLevelId))
 			gradeLevelId = result.gradeLevels[0]?.id ?? '';
 		if (!result.programs.some((p) => p.id === studyProgramId))
@@ -118,15 +134,15 @@
 			workspaceRequest.abort();
 			editorRequest.abort();
 			alignmentRequest.abort();
-			programOrderReviewRequest.abort();
+			abortEditorReviews();
 		};
 	});
 	function closeEditor() {
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		editorOpen = false;
 	}
 	async function refresh() {
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		const levelId = data.levelId;
 		const editionId = data.editionId;
 		const { revision, signal } = workspaceRequest.begin();
@@ -153,7 +169,7 @@
 	}
 	async function edit() {
 		if (!canManage) return;
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		const levelId = data.levelId;
 		const { revision, signal } = editorRequest.begin();
 		editorLoading = true;
@@ -180,7 +196,7 @@
 		const draftId = workspace.level.draftId;
 		if (!draftId) return;
 		const selected = workspace.level;
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		const result = await replaceCurriculumStructure(programId, {
 			rowVersion,
 			requirements,
@@ -195,7 +211,7 @@
 		const draftId = workspace.level.draftId;
 		if (!draftId) return;
 		const selected = workspace.level;
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		const result = await replaceCurriculumTermSlots(workspace.level.id, {
 			rowVersion,
 			draftId,
@@ -218,7 +234,7 @@
 	async function saveProgramOrder(rowVersion: number, studyProgramIds: string[]) {
 		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
 		const { id, draftId } = workspace.level;
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		const result = await replaceStudyProgramOrder(id, { draftId, rowVersion, studyProgramIds });
 		patchProgramOrder(result, id, draftId);
 		return result;
@@ -226,6 +242,7 @@
 	async function reviewProgramOrder() {
 		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
 		const { id, draftId } = workspace.level;
+		creditCriteriaReviewRequest.abort();
 		const { revision, signal } = programOrderReviewRequest.begin();
 		const initialMutationRevision = mutationRevision;
 		const latest = await getCurriculumStructureWorkspace(id, { signal, ...data.view });
@@ -246,20 +263,80 @@
 		patchProgramOrder(result, id, draftId);
 		return result;
 	}
+	function patchCreditCriteria(
+		result: CurriculumCreditCriteriaResult,
+		levelId: string,
+		draftId: string
+	) {
+		if (
+			data.levelId !== levelId ||
+			workspace?.level.draftId !== draftId ||
+			result.rowVersion < workspace.level.creditCriteriaRowVersion
+		)
+			return false;
+		mutationRevision++;
+		workspace = {
+			...workspace,
+			level: {
+				...workspace.level,
+				creditCriteria: result.criteria,
+				creditCriteriaRowVersion: result.rowVersion
+			}
+		};
+		return true;
+	}
+	async function saveCreditCriteria(rowVersion: number, criteria: CurriculumCreditCriterion[]) {
+		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนกำหนดเกณฑ์');
+		const { id, draftId } = workspace.level;
+		abortEditorReviews();
+		const result = await replaceCurriculumCreditCriteria(id, { draftId, rowVersion, criteria });
+		if (!patchCreditCriteria(result, id, draftId))
+			throw new DOMException('เกณฑ์เปลี่ยนไปแล้ว กรุณาตรวจสอบเกณฑ์ล่าสุด', 'AbortError');
+		return result;
+	}
+	async function reviewCreditCriteria() {
+		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนกำหนดเกณฑ์');
+		const { id, draftId } = workspace.level;
+		programOrderReviewRequest.abort();
+		const { revision, signal } = creditCriteriaReviewRequest.begin();
+		const initialMutationRevision = mutationRevision;
+		const latest = await getCurriculumStructureWorkspace(id, { signal, ...data.view });
+		if (
+			!creditCriteriaReviewRequest.isCurrent(revision) ||
+			!editorOpen ||
+			data.levelId !== id ||
+			workspace?.level.draftId !== draftId ||
+			mutationRevision !== initialMutationRevision ||
+			latest.level.id !== id ||
+			latest.level.draftId !== draftId
+		)
+			throw new DOMException('ข้อมูลเปลี่ยนไปแล้ว กรุณาโหลดเกณฑ์ล่าสุดเพื่อตรวจสอบ', 'AbortError');
+		if (!sameCoveredGrades(latest.level.gradeLevelIds, workspace.level.gradeLevelIds))
+			throw new Error(
+				'ชั้นที่ครอบคลุมเปลี่ยนไป ร่างเกณฑ์และร่างส่วนอื่นยังอยู่ กรุณาปิดตัวแก้ไขแล้วโหลดหน้าใหม่เพื่อตรวจสอบชั้นก่อนบันทึก'
+			);
+		const result = {
+			criteria: latest.level.creditCriteria,
+			rowVersion: latest.level.creditCriteriaRowVersion
+		};
+		if (!patchCreditCriteria(result, id, draftId))
+			throw new DOMException('เกณฑ์เปลี่ยนไปแล้ว กรุณาตรวจสอบเกณฑ์ล่าสุด', 'AbortError');
+		return result;
+	}
 	async function createProgram(request: CreateStudyProgramRequest) {
 		if (!workspace) return;
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		await createStudyProgram(workspace.level.id, request);
 		mutationRevision++;
 		await refresh();
 	}
 	function copied() {
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		mutationRevision++;
 		void refresh();
 	}
 	function programCreated() {
-		programOrderReviewRequest.abort();
+		abortEditorReviews();
 		mutationRevision++;
 		void refresh();
 	}
@@ -395,5 +472,7 @@
 		onCreateProgram={createProgram}
 		onSaveProgramOrder={saveProgramOrder}
 		onReviewProgramOrder={reviewProgramOrder}
+		onSaveCreditCriteria={saveCreditCriteria}
+		onReviewCreditCriteria={reviewCreditCriteria}
 		onClose={closeEditor}
 	/>{/if}

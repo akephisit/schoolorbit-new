@@ -224,6 +224,7 @@ test('an amendment adds term two, publishes the whole edition, and keeps publica
 	await page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น' }).click();
 	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
 	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
 	await dialog
 		.getByRole('button', { name: 'ภาคเรียนปกติ', exact: true })
 		.and(dialog.locator('[data-slot=button]'))
@@ -324,6 +325,7 @@ test('discard permanently removes an amendment without adding publication histor
 	await page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น' }).click();
 	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
 	const editor = page.getByRole('dialog');
+	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
 	await editor
 		.getByRole('button', { name: 'ภาคเรียนปกติ', exact: true })
 		.and(editor.locator('[data-slot=button]'))

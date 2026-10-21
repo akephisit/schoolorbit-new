@@ -9,6 +9,7 @@
 		type MetricTotal,
 		type CurriculumSummaryRow
 	} from '#lib/academic/curriculum-structure.js';
+	import { assessBasicCredits } from '#lib/academic-core/curriculum-credit-criteria.js';
 	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import CurriculumSummaryTable from '#lib/components/academic-core/CurriculumSummaryTable.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -38,16 +39,26 @@
 				(!section || row.section === section)
 		);
 	}
+	function annualMetrics(programId: string, gradeId: string) {
+		const totals = curriculumTotals(scopeRows(programId, gradeId));
+		return {
+			...curriculumSummaryMetrics(totals),
+			basicAssessment: assessBasicCredits(
+				totals.basicCredits,
+				workspace.level.creditCriteria.find((criterion) => criterion.scope === 'annual'),
+				workspace.level.gradeLevelIds,
+				'annual',
+				gradeId
+			)
+		};
+	}
 	function annualRows(gradeId: string): CurriculumSummaryRow[] {
 		return [
 			{
 				key: gradeId,
 				label: 'รวมทั้งปี · ทุกภาคเรียน',
 				totals: Object.fromEntries(
-					matrix.programs.map((program) => [
-						program.id,
-						curriculumSummaryMetrics(curriculumTotals(scopeRows(program.id, gradeId)))
-					])
+					matrix.programs.map((program) => [program.id, annualMetrics(program.id, gradeId)])
 				)
 			}
 		];
@@ -72,7 +83,15 @@
 			totals: Object.fromEntries(
 				matrix.summaries.map((summary) => [
 					summary.program.id,
-					curriculumSummaryMetrics(summary.level)
+					{
+						...curriculumSummaryMetrics(summary.level),
+						basicAssessment: assessBasicCredits(
+							summary.level.basicCredits,
+							workspace.level.creditCriteria.find((criterion) => criterion.scope === 'level'),
+							workspace.level.gradeLevelIds,
+							'level'
+						)
+					}
 				])
 			)
 		}
@@ -248,6 +267,7 @@
 				<CurriculumSummaryTable
 					programs={matrix.programs}
 					rows={annualRows(grade.id)}
+					creditBreakdown
 					label={`สรุปทั้งปี ${grade.name} · ทุกภาคเรียน`}
 				/>
 			</div>
@@ -255,13 +275,15 @@
 	{/each}
 	<div class="space-y-3 rounded-xl border bg-card p-4">
 		<p class="text-xs text-muted-foreground">
-			* ข้อมูลบางรายการไม่ครบ ยอดรวมใช้เฉพาะค่าที่มีข้อมูล · กิจกรรมไม่มีหน่วยกิต ·
-			ชั่วโมงตามหลักสูตรนับ 1 คาบเรียนเป็น 1 ชั่วโมงเรียนตามโครงสร้าง โดยใช้จำนวนเดิมในทะเบียน ·
+			* ข้อมูลบางรายการไม่ครบ ยอดรวมใช้เฉพาะค่าที่มีข้อมูล · หากประเภทวิชาไม่ครบ
+			พื้นฐานและเพิ่มเติมอาจไม่เท่ากับยอดรวม · กิจกรรมไม่มีหน่วยกิต · ชั่วโมงตามหลักสูตรนับ 1
+			คาบเรียนเป็น 1 ชั่วโมงเรียนตามโครงสร้าง โดยใช้จำนวนเดิมในทะเบียน ·
 			ยอดรายปีและทั้งระดับไม่รวมชั่วโมงต่อสัปดาห์ข้ามภาคเรียน
 		</p>
 		<CurriculumSummaryTable
 			programs={matrix.programs}
 			rows={summaryRows}
+			creditBreakdown
 			label="สรุปช่วงที่เลือกและทั้งระดับ"
 		/>
 		{#each matrix.summaries as summary (summary.program.id)}

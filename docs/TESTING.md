@@ -1831,3 +1831,22 @@ order, history and discard. Run affected curriculum publication/current-subject/
 Delivery and promotion-option consumers, HTTP permission/schema checks, API generation/check/tests
 and the frontend ordering helpers/browser fixtures. Predecessor migrations use historical SQL
 fixtures; current runtime services run only after their required schema is available.
+
+Curriculum basic-credit criteria use the same owned disposable runner:
+
+```bash
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 ./scripts/test_backend_school.sh curriculum_credit -- --test-threads=2
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core credit_criteria
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core credit_category
+```
+
+The fixtures cover clean 135/retry and populated 134 preservation with an active amendment,
+view identity/grants, empty legacy settings, strict bounded JSON, normalized decimal no-ops,
+stale/concurrent/token/tenant refusal, explicit covered-grade review and independent criteria
+revisions. Publication/history/discard/preview cases retain actual rules while excluding only
+revision metadata from semantic comparisons; unmet warning targets permit publication. Copy
+retains destination settings. Unknown pinned catalog classifications keep null credit categories
+in current and historical requirements/options, even after a later known revision exists.
+Run affected publication/order/current-subject/options/copy consumers, HTTP permissions,
+API schema/generate/check/test and documentation policy with the existing focused recipes.
+All mutation fixtures are synthetic; no production criteria or curricula are written.

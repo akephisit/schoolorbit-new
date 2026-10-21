@@ -89,3 +89,74 @@ pub async fn replace(
         row_version,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        CurriculumCreditCriteriaComparison as Comparison, CurriculumCreditCriteriaScope as Scope,
+    };
+
+    fn rule(target: &str) -> CurriculumCreditCriterion {
+        CurriculumCreditCriterion {
+            scope: Scope::Annual,
+            comparison: Comparison::Equal,
+            target_credits: target.into(),
+            enabled: true,
+            grade_level_ids: vec![Uuid::from_u128(1)],
+        }
+    }
+
+    #[test]
+    fn credit_criteria_decimal_normalization_and_bounds_are_semantic() {
+        let expected = normalize(vec![rule("1")]).unwrap();
+        for value in ["1.0", "1.00"] {
+            assert_eq!(normalize(vec![rule(value)]).unwrap(), expected);
+        }
+        for value in ["0", "9999.99"] {
+            assert!(normalize(vec![rule(value)]).is_ok());
+        }
+        for value in [
+            "10000",
+            "9999.999",
+            "-1",
+            "1e2",
+            "01",
+            "",
+            "NaN",
+            "99999999999999999999999999",
+        ] {
+            assert!(normalize(vec![rule(value)]).is_err(), "{value}");
+        }
+        assert!(normalize(vec![rule("1"), rule("2")]).is_err());
+        let mut duplicate = rule("1");
+        duplicate.grade_level_ids.push(duplicate.grade_level_ids[0]);
+        assert!(normalize(vec![duplicate]).is_err());
+        let mut missing = rule("1");
+        missing.grade_level_ids.clear();
+        assert!(normalize(vec![missing]).is_err());
+    }
+
+    #[test]
+    fn credit_criteria_inputs_reject_unknown_and_unreviewed_fields() {
+        let mut value =
+            serde_json::json!({"draftId":Uuid::new_v4(),"rowVersion":1,"criteria":[rule("22")]});
+        assert!(
+            serde_json::from_value::<ReplaceCurriculumCreditCriteriaRequest>(value.clone()).is_ok()
+        );
+        value["criteria"][0]["national"] = true.into();
+        assert!(
+            serde_json::from_value::<ReplaceCurriculumCreditCriteriaRequest>(value.clone())
+                .is_err()
+        );
+        value["criteria"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("national");
+        value["criteria"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("gradeLevelIds");
+        assert!(serde_json::from_value::<ReplaceCurriculumCreditCriteriaRequest>(value).is_err());
+    }
+}

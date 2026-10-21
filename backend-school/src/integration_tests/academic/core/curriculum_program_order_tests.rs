@@ -192,6 +192,8 @@ async fn curriculum_program_order_migration_preserves_133_graph_history_and_view
     assert_eq!(view,sqlx::query_as::<_,(i64,Option<String>)>("SELECT oid::bigint,relacl::text FROM pg_class WHERE oid='published_study_programs'::regclass").fetch_one(&pool).await.unwrap());
     let zeros:bool=sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM study_programs WHERE display_order<>0) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_programs WHERE display_order<>0)").fetch_one(&pool).await.unwrap();
     assert!(zeros);
+    // Current level DTO requires the additive criteria schema;134 assertions above stay historical.
+    apply_migrations_through(&pool, 135).await.unwrap();
     let workspace = curriculum_structure::get_workspace(&pool, level)
         .await
         .unwrap();
@@ -450,7 +452,7 @@ async fn curriculum_program_order_rejects_invalid_stale_foreign_and_oversized_se
         Err(school_errors::AppError::Conflict(_))
     ));
     let other = school_test_db::create_named_test_pool("program_order_other_tenant").await;
-    apply_migrations_through(&other, 134).await.unwrap();
+    apply_migrations_through(&other, 135).await.unwrap();
     assert!(matches!(
         reorder(&other, level, token, moved.row_version, ids(&programs)).await,
         Err(school_errors::AppError::NotFound(_))
@@ -1015,6 +1017,7 @@ async fn curriculum_program_order_history_ignores_stationary_legacy_zero_normali
         .await
         .unwrap();
     apply_migrations_through(&pool, 134).await.unwrap();
+    apply_migrations_through(&pool, 135).await.unwrap();
     let old = curriculum::get(&pool, edition).await.unwrap();
     let opened = publications::open_draft(
         &pool,

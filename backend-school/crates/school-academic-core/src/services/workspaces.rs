@@ -124,7 +124,7 @@ pub async fn curriculum_management_options(
     let mut catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
         r#"
         SELECT option.id, option.catalog_id, false AS selectable_for_new_requirement, option.resource_kind, option.code, option.name,
-               option.version_no, option.effective_from, option.effective_until, option.grade_level_ids, option.section
+               option.version_no, option.effective_from, option.effective_until, option.grade_level_ids, option.section, option.credit_category
         FROM (
             SELECT version.id, subject.id AS catalog_id, 'course'::text AS resource_kind,
                    subject.code, version.name_th AS name, version.version_no,

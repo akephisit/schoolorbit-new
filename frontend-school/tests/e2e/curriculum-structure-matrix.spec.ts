@@ -49,6 +49,7 @@ function matrixFixture() {
 			name: 'กิจกรรมชุมนุม',
 			code: 'HIDDEN-ACTIVITY-CODE',
 			resourceKind: 'activity',
+			creditCategory: null,
 			hasNewerCurrentVersion: false,
 			section: 'student_development',
 			subjectGroupId: null,
@@ -231,6 +232,7 @@ test('editor starts from displayed concrete grade, program and single term; grad
 		code: 'ทเพิ่มเติม',
 		name: 'วิชาเพิ่มเติมชั้นสอง',
 		section: 'additional_course',
+		creditCategory: 'additional',
 		gradeLevelIds: [fixture.workspace.gradeLevels[1].id]
 	});
 	const state = await installCurriculumCatalog(page, fixture);
@@ -352,6 +354,7 @@ test('numeric section, term and annual summaries align school hours while annual
 			name: 'กิจกรรม',
 			code: 'HIDDEN-ACTIVITY',
 			resourceKind: 'activity',
+			creditCategory: null,
 			hasNewerCurrentVersion: false,
 			section: 'student_development',
 			subjectGroupId: null,
@@ -372,10 +375,10 @@ test('numeric section, term and annual summaries align school hours while annual
 		name: 'สรุปทั้งปี มัธยมศึกษาปีที่ 1 · ทุกภาคเรียน',
 		exact: true
 	});
-	await expect(annual.locator('tbody td').nth(2)).toHaveText('—');
-	await expect(annual.locator('tbody td').nth(3)).toHaveText('70.00');
+	await expect(annual.locator('tbody td').nth(4)).toHaveText('—');
+	await expect(annual.locator('tbody td').nth(5)).toHaveText('70.00');
 	const range = page.getByRole('table', { name: 'สรุปช่วงที่เลือกและทั้งระดับ', exact: true });
-	await expect(range.locator('tbody tr').first().locator('td').nth(2)).toHaveText('—');
+	await expect(range.locator('tbody tr').first().locator('td').nth(4)).toHaveText('—');
 	await expect(table).not.toContainText('คาบ');
 	await expect(table).not.toContainText('ชม.');
 	expect(state.writes).toEqual([]);
@@ -614,6 +617,7 @@ test('staged section headings preserve duplicate rows and moving one course stay
 		code: 'วเพิ่มเติม',
 		name: 'รายวิชาเพิ่ม',
 		section: 'additional_course',
+		creditCategory: 'additional',
 		displayOrder: 2
 	});
 	fixture.workspace.requirements.push({
@@ -624,6 +628,7 @@ test('staged section headings preserve duplicate rows and moving one course stay
 		code: 'HIDDEN-ACTIVITY',
 		name: 'กิจกรรม',
 		resourceKind: 'activity',
+		creditCategory: null,
 		hasNewerCurrentVersion: false,
 		section: 'student_development',
 		subjectGroupId: null,
@@ -672,6 +677,7 @@ for (const width of [390, 1543])
 				catalogVersionId: 'extra-course',
 				name: 'รายวิชาเพิ่มเติมสำหรับตรวจการจัดกลุ่มในตัวแก้ไข',
 				section: 'additional_course',
+				creditCategory: 'additional',
 				displayOrder: 3
 			});
 			fixture.workspace.requirements.push({
@@ -682,6 +688,7 @@ for (const width of [390, 1543])
 				code: 'HIDDEN-ACTIVITY',
 				name: 'กิจกรรมพัฒนาผู้เรียน',
 				resourceKind: 'activity',
+				creditCategory: null,
 				hasNewerCurrentVersion: false,
 				section: 'student_development',
 				subjectGroupId: null,

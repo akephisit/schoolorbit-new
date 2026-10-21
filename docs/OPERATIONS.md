@@ -1891,3 +1891,21 @@ After a save, font preparation precedes atomic CSS replacement. A font failure a
 commit is reported as a successful save with a presentation retry, retaining the previous usable
 theme. Other documents pick up current settings on their next load, throttled visibility
 revalidation, or a same-origin save signal. Personal light/dark preference remains device-owned.
+
+Migration [135](../backend-school/migrations/135_curriculum_credit_criteria.sql) adds empty,
+level-owned basic-credit criteria and an independent criteria revision to draft and publication
+levels. It preserves existing graph/reference content, revisions and timestamps, appends the
+published-level view fields without replacing its identity/grants, and captures levels through
+explicit columns. Its atomic preservation audit is `curriculum.credit_criteria_added.reconciled`.
+No legacy criteria or suggested preset is inferred. Saving criteria requires the current draft
+token, criteria revision and explicitly reviewed covered grades; it leaves requirement, term-slot
+and program-order revision baselines unchanged. Historical criteria stay pinned, copy keeps the
+destination settings and discard restores saved settings with a monotonic criteria revision.
+Criteria are report warnings; they do not enforce graduation or block publication.
+
+Deploy 135 with the matching School backend, generated contracts and frontend through normal
+Pipeline selection under existing maintenance, exact-version/readiness and authenticated read-only
+smoke gates. Verify preservation through the canonical migration audit; lifecycle rehearsals use
+owned synthetic databases. Production curriculum/settings writes are not acceptance checks.
+On failure retain maintenance and repair forward through the existing release procedure. Presets
+require an explicit staff choice and save; opening or reporting never writes user criteria.

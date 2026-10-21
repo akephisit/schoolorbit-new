@@ -41,16 +41,19 @@ mod curriculum_current_subject_tests;
 #[path = "curriculum_program_order_tests.rs"]
 mod curriculum_program_order_tests;
 
+#[path = "curriculum_credit_criteria_tests.rs"]
+mod curriculum_credit_criteria_tests;
+
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 134).await
+    prepare_core_fixture_through(name, 135).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 134).await
+    prepare_core_fixture_through(name, 135).await
 }
 
 pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -133,7 +136,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 134).await;
+    let pool = prepare_core_fixture_through(name, 135).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -6593,6 +6596,7 @@ async fn curriculum_program_default_migration_preserves_populated_amendment_and_
         curriculum_program_order_tests::historical_workspace_evidence(&pool, level, None).await
     );
     // Current discard and another publication run only after the required schema.
+    apply_migrations_through(&pool, 135).await.unwrap();
     let preview = publications::preview_discard(&pool, edition, token)
         .await
         .unwrap();

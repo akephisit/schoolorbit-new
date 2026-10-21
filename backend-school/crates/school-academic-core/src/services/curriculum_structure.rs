@@ -868,3 +868,54 @@ fn grade_level_item(row: GradeLevelRow) -> GradeLevelLookupItem {
         level_order: order_base * 100 + row.year,
     }
 }
+
+#[cfg(test)]
+mod credit_category_tests {
+    use super::*;
+
+    #[test]
+    fn credit_category_uses_pinned_classification_and_keeps_unknown_partial() {
+        for (kind, classification, expected) in [
+            (
+                RequirementResourceKind::Course,
+                "BASIC",
+                Some(CurriculumCourseCreditCategory::Basic),
+            ),
+            (
+                RequirementResourceKind::Course,
+                "ADDITIONAL",
+                Some(CurriculumCourseCreditCategory::Additional),
+            ),
+            (RequirementResourceKind::Course, "LEGACY-UNKNOWN", None),
+            (RequirementResourceKind::Activity, "BASIC", None),
+        ] {
+            let row = RequirementRow {
+                id: Uuid::new_v4(),
+                study_program_id: Uuid::new_v4(),
+                grade_level_id: Uuid::new_v4(),
+                grade_level_type: "secondary".into(),
+                grade_level_year: 1,
+                term_slot_id: Uuid::new_v4(),
+                resource_kind: kind,
+                catalog_version_id: Uuid::new_v4(),
+                catalog_id: Uuid::new_v4(),
+                version_no: 1,
+                code: "REAL-CODE".into(),
+                name: "วิชาพื้นฐานชื่อไม่ใช่ประเภท".into(),
+                catalog_classification: classification.into(),
+                requirement_kind: RequirementKind::Required,
+                weekly_value: Some("1".into()),
+                weekly_unit: "period".into(),
+                credit: Some("1".into()),
+                total_hours: Some("20".into()),
+                display_order: 1,
+            };
+            let result =
+                requirement_from_row(row, false, &mut CurriculumStructureValidation::default());
+            assert_eq!(result.credit_category, expected);
+            if classification == "LEGACY-UNKNOWN" {
+                assert_eq!(result.section, CurriculumDocumentSection::BasicCourse);
+            }
+        }
+    }
+}
