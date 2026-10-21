@@ -1,8 +1,9 @@
 use super::super::models::{
     CopyStudyProgramRequest, CreateCurriculumLevelRequest, CreateCurriculumRequest,
     CreateStudyProgramRequest, CurriculumEdition, CurriculumLevel, PublishCurriculumRequest,
-    StudyProgram, StudyProgramOption, UpdateCurriculumLevelRequest, UpdateCurriculumRequest,
-    UpdateStudyProgramRequest, VersionStatus,
+    ReplaceStudyProgramOrderRequest, StudyProgram, StudyProgramOption, StudyProgramOrderResult,
+    UpdateCurriculumLevelRequest, UpdateCurriculumRequest, UpdateStudyProgramRequest,
+    VersionStatus,
 };
 use super::parse_row_version;
 use school_authorization::AcademicResourceListFilter;
@@ -13,7 +14,7 @@ use uuid::Uuid;
 pub(super) const EDITION_COLUMNS: &str = "current_publication_id,publication_count,draft_id,id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
 pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
 pub(super) const PROGRAM_COLUMNS: &str =
-    "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at";
+    "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,display_order";
 const MAX_LEVELS: i64 = 500;
 const MAX_PROGRAM_OPTIONS: i64 = 2000;
 const MAX_COPIED_REQUIREMENTS: i64 = 50_000;
@@ -280,7 +281,7 @@ pub(super) async fn list_programs_for_level(
     pool: &PgPool,
     level_id: Uuid,
 ) -> Result<Vec<StudyProgram>, AppError> {
-    let sql=format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY code,id");
+    let sql=format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id");
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(level_id)
         .fetch_all(pool)
@@ -303,11 +304,84 @@ pub async fn create_program(
     let id = Uuid::now_v7();
     let mut tx = pool.begin().await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES($1,$2,$3,$4,'draft')")
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status,display_order) SELECT $1,$2,$3,$4,'draft',COALESCE(max(display_order),0)+1 FROM study_programs WHERE curriculum_level_id=$2")
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(request.name_th.trim()).execute(&mut *tx).await?;
     tx.commit().await?;
     get_program(pool, id).await
 }
+/// Replace presentation order for the complete draft workspace, including archived
+/// identities. All other program fields and their edit rules remain unchanged.
+pub async fn replace_program_order(
+    pool: &PgPool,
+    level_id: Uuid,
+    request: ReplaceStudyProgramOrderRequest,
+) -> Result<StudyProgramOrderResult, AppError> {
+    parse_row_version(request.row_version)?;
+    if request.study_program_ids.len() as i64 > MAX_PROGRAM_OPTIONS {
+        return Err(AppError::ValidationError(
+            "จำนวนแผนการเรียนเกิน 2,000 รายการ".into(),
+        ));
+    }
+    let unique = request
+        .study_program_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    if unique.len() != request.study_program_ids.len() {
+        return Err(AppError::ValidationError("แผนการเรียนในลำดับต้องไม่ซ้ำ".into()));
+    }
+    let mut tx = pool.begin().await?;
+    require_draft_level(&mut tx, level_id, request.draft_id).await?;
+    let mut row_version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM curriculum_levels WHERE id=$1")
+            .bind(level_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    if row_version != request.row_version {
+        return Err(AppError::Conflict(
+            "ระดับการศึกษาถูกแก้ไขแล้ว กรุณาโหลดใหม่".into(),
+        ));
+    }
+    let sql = format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY display_order,code,id LIMIT $2");
+    let mut programs: Vec<StudyProgram> = sqlx::query_as(sqlx::AssertSqlSafe(sql.clone()))
+        .bind(level_id)
+        .bind(MAX_PROGRAM_OPTIONS + 1)
+        .fetch_all(&mut *tx)
+        .await?;
+    if programs.len() as i64 > MAX_PROGRAM_OPTIONS {
+        return Err(AppError::ValidationError(
+            "จำนวนแผนการเรียนเกิน 2,000 รายการ".into(),
+        ));
+    }
+    if programs.len() != unique.len()
+        || programs.iter().any(|program| !unique.contains(&program.id))
+    {
+        return Err(AppError::Conflict(
+            "ชุดแผนการเรียนเปลี่ยนแล้ว กรุณาโหลดใหม่".into(),
+        ));
+    }
+    let current = programs
+        .iter()
+        .map(|program| program.id)
+        .collect::<Vec<_>>();
+    if current != request.study_program_ids {
+        sqlx::query("UPDATE study_programs program SET display_order=ordered.position::integer,row_version=program.row_version+1,updated_at=now() FROM unnest($1::uuid[]) WITH ORDINALITY AS ordered(id,position) WHERE program.id=ordered.id AND program.curriculum_level_id=$2 AND program.display_order IS DISTINCT FROM ordered.position::integer")
+            .bind(&request.study_program_ids).bind(level_id).execute(&mut *tx).await?;
+        row_version = sqlx::query_scalar("UPDATE curriculum_levels SET row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version")
+            .bind(level_id).fetch_one(&mut *tx).await?;
+        programs = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(level_id)
+            .bind(MAX_PROGRAM_OPTIONS + 1)
+            .fetch_all(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(StudyProgramOrderResult {
+        programs,
+        row_version,
+    })
+}
+
 pub async fn update_program(
     pool: &PgPool,
     id: Uuid,
@@ -355,11 +429,11 @@ pub async fn list_study_program_options_for_year(
     if !exists {
         return Err(AppError::NotFound("ไม่พบปีการศึกษา".into()));
     }
-    let options:Vec<StudyProgramOption>=sqlx::query_as(r#"SELECT p.id,p.code,p.name_th AS name,e.id AS edition_id,e.name AS edition_name,e.revision_year,l.id AS curriculum_level_id,l.name_th AS level_name,
+    let options:Vec<StudyProgramOption>=sqlx::query_as(r#"SELECT p.id,p.code,p.display_order,p.name_th AS name,e.id AS edition_id,e.name AS edition_name,e.revision_year,l.id AS curriculum_level_id,l.name_th AS level_name,
         ARRAY(SELECT DISTINCT grade_level_id FROM (SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id=p.id UNION SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id=p.id) r ORDER BY grade_level_id) AS grade_level_ids
         FROM published_study_programs p JOIN published_curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id
         WHERE p.status='published' AND e.status='published' AND e.is_active AND l.is_active
-        ORDER BY e.revision_year DESC NULLS LAST,e.created_at DESC,l.name_th,p.name_th,p.id LIMIT $1"#).bind(MAX_PROGRAM_OPTIONS+1).fetch_all(pool).await?;
+        ORDER BY e.revision_year DESC NULLS LAST,e.created_at DESC,l.name_th,l.id,p.display_order,p.code,p.id LIMIT $1"#).bind(MAX_PROGRAM_OPTIONS+1).fetch_all(pool).await?;
     if options.len() as i64 > MAX_PROGRAM_OPTIONS {
         return Err(AppError::ValidationError(
             "จำนวนแผนการเรียนเกิน 2,000 รายการ".into(),
@@ -526,7 +600,7 @@ pub async fn copy_program(
         AND NOT EXISTS(SELECT 1 FROM curriculum_term_slots t WHERE t.curriculum_level_id=$1 AND t.term_type=s.term_type AND t.type_occurrence=s.type_occurrence)"#)
         .bind(level_id).bind(source.curriculum_level_id).bind(source.id).execute(&mut *tx).await?;
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,name_en,status) SELECT $1,$2,$3,$4,$5,'draft'")
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,name_en,status,display_order) SELECT $1,$2,$3,$4,$5,'draft',COALESCE(max(display_order),0)+1 FROM study_programs WHERE curriculum_level_id=$2")
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(name).bind(&source.name_en).execute(&mut *tx).await?;
     sqlx::query(r#"INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)
         SELECT gen_random_uuid(),$1,$2,r.subject_version_id,r.grade_level_id,target.id,r.requirement_kind,r.display_order
@@ -593,7 +667,7 @@ pub(super) async fn programs_from_publication(
 ) -> Result<Vec<StudyProgram>, AppError> {
     let source = super::curriculum_publications::source("study_programs", publication)?;
     let query = format!(
-        "SELECT {PROGRAM_COLUMNS} FROM {source} WHERE curriculum_level_id=$1 ORDER BY code,id"
+        "SELECT {PROGRAM_COLUMNS} FROM {source} WHERE curriculum_level_id=$1 ORDER BY display_order,code,id"
     );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(level_id)

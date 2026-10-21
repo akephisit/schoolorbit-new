@@ -82,6 +82,7 @@ struct HomeroomDeliveryBaseRow {
     grade_level_year: i32,
     study_program_id: Uuid,
     study_program_code: String,
+    study_program_display_order: i32,
     study_program_name: String,
     edition_id: Uuid,
     level_name: String,
@@ -264,6 +265,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   grade.year AS grade_level_year,
                   program.id AS study_program_id,
                   program.code AS study_program_code,
+                  program.display_order AS study_program_display_order,
                   program.name_th AS study_program_name,
                   curriculum.id AS edition_id,
                   version.name_th AS level_name,
@@ -548,6 +550,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
         let study_program = StudyProgramOption {
             id: room.study_program_id,
             code: room.study_program_code,
+            display_order: room.study_program_display_order,
             name: room.study_program_name,
             edition_id: room.edition_id,
             level_name: room.level_name,
@@ -964,7 +967,7 @@ pub async fn delivery_overview(
 
     let program_rows: Vec<StudyProgramOption> = sqlx::query_as(
         r#"
-        SELECT program.id, program.code, program.name_th AS name,
+        SELECT program.id, program.code, program.display_order, program.name_th AS name,
                curriculum.id AS edition_id, version.name_th AS level_name,
                version.id AS curriculum_level_id, curriculum.name AS edition_name, curriculum.revision_year,
                ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
@@ -975,7 +978,7 @@ pub async fn delivery_overview(
         JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
         JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
         WHERE program.id = ANY($1)
-        ORDER BY version.code, program.code, program.id
+        ORDER BY version.code, version.id, program.display_order, program.code, program.id
         "#,
     )
     .bind(&study_program_ids)
@@ -1090,6 +1093,8 @@ pub async fn delivery_overview(
         study_programs.sort_by(|left, right| {
             left.level_name
                 .cmp(&right.level_name)
+                .then_with(|| left.curriculum_level_id.cmp(&right.curriculum_level_id))
+                .then_with(|| left.display_order.cmp(&right.display_order))
                 .then_with(|| left.code.cmp(&right.code))
                 .then_with(|| left.id.cmp(&right.id))
         });

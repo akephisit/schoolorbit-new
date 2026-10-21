@@ -597,6 +597,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/curriculum-levels/{id}/program-order': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['replaceStudyProgramOrder'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curriculum-levels/{id}/programs': {
 		parameters: {
 			query?: never;
@@ -13012,6 +13028,8 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				curriculumLevelId: string;
+				/** Format: int32 */
+				displayOrder: number;
 				/** Format: uuid */
 				id: string;
 				nameEn?: string | null;
@@ -13021,6 +13039,15 @@ export interface components {
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StudyProgramOrderResult: {
+			data: {
+				programs: components['schemas']['StudyProgram'][];
+				/** Format: int64 */
+				rowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -15869,6 +15896,8 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				curriculumLevelId: string;
+				/** Format: int32 */
+				displayOrder: number;
 				/** Format: uuid */
 				id: string;
 				nameEn?: string | null;
@@ -15887,6 +15916,8 @@ export interface components {
 				code: string;
 				/** Format: uuid */
 				curriculumLevelId: string;
+				/** Format: int32 */
+				displayOrder: number;
 				/** Format: uuid */
 				editionId: string;
 				editionName: string;
@@ -24013,6 +24044,13 @@ export interface components {
 			/** Format: uuid */
 			file_id: string | null;
 		};
+		ReplaceStudyProgramOrderRequest: {
+			/** Format: uuid */
+			draftId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			studyProgramIds: string[];
+		};
 		RequestSupervisionObservationRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -25383,6 +25421,8 @@ export interface components {
 			createdAt: string;
 			/** Format: uuid */
 			curriculumLevelId: string;
+			/** Format: int32 */
+			displayOrder: number;
 			/** Format: uuid */
 			id: string;
 			nameEn?: string | null;
@@ -25397,6 +25437,8 @@ export interface components {
 			code: string;
 			/** Format: uuid */
 			curriculumLevelId: string;
+			/** Format: int32 */
+			displayOrder: number;
 			/** Format: uuid */
 			editionId: string;
 			editionName: string;
@@ -25407,6 +25449,11 @@ export interface components {
 			name: string;
 			/** Format: int32 */
 			revisionYear?: number | null;
+		};
+		StudyProgramOrderResult: {
+			programs: components['schemas']['StudyProgram'][];
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		SubjectEvaluationSummary: {
 			average: components['schemas']['ExactAverage'];
@@ -31211,6 +31258,78 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_CurriculumManagementOptions'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision or publication conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replaceStudyProgramOrder: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ReplaceStudyProgramOrderRequest'];
+			};
+		};
+		responses: {
+			/** @description Ordered draft programs and level revision */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StudyProgramOrderResult'];
 				};
 			};
 			/** @description Validation failed */
