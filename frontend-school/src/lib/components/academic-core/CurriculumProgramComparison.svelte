@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
 	import { buildProgramComparison } from '#lib/academic/curriculum-structure.js';
+	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 
@@ -51,7 +52,7 @@
 							<Table.Cell class="align-top">
 								<div class="text-xs font-semibold text-primary tabular-nums">{row.code}</div>
 								<div class="mt-1 font-medium">{row.name}</div>
-								<div class="mt-1 text-xs text-muted-foreground">v{row.versionNo}</div>
+								<CurriculumOutdatedBadge hasNewerCurrentVersion={row.hasNewerCurrentVersion} />
 								{#if row.isDifferent}
 									<div class="mt-1 text-xs text-amber-700 dark:text-amber-400">
 										ข้อมูลต่างกันระหว่างแผน

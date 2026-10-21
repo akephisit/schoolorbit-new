@@ -42827,6 +42827,9 @@
           "gradeLevel": {
             "$ref": "#/components/schemas/GradeLevelLookupItem"
           },
+          "hasNewerCurrentVersion": {
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -42868,6 +42871,7 @@
           "catalogVersionId",
           "catalogId",
           "versionNo",
+          "hasNewerCurrentVersion",
           "code",
           "name",
           "section",

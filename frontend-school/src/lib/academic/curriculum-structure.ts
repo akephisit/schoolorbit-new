@@ -50,6 +50,7 @@ export type ProgramComparisonRow = {
 	key: string;
 	catalogVersionId: string;
 	versionNo: number;
+	hasNewerCurrentVersion: boolean;
 	resourceKind: CurriculumStructureRequirement['resourceKind'];
 	section: CurriculumDocumentSection;
 	code: string;
@@ -163,6 +164,7 @@ export function buildProgramComparison(
 			key,
 			catalogVersionId: requirement.catalogVersionId,
 			versionNo: requirement.versionNo,
+			hasNewerCurrentVersion: requirement.hasNewerCurrentVersion,
 			resourceKind: requirement.resourceKind,
 			section: requirement.section,
 			code: requirement.code,

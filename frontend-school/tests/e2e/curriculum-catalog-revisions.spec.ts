@@ -10,9 +10,9 @@ import {
 	openCurriculumEditor
 } from './fixtures/curriculum-catalog';
 
-test.use({ serviceWorkers: 'block', timezoneId: 'Asia/Bangkok' });
+test.use({ serviceWorkers: 'block', timezoneId: 'Asia/Bangkok', hasTouch: true });
 const currentCheckbox = (page: Page) =>
-	page.getByRole('checkbox', { name: 'เลือก ค21101 v2', exact: true });
+	page.getByRole('checkbox', { name: /^เลือก ค21101 คณิตศาสตร์พื้นฐาน ·/ });
 const editor = (page: Page) => page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
 const picker = (page: Page) => editor(page).getByRole('region', { name: 'เลือกจากทะเบียน' });
 const rows = (page: Page) =>
@@ -43,23 +43,19 @@ test('only current v2 is selectable for new requirements in M1 through M3, with 
 	const fixture = curriculumCatalogFixture({ empty: true });
 	const state = await installCurriculumCatalog(page, fixture);
 	await openCurriculumEditor(page);
-	await expect(
-		picker(page).getByRole('checkbox', { name: 'เลือก ค21101 v1', exact: true })
-	).toHaveCount(0);
-	await expect(
-		picker(page).getByRole('checkbox', { name: 'เลือก ค21101 v3', exact: true })
-	).toHaveCount(0);
+	await expect(picker(page).getByRole('checkbox', { name: /^เลือก ค21101 / })).toHaveCount(1);
+	await expect(picker(page)).not.toContainText(/\bv\d+\b/);
 	await expect(picker(page)).not.toContainText('วิชาที่หมดอายุ');
 	await expect(
 		picker(page)
 			.locator('label')
 			.filter({ has: currentCheckbox(page) })
-	).toContainText('v2 · ตั้งแต่ 1 พ.ค. 2569');
+	).toContainText('ตั้งแต่ 1 พ.ค. 2569');
 	for (const grade of [1, 2, 3]) {
 		if (grade > 1) await selectContext(page, 'ระดับชั้น', `มัธยมศึกษาปีที่ ${grade}`);
 		await addCurrent(page);
 		await expect(currentCheckbox(page)).toBeDisabled();
-		await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว · v2');
+		await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว');
 	}
 	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	await expect(editor(page)).toBeHidden();
@@ -70,7 +66,13 @@ test('only current v2 is selectable for new requirements in M1 through M3, with 
 			gradeLevelId: grade.id
 		}))
 	});
-	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).toContainText('v2');
+	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).not.toContainText(/\bv\d+\b/);
+	await expect(
+		page
+			.getByRole('row')
+			.filter({ hasText: 'ค21101' })
+			.getByRole('button', { name: 'เก่า', exact: true })
+	).toHaveCount(0);
 	expect(state.errors).toEqual([]);
 	expect(state.unexpected).toEqual([]);
 });
@@ -83,9 +85,15 @@ test('missing old option retains pinned v1 metadata and visibly blocks the same 
 	await openCurriculumEditor(page);
 	await expect(rows(page)).toHaveCount(1);
 	await expect(rows(page)).toContainText('คณิตศาสตร์พื้นฐาน');
-	await expect(rows(page)).toContainText('v1');
+	await expect(rows(page).getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
+	await expect(editor(page)).not.toContainText(/\bv\d+\b/);
 	await expect(currentCheckbox(page)).toBeDisabled();
-	await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว · v1');
+	await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว');
+	await rows(page).getByRole('button', { name: 'เก่า', exact: true }).focus();
+	await expect(page.getByRole('tooltip')).toContainText(
+		'มีรายวิชารุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน'
+	);
+	await page.keyboard.press('Escape');
 	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	expect(state.writes[0].body).toMatchObject({
 		requirements: [{ catalogVersionId: ids.catalogVersion }]
@@ -100,7 +108,8 @@ test('explicit remove then add replaces only the selected pinned row', async ({ 
 	await rows(page).getByRole('button', { name: 'นำรายการออก', exact: true }).click();
 	await expect(currentCheckbox(page)).toBeEnabled();
 	await addCurrent(page);
-	await expect(rows(page)).toContainText('v2');
+	await expect(rows(page).getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(editor(page)).not.toContainText(/\bv\d+\b/);
 	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	expect(state.writes[0].body).toMatchObject({
 		requirements: [{ catalogVersionId: currentSubjectVersionId }]
@@ -117,14 +126,16 @@ test('legacy v1 and v2 duplicates remain independently editable and are not sile
 	const state = await installCurriculumCatalog(page, fixture);
 	await openCurriculumEditor(page);
 	await expect(rows(page)).toHaveCount(2);
-	await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว · v1, v2');
+	await expect(picker(page)).toContainText('มีรายวิชานี้แล้ว');
 	await rows(page)
-		.filter({ hasText: 'v1' })
+		.filter({ has: page.getByRole('button', { name: 'เก่า', exact: true }) })
 		.getByRole('button', { name: 'บังคับ', exact: true })
 		.click();
 	await page.getByRole('option', { name: 'เลือก', exact: true }).click();
 	await expect(
-		rows(page).filter({ hasText: 'v2' }).getByRole('button', { name: 'บังคับ', exact: true })
+		rows(page)
+			.filter({ hasNot: page.getByRole('button', { name: 'เก่า', exact: true }) })
+			.getByRole('button', { name: 'บังคับ', exact: true })
 	).toBeVisible();
 	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	expect(state.writes[0].body).toMatchObject({
@@ -168,7 +179,8 @@ test('stale-save 409 preserves chosen v2 and never retries or upgrades it', asyn
 	await addCurrent(page);
 	await editor(page).getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	await expect(editor(page).getByRole('alert')).toContainText('ไม่ใช่รุ่นปัจจุบันแล้ว');
-	await expect(rows(page)).toContainText('v2');
+	await expect(rows(page).getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(editor(page)).not.toContainText(/\bv\d+\b/);
 	await expect(currentCheckbox(page)).toBeDisabled();
 	expect(state.writes).toHaveLength(1);
 	expect(state.writes[0].body).toMatchObject({
@@ -185,7 +197,12 @@ test('activity revisions remain selectable with the existing exact-version dupli
 	await openCurriculumEditor(page);
 	for (const version of [1, 2]) {
 		await picker(page)
-			.getByRole('checkbox', { name: `เลือก A01 v${version}`, exact: true })
+			.getByRole('checkbox', {
+				name:
+					version === 1
+						? /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/
+						: /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 มิ.ย. 2570/
+			})
 			.check();
 		await picker(page)
 			.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
@@ -193,24 +210,53 @@ test('activity revisions remain selectable with the existing exact-version dupli
 	}
 	const table = editor(page).getByRole('region', { name: 'รายการในหลักสูตร' });
 	await expect(table.getByRole('row').filter({ hasText: 'A01' })).toHaveCount(2);
-	await picker(page).getByRole('checkbox', { name: 'เลือก A01 v1', exact: true }).check();
+	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(table).not.toContainText(/\bv\d+\b/);
+	await picker(page)
+		.getByRole('checkbox', { name: /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/ })
+		.check();
 	await picker(page)
 		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
 		.click();
 	await expect(table.getByRole('row').filter({ hasText: 'A01' })).toHaveCount(2);
+	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(table).not.toContainText(/\bv\d+\b/);
 	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
 });
 
-test('published comparison and document show the pinned revision without creating a curriculum draft', async ({
+test('published comparison and document show only the old badge without creating a curriculum draft', async ({
 	page
 }) => {
 	const fixture = curriculumCatalogFixture({ readOnly: true });
 	const state = await installCurriculumCatalog(page, fixture);
 	await page.goto(curriculumCatalogPath.split('?')[0]);
-	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).toContainText('v1');
+	await expect(
+		page
+			.getByRole('row')
+			.filter({ hasText: 'ค21101' })
+			.getByRole('button', { name: 'เก่า', exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).not.toContainText(/\bv\d+\b/);
 	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
-	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).toContainText('v1');
+	await expect(
+		page
+			.getByRole('row')
+			.filter({ hasText: 'ค21101' })
+			.getByRole('button', { name: 'เก่า', exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).not.toContainText(/\bv\d+\b/);
+	await expect(page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true })).toHaveCount(0);
+	await page.goto(
+		`${curriculumCatalogPath.split('?')[0]}?publicationId=${fixture.workspace.level.publicationId}`
+	);
+	await expect(page.getByText('ประวัติการเผยแพร่ · อ่านอย่างเดียว')).toBeVisible();
+	for (const tab of ['เทียบทุกแผน', 'เอกสารรายแผน']) {
+		await page.getByRole('tab', { name: tab, exact: true }).click();
+		const historicalCourse = page.getByRole('row').filter({ hasText: 'ค21101' });
+		await expect(historicalCourse.getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
+		await expect(historicalCourse).not.toContainText(/\bv\d+\b/);
+	}
 	await expect(page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true })).toHaveCount(0);
 	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
@@ -244,7 +290,13 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
 	await page.getByRole('button', { name: 'แผนการเรียนพื้นฐาน', exact: true }).click();
 	await page.getByRole('option', { name: 'แผนคัดลอก', exact: true }).click();
-	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).toContainText('v1');
+	await expect(
+		page
+			.getByRole('row')
+			.filter({ hasText: 'ค21101' })
+			.getByRole('button', { name: 'เก่า', exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('row').filter({ hasText: 'ค21101' })).not.toContainText(/\bv\d+\b/);
 	expect(state.writes).toHaveLength(1);
 	expect(state.writes[0].path).toContain('/copy-program');
 	expect(state.errors).toEqual([]);
@@ -252,7 +304,7 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 
 for (const width of [1440, 390])
 	for (const mode of ['light', 'dark'] as const) {
-		test(`${width}px ${mode}: pinned version, picker dates and nested scrolling remain readable`, async ({
+		test(`${width}px ${mode}: old badge, picker dates and nested scrolling remain readable`, async ({
 			page
 		}, testInfo) => {
 			await page.setViewportSize({ width, height: 900 });
@@ -260,8 +312,9 @@ for (const width of [1440, 390])
 			const state = await installCurriculumCatalog(page, fixture, { mode });
 			await openCurriculumEditor(page);
 			await expect(page.locator('html')).toHaveClass(mode === 'dark' ? /dark/ : /^(?!.*dark)/);
-			await expect(rows(page)).toContainText('v1');
-			await expect(picker(page)).toContainText('v2 · ตั้งแต่ 1 พ.ค. 2569');
+			await expect(rows(page).getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
+			await expect(editor(page)).not.toContainText(/\bv\d+\b/);
+			await expect(picker(page)).toContainText('ตั้งแต่ 1 พ.ค. 2569');
 			expect(
 				await editor(page).evaluate((element) => element.scrollWidth <= element.clientWidth)
 			).toBe(true);
@@ -272,9 +325,7 @@ for (const width of [1440, 390])
 			await catalogScroll.evaluate((element) => {
 				element.scrollTop = element.scrollHeight;
 			});
-			await expect(
-				picker(page).getByRole('checkbox', { name: 'เลือก ท17 v2', exact: true })
-			).toBeVisible();
+			await expect(picker(page).getByRole('checkbox', { name: /^เลือก ท17 / })).toBeVisible();
 			const tableScroll = editor(page)
 				.getByRole('region', { name: 'รายการในหลักสูตร' })
 				.locator('[data-slot="table-container"]');
@@ -289,10 +340,42 @@ for (const width of [1440, 390])
 			const dir = process.env.E2E_ARTIFACT_DIR ?? testInfo.outputPath('screenshots');
 			await mkdir(dir, { recursive: true });
 			await page.screenshot({
-				path: path.join(dir, `curriculum-revisions-${width}-${mode}.png`),
+				path: path.join(dir, `outdated-badge-${width}-${mode}.png`),
 				fullPage: true
 			});
+			if (width === 390) {
+				const badge = rows(page).getByRole('button', { name: 'เก่า', exact: true });
+				await badge.scrollIntoViewIfNeeded();
+				await badge.tap();
+				await expect(page.getByRole('tooltip')).toContainText(
+					'มีรายวิชารุ่นใหม่ที่เริ่มใช้แล้วในทะเบียน'
+				);
+				await page.screenshot({
+					path: path.join(dir, `outdated-badge-${width}-${mode}-explanation.png`),
+					fullPage: true
+				});
+			}
 			expect(state.errors).toEqual([]);
 			expect(state.unexpected).toEqual([]);
 		});
 	}
+
+test('false server status shows no badge in comparison, document or editor even with higher revision metadata', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture();
+	fixture.workspace.requirements[0].hasNewerCurrentVersion = false;
+	const state = await installCurriculumCatalog(page, fixture);
+	await page.goto(curriculumCatalogPath);
+	const course = page.getByRole('row').filter({ hasText: 'ค21101' });
+	await expect(course.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(course).not.toContainText(/\bv\d+\b/);
+	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
+	await expect(course.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(course).not.toContainText(/\bv\d+\b/);
+	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
+	await expect(rows(page).getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
+	await expect(editor(page)).not.toContainText(/\bv\d+\b/);
+	expect(state.writes).toEqual([]);
+	expect(state.errors).toEqual([]);
+});

@@ -107,6 +107,7 @@ function workspace(): CurriculumStructureWorkspace {
 				catalogVersionId: 'subject-1',
 				catalogId: 'subject-stable-1',
 				versionNo: 1,
+				hasNewerCurrentVersion: true,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				section: 'basic_course',
@@ -135,6 +136,7 @@ function workspace(): CurriculumStructureWorkspace {
 				catalogVersionId: 'subject-2',
 				catalogId: 'subject-stable-2',
 				versionNo: 2,
+				hasNewerCurrentVersion: false,
 				code: 'ว21201',
 				name: 'วิทยาศาสตร์เพิ่มเติม',
 				section: 'additional_course',
@@ -163,6 +165,7 @@ function workspace(): CurriculumStructureWorkspace {
 				catalogVersionId: 'subject-1',
 				catalogId: 'subject-stable-1',
 				versionNo: 1,
+				hasNewerCurrentVersion: true,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				section: 'basic_course',
@@ -209,6 +212,7 @@ test('curriculum comparison keeps program assignments independent', () => {
 	assert.deepEqual(mathematics?.cells['program-b']?.termNames, ['ภาคเรียนที่ 2']);
 	assert.equal(mathematics?.isDifferent, true);
 	assert.equal(mathematics?.versionNo, 1);
+	assert.equal(mathematics?.hasNewerCurrentVersion, true);
 });
 
 test('curriculum validation notices collapse duplicate API rows into unique render keys', () => {
@@ -235,5 +239,32 @@ test('curriculum validation notices collapse duplicate API rows into unique rend
 	assert.deepEqual(
 		views.map((view) => view.code),
 		['catalog_total_hours_missing', 'catalog_weekly_value_missing']
+	);
+});
+
+test('curriculum views preserve the server old-status flag rather than deriving it from curriculum revisions', () => {
+	const original = workspace();
+	const old = original.requirements[0];
+	for (const requirement of original.requirements) {
+		if (requirement.catalogVersionId === old.catalogVersionId)
+			requirement.hasNewerCurrentVersion = false;
+	}
+	const comparison = buildProgramComparison(original, 'grade-1');
+	assert.equal(
+		comparison.rows.find((row) => row.catalogVersionId === old.catalogVersionId)
+			?.hasNewerCurrentVersion,
+		false
+	);
+	const document = buildCurriculumDocument(original, 'program-a', 'grade-1');
+	assert.equal(document.termPanels[0].sections[0].rows[0].hasNewerCurrentVersion, false);
+	for (const requirement of original.requirements) {
+		if (requirement.catalogVersionId === old.catalogVersionId)
+			requirement.hasNewerCurrentVersion = true;
+	}
+	assert.equal(
+		buildProgramComparison(original, 'grade-1').rows.find(
+			(row) => row.catalogVersionId === old.catalogVersionId
+		)?.hasNewerCurrentVersion,
+		true
 	);
 });

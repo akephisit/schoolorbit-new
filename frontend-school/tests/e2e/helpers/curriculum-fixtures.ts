@@ -118,6 +118,7 @@ export function curriculumStructure(
 				catalogVersionId: ids.catalogVersion,
 				catalogId: ids.catalog,
 				versionNo: 1,
+				hasNewerCurrentVersion: false,
 				code: 'ค21101',
 				name: 'คณิตศาสตร์พื้นฐาน',
 				requirementKind: 'required',
