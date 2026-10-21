@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { ALL_GRADES } from '#lib/academic/curriculum-structure.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -11,6 +13,7 @@
 		viewMode = $bindable<'comparison' | 'document'>('comparison'),
 		gradeLevelId = $bindable(''),
 		studyProgramId = $bindable(''),
+		termSlotIds = $bindable<string[]>([]),
 		canManage = false,
 		busy = false,
 		onEdit
@@ -19,13 +22,16 @@
 		viewMode?: 'comparison' | 'document';
 		gradeLevelId?: string;
 		studyProgramId?: string;
+		termSlotIds?: string[];
 		canManage?: boolean;
 		busy?: boolean;
 		onEdit: () => void;
 	} = $props();
 
 	let selectedGrade = $derived(
-		workspace.gradeLevels.find((grade) => grade.id === gradeLevelId)?.name ?? 'เลือกระดับชั้น'
+		gradeLevelId === ALL_GRADES
+			? 'ทุกระดับชั้น'
+			: (workspace.gradeLevels.find((grade) => grade.id === gradeLevelId)?.name ?? 'เลือกระดับชั้น')
 	);
 	let selectedProgram = $derived(
 		workspace.programs.find((program) => program.id === studyProgramId)?.nameTh ??
@@ -44,8 +50,11 @@
 			</Tabs.Root>
 
 			<Select.Root type="single" bind:value={gradeLevelId}>
-				<Select.Trigger class="w-full sm:w-56">{selectedGrade}</Select.Trigger>
+				<Select.Trigger aria-label="ระดับชั้นที่แสดง" class="w-full sm:w-56"
+					>{selectedGrade}</Select.Trigger
+				>
 				<Select.Content>
+					<Select.Item value={ALL_GRADES}>ทุกระดับชั้น</Select.Item>
 					{#each workspace.gradeLevels as grade (grade.id)}
 						<Select.Item value={grade.id}>{grade.name}</Select.Item>
 					{/each}
@@ -54,11 +63,13 @@
 
 			{#if viewMode === 'document'}
 				<Select.Root type="single" bind:value={studyProgramId}>
-					<Select.Trigger class="w-full sm:w-64">{selectedProgram}</Select.Trigger>
+					<Select.Trigger aria-label="แผนการเรียนที่แสดง" class="w-full sm:w-64"
+						>{selectedProgram}</Select.Trigger
+					>
 					<Select.Content>
 						{#each workspace.programs as program (program.id)}
 							<Select.Item value={program.id}>
-								{program.nameTh}{program.isDefault ? ' · แผนเริ่มต้น' : ''}
+								{program.nameTh}
 							</Select.Item>
 						{/each}
 					</Select.Content>
@@ -80,4 +91,20 @@
 			{/if}
 		</div>
 	</div>
+	<fieldset class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3">
+		<legend class="sr-only">ภาคเรียนที่แสดง</legend>
+		<span class="text-sm text-muted-foreground">ภาคเรียนที่แสดง</span>
+		{#each [...workspace.termSlots].sort((a, b) => a.sequence - b.sequence) as term (term.id)}
+			<label class="flex cursor-pointer items-center gap-2 py-1 text-sm">
+				<Checkbox
+					checked={termSlotIds.includes(term.id)}
+					onCheckedChange={(checked) => {
+						termSlotIds = checked
+							? [...termSlotIds, term.id]
+							: termSlotIds.filter((id) => id !== term.id);
+					}}
+				/>{term.name}
+			</label>
+		{/each}
+	</fieldset>
 </div>

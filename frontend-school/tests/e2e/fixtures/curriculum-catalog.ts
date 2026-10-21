@@ -2,7 +2,8 @@ import { expect, type Page, type Route } from '@playwright/test';
 import type {
 	CurriculumManagementOptions,
 	CurriculumStructureRequirement,
-	ReplaceCurriculumStructureRequest
+	ReplaceCurriculumStructureRequest,
+	ReplaceCurriculumTermSlotsRequest
 } from '../../../src/lib/api/academic-core.js';
 import { DEFAULT_APPEARANCE, schoolAppearanceCss } from '../../../src/lib/appearance/model.js';
 import {
@@ -49,8 +50,7 @@ export function curriculumCatalogFixture(
 		...workspace.programs[0],
 		id: '62000000-0000-4000-8000-000000000402',
 		code: 'SECOND',
-		nameTh: 'แผนวิทย์คณิต',
-		isDefault: false
+		nameTh: 'แผนวิทย์คณิต'
 	});
 	workspace.requirements[0].hasNewerCurrentVersion = true;
 	const original = structuredClone(workspace.requirements[0]);
@@ -63,7 +63,9 @@ export function curriculumCatalogFixture(
 		versionNo: 2,
 		effectiveFrom: '2026-05-01',
 		effectiveUntil: null,
-		selectableForNewRequirement: true
+		selectableForNewRequirement: true,
+		gradeLevelIds: workspace.gradeLevels.map((grade) => grade.id),
+		section: 'basic_course'
 	};
 	const old = {
 		...current,
@@ -95,6 +97,7 @@ export function curriculumCatalogFixture(
 			id: 'activity-v1',
 			catalogId: 'activity-stable',
 			resourceKind: 'activity',
+			section: 'student_development',
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
 			versionNo: 1,
@@ -105,6 +108,7 @@ export function curriculumCatalogFixture(
 			id: 'activity-v2',
 			catalogId: 'activity-stable',
 			resourceKind: 'activity',
+			section: 'student_development',
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
 			versionNo: 2,
@@ -225,7 +229,8 @@ export async function installCurriculumCatalog(
 							versionNo: existing?.versionNo ?? catalog!.versionNo,
 							hasNewerCurrentVersion: existing?.hasNewerCurrentVersion ?? false,
 							code: existing?.code ?? catalog!.code,
-							name: existing?.name ?? catalog!.name
+							name: existing?.name ?? catalog!.name,
+							section: existing?.section ?? catalog!.section
 						};
 					}
 				);
@@ -233,6 +238,19 @@ export async function installCurriculumCatalog(
 					...fixture.workspace.requirements.filter((item) => item.studyProgramId !== programId),
 					...requirements
 				];
+				return reply(route, fixture.workspace);
+			}
+			if (
+				path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/term-slots` &&
+				method === 'PUT'
+			) {
+				const body: ReplaceCurriculumTermSlotsRequest = request.postDataJSON();
+				fixture.workspace.termSlots = body.slots.map((slot, index) => ({
+					...slot,
+					id: slot.id ?? `new-term-${index}`,
+					curriculumLevelId: ids.curriculumVersion,
+					rowVersion: 1
+				}));
 				return reply(route, fixture.workspace);
 			}
 			if (path === '/api/academic/curricula/overview')
@@ -250,8 +268,7 @@ export async function installCurriculumCatalog(
 				const copied = {
 					...fixture.workspace.programs[0],
 					id: 'copied-program',
-					nameTh: 'แผนคัดลอก',
-					isDefault: false
+					nameTh: 'แผนคัดลอก'
 				};
 				fixture.workspace.programs.push(copied);
 				fixture.workspace.requirements.push({

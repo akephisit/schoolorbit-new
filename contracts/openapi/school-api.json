@@ -16916,9 +16916,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "isDefault": {
-                "type": "boolean"
-              },
               "nameEn": {
                 "type": [
                   "string",
@@ -16945,7 +16942,6 @@
               "curriculumLevelId",
               "code",
               "nameTh",
-              "isDefault",
               "status",
               "rowVersion",
               "createdAt",
@@ -27411,9 +27407,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "isDefault": {
-                  "type": "boolean"
-                },
                 "nameEn": {
                   "type": [
                     "string",
@@ -27440,7 +27433,6 @@
                 "curriculumLevelId",
                 "code",
                 "nameTh",
-                "isDefault",
                 "status",
                 "rowVersion",
                 "createdAt",
@@ -41453,17 +41445,13 @@
             "format": "uuid",
             "type": "string"
           },
-          "isDefault": {
-            "type": "boolean"
-          },
           "nameTh": {
             "type": "string"
           }
         },
         "required": [
           "draftId",
-          "nameTh",
-          "isDefault"
+          "nameTh"
         ],
         "type": "object"
       },
@@ -42029,6 +42017,13 @@
               "null"
             ]
           },
+          "gradeLevelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -42038,6 +42033,9 @@
           },
           "resourceKind": {
             "$ref": "#/components/schemas/RequirementResourceKind"
+          },
+          "section": {
+            "$ref": "#/components/schemas/CurriculumDocumentSection"
           },
           "selectableForNewRequirement": {
             "type": "boolean"
@@ -42055,7 +42053,9 @@
           "code",
           "name",
           "versionNo",
-          "effectiveFrom"
+          "effectiveFrom",
+          "gradeLevelIds",
+          "section"
         ],
         "type": "object"
       },
@@ -42852,6 +42852,20 @@
           "studyProgramId": {
             "format": "uuid",
             "type": "string"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectGroupOrder": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "termSlotId": {
             "format": "uuid",
@@ -61946,9 +61960,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "isDefault": {
-            "type": "boolean"
-          },
           "nameEn": {
             "type": [
               "string",
@@ -61975,7 +61986,6 @@
           "curriculumLevelId",
           "code",
           "nameTh",
-          "isDefault",
           "status",
           "rowVersion",
           "createdAt",
@@ -69400,9 +69410,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "isDefault": {
-            "type": "boolean"
-          },
           "nameTh": {
             "type": "string"
           },
@@ -69414,7 +69421,6 @@
         "required": [
           "draftId",
           "nameTh",
-          "isDefault",
           "rowVersion"
         ],
         "type": "object"

@@ -19,6 +19,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
@@ -28,6 +29,9 @@
 	let {
 		workspace,
 		managementOptions,
+		initialProgram = '',
+		initialGrade = '',
+		initialTerm = '',
 		onSaveStructure,
 		onSaveTermSlots,
 		onCreateProgram,
@@ -35,6 +39,9 @@
 	}: {
 		workspace: CurriculumStructureWorkspace;
 		managementOptions: CurriculumManagementOptions;
+		initialProgram?: string;
+		initialGrade?: string;
+		initialTerm?: string;
 		onSaveStructure: (
 			studyProgramId: string,
 			rowVersion: number,
@@ -46,13 +53,25 @@
 	} = $props();
 	type StagedRequirement = StagedCurriculumRequirement;
 	function initialProgramId() {
-		return workspace.programs[0]?.id ?? '';
+		return (
+			workspace.programs.find((program) => program.id === initialProgram)?.id ??
+			workspace.programs[0]?.id ??
+			''
+		);
 	}
 	function initialGradeId() {
-		return workspace.gradeLevels[0]?.id ?? '';
+		return (
+			workspace.gradeLevels.find((grade) => grade.id === initialGrade)?.id ??
+			workspace.gradeLevels[0]?.id ??
+			''
+		);
 	}
 	function initialTermSlotId() {
-		return workspace.termSlots[0]?.id ?? '';
+		return (
+			workspace.termSlots.find((term) => term.id === initialTerm)?.id ??
+			[...workspace.termSlots].sort((a, b) => a.sequence - b.sequence)[0]?.id ??
+			''
+		);
 	}
 	function initialRequirements(): StagedRequirement[] {
 		return workspace.requirements.map((requirement) => ({
@@ -92,10 +111,12 @@
 	): value is CurriculumStructureRequirementInput['requirementKind'] {
 		return requirementKinds.some((kind) => kind === value);
 	}
-	let resourceKind = $state<'all' | 'course' | 'activity'>('all');
+	let resourceKind = $state<'all' | 'basic_course' | 'additional_course' | 'student_development'>(
+		'all'
+	);
 	let search = $state('');
 	let selectedCatalogIds = $state.raw<string[]>([]);
-	let programDraft = $state({ nameTh: '', isDefault: initialProgramId() === '' });
+	let programDraft = $state({ nameTh: '' });
 	let history = $state.raw<StagedRequirement[][]>([]);
 	let stagedRequirements = $state.raw<StagedRequirement[]>(initialRequirements());
 	let stagedSlots = $state.raw<CurriculumTermSlotInput[]>(initialSlots());
@@ -125,8 +146,8 @@
 	let filteredCatalog = $derived.by(() => {
 		const query = search.trim().toLocaleLowerCase('th');
 		return managementOptions.catalogVersions.filter((option) => {
-			if (!selectableCatalogOption(option)) return false;
-			if (resourceKind !== 'all' && option.resourceKind !== resourceKind) return false;
+			if (!selectableCatalogOption(option, selectedGradeId)) return false;
+			if (resourceKind !== 'all' && option.section !== resourceKind) return false;
 			return !query || `${option.code} ${option.name}`.toLocaleLowerCase('th').includes(query);
 		});
 	});
@@ -171,7 +192,11 @@
 
 	function requirementSource(id: string) {
 		return workspace.requirements.find(
-			(source) => source.studyProgramId === selectedProgramId && source.catalogVersionId === id
+			(source) =>
+				source.studyProgramId === selectedProgramId &&
+				source.catalogVersionId === id &&
+				source.gradeLevel.id === selectedGradeId &&
+				source.termSlotId === selectedTermSlotId
 		);
 	}
 
@@ -226,33 +251,16 @@
 	}
 
 	function updateRequirement(
-		catalogVersionId: string,
+		target: StagedRequirement,
 		values: Partial<CurriculumStructureRequirementInput>
 	) {
 		replaceStaged(
-			stagedRequirements.map((item) =>
-				item.studyProgramId === selectedProgramId &&
-				item.catalogVersionId === catalogVersionId &&
-				item.gradeLevelId === selectedGradeId &&
-				item.termSlotId === selectedTermSlotId
-					? { ...item, ...values }
-					: item
-			)
+			stagedRequirements.map((item) => (item === target ? { ...item, ...values } : item))
 		);
 	}
 
-	function removeRequirement(catalogVersionId: string) {
-		replaceStaged(
-			stagedRequirements.filter(
-				(item) =>
-					!(
-						item.studyProgramId === selectedProgramId &&
-						item.catalogVersionId === catalogVersionId &&
-						item.gradeLevelId === selectedGradeId &&
-						item.termSlotId === selectedTermSlotId
-					)
-			)
-		);
+	function removeRequirement(target: StagedRequirement) {
+		replaceStaged(stagedRequirements.filter((item) => item !== target));
 	}
 
 	function undo() {
@@ -301,8 +309,7 @@
 			if (!workspace.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนเพิ่มแผน');
 			await onCreateProgram({
 				draftId: workspace.level.draftId,
-				nameTh: programDraft.nameTh.trim(),
-				isDefault: programDraft.isDefault
+				nameTh: programDraft.nameTh.trim()
 			});
 			onClose();
 		} catch (error) {
@@ -328,17 +335,36 @@
 		</Sheet.Header>
 
 		<div class="space-y-5 py-4">
-			<section
-				class="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-[minmax(14rem,1fr)_auto_auto] sm:items-center"
+			<Collapsible.Root class="rounded-xl border bg-card p-3">
+				<Collapsible.Trigger class="w-full text-left text-sm font-medium"
+					>เพิ่มแผนการเรียน</Collapsible.Trigger
+				>
+				<Collapsible.Content>
+					<div class="mt-3 flex flex-wrap gap-2">
+						<Input
+							aria-label="ชื่อแผนการเรียนใหม่"
+							bind:value={programDraft.nameTh}
+							placeholder="ชื่อแผนการเรียน"
+							class="min-w-48 flex-1"
+						/>
+						<LoadingButton loading={saving} onclick={createProgram}>เพิ่มแผน</LoadingButton>
+					</div>
+				</Collapsible.Content></Collapsible.Root
 			>
-				<Input bind:value={programDraft.nameTh} placeholder="ชื่อแผนการเรียน" />
-				<label class="flex items-center gap-2 text-sm">
-					<Checkbox bind:checked={programDraft.isDefault} /> แผนเริ่มต้น
-				</label>
-				<LoadingButton loading={saving} onclick={createProgram}>เพิ่มแผน</LoadingButton>
-			</section>
+			<Collapsible.Root class="rounded-xl border bg-card p-3">
+				<Collapsible.Trigger class="w-full text-left text-sm font-medium"
+					>ตั้งค่าภาคเรียนในหลักสูตร</Collapsible.Trigger
+				>
+				<Collapsible.Content>
+					<div class="mt-3">
+						<CurriculumTermSlotEditor
+							slots={stagedSlots}
+							onchange={(slots) => (stagedSlots = slots)}
+						/>
+					</div>
+				</Collapsible.Content></Collapsible.Root
+			>
 
-			<CurriculumTermSlotEditor slots={stagedSlots} onchange={(slots) => (stagedSlots = slots)} />
 			{#if slotsDirty}
 				<div
 					class="flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/20"
@@ -410,37 +436,45 @@
 						type="single"
 						value={resourceKind}
 						onValueChange={(value) => {
-							if (value === 'all' || value === 'course' || value === 'activity') {
+							if (
+								value === 'all' ||
+								value === 'basic_course' ||
+								value === 'additional_course' ||
+								value === 'student_development'
+							) {
 								resourceKind = value;
 								selectedCatalogIds = [];
 							}
 						}}
 					>
-						<Select.Trigger>
+						<Select.Trigger aria-label="หมวดทะเบียน">
 							{resourceKind === 'all'
 								? 'ทั้งหมด'
-								: resourceKind === 'course'
-									? 'รายวิชา'
-									: 'กิจกรรม'}
+								: resourceKind === 'basic_course'
+									? 'รายวิชาพื้นฐาน'
+									: resourceKind === 'additional_course'
+										? 'รายวิชาเพิ่มเติม'
+										: 'กิจกรรมพัฒนาผู้เรียน'}
 						</Select.Trigger>
 						<Select.Content>
 							<Select.Item value="all">ทั้งหมด</Select.Item>
-							<Select.Item value="course">รายวิชา</Select.Item>
-							<Select.Item value="activity">กิจกรรม</Select.Item>
+							<Select.Item value="basic_course">รายวิชาพื้นฐาน</Select.Item>
+							<Select.Item value="additional_course">รายวิชาเพิ่มเติม</Select.Item>
+							<Select.Item value="student_development">กิจกรรมพัฒนาผู้เรียน</Select.Item>
 						</Select.Content>
 					</Select.Root>
 					<div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-1">
 						{#each catalogChoices as { option, hasExistingCourse } (option.id)}
 							<label class="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted/60">
 								<Checkbox
-									aria-label={`เลือก ${option.code} ${option.name} · ${formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}`}
+									aria-label={`เลือก ${option.resourceKind === 'course' ? option.code + ' ' : ''}${option.name} · ${formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}`}
 									disabled={hasExistingCourse || !selectionReady || saving}
 									checked={selectedCatalogIds.includes(option.id)}
 									onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 								/>
 								<span class="min-w-0">
 									<span class="block text-xs font-semibold text-primary tabular-nums"
-										>{option.code}</span
+										>{option.resourceKind === 'course' ? option.code : ''}</span
 									>
 									<span class="block text-sm">{option.name}</span>
 									<span class="block text-xs text-muted-foreground"
@@ -499,13 +533,15 @@
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
-								{#each visibleRequirements as requirement (requirement.catalogVersionId)}
+								{#each visibleRequirements as requirement (requirement)}
 									{@const option = catalogOption(requirement.catalogVersionId)}
 									{@const source = requirementSource(requirement.catalogVersionId)}
 									<Table.Row>
 										<Table.Cell>
 											<div class="text-xs font-semibold text-primary tabular-nums">
-												{option?.code ?? source?.code}
+												{requirement.resourceKind === 'course'
+													? (option?.code ?? source?.code)
+													: ''}
 											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>
 											<CurriculumOutdatedBadge
@@ -519,7 +555,7 @@
 												onValueChange={(value) =>
 													value &&
 													isRequirementKind(value) &&
-													updateRequirement(requirement.catalogVersionId, {
+													updateRequirement(requirement, {
 														requirementKind: value
 													})}
 											>
@@ -549,7 +585,7 @@
 											<Button
 												variant="ghost"
 												size="icon"
-												onclick={() => removeRequirement(requirement.catalogVersionId)}
+												onclick={() => removeRequirement(requirement)}
 												aria-label="นำรายการออก"
 											>
 												<Trash2 class="size-4" />

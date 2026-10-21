@@ -2,6 +2,7 @@
 	import type { CurriculumTermSlotInput } from '#lib/api/academic-core.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Plus, Trash2 } from '@lucide/svelte';
 
@@ -49,16 +50,17 @@
 						: `ภาคเรียนพิเศษ ${occurrence}`;
 		onchange([
 			...slots,
-			{ sequence: slots.length + 1, termType, typeOccurrence: occurrence, name }
+			{
+				sequence: Math.max(0, ...slots.map((slot) => slot.sequence)) + 1,
+				termType,
+				typeOccurrence: occurrence,
+				name
+			}
 		]);
 	}
 
 	function remove(index: number) {
-		onchange(
-			slots
-				.filter((_, slotIndex) => slotIndex !== index)
-				.map((slot, slotIndex) => ({ ...slot, sequence: slotIndex + 1 }))
-		);
+		onchange(slots.filter((_, slotIndex) => slotIndex !== index));
 	}
 </script>
 
@@ -66,47 +68,67 @@
 	<div>
 		<h3 class="font-semibold">ภาคเรียนในโครงสร้างหลักสูตร</h3>
 		<p class="text-xs text-muted-foreground">
-			เป็นช่องของหลักสูตร ไม่ใช่ภาคเรียนจริงของปีใดปีหนึ่ง ระบบจะจับคู่ตามประเภทและลำดับ
+			เป็นช่องของหลักสูตร ไม่ใช่ภาคเรียนจริงของปีใดปีหนึ่ง
+			ระบบจับคู่กับภาคเรียนจริงตามประเภทและครั้งที่ภายในประเภทเดียวกัน เช่น ปกติครั้งที่ 2
+			จับคู่ภาคเรียนปกติครั้งที่ 2 ของปีนั้น ชื่อและลำดับแสดงใช้เพื่อแสดงผลเท่านั้น
 		</p>
 	</div>
 
 	<div class="space-y-2">
-		{#each slots as slot, index (slot.id ?? `${slot.termType}-${slot.typeOccurrence}`)}
+		{#each slots as slot, index (index)}
 			<div
-				class="grid gap-2 rounded-lg border bg-background p-2 sm:grid-cols-[4rem_minmax(12rem,1fr)_11rem_5rem_2.5rem] sm:items-center"
+				class="grid gap-2 rounded-lg border bg-background p-2 lg:grid-cols-[5rem_minmax(10rem,1fr)_11rem_8rem_2.5rem] lg:items-end"
 			>
-				<Input
-					type="number"
-					min="1"
-					value={slot.sequence}
-					oninput={(event) => update(index, { sequence: Number(event.currentTarget.value) })}
-					aria-label="ลำดับภาคเรียน"
-				/>
-				<Input
-					value={slot.name}
-					oninput={(event) => update(index, { name: event.currentTarget.value })}
-					aria-label="ชื่อภาคเรียน"
-				/>
-				<Select.Root
-					type="single"
-					value={slot.termType}
-					onValueChange={(value) =>
-						value && isTermType(value) && update(index, { termType: value })}
-				>
-					<Select.Trigger>{typeLabels[slot.termType]}</Select.Trigger>
-					<Select.Content>
-						{#each termTypes as value (value)}
-							<Select.Item {value}>{typeLabels[value]}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Input
-					type="number"
-					min="1"
-					value={slot.typeOccurrence}
-					oninput={(event) => update(index, { typeOccurrence: Number(event.currentTarget.value) })}
-					aria-label="ลำดับภายในประเภท"
-				/>
+				<div class="space-y-1">
+					<Label for={`term-sequence-${index}`}>ลำดับแสดง</Label>
+					<Input
+						id={`term-sequence-${index}`}
+						type="number"
+						min="1"
+						value={slot.sequence}
+						oninput={(event) => update(index, { sequence: Number(event.currentTarget.value) })}
+						aria-label="ลำดับแสดง"
+					/>
+				</div>
+				<div class="space-y-1">
+					<Label for={`term-name-${index}`}>ชื่อภาคเรียน</Label>
+					<Input
+						id={`term-name-${index}`}
+						value={slot.name}
+						oninput={(event) => update(index, { name: event.currentTarget.value })}
+						aria-label="ชื่อภาคเรียน"
+					/>
+				</div>
+				<div class="space-y-1">
+					<Label for={`term-type-${index}`}>ประเภท</Label>
+					<Select.Root
+						type="single"
+						value={slot.termType}
+						onValueChange={(value) =>
+							value && isTermType(value) && update(index, { termType: value })}
+					>
+						<Select.Trigger id={`term-type-${index}`} aria-label="ประเภทภาคเรียน"
+							>{typeLabels[slot.termType]}</Select.Trigger
+						>
+						<Select.Content>
+							{#each termTypes as value (value)}
+								<Select.Item {value}>{typeLabels[value]}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="space-y-1">
+					<Label for={`term-occurrence-${index}`}>ครั้งที่ภายในประเภท</Label>
+					<Input
+						id={`term-occurrence-${index}`}
+						type="number"
+						min="1"
+						value={slot.typeOccurrence}
+						oninput={(event) =>
+							update(index, { typeOccurrence: Number(event.currentTarget.value) })}
+						aria-label="ครั้งที่ภายในประเภท"
+					/>
+				</div>
 				<Button
 					type="button"
 					variant="ghost"

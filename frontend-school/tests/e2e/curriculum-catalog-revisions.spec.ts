@@ -200,8 +200,8 @@ test('activity revisions remain selectable with the existing exact-version dupli
 			.getByRole('checkbox', {
 				name:
 					version === 1
-						? /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/
-						: /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 มิ.ย. 2570/
+						? /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/
+						: /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 มิ.ย. 2570/
 			})
 			.check();
 		await picker(page)
@@ -209,18 +209,20 @@ test('activity revisions remain selectable with the existing exact-version dupli
 			.click();
 	}
 	const table = editor(page).getByRole('region', { name: 'รายการในหลักสูตร' });
-	await expect(table.getByRole('row').filter({ hasText: 'A01' })).toHaveCount(2);
+	await expect(table.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' })).toHaveCount(2);
 	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
 	await expect(table).not.toContainText(/\bv\d+\b/);
+	await expect(table).not.toContainText('A01');
 	await picker(page)
-		.getByRole('checkbox', { name: /เลือก A01 กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/ })
+		.getByRole('checkbox', { name: /เลือก กิจกรรมชุมนุม · ตั้งแต่ 1 พ.ค. 2570/ })
 		.check();
 	await picker(page)
 		.getByRole('button', { name: /เพิ่ม 1 รายการ/ })
 		.click();
-	await expect(table.getByRole('row').filter({ hasText: 'A01' })).toHaveCount(2);
+	await expect(table.getByRole('row').filter({ hasText: 'กิจกรรมชุมนุม' })).toHaveCount(2);
 	await expect(table.getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(0);
 	await expect(table).not.toContainText(/\bv\d+\b/);
+	await expect(table).not.toContainText('A01');
 	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
 });
@@ -288,7 +290,7 @@ test('copying a published program keeps its pinned v1 even when v2 is current', 
 		)
 		.toEqual([ids.catalogVersion]);
 	await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
-	await page.getByRole('button', { name: 'แผนการเรียนพื้นฐาน', exact: true }).click();
+	await page.getByRole('button', { name: 'แผนการเรียนที่แสดง', exact: true }).click();
 	await page.getByRole('option', { name: 'แผนคัดลอก', exact: true }).click();
 	await expect(
 		page

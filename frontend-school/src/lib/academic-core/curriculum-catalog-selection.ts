@@ -14,8 +14,14 @@ export type CurriculumSelectionContext = {
 	termSlotId: string;
 };
 
-export function selectableCatalogOption(option: CurriculumCatalogOption): boolean {
-	return option.selectableForNewRequirement;
+export function selectableCatalogOption(
+	option: CurriculumCatalogOption,
+	gradeLevelId?: string
+): boolean {
+	return (
+		option.selectableForNewRequirement &&
+		(!gradeLevelId || option.gradeLevelIds.includes(gradeLevelId))
+	);
 }
 
 function requirementMetadata(
@@ -97,7 +103,7 @@ export function appendSelectedCatalogRequirements(
 		const option = options.find((candidate) => candidate.id === id);
 		if (
 			!option ||
-			!selectableCatalogOption(option) ||
+			!selectableCatalogOption(option, context.gradeLevelId) ||
 			duplicateRequirements(option, context, next, options, originals).length > 0
 		)
 			continue;

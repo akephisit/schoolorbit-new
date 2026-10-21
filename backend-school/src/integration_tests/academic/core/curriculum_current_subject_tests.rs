@@ -456,9 +456,18 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
     .await
     .unwrap();
     assert!(!published_before.requirements[0].has_newer_current_version);
-    let pinned_group = catalog::subject_groups_for_versions(&f.pool, &[f.v1.id]).await.unwrap().remove(0);
-    assert_eq!(published_before.requirements[0].subject_group_id, Some(pinned_group.subject_group_id));
-    assert_eq!(published_before.requirements[0].subject_group_order, pinned_group.display_order);
+    let pinned_group = catalog::subject_groups_for_versions(&f.pool, &[f.v1.id])
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        published_before.requirements[0].subject_group_id,
+        Some(pinned_group.subject_group_id)
+    );
+    assert_eq!(
+        published_before.requirements[0].subject_group_order,
+        pinned_group.display_order
+    );
     revision(&f, "รายวิชารุ่นสอง").await;
     let persisted_before_read = snapshot(&f).await;
     let published_after = school_academic_core::services::curriculum_publications::read_workspace(
@@ -578,7 +587,10 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
         .unwrap();
     assert_eq!(option.catalog_id, activity.id);
     assert_eq!(option.grade_level_ids, vec![f.grade]);
-    assert_eq!(option.section, school_academic_core::models::CurriculumDocumentSection::StudentDevelopment);
+    assert_eq!(
+        option.section,
+        school_academic_core::models::CurriculumDocumentSection::StudentDevelopment
+    );
     assert!(option.selectable_for_new_requirement);
     let mut activity_row = row(&f, activity_version.id);
     activity_row.resource_kind = RequirementResourceKind::Activity;

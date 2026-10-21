@@ -2,206 +2,267 @@ import type {
 	CurriculumDocumentSection,
 	CurriculumStructureRequirement,
 	CurriculumStructureWorkspace,
-	CurriculumValidationNotice,
-	StudyProgram
+	CurriculumValidationNotice
 } from '#lib/api/academic-core.js';
 
-const sectionDefinitions: ReadonlyArray<{
-	id: CurriculumDocumentSection;
-	label: string;
-}> = [
+export const curriculumSections: ReadonlyArray<{ id: CurriculumDocumentSection; label: string }> = [
 	{ id: 'basic_course', label: 'รายวิชาพื้นฐาน' },
 	{ id: 'additional_course', label: 'รายวิชาเพิ่มเติม' },
 	{ id: 'student_development', label: 'กิจกรรมพัฒนาผู้เรียน' }
 ];
-
-export type CurriculumDocumentSectionView = {
-	id: CurriculumDocumentSection;
-	label: string;
-	rows: CurriculumStructureRequirement[];
-	totalCredits: string;
-	totalHours: string;
+export const ALL_GRADES = 'all';
+export type MetricTotal = { value: string; partial: boolean };
+export type CurriculumTotals = {
+	credits: MetricTotal;
+	hours: MetricTotal;
+	weeklyPeriods: MetricTotal;
+	weeklyHours: MetricTotal;
 };
-
-export type CurriculumTermPanel = {
-	id: string;
-	name: string;
-	sections: CurriculumDocumentSectionView[];
-	totalCredits: string;
-	totalHours: string;
-};
-
-export type CurriculumDocumentView = {
-	program: StudyProgram | null;
-	gradeName: string;
-	termPanels: CurriculumTermPanel[];
-	totalCredits: string;
-	totalHours: string;
-};
-
-export type ProgramComparisonCell = {
-	termNames: string[];
-	requirementKinds: CurriculumStructureRequirement['requirementKind'][];
-	credit: string | null;
-	totalHours: string | null;
-};
-
-export type ProgramComparisonRow = {
+export type CurriculumMatrixRow = {
 	key: string;
-	catalogVersionId: string;
-	versionNo: number;
-	hasNewerCurrentVersion: boolean;
-	resourceKind: CurriculumStructureRequirement['resourceKind'];
 	section: CurriculumDocumentSection;
-	code: string;
-	name: string;
-	cells: Record<string, ProgramComparisonCell | undefined>;
-	isDifferent: boolean;
+	groupId: string | null;
+	groupOrder: number | null;
+	label: string;
+	cells: Record<string, CurriculumStructureRequirement[]>;
 };
-
-export type ProgramComparisonView = {
-	programs: Array<{ id: string; name: string; code: string; isDefault: boolean }>;
-	sections: typeof sectionDefinitions;
-	rows: ProgramComparisonRow[];
-};
-
+export type CurriculumMatrix = ReturnType<typeof buildCurriculumMatrix>;
 export type CurriculumValidationNoticeView = CurriculumValidationNotice & { key: string };
 
 export function buildCurriculumValidationNoticeViews(
 	notices: readonly CurriculumValidationNotice[]
 ): CurriculumValidationNoticeView[] {
 	const seen = new Set<string>();
-	const views: CurriculumValidationNoticeView[] = [];
-	for (const notice of notices) {
+	return notices.flatMap((notice) => {
 		const key = JSON.stringify([notice.code, notice.catalogVersionId ?? null, notice.message]);
-		if (seen.has(key)) continue;
+		if (seen.has(key)) return [];
 		seen.add(key);
-		views.push({ ...notice, key });
+		return [{ ...notice, key }];
+	});
+}
+
+function decimal(value: string | null | undefined): bigint | null {
+	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value?.trim() ?? '');
+	return match ? BigInt(match[1]) * 100n + BigInt((match[2] ?? '').padEnd(2, '0')) : null;
+}
+function format(value: bigint): string {
+	return `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+}
+export function curriculumMetric(value: string | null | undefined): string {
+	const parsed = decimal(value);
+	return parsed === null ? '—' : format(parsed);
+}
+function sum(values: (string | null | undefined)[]): MetricTotal {
+	let total = 0n;
+	let known = 0;
+	for (const value of values) {
+		const parsed = decimal(value);
+		if (parsed !== null) {
+			total += parsed;
+			known++;
+		}
 	}
-	return views;
-}
-
-function decimalToHundredths(value: string | null | undefined): number | null {
-	if (value == null || value.trim() === '') return null;
-	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-	if (!match) return null;
-	const fraction = (match[2] ?? '').padEnd(2, '0');
-	return Number(match[1]) * 100 + Number(fraction || '0');
-}
-
-function formatHundredths(value: number): string {
-	return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, '0')}`;
-}
-
-function sumMetric(
-	requirements: CurriculumStructureRequirement[],
-	metric: 'credit' | 'totalHours'
-): string {
-	const total = requirements.reduce((sum, requirement) => {
-		return sum + (decimalToHundredths(requirement.metrics[metric]) ?? 0);
-	}, 0);
-	return formatHundredths(total);
-}
-
-export function buildCurriculumDocument(
-	workspace: CurriculumStructureWorkspace,
-	studyProgramId: string,
-	gradeLevelId: string
-): CurriculumDocumentView {
-	const program = workspace.programs.find((item) => item.id === studyProgramId) ?? null;
-	const gradeName =
-		workspace.gradeLevels.find((item) => item.id === gradeLevelId)?.name ?? 'ไม่พบระดับชั้น';
-	const selected = workspace.requirements.filter(
-		(requirement) =>
-			requirement.studyProgramId === studyProgramId && requirement.gradeLevel.id === gradeLevelId
-	);
-	const termPanels = [...workspace.termSlots]
-		.sort((left, right) => left.sequence - right.sequence)
-		.map((slot) => {
-			const termRequirements = selected.filter((requirement) => requirement.termSlotId === slot.id);
-			const sections = sectionDefinitions.map((section) => {
-				const rows = termRequirements
-					.filter((requirement) => requirement.section === section.id)
-					.sort(
-						(left, right) =>
-							left.displayOrder - right.displayOrder || left.code.localeCompare(right.code, 'th')
-					);
-				return {
-					...section,
-					rows,
-					totalCredits: sumMetric(rows, 'credit'),
-					totalHours: sumMetric(rows, 'totalHours')
-				};
-			});
-			return {
-				id: slot.id,
-				name: slot.name,
-				sections,
-				totalCredits: sumMetric(termRequirements, 'credit'),
-				totalHours: sumMetric(termRequirements, 'totalHours')
-			};
-		});
-
 	return {
-		program,
-		gradeName,
-		termPanels,
-		totalCredits: sumMetric(selected, 'credit'),
-		totalHours: sumMetric(selected, 'totalHours')
+		value: values.length && !known ? '—' : format(total),
+		partial: known !== values.length
+	};
+}
+export function curriculumTotals(
+	rows: readonly CurriculumStructureRequirement[]
+): CurriculumTotals {
+	const courses = rows.filter((row) => row.resourceKind === 'course');
+	const activities = rows.filter((row) => row.resourceKind === 'activity');
+	return {
+		credits: sum(courses.map((row) => row.metrics.credit)),
+		hours: sum(rows.map((row) => row.metrics.totalHours)),
+		weeklyPeriods: sum(
+			courses.map((row) => (row.metrics.weeklyUnit === 'period' ? row.metrics.weeklyValue : null))
+		),
+		weeklyHours: sum(
+			activities.map((row) => (row.metrics.weeklyUnit === 'hour' ? row.metrics.weeklyValue : null))
+		)
+	};
+}
+export function matrixCellKey(programId: string, termId: string): string {
+	return JSON.stringify([programId, termId]);
+}
+function nameKey(name: string): string {
+	return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('th');
+}
+function familyKey(name: string): string {
+	return nameKey(name)
+		.replace(/\s*[0-9๐-๙]+\s*$/, '')
+		.trim();
+}
+function scope(row: CurriculumStructureRequirement): string {
+	return JSON.stringify([row.section, row.subjectGroupId ?? null, row.resourceKind]);
+}
+function compareRequirements(
+	a: CurriculumStructureRequirement,
+	b: CurriculumStructureRequirement
+): number {
+	return (
+		a.displayOrder - b.displayOrder ||
+		a.code.localeCompare(b.code, 'th', { numeric: true }) ||
+		a.id.localeCompare(b.id)
+	);
+}
+
+// Matching is presentation only. Stable identities win; name fallbacks merge only
+// unambiguous, disjoint columns in the same section and authoritative subject group.
+function align(requirements: CurriculumStructureRequirement[]): CurriculumMatrixRow[] {
+	const identities = new Map<string, CurriculumStructureRequirement[]>();
+	for (const requirement of [...requirements].sort(compareRequirements)) {
+		const key = JSON.stringify([scope(requirement), requirement.catalogId]);
+		const bucket = identities.get(key) ?? [];
+		bucket.push(requirement);
+		identities.set(key, bucket);
+	}
+	let clusters = [...identities.values()];
+	for (const getName of [nameKey, familyKey]) {
+		const buckets = new Map<string, CurriculumStructureRequirement[][]>();
+		for (const cluster of clusters) {
+			const names = new Set(cluster.map((row) => getName(row.name)));
+			// An identity with different names still stays together, but cannot
+			// arbitrarily supply one of those names for a weaker match.
+			const key =
+				names.size === 1 && [...names][0]
+					? JSON.stringify([scope(cluster[0]), [...names][0]])
+					: null;
+			const bucketKey = key ?? JSON.stringify(['identity', cluster[0].id]);
+			const bucket = buckets.get(bucketKey) ?? [];
+			bucket.push(cluster);
+			buckets.set(bucketKey, bucket);
+		}
+		clusters = [...buckets.values()].flatMap((bucket) => {
+			const columns = new Set<string>();
+			for (const cluster of bucket) {
+				for (const row of cluster) {
+					const column = matrixCellKey(row.studyProgramId, row.termSlotId);
+					if (columns.has(column)) return bucket;
+					columns.add(column);
+				}
+			}
+			return [bucket.flat()];
+		});
+	}
+	return clusters
+		.map((cluster) => {
+			const sorted = [...cluster].sort(compareRequirements);
+			const first = sorted[0];
+			const cells: CurriculumMatrixRow['cells'] = {};
+			for (const row of sorted) {
+				const key = matrixCellKey(row.studyProgramId, row.termSlotId);
+				(cells[key] ??= []).push(row);
+			}
+			return {
+				key: JSON.stringify(sorted.map((row) => row.id).sort()),
+				section: first.section,
+				groupId: first.subjectGroupId ?? null,
+				groupOrder: first.subjectGroupOrder ?? null,
+				label: familyKey(first.name) || first.name,
+				cells
+			};
+		})
+		.sort(
+			(a, b) =>
+				curriculumSections.findIndex((section) => section.id === a.section) -
+					curriculumSections.findIndex((section) => section.id === b.section) ||
+				Number(a.groupId === null) - Number(b.groupId === null) ||
+				(a.groupOrder ?? Number.MAX_SAFE_INTEGER) - (b.groupOrder ?? Number.MAX_SAFE_INTEGER) ||
+				(a.groupId ?? '').localeCompare(b.groupId ?? '') ||
+				a.label.localeCompare(b.label, 'th', { numeric: true }) ||
+				a.key.localeCompare(b.key)
+		);
+}
+
+export function buildCurriculumMatrix(
+	workspace: CurriculumStructureWorkspace,
+	gradeLevelId: string,
+	termSlotIds: readonly string[] = workspace.termSlots.map((term) => term.id),
+	studyProgramId?: string
+) {
+	const terms = [...workspace.termSlots]
+		.filter((term) => termSlotIds.includes(term.id))
+		.sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id));
+	const programs = workspace.programs.filter(
+		(program) => !studyProgramId || program.id === studyProgramId
+	);
+	const grades = [...workspace.gradeLevels]
+		.filter((grade) => gradeLevelId === ALL_GRADES || grade.id === gradeLevelId)
+		.sort((a, b) => a.level_order - b.level_order);
+	const selectedRows = workspace.requirements.filter(
+		(row) =>
+			programs.some((program) => program.id === row.studyProgramId) &&
+			terms.some((term) => term.id === row.termSlotId)
+	);
+	return {
+		programs,
+		terms,
+		grades: grades.map((grade) => {
+			// Align globally so switching views never changes the relative row order.
+			const allRows = workspace.requirements.filter(
+				(row) => row.gradeLevel.id === grade.id && terms.some((term) => term.id === row.termSlotId)
+			);
+			const rows = align(allRows).filter((row) =>
+				programs.some((program) =>
+					terms.some((term) => row.cells[matrixCellKey(program.id, term.id)]?.length)
+				)
+			);
+			return {
+				grade,
+				sections: curriculumSections.map((section) => ({
+					...section,
+					rows: rows.filter((row) => row.section === section.id)
+				}))
+			};
+		}),
+		summaries: programs.map((program) => ({
+			program,
+			selected: curriculumTotals(
+				selectedRows.filter(
+					(row) =>
+						row.studyProgramId === program.id &&
+						grades.some((grade) => grade.id === row.gradeLevel.id)
+				)
+			),
+			level: curriculumTotals(
+				workspace.requirements.filter((row) => row.studyProgramId === program.id)
+			),
+			weekly: [...workspace.gradeLevels]
+				.sort((a, b) => a.level_order - b.level_order)
+				.flatMap((grade) =>
+					[...workspace.termSlots]
+						.sort((a, b) => a.sequence - b.sequence)
+						.map((term) => ({
+							grade,
+							term,
+							totals: curriculumTotals(
+								workspace.requirements.filter(
+									(row) =>
+										row.studyProgramId === program.id &&
+										row.gradeLevel.id === grade.id &&
+										row.termSlotId === term.id
+								)
+							)
+						}))
+				)
+		}))
 	};
 }
 
 export function buildProgramComparison(
 	workspace: CurriculumStructureWorkspace,
-	gradeLevelId: string
-): ProgramComparisonView {
-	const slotNames = new Map(workspace.termSlots.map((slot) => [slot.id, slot.name]));
-	const rows = new Map<string, ProgramComparisonRow>();
-	for (const requirement of workspace.requirements) {
-		if (requirement.gradeLevel.id !== gradeLevelId) continue;
-		const key = `${requirement.resourceKind}:${requirement.catalogVersionId}`;
-		const row = rows.get(key) ?? {
-			key,
-			catalogVersionId: requirement.catalogVersionId,
-			versionNo: requirement.versionNo,
-			hasNewerCurrentVersion: requirement.hasNewerCurrentVersion,
-			resourceKind: requirement.resourceKind,
-			section: requirement.section,
-			code: requirement.code,
-			name: requirement.name,
-			cells: {},
-			isDifferent: false
-		};
-		const existing = row.cells[requirement.studyProgramId];
-		row.cells[requirement.studyProgramId] = {
-			termNames: [
-				...(existing?.termNames ?? []),
-				slotNames.get(requirement.termSlotId) ?? 'ไม่พบภาคเรียน'
-			],
-			requirementKinds: [...(existing?.requirementKinds ?? []), requirement.requirementKind],
-			credit: requirement.metrics.credit ?? null,
-			totalHours: requirement.metrics.totalHours ?? null
-		};
-		rows.set(key, row);
-	}
-
-	const programs = workspace.programs.map((program) => ({
-		id: program.id,
-		name: program.nameTh,
-		code: program.code,
-		isDefault: program.isDefault
-	}));
-	const orderedRows = [...rows.values()]
-		.map((row) => {
-			const signatures = programs.map((program) => JSON.stringify(row.cells[program.id] ?? null));
-			return { ...row, isDifferent: new Set(signatures).size > 1 };
-		})
-		.sort((left, right) => {
-			const sectionOrder =
-				sectionDefinitions.findIndex((section) => section.id === left.section) -
-				sectionDefinitions.findIndex((section) => section.id === right.section);
-			return sectionOrder || left.code.localeCompare(right.code, 'th');
-		});
-
-	return { programs, sections: sectionDefinitions, rows: orderedRows };
+	gradeLevelId: string,
+	termSlotIds?: readonly string[]
+) {
+	return buildCurriculumMatrix(workspace, gradeLevelId, termSlotIds);
+}
+export function buildCurriculumDocument(
+	workspace: CurriculumStructureWorkspace,
+	studyProgramId: string,
+	gradeLevelId: string,
+	termSlotIds?: readonly string[]
+) {
+	return buildCurriculumMatrix(workspace, gradeLevelId, termSlotIds, studyProgramId);
 }

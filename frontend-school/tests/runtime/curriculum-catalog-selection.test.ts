@@ -16,6 +16,8 @@ const current: CurriculumCatalogOption = {
 	resourceKind: 'course',
 	code: 'ค21101',
 	name: 'คณิตศาสตร์',
+	gradeLevelIds: ['grade-1', 'grade-2'],
+	section: 'basic_course',
 	versionNo: 2,
 	effectiveFrom: '2026-05-01',
 	effectiveUntil: null,
@@ -46,6 +48,8 @@ const pinned: CurriculumStructureRequirement = {
 	code: old.code,
 	name: old.name,
 	section: 'basic_course',
+	subjectGroupId: 'math',
+	subjectGroupOrder: 1,
 	requirementKind: 'required',
 	displayOrder: 1,
 	metrics: { weeklyUnit: 'period', weeklyValue: '3', credit: '1.50', totalHours: '60' }
@@ -168,5 +172,14 @@ test('activity revision selection retains its exact-version policy and never col
 	assert.deepEqual(
 		result.map((item) => item.catalogVersionId),
 		[old.id, activity.id, second.id]
+	);
+});
+
+test('concrete grade coverage is rechecked when adding stale picker selections', () => {
+	const otherGrade = { ...current, gradeLevelIds: ['grade-2'] };
+	assert.equal(selectableCatalogOption(otherGrade, context.gradeLevelId), false);
+	assert.deepEqual(
+		appendSelectedCatalogRequirements([], [otherGrade.id], context, [otherGrade], [], 'required'),
+		[]
 	);
 });

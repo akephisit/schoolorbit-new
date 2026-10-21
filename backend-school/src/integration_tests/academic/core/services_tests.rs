@@ -6481,10 +6481,26 @@ async fn curriculum_program_default_migration_preserves_populated_amendment_and_
     use school_academic_core::models::{CurriculumViewQuery, OpenCurriculumDraftRequest};
     use school_academic_core::services::curriculum_publications as publications;
     let pool = prepare_core_fixture_through("curriculum_program_default_upgrade", 132).await;
-    let (program, level, edition): (Uuid, Uuid, Uuid) = sqlx::query_as("SELECT p.id,l.id,e.id FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id WHERE e.current_publication_id IS NOT NULL ORDER BY p.id LIMIT 1")
-        .fetch_one(&pool).await.unwrap();
+    // Legacy publications with an unknown revision year remain preserved below,
+    // but a new capture must use an edition that satisfies current publication rules.
+    let (edition, level) = publication_fixture(&pool, "DEFAULT-FREE").await;
+    let program: Uuid = sqlx::query_scalar(
+        "SELECT id FROM study_programs WHERE curriculum_level_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(level)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let released = curriculum::get(&pool, edition).await.unwrap();
-    let draft = publications::open_draft(&pool, edition, OpenCurriculumDraftRequest { row_version: released.row_version }).await.unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        edition,
+        OpenCurriculumDraftRequest {
+            row_version: released.row_version,
+        },
+    )
+    .await
+    .unwrap();
     let token = draft.draft_id.unwrap();
     sqlx::query("UPDATE study_programs SET name_th=name_th||' amended',row_version=row_version+1,updated_at=now() WHERE id=$1")
         .bind(program).execute(&pool).await.unwrap();
@@ -6494,53 +6510,191 @@ async fn curriculum_program_default_migration_preserves_populated_amendment_and_
     // preservation or the new publication rules, and are deliberately not archived.
     sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) VALUES(gen_random_uuid(),$1,'UNRELEASED','Unreleased',false,'draft')")
         .bind(level).execute(&pool).await.unwrap();
-    let released_workspace = publications::read_workspace(&pool, level, &CurriculumViewQuery::default()).await.unwrap();
-    let draft_workspace = publications::read_workspace(&pool, level, &CurriculumViewQuery {draft_id:Some(token),publication_id:None}).await.unwrap();
-    assert_ne!(released_workspace.programs.len(), draft_workspace.programs.len());
-    let history = serde_json::to_value(publications::list_publications(&pool, edition).await.unwrap()).unwrap();
+    let released_workspace =
+        publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
+            .await
+            .unwrap();
+    let draft_workspace = publications::read_workspace(
+        &pool,
+        level,
+        &CurriculumViewQuery {
+            draft_id: Some(token),
+            publication_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(
+        released_workspace.programs.len(),
+        draft_workspace.programs.len()
+    );
+    let history = serde_json::to_value(
+        publications::list_publications(&pool, edition)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let evidence_sql = "SELECT jsonb_build_object('programs',(SELECT jsonb_agg(to_jsonb(r)-'is_default' ORDER BY id) FROM study_programs r),'snapshots',(SELECT jsonb_agg(to_jsonb(r)-'is_default' ORDER BY publication_id,id) FROM curriculum_publication_programs r),'levels',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_levels r),'courses',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_course_requirements r),'activities',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_activity_requirements r),'sources',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_requirement_sources r),'slots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_term_slots r),'publications',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_publications r))";
-    let before: serde_json::Value = sqlx::query_scalar(evidence_sql).fetch_one(&pool).await.unwrap();
+    let before: serde_json::Value = sqlx::query_scalar(evidence_sql)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     apply_migrations_through(&pool, 133).await.unwrap();
-    assert_eq!(before, sqlx::query_scalar::<_,serde_json::Value>(evidence_sql).fetch_one(&pool).await.unwrap());
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(evidence_sql)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
     apply_migrations_through(&pool, 133).await.unwrap();
-    assert_eq!(before, sqlx::query_scalar::<_,serde_json::Value>(evidence_sql).fetch_one(&pool).await.unwrap());
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(evidence_sql)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
     let columns: i64 = sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN('study_programs','curriculum_publication_programs','published_study_programs') AND column_name='is_default'").fetch_one(&pool).await.unwrap();
-    assert_eq!(columns,0);
+    assert_eq!(columns, 0);
     let audit: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE event_code='curriculum.program_default_removed.reconciled' AND payload->>'passed'='true'").fetch_one(&pool).await.unwrap();
-    assert_eq!(audit,1);
-    assert_eq!(history,serde_json::to_value(publications::list_publications(&pool, edition).await.unwrap()).unwrap());
-    assert_eq!(serde_json::to_value(released_workspace).unwrap(),serde_json::to_value(publications::read_workspace(&pool,level,&CurriculumViewQuery::default()).await.unwrap()).unwrap());
-    assert_eq!(serde_json::to_value(draft_workspace).unwrap(),serde_json::to_value(publications::read_workspace(&pool,level,&CurriculumViewQuery {draft_id:Some(token),publication_id:None}).await.unwrap()).unwrap());
+    assert_eq!(audit, 1);
+    assert_eq!(
+        history,
+        serde_json::to_value(
+            publications::list_publications(&pool, edition)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(released_workspace).unwrap(),
+        serde_json::to_value(
+            publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(draft_workspace).unwrap(),
+        serde_json::to_value(
+            publications::read_workspace(
+                &pool,
+                level,
+                &CurriculumViewQuery {
+                    draft_id: Some(token),
+                    publication_id: None
+                }
+            )
+            .await
+            .unwrap()
+        )
+        .unwrap()
+    );
     // Restore the actual publication through the owner after upgrading, then make
     // another release: capture's positional SELECT r.* must still be valid.
-    let preview=publications::preview_discard(&pool,edition,token).await.unwrap();
-    publications::discard_draft(&pool,edition, school_academic_core::models::DiscardCurriculumDraftRequest {draft_id:token,row_version:preview.row_version,content_hash:preview.content_hash}).await.unwrap();
-    let released=curriculum::get(&pool,edition).await.unwrap();
-    let next=publications::open_draft(&pool,edition,OpenCurriculumDraftRequest {row_version:released.row_version}).await.unwrap();
-    let published=curriculum::publish(&pool,edition,PublishCurriculumRequest {draft_id:next.draft_id.unwrap(),row_version:next.row_version,change_note:Some("Default-free capture".into())},fixture_actor(&pool).await).await.unwrap();
-    assert_eq!(published.publication_count,released.publication_count+1);
-    assert_eq!(publications::list_publications(&pool,edition).await.unwrap().len(),history.as_array().unwrap().len()+1);
+    let preview = publications::preview_discard(&pool, edition, token)
+        .await
+        .unwrap();
+    publications::discard_draft(
+        &pool,
+        edition,
+        school_academic_core::models::DiscardCurriculumDraftRequest {
+            draft_id: token,
+            row_version: preview.row_version,
+            content_hash: preview.content_hash,
+        },
+    )
+    .await
+    .unwrap();
+    let released = curriculum::get(&pool, edition).await.unwrap();
+    let next = publications::open_draft(
+        &pool,
+        edition,
+        OpenCurriculumDraftRequest {
+            row_version: released.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let published = curriculum::publish(
+        &pool,
+        edition,
+        PublishCurriculumRequest {
+            draft_id: next.draft_id.unwrap(),
+            row_version: next.row_version,
+            change_note: "Default-free capture".into(),
+        },
+        fixture_actor(&pool).await,
+    )
+    .await
+    .unwrap();
+    assert_eq!(published.publication_count, released.publication_count + 1);
+    assert_eq!(
+        publications::list_publications(&pool, edition)
+            .await
+            .unwrap()
+            .len(),
+        history.as_array().unwrap().len() + 1
+    );
 }
 
 #[tokio::test]
 async fn curriculum_program_default_clean_baseline_and_retry() {
-    let pool=school_test_db::create_named_test_pool("curriculum_program_default_baseline").await;
-    apply_migrations_through(&pool,133).await.unwrap();
-    apply_migrations_through(&pool,133).await.unwrap();
-    assert!(sqlx::query("SELECT is_default FROM bell_schedules LIMIT 1").fetch_optional(&pool).await.is_ok());
-    assert!(sqlx::query("SELECT is_default FROM study_programs LIMIT 1").fetch_optional(&pool).await.is_err());
+    let pool = school_test_db::create_named_test_pool("curriculum_program_default_baseline").await;
+    apply_migrations_through(&pool, 133).await.unwrap();
+    apply_migrations_through(&pool, 133).await.unwrap();
+    assert!(sqlx::query("SELECT is_default FROM bell_schedules LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .is_ok());
+    assert!(sqlx::query("SELECT is_default FROM study_programs LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
 async fn curriculum_program_default_dependency_refuses_atomically_and_retries() {
-    let pool=prepare_core_fixture_through("curriculum_program_default_dependency",132).await;
-    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p").fetch_one(&pool).await.unwrap();
-    sqlx::query("CREATE VIEW unexpected_program_consumer AS SELECT id FROM published_study_programs").execute(&pool).await.unwrap();
-    assert!(apply_migrations_through(&pool,133).await.is_err());
-    assert_eq!(before,sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p").fetch_one(&pool).await.unwrap());
-    assert!(sqlx::query("SELECT is_default FROM published_study_programs LIMIT 1").fetch_optional(&pool).await.is_ok());
-    let applied:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=133)").fetch_one(&pool).await.unwrap();
+    let pool = prepare_core_fixture_through("curriculum_program_default_dependency", 132).await;
+    let before: serde_json::Value =
+        sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "CREATE VIEW unexpected_program_consumer AS SELECT id FROM published_study_programs",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(apply_migrations_through(&pool, 133).await.is_err());
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    );
+    assert!(
+        sqlx::query("SELECT is_default FROM published_study_programs LIMIT 1")
+            .fetch_optional(&pool)
+            .await
+            .is_ok()
+    );
+    let applied: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=133)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(!applied);
-    sqlx::query("DROP VIEW unexpected_program_consumer RESTRICT").execute(&pool).await.unwrap();
-    apply_migrations_through(&pool,133).await.unwrap();
+    sqlx::query("DROP VIEW unexpected_program_consumer RESTRICT")
+        .execute(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 133).await.unwrap();
 }

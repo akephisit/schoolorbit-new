@@ -5,26 +5,21 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	let {
 		levelId,
 		draftId,
-		isFirst = false,
 		onCreated
 	}: {
 		levelId: string;
 		draftId: string;
-		isFirst?: boolean;
 		onCreated: (program: StudyProgram) => void;
 	} = $props();
 	let open = $state(false);
 	let saving = $state(false);
 	let name = $state('');
-	let isDefault = $state(false);
 	let error = $state('');
 	function show() {
 		name = '';
-		isDefault = isFirst;
 		error = '';
 		open = true;
 	}
@@ -36,8 +31,7 @@
 		try {
 			const program = await createStudyProgram(levelId, {
 				draftId,
-				nameTh: name.trim(),
-				isDefault
+				nameTh: name.trim()
 			});
 			open = false;
 			onCreated(program);
@@ -67,9 +61,7 @@
 					maxlength={200}
 				/>
 			</div>
-			<label class="flex items-center gap-2 text-sm"
-				><Checkbox bind:checked={isDefault} />ใช้เป็นแผนเริ่มต้นของระดับนี้</label
-			>{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}<Dialog.Footer
+			{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}<Dialog.Footer
 				><Button type="button" variant="outline" disabled={saving} onclick={() => (open = false)}
 					>ยกเลิก</Button
 				><LoadingButton type="submit" loading={saving} loadingLabel="กำลังสร้าง"
