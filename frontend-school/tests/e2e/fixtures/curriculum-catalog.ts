@@ -52,6 +52,7 @@ export function curriculumCatalogFixture(
 		nameTh: 'แผนวิทย์คณิต',
 		isDefault: false
 	});
+	workspace.requirements[0].hasNewerCurrentVersion = true;
 	const original = structuredClone(workspace.requirements[0]);
 	const current: CurriculumManagementOptions['catalogVersions'][number] = {
 		id: currentSubjectVersionId,
@@ -107,7 +108,7 @@ export function curriculumCatalogFixture(
 			code: 'A01',
 			name: 'กิจกรรมชุมนุม',
 			versionNo: 2,
-			effectiveFrom: '2027-05-01'
+			effectiveFrom: '2027-06-01'
 		}
 	];
 	if (options.longCatalog)
@@ -126,6 +127,7 @@ export function curriculumCatalogFixture(
 			id: 'legacy-requirement-v2',
 			catalogVersionId: current.id,
 			versionNo: 2,
+			hasNewerCurrentVersion: false,
 			displayOrder: 2
 		});
 	return {
@@ -221,6 +223,7 @@ export async function installCurriculumCatalog(
 							)!,
 							catalogId: existing?.catalogId ?? catalog!.catalogId,
 							versionNo: existing?.versionNo ?? catalog!.versionNo,
+							hasNewerCurrentVersion: existing?.hasNewerCurrentVersion ?? false,
 							code: existing?.code ?? catalog!.code,
 							name: existing?.name ?? catalog!.name
 						};

@@ -20068,6 +20068,7 @@ export interface components {
 			/** Format: int32 */
 			displayOrder: number;
 			gradeLevel: components['schemas']['GradeLevelLookupItem'];
+			hasNewerCurrentVersion: boolean;
 			/** Format: uuid */
 			id: string;
 			metrics: components['schemas']['CatalogCurriculumMetrics'];

@@ -57,21 +57,17 @@ function duplicateRequirements(
 	});
 }
 
-export function existingCourseVersions(
+export function hasExistingCourseRequirement(
 	option: CurriculumCatalogOption,
 	context: CurriculumSelectionContext,
 	requirements: StagedCurriculumRequirement[],
 	options: CurriculumCatalogOption[],
 	originals: CurriculumStructureRequirement[]
-): number[] {
-	if (option.resourceKind !== 'course') return [];
-	return [
-		...new Set(
-			duplicateRequirements(option, context, requirements, options, originals)
-				.map((requirement) => requirementMetadata(requirement, options, originals)?.versionNo)
-				.filter((version): version is number => version !== undefined)
-		)
-	];
+): boolean {
+	return (
+		option.resourceKind === 'course' &&
+		duplicateRequirements(option, context, requirements, options, originals).length > 0
+	);
 }
 
 // This guards local selection changes; the save endpoint remains authoritative for freshness.

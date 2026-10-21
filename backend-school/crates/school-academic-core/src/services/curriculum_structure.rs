@@ -180,6 +180,15 @@ pub(super) async fn get_workspace_from_publication(
     .fetch_all(pool)
     .await?;
 
+    let subject_ids = rows
+        .iter()
+        .filter(|row| row.resource_kind == RequirementResourceKind::Course)
+        .map(|row| row.catalog_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let current_revisions = super::catalog::current_subject_revisions(pool, &subject_ids).await?;
+
     let program_order = programs
         .iter()
         .enumerate()
@@ -192,7 +201,13 @@ pub(super) async fn get_workspace_from_publication(
     let mut validation = CurriculumStructureValidation::default();
     let mut requirements = rows
         .into_iter()
-        .map(|row| requirement_from_row(row, &mut validation))
+        .map(|row| {
+            let has_newer_current_version = row.resource_kind == RequirementResourceKind::Course
+                && current_revisions
+                    .get(&row.catalog_id)
+                    .is_some_and(|current| current.version_no > row.version_no);
+            requirement_from_row(row, has_newer_current_version, &mut validation)
+        })
         .collect::<Vec<_>>();
     requirements.sort_by_key(|requirement| {
         (
@@ -723,6 +738,7 @@ async fn load_catalog_grades(
 
 fn requirement_from_row(
     row: RequirementRow,
+    has_newer_current_version: bool,
     validation: &mut CurriculumStructureValidation,
 ) -> CurriculumStructureRequirement {
     if row.weekly_value.is_none() {
@@ -768,6 +784,7 @@ fn requirement_from_row(
         catalog_version_id: row.catalog_version_id,
         catalog_id: row.catalog_id,
         version_no: row.version_no,
+        has_newer_current_version,
         code: row.code,
         name: row.name,
         section,

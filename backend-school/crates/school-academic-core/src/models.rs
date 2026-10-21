@@ -1032,6 +1032,7 @@ pub struct CurriculumStructureRequirement {
     pub catalog_version_id: Uuid,
     pub catalog_id: Uuid,
     pub version_no: i32,
+    pub has_newer_current_version: bool,
     pub code: String,
     pub name: String,
     pub section: CurriculumDocumentSection,

@@ -8,11 +8,12 @@
 	} from '#lib/api/academic-core.js';
 	import {
 		appendSelectedCatalogRequirements,
-		existingCourseVersions,
+		hasExistingCourseRequirement,
 		selectableCatalogOption,
 		type StagedCurriculumRequirement
 	} from '#lib/academic-core/curriculum-catalog-selection.js';
 	import { formatEffectiveRange } from '#lib/academic-core/catalog-presentation.js';
+	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import CurriculumTermSlotEditor from '#lib/components/academic-core/CurriculumTermSlotEditor.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -193,7 +194,7 @@
 	let catalogChoices = $derived(
 		filteredCatalog.map((option) => ({
 			option,
-			existingVersions: existingCourseVersions(
+			hasExistingCourse: hasExistingCourseRequirement(
 				option,
 				selectionContext,
 				stagedRequirements,
@@ -429,11 +430,11 @@
 						</Select.Content>
 					</Select.Root>
 					<div class="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-1">
-						{#each catalogChoices as { option, existingVersions } (option.id)}
+						{#each catalogChoices as { option, hasExistingCourse } (option.id)}
 							<label class="flex cursor-pointer items-start gap-2 rounded-md p-2 hover:bg-muted/60">
 								<Checkbox
-									aria-label={`เลือก ${option.code} v${option.versionNo}`}
-									disabled={existingVersions.length > 0 || !selectionReady || saving}
+									aria-label={`เลือก ${option.code} ${option.name} · ${formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}`}
+									disabled={hasExistingCourse || !selectionReady || saving}
 									checked={selectedCatalogIds.includes(option.id)}
 									onCheckedChange={(checked) => toggleCatalog(option.id, checked === true)}
 								/>
@@ -443,15 +444,10 @@
 									>
 									<span class="block text-sm">{option.name}</span>
 									<span class="block text-xs text-muted-foreground"
-										>v{option.versionNo} · {formatEffectiveRange(
-											option.effectiveFrom,
-											option.effectiveUntil
-										)}</span
+										>{formatEffectiveRange(option.effectiveFrom, option.effectiveUntil)}</span
 									>
-									{#if existingVersions.length}<span class="block text-xs text-muted-foreground"
-											>มีรายวิชานี้แล้ว · {existingVersions
-												.map((version) => `v${version}`)
-												.join(', ')}</span
+									{#if hasExistingCourse}<span class="block text-xs text-muted-foreground"
+											>มีรายวิชานี้แล้ว</span
 										>{/if}
 								</span>
 							</label>
@@ -512,9 +508,9 @@
 												{option?.code ?? source?.code}
 											</div>
 											<div class="font-medium">{option?.name ?? source?.name}</div>
-											<div class="text-xs text-muted-foreground">
-												v{source?.versionNo ?? option?.versionNo}
-											</div>
+											<CurriculumOutdatedBadge
+												hasNewerCurrentVersion={source?.hasNewerCurrentVersion ?? false}
+											/>
 										</Table.Cell>
 										<Table.Cell>
 											<Select.Root

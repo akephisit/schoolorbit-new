@@ -55,13 +55,11 @@ for (const move of [false, true])
 			await page.getByRole('option', { name: 'หน่วยงานสอง', exact: true }).click();
 		} else await dialog.locator('#edit-primary').check();
 		await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
-		await expect
-			.poll(saved)
-			.toMatchObject({
-				position_title: title,
-				responsibilities,
-				...(move ? { new_organization_unit_id: secondUnit } : { is_primary: true })
-			});
+		await expect.poll(saved).toMatchObject({
+			position_title: title,
+			responsibilities,
+			...(move ? { new_organization_unit_id: secondUnit } : { is_primary: true })
+		});
 	});
 
 test('bulk primary edit retains inactive source custom titles and original null responsibilities', async ({
