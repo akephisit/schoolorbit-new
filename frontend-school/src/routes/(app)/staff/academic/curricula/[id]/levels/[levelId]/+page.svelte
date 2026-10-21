@@ -55,6 +55,7 @@
 	const workspaceRequest = new LatestRequest();
 	const editorRequest = new LatestRequest();
 	const alignmentRequest = new LatestRequest();
+	const programOrderReviewRequest = new LatestRequest();
 	let canManage = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && !!workspace?.level.draftId
 	);
@@ -117,9 +118,15 @@
 			workspaceRequest.abort();
 			editorRequest.abort();
 			alignmentRequest.abort();
+			programOrderReviewRequest.abort();
 		};
 	});
+	function closeEditor() {
+		programOrderReviewRequest.abort();
+		editorOpen = false;
+	}
 	async function refresh() {
+		programOrderReviewRequest.abort();
 		const levelId = data.levelId;
 		const editionId = data.editionId;
 		const { revision, signal } = workspaceRequest.begin();
@@ -146,6 +153,7 @@
 	}
 	async function edit() {
 		if (!canManage) return;
+		programOrderReviewRequest.abort();
 		const levelId = data.levelId;
 		const { revision, signal } = editorRequest.begin();
 		editorLoading = true;
@@ -172,6 +180,7 @@
 		const draftId = workspace.level.draftId;
 		if (!draftId) return;
 		const selected = workspace.level;
+		programOrderReviewRequest.abort();
 		const result = await replaceCurriculumStructure(programId, {
 			rowVersion,
 			requirements,
@@ -186,6 +195,7 @@
 		const draftId = workspace.level.draftId;
 		if (!draftId) return;
 		const selected = workspace.level;
+		programOrderReviewRequest.abort();
 		const result = await replaceCurriculumTermSlots(workspace.level.id, {
 			rowVersion,
 			draftId,
@@ -208,6 +218,7 @@
 	async function saveProgramOrder(rowVersion: number, studyProgramIds: string[]) {
 		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
 		const { id, draftId } = workspace.level;
+		programOrderReviewRequest.abort();
 		const result = await replaceStudyProgramOrder(id, { draftId, rowVersion, studyProgramIds });
 		patchProgramOrder(result, id, draftId);
 		return result;
@@ -215,7 +226,19 @@
 	async function reviewProgramOrder() {
 		if (!workspace?.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนจัดลำดับแผน');
 		const { id, draftId } = workspace.level;
-		const latest = await getCurriculumStructureWorkspace(id, { ...data.view });
+		const { revision, signal } = programOrderReviewRequest.begin();
+		const initialMutationRevision = mutationRevision;
+		const latest = await getCurriculumStructureWorkspace(id, { signal, ...data.view });
+		if (
+			!programOrderReviewRequest.isCurrent(revision) ||
+			!editorOpen ||
+			data.levelId !== id ||
+			workspace?.level.draftId !== draftId ||
+			mutationRevision !== initialMutationRevision ||
+			latest.level.id !== id ||
+			latest.level.draftId !== draftId
+		)
+			throw new DOMException('ข้อมูลเปลี่ยนไปแล้ว กรุณาโหลดลำดับล่าสุดเพื่อตรวจสอบ', 'AbortError');
 		const result: StudyProgramOrderSnapshot = {
 			programs: latest.programs,
 			rowVersion: latest.level.rowVersion
@@ -225,15 +248,18 @@
 	}
 	async function createProgram(request: CreateStudyProgramRequest) {
 		if (!workspace) return;
+		programOrderReviewRequest.abort();
 		await createStudyProgram(workspace.level.id, request);
 		mutationRevision++;
 		await refresh();
 	}
 	function copied() {
+		programOrderReviewRequest.abort();
 		mutationRevision++;
 		void refresh();
 	}
 	function programCreated() {
+		programOrderReviewRequest.abort();
 		mutationRevision++;
 		void refresh();
 	}
@@ -369,5 +395,5 @@
 		onCreateProgram={createProgram}
 		onSaveProgramOrder={saveProgramOrder}
 		onReviewProgramOrder={reviewProgramOrder}
-		onClose={() => (editorOpen = false)}
+		onClose={closeEditor}
 	/>{/if}

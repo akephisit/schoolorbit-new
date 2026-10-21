@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import type { CurriculumStructureRequirement } from '../../src/lib/api/academic-core.js';
+import { edition } from './helpers/curriculum-fixtures';
 import {
 	curriculumCatalogFixture,
 	curriculumCatalogPath,
@@ -737,3 +738,132 @@ for (const width of [390, 1543])
 			expect(state.errors).toEqual([]);
 		});
 	}
+
+// Hold a completed transport response so cancellation alone cannot hide a stale-result bug.
+// The page still receives real provider JSON; no application state is exposed to the test.
+async function delayFirstOrderReviewResponse(page: Page) {
+	await page.addInitScript(() => {
+		const requestFetch = window.fetch.bind(window);
+		let structureReads = 0;
+		window.fetch = async (input, init) => {
+			const response = await requestFetch(input, init);
+			const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+			if (
+				!url.pathname.endsWith('/structure') ||
+				(init?.method ?? 'GET') !== 'GET' ||
+				++structureReads !== 2
+			)
+				return response;
+			const body = await response.text();
+			const headers = new Headers(response.headers);
+			const status = response.status;
+			document.documentElement.dataset.orderReviewWaiting = 'true';
+			await new Promise<void>((resolve) =>
+				window.addEventListener('release-test-order-review', () => resolve(), { once: true })
+			);
+			const buffered = new Response(body, { status, headers });
+			const read = buffered.text.bind(buffered);
+			buffered.text = async () => {
+				const text = await read();
+				document.documentElement.dataset.orderReviewConsumed = 'true';
+				return text;
+			};
+			return buffered;
+		};
+	});
+}
+async function releaseOrderReviewResponse(page: Page) {
+	await page.evaluate(() => window.dispatchEvent(new Event('release-test-order-review')));
+	await page.waitForFunction(() => document.documentElement.dataset.orderReviewConsumed === 'true');
+	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+async function startDelayedOrderReview(page: Page) {
+	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
+	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await editor.getByRole('button', { name: 'เลื่อนแผน 2 ขึ้น', exact: true }).click();
+	await editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true }).click();
+	await expect(editor.getByRole('alert')).toContainText('เปลี่ยนไปแล้ว');
+	await editor.getByRole('button', { name: 'โหลดลำดับล่าสุดเพื่อตรวจสอบ', exact: true }).click();
+	await page.waitForFunction(() => document.documentElement.dataset.orderReviewWaiting === 'true');
+	await editor.getByRole('button', { name: 'Close', exact: true }).click();
+	await expect(editor).toBeHidden();
+}
+
+test('a delayed order review cannot regress a reopened editor after a newer order save', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture();
+	const initialRevision = fixture.workspace.level.rowVersion;
+	const state = await installCurriculumCatalog(page, fixture, { failOrderOnce: true });
+	await delayFirstOrderReviewResponse(page);
+	await openCurriculumEditor(page);
+	await startDelayedOrderReview(page);
+	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
+	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
+	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await editor.getByRole('button', { name: 'เลื่อนแผน 2 ขึ้น', exact: true }).click();
+	await editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true }).click();
+	await expect(editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true })).toBeDisabled();
+	await releaseOrderReviewResponse(page);
+	const firstProgram = page
+		.getByTestId('curriculum-matrix')
+		.locator('.matrix-table')
+		.first()
+		.locator('thead tr')
+		.first()
+		.getByRole('columnheader')
+		.first();
+	await expect.soft(firstProgram).toHaveText('แผนวิทย์คณิต');
+	await editor.getByRole('button', { name: 'Close', exact: true }).click();
+	await expect(editor).toBeHidden();
+	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
+	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await editor.getByRole('button', { name: 'เลื่อนแผน 2 ขึ้น', exact: true }).click();
+	await editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true }).click();
+	await expect.poll(() => state.writes.length).toBe(3);
+	expect(state.writes[2].body).toMatchObject({ rowVersion: initialRevision + 1 });
+	await expect(editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true })).toBeDisabled();
+	expect(state.structureReads()).toBe(2);
+	expect(state.errors).toEqual([]);
+});
+
+test('a delayed order review cannot replace a newer same-context workspace refresh after copying a program', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture();
+	const initialRevision = fixture.workspace.level.rowVersion;
+	const state = await installCurriculumCatalog(page, fixture, { failOrderOnce: true });
+	await delayFirstOrderReviewResponse(page);
+	await openCurriculumEditor(page);
+	await startDelayedOrderReview(page);
+	await page.getByRole('button', { name: 'คัดลอกแผนจากฉบับเดิม', exact: true }).click();
+	const copy = page.getByRole('dialog', { name: 'คัดลอกแผนจากฉบับเดิม', exact: true });
+	for (const [field, choice] of [
+		['ฉบับต้นทาง *', edition().name],
+		['ระดับการศึกษาต้นทาง *', 'ระดับมัธยมศึกษาตอนต้น'],
+		['แผนต้นทาง *', 'แผนการเรียนพื้นฐาน']
+	]) {
+		await copy.getByLabel(field, { exact: true }).click();
+		await page.getByRole('option', { name: choice, exact: true }).click();
+	}
+	await copy.getByRole('button', { name: 'คัดลอกเป็นแผนร่าง', exact: true }).click();
+	await expect(copy).toBeHidden();
+	await expect(page.getByTestId('curriculum-level-ready')).toContainText('3 แผนการเรียน');
+	const completeProgramIds = fixture.workspace.programs.map((program) => program.id);
+	await releaseOrderReviewResponse(page);
+	await expect.soft(page.getByTestId('curriculum-level-ready')).toContainText('3 แผนการเรียน');
+	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
+	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
+	await editor.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await expect.soft(editor.locator('[data-program-order-id]')).toHaveCount(3);
+	await editor.getByRole('button', { name: 'เลื่อนแผน 2 ขึ้น', exact: true }).click();
+	await editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true }).click();
+	await expect.poll(() => state.writes.length).toBe(3);
+	expect(state.writes[2].body).toMatchObject({
+		rowVersion: initialRevision,
+		studyProgramIds: [completeProgramIds[1], completeProgramIds[0], completeProgramIds[2]]
+	});
+	await expect(editor.getByRole('button', { name: 'บันทึกลำดับแผน', exact: true })).toBeDisabled();
+	expect(state.structureReads()).toBe(3);
+	expect(state.errors).toEqual([]);
+});
