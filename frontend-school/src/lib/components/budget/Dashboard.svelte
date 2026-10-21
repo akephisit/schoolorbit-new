@@ -161,13 +161,15 @@
 					region.retry((signal) => getBudgetDashboard({ signal, query: scopedQuery }))}
 			/>{/if}{#if region.loading && !region.value}<TableSkeleton
 				columns={6}
-			/>{:else if region.value}<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+			/>{:else if region.value}<div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
 				{#each [{ label: 'งบประมาณปัจจุบัน', value: region.value.totals.currentSatang }, { label: 'ผูกพัน', value: region.value.totals.reservedSatang }, { label: 'จ่ายจริง', value: region.value.totals.paidSatang }, { label: 'คงเหลือใช้ได้', value: region.value.totals.availableSatang }] as metric, index (metric.label)}<Card.Root
-						class={index === 3 ? 'border-primary/20 bg-primary/5' : ''}
-						><Card.Content
+						class={`min-w-0 gap-0 py-0 ${index === 3 ? 'border-primary/20 bg-primary/5' : ''}`}
+						><Card.Content class="min-w-0 p-4"
 							><dl>
-								<dt class="text-sm text-muted-foreground">{metric.label}</dt>
-								<dd class="mt-2 text-xl font-semibold tabular-nums">
+								<dt class="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+									{metric.label}
+								</dt>
+								<dd class="mt-2 text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">
 									{money(metric.value)} <span class="text-sm font-normal">บาท</span>
 								</dd>
 							</dl>

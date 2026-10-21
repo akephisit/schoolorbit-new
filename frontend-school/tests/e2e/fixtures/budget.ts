@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { MenuGroup } from '../../../src/lib/api/menu';
 import { mockStaffHome, id, actor, firstStaff } from './staff-home-route-data';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
 import type {
@@ -20,6 +21,69 @@ export const budgetProjectId = id(810),
 	learnerFundId = id(815),
 	materialsId = id(816),
 	equipmentId = id(817);
+/** Mirrors the two seeded work sections and five route-owned budget menu entries. */
+export const budgetMenuGroups: MenuGroup[] = [
+	{
+		code: 'budget_planning',
+		name: 'แผนงานและโครงการ',
+		icon: 'notebook-pen',
+		displayOrder: 20,
+		workspaceCode: 'budget',
+		workspaceName: 'กลุ่มบริหารงบประมาณ',
+		workspaceIcon: 'wallet',
+		workspaceOrder: 50,
+		items: [
+			{
+				id: id(100),
+				code: 'budget_overview',
+				name: 'ภาพรวมงบประมาณ',
+				path: '/staff/budget',
+				icon: 'Wallet'
+			},
+			{
+				id: id(101),
+				code: 'budget_projects',
+				name: 'โครงการงบประมาณ',
+				path: '/staff/budget/projects',
+				icon: 'FolderOpen'
+			},
+			{
+				id: id(102),
+				code: 'budget_reports',
+				name: 'รายงานงบประมาณ',
+				path: '/staff/budget/reports',
+				icon: 'ChartNoAxesCombined'
+			}
+		]
+	},
+	{
+		code: 'budget_finance',
+		name: 'การเงินและงบประมาณ',
+		icon: 'wallet',
+		displayOrder: 30,
+		workspaceCode: 'budget',
+		workspaceName: 'กลุ่มบริหารงบประมาณ',
+		workspaceIcon: 'wallet',
+		workspaceOrder: 50,
+		items: [
+			{
+				id: id(103),
+				code: 'budget_requests',
+				name: 'คำขอใช้เงิน',
+				path: '/staff/budget/requests',
+				icon: 'Receipt'
+			},
+			{
+				id: id(104),
+				code: 'budget_adjustments',
+				name: 'ปรับงบประมาณและเงินยืม',
+				path: '/staff/budget/adjustments',
+				icon: 'ArrowLeftRight'
+			}
+		]
+	}
+];
+
 export const budgetPermissions = [
 	PERMISSIONS.BUDGET_READ_SCHOOL,
 	PERMISSIONS.BUDGET_CREATE_OWN,
@@ -138,10 +202,14 @@ export async function mockBudget(
 		stalePlan?: boolean;
 		stalePayment?: boolean;
 		exportFiltered?: boolean;
+		dashboardOverride?: BudgetDashboard;
 		reviewer?: boolean;
 	} = {}
 ) {
-	await mockStaffHome(page, { permissions: options.permissions ?? budgetPermissions });
+	await mockStaffHome(page, {
+		permissions: options.permissions ?? budgetPermissions,
+		menuGroups: budgetMenuGroups
+	});
 	await page.route('https://fonts.googleapis.com/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
 	);
@@ -313,6 +381,7 @@ export async function mockBudget(
 		};
 	}
 	function dashboard(): BudgetDashboard {
+		if (options.dashboardOverride) return structuredClone(options.dashboardOverride);
 		const rows = (workspace.acceptedPlan?.activities ?? []).flatMap((activity) =>
 			activity.lines.map((line) => ({
 				projectId: budgetProjectId,

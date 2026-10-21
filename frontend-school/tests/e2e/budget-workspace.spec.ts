@@ -7,9 +7,11 @@ import {
 	budgetYearId,
 	budgetFundId,
 	materialsId,
-	equipmentId
+	equipmentId,
+	budgetMenuGroups
 } from './fixtures/budget';
 import { id, actor } from './fixtures/staff-home-route-data';
+import type { BudgetDashboard } from '../../src/lib/api/budget';
 import { PERMISSIONS } from '../../src/lib/permissions/registry.generated';
 test.use({ serviceWorkers: 'block' });
 async function choose(page: Page, label: string, option: string) {
@@ -17,11 +19,20 @@ async function choose(page: Page, label: string, option: string) {
 	await page.getByRole('option', { name: option, exact: true }).click();
 }
 async function date(page: Page, label: string) {
-	await page.getByRole('button', { name: label, exact: true }).click();
-	await page
-		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
-		.filter({ hasText: /^20$/ })
-		.click();
+	const trigger = page.getByRole('button', { name: label, exact: true });
+	await trigger.click();
+	await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+	const contentId = await trigger.getAttribute('aria-controls');
+	expect(contentId).toBeTruthy();
+	const popover = page.locator(`[id="${contentId}"][data-state="open"]`);
+	await expect(popover).toBeVisible();
+	const day = popover
+		.locator('[data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^20$/ });
+	await expect(day).toHaveCount(1);
+	await day.click();
+	await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+	await expect(trigger).toContainText(/^\s*20\s/);
 }
 
 test('reader sees independent regions and exact activity fund/category pivot without action reads', async ({
@@ -631,7 +642,8 @@ async function captureBudget(page: Page, name: string, width: number, theme: str
 	await assertBudgetGeometry(page);
 	await page.screenshot({
 		path: `/tmp/budget-design-${width}-${theme}-${name}.png`,
-		fullPage: true
+		fullPage: true,
+		animations: 'disabled'
 	});
 }
 const budgetViews = [
@@ -895,7 +907,9 @@ for (const viewport of [
 				);
 				await date(page, 'วันที่จ่ายเงิน');
 				await page.getByLabel('เลขที่ใบสำคัญ *').fill('PV-PENDING');
-				await page.getByLabel('จำนวนเงินจ่าย กระดาษ', { exact: true }).fill('2.00');
+				await page
+					.getByLabel(`จำนวนเงินจ่าย ${api.request!.lines[0].description}`, { exact: true })
+					.fill('2.00');
 				await page
 					.getByRole('dialog')
 					.getByRole('button', { name: 'บันทึกการจ่ายเงิน', exact: true })
@@ -942,3 +956,156 @@ test('reader has no settings or create action in the project header', async ({ p
 	);
 	expect(api.writes).toHaveLength(0);
 });
+
+const largeAmountDashboard: BudgetDashboard = {
+	rows: [
+		{
+			projectId: budgetProjectId,
+			projectName: 'โครงการงบประมาณจำนวนมาก',
+			activityId: id(820),
+			activityTitle: 'กิจกรรมที่มีการจ่ายและผูกพันบางส่วน',
+			fundId: budgetFundId,
+			fundName: 'เงินอุดหนุน',
+			expenseCategoryId: materialsId,
+			expenseCategoryName: 'วัสดุ',
+			plannedSatang: '9007199254740993',
+			adjustedSatang: '0',
+			currentSatang: '9007199254740993',
+			reservedSatang: '3002399751580331',
+			paidSatang: '3002399751580331',
+			availableSatang: '3002399751580331',
+			loanOutstandingSatang: '0'
+		}
+	],
+	totals: {
+		plannedSatang: '9007199254740993',
+		adjustedSatang: '0',
+		currentSatang: '9007199254740993',
+		reservedSatang: '3002399751580331',
+		paidSatang: '3002399751580331',
+		availableSatang: '3002399751580331',
+		loanOutstandingSatang: '0'
+	}
+};
+for (const viewport of [
+	{ width: 390, height: 844 },
+	{ width: 1440, height: 1000 }
+])
+	for (const theme of ['light', 'dark'] as const)
+		test.describe(`budget navigation and large money ${viewport.width}px ${theme}`, () => {
+			test.use({ viewport, hasTouch: viewport.width === 390 });
+			test.beforeEach(async ({ page }) => {
+				await page.addInitScript(
+					(theme) =>
+						localStorage.setItem(
+							'ui-preferences',
+							JSON.stringify({ theme, sidebarCollapsed: false, sidebarExpandedGroups: {} })
+						),
+					theme
+				);
+			});
+			test('large exact amounts wrap inside compact summary cards and reconcile with their allocation', async ({
+				page
+			}) => {
+				const api = await mockBudget(page, { dashboardOverride: largeAmountDashboard });
+				const totals = largeAmountDashboard.totals;
+				expect(BigInt(totals.currentSatang)).toBe(
+					BigInt(totals.reservedSatang) + BigInt(totals.paidSatang) + BigInt(totals.availableSatang)
+				);
+				for (const [key, value] of Object.entries(totals))
+					expect(largeAmountDashboard.rows[0][key as keyof typeof totals]).toBe(value);
+				await page.goto('/staff/budget');
+				const summary = page.getByTestId('budget-dashboard');
+				const cards = summary.locator('[data-slot="card"]').filter({ has: page.locator('dt') });
+				await expect(cards).toHaveCount(4);
+				const labels = ['งบประมาณปัจจุบัน', 'ผูกพัน', 'จ่ายจริง', 'คงเหลือใช้ได้'];
+				for (let index = 0; index < labels.length; index++) {
+					await expect(cards.nth(index).locator('dt')).toHaveText(labels[index]);
+					await expect(cards.nth(index).locator('dd')).toHaveText(
+						`${index === 0 ? '90,071,992,547,409.93' : '30,023,997,515,803.31'} บาท`
+					);
+					expect(
+						await cards
+							.nth(index)
+							.evaluate(
+								(element) =>
+									element.scrollWidth <= element.clientWidth &&
+									[...element.querySelectorAll('dt,dd')].every(
+										(text) => text.scrollWidth <= text.clientWidth
+									)
+							)
+					).toBe(true);
+				}
+				const boxes = await cards.evaluateAll((elements) =>
+					elements.map((element) => {
+						const box = element.getBoundingClientRect();
+						return { x: box.x, y: box.y, right: box.right, bottom: box.bottom };
+					})
+				);
+				if (viewport.width === 390) {
+					expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
+					expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
+					expect(Math.abs(boxes[0].x - boxes[2].x)).toBeLessThan(1);
+					expect(boxes[1].x).toBeGreaterThan(boxes[0].right);
+					expect(boxes[2].y).toBeGreaterThan(boxes[0].bottom);
+				} else {
+					for (let index = 1; index < boxes.length; index++) {
+						expect(Math.abs(boxes[index].y - boxes[0].y)).toBeLessThan(1);
+						expect(boxes[index].x).toBeGreaterThan(boxes[index - 1].right);
+					}
+				}
+				await expect(
+					summary.getByRole('cell', { name: '90,071,992,547,409.93', exact: true })
+				).toHaveCount(2);
+				await captureBudget(page, 'overview-large-amounts', viewport.width, theme);
+				expect(api.writes).toHaveLength(0);
+			});
+			test('real budget sidebar sections navigate by pointer and keyboard while list paging stays accessible', async ({
+				page
+			}) => {
+				const api = await mockBudget(page, { withRequest: true });
+				seedTransfer(api);
+				await page.goto('/staff/budget');
+				await expect(page.getByTestId('budget-dashboard')).toContainText('9,928.00');
+				const sidebar = page.locator('aside');
+				const mobile = viewport.width === 390;
+				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				const planning = sidebar.getByRole('button', { name: 'แผนงานและโครงการ', exact: true });
+				await expect(planning).toHaveAttribute('aria-expanded', 'true');
+				const finance = sidebar.getByRole('button', { name: 'การเงินและงบประมาณ', exact: true });
+				await finance.focus();
+				await page.keyboard.press('Enter');
+				await expect(finance).toHaveAttribute('aria-expanded', 'true');
+				for (const group of budgetMenuGroups)
+					for (const item of group.items)
+						await expect(
+							sidebar.getByRole('link', { name: item.name, exact: true })
+						).toHaveAttribute('href', item.path);
+				await captureBudget(page, 'sidebar-navigation', viewport.width, theme);
+				await activate(sidebar.getByRole('link', { name: 'คำขอใช้เงิน', exact: true }), mobile);
+				await expect(page).toHaveURL(/\/staff\/budget\/requests$/);
+				await expect(page.getByTestId('budget-requests')).toContainText('คำขอทดสอบ');
+				await expect(
+					page.getByRole('navigation', { name: 'หน้ารายการงบประมาณ', exact: true })
+				).toBeVisible();
+				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				await sidebar.getByRole('link', { name: 'ปรับงบประมาณและเงินยืม', exact: true }).focus();
+				await page.keyboard.press('Enter');
+				await expect(page).toHaveURL(/\/staff\/budget\/adjustments$/);
+				await expect(page.getByTestId('budget-adjustments')).toContainText('โอนภายในโครงการ');
+				await expect(
+					page.getByRole('navigation', { name: 'หน้ารายการงบประมาณ', exact: true })
+				).toBeVisible();
+				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				if ((await planning.getAttribute('aria-expanded')) !== 'true')
+					await activate(planning, mobile);
+				await sidebar.getByRole('link', { name: 'รายงานงบประมาณ', exact: true }).focus();
+				await page.keyboard.press('Enter');
+				await expect(page).toHaveURL(/\/staff\/budget\/reports$/);
+				await expect(page.getByTestId('budget-pivot')).toContainText('9,928.00');
+				await expect(
+					page.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+				).toHaveCount(0);
+				expect(api.writes).toHaveLength(0);
+			});
+		});
