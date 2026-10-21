@@ -16,7 +16,8 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
-	import Navigation from './Navigation.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { ArrowLeftRight, Plus } from '@lucide/svelte';
 	import Paging from './Paging.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import AdjustmentForm from './AdjustmentForm.svelte';
@@ -33,55 +34,74 @@
 	onDestroy(() => region.dispose());
 </script>
 
-<PageShell title="ปรับงบประมาณและเงินยืม" contentClass="space-y-4"
+<PageShell
+	title="ปรับงบประมาณและเงินยืม"
+	description="ติดตามการเพิ่ม ลด โอนงบประมาณ และการยืมคืนเงิน"
+	icon={ArrowLeftRight}
+	contentClass="space-y-6"
 	>{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_ADJUSTMENT_CREATE_SCHOOL) && $can.hasAny(...budgetReadPermissions)}<Button
-				onclick={() => (creating = true)}>สร้างรายการปรับงบ</Button
-			>{/if}{/snippet}<Navigation /><ReadAccessNotice />
+				onclick={() => (creating = true)}
+				><Plus class="size-4" aria-hidden="true" />สร้างรายการปรับงบ</Button
+			>{/if}{/snippet}<ReadAccessNotice />
 	<section
 		aria-label="รายการปรับงบประมาณ"
 		aria-busy={region.loading}
 		data-testid="budget-adjustments"
 	>
-		{#if region.error}<PageState
-				variant="error"
-				title="โหลดรายการปรับงบไม่สำเร็จ"
-				description={region.error}
-				actionLabel="ลองอีกครั้ง"
-				onaction={() => region.retry((signal) => listBudgetAdjustments({ signal, query }))}
-			/>{/if}{#if region.loading && !region.value}<TableSkeleton
-				columns={5}
-			/>{:else if region.value?.items.length}<div class="overflow-x-auto rounded-lg border bg-card">
-				<Table.Root
-					><Table.Header
-						><Table.Row
-							><Table.Head>รายการ / เหตุผล</Table.Head><Table.Head>จำนวนเงิน</Table.Head><Table.Head
-								>ยืมค้างคืน</Table.Head
-							><Table.Head>สถานะ</Table.Head><Table.Head>รายละเอียด</Table.Head></Table.Row
-						></Table.Header
-					><Table.Body
-						>{#each region.value.items as item (item.id)}<Table.Row
-								><Table.Cell class="min-w-48"
-									><p class="font-medium">{adjustmentLabels[item.kind]}</p>
-									<p class="text-sm text-muted-foreground">{item.reason}</p></Table.Cell
-								><Table.Cell class="whitespace-nowrap tabular-nums"
-									>{money(item.amountSatang)}</Table.Cell
-								><Table.Cell class="whitespace-nowrap tabular-nums"
-									>{item.kind === 'loan' ? money(item.loanOutstandingSatang) : '—'}</Table.Cell
-								><Table.Cell><StatusBadge status={item.status} /></Table.Cell><Table.Cell
-									><Button
-										size="sm"
-										variant="outline"
-										href={`/staff/budget/adjustments/${item.id}?returnTo=${encodeURIComponent(page.url.pathname + page.url.search)}`}
-										>เปิดรายการ</Button
-									></Table.Cell
-								></Table.Row
-							>{/each}</Table.Body
-					></Table.Root
-				>
-			</div>{:else if region.value && !region.error}<PageState
-				title="ยังไม่มีรายการปรับงบประมาณ"
-				description="รายการเพิ่ม ลด โอน ยืม และคืนเงินยืมจะแสดงที่นี่"
-			/>{/if}
+		<Card.Root
+			><Card.Header
+				><Card.Title>รายการปรับงบประมาณ</Card.Title><Card.Description
+					>{region.value
+						? `ทั้งหมด ${region.value.total} รายการ`
+						: 'รายการและสถานะการพิจารณา'}</Card.Description
+				></Card.Header
+			><Card.Content>
+				{#if region.error}<PageState
+						variant="error"
+						title="โหลดรายการปรับงบไม่สำเร็จ"
+						description={region.error}
+						actionLabel="ลองอีกครั้ง"
+						onaction={() => region.retry((signal) => listBudgetAdjustments({ signal, query }))}
+					/>{/if}{#if region.loading && !region.value}<TableSkeleton
+						columns={5}
+					/>{:else if region.value?.items.length}<div
+						class="min-w-0 overflow-hidden rounded-lg border"
+					>
+						<Table.Root class="min-w-[44rem]"
+							><Table.Header
+								><Table.Row
+									><Table.Head>รายการ / เหตุผล</Table.Head><Table.Head class="text-right"
+										>จำนวนเงิน (บาท)</Table.Head
+									><Table.Head class="text-right">ยืมค้างคืน (บาท)</Table.Head><Table.Head
+										>สถานะ</Table.Head
+									><Table.Head>รายละเอียด</Table.Head></Table.Row
+								></Table.Header
+							><Table.Body
+								>{#each region.value.items as item (item.id)}<Table.Row
+										><Table.Cell class="min-w-48"
+											><p class="font-medium">{adjustmentLabels[item.kind]}</p>
+											<p class="text-sm text-muted-foreground">{item.reason}</p></Table.Cell
+										><Table.Cell class="whitespace-nowrap text-right tabular-nums"
+											>{money(item.amountSatang)}</Table.Cell
+										><Table.Cell class="whitespace-nowrap text-right tabular-nums"
+											>{item.kind === 'loan' ? money(item.loanOutstandingSatang) : '—'}</Table.Cell
+										><Table.Cell><StatusBadge status={item.status} /></Table.Cell><Table.Cell
+											><Button
+												size="sm"
+												variant="outline"
+												href={`/staff/budget/adjustments/${item.id}?returnTo=${encodeURIComponent(page.url.pathname + page.url.search)}`}
+												>เปิดรายการ</Button
+											></Table.Cell
+										></Table.Row
+									>{/each}</Table.Body
+							></Table.Root
+						>
+					</div>{:else if region.value && !region.error}<PageState
+						title="ยังไม่มีรายการปรับงบประมาณ"
+						description="รายการเพิ่ม ลด โอน ยืม และคืนเงินยืมจะแสดงที่นี่"
+					/>{/if}
+			</Card.Content></Card.Root
+		>
 	</section>
 	{#if region.value}<Paging
 			path="/staff/budget/adjustments"
@@ -92,7 +112,7 @@
 		/>{/if}</PageShell
 >
 <Dialog.Root bind:open={creating}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
 		><Dialog.Header
 			><Dialog.Title>สร้างรายการปรับงบประมาณ</Dialog.Title><Dialog.Description
 				>ระบุงบประมาณและเหตุผลก่อนส่งพิจารณา</Dialog.Description

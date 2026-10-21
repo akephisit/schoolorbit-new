@@ -107,7 +107,12 @@
 	}
 </script>
 
-<form bind:this={form} onsubmit={save} class="space-y-5" data-testid="budget-project-form">
+<form
+	bind:this={form}
+	onsubmit={save}
+	class="mx-auto w-full max-w-2xl space-y-6"
+	data-testid="budget-project-form"
+>
 	{#if loading && !catalogs}<PageSkeleton variant="form" rows={4} />{/if}
 	{#if readError}<PageState
 			variant="error"
@@ -150,7 +155,7 @@
 		disabled={pending || loading || !!workspace?.acceptedPlan}
 		error={errors.organizationUnitId}
 	/>
-	<fieldset class="grid gap-3 sm:grid-cols-2">
+	<fieldset class="grid gap-5 sm:grid-cols-2">
 		<legend class="mb-2 text-sm font-medium">ระยะเวลาดำเนินการ *</legend>
 		<div class="space-y-2">
 			<Label for="budget-project-start">วันที่เริ่มต้น *</Label><DatePicker
@@ -172,7 +177,7 @@
 		</div>
 	</fieldset>
 	{#if error}<PageState variant="error" title="บันทึกโครงการไม่สำเร็จ" description={error} />{/if}
-	<div class="flex justify-end gap-2">
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-5">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
 		><LoadingButton type="submit" loading={pending} disabled={loading || !!readError}
 			>บันทึกโครงการ</LoadingButton

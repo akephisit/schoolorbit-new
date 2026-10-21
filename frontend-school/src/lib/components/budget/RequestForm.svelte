@@ -96,31 +96,41 @@
 	}
 </script>
 
-<form bind:this={form} onsubmit={save} class="space-y-4" data-testid="budget-request-form">
-	<div class="space-y-2">
-		<Label for="budget-request-title">ชื่อคำขอใช้เงิน *</Label><Input
-			id="budget-request-title"
-			bind:value={title}
-			disabled={pending}
-			aria-invalid={submitted && !title.trim()}
-		/>
-	</div>
-	<Choice
-		id="budget-request-activity"
-		label="กิจกรรม"
-		required
-		bind:value={activityId}
-		options={activities.map((value) => ({ value: value.id, label: value.title }))}
-		disabled={pending || !!detail}
-		onchange={() => (amounts = {})}
-		error={submitted && !activityId ? 'เลือกกิจกรรม' : ''}
-	/>
-	{#if activity}<fieldset class="space-y-3">
-			<legend class="mb-2 text-sm font-medium">รายการจากแผนที่อนุมัติ *</legend
+<form
+	bind:this={form}
+	onsubmit={save}
+	class="w-full min-w-0 max-w-4xl space-y-6"
+	data-testid="budget-request-form"
+>
+	<section class="space-y-4" aria-label="ข้อมูลคำขอ">
+		<h3 class="font-semibold">ข้อมูลคำขอ</h3>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="space-y-2">
+				<Label for="budget-request-title">ชื่อคำขอใช้เงิน *</Label><Input
+					id="budget-request-title"
+					bind:value={title}
+					disabled={pending}
+					aria-invalid={submitted && !title.trim()}
+				/>
+			</div>
+			<Choice
+				id="budget-request-activity"
+				label="กิจกรรม"
+				required
+				bind:value={activityId}
+				options={activities.map((value) => ({ value: value.id, label: value.title }))}
+				disabled={pending || !!detail}
+				onchange={() => (amounts = {})}
+				error={submitted && !activityId ? 'เลือกกิจกรรม' : ''}
+			/>
+		</div>
+	</section>
+	{#if activity}<fieldset class="min-w-0 space-y-3 border-t pt-6">
+			<legend class="mb-2 font-semibold">รายการจากแผนที่อนุมัติ *</legend
 			>{#each activity.lines as line (line.id)}<div
-					class="grid items-end gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_12rem]"
+					class="grid min-w-0 items-end gap-3 border-b pb-3 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_10rem]"
 				>
-					<div class="flex items-center gap-2">
+					<div class="flex min-w-0 items-start gap-2">
 						<Checkbox
 							id={`budget-request-line-${line.id}`}
 							checked={amounts[line.id] !== undefined}
@@ -133,12 +143,15 @@
 									amounts = next;
 								}
 							}}
-						/><Label for={`budget-request-line-${line.id}`}>{line.description}</Label>
+						/><Label class="min-w-0 break-words leading-5" for={`budget-request-line-${line.id}`}
+							>{line.description}</Label
+						>
 					</div>
 					{#if amounts[line.id] !== undefined}<div class="space-y-2">
 							<Label for={`budget-request-amount-${line.id}`}>จำนวนเงิน (บาท) *</Label><Input
 								id={`budget-request-amount-${line.id}`}
 								bind:value={amounts[line.id]}
+								class="text-right tabular-nums"
 								inputmode="decimal"
 								disabled={pending}
 							/>
@@ -151,9 +164,13 @@
 			bind:busy={uploading}
 			disabled={pending}
 		/>{/if}
-	<p class="text-right tabular-nums">รวมคำขอ <strong>{money(total)} บาท</strong></p>
+	<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-4">
+		<span class="text-sm text-muted-foreground">รวมคำขอ</span><strong class="text-lg tabular-nums"
+			>{money(total)} บาท</strong
+		>
+	</div>
 	{#if error}<PageState variant="error" title="บันทึกคำขอไม่สำเร็จ" description={error} />{/if}
-	<div class="flex justify-end gap-2">
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending || uploading}
 			>ยกเลิก</Button
 		><LoadingButton type="submit" loading={pending} disabled={uploading}

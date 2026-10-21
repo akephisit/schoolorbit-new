@@ -6,6 +6,12 @@
 </script>
 
 <Badge
-	variant={status === 'approved' ? 'default' : status === 'rejected' ? 'destructive' : 'secondary'}
-	>{statusLabels[status]}</Badge
+	variant={status === 'rejected' ? 'destructive' : 'outline'}
+	class={status === 'approved'
+		? 'border-success/20 bg-success/10 text-success'
+		: status === 'returned'
+			? 'border-warning/20 bg-warning/10 text-warning'
+			: status === 'rejected'
+				? ''
+				: 'text-muted-foreground'}>{statusLabels[status]}</Badge
 >

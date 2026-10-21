@@ -117,9 +117,9 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={load}
 		/>{/if}{#each steps as step, index (index)}<section
-			class="space-y-3 rounded-lg border bg-card p-3"
+			class="space-y-4 rounded-lg border bg-muted/20 p-4"
 		>
-			<div class="flex items-end gap-2">
+			<div class="flex flex-wrap items-end gap-3">
 				<div class="min-w-0 flex-1 space-y-2">
 					<Label for={`${prefix}-title-${index}`}>ชื่อขั้นตอนที่ {index + 1} *</Label><Input
 						id={`${prefix}-title-${index}`}
@@ -157,7 +157,7 @@
 					{disabled}
 				/>
 			</div>
-			<div class="flex items-end gap-2">
+			<div class="flex flex-wrap items-end gap-3">
 				<div class="min-w-0 flex-1">
 					<Choice
 						id={`${prefix}-recipient-${index}`}
@@ -174,7 +174,7 @@
 					onclick={() => addRecipient(index)}>เพิ่ม</Button
 				>
 			</div>
-			<ul class="space-y-1">
+			<ul class="space-y-2">
 				{#each step.recipients ?? [] as recipient, recipientIndex (recipientIndex)}<li
 						class="flex items-center justify-between gap-2 text-sm"
 					>

@@ -30,9 +30,9 @@
 	onDestroy(() => request.abort());
 </script>
 
-<section aria-label="เลือกพัสดุจากคลัง" class="space-y-3">
+<section aria-label="เลือกพัสดุจากคลัง" class="space-y-4">
 	<form
-		class="flex items-end gap-2"
+		class="flex flex-wrap items-end gap-3"
 		onsubmit={(event) => {
 			event.preventDefault();
 			void load();
@@ -65,7 +65,7 @@
 							>{item.name}<span class="block text-xs text-muted-foreground"
 								>{item.unit} · {item.latestVersion.shop}</span
 							></span
-						><span class="shrink-0 tabular-nums"
+						><span class="shrink-0 text-right tabular-nums"
 							>{money(toSatang(item.latestVersion.price))} บาท</span
 						></Button
 					>

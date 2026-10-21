@@ -64,15 +64,32 @@ test('management API wrappers type inactive lists and deactivation envelopes', a
 	}
 });
 
-test('staff assignment screens keep active-only list defaults', async () => {
+test('staff assignment options keep active defaults and preserve selected inactive history', async () => {
 	for (const relativePath of [
 		'frontend-school/src/routes/(app)/staff/manage/new/+page.svelte',
-		'frontend-school/src/routes/(app)/staff/manage/[id]/edit/+page.svelte',
 		'frontend-school/src/lib/components/UserRoleManager.svelte'
 	]) {
 		const source = await readRepoFile(relativePath);
 		assert.doesNotMatch(source, /include_inactive\s*:\s*true/);
 	}
+
+	const editPage = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/manage/[id]/edit/+page.svelte'
+	);
+	assert.equal([...editPage.matchAll(/include_inactive\s*:\s*true/g)].length, 1);
+	// Bind the sole exception to the organization loader, without crossing into another function.
+	const organizationLoader = editPage.match(
+		/^([ \t]*)async\s+function\s+loadOrganizationOptions\s*\(\s*\)\s*\{([\s\S]*?)^\1\}/m
+	)?.[2];
+	assert.ok(organizationLoader, 'staff edit must own the organization-options loader');
+	assert.match(
+		organizationLoader,
+		/listOrganizationUnits\s*\(\s*\{\s*include_inactive\s*:\s*true\s*\}\s*,\s*\{\s*signal\s*:\s*ticket\.signal\s*\}\s*\)/
+	);
+	assert.match(
+		organizationLoader,
+		/organizationUnits\s*=\s*result\.data\.filter\(\s*\(\s*unit\s*\)\s*=>\s*unit\.is_active\s*\|\|\s*formData\.organization_assignments\.some\(\s*\(\s*assignment\s*\)\s*=>\s*assignment\.organization_unit_id\s*===\s*unit\.id\s*\)\s*\)\s*;/
+	);
 });
 
 test('role management uses reversible permission-aware status controls', async () => {

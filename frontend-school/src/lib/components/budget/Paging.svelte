@@ -16,8 +16,8 @@
 	} = $props();
 </script>
 
-<div class="flex flex-wrap items-center justify-between gap-3">
-	<p class="text-sm text-muted-foreground">
+<nav aria-label="หน้ารายการงบประมาณ" class="flex flex-wrap items-center justify-between gap-3">
+	<p class="text-sm text-muted-foreground tabular-nums">
 		{total ? `${offset + 1}–${Math.min(offset + limit, total)} จาก ${total} รายการ` : '0 รายการ'}
 	</p>
 	<div class="flex gap-2">
@@ -37,4 +37,4 @@
 				: undefined}>ถัดไป</Button
 		>
 	</div>
-</div>
+</nav>

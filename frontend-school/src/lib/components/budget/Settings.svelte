@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Settings2 } from '@lucide/svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import { onDestroy, untrack } from 'svelte';
 	import {
 		getBudgetSettings,
@@ -18,7 +20,6 @@
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
-	import Navigation from './Navigation.svelte';
 	import RoutingEditor from './RoutingEditor.svelte';
 	import { toast } from 'svelte-sonner';
 	let { source }: { source: Promise<RouteLoadResult<BudgetSettings | null>> } = $props();
@@ -102,8 +103,14 @@
 	}
 </script>
 
-<PageShell title="ตั้งค่างบประมาณ" contentClass="space-y-4"
-	><Navigation />{#if region.error}<PageState
+<PageShell
+	icon={Settings2}
+	description="จัดการปีงบประมาณ แหล่งเงิน หมวดรายจ่าย และขั้นตอนพิจารณา"
+	backHref="/staff/budget"
+	backLabel="กลับภาพรวมงบประมาณ"
+	title="ตั้งค่างบประมาณ"
+	contentClass="space-y-6"
+	>{#if region.error}<PageState
 			variant="error"
 			title="โหลดการตั้งค่าไม่สำเร็จ"
 			description={region.error}
@@ -112,7 +119,11 @@
 		/>{/if}{#if !draft && region.loading}<PageSkeleton
 			variant="form"
 			rows={5}
-		/>{/if}{#if draft}<form onsubmit={save} class="space-y-4" data-testid="budget-settings">
+		/>{/if}{#if draft}<form
+			onsubmit={save}
+			class="max-w-5xl space-y-6"
+			data-testid="budget-settings"
+		>
 			<Tabs.Root bind:value={section}
 				><Tabs.List class="h-auto flex-wrap"
 					><Tabs.Trigger value="fiscal-years">ปีงบประมาณ</Tabs.Trigger><Tabs.Trigger value="funds"
@@ -120,52 +131,59 @@
 					><Tabs.Trigger value="categories">หมวดรายจ่าย</Tabs.Trigger><Tabs.Trigger value="routing"
 						>ขั้นตอนพิจารณา</Tabs.Trigger
 					></Tabs.List
-				><Tabs.Content value="fiscal-years" class="space-y-3"
-					>{#each draft.fiscalYears as year, index (index)}<section
-							class="grid items-end gap-3 rounded-xl border bg-card p-3 sm:grid-cols-2 xl:grid-cols-4"
-						>
-							<div class="space-y-2">
-								<Label for={`budget-year-name-${index}`}>ชื่อปีงบประมาณ *</Label><Input
-									id={`budget-year-name-${index}`}
-									bind:value={year.name}
-									disabled={pending}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for={`budget-year-start-${index}`}>วันที่เริ่มต้น *</Label><DatePicker
-									id={`budget-year-start-${index}`}
-									value={year.startDate || undefined}
-									onValueChange={(value) => (year.startDate = value ?? '')}
-									ariaLabel={`วันที่เริ่มต้นปีงบประมาณ ${index + 1}`}
-									disabled={pending}
-								/>
-							</div>
-							<div class="space-y-2">
-								<Label for={`budget-year-end-${index}`}>วันที่สิ้นสุด *</Label><DatePicker
-									id={`budget-year-end-${index}`}
-									value={year.endDate || undefined}
-									onValueChange={(value) => (year.endDate = value ?? '')}
-									ariaLabel={`วันที่สิ้นสุดปีงบประมาณ ${index + 1}`}
-									disabled={pending}
-								/>
-							</div>
-							<div class="flex items-center gap-2">
-								<Checkbox
-									id={`budget-year-active-${index}`}
-									bind:checked={year.active}
-									disabled={pending}
-								/><Label for={`budget-year-active-${index}`}>เปิดใช้งาน</Label>{#if !year.id}<Button
-										type="button"
-										variant="ghost"
-										size="sm"
+				><Tabs.Content value="fiscal-years" class="space-y-4 pt-4"
+					><div class="space-y-1">
+						<h2 class="font-semibold">ปีงบประมาณ</h2>
+						<p class="text-sm text-muted-foreground">
+							กำหนดชื่อและช่วงวันที่สำหรับการวางแผนงบประมาณ
+						</p>
+					</div>
+					{#each draft.fiscalYears as year, index (index)}<Card.Root
+							><Card.Content class="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-4">
+								<div class="space-y-2">
+									<Label for={`budget-year-name-${index}`}>ชื่อปีงบประมาณ *</Label><Input
+										id={`budget-year-name-${index}`}
+										bind:value={year.name}
 										disabled={pending}
-										onclick={() => {
-											if (draft)
-												draft.fiscalYears = draft.fiscalYears.filter((_, i) => i !== index);
-										}}>นำออก</Button
-									>{/if}
-							</div>
-						</section>{/each}<Button
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for={`budget-year-start-${index}`}>วันที่เริ่มต้น *</Label><DatePicker
+										id={`budget-year-start-${index}`}
+										value={year.startDate || undefined}
+										onValueChange={(value) => (year.startDate = value ?? '')}
+										ariaLabel={`วันที่เริ่มต้นปีงบประมาณ ${index + 1}`}
+										disabled={pending}
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for={`budget-year-end-${index}`}>วันที่สิ้นสุด *</Label><DatePicker
+										id={`budget-year-end-${index}`}
+										value={year.endDate || undefined}
+										onValueChange={(value) => (year.endDate = value ?? '')}
+										ariaLabel={`วันที่สิ้นสุดปีงบประมาณ ${index + 1}`}
+										disabled={pending}
+									/>
+								</div>
+								<div class="flex items-center gap-2">
+									<Checkbox
+										id={`budget-year-active-${index}`}
+										bind:checked={year.active}
+										disabled={pending}
+									/><Label for={`budget-year-active-${index}`}>เปิดใช้งาน</Label
+									>{#if !year.id}<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											disabled={pending}
+											onclick={() => {
+												if (draft)
+													draft.fiscalYears = draft.fiscalYears.filter((_, i) => i !== index);
+											}}>นำออก</Button
+										>{/if}
+								</div>
+							</Card.Content></Card.Root
+						>{/each}<Button
 						type="button"
 						variant="outline"
 						disabled={pending}
@@ -179,35 +197,43 @@
 					></Tabs.Content
 				>{#each [{ key: 'funds' as const, tab: 'funds', label: 'แหล่งเงิน' }, { key: 'expenseCategories' as const, tab: 'categories', label: 'หมวดรายจ่าย' }] as collection (collection.key)}<Tabs.Content
 						value={collection.tab}
-						class="space-y-3"
-						>{#each draft[collection.key] as item, index (index)}<div
-								class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3"
-							>
-								<div class="min-w-0 flex-1 space-y-2">
-									<Label for={`budget-${collection.key}-${index}`}>ชื่อ{collection.label} *</Label
-									><Input
-										id={`budget-${collection.key}-${index}`}
-										bind:value={item.name}
-										disabled={pending}
-									/>
-								</div>
-								<div class="flex items-center gap-2">
-									<Checkbox
-										id={`budget-${collection.key}-active-${index}`}
-										bind:checked={item.active}
-										disabled={pending}
-									/><Label for={`budget-${collection.key}-active-${index}`}>เปิดใช้งาน</Label>
-								</div>
-								{#if !item.id}<Button
-										type="button"
-										variant="ghost"
-										disabled={pending}
-										onclick={() => {
-											if (draft)
-												draft[collection.key] = draft[collection.key].filter((_, i) => i !== index);
-										}}>นำออก</Button
-									>{/if}
-							</div>{/each}<Button
+						class="space-y-4 pt-4"
+						><div class="space-y-1">
+							<h2 class="font-semibold">{collection.label}</h2>
+							<p class="text-sm text-muted-foreground">
+								จัดการรายการที่ใช้เลือกในแผนและการใช้เงินของโครงการ
+							</p>
+						</div>
+						{#each draft[collection.key] as item, index (index)}<Card.Root
+								><Card.Content class="flex flex-wrap items-end gap-4">
+									<div class="min-w-0 flex-1 space-y-2">
+										<Label for={`budget-${collection.key}-${index}`}>ชื่อ{collection.label} *</Label
+										><Input
+											id={`budget-${collection.key}-${index}`}
+											bind:value={item.name}
+											disabled={pending}
+										/>
+									</div>
+									<div class="flex items-center gap-2">
+										<Checkbox
+											id={`budget-${collection.key}-active-${index}`}
+											bind:checked={item.active}
+											disabled={pending}
+										/><Label for={`budget-${collection.key}-active-${index}`}>เปิดใช้งาน</Label>
+									</div>
+									{#if !item.id}<Button
+											type="button"
+											variant="ghost"
+											disabled={pending}
+											onclick={() => {
+												if (draft)
+													draft[collection.key] = draft[collection.key].filter(
+														(_, i) => i !== index
+													);
+											}}>นำออก</Button
+										>{/if}
+								</Card.Content></Card.Root
+							>{/each}<Button
 							type="button"
 							variant="outline"
 							disabled={pending}
@@ -216,24 +242,27 @@
 									draft[collection.key] = [...draft[collection.key], { name: '', active: true }];
 							}}>เพิ่ม{collection.label}</Button
 						></Tabs.Content
-					>{/each}<Tabs.Content value="routing" class="space-y-5"
-					>{#if section === 'routing'}{#each [{ key: 'planSteps' as const, label: 'พิจารณาแผนโครงการ' }, { key: 'requestSteps' as const, label: 'พิจารณาคำขอใช้เงิน' }, { key: 'adjustmentSteps' as const, label: 'พิจารณาปรับงบประมาณ' }] as routing (routing.key)}<section
-								class="space-y-3"
+					>{/each}<Tabs.Content value="routing" class="space-y-6 pt-4"
+					>{#if section === 'routing'}{#each [{ key: 'planSteps' as const, label: 'พิจารณาแผนโครงการ' }, { key: 'requestSteps' as const, label: 'พิจารณาคำขอใช้เงิน' }, { key: 'adjustmentSteps' as const, label: 'พิจารณาปรับงบประมาณ' }] as routing (routing.key)}<Card.Root
+								class="gap-4"
 							>
-								<h2 class="font-semibold">{routing.label}</h2>
-								<RoutingEditor
-									bind:steps={draft[routing.key]}
-									prefix={`budget-${routing.key}`}
-									disabled={pending}
-								/>
-							</section>{/each}{/if}</Tabs.Content
+								<Card.Header><Card.Title><h2>{routing.label}</h2></Card.Title></Card.Header
+								><Card.Content>
+									<RoutingEditor
+										bind:steps={draft[routing.key]}
+										prefix={`budget-${routing.key}`}
+										disabled={pending}
+									/>
+								</Card.Content></Card.Root
+							>{/each}{/if}</Tabs.Content
 				></Tabs.Root
 			>{#if error}<PageState
 					variant="error"
 					title="บันทึกการตั้งค่าไม่สำเร็จ"
 					description={error}
 				/>{/if}
-			<div class="flex justify-end">
+			<div class="flex flex-wrap justify-end gap-2 border-t pt-5">
+				<Button variant="outline" href="/staff/budget" disabled={pending}>กลับภาพรวม</Button>
 				<LoadingButton type="submit" loading={pending}>บันทึกการตั้งค่า</LoadingButton>
 			</div>
 		</form>{/if}</PageShell

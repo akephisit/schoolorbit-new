@@ -13,6 +13,9 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { LoadingButton, PageState, PageSkeleton } from '#lib/components/app-state/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { GitPullRequest } from '@lucide/svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	let {
 		source,
@@ -94,51 +97,57 @@
 	}
 </script>
 
-<section
-	class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
-	aria-label="การพิจารณา"
-	aria-busy={region.loading}
->
-	<h2 class="font-semibold">การพิจารณา</h2>
-	{#if region.error}<PageState
-			variant="error"
-			title="โหลดขั้นตอนพิจารณาไม่สำเร็จ"
-			description={region.error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => region.retry((signal) => getBudgetProcess(kind, id, { signal }))}
-		/>{/if}
-	{#if region.loading && !region.value}<PageSkeleton variant="form" rows={2} />{:else if process}<ol
-			class="space-y-2"
-		>
-			{#each process.steps as step (step.stepIndex)}<li
-					class="flex flex-wrap items-start justify-between gap-2 text-sm"
-				>
-					<div>
-						<p class:font-semibold={step.stepIndex === process.currentStep}>
-							{step.stepIndex + 1}. {step.definition.title}
-						</p>
-						<p class="text-muted-foreground">
-							{step.recipients.map((recipient) => recipient.displayName).join(', ')}
-						</p>
-					</div>
-					<span class="text-muted-foreground"
-						>{step.completedAt
-							? 'ดำเนินการแล้ว'
-							: step.stepIndex === process.currentStep
-								? 'ขั้นตอนปัจจุบัน'
-								: 'รอดำเนินการ'}</span
+<Card.Root role="region" aria-label="การพิจารณา" aria-busy={region.loading}>
+	<Card.Header
+		><Card.Title class="flex items-center gap-2"
+			><GitPullRequest
+				class="size-4 text-muted-foreground"
+				aria-hidden="true"
+			/>การพิจารณา</Card.Title
+		></Card.Header
+	><Card.Content class="space-y-4">
+		{#if region.error}<PageState
+				variant="error"
+				title="โหลดขั้นตอนพิจารณาไม่สำเร็จ"
+				description={region.error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => region.retry((signal) => getBudgetProcess(kind, id, { signal }))}
+			/>{/if}
+		{#if region.loading && !region.value}<PageSkeleton
+				variant="form"
+				rows={2}
+			/>{:else if process}<ol class="divide-y">
+				{#each process.steps as step (step.stepIndex)}<li
+						class="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 text-sm"
 					>
-				</li>{/each}
-		</ol>
-		{#if canAct && process.status === 'active'}<div class="flex flex-wrap gap-2">
-				<Button onclick={() => open(current?.definition.kind === 'review' ? 'review' : 'approve')}
-					>{current?.definition.kind === 'review' ? 'ตรวจสอบแล้ว' : 'อนุมัติ'}</Button
-				><Button variant="outline" onclick={() => open('return_for_revision')}>ส่งกลับแก้ไข</Button
-				><Button variant="destructive" onclick={() => open('reject')}>ไม่อนุมัติ</Button>
-			</div>{/if}{:else if !region.error}<p class="text-sm text-muted-foreground">
-			ยังไม่ได้ส่งพิจารณา
-		</p>{/if}
-</section>
+						<div>
+							<p class:font-semibold={step.stepIndex === process.currentStep}>
+								{step.stepIndex + 1}. {step.definition.title}
+							</p>
+							<p class="text-muted-foreground">
+								{step.recipients.map((recipient) => recipient.displayName).join(', ')}
+							</p>
+						</div>
+						<Badge variant="secondary" class="whitespace-nowrap"
+							>{step.completedAt
+								? 'ดำเนินการแล้ว'
+								: step.stepIndex === process.currentStep
+									? 'ขั้นตอนปัจจุบัน'
+									: 'รอดำเนินการ'}</Badge
+						>
+					</li>{/each}
+			</ol>
+			{#if canAct && process.status === 'active'}<div class="flex flex-wrap gap-2 border-t pt-4">
+					<Button onclick={() => open(current?.definition.kind === 'review' ? 'review' : 'approve')}
+						>{current?.definition.kind === 'review' ? 'ตรวจสอบแล้ว' : 'อนุมัติ'}</Button
+					><Button variant="outline" onclick={() => open('return_for_revision')}
+						>ส่งกลับแก้ไข</Button
+					><Button variant="destructive" onclick={() => open('reject')}>ไม่อนุมัติ</Button>
+				</div>{/if}{:else if !region.error}<p class="text-sm text-muted-foreground">
+				ยังไม่ได้ส่งพิจารณา
+			</p>{/if}
+	</Card.Content></Card.Root
+>
 <Dialog.Root
 	open={action !== null}
 	onOpenChange={(open) => {
@@ -150,7 +159,7 @@
 				>ยืนยันการพิจารณาฉบับที่ {expectedRevision}</Dialog.Description
 			></Dialog.Header
 		>
-		<form onsubmit={save} class="space-y-4">
+		<form onsubmit={save} class="space-y-6">
 			<div class="space-y-2">
 				<Label for="budget-action-comment">ความคิดเห็น / เหตุผล</Label><Textarea
 					id="budget-action-comment"
@@ -159,7 +168,7 @@
 				/>
 			</div>
 			{#if error}<PageState variant="error" title="ดำเนินการไม่สำเร็จ" description={error} />{/if}
-			<div class="flex justify-end gap-2">
+			<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 				<Button type="button" variant="outline" disabled={pending} onclick={() => (action = null)}
 					>ยกเลิก</Button
 				><LoadingButton type="submit" loading={pending}>ยืนยัน{actionLabel}</LoadingButton>
