@@ -4192,6 +4192,40 @@ mod tests {
     }
 
     #[test]
+    fn curriculum_matrix_metadata_and_removed_program_default_are_typed() {
+        let document = school_api_value().unwrap();
+        let schemas = &document["components"]["schemas"];
+        for name in [
+            "StudyProgram",
+            "CreateStudyProgramRequest",
+            "UpdateStudyProgramRequest",
+        ] {
+            assert!(
+                schemas[name]["properties"].get("isDefault").is_none(),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            schemas["CurriculumCatalogVersionOption"]["properties"]["gradeLevelIds"]["items"]
+                ["format"],
+            "uuid"
+        );
+        assert_eq!(
+            schemas["CurriculumCatalogVersionOption"]["properties"]["section"]["$ref"],
+            "#/components/schemas/CurriculumDocumentSection"
+        );
+        let props = &schemas["CurriculumStructureRequirement"]["properties"];
+        assert_eq!(props["subjectGroupId"]["format"], "uuid");
+        assert!(props.get("subjectGroupOrder").is_some());
+        let input = &schemas["CurriculumStructureRequirementInput"]["properties"];
+        assert!(input.get("subjectGroupId").is_none());
+        assert!(input.get("subjectGroupOrder").is_none());
+        assert!(schemas["BellSchedule"]["properties"]
+            .get("isDefault")
+            .is_some());
+    }
+
+    #[test]
     fn curriculum_current_subject_metadata_is_typed_without_changing_save_inputs() {
         let document = school_api_value().expect("document should serialize");
         let schemas = &document["components"]["schemas"];

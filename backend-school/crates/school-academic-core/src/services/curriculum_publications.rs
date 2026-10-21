@@ -212,7 +212,7 @@ pub async fn discard_draft(
         .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
     sqlx::query("DELETE FROM curriculum_levels w WHERE edition_id=$1 AND NOT EXISTS(SELECT 1 FROM curriculum_publication_levels p WHERE p.publication_id=$2 AND p.id=w.id)")
         .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
-    // Codes and the default flag may have been swapped during editing. Vacate their
+    // Codes may have been swapped during editing. Vacate their
     // unique keys inside this transaction before restoring the published values.
     sqlx::query(
         "UPDATE curriculum_levels SET code='discard-'||gen_random_uuid()::text WHERE edition_id=$1",
@@ -220,11 +220,11 @@ pub async fn discard_draft(
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE study_programs SET code='discard-'||gen_random_uuid()::text,is_default=false WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
+    sqlx::query("UPDATE study_programs SET code='discard-'||gen_random_uuid()::text WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
         .bind(id).execute(&mut *tx).await?;
     for (table,snapshot,columns) in [
         ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active"),
-        ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,is_default,status,row_version,created_at,updated_at,migration_provenance"),
+        ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,migration_provenance"),
         ("curriculum_term_slots","curriculum_publication_slots","id,curriculum_level_id,sequence,term_type,type_occurrence,name,row_version,created_at,updated_at"),
         ("curriculum_course_requirements","curriculum_publication_courses","id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,created_at,updated_at,study_program_id,requirement_kind,row_version,term_slot_id"),
         ("curriculum_activity_requirements","curriculum_publication_activities","id,curriculum_level_id,display_order,created_at,updated_at,activity_version_id,grade_level_id,study_program_id,requirement_kind,row_version,term_slot_id"),

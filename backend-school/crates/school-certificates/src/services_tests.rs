@@ -4043,7 +4043,7 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
     let study_program_id: Uuid = sqlx::query_scalar(
         "WITH edition AS (INSERT INTO curriculum_editions(name,revision_year) VALUES('Purge fixture',2569) RETURNING id),
          level AS (INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) SELECT id,'PURGE-FIXTURE','แผนทดสอบผู้ใช้ไฟล์',$1,true FROM edition RETURNING id)
-         INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) SELECT gen_random_uuid(),id,'PURGE-FIXTURE','แผนทดสอบผู้ใช้ไฟล์',true,'published' FROM level RETURNING id",
+         INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) SELECT gen_random_uuid(),id,'PURGE-FIXTURE','แผนทดสอบผู้ใช้ไฟล์','published' FROM level RETURNING id",
     ).bind(sqlx::types::Json(vec![grade_level_id])).fetch_one(&pool).await.unwrap();
     sqlx::query("SELECT capture_curriculum_publication((SELECT l.edition_id FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id WHERE p.id=$1),$2,'Synthetic admission file-consumer fixture')").bind(study_program_id).bind(actor.user_id).execute(&pool).await.unwrap();
     let admission_round_id: Uuid = sqlx::query_scalar(

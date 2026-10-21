@@ -1315,7 +1315,7 @@ async fn purge_finalizer_rejects_admission_logo_and_question_bank_file_consumers
     let study_program_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM study_programs
          WHERE status = 'published'
-         ORDER BY is_default DESC, id
+         ORDER BY code, id
          LIMIT 1",
     )
     .fetch_one(&pool)

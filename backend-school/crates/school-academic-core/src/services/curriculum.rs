@@ -12,7 +12,8 @@ use uuid::Uuid;
 
 pub(super) const EDITION_COLUMNS: &str = "current_publication_id,publication_count,draft_id,id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
 pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
-pub(super) const PROGRAM_COLUMNS: &str = "id,curriculum_level_id,code,name_th,name_en,is_default,status,row_version,created_at,updated_at";
+pub(super) const PROGRAM_COLUMNS: &str =
+    "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at";
 const MAX_LEVELS: i64 = 500;
 const MAX_PROGRAM_OPTIONS: i64 = 2000;
 const MAX_COPIED_REQUIREMENTS: i64 = 50_000;
@@ -279,7 +280,7 @@ pub(super) async fn list_programs_for_level(
     pool: &PgPool,
     level_id: Uuid,
 ) -> Result<Vec<StudyProgram>, AppError> {
-    let sql=format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY is_default DESC,code,id");
+    let sql=format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_level_id=$1 ORDER BY code,id");
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(level_id)
         .fetch_all(pool)
@@ -293,14 +294,6 @@ pub async fn get_program(pool: &PgPool, id: Uuid) -> Result<StudyProgram, AppErr
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))
 }
-async fn clear_default(
-    tx: &mut Transaction<'_, Postgres>,
-    level_id: Uuid,
-    except: Option<Uuid>,
-) -> Result<(), AppError> {
-    sqlx::query("UPDATE study_programs SET is_default=false,row_version=row_version+1,updated_at=now() WHERE curriculum_level_id=$1 AND is_default AND ($2::uuid IS NULL OR id<>$2)").bind(level_id).bind(except).execute(&mut **tx).await?;
-    Ok(())
-}
 pub async fn create_program(
     pool: &PgPool,
     level_id: Uuid,
@@ -310,11 +303,8 @@ pub async fn create_program(
     let id = Uuid::now_v7();
     let mut tx = pool.begin().await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
-    if request.is_default {
-        clear_default(&mut tx, level_id, None).await?;
-    }
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) VALUES($1,$2,$3,$4,$5,'draft')")
-        .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(request.name_th.trim()).bind(request.is_default).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES($1,$2,$3,$4,'draft')")
+        .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(request.name_th.trim()).execute(&mut *tx).await?;
     tx.commit().await?;
     get_program(pool, id).await
 }
@@ -347,10 +337,7 @@ pub async fn update_program(
     if program.row_version != request.row_version {
         return Err(AppError::Conflict("แผนการเรียนถูกแก้ไขโดยผู้ใช้อื่น".into()));
     }
-    if request.is_default {
-        clear_default(&mut tx, program.curriculum_level_id, Some(id)).await?;
-    }
-    sqlx::query("UPDATE study_programs SET name_th=$1,is_default=$2,row_version=row_version+1,updated_at=now() WHERE id=$3").bind(request.name_th.trim()).bind(request.is_default).bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE study_programs SET name_th=$1,row_version=row_version+1,updated_at=now() WHERE id=$2").bind(request.name_th.trim()).bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     get_program(pool, id).await
 }
@@ -372,7 +359,7 @@ pub async fn list_study_program_options_for_year(
         ARRAY(SELECT DISTINCT grade_level_id FROM (SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id=p.id UNION SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id=p.id) r ORDER BY grade_level_id) AS grade_level_ids
         FROM published_study_programs p JOIN published_curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id
         WHERE p.status='published' AND e.status='published' AND e.is_active AND l.is_active
-        ORDER BY e.revision_year DESC NULLS LAST,e.created_at DESC,l.name_th,p.is_default DESC,p.name_th,p.id LIMIT $1"#).bind(MAX_PROGRAM_OPTIONS+1).fetch_all(pool).await?;
+        ORDER BY e.revision_year DESC NULLS LAST,e.created_at DESC,l.name_th,p.name_th,p.id LIMIT $1"#).bind(MAX_PROGRAM_OPTIONS+1).fetch_all(pool).await?;
     if options.len() as i64 > MAX_PROGRAM_OPTIONS {
         return Err(AppError::ValidationError(
             "จำนวนแผนการเรียนเกิน 2,000 รายการ".into(),
@@ -405,17 +392,6 @@ async fn validate_publishable(
     if program_count == 0 {
         return Err(AppError::ValidationError(
             "ต้องมีแผนการเรียนอย่างน้อยหนึ่งรายการก่อนเผยแพร่".to_string(),
-        ));
-    }
-    let default_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM study_programs WHERE curriculum_level_id = $1 AND is_default AND status <> 'archived'",
-    )
-    .bind(version.id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if default_count != 1 {
-        return Err(AppError::ValidationError(
-            "ต้องมีแผนการเรียนเริ่มต้นหนึ่งรายการพอดี".to_string(),
         ));
     }
     let empty_programs: i64 = sqlx::query_scalar(
@@ -550,7 +526,7 @@ pub async fn copy_program(
         AND NOT EXISTS(SELECT 1 FROM curriculum_term_slots t WHERE t.curriculum_level_id=$1 AND t.term_type=s.term_type AND t.type_occurrence=s.type_occurrence)"#)
         .bind(level_id).bind(source.curriculum_level_id).bind(source.id).execute(&mut *tx).await?;
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,name_en,is_default,status) SELECT $1,$2,$3,$4,$5,NOT EXISTS(SELECT 1 FROM study_programs WHERE curriculum_level_id=$2 AND is_default),'draft'")
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,name_en,status) SELECT $1,$2,$3,$4,$5,'draft'")
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(name).bind(&source.name_en).execute(&mut *tx).await?;
     sqlx::query(r#"INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)
         SELECT gen_random_uuid(),$1,$2,r.subject_version_id,r.grade_level_id,target.id,r.requirement_kind,r.display_order
@@ -616,10 +592,29 @@ pub(super) async fn programs_from_publication(
     publication: Option<Uuid>,
 ) -> Result<Vec<StudyProgram>, AppError> {
     let source = super::curriculum_publications::source("study_programs", publication)?;
-    let query = format!("SELECT {PROGRAM_COLUMNS} FROM {source} WHERE curriculum_level_id=$1 ORDER BY is_default DESC,code,id");
+    let query = format!(
+        "SELECT {PROGRAM_COLUMNS} FROM {source} WHERE curriculum_level_id=$1 ORDER BY code,id"
+    );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(query))
         .bind(level_id)
         .bind(publication)
         .fetch_all(pool)
         .await?)
+}
+
+#[cfg(test)]
+mod removed_default_contract_tests {
+    use crate::models::{CreateStudyProgramRequest, UpdateStudyProgramRequest};
+    #[test]
+    fn study_program_rejects_removed_default_input() {
+        let token = uuid::Uuid::new_v4();
+        let mut create = serde_json::json!({"draftId":token,"nameTh":"แผน"});
+        assert!(serde_json::from_value::<CreateStudyProgramRequest>(create.clone()).is_ok());
+        create["isDefault"] = true.into();
+        assert!(serde_json::from_value::<CreateStudyProgramRequest>(create).is_err());
+        let mut update = serde_json::json!({"draftId":token,"nameTh":"แผน","rowVersion":1});
+        assert!(serde_json::from_value::<UpdateStudyProgramRequest>(update.clone()).is_ok());
+        update["isDefault"] = false.into();
+        assert!(serde_json::from_value::<UpdateStudyProgramRequest>(update).is_err());
+    }
 }

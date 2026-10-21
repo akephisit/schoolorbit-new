@@ -890,7 +890,6 @@ pub struct StudyProgram {
     pub code: String,
     pub name_th: String,
     pub name_en: Option<String>,
-    pub is_default: bool,
     pub status: VersionStatus,
     pub row_version: i64,
     pub created_at: DateTime<Utc>,
@@ -918,7 +917,6 @@ pub struct StudyProgramOption {
 pub struct CreateStudyProgramRequest {
     pub draft_id: Uuid,
     pub name_th: String,
-    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -927,7 +925,6 @@ pub struct CreateStudyProgramRequest {
 pub struct UpdateStudyProgramRequest {
     pub draft_id: Uuid,
     pub name_th: String,
-    pub is_default: bool,
     pub row_version: i64,
 }
 
@@ -963,6 +960,8 @@ pub struct CurriculumCatalogVersionOption {
     pub version_no: i32,
     pub effective_from: NaiveDate,
     pub effective_until: Option<NaiveDate>,
+    pub grade_level_ids: Vec<Uuid>,
+    pub section: CurriculumDocumentSection,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1001,9 +1000,10 @@ pub enum CatalogWeeklyUnit {
     Hour,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum CurriculumDocumentSection {
     BasicCourse,
     AdditionalCourse,
@@ -1036,6 +1036,8 @@ pub struct CurriculumStructureRequirement {
     pub code: String,
     pub name: String,
     pub section: CurriculumDocumentSection,
+    pub subject_group_id: Option<Uuid>,
+    pub subject_group_order: Option<i32>,
     pub requirement_kind: RequirementKind,
     pub metrics: CatalogCurriculumMetrics,
     pub display_order: i32,

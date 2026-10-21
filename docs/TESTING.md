@@ -1781,3 +1781,24 @@ tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser wo
 `tests/e2e/curriculum-catalog-revisions.spec.ts` against an owned local preview. The
 fixtures cover current-only additions, preserved pins with current-registry outdated badges
 and hidden revision numbers, explicit replacement, legacy duplicate buckets and conflict retention in the editor and read-only tables.
+
+
+Curriculum matrix contracts and default removal use the same owned disposable PostgreSQL runner:
+
+```bash
+CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 ./scripts/test_backend_school.sh curriculum_program_default -- --test-threads=1
+./scripts/test_backend_school.sh curriculum_current_subject -- --test-threads=2
+./scripts/test_backend_school.sh curriculum_publication -- --test-threads=2
+./scripts/test_backend_school.sh curriculum_structure -- --test-threads=2
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core --lib study_program_rejects_removed_default_input
+```
+
+The 132→133 fixture keeps a deliberately different active amendment and immutable history,
+compares all surviving program data including identities/revisions/timestamps, retries the
+canonical migration, then discards and captures another publication. The clean fixture
+checks migration/retry and preserved bell-schedule defaults. Migration assertions independently
+verify graph/reference and published-view counts and checksums. Current-subject cases verify
+immutable grade/section options, pinned historical subject-group metadata, activity null groups,
+current-only admission and unchanged denied access. Run affected copy/options and curriculum
+permission cases, Core/HTTP in default and `api-docs` modes, schema/Serde removed-input tests,
+and the existing API generate/check/test commands. These checks never use production data.

@@ -744,7 +744,7 @@ async fn upsert_curriculum_program(
     }
     sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) SELECT $1,$2,'SBX-GEN','Sandbox General',$3,true WHERE NOT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1)")
         .bind(level_id).bind(edition_id).bind(json!([grade_level_id])).execute(&mut **tx).await?;
-    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox',true,'draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox','draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
         .bind(program_id).bind(level_id).execute(&mut **tx).await?;
     sqlx::query("UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(program_id).execute(&mut **tx).await?;
     sqlx::query("SELECT capture_curriculum_publication($1,$2,'Initial minimal sandbox fixture')")

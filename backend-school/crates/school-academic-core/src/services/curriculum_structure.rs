@@ -189,6 +189,17 @@ pub(super) async fn get_workspace_from_publication(
         .collect::<Vec<_>>();
     let current_revisions = super::catalog::current_subject_revisions(pool, &subject_ids).await?;
 
+    let version_ids = rows
+        .iter()
+        .filter(|row| row.resource_kind == RequirementResourceKind::Course)
+        .map(|row| row.catalog_version_id)
+        .collect::<Vec<_>>();
+    let groups = super::catalog::subject_groups_for_versions(pool, &version_ids)
+        .await?
+        .into_iter()
+        .map(|group| (group.subject_version_id, group))
+        .collect::<HashMap<_, _>>();
+
     let program_order = programs
         .iter()
         .enumerate()
@@ -206,7 +217,12 @@ pub(super) async fn get_workspace_from_publication(
                 && current_revisions
                     .get(&row.catalog_id)
                     .is_some_and(|current| current.version_no > row.version_no);
-            requirement_from_row(row, has_newer_current_version, &mut validation)
+            let group = groups.get(&row.catalog_version_id);
+            let mut requirement =
+                requirement_from_row(row, has_newer_current_version, &mut validation);
+            requirement.subject_group_id = group.map(|group| group.subject_group_id);
+            requirement.subject_group_order = group.and_then(|group| group.display_order);
+            requirement
         })
         .collect::<Vec<_>>();
     requirements.sort_by_key(|requirement| {
@@ -788,6 +804,8 @@ fn requirement_from_row(
         code: row.code,
         name: row.name,
         section,
+        subject_group_id: None,
+        subject_group_order: None,
         requirement_kind: row.requirement_kind,
         metrics: CatalogCurriculumMetrics {
             weekly_value: row.weekly_value,
