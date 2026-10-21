@@ -729,12 +729,7 @@ async fn create_published_program_option_fixture(
             .fetch_one(pool)
             .await
             .unwrap();
-    let subject_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let subject_version_id = current_fixture_subject_version(pool).await;
     sqlx::query(
         r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING"#,

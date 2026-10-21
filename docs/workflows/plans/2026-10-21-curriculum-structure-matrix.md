@@ -1,6 +1,0 @@
-# Curriculum structure matrix implementation
-
-1. Backend writer: extend Academic Core metadata through the catalog provider, remove study-program defaults and add migration 133 with locked before/after aggregate assertions. Add populated predecessor, lifecycle, authorization and rejected-old-input cases. Own OpenAPI generation and the single shared Cargo target.
-2. Frontend writer: implement comparison/document tables, conservative pairing, summaries, collapsed settings and grade/classification picker filters using generated DTOs. Preserve mutation and stale-draft behavior.
-3. Verify focused Core/HTTP compile in default and api-docs modes, disposable migration/current-subject/publication/structure/access tests, API generation/check/test, frontend type/lint/helper/browser fixtures, documentation policy and diff checks. Use low-debug Rust jobs=2 and the pinned Node 24 runtime; serialize Cargo.
-4. Senior coordinates checkpoint barriers, draft PR and independent Reviewer/QA acceptance. Deliver the matched School release only through normal Pipeline selection and existing maintenance/recovery gates; lifecycle tests use disposable synthetic fixtures only. Remove these workflow inputs once the PR records the completed outcome.

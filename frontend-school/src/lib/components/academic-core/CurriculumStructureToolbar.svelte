@@ -28,6 +28,11 @@
 		onEdit: () => void;
 	} = $props();
 
+	let allTermsSelected = $derived(
+		workspace.termSlots.length > 0 &&
+			workspace.termSlots.every((term) => termSlotIds.includes(term.id))
+	);
+
 	let selectedGrade = $derived(
 		gradeLevelId === ALL_GRADES
 			? 'ทุกระดับชั้น'
@@ -94,6 +99,17 @@
 	<fieldset class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3">
 		<legend class="sr-only">ภาคเรียนที่แสดง</legend>
 		<span class="text-sm text-muted-foreground">ภาคเรียนที่แสดง</span>
+		<label class="flex cursor-pointer items-center gap-2 py-1 text-sm font-medium">
+			<Checkbox
+				checked={allTermsSelected}
+				indeterminate={!allTermsSelected &&
+					workspace.termSlots.some((term) => termSlotIds.includes(term.id))}
+				disabled={workspace.termSlots.length === 0}
+				onCheckedChange={(checked) => {
+					termSlotIds = checked ? workspace.termSlots.map((term) => term.id) : [];
+				}}
+			/>ทุกภาคเรียน
+		</label>
 		{#each [...workspace.termSlots].sort((a, b) => a.sequence - b.sequence) as term (term.id)}
 			<label class="flex cursor-pointer items-center gap-2 py-1 text-sm">
 				<Checkbox

@@ -111,7 +111,7 @@
 							<Table.Row>
 								{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
 										<Table.Head class="identity-head border-l whitespace-normal"
-											>รหัส / ชื่อจริงในภาคเรียน</Table.Head
+											>รายการในภาคเรียน</Table.Head
 										>
 										<Table.Head class="metric-head"><span>หน่วยกิต</span></Table.Head>
 										<Table.Head class="metric-head"><span>ต่อสัปดาห์</span></Table.Head>

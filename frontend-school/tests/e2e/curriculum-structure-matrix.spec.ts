@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Locator } from '@playwright/test';
 import type { CurriculumStructureRequirement } from '../../src/lib/api/academic-core.js';
 import {
 	curriculumCatalogFixture,
@@ -73,6 +73,17 @@ async function choose(page: Page, label: string, option: string) {
 	await page.getByRole('option', { name: option, exact: true }).click();
 }
 
+async function showSciencePair(viewport: Locator) {
+	await viewport.evaluate((node) => {
+		const target = node.querySelector('[data-requirement-id="science-1"]')!.getBoundingClientRect();
+		const header = node.querySelector('thead')!.getBoundingClientRect();
+		const section = node.querySelector('tbody td')!.getBoundingClientRect();
+		node.scrollTop +=
+			target.top - node.getBoundingClientRect().top - header.height - section.height - 8;
+		node.scrollLeft = 0;
+	});
+}
+
 for (const width of [390, 1543])
 	for (const mode of ['light', 'dark'] as const) {
 		test(`aligned matrix and bounded sticky scrolling at ${width}px ${mode}`, async ({
@@ -124,6 +135,11 @@ for (const width of [390, 1543])
 				path: testInfo.outputPath(`comparison-${width}-${mode}.png`),
 				fullPage: true
 			});
+			await showSciencePair(viewport);
+			await page.screenshot({
+				path: testInfo.outputPath(`comparison-scrolled-${width}-${mode}.png`),
+				fullPage: true
+			});
 			await page.getByRole('tab', { name: 'เอกสารรายแผน' }).click();
 			await expect(
 				matrix.getByRole('columnheader', { name: 'รายวิชา / กิจกรรม', exact: true })
@@ -134,6 +150,11 @@ for (const width of [390, 1543])
 				path: testInfo.outputPath(`document-${width}-${mode}.png`),
 				fullPage: true
 			});
+			await showSciencePair(viewport);
+			await page.screenshot({
+				path: testInfo.outputPath(`document-scrolled-${width}-${mode}.png`),
+				fullPage: true
+			});
 			await choose(page, 'ระดับชั้นที่แสดง', 'ทุกระดับชั้น');
 			await expect(matrix.getByRole('table')).toHaveCount(3);
 			await expect(matrix).toContainText('รวมทั้งระดับ · ทุกชั้น ทุกภาคเรียน');
@@ -142,10 +163,20 @@ for (const width of [390, 1543])
 				'ภาคเรียนที่ 2'
 			);
 			await expect(matrix.getByRole('table').first().locator('thead')).toContainText('ภาคฤดูร้อน');
+			await page.getByRole('checkbox', { name: 'ทุกภาคเรียน', exact: true }).check();
+			await expect(matrix.getByRole('table').first().locator('thead')).toContainText(
+				'ภาคเรียนที่ 2'
+			);
+			await page.getByRole('checkbox', { name: 'ภาคเรียนที่ 2', exact: true }).uncheck();
 			await page.getByRole('checkbox', { name: 'ภาคฤดูร้อน', exact: true }).uncheck();
 			await page.getByRole('checkbox', { name: 'ภาคเรียนที่ 1', exact: true }).uncheck();
 			await expect(matrix.getByRole('table')).toHaveCount(0);
 			await expect(matrix.getByText('เลือกภาคเรียนเพื่อแสดงตาราง')).toHaveCount(3);
+			await page.getByRole('checkbox', { name: 'ทุกภาคเรียน', exact: true }).focus();
+			await page.keyboard.press('Space');
+			await expect(page.getByRole('checkbox', { name: 'ทุกภาคเรียน', exact: true })).toBeChecked();
+			await expect(matrix.getByRole('table')).toHaveCount(3);
+			await expect(matrix.getByRole('table').first().locator('thead')).toContainText('ภาคฤดูร้อน');
 			expect(state.writes).toEqual([]);
 			expect(state.errors).toEqual([]);
 		});
@@ -257,5 +288,18 @@ test('saving term settings retains an explicit subset filter when a new slot is 
 	).not.toBeChecked();
 	await expect(page.getByRole('checkbox', { name: 'ภาคฤดูร้อน 1', exact: true })).not.toBeChecked();
 	expect(state.writes).toHaveLength(1);
+	expect(state.errors).toEqual([]);
+});
+
+test('all-terms control is disabled when the level has no configured term slots', async ({
+	page
+}) => {
+	const fixture = curriculumCatalogFixture({ empty: true });
+	fixture.workspace.termSlots = [];
+	const state = await installCurriculumCatalog(page, fixture);
+	await page.goto(curriculumCatalogPath);
+	await expect(page.getByRole('checkbox', { name: 'ทุกภาคเรียน', exact: true })).toBeDisabled();
+	await expect(page.getByTestId('curriculum-matrix').getByRole('table')).toHaveCount(0);
+	expect(state.writes).toEqual([]);
 	expect(state.errors).toEqual([]);
 });

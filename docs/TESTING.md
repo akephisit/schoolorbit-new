@@ -1802,3 +1802,17 @@ immutable grade/section options, pinned historical subject-group metadata, activ
 current-only admission and unchanged denied access. Run affected copy/options and curriculum
 permission cases, Core/HTTP in default and `api-docs` modes, schema/Serde removed-input tests,
 and the existing API generate/check/test commands. These checks never use production data.
+
+
+From `frontend-school`, run the matrix and picker helper cases with the pinned Node 24 runtime:
+
+```bash
+node --experimental-strip-types --test tests/runtime/curriculum-structure.test.ts tests/runtime/curriculum-catalog-selection.test.ts
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-structure-matrix.spec.ts tests/e2e/curriculum-catalog-revisions.spec.ts tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium
+```
+
+Use an owned local preview for the synthetic intercepted-API browser fixtures. They cover
+all configured terms (including empty and more than two), grade and classification filters,
+conservative pairing and partial totals, sticky table context and screenshots across the
+configured layouts/themes. These fixtures never write production curriculum data and do not
+replace deferred live UI acceptance.
