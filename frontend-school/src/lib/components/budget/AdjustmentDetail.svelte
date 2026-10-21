@@ -27,7 +27,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import Navigation from './Navigation.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { ArrowLeftRight, Pencil } from '@lucide/svelte';
 	import WorkflowPanel from './WorkflowPanel.svelte';
 	import History from './History.svelte';
 	import StatusBadge from './StatusBadge.svelte';
@@ -139,18 +140,21 @@
 
 <PageShell
 	title={region.value ? adjustmentLabels[region.value.kind] : 'รายละเอียดการปรับงบประมาณ'}
+	description="ตรวจสอบงบประมาณต้นทาง ปลายทาง และสถานะการพิจารณา"
+	icon={ArrowLeftRight}
 	backHref={returnTo}
 	backLabel="กลับรายการปรับงบ"
-	contentClass="space-y-4"
+	contentClass="space-y-6"
 	>{#snippet actions()}{#if region.value}{#if region.value.capabilities.canEdit}<Button
 					variant="outline"
-					onclick={() => (editing = true)}>แก้ไขฉบับร่าง</Button
+					onclick={() => (editing = true)}
+					><Pencil class="size-4" aria-hidden="true" />แก้ไขฉบับร่าง</Button
 				>{/if}{#if region.value.capabilities.canSubmit}<LoadingButton
 					loading={pending}
 					onclick={submit}>ส่งรายการพิจารณา</LoadingButton
 				>{/if}{#if region.value.kind === 'loan' && region.value.status === 'approved' && BigInt(region.value.loanOutstandingSatang) > 0n && $can.has(PERMISSIONS.BUDGET_ADJUSTMENT_CREATE_SCHOOL)}<Button
 					onclick={() => (repaying = true)}>คืนเงินยืม</Button
-				>{/if}{/if}{/snippet}<Navigation /><ReadAccessNotice />
+				>{/if}{/if}{/snippet}<ReadAccessNotice />
 	<section
 		aria-label="รายละเอียดการปรับงบ"
 		aria-busy={region.loading}
@@ -166,100 +170,114 @@
 				variant="form"
 				rows={4}
 			/>{:else if region.value}{@const detail = region.value}
-			<div
-				class="space-y-3 rounded-xl border border-primary/15 bg-gradient-to-r from-primary/5 to-card p-4"
-			>
-				<StatusBadge status={detail.status} />
-				<p class="text-xl font-semibold tabular-nums">{money(detail.amountSatang)} บาท</p>
-				<p>{detail.reason}</p>
-				<section aria-label="ปีงบประมาณของรายการ" class="space-y-2" aria-busy={catalogs.loading}>
-					{#if catalogs.error}<PageState
-							variant="error"
-							title="โหลดปีงบประมาณและหมวดรายการไม่สำเร็จ"
-							description={catalogs.error}
-							actionLabel="ลองอีกครั้ง"
-							onaction={() => catalogs.retry((signal) => getBudgetCatalogs({ signal }))}
-						/>{/if}
-					{#if catalogs.loading && !catalogs.value}<PageSkeleton
-							variant="form"
-							rows={1}
-						/>{:else if fiscalYear}<p class="text-sm">
-							ปีงบประมาณ <strong>{fiscalYear.name}</strong>
-						</p>{:else if !catalogs.error}<PageState
-							variant="permission"
-							title="ไม่พบปีงบประมาณของรายการ"
-							description="ติดต่อผู้ดูแลเพื่อตรวจสอบปีงบประมาณก่อนพิจารณารายการ"
-						/>{/if}
-				</section>
-				{#if detail.kind === 'loan'}<p class="text-sm">
-						เงินยืมค้างคืน <strong>{money(detail.loanOutstandingSatang)} บาท</strong>
-					</p>{/if}
-				<div class="flex flex-wrap gap-2">
-					{#if detail.from}<Button
-							variant="outline"
-							size="sm"
-							href={`/staff/budget/projects/${detail.from.projectId}`}>เปิดโครงการต้นทาง</Button
-						>{/if}{#if detail.to}<Button
-							variant="outline"
-							size="sm"
-							href={`/staff/budget/projects/${detail.to.projectId}`}>เปิดโครงการปลายทาง</Button
-						>{/if}{#if detail.loanId}<Button
-							variant="outline"
-							size="sm"
-							href={`/staff/budget/adjustments/${detail.loanId}`}>เปิดรายการยืม</Button
-						>{/if}
-				</div>
-			</div>{/if}{#if error}<PageState
+			<Card.Root
+				><Card.Header
+					><div class="flex flex-wrap items-center justify-between gap-3">
+						<Card.Title>สรุปการปรับงบประมาณ</Card.Title><StatusBadge status={detail.status} />
+					</div></Card.Header
+				><Card.Content class="space-y-6"
+					><dl class="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)]">
+						<div>
+							<dt class="text-sm text-muted-foreground">จำนวนเงิน</dt>
+							<dd class="text-2xl font-semibold tabular-nums">{money(detail.amountSatang)} บาท</dd>
+						</div>
+						<div>
+							<dt class="text-sm text-muted-foreground">เหตุผล</dt>
+							<dd class="break-words">{detail.reason}</dd>
+						</div>
+					</dl>
+					<section aria-label="ปีงบประมาณของรายการ" class="space-y-2" aria-busy={catalogs.loading}>
+						{#if catalogs.error}<PageState
+								variant="error"
+								title="โหลดปีงบประมาณและหมวดรายการไม่สำเร็จ"
+								description={catalogs.error}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => catalogs.retry((signal) => getBudgetCatalogs({ signal }))}
+							/>{/if}
+						{#if catalogs.loading && !catalogs.value}<PageSkeleton
+								variant="form"
+								rows={1}
+							/>{:else if fiscalYear}<p class="text-sm">
+								ปีงบประมาณ <strong>{fiscalYear.name}</strong>
+							</p>{:else if !catalogs.error}<PageState
+								variant="permission"
+								title="ไม่พบปีงบประมาณของรายการ"
+								description="ติดต่อผู้ดูแลเพื่อตรวจสอบปีงบประมาณก่อนพิจารณารายการ"
+							/>{/if}
+					</section>
+					{#if detail.kind === 'loan'}<p class="text-sm">
+							เงินยืมค้างคืน <strong>{money(detail.loanOutstandingSatang)} บาท</strong>
+						</p>{/if}
+					<div class="flex flex-wrap gap-2">
+						{#if detail.from}<Button
+								variant="outline"
+								size="sm"
+								href={`/staff/budget/projects/${detail.from.projectId}`}>เปิดโครงการต้นทาง</Button
+							>{/if}{#if detail.to}<Button
+								variant="outline"
+								size="sm"
+								href={`/staff/budget/projects/${detail.to.projectId}`}>เปิดโครงการปลายทาง</Button
+							>{/if}{#if detail.loanId}<Button
+								variant="outline"
+								size="sm"
+								href={`/staff/budget/adjustments/${detail.loanId}`}>เปิดรายการยืม</Button
+							>{/if}
+					</div>
+				</Card.Content></Card.Root
+			>{/if}{#if error}<PageState
 				variant="error"
 				title="ดำเนินการไม่สำเร็จ"
 				description={error}
 			/>{/if}
 	</section>
-	{#if region.value}<div class="grid gap-3 lg:grid-cols-2">
-			{#each [{ side: 'from' as const, title: 'งบประมาณต้นทาง (หักออก)', ref: region.value.from, project: fromBudget, allocation: fromAllocation }, { side: 'to' as const, title: 'งบประมาณปลายทาง (รับเข้า)', ref: region.value.to, project: toBudget, allocation: toAllocation }] as context (context.side)}{#if context.ref}<section
-						class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+	{#if region.value}<div class="grid gap-6 lg:grid-cols-2">
+			{#each [{ side: 'from' as const, title: 'งบประมาณต้นทาง (หักออก)', ref: region.value.from, project: fromBudget, allocation: fromAllocation }, { side: 'to' as const, title: 'งบประมาณปลายทาง (รับเข้า)', ref: region.value.to, project: toBudget, allocation: toAllocation }] as context (context.side)}{#if context.ref}<Card.Root
+						role="region"
 						aria-label={context.title}
 						aria-busy={context.project.loading}
 					>
-						<h2 class="font-semibold">{context.title}</h2>
-						{#if context.project.error}<PageState
-								variant="error"
-								title="โหลดรายละเอียดงบประมาณไม่สำเร็จ"
-								description={context.project.error}
-								actionLabel="ลองอีกครั้ง"
-								onaction={() => {
-									const ref = context.ref;
-									if (ref)
-										context.project.retry((signal) =>
-											getBudgetDashboard({ signal, query: { projectId: ref.projectId } })
-										);
-								}}
-							/>{/if}{#if context.project.loading && !context.project.value}<PageSkeleton
-								variant="form"
-								rows={4}
-							/>{:else if context.allocation}<dl class="grid gap-3 sm:grid-cols-2">
-								<div>
-									<dt class="text-sm text-muted-foreground">โครงการ</dt>
-									<dd class="font-medium">{context.allocation.projectName}</dd>
-								</div>
-								<div>
-									<dt class="text-sm text-muted-foreground">กิจกรรม</dt>
-									<dd>{context.allocation.activityTitle}</dd>
-								</div>
-								<div>
-									<dt class="text-sm text-muted-foreground">แหล่งเงิน</dt>
-									<dd>{context.allocation.fundName}</dd>
-								</div>
-								<div>
-									<dt class="text-sm text-muted-foreground">หมวดรายจ่าย</dt>
-									<dd>{context.allocation.categoryName}</dd>
-								</div>
-							</dl>{:else if !context.project.error && !catalogs.loading && !catalogs.error}<PageState
-								variant="permission"
-								title="ยังยืนยันรายการงบประมาณไม่ได้"
-								description="ตรวจสอบสิทธิ์และรายการในแผนที่อนุมัติ หรือขอให้ผู้รับผิดชอบแก้ไขรายการก่อนพิจารณา"
-							/>{/if}
-					</section>{/if}{/each}
+						<Card.Header><Card.Title>{context.title}</Card.Title></Card.Header><Card.Content
+							class="space-y-4"
+						>
+							{#if context.project.error}<PageState
+									variant="error"
+									title="โหลดรายละเอียดงบประมาณไม่สำเร็จ"
+									description={context.project.error}
+									actionLabel="ลองอีกครั้ง"
+									onaction={() => {
+										const ref = context.ref;
+										if (ref)
+											context.project.retry((signal) =>
+												getBudgetDashboard({ signal, query: { projectId: ref.projectId } })
+											);
+									}}
+								/>{/if}{#if context.project.loading && !context.project.value}<PageSkeleton
+									variant="form"
+									rows={4}
+								/>{:else if context.allocation}<dl class="grid gap-3 sm:grid-cols-2">
+									<div>
+										<dt class="text-sm text-muted-foreground">โครงการ</dt>
+										<dd class="break-words font-medium">{context.allocation.projectName}</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">กิจกรรม</dt>
+										<dd class="break-words">{context.allocation.activityTitle}</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">แหล่งเงิน</dt>
+										<dd class="break-words">{context.allocation.fundName}</dd>
+									</div>
+									<div>
+										<dt class="text-sm text-muted-foreground">หมวดรายจ่าย</dt>
+										<dd class="break-words">{context.allocation.categoryName}</dd>
+									</div>
+								</dl>{:else if !context.project.error && !catalogs.loading && !catalogs.error}<PageState
+									variant="permission"
+									title="ยังยืนยันรายการงบประมาณไม่ได้"
+									description="ตรวจสอบสิทธิ์และรายการในแผนที่อนุมัติ หรือขอให้ผู้รับผิดชอบแก้ไขรายการก่อนพิจารณา"
+								/>{/if}
+						</Card.Content></Card.Root
+					>{/if}{/each}
 		</div>
 		{#if !allocationReady && region.value.capabilities.canAct}<PageState
 				variant="permission"
@@ -294,7 +312,7 @@
 			repaying = false;
 		}
 	}}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
 		><Dialog.Header
 			><Dialog.Title>{repaying ? 'คืนเงินยืม' : 'แก้ไขรายการปรับงบ'}</Dialog.Title
 			><Dialog.Description>ตรวจสอบงบประมาณและเหตุผลก่อนบันทึก</Dialog.Description></Dialog.Header

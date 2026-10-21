@@ -37,7 +37,8 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import Navigation from './Navigation.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { ReceiptText, ArrowUpRight, Pencil, WalletCards } from '@lucide/svelte';
 	import RequestForm from './RequestForm.svelte';
 	import PaymentForm from './PaymentForm.svelte';
 	import WorkflowPanel from './WorkflowPanel.svelte';
@@ -164,20 +165,23 @@
 
 <PageShell
 	title={region.value?.request.title ?? 'รายละเอียดคำขอใช้เงิน'}
+	description="รายละเอียดคำขอ รายการใช้เงิน และการจ่ายเงิน"
+	icon={ReceiptText}
 	backHref={returnTo}
 	backLabel="กลับรายการคำขอ"
-	contentClass="space-y-4"
+	contentClass="space-y-6"
 >
 	{#snippet actions()}{#if region.value}{@const detail =
 				region.value}{#if detail.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}<Button
 					variant="outline"
 					disabled={pending}
-					onclick={edit}>แก้ไขฉบับร่าง</Button
+					onclick={edit}><Pencil class="size-4" aria-hidden="true" />แก้ไขฉบับร่าง</Button
 				>{/if}{#if detail.capabilities.canSubmit && $can.hasAny(...budgetUpdatePermissions)}<LoadingButton
 					loading={pending}
 					onclick={submit}>ส่งคำขอพิจารณา</LoadingButton
 				>{/if}{#if detail.capabilities.canPay && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
-					onclick={() => (paying = true)}>บันทึกการจ่ายเงิน</Button
+					onclick={() => (paying = true)}
+					><WalletCards class="size-4" aria-hidden="true" />บันทึกการจ่ายเงิน</Button
 				>{/if}{#if detail.capabilities.canClose && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
 					variant="outline"
 					disabled={pending}
@@ -186,7 +190,7 @@
 						error = '';
 					}}>ปิดคำขอ</Button
 				>{/if}{/if}{/snippet}
-	<Navigation /><ReadAccessNotice />
+	<ReadAccessNotice />
 	<section
 		class="space-y-4"
 		aria-label="รายละเอียดคำขอใช้เงิน"
@@ -204,43 +208,59 @@
 				variant="form"
 				rows={4}
 			/>{:else if region.value}{@const detail = region.value}
-			<div
-				class="space-y-3 rounded-xl border border-primary/15 bg-gradient-to-r from-primary/5 to-card p-4"
+			<Card.Root
+				><Card.Header
+					><div class="flex flex-wrap items-center justify-between gap-3">
+						<Card.Title>สรุปคำขอใช้เงิน</Card.Title>
+						<div class="flex flex-wrap items-center gap-3">
+							<StatusBadge status={detail.request.status} /><Button
+								variant="outline"
+								size="sm"
+								href={`/staff/budget/projects/${detail.request.projectId}`}
+								><ArrowUpRight class="size-4" aria-hidden="true" />เปิดโครงการ</Button
+							>
+						</div>
+					</div></Card.Header
+				><Card.Content class="space-y-6">
+					<dl class="grid grid-cols-2 gap-6 lg:grid-cols-4">
+						{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้ว', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric (metric.label)}<div
+							>
+								<dt class="text-sm text-muted-foreground">{metric.label}</dt>
+								<dd class="break-words text-lg font-semibold tabular-nums">
+									{money(metric.value)} บาท
+								</dd>
+							</div>{/each}
+					</dl>
+				</Card.Content></Card.Root
 			>
-				<div class="flex flex-wrap items-center justify-between gap-2">
-					<StatusBadge status={detail.request.status} /><Button
-						variant="link"
-						href={`/staff/budget/projects/${detail.request.projectId}`}>เปิดโครงการ</Button
-					>
-				</div>
-				<dl class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-					{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้ว', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric (metric.label)}<div
+			<Card.Root
+				><Card.Header
+					><Card.Title>รายการใช้เงิน</Card.Title><Card.Description
+						>จำนวนเงินที่ขอแยกตามแหล่งเงินและหมวดรายจ่าย</Card.Description
+					></Card.Header
+				><Card.Content class="space-y-4"
+					><div class="min-w-0 overflow-hidden rounded-lg border">
+						<Table.Root class="min-w-[38rem]"
+							><Table.Header
+								><Table.Row
+									><Table.Head>รายการ</Table.Head><Table.Head>แหล่งเงิน</Table.Head><Table.Head
+										>หมวดรายจ่าย</Table.Head
+									><Table.Head class="text-right">จำนวนเงิน (บาท)</Table.Head></Table.Row
+								></Table.Header
+							><Table.Body
+								>{#each detail.lines as line (line.planLineId)}<Table.Row
+										><Table.Cell class="min-w-44">{line.description}</Table.Cell><Table.Cell
+											>{line.fundName}</Table.Cell
+										><Table.Cell>{line.expenseCategoryName}</Table.Cell><Table.Cell
+											class="text-right tabular-nums">{money(line.amountSatang)}</Table.Cell
+										></Table.Row
+									>{/each}</Table.Body
+							></Table.Root
 						>
-							<dt class="text-sm text-muted-foreground">{metric.label}</dt>
-							<dd class="font-semibold tabular-nums">{money(metric.value)} บาท</dd>
-						</div>{/each}
-				</dl>
-			</div>
-			<div class="overflow-x-auto rounded-lg border bg-card">
-				<Table.Root
-					><Table.Header
-						><Table.Row
-							><Table.Head>รายการ</Table.Head><Table.Head>แหล่งเงิน</Table.Head><Table.Head
-								>หมวดรายจ่าย</Table.Head
-							><Table.Head>จำนวนเงิน</Table.Head></Table.Row
-						></Table.Header
-					><Table.Body
-						>{#each detail.lines as line (line.planLineId)}<Table.Row
-								><Table.Cell class="min-w-44">{line.description}</Table.Cell><Table.Cell
-									>{line.fundName}</Table.Cell
-								><Table.Cell>{line.expenseCategoryName}</Table.Cell><Table.Cell
-									class="text-right tabular-nums">{money(line.amountSatang)}</Table.Cell
-								></Table.Row
-							>{/each}</Table.Body
-					></Table.Root
-				>
-			</div>
-			<EvidenceList ids={detail.evidenceFileIds} resourceId={id} />{/if}
+					</div>
+					<EvidenceList ids={detail.evidenceFileIds} resourceId={id} /></Card.Content
+				></Card.Root
+			>{/if}
 		{#if error && !closing}<PageState
 				variant="error"
 				title="ดำเนินการไม่สำเร็จ"
@@ -264,75 +284,82 @@
 		aria-busy={payments.loading}
 		data-testid="budget-payments"
 	>
-		<h2 class="font-semibold">การจ่ายเงินและคืนเงิน</h2>
-		{#if payments.error}<PageState
-				variant="error"
-				title="โหลดการจ่ายเงินไม่สำเร็จ"
-				description={payments.error}
-				actionLabel="ลองอีกครั้ง"
-				onaction={() => loadPayments()}
-			/>{/if}{#if payments.loading && !payments.value}<TableSkeleton
-				columns={4}
-			/>{:else if payments.value?.items.length}<ul class="space-y-3">
-				{#each payments.value.items as payment (payment.id)}<li
-						class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
-					>
-						<div class="flex flex-wrap items-start justify-between gap-3">
-							<div>
-								<h3 class="font-medium">ใบสำคัญ {payment.voucherNumber}</h3>
-								<p class="text-sm text-muted-foreground">
-									{dateLabel(payment.paidOn)}{payment.note ? ` · ${payment.note}` : ''}
-								</p>
-							</div>
-							<strong class="tabular-nums">{money(payment.totalSatang)} บาท</strong>
-						</div>
-						<ul class="space-y-1 text-sm">
-							{#each payment.allocations as allocation, index (allocation.planLineId)}<li
-									class="flex justify-between gap-3"
-								>
-									<span>{lineNames[allocation.planLineId] ?? `รายการที่ ${index + 1}`}</span><span
-										class="tabular-nums">{money(allocation.amountSatang)} บาท</span
-									>
-								</li>{/each}
-						</ul>
-						<EvidenceList
-							ids={payment.evidence.map((file) => file.fileId)}
-							resourceId={id}
-						/>{#if payment.refunds.length}<div class="space-y-2 border-t pt-2">
-								{#each payment.refunds as refund (refund.id)}<div class="space-y-2 text-sm">
-										<p>
-											คืนเงิน {money(refund.totalSatang)} บาท · {dateLabel(refund.refundedOn)} · {refund.reason}
+		<Card.Root
+			><Card.Header
+				><Card.Title>การจ่ายเงินและคืนเงิน</Card.Title><Card.Description
+					>ใบสำคัญ หลักฐาน และรายการคืนเงินของคำขอนี้</Card.Description
+				></Card.Header
+			><Card.Content class="space-y-4">
+				{#if payments.error}<PageState
+						variant="error"
+						title="โหลดการจ่ายเงินไม่สำเร็จ"
+						description={payments.error}
+						actionLabel="ลองอีกครั้ง"
+						onaction={() => loadPayments()}
+					/>{/if}{#if payments.loading && !payments.value}<TableSkeleton
+						columns={4}
+					/>{:else if payments.value?.items.length}<ul class="space-y-3">
+						{#each payments.value.items as payment (payment.id)}<li
+								class="space-y-4 rounded-lg border p-4"
+							>
+								<div class="flex flex-wrap items-start justify-between gap-3">
+									<div>
+										<h3 class="font-medium">ใบสำคัญ {payment.voucherNumber}</h3>
+										<p class="text-sm text-muted-foreground">
+											{dateLabel(payment.paidOn)}{payment.note ? ` · ${payment.note}` : ''}
 										</p>
-										<EvidenceList
-											ids={refund.evidence.map((file) => file.fileId)}
-											resourceId={id}
-										/>
-									</div>{/each}
-							</div>{/if}{#if region.value && ['approved', 'closed'].includes(region.value.request.status) && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
-								size="sm"
-								variant="outline"
-								onclick={() => (refund = payment)}>บันทึกคืนเงิน</Button
-							>{/if}
-					</li>{/each}
-			</ul>
-			<div class="flex justify-between">
-				<Button
-					size="sm"
-					variant="outline"
-					disabled={paymentOffset === 0 || payments.loading}
-					onclick={() => loadPayments(Math.max(0, paymentOffset - 20))}>ก่อนหน้า</Button
-				><Button
-					size="sm"
-					variant="outline"
-					disabled={paymentOffset + 20 >= payments.value.total || payments.loading}
-					onclick={() => loadPayments(paymentOffset + 20)}>ถัดไป</Button
-				>
-			</div>{:else if !payments.error}<PageState title="ยังไม่มีการจ่ายเงิน" />{/if}
+									</div>
+									<strong class="tabular-nums">{money(payment.totalSatang)} บาท</strong>
+								</div>
+								<ul class="space-y-1 text-sm">
+									{#each payment.allocations as allocation, index (allocation.planLineId)}<li
+											class="flex min-w-0 flex-wrap justify-between gap-3"
+										>
+											<span class="min-w-0 break-words"
+												>{lineNames[allocation.planLineId] ?? `รายการที่ ${index + 1}`}</span
+											><span class="tabular-nums">{money(allocation.amountSatang)} บาท</span>
+										</li>{/each}
+								</ul>
+								<EvidenceList
+									ids={payment.evidence.map((file) => file.fileId)}
+									resourceId={id}
+								/>{#if payment.refunds.length}<div class="space-y-2 border-t pt-2">
+										{#each payment.refunds as refund (refund.id)}<div class="space-y-2 text-sm">
+												<p>
+													คืนเงิน {money(refund.totalSatang)} บาท · {dateLabel(refund.refundedOn)} · {refund.reason}
+												</p>
+												<EvidenceList
+													ids={refund.evidence.map((file) => file.fileId)}
+													resourceId={id}
+												/>
+											</div>{/each}
+									</div>{/if}{#if region.value && ['approved', 'closed'].includes(region.value.request.status) && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
+										size="sm"
+										variant="outline"
+										onclick={() => (refund = payment)}>บันทึกคืนเงิน</Button
+									>{/if}
+							</li>{/each}
+					</ul>
+					<div class="flex justify-between">
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={paymentOffset === 0 || payments.loading}
+							onclick={() => loadPayments(Math.max(0, paymentOffset - 20))}>ก่อนหน้า</Button
+						><Button
+							size="sm"
+							variant="outline"
+							disabled={paymentOffset + 20 >= payments.value.total || payments.loading}
+							onclick={() => loadPayments(paymentOffset + 20)}>ถัดไป</Button
+						>
+					</div>{:else if !payments.error}<PageState title="ยังไม่มีการจ่ายเงิน" />{/if}
+			</Card.Content></Card.Root
+		>
 	</section>
 	{#if region.value}<History kind="requests" {id} revision={region.value.request.revision} />{/if}
 </PageShell>
 <Dialog.Root bind:open={editing}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
 		><Dialog.Header
 			><Dialog.Title>แก้ไขคำขอใช้เงิน</Dialog.Title><Dialog.Description
 				>แก้ไขรายการและหลักฐานก่อนส่งพิจารณา</Dialog.Description
@@ -362,10 +389,10 @@
 			refund = null;
 		}
 	}}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
 		><Dialog.Header
 			><Dialog.Title>{refund ? 'บันทึกคืนเงิน' : 'บันทึกการจ่ายเงิน'}</Dialog.Title
-			><Dialog.Description>ระบุจำนวนเงินแยกตามรายการและแนบหลักฐาน</Dialog.Description
+			><Dialog.Description>ระบุจำนวนเงินแยกตามรายการ และแนบหลักฐานถ้ามี</Dialog.Description
 			></Dialog.Header
 		>{#if (paying || refund) && region.value}<PaymentForm
 				detail={region.value}

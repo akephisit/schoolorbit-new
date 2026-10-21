@@ -136,7 +136,7 @@
 	}
 </script>
 
-<form bind:this={form} onsubmit={save} class="space-y-4" data-testid="budget-plan-editor">
+<form bind:this={form} onsubmit={save} class="max-w-4xl space-y-6" data-testid="budget-plan-editor">
 	{#if conflict}<section
 			class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
 			aria-label="ทบทวนแผนล่าสุด"
@@ -174,7 +174,13 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={load}
 		/>{:else if !catalogs}<PageSkeleton variant="form" rows={5} />{/if}
-	{#if catalogs}{#each activities as activity, index (activity.key)}<ActivityEditor
+	{#if catalogs}<div class="space-y-1">
+			<h2 class="font-semibold">กิจกรรมและรายการค่าใช้จ่าย</h2>
+			<p class="text-sm text-muted-foreground">
+				เพิ่มกิจกรรมและแยกค่าใช้จ่ายตามแหล่งเงินและหมวดรายจ่าย
+			</p>
+		</div>
+		{#each activities as activity, index (activity.key)}<ActivityEditor
 				bind:activity={activities[index]}
 				{catalogs}
 				{submitted}
@@ -195,7 +201,7 @@
 			</p>
 		</div>{/if}
 	{#if error}<PageState variant="error" title="บันทึกแผนไม่สำเร็จ" description={error} />{/if}
-	<div class="flex justify-end gap-2">
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-5">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending}>ยกเลิก</Button
 		><LoadingButton type="submit" loading={pending} disabled={!catalogs || conflict}
 			>บันทึกแผนฉบับร่าง</LoadingButton

@@ -165,7 +165,7 @@
 	}
 </script>
 
-<form onsubmit={save} class="space-y-4" data-testid="budget-payment-form">
+<form onsubmit={save} class="w-full min-w-0 max-w-4xl space-y-6" data-testid="budget-payment-form">
 	{#if conflict}<section
 			class="space-y-3 rounded-xl border bg-card p-3 sm:p-4"
 			aria-label="ทบทวนยอดล่าสุด"
@@ -195,32 +195,35 @@
 						description="ตรวจสอบสถานะคำขอกับผู้รับผิดชอบก่อนดำเนินการต่อ"
 					/>{/if}{/if}
 		</section>{/if}
-	<div class="grid gap-3 sm:grid-cols-2">
-		<div class="space-y-2">
-			<Label for="budget-payment-date">{payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'} *</Label
-			><DatePicker
-				id="budget-payment-date"
-				bind:value={paidOn}
-				ariaLabel={payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'}
-				disabled={pending}
-			/>
-		</div>
-		{#if !payment}<div class="space-y-2">
-				<Label for="budget-payment-voucher">เลขที่ใบสำคัญ *</Label><Input
-					id="budget-payment-voucher"
-					bind:value={voucher}
+	<section class="space-y-4" aria-label="ข้อมูลการทำรายการ">
+		<h3 class="font-semibold">{payment ? 'ข้อมูลการคืนเงิน' : 'ข้อมูลการจ่ายเงิน'}</h3>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<div class="space-y-2">
+				<Label for="budget-payment-date">{payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'} *</Label
+				><DatePicker
+					id="budget-payment-date"
+					bind:value={paidOn}
+					ariaLabel={payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'}
 					disabled={pending}
 				/>
-			</div>{/if}
-	</div>
-	<fieldset class="space-y-3">
-		<legend class="mb-2 text-sm font-medium">จำนวนเงินแยกตามรายการ</legend
+			</div>
+			{#if !payment}<div class="space-y-2">
+					<Label for="budget-payment-voucher">เลขที่ใบสำคัญ *</Label><Input
+						id="budget-payment-voucher"
+						bind:value={voucher}
+						disabled={pending}
+					/>
+				</div>{/if}
+		</div>
+	</section>
+	<fieldset class="min-w-0 space-y-4 border-t pt-6">
+		<legend class="mb-2 font-semibold">จำนวนเงินแยกตามรายการ</legend
 		>{#each lines as line, index (line.planLineId)}<div
-				class="grid items-end gap-3 sm:grid-cols-[1fr_12rem]"
+				class="grid min-w-0 items-end gap-3 border-b pb-4 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_10rem]"
 			>
 				<Label for={`budget-payment-line-${line.planLineId}`}
 					>{lineNames[line.planLineId] ?? `รายการที่ ${index + 1}`}<span
-						class="block text-xs text-muted-foreground"
+						class="block text-sm font-normal text-muted-foreground"
 						>ยอดคงเหลือ{payment ? 'ที่คืนได้' : 'ที่จ่ายได้'}
 						{money(line.remainingSatang)} บาท</span
 					></Label
@@ -228,6 +231,7 @@
 					id={`budget-payment-line-${line.planLineId}`}
 					aria-label={`จำนวนเงิน${payment ? 'คืน' : 'จ่าย'} ${lineNames[line.planLineId] ?? `รายการที่ ${index + 1}`}`}
 					bind:value={amounts[line.planLineId]}
+					class="text-right tabular-nums"
 					inputmode="decimal"
 					disabled={pending}
 					placeholder="0.00"
@@ -253,11 +257,13 @@
 		bind:busy={uploading}
 		disabled={pending}
 	/>
-	<p class="text-right tabular-nums">
-		รวม{payment ? 'คืนเงิน' : 'จ่ายเงิน'} <strong>{money(total)} บาท</strong>
-	</p>
+	<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-4">
+		<span class="text-sm text-muted-foreground">รวม{payment ? 'คืนเงิน' : 'จ่ายเงิน'}</span><strong
+			class="text-lg tabular-nums">{money(total)} บาท</strong
+		>
+	</div>
 	{#if error}<PageState variant="error" title="บันทึกไม่สำเร็จ" description={error} />{/if}
-	<div class="flex justify-end gap-2">
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button type="button" variant="outline" onclick={oncancel} disabled={pending || uploading}
 			>ยกเลิก</Button
 		><LoadingButton type="submit" loading={pending} disabled={uploading || conflict}

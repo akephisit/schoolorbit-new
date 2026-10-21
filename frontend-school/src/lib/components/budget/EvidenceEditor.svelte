@@ -5,6 +5,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Paperclip } from '@lucide/svelte';
 	import { PageState } from '#lib/components/app-state/index.js';
 	let {
 		resourceId,
@@ -44,22 +45,28 @@
 	}
 </script>
 
-<div class="space-y-2">
-	<Label for={`budget-evidence-${resourceId}`}>แนบหลักฐาน{required ? ' *' : ''}</Label><Input
+<section class="space-y-3 border-t pt-6" aria-label="หลักฐานประกอบ">
+	<Label for={`budget-evidence-${resourceId}`}
+		><Paperclip class="size-4 text-muted-foreground" aria-hidden="true" />แนบหลักฐาน{required
+			? ' *'
+			: ''}</Label
+	><Input
 		id={`budget-evidence-${resourceId}`}
 		type="file"
 		multiple
 		disabled={disabled || busy}
 		onchange={upload}
-	/>{#if busy}<p role="status" class="text-sm text-muted-foreground">
+	/>
+	<p class="text-sm text-muted-foreground">แนบเอกสารประกอบ{required ? 'การทำรายการ' : 'ถ้ามี'}</p>
+	{#if busy}<p role="status" class="text-sm text-muted-foreground">
 			กำลังแนบหลักฐาน…
 		</p>{/if}{#if error}<PageState
 			variant="error"
 			title="แนบหลักฐานไม่สำเร็จ"
 			description={error}
-		/>{/if}{#if ids.length}<ul class="space-y-1">
+		/>{/if}{#if ids.length}<ul class="divide-y rounded-lg border px-3">
 			{#each ids as fileId, index (fileId)}<li
-					class="flex items-center justify-between gap-2 text-sm"
+					class="flex items-center justify-between gap-2 py-2 text-sm"
 				>
 					<span>หลักฐานที่ {index + 1}</span><Button
 						type="button"
@@ -70,4 +77,4 @@
 					>
 				</li>{/each}
 		</ul>{/if}
-</div>
+</section>

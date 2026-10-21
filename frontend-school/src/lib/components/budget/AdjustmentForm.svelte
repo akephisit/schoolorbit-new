@@ -147,82 +147,100 @@
 	}
 </script>
 
-<form onsubmit={save} class="space-y-4" data-testid="budget-adjustment-form">
+<form
+	onsubmit={save}
+	class="w-full min-w-0 max-w-4xl space-y-6"
+	data-testid="budget-adjustment-form"
+>
 	{#if loading && !catalogs}<PageSkeleton variant="form" rows={4} />{/if}{#if readError}<PageState
 			variant="error"
 			title="โหลดตัวเลือกงบประมาณไม่สำเร็จ"
 			description={readError}
 			actionLabel="ลองอีกครั้ง"
 			onaction={load}
-		/>{/if}<Choice
-		id="budget-adjustment-kind"
-		label="ประเภทรายการ"
-		required
-		bind:value={kind}
-		options={Object.entries(adjustmentLabels)
-			.filter(([value]) => value !== 'repayment' || !!loan || detail?.kind === 'repayment')
-			.map(([value, label]) => ({ value, label }))}
-		disabled={pending || !!loan || !!detail}
-		onchange={() => {
-			fromKey = '';
-			toKey = '';
-		}}
-	/><Choice
-		id="budget-adjustment-year"
-		label="ปีงบประมาณ"
-		required
-		bind:value={fiscalYearId}
-		options={(catalogs?.fiscalYears ?? [])
-			.filter((year) => year.active || year.id === fiscalYearId)
-			.map((year) => ({ value: year.id, label: year.name }))}
-		disabled={pending || !!loan || !!detail}
-		onchange={() => {
-			fromKey = '';
-			toKey = '';
-			void load();
-		}}
-	/>{#if kind !== 'add'}<Choice
-			id="budget-adjustment-from"
-			label="งบประมาณต้นทาง"
-			required
-			bind:value={fromKey}
-			options={refs.map((item) => ({
-				value: item.key,
-				label: item.label,
-				description: `ใช้ได้ ${money(item.available)} บาท`
-			}))}
-			disabled={pending || loading || !!loan}
-			onchange={() => (toKey = '')}
-		/>{/if}{#if kind !== 'reduce'}<Choice
-			id="budget-adjustment-to"
-			label="งบประมาณปลายทาง"
-			required
-			bind:value={toKey}
-			options={(kind === 'add' ? refs : destinationOptions).map((item) => ({
-				value: item.key,
-				label: item.label
-			}))}
-			disabled={pending || loading || !!loan}
-		/>{/if}{#if loan}<p class="text-sm text-muted-foreground">
-			เงินยืมค้างคืน {money(loan.loanOutstandingSatang)} บาท
-		</p>{/if}
-	<div class="space-y-2">
-		<Label for="budget-adjustment-amount">จำนวนเงิน (บาท) *</Label><Input
-			id="budget-adjustment-amount"
-			bind:value={amount}
-			inputmode="decimal"
-			disabled={pending}
-		/>
-	</div>
-	<div class="space-y-2">
-		<Label for="budget-adjustment-reason">เหตุผล *</Label><Textarea
-			id="budget-adjustment-reason"
-			bind:value={reason}
-			disabled={pending}
-		/>
-	</div>
+		/>{/if}
+	<section class="space-y-4" aria-label="ข้อมูลการปรับงบ">
+		<h3 class="font-semibold">ข้อมูลการปรับงบ</h3>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<Choice
+				id="budget-adjustment-kind"
+				label="ประเภทรายการ"
+				required
+				bind:value={kind}
+				options={Object.entries(adjustmentLabels)
+					.filter(([value]) => value !== 'repayment' || !!loan || detail?.kind === 'repayment')
+					.map(([value, label]) => ({ value, label }))}
+				disabled={pending || !!loan || !!detail}
+				onchange={() => {
+					fromKey = '';
+					toKey = '';
+				}}
+			/><Choice
+				id="budget-adjustment-year"
+				label="ปีงบประมาณ"
+				required
+				bind:value={fiscalYearId}
+				options={(catalogs?.fiscalYears ?? [])
+					.filter((year) => year.active || year.id === fiscalYearId)
+					.map((year) => ({ value: year.id, label: year.name }))}
+				disabled={pending || !!loan || !!detail}
+				onchange={() => {
+					fromKey = '';
+					toKey = '';
+					void load();
+				}}
+			/>
+		</div>
+	</section>
+	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง">
+		<h3 class="font-semibold">งบประมาณที่เกี่ยวข้อง</h3>
+		{#if kind !== 'add'}<Choice
+				id="budget-adjustment-from"
+				label="งบประมาณต้นทาง"
+				required
+				bind:value={fromKey}
+				options={refs.map((item) => ({
+					value: item.key,
+					label: item.label,
+					description: `ใช้ได้ ${money(item.available)} บาท`
+				}))}
+				disabled={pending || loading || !!loan}
+				onchange={() => (toKey = '')}
+			/>{/if}{#if kind !== 'reduce'}<Choice
+				id="budget-adjustment-to"
+				label="งบประมาณปลายทาง"
+				required
+				bind:value={toKey}
+				options={(kind === 'add' ? refs : destinationOptions).map((item) => ({
+					value: item.key,
+					label: item.label
+				}))}
+				disabled={pending || loading || !!loan}
+			/>{/if}{#if loan}<p class="text-sm text-muted-foreground">
+				เงินยืมค้างคืน {money(loan.loanOutstandingSatang)} บาท
+			</p>{/if}
+	</section>
+	<section class="space-y-4 border-t pt-6" aria-label="จำนวนเงินและเหตุผล">
+		<h3 class="font-semibold">จำนวนเงินและเหตุผล</h3>
+		<div class="w-full space-y-2 sm:max-w-xs">
+			<Label for="budget-adjustment-amount">จำนวนเงิน (บาท) *</Label><Input
+				id="budget-adjustment-amount"
+				bind:value={amount}
+				class="text-right tabular-nums"
+				inputmode="decimal"
+				disabled={pending}
+			/>
+		</div>
+		<div class="space-y-2">
+			<Label for="budget-adjustment-reason">เหตุผล *</Label><Textarea
+				id="budget-adjustment-reason"
+				bind:value={reason}
+				disabled={pending}
+			/>
+		</div>
+	</section>
 	{#if error}<PageState variant="error" title="บันทึกการปรับงบไม่สำเร็จ" description={error} />{/if}
-	<div class="flex justify-end gap-2">
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
 		><LoadingButton type="submit" loading={pending} disabled={loading || !!readError}
 			>บันทึกฉบับร่าง</LoadingButton

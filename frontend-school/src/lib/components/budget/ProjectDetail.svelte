@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { FolderOpen } from '@lucide/svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
 	import { budgetUpdatePermissions } from '#lib/budget/access.js';
@@ -30,7 +32,6 @@
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import Navigation from './Navigation.svelte';
 	import ProjectForm from './ProjectForm.svelte';
 	import PlanEditor from './PlanEditor.svelte';
 	import PlanView from './PlanView.svelte';
@@ -130,10 +131,12 @@
 </script>
 
 <PageShell
+	icon={FolderOpen}
+	description="รายละเอียดกิจกรรม แผนค่าใช้จ่าย และสถานะการใช้เงินของโครงการ"
 	title={region.value?.project.name ?? 'รายละเอียดโครงการงบประมาณ'}
 	backHref={returnTo}
 	backLabel="กลับรายการโครงการ"
-	contentClass="space-y-4"
+	contentClass="space-y-6"
 >
 	{#snippet actions()}{#if region.value}{@const value =
 				region.value}{#if value.capabilities.canEdit && $can.hasAny(PERMISSIONS.BUDGET_UPDATE_OWN, PERMISSIONS.BUDGET_UPDATE_ORGANIZATION_UNIT, PERMISSIONS.BUDGET_UPDATE_ORGANIZATION_TREE, PERMISSIONS.BUDGET_UPDATE_SCHOOL)}<Button
@@ -151,7 +154,7 @@
 					disabled={pending}
 					onclick={() => (requestOpen = true)}>สร้างคำขอใช้เงิน</Button
 				>{/if}{/if}{/snippet}
-	<Navigation /><ReadAccessNotice />
+	<ReadAccessNotice />
 	<section
 		class="space-y-4"
 		aria-label="แผนโครงการ"
@@ -169,19 +172,19 @@
 				variant="form"
 				rows={5}
 			/>{:else if region.value}{@const value = region.value}
-			<div
-				class="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-primary/15 bg-gradient-to-r from-primary/5 to-card p-4"
+			<Card.Root
+				><Card.Content class="flex flex-wrap items-start justify-between gap-4">
+					<div class="space-y-2">
+						<StatusBadge status={value.project.status} />
+						<p class="text-sm text-muted-foreground">
+							{value.project.organizationUnitName} · {dateLabel(value.project.startDate)} – {dateLabel(
+								value.project.endDate
+							)}
+						</p>
+					</div>
+					<p class="tabular-nums">งบแผน <strong>{money(value.project.totalSatang)} บาท</strong></p>
+				</Card.Content></Card.Root
 			>
-				<div class="space-y-2">
-					<StatusBadge status={value.project.status} />
-					<p class="text-sm text-muted-foreground">
-						{value.project.organizationUnitName} · {dateLabel(value.project.startDate)} – {dateLabel(
-							value.project.endDate
-						)}
-					</p>
-				</div>
-				<p class="tabular-nums">งบแผน <strong>{money(value.project.totalSatang)} บาท</strong></p>
-			</div>
 			{#if error && !amendmentOpen}<PageState
 					variant="error"
 					title="ดำเนินการไม่สำเร็จ"
@@ -236,37 +239,42 @@
 				</details>{/if}
 			{#if value.balances.length}<section class="space-y-3">
 					<h2 class="font-semibold">ยอดงบประมาณตามกิจกรรมและแหล่งเงิน</h2>
-					<div class="overflow-x-auto rounded-lg border bg-card">
-						<Table.Root
-							><Table.Header
-								><Table.Row
-									><Table.Head>กิจกรรม</Table.Head><Table.Head>แหล่งเงิน / หมวดรายจ่าย</Table.Head
-									><Table.Head>งบปัจจุบัน</Table.Head><Table.Head>ผูกพัน</Table.Head><Table.Head
-										>จ่ายจริง</Table.Head
-									><Table.Head>ใช้ได้</Table.Head><Table.Head>ยืมค้างคืน</Table.Head></Table.Row
-								></Table.Header
-							><Table.Body
-								>{#each value.balances as balance (`${balance.activityId}|${balance.fundId}|${balance.expenseCategoryId}`)}<Table.Row
-										><Table.Cell
-											>{(value.acceptedPlan?.activities ?? value.activities).find(
-												(activity) => activity.id === balance.activityId
-											)?.title ?? '—'}</Table.Cell
-										><Table.Cell
-											>{catalogs.value?.funds.find((item) => item.id === balance.fundId)?.name ??
-												'—'}
-											<p class="text-sm text-muted-foreground">
-												{catalogs.value?.expenseCategories.find(
-													(item) => item.id === balance.expenseCategoryId
-												)?.name ?? '—'}
-											</p></Table.Cell
-										>{#each [balance.currentSatang, balance.reservedSatang, balance.paidSatang, balance.availableSatang, balance.loanOutstandingSatang] as amount, columnIndex (columnIndex)}<Table.Cell
-												class="whitespace-nowrap text-right tabular-nums"
-												>{money(amount)}</Table.Cell
-											>{/each}</Table.Row
-									>{/each}</Table.Body
-							></Table.Root
-						>
-					</div>
+					<Card.Root class="gap-0 overflow-hidden py-0"
+						><div class="min-w-0">
+							<Table.Root class="min-w-[60rem]"
+								><Table.Header
+									><Table.Row
+										><Table.Head>กิจกรรม</Table.Head><Table.Head>แหล่งเงิน / หมวดรายจ่าย</Table.Head
+										><Table.Head class="whitespace-nowrap text-right">งบปัจจุบัน</Table.Head
+										><Table.Head class="whitespace-nowrap text-right">ผูกพัน</Table.Head><Table.Head
+											class="whitespace-nowrap text-right">จ่ายจริง</Table.Head
+										><Table.Head class="whitespace-nowrap text-right">ใช้ได้</Table.Head><Table.Head
+											class="whitespace-nowrap text-right">ยืมค้างคืน</Table.Head
+										></Table.Row
+									></Table.Header
+								><Table.Body
+									>{#each value.balances as balance (`${balance.activityId}|${balance.fundId}|${balance.expenseCategoryId}`)}<Table.Row
+											><Table.Cell
+												>{(value.acceptedPlan?.activities ?? value.activities).find(
+													(activity) => activity.id === balance.activityId
+												)?.title ?? '—'}</Table.Cell
+											><Table.Cell
+												>{catalogs.value?.funds.find((item) => item.id === balance.fundId)?.name ??
+													'—'}
+												<p class="text-sm text-muted-foreground">
+													{catalogs.value?.expenseCategories.find(
+														(item) => item.id === balance.expenseCategoryId
+													)?.name ?? '—'}
+												</p></Table.Cell
+											>{#each [balance.currentSatang, balance.reservedSatang, balance.paidSatang, balance.availableSatang, balance.loanOutstandingSatang] as amount, columnIndex (columnIndex)}<Table.Cell
+													class="whitespace-nowrap text-right tabular-nums"
+													>{money(amount)}</Table.Cell
+												>{/each}</Table.Row
+										>{/each}</Table.Body
+								></Table.Root
+							>
+						</div></Card.Root
+					>
 				</section>{/if}
 		{/if}
 	</section>
