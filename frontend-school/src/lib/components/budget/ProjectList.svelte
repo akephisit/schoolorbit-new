@@ -50,8 +50,8 @@
 				onclick={() => (creating = true)}><Plus class="size-4" />สร้างโครงการ</Button
 			>{/if}{/snippet}
 	<ReadAccessNotice />
-	<Card.Root
-		><Card.Content>
+	<Card.Root class="gap-0 py-0"
+		><Card.Content class="p-3 sm:p-4">
 			<form
 				class="flex flex-wrap items-end gap-3"
 				onsubmit={(event) => {

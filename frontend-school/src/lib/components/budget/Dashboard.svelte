@@ -95,7 +95,10 @@
 	{#if reports && exportPreview}<p class="text-sm text-muted-foreground">
 			รายงานนี้แสดงเฉพาะข้อมูลที่คุณมีสิทธิ์ดูและส่งออก
 		</p>{/if}
-	<section class="flex flex-wrap items-end gap-4" aria-label="เลือกปีงบประมาณ">
+	<section
+		class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4"
+		aria-label="เลือกปีงบประมาณ"
+	>
 		{#if catalogs.error}<PageState
 				variant="error"
 				title="โหลดปีงบประมาณไม่สำเร็จ"

@@ -37,7 +37,7 @@
 	const id = $derived(`budget-activity-${activity.key}`);
 </script>
 
-<Card.Root class="gap-0" aria-label={activity.title || 'กิจกรรมใหม่'}
+<Card.Root class="gap-0" role="region" aria-label={activity.title || 'กิจกรรมใหม่'}
 	><Card.Content class="space-y-5">
 		<div class="flex flex-wrap items-end justify-between gap-3">
 			<div class="min-w-0 flex-1 space-y-2">

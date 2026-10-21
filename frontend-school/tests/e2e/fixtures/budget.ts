@@ -133,6 +133,8 @@ export async function mockBudget(
 		fail?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		failMutation?: boolean;
 		withRequest?: boolean;
+		empty?: boolean;
+		holdMutation?: boolean;
 		stalePlan?: boolean;
 		stalePayment?: boolean;
 		exportFiltered?: boolean;
@@ -391,6 +393,7 @@ export async function mockBudget(
 			return reply(route, 'ไม่สามารถพิจารณารายการของตนเอง', 403);
 		if (method !== 'GET') {
 			writes.push({ path, payload });
+			if (options.holdMutation) await held;
 			if (options.failMutation && !mutationFailed) {
 				mutationFailed = true;
 				return reply(route, 'บันทึกไม่สำเร็จชั่วคราว', 503);
@@ -500,6 +503,12 @@ export async function mockBudget(
 		}
 		if (path.endsWith('/dashboard')) {
 			const result = dashboard();
+			if (options.empty) {
+				result.rows = [];
+				result.totals = Object.fromEntries(
+					Object.keys(result.totals).map((key) => [key, '0'])
+				) as BudgetDashboard['totals'];
+			}
 			if (options.exportFiltered && url.searchParams.get('exportScope') === 'true') {
 				result.rows = result.rows.slice(0, 1);
 				result.totals = {
@@ -535,7 +544,7 @@ export async function mockBudget(
 			return reply(route, process(resource, path.split('/').at(-2)!));
 		}
 		if (path === '/api/budget/projects' && method === 'GET')
-			return reply(route, pageData([workspace.project], url));
+			return reply(route, pageData(options.empty ? [] : [workspace.project], url));
 		if (path === '/api/budget/projects' && method === 'POST') {
 			workspace = {
 				...workspace,
