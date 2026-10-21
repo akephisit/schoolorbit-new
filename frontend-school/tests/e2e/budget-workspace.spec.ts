@@ -696,7 +696,23 @@ for (const viewport of [
 						theme === 'dark' ? /dark/ : /^(?!.*\bdark\b)/
 					);
 					await expect(page.locator('.school-page-shell h1')).toHaveCount(1);
-					await expect(page.locator('.school-page-content').getByRole('navigation')).toHaveCount(0);
+					await expect(
+						page.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+					).toHaveCount(0);
+					if (name === 'projects' || name === 'requests' || name === 'adjustments') {
+						const pagination = page.getByRole('navigation', {
+							name: 'หน้ารายการงบประมาณ',
+							exact: true
+						});
+						await expect(pagination).toBeVisible();
+						await expect(pagination).toContainText('1–1 จาก 1 รายการ');
+						await expect(
+							pagination.getByRole('button', { name: 'ก่อนหน้า', exact: true })
+						).toBeDisabled();
+						await expect(
+							pagination.getByRole('button', { name: 'ถัดไป', exact: true })
+						).toBeDisabled();
+					}
 					if (name === 'requests' || name === 'adjustments')
 						await expect(
 							page.getByRole('columnheader', { name: 'จำนวนเงิน (บาท)', exact: true })
