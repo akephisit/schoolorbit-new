@@ -38,16 +38,19 @@ mod subject_revision_tests;
 #[path = "curriculum_current_subject_tests.rs"]
 mod curriculum_current_subject_tests;
 
+#[path = "curriculum_program_order_tests.rs"]
+mod curriculum_program_order_tests;
+
 const CURRENT_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0025);
 const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_0000_0026);
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 133).await
+    prepare_core_fixture_through(name, 134).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 133).await
+    prepare_core_fixture_through(name, 134).await
 }
 
 pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -130,7 +133,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 133).await;
+    let pool = prepare_core_fixture_through(name, 134).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -6473,12 +6476,13 @@ async fn organization_learning_area_cutover_preserves_academic_owners_and_grants
 
 #[tokio::test]
 async fn curriculum_program_default_migration_preserves_populated_amendment_and_history() {
-    use school_academic_core::models::{CurriculumViewQuery, OpenCurriculumDraftRequest};
+    use school_academic_core::models::OpenCurriculumDraftRequest;
     use school_academic_core::services::curriculum_publications as publications;
     let pool = prepare_core_fixture_through("curriculum_program_default_upgrade", 132).await;
     // Legacy publications with an unknown revision year remain preserved below,
     // but a new capture must use an edition that satisfies current publication rules.
-    let (edition, level) = publication_fixture(&pool, "DEFAULT-FREE").await;
+    let (edition, level) =
+        curriculum_program_order_tests::historical_publication_fixture(&pool, "DEFAULT-FREE").await;
     let program: Uuid = sqlx::query_scalar(
         "SELECT id FROM study_programs WHERE curriculum_level_id=$1 ORDER BY id LIMIT 1",
     )
@@ -6505,23 +6509,17 @@ async fn curriculum_program_default_migration_preserves_populated_amendment_and_
     // preservation or the new publication rules, and are deliberately not archived.
     sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) VALUES(gen_random_uuid(),$1,'UNRELEASED','Unreleased',false,'draft')")
         .bind(level).execute(&pool).await.unwrap();
-    let released_workspace =
-        publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
-            .await
-            .unwrap();
-    let draft_workspace = publications::read_workspace(
+    let released_workspace = curriculum_program_order_tests::historical_workspace_evidence(
         &pool,
         level,
-        &CurriculumViewQuery {
-            draft_id: Some(token),
-            publication_id: None,
-        },
+        released.current_publication_id,
     )
-    .await
-    .unwrap();
+    .await;
+    let draft_workspace =
+        curriculum_program_order_tests::historical_workspace_evidence(&pool, level, None).await;
     assert_ne!(
-        released_workspace.programs.len(),
-        draft_workspace.programs.len()
+        released_workspace["programs"].as_array().unwrap().len(),
+        draft_workspace["programs"].as_array().unwrap().len()
     );
     let history = serde_json::to_value(
         publications::list_publications(&pool, edition)
@@ -6564,32 +6562,37 @@ async fn curriculum_program_default_migration_preserves_populated_amendment_and_
         .unwrap()
     );
     assert_eq!(
-        serde_json::to_value(released_workspace).unwrap(),
-        serde_json::to_value(
-            publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
-                .await
-                .unwrap()
+        released_workspace,
+        curriculum_program_order_tests::historical_workspace_evidence(
+            &pool,
+            level,
+            released.current_publication_id
         )
-        .unwrap()
+        .await
     );
     assert_eq!(
-        serde_json::to_value(draft_workspace).unwrap(),
-        serde_json::to_value(
-            publications::read_workspace(
-                &pool,
-                level,
-                &CurriculumViewQuery {
-                    draft_id: Some(token),
-                    publication_id: None
-                }
-            )
-            .await
-            .unwrap()
-        )
-        .unwrap()
+        draft_workspace,
+        curriculum_program_order_tests::historical_workspace_evidence(&pool, level, None).await
     );
-    // Restore the actual publication through the owner after upgrading, then make
-    // another release: capture's positional SELECT r.* must still be valid.
+    // Prove 133's positional capture using historical SQL before upgrading to
+    // the schema required by current runtime services.
+    curriculum_program_order_tests::historical_publication_fixture(&pool, "DEFAULT-FREE-POST133")
+        .await;
+    apply_migrations_through(&pool, 134).await.unwrap();
+    assert_eq!(
+        released_workspace,
+        curriculum_program_order_tests::historical_workspace_evidence(
+            &pool,
+            level,
+            released.current_publication_id
+        )
+        .await
+    );
+    assert_eq!(
+        draft_workspace,
+        curriculum_program_order_tests::historical_workspace_evidence(&pool, level, None).await
+    );
+    // Current discard and another publication run only after the required schema.
     let preview = publications::preview_discard(&pool, edition, token)
         .await
         .unwrap();

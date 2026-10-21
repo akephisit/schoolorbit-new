@@ -8,6 +8,7 @@
 		type CurriculumLevel,
 		type StudyProgram
 	} from '#lib/api/academic-core.js';
+	import { orderedCurriculumPrograms } from '#lib/academic-core/curriculum-program-order.js';
 	import { onDestroy } from 'svelte';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -90,7 +91,9 @@
 		try {
 			const result = await listStudyPrograms(id, { signal });
 			if (sourceRequest.isCurrent(revision))
-				programs = result.filter((program) => program.status === 'published');
+				programs = orderedCurriculumPrograms(
+					result.filter((program) => program.status === 'published')
+				);
 		} catch (e) {
 			if (sourceRequest.isCurrent(revision) && !isAbortError(e))
 				error = e instanceof Error ? e.message : 'โหลดแผนต้นทางไม่สำเร็จ';

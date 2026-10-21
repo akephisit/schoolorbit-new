@@ -1,3 +1,4 @@
+import { orderedCurriculumPrograms } from '../academic-core/curriculum-program-order.ts';
 import type {
 	CurriculumDocumentSection,
 	CurriculumStructureRequirement,
@@ -17,6 +18,7 @@ export type CurriculumTotals = {
 	hours: MetricTotal;
 	weeklyPeriods: MetricTotal;
 	weeklyHours: MetricTotal;
+	weeklySchoolHours: MetricTotal;
 };
 export type CurriculumMatrixRow = {
 	key: string;
@@ -67,12 +69,51 @@ function sum(values: (string | null | undefined)[]): MetricTotal {
 		partial: known !== values.length
 	};
 }
+// Curriculum planning counts one teaching period as one instructional hour.
+// This preserves catalog numbers and does not convert periods to clock minutes.
+export function curriculumWeeklySchoolHours(
+	rows: readonly CurriculumStructureRequirement[]
+): MetricTotal {
+	const contexts = new Set(
+		rows.map((row) => JSON.stringify([row.studyProgramId, row.gradeLevel.id, row.termSlotId]))
+	);
+	if (contexts.size > 1) return { value: '—', partial: false };
+	return sum(
+		rows.map((row) =>
+			(row.resourceKind === 'course' && row.metrics.weeklyUnit === 'period') ||
+			(row.resourceKind === 'activity' && row.metrics.weeklyUnit === 'hour')
+				? row.metrics.weeklyValue
+				: null
+		)
+	);
+}
+export type CurriculumSummaryMetrics = {
+	credits: MetricTotal;
+	weekly: MetricTotal | null;
+	hours: MetricTotal;
+};
+export type CurriculumSummaryRow = {
+	key: string;
+	label: string;
+	totals: Record<string, CurriculumSummaryMetrics>;
+};
+export function curriculumSummaryMetrics(
+	totals: CurriculumTotals,
+	weekly = false
+): CurriculumSummaryMetrics {
+	return {
+		credits: totals.credits,
+		weekly: weekly ? totals.weeklySchoolHours : null,
+		hours: totals.hours
+	};
+}
 export function curriculumTotals(
 	rows: readonly CurriculumStructureRequirement[]
 ): CurriculumTotals {
 	const courses = rows.filter((row) => row.resourceKind === 'course');
 	const activities = rows.filter((row) => row.resourceKind === 'activity');
 	return {
+		weeklySchoolHours: curriculumWeeklySchoolHours(rows),
 		credits: sum(courses.map((row) => row.metrics.credit)),
 		hours: sum(rows.map((row) => row.metrics.totalHours)),
 		weeklyPeriods: sum(
@@ -185,7 +226,7 @@ export function buildCurriculumMatrix(
 	const terms = [...workspace.termSlots]
 		.filter((term) => termSlotIds.includes(term.id))
 		.sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id));
-	const programs = workspace.programs.filter(
+	const programs = orderedCurriculumPrograms(workspace.programs).filter(
 		(program) => !studyProgramId || program.id === studyProgramId
 	);
 	const grades = [...workspace.gradeLevels]

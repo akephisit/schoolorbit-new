@@ -3,7 +3,8 @@ import type {
 	CurriculumManagementOptions,
 	CurriculumStructureRequirement,
 	ReplaceCurriculumStructureRequest,
-	ReplaceCurriculumTermSlotsRequest
+	ReplaceCurriculumTermSlotsRequest,
+	ReplaceStudyProgramOrderRequest
 } from '../../../src/lib/api/academic-core.js';
 import { DEFAULT_APPEARANCE, schoolAppearanceCss } from '../../../src/lib/appearance/model.js';
 import {
@@ -50,7 +51,8 @@ export function curriculumCatalogFixture(
 		...workspace.programs[0],
 		id: '62000000-0000-4000-8000-000000000402',
 		code: 'SECOND',
-		nameTh: 'แผนวิทย์คณิต'
+		nameTh: 'แผนวิทย์คณิต',
+		displayOrder: 2
 	});
 	workspace.requirements[0].hasNewerCurrentVersion = true;
 	const original = structuredClone(workspace.requirements[0]);
@@ -149,12 +151,21 @@ export function curriculumCatalogFixture(
 export async function installCurriculumCatalog(
 	page: Page,
 	fixture: ReturnType<typeof curriculumCatalogFixture>,
-	options: { mode?: 'light' | 'dark'; failSaveOnce?: boolean } = {}
+	options: {
+		mode?: 'light' | 'dark';
+		failSaveOnce?: boolean;
+		failOrderOnce?: boolean;
+		concurrentStructureOnOrder?: boolean;
+		concurrentSlotsOnOrderConflict?: boolean;
+	} = {}
 ) {
 	const writes: Array<{ path: string; method: string; body: unknown }> = [];
 	const errors: string[] = [];
 	const unexpected: string[] = [];
 	let saveAttempts = 0;
+	let orderAttempts = 0;
+	let concurrentStructureApplied = false;
+	let structureReads = 0;
 	page.on('pageerror', (error) => errors.push(error.message));
 	await page.clock.setFixedTime(new Date('2026-10-21T05:00:00Z'));
 	await page.addInitScript(
@@ -193,8 +204,10 @@ export async function installCurriculumCatalog(
 				});
 			if (path === `/api/academic/curricula/${ids.curriculum}`)
 				return reply(route, { ...edition(), draftId: fixture.workspace.level.draftId });
-			if (path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/structure`)
+			if (path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/structure`) {
+				structureReads++;
 				return reply(route, fixture.workspace);
+			}
 			if (path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/management-options`)
 				return reply(route, fixture.managementOptions);
 			if (
@@ -210,6 +223,15 @@ export async function installCurriculumCatalog(
 					);
 				const body: ReplaceCurriculumStructureRequest = request.postDataJSON();
 				const programId = path.split('/')[4];
+				if (
+					body.rowVersion !==
+					fixture.workspace.programs.find((program) => program.id === programId)?.rowVersion
+				)
+					return reply(
+						route,
+						'โครงสร้างแผนเปลี่ยนไปแล้ว ร่างที่แก้ไขยังอยู่ กรุณาตรวจสอบข้อมูลล่าสุด',
+						409
+					);
 				const requirements = body.requirements.map(
 					(input, index): CurriculumStructureRequirement => {
 						const catalog = fixture.catalog.find((item) => item.id === input.catalogVersionId);
@@ -245,6 +267,12 @@ export async function installCurriculumCatalog(
 				method === 'PUT'
 			) {
 				const body: ReplaceCurriculumTermSlotsRequest = request.postDataJSON();
+				if (body.rowVersion !== fixture.workspace.level.rowVersion)
+					return reply(
+						route,
+						'ภาคเรียนเปลี่ยนไปแล้ว ร่างที่แก้ไขยังอยู่ กรุณาตรวจสอบข้อมูลล่าสุด',
+						409
+					);
 				fixture.workspace.termSlots = body.slots.map((slot, index) => ({
 					...slot,
 					id: slot.id ?? `new-term-${index}`,
@@ -252,6 +280,45 @@ export async function installCurriculumCatalog(
 					rowVersion: 1
 				}));
 				return reply(route, fixture.workspace);
+			}
+			if (
+				path === `/api/academic/curriculum-levels/${ids.curriculumVersion}/program-order` &&
+				method === 'PUT'
+			) {
+				if (options.failOrderOnce && ++orderAttempts === 1) {
+					if (options.concurrentSlotsOnOrderConflict) {
+						fixture.workspace.level.rowVersion++;
+						fixture.workspace.termSlots[0].name = 'ภาคจากผู้ใช้อื่น';
+					}
+					return reply(route, 'ลำดับแผนเปลี่ยนไปแล้ว กรุณาตรวจสอบข้อมูลล่าสุด', 409);
+				}
+				const body: ReplaceStudyProgramOrderRequest = request.postDataJSON();
+				if (body.rowVersion !== fixture.workspace.level.rowVersion)
+					return reply(route, 'ลำดับแผนเปลี่ยนไปแล้ว กรุณาตรวจสอบข้อมูลล่าสุด', 409);
+				if (options.concurrentStructureOnOrder && !concurrentStructureApplied) {
+					concurrentStructureApplied = true;
+					fixture.workspace.programs[0].rowVersion++;
+					fixture.workspace.requirements[0].requirementKind = 'optional';
+				}
+				const previousProgramRowVersions = fixture.workspace.programs.map(({ id, rowVersion }) => ({
+					id,
+					rowVersion
+				}));
+				fixture.workspace.programs = body.studyProgramIds.map((id, index) => {
+					const program = fixture.workspace.programs.find((candidate) => candidate.id === id)!;
+					return {
+						...program,
+						displayOrder: index + 1,
+						rowVersion: program.rowVersion + (program.displayOrder === index + 1 ? 0 : 1)
+					};
+				});
+				fixture.workspace.level.rowVersion++;
+				fixture.workspace.rowVersion = fixture.workspace.level.rowVersion;
+				return reply(route, {
+					programs: fixture.workspace.programs,
+					rowVersion: fixture.workspace.level.rowVersion,
+					previousProgramRowVersions
+				});
 			}
 			if (path === '/api/academic/curricula/overview')
 				return reply(route, {
@@ -268,7 +335,8 @@ export async function installCurriculumCatalog(
 				const copied = {
 					...fixture.workspace.programs[0],
 					id: 'copied-program',
-					nameTh: 'แผนคัดลอก'
+					nameTh: 'แผนคัดลอก',
+					displayOrder: 3
 				};
 				fixture.workspace.programs.push(copied);
 				fixture.workspace.requirements.push({
@@ -300,7 +368,7 @@ export async function installCurriculumCatalog(
 			return reply(route, {});
 		}
 	);
-	return { writes, errors, unexpected };
+	return { writes, errors, unexpected, structureReads: () => structureReads };
 }
 
 export async function openCurriculumEditor(page: Page) {

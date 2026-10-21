@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { orderedCurriculumPrograms } from '#lib/academic-core/curriculum-program-order.js';
 	import { ALL_GRADES } from '#lib/academic/curriculum-structure.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -72,7 +73,7 @@
 						>{selectedProgram}</Select.Trigger
 					>
 					<Select.Content>
-						{#each workspace.programs as program (program.id)}
+						{#each orderedCurriculumPrograms(workspace.programs) as program (program.id)}
 							<Select.Item value={program.id}>
 								{program.nameTh}
 							</Select.Item>

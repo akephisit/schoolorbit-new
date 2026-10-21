@@ -2224,6 +2224,36 @@ pub async fn replace_curriculum_term_slots(
     Ok(ok(value))
 }
 
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/curriculum-levels/{id}/program-order",operation_id="replaceStudyProgramOrder",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceStudyProgramOrderRequest,responses((status=200,description="Ordered draft programs and level revision",body=ApiResponse<StudyProgramOrderResult>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
+pub async fn replace_study_program_order(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceStudyProgramOrderRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let previous_level_version = request.row_version;
+    let value = curriculum::replace_program_order(&context.tenant.pool, id, request).await?;
+    if value.row_version != previous_level_version {
+        signal_core_changed(
+            &state,
+            &session,
+            &context.actor,
+            "curriculum",
+            Some(id),
+            None,
+            None,
+        );
+    }
+    Ok(ok(value))
+}
+
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse))))]
 pub async fn list_study_programs(
     State(state): State<AcademicHttpState>,

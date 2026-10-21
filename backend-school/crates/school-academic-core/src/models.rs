@@ -888,6 +888,7 @@ pub struct StudyProgram {
     pub id: Uuid,
     pub curriculum_level_id: Uuid,
     pub code: String,
+    pub display_order: i32,
     pub name_th: String,
     pub name_en: Option<String>,
     pub status: VersionStatus,
@@ -902,6 +903,7 @@ pub struct StudyProgram {
 pub struct StudyProgramOption {
     pub id: Uuid,
     pub code: String,
+    pub display_order: i32,
     pub name: String,
     pub edition_id: Uuid,
     pub edition_name: String,
@@ -925,6 +927,32 @@ pub struct CreateStudyProgramRequest {
 pub struct UpdateStudyProgramRequest {
     pub draft_id: Uuid,
     pub name_th: String,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceStudyProgramOrderRequest {
+    pub draft_id: Uuid,
+    pub row_version: i64,
+    pub study_program_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct StudyProgramRowVersion {
+    pub id: Uuid,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct StudyProgramOrderResult {
+    pub programs: Vec<StudyProgram>,
+    pub previous_program_row_versions: Vec<StudyProgramRowVersion>,
     pub row_version: i64,
 }
 

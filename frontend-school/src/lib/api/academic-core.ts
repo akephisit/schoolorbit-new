@@ -54,6 +54,9 @@ export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOp
 export type CurriculumLevel = Schemas['CurriculumLevel'];
 export type CurriculumLevelView = Schemas['CurriculumLevelView'];
 export type StudyProgram = Schemas['StudyProgram'];
+export type ReplaceStudyProgramOrderRequest = Schemas['ReplaceStudyProgramOrderRequest'];
+export type StudyProgramOrderResult = Schemas['StudyProgramOrderResult'];
+export type StudyProgramOrderSnapshot = Pick<StudyProgramOrderResult, 'programs' | 'rowVersion'>;
 export type CurriculumTermSlot = Schemas['CurriculumTermSlot'];
 export type CatalogWeeklyUnit = Schemas['CatalogWeeklyUnit'];
 export type CurriculumDocumentSection = Schemas['CurriculumDocumentSection'];
@@ -400,6 +403,17 @@ export const createStudyProgram = (curriculumLevelId: string, body: CreateStudyP
 			body
 		),
 		'สร้างแผนการเรียนไม่สำเร็จ'
+	);
+export const replaceStudyProgramOrder = (
+	curriculumLevelId: string,
+	body: ReplaceStudyProgramOrderRequest
+) =>
+	academicData(
+		apiClient.put<StudyProgramOrderResult>(
+			`/api/academic/curriculum-levels/${requiredContext(curriculumLevelId, 'ระดับการศึกษา')}/program-order`,
+			body
+		),
+		'บันทึกลำดับแผนการเรียนไม่สำเร็จ'
 	);
 export const getStudyProgram = (id: string) =>
 	academicData(

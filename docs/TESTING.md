@@ -1816,3 +1816,18 @@ all configured terms (including empty and more than two), grade and classificati
 conservative pairing and partial totals, sticky table context and screenshots across the
 configured layouts/themes. These fixtures never write production curriculum data and do not
 replace deferred live UI acceptance.
+
+
+Custom curriculum program order uses owned disposable fixtures:
+
+```bash
+CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 ./scripts/test_backend_school.sh curriculum_program_order -- --test-threads=2
+```
+
+These cases cover clean migration/retry and populated 133→134 preservation, legacy zero ties,
+complete-set order validation, stale/foreign/duplicate inputs, no-op revisions, concurrent
+reorders/creation, archived presentation-only changes, append-on-create/copy, pinned publication
+order, history and discard. Run affected curriculum publication/current-subject/options/copy,
+Delivery and promotion-option consumers, HTTP permission/schema checks, API generation/check/tests
+and the frontend ordering helpers/browser fixtures. Predecessor migrations use historical SQL
+fixtures; current runtime services run only after their required schema is available.

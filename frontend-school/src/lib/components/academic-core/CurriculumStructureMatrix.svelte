@@ -4,15 +4,16 @@
 		buildCurriculumMatrix,
 		curriculumMetric,
 		curriculumTotals,
+		curriculumSummaryMetrics,
 		matrixCellKey,
-		type CurriculumTotals,
-		type MetricTotal
+		type MetricTotal,
+		type CurriculumSummaryRow
 	} from '#lib/academic/curriculum-structure.js';
 	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
+	import CurriculumSummaryTable from '#lib/components/academic-core/CurriculumSummaryTable.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-
 	let {
 		workspace,
 		gradeLevelId,
@@ -28,15 +29,54 @@
 		buildCurriculumMatrix(workspace, gradeLevelId, termSlotIds, studyProgramId)
 	);
 	const kindLabels = { required: 'บังคับ', elective: 'เลือก', optional: 'เพิ่มเติม' } as const;
-	function scopeRows(programId: string, gradeId: string, termId: string, section?: string) {
+	function scopeRows(programId: string, gradeId: string, termId?: string, section?: string) {
 		return workspace.requirements.filter(
 			(row) =>
 				row.studyProgramId === programId &&
 				row.gradeLevel.id === gradeId &&
-				row.termSlotId === termId &&
+				(!termId || row.termSlotId === termId) &&
 				(!section || row.section === section)
 		);
 	}
+	function annualRows(gradeId: string): CurriculumSummaryRow[] {
+		return [
+			{
+				key: gradeId,
+				label: 'รวมทั้งปี · ทุกภาคเรียน',
+				totals: Object.fromEntries(
+					matrix.programs.map((program) => [
+						program.id,
+						curriculumSummaryMetrics(curriculumTotals(scopeRows(program.id, gradeId)))
+					])
+				)
+			}
+		];
+	}
+	let summaryRows: CurriculumSummaryRow[] = $derived([
+		{
+			key: 'selected',
+			label: `รวมช่วงที่เลือก · ${gradeLevelId === 'all' ? 'ทุกชั้น' : (matrix.grades[0]?.grade.name ?? '')} · ${matrix.terms.map((term) => term.name).join(', ') || 'ไม่มีภาคเรียน'}`,
+			totals: Object.fromEntries(
+				matrix.summaries.map((summary) => [
+					summary.program.id,
+					curriculumSummaryMetrics(
+						summary.selected,
+						matrix.grades.length === 1 && matrix.terms.length === 1
+					)
+				])
+			)
+		},
+		{
+			key: 'level',
+			label: 'รวมทั้งระดับ · ทุกชั้น ทุกภาคเรียน',
+			totals: Object.fromEntries(
+				matrix.summaries.map((summary) => [
+					summary.program.id,
+					curriculumSummaryMetrics(summary.level)
+				])
+			)
+		}
+	]);
 	function measureHeader(node: HTMLDivElement) {
 		const header = node.querySelector('thead');
 		if (!header) return;
@@ -49,27 +89,12 @@
 </script>
 
 {#snippet metric(total: MetricTotal)}
-	<span class="tabular-nums"
-		>{total.value}{#if total.partial}<abbr
-				class="ml-0.5 no-underline"
-				title="รวมเฉพาะค่าที่มีข้อมูล ข้อมูลบางรายการไม่ครบ"
-				aria-label="ข้อมูลบางรายการไม่ครบ">*</abbr
-			>{/if}</span
-	>
+	{total.value}{#if total.partial}<abbr
+			class="ml-0.5 no-underline"
+			title="รวมเฉพาะค่าที่มีข้อมูล ข้อมูลบางรายการไม่ครบ"
+			aria-label="ข้อมูลบางรายการไม่ครบ">*</abbr
+		>{/if}
 {/snippet}
-{#snippet totalLine(totals: CurriculumTotals, weekly = false, section?: string)}
-	<span class="inline-flex flex-wrap gap-x-3 gap-y-1 text-xs">
-		{#if section !== 'student_development'}<span>หน่วยกิต {@render metric(totals.credits)}</span
-			>{/if}
-		{#if weekly}{#if section !== 'student_development'}<span
-					>คาบ/สัปดาห์ {@render metric(totals.weeklyPeriods)}</span
-				>{/if}{#if !section || section === 'student_development'}<span
-					>ชม.กิจกรรม/สัปดาห์ {@render metric(totals.weeklyHours)}</span
-				>{/if}{/if}
-		<span>ชั่วโมงรวม {@render metric(totals.hours)}</span>
-	</span>
-{/snippet}
-
 <div class="space-y-4" data-testid="curriculum-matrix">
 	{#each matrix.grades as { grade, sections } (grade.id)}
 		<section
@@ -86,56 +111,51 @@
 				<div class="matrix-viewport" use:measureHeader>
 					<Table.Root class="matrix-table" aria-label={`รายวิชาและกิจกรรม ${grade.name}`}>
 						<Table.Header class="matrix-head">
-							<Table.Row>
-								{#if !studyProgramId}<Table.Head rowspan={3} class="family-head whitespace-normal"
-										>รายวิชา / กิจกรรม</Table.Head
-									>{/if}
-								{#each matrix.programs as program (program.id)}
-									<Table.Head
-										colspan={matrix.terms.length * 4 || 1}
+							<Table.Row
+								>{#each matrix.programs as program (program.id)}<Table.Head
+										colspan={matrix.terms.length * 4}
 										scope="colgroup"
 										class="border-l text-center whitespace-normal font-semibold"
 										>{program.nameTh}</Table.Head
-									>
-								{/each}
-							</Table.Row>
-							<Table.Row>
-								{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
-										<Table.Head
+									>{/each}</Table.Row
+							>
+							<Table.Row
+								>{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}<Table.Head
 											colspan={4}
 											scope="colgroup"
 											class="border-l text-center whitespace-normal">{term.name}</Table.Head
-										>
-									{/each}{/each}
-							</Table.Row>
-							<Table.Row>
-								{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
-										<Table.Head class="identity-head border-l whitespace-normal"
-											>รายการในภาคเรียน</Table.Head
+										>{/each}{/each}</Table.Row
+							>
+							<Table.Row
+								>{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
+										<Table.Head class="identity-head border-l whitespace-normal">รายวิชา</Table.Head
 										>
 										<Table.Head class="metric-head"><span>หน่วยกิต</span></Table.Head>
-										<Table.Head class="metric-head"><span>ต่อสัปดาห์</span></Table.Head>
+										<Table.Head class="metric-head"><span>ชั่วโมง/สัปดาห์</span></Table.Head>
 										<Table.Head class="metric-head"><span>ชั่วโมง/ภาคเรียน</span></Table.Head>
-									{/each}{/each}
-							</Table.Row>
+									{/each}{/each}</Table.Row
+							>
 						</Table.Header>
 						{#each sections as section (section.id)}
 							<Table.Body>
 								<Table.Row class="section-heading">
-									{#if !studyProgramId}<Table.Cell
-											class="whitespace-normal font-semibold text-primary"
-											>{section.label}</Table.Cell
-										>{/if}
 									{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
-											<Table.Cell colspan={4} class="border-l whitespace-normal"
-												>{#if studyProgramId}<span class="mb-1 block font-semibold text-primary"
-														>{section.label}</span
-													>{/if}{@render totalLine(
-													curriculumTotals(scopeRows(program.id, grade.id, term.id, section.id)),
-													true,
-													section.id
-												)}</Table.Cell
+											{@const totals = curriculumTotals(
+												scopeRows(program.id, grade.id, term.id, section.id)
+											)}
+											<Table.Cell
+												class="identity-cell border-l whitespace-normal font-semibold text-primary"
+												>{section.label}</Table.Cell
 											>
+											<Table.Cell class="metric-cell"
+												>{#if section.id === 'student_development'}—{:else}{@render metric(
+														totals.credits
+													)}{/if}</Table.Cell
+											>
+											<Table.Cell class="metric-cell"
+												>{@render metric(totals.weeklySchoolHours)}</Table.Cell
+											>
+											<Table.Cell class="metric-cell">{@render metric(totals.hours)}</Table.Cell>
 										{/each}{/each}
 								</Table.Row>
 								{#each section.rows as row, index (row.key)}
@@ -155,10 +175,6 @@
 												? 'group-start'
 												: 'within-group'}
 										>
-											{#if !studyProgramId}<Table.Cell
-													class="family-cell whitespace-normal align-top"
-													>{occurrence === 0 ? row.label : '↳'}</Table.Cell
-												>{/if}
 											{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
 													{@const requirement =
 														row.cells[matrixCellKey(program.id, term.id)]?.[occurrence]}
@@ -187,10 +203,7 @@
 																: curriculumMetric(requirement.metrics.credit)}</Table.Cell
 														>
 														<Table.Cell class="metric-cell"
-															>{curriculumMetric(requirement.metrics.weeklyValue)}<span
-																class="block text-[10px] text-muted-foreground"
-																>{requirement.metrics.weeklyUnit === 'period' ? 'คาบ' : 'ชม.'}</span
-															></Table.Cell
+															>{curriculumMetric(requirement.metrics.weeklyValue)}</Table.Cell
 														>
 														<Table.Cell class="metric-cell"
 															>{curriculumMetric(requirement.metrics.totalHours)}</Table.Cell
@@ -206,90 +219,68 @@
 								{/each}
 								{#if !section.rows.length}<Table.Row
 										><Table.Cell
-											colspan={(studyProgramId ? 0 : 1) +
-												matrix.programs.length * matrix.terms.length * 4}
+											colspan={matrix.programs.length * matrix.terms.length * 4}
 											class="py-3 text-center text-muted-foreground"
 											>ยังไม่มีรายการในหมวดนี้</Table.Cell
 										></Table.Row
 									>{/if}
 							</Table.Body>
 						{/each}
-						<Table.Footer>
-							<Table.Row>
-								{#if !studyProgramId}<Table.Cell class="whitespace-normal font-semibold"
-										>รวมรายภาคเรียน</Table.Cell
-									>{/if}
+						<Table.Footer
+							><Table.Row>
 								{#each matrix.programs as program (program.id)}{#each matrix.terms as term (term.id)}
-										<Table.Cell colspan={4} class="border-l whitespace-normal"
-											>{#if studyProgramId}<span class="mb-1 block font-semibold"
-													>รวมรายภาคเรียน</span
-												>{/if}{@render totalLine(
-												curriculumTotals(scopeRows(program.id, grade.id, term.id)),
-												true
-											)}</Table.Cell
+										{@const totals = curriculumTotals(scopeRows(program.id, grade.id, term.id))}
+										<Table.Cell class="identity-cell border-l whitespace-normal font-semibold"
+											>รวมรายภาคเรียน</Table.Cell
 										>
+										<Table.Cell class="metric-cell">{@render metric(totals.credits)}</Table.Cell>
+										<Table.Cell class="metric-cell"
+											>{@render metric(totals.weeklySchoolHours)}</Table.Cell
+										>
+										<Table.Cell class="metric-cell">{@render metric(totals.hours)}</Table.Cell>
 									{/each}{/each}
-							</Table.Row>
-							<Table.Row>
-								{#if !studyProgramId}<Table.Cell class="whitespace-normal font-semibold"
-										>รวมทั้งปี · ทุกภาคเรียน</Table.Cell
-									>{/if}
-								{#each matrix.programs as program (program.id)}
-									<Table.Cell
-										colspan={matrix.terms.length * 4 || 1}
-										class="border-l whitespace-normal"
-										>{#if studyProgramId}<span class="mr-3 font-semibold"
-												>รวมทั้งปี · ทุกภาคเรียน</span
-											>{/if}{@render totalLine(
-											curriculumTotals(
-												workspace.requirements.filter(
-													(row) =>
-														row.studyProgramId === program.id && row.gradeLevel.id === grade.id
-												)
-											)
-										)}</Table.Cell
-									>
-								{/each}
-							</Table.Row>
-						</Table.Footer>
+							</Table.Row></Table.Footer
+						>
 					</Table.Root>
 				</div>
 			{:else}<p class="p-4 text-sm text-muted-foreground">เลือกภาคเรียนเพื่อแสดงตาราง</p>{/if}
+			<div class="border-t">
+				<CurriculumSummaryTable
+					programs={matrix.programs}
+					rows={annualRows(grade.id)}
+					label={`สรุปทั้งปี ${grade.name} · ทุกภาคเรียน`}
+				/>
+			</div>
 		</section>
 	{/each}
 	<div class="space-y-3 rounded-xl border bg-card p-4">
 		<p class="text-xs text-muted-foreground">
 			* ข้อมูลบางรายการไม่ครบ ยอดรวมใช้เฉพาะค่าที่มีข้อมูล · กิจกรรมไม่มีหน่วยกิต ·
-			จำนวนต่อสัปดาห์แยกคาบเรียนและชั่วโมงกิจกรรมตามชั้นและภาคเรียน
+			ชั่วโมงตามหลักสูตรนับ 1 คาบเรียนเป็น 1 ชั่วโมงเรียนตามโครงสร้าง โดยใช้จำนวนเดิมในทะเบียน ·
+			ยอดรายปีและทั้งระดับไม่รวมชั่วโมงต่อสัปดาห์ข้ามภาคเรียน
 		</p>
+		<CurriculumSummaryTable
+			programs={matrix.programs}
+			rows={summaryRows}
+			label="สรุปช่วงที่เลือกและทั้งระดับ"
+		/>
 		{#each matrix.summaries as summary (summary.program.id)}
-			<section class="space-y-2" aria-label={`สรุป ${summary.program.nameTh}`}>
-				<h3 class="font-semibold">{summary.program.nameTh}</h3>
-				<p class="flex flex-wrap items-center gap-3 text-sm">
-					<span
-						>รวมช่วงที่เลือก · {gradeLevelId === 'all' ? 'ทุกชั้น' : matrix.grades[0]?.grade.name} · {matrix.terms
-							.map((term) => term.name)
-							.join(', ') || 'ไม่มีภาคเรียน'}</span
-					>{@render totalLine(summary.selected)}
-				</p>
-				<p class="flex flex-wrap items-center gap-3 text-sm">
-					<span>รวมทั้งระดับ · ทุกชั้น ทุกภาคเรียน</span>{@render totalLine(summary.level)}
-				</p>
-				<Collapsible.Root class="text-xs text-muted-foreground">
-					<Collapsible.Trigger class="py-1 text-left"
-						>ภาระต่อสัปดาห์ แยกทุกชั้นและภาคเรียน</Collapsible.Trigger
-					>
-					<Collapsible.Content>
-						<div class="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-							{#each summary.weekly as item (`${item.grade.id}:${item.term.id}`)}<p>
-									{item.grade.short_name ?? item.grade.name} · {item.term.name}: {@render metric(
-										item.totals.weeklyPeriods
-									)} คาบเรียน / {@render metric(item.totals.weeklyHours)} ชม.กิจกรรม
-								</p>{/each}
-						</div>
-					</Collapsible.Content></Collapsible.Root
+			<Collapsible.Root class="text-xs text-muted-foreground">
+				<Collapsible.Trigger class="py-1 text-left"
+					>{summary.program.nameTh} · ชั่วโมงต่อสัปดาห์ แยกทุกชั้นและภาคเรียน</Collapsible.Trigger
 				>
-			</section>
+				<Collapsible.Content
+					><CurriculumSummaryTable
+						programs={[summary.program]}
+						rows={summary.weekly.map((item) => ({
+							key: `${item.grade.id}:${item.term.id}`,
+							label: `${item.grade.short_name ?? item.grade.name} · ${item.term.name}`,
+							totals: { [summary.program.id]: curriculumSummaryMetrics(item.totals, true) }
+						}))}
+						label="ชั่วโมงตามชั้นและภาคเรียน"
+					/></Collapsible.Content
+				>
+			</Collapsible.Root>
 		{/each}
 	</div>
 </div>
@@ -315,12 +306,6 @@
 	}
 	.matrix-viewport :global(.matrix-head th) {
 		background: var(--card);
-	}
-	.matrix-viewport :global(.family-head),
-	.matrix-viewport :global(.family-cell) {
-		min-width: 8rem;
-		max-width: 11rem;
-		padding: 0.65rem 0.75rem;
 	}
 	.matrix-viewport :global(.identity-head),
 	.matrix-viewport :global(.identity-cell) {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	groupStagedRequirements,
+	moveStagedRequirementWithinSection,
 	appendSelectedCatalogRequirements,
 	hasExistingCourseRequirement,
 	selectableCatalogOption,
@@ -182,4 +184,37 @@ test('concrete grade coverage is rechecked when adding stale picker selections',
 		appendSelectedCatalogRequirements([], [otherGrade.id], context, [otherGrade], [], 'required'),
 		[]
 	);
+});
+
+test('section presentation prefers pinned metadata, preserves every duplicate and retains unknown legacy rows', () => {
+	const activity = { ...existing, resourceKind: 'activity' as const, catalogVersionId: 'activity' };
+	const unknown = { ...existing, catalogVersionId: 'missing' };
+	const groups = groupStagedRequirements(
+		[existing, { ...existing }, activity, unknown],
+		[
+			{ ...old, section: 'additional_course' },
+			{ ...current, id: 'activity', resourceKind: 'activity', section: 'student_development' }
+		],
+		[pinned]
+	);
+	assert.equal(groups.find((group) => group.id === 'basic_course')!.rows.length, 2);
+	assert.equal(groups.find((group) => group.id === 'additional_course')!.rows.length, 0);
+	assert.equal(groups.find((group) => group.id === 'student_development')!.rows.length, 1);
+	assert.equal(groups.find((group) => group.id === 'unclassified')!.rows.length, 1);
+});
+test('within-section moves preserve adjacent sections, contexts, duplicate identities and untouched fields', () => {
+	const duplicate = { ...existing, displayOrder: 3 };
+	const additional = { ...existing, catalogVersionId: 'additional', displayOrder: 2 };
+	const anotherContext = { ...existing, gradeLevelId: 'grade-2', displayOrder: 4 };
+	const rows = [existing, additional, duplicate, anotherContext];
+	const options = [{ ...current, id: 'additional', section: 'additional_course' as const }];
+	const moved = moveStagedRequirementWithinSection(rows, duplicate, -1, options, [pinned]);
+	assert.equal(moved.length, 4);
+	assert.equal(moved[0].displayOrder, 3);
+	assert.equal(moved[2].displayOrder, 1);
+	assert.equal(moved[1], additional);
+	assert.equal(moved[3], anotherContext);
+	assert.equal(moved[2].catalogVersionId, existing.catalogVersionId);
+	assert.equal(moved[2].requirementKind, existing.requirementKind);
+	assert.equal(existing.displayOrder, 1);
 });
