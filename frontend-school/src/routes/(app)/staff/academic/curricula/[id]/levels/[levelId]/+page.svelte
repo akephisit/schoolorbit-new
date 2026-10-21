@@ -46,6 +46,8 @@
 	let viewMode = $state<'comparison' | 'document'>('comparison');
 	let gradeLevelId = $state('');
 	let studyProgramId = $state('');
+	let termSlotIds = $state<string[]>([]);
+	let termsInitialized = false;
 	let mutationRevision = 0;
 	const workspaceRequest = new LatestRequest();
 	const editorRequest = new LatestRequest();
@@ -54,8 +56,18 @@
 		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && !!workspace?.level.draftId
 	);
 	function apply(result: CurriculumStructureWorkspace) {
+		const previousTerms = workspace?.termSlots.map((term) => term.id) ?? [];
+		if (!termsInitialized) {
+			termSlotIds = result.termSlots.map((term) => term.id);
+			termsInitialized = true;
+		} else {
+			const showingAllTerms = previousTerms.every((termId) => termSlotIds.includes(termId));
+			termSlotIds = result.termSlots
+				.filter((term) => showingAllTerms || termSlotIds.includes(term.id))
+				.map((term) => term.id);
+		}
 		workspace = result;
-		if (!result.gradeLevels.some((g) => g.id === gradeLevelId))
+		if (gradeLevelId !== 'all' && !result.gradeLevels.some((g) => g.id === gradeLevelId))
 			gradeLevelId = result.gradeLevels[0]?.id ?? '';
 		if (!result.programs.some((p) => p.id === studyProgramId))
 			studyProgramId = result.programs[0]?.id ?? '';
@@ -68,6 +80,7 @@
 		let current = true;
 		untrack(() => {
 			workspace = null;
+			termsInitialized = false;
 			edition = null;
 			options = null;
 			alignment = null;
@@ -275,7 +288,6 @@
 							/><CurriculumProgramCreateDialog
 								levelId={workspace.level.id}
 								draftId={workspace.level.draftId ?? ''}
-								isFirst={workspace.programs.length === 0}
 								onCreated={programCreated}
 							/>
 						</div>{/if}
@@ -293,13 +305,20 @@
 					bind:viewMode
 					bind:gradeLevelId
 					bind:studyProgramId
+					bind:termSlotIds
 					{canManage}
 					onEdit={edit}
 					busy={editorLoading}
 				/>{#if viewMode === 'comparison'}<CurriculumProgramComparison
 						{workspace}
 						{gradeLevelId}
-					/>{:else}<CurriculumTermDocument {workspace} {gradeLevelId} {studyProgramId} />{/if}
+						{termSlotIds}
+					/>{:else}<CurriculumTermDocument
+						{workspace}
+						{gradeLevelId}
+						{studyProgramId}
+						{termSlotIds}
+					/>{/if}
 			{:else}<PageState
 					variant="empty"
 					title="ยังไม่มีแผนการเรียน"
@@ -311,6 +330,9 @@
 {#if editorOpen && workspace && options}<CurriculumStructureEditor
 		{workspace}
 		managementOptions={options}
+		initialProgram={studyProgramId}
+		initialGrade={gradeLevelId}
+		initialTerm={termSlotIds.length === 1 ? termSlotIds[0] : ''}
 		onSaveStructure={saveStructure}
 		onSaveTermSlots={saveSlots}
 		onCreateProgram={createProgram}

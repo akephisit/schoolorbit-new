@@ -1,13 +1,10 @@
 use super::*;
-use crate::integration_tests::academic::{
-    core, cutover_test_support::apply_migrations_through, lifecycle::models::*,
-};
+use crate::integration_tests::academic::{core, lifecycle::models::*};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
 async fn fixture(name: &str) -> (PgPool, ActorContext, PromotionPolicyInput) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 72).await.unwrap();
     let user = sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' LIMIT 1")
         .fetch_one(&pool)
         .await

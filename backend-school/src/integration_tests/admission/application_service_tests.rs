@@ -85,7 +85,7 @@ mod tests {
                      SELECT id
                      FROM study_programs
                      WHERE status = 'published'
-                     ORDER BY is_default DESC, id
+                     ORDER BY code, id
                      LIMIT 1
                  ) program
                  ORDER BY grade.id

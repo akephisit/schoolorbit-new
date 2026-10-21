@@ -47,7 +47,7 @@ fn version_request(
 }
 
 async fn fixture(name: &str) -> Fixture {
-    let pool = prepare_core_fixture_through(name, 131).await;
+    let pool = prepare_core_fixture_through(name, 133).await;
     let grades: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type='secondary' AND year BETWEEN 1 AND 3 ORDER BY year")
         .fetch_all(&pool).await.unwrap();
     assert_eq!(grades.len(), 3);
@@ -80,7 +80,6 @@ async fn fixture(name: &str) -> Fixture {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, edition.id).await,
             name_th: "แผนทดสอบ".into(),
-            is_default: true,
         },
     )
     .await
@@ -241,6 +240,13 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
             .find(|option| option.id == version.id)
             .unwrap();
         assert_eq!(option.catalog_id, version.subject_id);
+        let mut expected_grades = version.grade_level_ids.clone();
+        expected_grades.sort();
+        assert_eq!(option.grade_level_ids, expected_grades);
+        assert_eq!(
+            option.section,
+            school_academic_core::models::CurriculumDocumentSection::BasicCourse
+        );
         assert_eq!(option.selectable_for_new_requirement, version.id == v2.id);
     }
     assert!(!options
@@ -450,6 +456,18 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
     .await
     .unwrap();
     assert!(!published_before.requirements[0].has_newer_current_version);
+    let pinned_group = catalog::subject_groups_for_versions(&f.pool, &[f.v1.id])
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(
+        published_before.requirements[0].subject_group_id,
+        Some(pinned_group.subject_group_id)
+    );
+    assert_eq!(
+        published_before.requirements[0].subject_group_order,
+        pinned_group.display_order
+    );
     revision(&f, "รายวิชารุ่นสอง").await;
     let persisted_before_read = snapshot(&f).await;
     let published_after = school_academic_core::services::curriculum_publications::read_workspace(
@@ -568,6 +586,11 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
         .find(|option| option.id == activity_version.id)
         .unwrap();
     assert_eq!(option.catalog_id, activity.id);
+    assert_eq!(option.grade_level_ids, vec![f.grade]);
+    assert_eq!(
+        option.section,
+        school_academic_core::models::CurriculumDocumentSection::StudentDevelopment
+    );
     assert!(option.selectable_for_new_requirement);
     let mut activity_row = row(&f, activity_version.id);
     activity_row.resource_kind = RequirementResourceKind::Activity;
@@ -579,6 +602,8 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
         .iter()
         .find(|row| row.resource_kind == RequirementResourceKind::Activity)
         .unwrap();
+    assert_eq!(activity_row.subject_group_id, None);
+    assert_eq!(activity_row.subject_group_order, None);
     assert_eq!(activity_row.catalog_id, activity.id);
     assert_eq!(activity_row.version_no, 1);
     assert!(!activity_row.has_newer_current_version);

@@ -623,8 +623,7 @@ test('create a level with covered grades within an edition, then create its plan
 	await expect(dialog).toBeHidden();
 	expect(mocked.programRequest()).toEqual({
 		draftId: 'f2000000-0000-4000-8000-000000000402',
-		nameTh: 'วิทยาศาสตร์-คณิตศาสตร์',
-		isDefault: false
+		nameTh: 'วิทยาศาสตร์-คณิตศาสตร์'
 	});
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
 });

@@ -13014,7 +13014,6 @@ export interface components {
 				curriculumLevelId: string;
 				/** Format: uuid */
 				id: string;
-				isDefault: boolean;
 				nameEn?: string | null;
 				nameTh: string;
 				/** Format: int64 */
@@ -15872,7 +15871,6 @@ export interface components {
 				curriculumLevelId: string;
 				/** Format: uuid */
 				id: string;
-				isDefault: boolean;
 				nameEn?: string | null;
 				nameTh: string;
 				/** Format: int64 */
@@ -19693,7 +19691,6 @@ export interface components {
 		CreateStudyProgramRequest: {
 			/** Format: uuid */
 			draftId: string;
-			isDefault: boolean;
 			nameTh: string;
 		};
 		CreateSubjectGroupRequest: {
@@ -19845,10 +19842,12 @@ export interface components {
 			effectiveFrom: string;
 			/** Format: date */
 			effectiveUntil?: string | null;
+			gradeLevelIds: string[];
 			/** Format: uuid */
 			id: string;
 			name: string;
 			resourceKind: components['schemas']['RequirementResourceKind'];
+			section: components['schemas']['CurriculumDocumentSection'];
 			selectableForNewRequirement: boolean;
 			/** Format: int32 */
 			versionNo: number;
@@ -20078,6 +20077,10 @@ export interface components {
 			section: components['schemas']['CurriculumDocumentSection'];
 			/** Format: uuid */
 			studyProgramId: string;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+			/** Format: int32 */
+			subjectGroupOrder?: number | null;
 			/** Format: uuid */
 			termSlotId: string;
 			/** Format: int32 */
@@ -25382,7 +25385,6 @@ export interface components {
 			curriculumLevelId: string;
 			/** Format: uuid */
 			id: string;
-			isDefault: boolean;
 			nameEn?: string | null;
 			nameTh: string;
 			/** Format: int64 */
@@ -27423,7 +27425,6 @@ export interface components {
 		UpdateStudyProgramRequest: {
 			/** Format: uuid */
 			draftId: string;
-			isDefault: boolean;
 			nameTh: string;
 			/** Format: int64 */
 			rowVersion: number;

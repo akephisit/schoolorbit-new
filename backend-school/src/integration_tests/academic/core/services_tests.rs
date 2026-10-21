@@ -43,11 +43,11 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 114).await
+    prepare_core_fixture_through(name, 133).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 114).await
+    prepare_core_fixture_through(name, 133).await
 }
 
 pub(crate) async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -130,7 +130,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 114).await;
+    let pool = prepare_core_fixture_through(name, 133).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -729,12 +729,7 @@ async fn create_published_program_option_fixture(
             .fetch_one(pool)
             .await
             .unwrap();
-    let subject_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM subject_versions WHERE status = 'published' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let subject_version_id = current_fixture_subject_version(pool).await;
     sqlx::query(
         r#"INSERT INTO subject_version_grade_levels (subject_id, grade_level_id)
            VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
@@ -772,8 +767,6 @@ async fn create_published_program_option_fixture(
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(pool, version.id).await,
             name_th: format!("แผนการเรียน {code}"),
-
-            is_default: true,
         },
     )
     .await
@@ -913,8 +906,6 @@ async fn create_curriculum_overview_fixture(
             CreateStudyProgramRequest {
                 draft_id: resource_draft_id(pool, version.id).await,
                 name_th: format!("แผน {}", index + 1),
-
-                is_default: index == 0,
             },
         )
         .await
@@ -1026,7 +1017,6 @@ async fn curriculum_publication_validates_all_levels_before_changing_any_plan() 
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, second.id).await,
             name_th: "แผนเพิ่มเติม".into(),
-            is_default: true,
         },
     )
     .await
@@ -1472,8 +1462,6 @@ async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_s
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนทั่วไป".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -1614,8 +1602,6 @@ async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slo
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนทั่วไป".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -3435,8 +3421,6 @@ async fn study_program_options_are_published_effective_and_authorized() {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, draft_version.id).await,
             name_th: "แผนการเรียนร่าง".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -4307,7 +4291,6 @@ async fn curriculum_overview_lists_editions_with_level_and_program_counts() {
             CreateStudyProgramRequest {
                 draft_id: resource_draft_id(&pool, level.id).await,
                 name_th: "แผนหลัก".into(),
-                is_default: true,
             },
         )
         .await
@@ -4634,8 +4617,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนหลัก".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -4646,8 +4627,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนทางเลือก".to_string(),
-
-            is_default: false,
         },
     )
     .await
@@ -4735,8 +4714,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, other_version.id).await,
             name_th: "แผนอื่น".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -4954,8 +4931,6 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนทั่วไป".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -4966,8 +4941,6 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนวิทย์-คณิต".to_string(),
-
-            is_default: false,
         },
     )
     .await
@@ -5052,8 +5025,6 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
             draft_id: resource_draft_id(&pool, frozen_program.id).await,
             name_th: frozen_program.name_th,
 
-            is_default: frozen_program.is_default,
-
             row_version: frozen_program.row_version,
         },
     )
@@ -5121,8 +5092,6 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
         CreateStudyProgramRequest {
             draft_id: resource_draft_id(&pool, version.id).await,
             name_th: "แผนหลัก".to_string(),
-
-            is_default: true,
         },
     )
     .await
@@ -5530,7 +5499,6 @@ async fn curriculum_publication_discard_rolls_back_when_new_plan_has_external_re
         CreateStudyProgramRequest {
             draft_id: token,
             name_th: "แผนมีห้องอ้างอิง".into(),
-            is_default: false,
         },
     )
     .await
@@ -5818,7 +5786,6 @@ async fn curriculum_publication_discard_restores_all_levels_and_used_requirement
         CreateStudyProgramRequest {
             draft_id: token,
             name_th: "แผนทดลองที่จะลบ".into(),
-            is_default: true,
         },
     )
     .await
@@ -6502,4 +6469,227 @@ async fn organization_learning_area_cutover_preserves_academic_owners_and_grants
     let activity: (String, String) = sqlx::query_as("SELECT u.code, g.code FROM organization_units u JOIN subject_groups g ON g.id=u.subject_group_id WHERE u.code='ACAD-ACT'")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(activity, ("ACAD-ACT".into(), "AC".into()));
+}
+
+#[tokio::test]
+async fn curriculum_program_default_migration_preserves_populated_amendment_and_history() {
+    use school_academic_core::models::{CurriculumViewQuery, OpenCurriculumDraftRequest};
+    use school_academic_core::services::curriculum_publications as publications;
+    let pool = prepare_core_fixture_through("curriculum_program_default_upgrade", 132).await;
+    // Legacy publications with an unknown revision year remain preserved below,
+    // but a new capture must use an edition that satisfies current publication rules.
+    let (edition, level) = publication_fixture(&pool, "DEFAULT-FREE").await;
+    let program: Uuid = sqlx::query_scalar(
+        "SELECT id FROM study_programs WHERE curriculum_level_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(level)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let released = curriculum::get(&pool, edition).await.unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        edition,
+        OpenCurriculumDraftRequest {
+            row_version: released.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let token = draft.draft_id.unwrap();
+    sqlx::query("UPDATE study_programs SET name_th=name_th||' amended',row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(program).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE curriculum_course_requirements SET display_order=display_order+77 WHERE study_program_id=$1")
+        .bind(program).execute(&pool).await.unwrap();
+    // Two historical flags survive until the contraction. They have no bearing on
+    // preservation or the new publication rules, and are deliberately not archived.
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) VALUES(gen_random_uuid(),$1,'UNRELEASED','Unreleased',false,'draft')")
+        .bind(level).execute(&pool).await.unwrap();
+    let released_workspace =
+        publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
+            .await
+            .unwrap();
+    let draft_workspace = publications::read_workspace(
+        &pool,
+        level,
+        &CurriculumViewQuery {
+            draft_id: Some(token),
+            publication_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(
+        released_workspace.programs.len(),
+        draft_workspace.programs.len()
+    );
+    let history = serde_json::to_value(
+        publications::list_publications(&pool, edition)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let evidence_sql = "SELECT jsonb_build_object('programs',(SELECT jsonb_agg(to_jsonb(r)-'is_default' ORDER BY id) FROM study_programs r),'snapshots',(SELECT jsonb_agg(to_jsonb(r)-'is_default' ORDER BY publication_id,id) FROM curriculum_publication_programs r),'levels',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_levels r),'courses',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_course_requirements r),'activities',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_activity_requirements r),'sources',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_requirement_sources r),'slots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_term_slots r),'publications',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_publications r))";
+    let before: serde_json::Value = sqlx::query_scalar(evidence_sql)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 133).await.unwrap();
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(evidence_sql)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
+    apply_migrations_through(&pool, 133).await.unwrap();
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(evidence_sql)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    );
+    let columns: i64 = sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name IN('study_programs','curriculum_publication_programs','published_study_programs') AND column_name='is_default'").fetch_one(&pool).await.unwrap();
+    assert_eq!(columns, 0);
+    let audit: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE event_code='curriculum.program_default_removed.reconciled' AND payload->>'passed'='true'").fetch_one(&pool).await.unwrap();
+    assert_eq!(audit, 1);
+    assert_eq!(
+        history,
+        serde_json::to_value(
+            publications::list_publications(&pool, edition)
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(released_workspace).unwrap(),
+        serde_json::to_value(
+            publications::read_workspace(&pool, level, &CurriculumViewQuery::default())
+                .await
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(draft_workspace).unwrap(),
+        serde_json::to_value(
+            publications::read_workspace(
+                &pool,
+                level,
+                &CurriculumViewQuery {
+                    draft_id: Some(token),
+                    publication_id: None
+                }
+            )
+            .await
+            .unwrap()
+        )
+        .unwrap()
+    );
+    // Restore the actual publication through the owner after upgrading, then make
+    // another release: capture's positional SELECT r.* must still be valid.
+    let preview = publications::preview_discard(&pool, edition, token)
+        .await
+        .unwrap();
+    publications::discard_draft(
+        &pool,
+        edition,
+        school_academic_core::models::DiscardCurriculumDraftRequest {
+            draft_id: token,
+            row_version: preview.row_version,
+            content_hash: preview.content_hash,
+        },
+    )
+    .await
+    .unwrap();
+    let released = curriculum::get(&pool, edition).await.unwrap();
+    let next = publications::open_draft(
+        &pool,
+        edition,
+        OpenCurriculumDraftRequest {
+            row_version: released.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let published = curriculum::publish(
+        &pool,
+        edition,
+        PublishCurriculumRequest {
+            draft_id: next.draft_id.unwrap(),
+            row_version: next.row_version,
+            change_note: "Default-free capture".into(),
+        },
+        fixture_actor(&pool).await,
+    )
+    .await
+    .unwrap();
+    assert_eq!(published.publication_count, released.publication_count + 1);
+    assert_eq!(
+        publications::list_publications(&pool, edition)
+            .await
+            .unwrap()
+            .len(),
+        history.as_array().unwrap().len() + 1
+    );
+}
+
+#[tokio::test]
+async fn curriculum_program_default_clean_baseline_and_retry() {
+    let pool = school_test_db::create_named_test_pool("curriculum_program_default_baseline").await;
+    apply_migrations_through(&pool, 133).await.unwrap();
+    apply_migrations_through(&pool, 133).await.unwrap();
+    assert!(sqlx::query("SELECT is_default FROM bell_schedules LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .is_ok());
+    assert!(sqlx::query("SELECT is_default FROM study_programs LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn curriculum_program_default_dependency_refuses_atomically_and_retries() {
+    let pool = prepare_core_fixture_through("curriculum_program_default_dependency", 132).await;
+    let before: serde_json::Value =
+        sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "CREATE VIEW unexpected_program_consumer AS SELECT id FROM published_study_programs",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(apply_migrations_through(&pool, 133).await.is_err());
+    assert_eq!(
+        before,
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM study_programs p"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    );
+    assert!(
+        sqlx::query("SELECT is_default FROM published_study_programs LIMIT 1")
+            .fetch_optional(&pool)
+            .await
+            .is_ok()
+    );
+    let applied: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=133)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!applied);
+    sqlx::query("DROP VIEW unexpected_program_consumer RESTRICT")
+        .execute(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 133).await.unwrap();
 }

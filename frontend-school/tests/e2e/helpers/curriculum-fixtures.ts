@@ -94,7 +94,6 @@ export function curriculumStructure(
 				code: 'DEFAULT',
 				nameTh: 'แผนการเรียนพื้นฐาน',
 				nameEn: null,
-				isDefault: true,
 				status: version.status,
 				rowVersion: 1,
 				createdAt: '2026-04-01T00:00:00Z',
@@ -123,6 +122,8 @@ export function curriculumStructure(
 				name: 'คณิตศาสตร์พื้นฐาน',
 				requirementKind: 'required',
 				section: 'basic_course',
+				subjectGroupId: 'math-group',
+				subjectGroupOrder: 1,
 				metrics: {
 					credit: '0.50',
 					totalHours: '20',
