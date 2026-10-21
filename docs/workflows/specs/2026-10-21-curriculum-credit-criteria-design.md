@@ -1,0 +1,9 @@
+# Approved curriculum credit criteria
+
+Academic Core owns a bounded typed level-settings aggregate, shared by each plan independently and captured with the edition publication. Add basic-credit rules with annual/level scope, equal/minimum comparison, decimal-string target, enabled flag and explicitly reviewed covered grade UUIDs. New and existing levels start empty; suggested national presets are UI choices, never automatic writes or graduation/publication guards. Preserve the current report layout and unknown/partial metrics.
+
+Persist typed JSON and its independent positive revision on live and publication levels. At most two unique scopes; canonical scope/grade ordering. A dedicated draft-token/criteria-revision PUT replaces the collection atomically under existing edition/level locks. Validate saved grades exactly against current coverage; changed coverage returns409. Criteria saves never rebase program, term-slot or level revisions. Copy keeps destination criteria. Pin history, restore criteria with monotonic revision on discard, retain config in semantic comparison but omit its revision metadata. Preview hashes include both.
+
+Migration135 adds empty defaults without business-row updates, verifies surviving graph/reference/view evidence atomically, names level capture columns explicitly, preserves the existing explicit program capture, appends view columns without losing grants, and updates the discard matcher. No applied migrations change. Read classification from pinned catalog data: basic/additional only when known; activities and unknown types expose null creditCategory while keeping the existing three display sections.
+
+Use matched School deployment under existing maintenance/version/readiness gates; no production curriculum writes. Keep the approved source citation in UI preset explanation. Backend settings validation does not evaluate graduation or block publication. Independent review and QA assess the frozen candidate.

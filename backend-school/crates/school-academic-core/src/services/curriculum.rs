@@ -12,7 +12,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 pub(super) const EDITION_COLUMNS: &str = "current_publication_id,publication_count,draft_id,id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
-pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
+pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.credit_criteria,l.credit_criteria_row_version,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
 pub(super) const PROGRAM_COLUMNS: &str =
     "id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,display_order";
 const MAX_LEVELS: i64 = 500;

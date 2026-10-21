@@ -130,7 +130,7 @@ pub async fn curriculum_management_options(
                    subject.code, version.name_th AS name, version.version_no,
                    version.effective_from, version.effective_until,
                    ARRAY(SELECT grade_level_id FROM subject_version_grade_levels WHERE subject_id=version.id ORDER BY grade_level_id) AS grade_level_ids,
-                   CASE WHEN upper(version.type)='ADDITIONAL' THEN 'additional_course' ELSE 'basic_course' END AS section
+                   CASE WHEN upper(version.type)='ADDITIONAL' THEN 'additional_course' ELSE 'basic_course' END AS section, CASE upper(version.type) WHEN 'BASIC' THEN 'basic' WHEN 'ADDITIONAL' THEN 'additional' ELSE NULL END::text AS credit_category
             FROM subject_versions version
             JOIN subjects subject ON subject.id = version.subject_id
             WHERE version.status = 'published'
@@ -140,7 +140,7 @@ pub async fn curriculum_management_options(
                    activity.code, version.name, version.version_no,
                    version.effective_from, version.effective_until,
                    ARRAY(SELECT jsonb_array_elements_text(COALESCE(version.grade_level_ids,'[]'::jsonb))::uuid ORDER BY 1) AS grade_level_ids,
-                   'student_development'::text AS section
+                   'student_development'::text AS section, NULL::text AS credit_category
             FROM activity_versions version
             JOIN activities activity ON activity.id = version.activity_id
             WHERE version.status = 'published'

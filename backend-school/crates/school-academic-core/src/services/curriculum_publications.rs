@@ -223,19 +223,19 @@ pub async fn discard_draft(
     sqlx::query("UPDATE study_programs SET code='discard-'||gen_random_uuid()::text WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
         .bind(id).execute(&mut *tx).await?;
     for (table,snapshot,columns) in [
-        ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active"),
+        ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active,credit_criteria,credit_criteria_row_version"),
         ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,migration_provenance,display_order"),
         ("curriculum_term_slots","curriculum_publication_slots","id,curriculum_level_id,sequence,term_type,type_occurrence,name,row_version,created_at,updated_at"),
         ("curriculum_course_requirements","curriculum_publication_courses","id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,created_at,updated_at,study_program_id,requirement_kind,row_version,term_slot_id"),
         ("curriculum_activity_requirements","curriculum_publication_activities","id,curriculum_level_id,display_order,created_at,updated_at,activity_version_id,grade_level_id,study_program_id,requirement_kind,row_version,term_slot_id"),
     ] {
         let selected=columns.split(',').map(|column| match column {
-            "row_version"=>"p.row_version+1".to_owned(),
+            "row_version" | "credit_criteria_row_version"=>format!("p.{column}+1"),
             "updated_at"=>"now()".to_owned(),
             _=>format!("p.{column}"),
         }).collect::<Vec<_>>().join(",");
         let updated=columns.split(',').filter(|column| *column!="id").map(|column| match column {
-            "row_version"=>"row_version=GREATEST(workspace.row_version+1,EXCLUDED.row_version)".to_owned(),
+            "row_version" | "credit_criteria_row_version"=>format!("{column}=GREATEST(workspace.{column}+1,EXCLUDED.{column})"),
             _=>format!("{column}=EXCLUDED.{column}"),
         }).collect::<Vec<_>>().join(",");
         let sql=format!("INSERT INTO {table} AS workspace({columns}) SELECT {selected} FROM {snapshot} p WHERE publication_id=$1 ON CONFLICT(id) DO UPDATE SET {updated}");

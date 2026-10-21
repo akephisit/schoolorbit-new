@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::models::GradeLevelLookupItem;
 
 use super::super::models::{
-    CatalogCurriculumMetrics, CatalogWeeklyUnit, CurriculumDocumentSection,
-    CurriculumStructureRequirement, CurriculumStructureRequirementInput,
+    CatalogCurriculumMetrics, CatalogWeeklyUnit, CurriculumCourseCreditCategory,
+    CurriculumDocumentSection, CurriculumStructureRequirement, CurriculumStructureRequirementInput,
     CurriculumStructureValidation, CurriculumStructureWorkspace, CurriculumTermSlot,
     CurriculumValidationNotice, ReplaceCurriculumStructureRequest,
     ReplaceCurriculumTermSlotsRequest, RequirementKind, RequirementResourceKind, VersionStatus,
@@ -804,6 +804,21 @@ fn requirement_from_row(
         code: row.code,
         name: row.name,
         section,
+        credit_category: match row.resource_kind {
+            RequirementResourceKind::Course
+                if row.catalog_classification.eq_ignore_ascii_case("BASIC") =>
+            {
+                Some(CurriculumCourseCreditCategory::Basic)
+            }
+            RequirementResourceKind::Course
+                if row
+                    .catalog_classification
+                    .eq_ignore_ascii_case("ADDITIONAL") =>
+            {
+                Some(CurriculumCourseCreditCategory::Additional)
+            }
+            _ => None,
+        },
         subject_group_id: None,
         subject_group_order: None,
         requirement_kind: row.requirement_kind,
