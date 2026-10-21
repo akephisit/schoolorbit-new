@@ -1770,13 +1770,14 @@ cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core --l
 
 The provider cases cover Bangkok midnight, same-day revision ordering and exclusive ends.
 Database cases exercise old/current option metadata, no future/expired/draft fallback,
-unchanged existing and copied version IDs, explicit replacement, grandfathered duplicate
-buckets, atomic stale-publication rejection under stable-subject locks, and activity parity.
+unchanged existing and copied version IDs, current-registry outdated warnings (including
+historical publication reads), no warnings from future/draft/expired-only revisions or a higher
+future pin, explicit replacement, grandfathered duplicate buckets, atomic stale-publication rejection under stable-subject locks, and activity parity.
 Run affected curriculum structure/copy and curriculum permission cases alongside them.
 Regenerate and check/test API contracts after DTO changes; compile affected Core/HTTP
 consumers both with default features and `api-docs`. These fixtures never use tenant data.
 From `frontend-school`, run `node --experimental-strip-types --test
 tests/runtime/curriculum-catalog-selection.test.ts` and the synthetic browser workflow
 `tests/e2e/curriculum-catalog-revisions.spec.ts` against an owned local preview. The
-fixtures cover current-only additions, preserved pinned-version labels, explicit replacement,
-legacy duplicate buckets and conflict retention in the editor and read-only tables.
+fixtures cover current-only additions, preserved pins with current-registry outdated badges
+and hidden revision numbers, explicit replacement, legacy duplicate buckets and conflict retention in the editor and read-only tables.

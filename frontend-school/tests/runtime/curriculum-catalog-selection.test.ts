@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	appendSelectedCatalogRequirements,
-	existingCourseVersions,
+	hasExistingCourseRequirement,
 	selectableCatalogOption,
 	type CurriculumCatalogOption,
 	type StagedCurriculumRequirement
@@ -41,6 +41,7 @@ const pinned: CurriculumStructureRequirement = {
 	catalogVersionId: old.id,
 	catalogId: old.catalogId,
 	versionNo: old.versionNo,
+	hasNewerCurrentVersion: true,
 	resourceKind: 'course',
 	code: old.code,
 	name: old.name,
@@ -83,7 +84,10 @@ test('add selection rechecks server eligibility and never substitutes an old or 
 });
 
 test('pinned requirement identity blocks a newer revision even when its old option is unavailable', () => {
-	assert.deepEqual(existingCourseVersions(current, context, [existing], [current], [pinned]), [1]);
+	assert.deepEqual(
+		hasExistingCourseRequirement(current, context, [existing], [current], [pinned]),
+		true
+	);
 	assert.deepEqual(
 		appendSelectedCatalogRequirements(
 			[existing],
@@ -123,7 +127,7 @@ test('program, grade and term contexts remain independent and additions cannot s
 		'required'
 	);
 	assert.equal(result.length, 1);
-	assert.deepEqual(existingCourseVersions(current, context, result, [current], []), [2]);
+	assert.deepEqual(hasExistingCourseRequirement(current, context, result, [current], []), true);
 });
 
 test('explicit removal permits replacement while legacy revision duplicates remain untouched', () => {

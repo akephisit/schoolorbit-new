@@ -4214,7 +4214,17 @@ mod tests {
             schemas["CurriculumStructureRequirement"]["properties"]["versionNo"]["type"],
             "integer"
         );
+        assert_eq!(
+            schemas["CurriculumStructureRequirement"]["properties"]["hasNewerCurrentVersion"]
+                ["type"],
+            "boolean"
+        );
+        assert!(schemas["CurriculumStructureRequirement"]["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("hasNewerCurrentVersion")));
         let input = &schemas["CurriculumStructureRequirementInput"]["properties"];
+        assert!(input.get("hasNewerCurrentVersion").is_none());
         assert!(input.get("catalogId").is_none());
         assert!(input.get("versionNo").is_none());
         assert_eq!(input["catalogVersionId"]["format"], "uuid");

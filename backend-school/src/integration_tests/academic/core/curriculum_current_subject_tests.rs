@@ -309,7 +309,8 @@ async fn curriculum_current_subject_options_keep_history_and_reject_no_current_f
         .iter()
         .all(|item| item.catalog_version_id == v2.id
             && item.catalog_id == f.subject
-            && item.version_no == 2));
+            && item.version_no == 2
+            && !item.has_newer_current_version));
     assert_eq!(
         saved
             .requirements
@@ -333,6 +334,7 @@ async fn curriculum_current_subject_preserves_old_rows_and_allows_explicit_repla
     assert_eq!(retained.catalog_version_id, f.v1.id);
     assert_eq!(retained.catalog_id, f.subject);
     assert_eq!(retained.version_no, 1);
+    assert!(retained.has_newer_current_version);
     assert_eq!(retained.display_order, 9);
     assert_eq!(retained.requirement_kind, RequirementKind::Elective);
     let before = snapshot(&f).await;
@@ -346,6 +348,7 @@ async fn curriculum_current_subject_preserves_old_rows_and_allows_explicit_repla
     assert_eq!(replaced.requirements[0].catalog_version_id, v2.id);
     assert_eq!(replaced.requirements[0].catalog_id, f.subject);
     assert_eq!(replaced.requirements[0].version_no, 2);
+    assert!(!replaced.requirements[0].has_newer_current_version);
 }
 
 #[tokio::test]
@@ -432,7 +435,38 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
     )
     .await
     .unwrap();
+    let publication_id = curriculum::get(&f.pool, f.edition)
+        .await
+        .unwrap()
+        .current_publication_id;
+    let published_before = school_academic_core::services::curriculum_publications::read_workspace(
+        &f.pool,
+        f.level,
+        &school_academic_core::models::CurriculumViewQuery {
+            publication_id,
+            draft_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!published_before.requirements[0].has_newer_current_version);
     revision(&f, "รายวิชารุ่นสอง").await;
+    let persisted_before_read = snapshot(&f).await;
+    let published_after = school_academic_core::services::curriculum_publications::read_workspace(
+        &f.pool,
+        f.level,
+        &school_academic_core::models::CurriculumViewQuery {
+            publication_id,
+            draft_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(published_after.requirements[0].has_newer_current_version);
+    let mut expected = serde_json::to_value(&published_before).unwrap();
+    expected["requirements"][0]["hasNewerCurrentVersion"] = json!(true);
+    assert_eq!(expected, serde_json::to_value(&published_after).unwrap());
+    assert_eq!(persisted_before_read, snapshot(&f).await);
     let destination = curriculum::create(
         &f.pool,
         CreateCurriculumRequest {
@@ -482,6 +516,7 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
     assert_eq!(retained.catalog_version_id, f.v1.id);
     assert_eq!(retained.catalog_id, f.subject);
     assert_eq!(retained.version_no, 1);
+    assert!(retained.has_newer_current_version);
     save(&f, vec![row(&f, f.v1.id)]).await.unwrap();
     let activity = catalog::create_activity(
         &f.pool,
@@ -546,6 +581,7 @@ async fn curriculum_current_subject_copied_v1_remains_pinned_and_activities_keep
         .unwrap();
     assert_eq!(activity_row.catalog_id, activity.id);
     assert_eq!(activity_row.version_no, 1);
+    assert!(!activity_row.has_newer_current_version);
 }
 
 #[tokio::test]
@@ -579,4 +615,122 @@ async fn curriculum_current_subject_save_waits_for_publication_lock_and_rolls_ba
         Err(school_errors::AppError::Conflict(_))
     ));
     assert_eq!(before, snapshot(&f).await);
+}
+
+#[tokio::test]
+async fn curriculum_current_subject_warning_ignores_unavailable_revisions_and_preserves_pins() {
+    let f = fixture("curriculum_current_subject_warning").await;
+    let initial = save(&f, vec![row(&f, f.v1.id)]).await.unwrap();
+    assert!(!initial.requirements[0].has_newer_current_version);
+    let today = catalog::subject_catalog_today();
+    // A newer draft, future publication, or expired publication is not current.
+    catalog::create_subject_version(
+        &f.pool,
+        f.subject,
+        version_request("ร่างใหม่", f.grade, today, None),
+    )
+    .await
+    .unwrap();
+    let future = publish(
+        &f.pool,
+        catalog::create_subject_version(
+            &f.pool,
+            f.subject,
+            version_request("อนาคตใหม่", f.grade, today.succ_opt().unwrap(), None),
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    let expired = publish(
+        &f.pool,
+        catalog::create_subject_version(
+            &f.pool,
+            f.subject,
+            version_request("หมดอายุใหม่", f.grade, today.pred_opt().unwrap(), Some(today)),
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    let current = catalog::current_subject_revisions(&f.pool, &[f.subject])
+        .await
+        .unwrap();
+    assert_eq!(current[&f.subject].id, f.v1.id);
+    assert_eq!(current[&f.subject].version_no, 1);
+    let before = snapshot(&f).await;
+    let workspace = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    assert!(!workspace.requirements[0].has_newer_current_version);
+    assert_eq!(workspace.requirements[0].catalog_version_id, f.v1.id);
+    assert_eq!(before, snapshot(&f).await);
+    // Legacy future pin has a higher revision number than the selected current version.
+    seed_existing(&f, future.id).await;
+    let before = snapshot(&f).await;
+    let workspace = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    assert!(workspace
+        .requirements
+        .iter()
+        .all(|item| !item.has_newer_current_version));
+    assert_eq!(before, snapshot(&f).await);
+
+    let unavailable = catalog::create_subject(
+        &f.pool,
+        CreateCatalogSubjectRequest {
+            code: "WARNING-NO-CURRENT".into(),
+            subject_group_id: DEFAULT_SUBJECT_GROUP_ID,
+        },
+    )
+    .await
+    .unwrap();
+    let old = publish(
+        &f.pool,
+        catalog::create_subject_version(
+            &f.pool,
+            unavailable.id,
+            version_request("หมดอายุ", f.grade, today.pred_opt().unwrap(), Some(today)),
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    publish(
+        &f.pool,
+        catalog::create_subject_version(
+            &f.pool,
+            unavailable.id,
+            version_request("อนาคต", f.grade, today.succ_opt().unwrap(), None),
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    catalog::create_subject_version(
+        &f.pool,
+        unavailable.id,
+        version_request("ร่าง", f.grade, today, None),
+    )
+    .await
+    .unwrap();
+    seed_existing(&f, old.id).await;
+    assert!(
+        !catalog::current_subject_revisions(&f.pool, &[unavailable.id])
+            .await
+            .unwrap()
+            .contains_key(&unavailable.id)
+    );
+    let before = snapshot(&f).await;
+    let workspace = curriculum_structure::get_workspace(&f.pool, f.level)
+        .await
+        .unwrap();
+    assert_eq!(workspace.requirements.len(), 3);
+    assert!(workspace
+        .requirements
+        .iter()
+        .all(|item| !item.has_newer_current_version));
+    assert_eq!(before, snapshot(&f).await);
+    assert!(expired.version_no > f.v1.version_no);
 }

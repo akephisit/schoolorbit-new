@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
 	import { buildCurriculumDocument } from '#lib/academic/curriculum-structure.js';
+	import CurriculumOutdatedBadge from '#lib/components/academic-core/CurriculumOutdatedBadge.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 
@@ -61,7 +62,9 @@
 										<Table.Cell class="text-xs font-semibold tabular-nums">{row.code}</Table.Cell>
 										<Table.Cell>
 											<div class="font-medium">{row.name}</div>
-											<div class="text-xs text-muted-foreground">v{row.versionNo}</div>
+											<CurriculumOutdatedBadge
+												hasNewerCurrentVersion={row.hasNewerCurrentVersion}
+											/>
 											<Badge variant="secondary" class="mt-1 text-[10px]">
 												{row.requirementKind === 'required'
 													? 'บังคับ'
