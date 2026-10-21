@@ -1832,6 +1832,8 @@ Delivery and promotion-option consumers, HTTP permission/schema checks, API gene
 and the frontend ordering helpers/browser fixtures. Predecessor migrations use historical SQL
 fixtures; current runtime services run only after their required schema is available.
 
+## Curriculum credit criteria
+
 Curriculum basic-credit criteria use the same owned disposable runner:
 
 ```bash

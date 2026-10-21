@@ -195,6 +195,27 @@ async fn curriculum_credit_criteria_noop_normalizes_and_keeps_unrelated_baseline
             .target_credits,
         "0"
     );
+    let annual = rule(&pool, level, "0").await;
+    let mut whole_level = rule(&pool, level, "41").await;
+    whole_level.scope = Scope::Level;
+    let paired = replace(
+        &pool,
+        level,
+        token,
+        3,
+        vec![whole_level.clone(), annual.clone()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(paired.row_version, 4);
+    assert_eq!(paired.criteria, vec![annual, whole_level]);
+    assert_eq!(
+        curriculum::get_level(&pool, level)
+            .await
+            .unwrap()
+            .credit_criteria,
+        paired.criteria
+    );
 }
 
 #[tokio::test]

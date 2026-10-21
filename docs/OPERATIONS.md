@@ -1892,6 +1892,8 @@ commit is reported as a successful save with a presentation retry, retaining the
 theme. Other documents pick up current settings on their next load, throttled visibility
 revalidation, or a same-origin save signal. Personal light/dark preference remains device-owned.
 
+## Curriculum credit criteria
+
 Migration [135](../backend-school/migrations/135_curriculum_credit_criteria.sql) adds empty,
 level-owned basic-credit criteria and an independent criteria revision to draft and publication
 levels. It preserves existing graph/reference content, revisions and timestamps, appends the
@@ -1909,3 +1911,5 @@ smoke gates. Verify preservation through the canonical migration audit; lifecycl
 owned synthetic databases. Production curriculum/settings writes are not acceptance checks.
 On failure retain maintenance and repair forward through the existing release procedure. Presets
 require an explicit staff choice and save; opening or reporting never writes user criteria.
+
+Pre-135 School binaries cannot maintain or restore criteria semantics, and the compiled migration-history gate prohibits their use after migration 135. Keep a compatible 135-or-later writer and repair forward; never restore an older binary after this migration.
