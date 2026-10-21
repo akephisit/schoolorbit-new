@@ -604,11 +604,13 @@ test('explicit order review and later order save never rebase stale staged term 
 	expect(state.errors).toEqual([]);
 });
 
-test('staged section headings preserve duplicate rows and moving one course stays inside its section', async ({
+test('staged sections omit row ordering controls and saving preserves duplicate rows and persisted order', async ({
 	page
 }) => {
 	const fixture = curriculumCatalogFixture({ legacyDuplicates: true });
 	const original = fixture.original;
+	fixture.workspace.requirements[0].displayOrder = 7;
+	fixture.workspace.requirements[1].displayOrder = 19;
 	fixture.workspace.requirements.push({
 		...original,
 		id: 'additional-row',
@@ -640,21 +642,29 @@ test('staged section headings preserve duplicate rows and moving one course stay
 	await openCurriculumEditor(page);
 	const editor = page.getByRole('dialog', { name: 'จัดโครงสร้างหลักสูตร' });
 	const staged = editor.getByRole('region', { name: 'รายการในหลักสูตร' });
-	for (const label of ['รายวิชาพื้นฐาน', 'รายวิชาเพิ่มเติม', 'กิจกรรมพัฒนาผู้เรียน'])
-		await expect(staged.getByRole('cell', { name: label, exact: true })).toBeVisible();
+	await expect(staged.getByRole('columnheader')).toHaveCount(4);
+	await expect(staged.getByRole('columnheader', { name: 'ลำดับ', exact: true })).toHaveCount(0);
+	await expect(staged.getByRole('button', { name: /^เลื่อนรายการ(ขึ้น|ลง)$/ })).toHaveCount(0);
+	for (const label of ['รายวิชาพื้นฐาน', 'รายวิชาเพิ่มเติม', 'กิจกรรมพัฒนาผู้เรียน']) {
+		const heading = staged.getByRole('cell', { name: label, exact: true });
+		await expect(heading).toBeVisible();
+		await expect(heading).toHaveAttribute('colspan', '4');
+	}
 	const duplicates = staged.getByRole('row').filter({ hasText: 'ค21101' });
 	await expect(duplicates).toHaveCount(2);
-	await duplicates.first().getByRole('button', { name: 'เลื่อนรายการลง', exact: true }).click();
-	await expect(duplicates.first().getByRole('button', { name: 'เก่า', exact: true })).toHaveCount(
-		0
-	);
+	await expect(duplicates.first().getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
 	await expect(staged).not.toContainText('HIDDEN-ACTIVITY');
+	await duplicates.first().getByRole('button', { name: 'นำรายการออก', exact: true }).click();
+	await expect(duplicates).toHaveCount(1);
+	await editor.getByRole('button', { name: 'ย้อนกลับ', exact: true }).click();
+	await expect(duplicates).toHaveCount(2);
+	await expect(duplicates.first().getByRole('button', { name: 'เก่า', exact: true })).toBeVisible();
 	await editor.getByRole('button', { name: 'บันทึกโครงสร้าง', exact: true }).click();
 	await expect(editor).toBeHidden();
 	expect(state.writes[0].body).toMatchObject({
 		requirements: [
-			{ catalogVersionId: original.catalogVersionId, displayOrder: 2 },
-			{ catalogVersionId: fixture.current.id, displayOrder: 1 },
+			{ catalogVersionId: original.catalogVersionId, displayOrder: 7 },
+			{ catalogVersionId: fixture.current.id, displayOrder: 19 },
 			{ catalogVersionId: 'additional', displayOrder: 2 },
 			{ catalogVersionId: 'activity-row', displayOrder: 3 }
 		]
@@ -721,7 +731,7 @@ for (const width of [390, 1543])
 				.getByRole('region', { name: 'รายการในหลักสูตร' })
 				.getByRole('row')
 				.filter({ hasText: 'กิจกรรมพัฒนาผู้เรียน' })
-				.filter({ has: page.getByRole('button', { name: 'เลื่อนรายการขึ้น', exact: true }) });
+				.filter({ has: page.getByRole('button', { name: 'นำรายการออก', exact: true }) });
 			await expect(activityRow).toHaveCount(1);
 			await expect(activityRow).not.toContainText('หน่วยกิต');
 			await expect(activityRow).toContainText('30 ชม.');

@@ -12,7 +12,6 @@
 	} from '#lib/api/academic-core.js';
 	import {
 		groupStagedRequirements,
-		moveStagedRequirementWithinSection,
 		appendSelectedCatalogRequirements,
 		hasExistingCourseRequirement,
 		selectableCatalogOption,
@@ -441,17 +440,6 @@
 		replaceStaged(stagedRequirements.filter((item) => item !== target));
 	}
 
-	function moveRequirement(target: StagedRequirement, direction: -1 | 1) {
-		replaceStaged(
-			moveStagedRequirementWithinSection(
-				stagedRequirements,
-				target,
-				direction,
-				managementOptions.catalogVersions,
-				workspace.requirements
-			)
-		);
-	}
 	function undo() {
 		const previous = history.at(-1);
 		if (!previous) return;
@@ -783,24 +771,23 @@
 							</Button>
 						</div>
 						<div class="overflow-x-auto">
-							<Table.Root class="min-w-[680px]">
+							<Table.Root class="min-w-[584px]">
 								<Table.Header>
 									<Table.Row>
 										<Table.Head>รายการ</Table.Head>
 										<Table.Head class="w-44">เงื่อนไข</Table.Head>
 										<Table.Head class="w-40">ค่าทางการ</Table.Head>
-										<Table.Head class="w-24">ลำดับ</Table.Head><Table.Head class="w-12"
-										></Table.Head>
+										<Table.Head class="w-12"></Table.Head>
 									</Table.Row>
 								</Table.Header>
 								<Table.Body>
 									{#each requirementSections as section (section.id)}
 										{#if section.id !== 'unclassified' || section.rows.length}<Table.Row
 												class="bg-muted/40"
-												><Table.Cell colspan={5} class="font-semibold">{section.label}</Table.Cell
+												><Table.Cell colspan={4} class="font-semibold">{section.label}</Table.Cell
 												></Table.Row
 											>{/if}
-										{#each section.rows as requirement, rowIndex (requirement)}
+										{#each section.rows as requirement (requirement)}
 											{@const option = catalogOption(requirement.catalogVersionId)}
 											{@const source = requirementSource(requirement.catalogVersionId)}
 											<Table.Row>
@@ -851,23 +838,6 @@
 														จากทะเบียนเมื่อบันทึก
 													{/if}
 												</Table.Cell>
-												<Table.Cell
-													><div class="flex">
-														<Button
-															variant="ghost"
-															size="icon"
-															disabled={rowIndex === 0}
-															onclick={() => moveRequirement(requirement, -1)}
-															aria-label="เลื่อนรายการขึ้น"><ArrowUp class="size-4" /></Button
-														><Button
-															variant="ghost"
-															size="icon"
-															disabled={rowIndex === section.rows.length - 1}
-															onclick={() => moveRequirement(requirement, 1)}
-															aria-label="เลื่อนรายการลง"><ArrowDown class="size-4" /></Button
-														>
-													</div></Table.Cell
-												>
 												<Table.Cell>
 													<Button
 														variant="ghost"
