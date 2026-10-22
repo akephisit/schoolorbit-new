@@ -52,7 +52,7 @@
 				{#each schools as school (school.subdomain)}
 					<li>
 						<a
-							href={`https://${school.subdomain}.${data.publicSite.baseDomain}/`}
+							href={school.url}
 							class="flex h-full items-center gap-4 rounded-3xl border border-[#dce9ee] bg-white p-6 hover:border-[#237c9b] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#237c9b]"
 						>
 							<GraduationCap class="size-7 shrink-0 text-[#237c9b]" aria-hidden="true" />
@@ -76,7 +76,7 @@
 					class="hover:underline">กลับหน้าแรกของรายชื่อ</a
 				>{/if}
 			{#if data.directory.nextCursor}<a
-					href={resolve(`/schools?after=${encodeURIComponent(data.directory.nextCursor)}`)}
+					href={`${resolve('schools')}?after=${encodeURIComponent(data.directory.nextCursor)}`}
 					class="inline-flex items-center gap-2 hover:underline"
 					>โรงเรียนถัดไป <ArrowRight class="size-4" aria-hidden="true" /></a
 				>{/if}

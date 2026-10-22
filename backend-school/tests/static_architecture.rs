@@ -451,7 +451,7 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
     assert!(school_manifest.contains(
         "base64 = { version = \"0.23.1\", default-features = false, features = [\"std\"] }"
     ));
-    assert!(school_manifest.contains("lopdf = { version = \"0.45.0\", default-features = false }"));
+    assert!(school_manifest.contains("lopdf = { version = \"0.46.0\", default-features = false }"));
 }
 
 #[test]
@@ -511,7 +511,7 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
         "rand = { version = \"0.10.3\", default-features = false, features = [\"sys_rng\"] }"
     ));
     assert!(manifest.contains(
-        "sha2 = { version = \"0.11.0\", default-features = false, features = [\"zeroize\"] }"
+        "sha2 = { version = \"0.11.1\", default-features = false, features = [\"zeroize\"] }"
     ));
     assert!(!manifest
         .lines()
@@ -1935,15 +1935,68 @@ fn workspace_crates_do_not_depend_on_application_state_or_source_paths() {
     for file in list_files(manifest_dir().join("crates"), |path| {
         path.extension().is_some_and(|extension| extension == "rs")
     }) {
-        let source = strip_comments(&strip_cfg_test_modules(&read_source(&file)));
-        for forbidden in ["crate::AppState", "backend_school::", "#[path ="] {
-            if source.contains(forbidden) {
-                violations.push(format!("{}: {forbidden}", relative(&file)));
-            }
+        for forbidden in application_source_dependency_violations(&read_source(&file)) {
+            violations.push(format!("{}: {forbidden}", relative(&file)));
         }
     }
 
     assert_eq!(violations, Vec::<String>::new());
+}
+
+fn application_source_dependency_violations(source: &str) -> Vec<&'static str> {
+    let runtime = strip_comments(&strip_cfg_test_modules(source));
+    ["crate::AppState", "backend_school::", "#[path ="]
+        .into_iter()
+        .filter(|forbidden| runtime.contains(*forbidden))
+        .collect()
+}
+
+#[test]
+fn application_source_guard_distinguishes_test_modules_from_runtime_dependencies() {
+    for declaration in [
+        "#[path = \"revision_tests.rs\"]\nmod revision_selection_tests;",
+        "#[path = \"revision_tests.rs\"]\npub(crate) mod revision_selection_tests;",
+        "mod revision_selection_tests { use crate::AppState; use backend_school::AppState; }",
+        "mod tests { use crate::AppState; }",
+    ] {
+        assert!(
+            !application_source_dependency_violations(declaration).is_empty(),
+            "production declaration must still be rejected: {declaration}"
+        );
+        let (attributes, module) = declaration.split_once('\n').unwrap_or(("", declaration));
+        for test_only in [
+            format!("#[cfg(test)]\n{declaration}"),
+            format!("{attributes}\n#[cfg(test)]\n{module}"),
+            format!("#[cfg ( test )]\n{declaration}"),
+        ] {
+            let source = format!("fn before() {{}}\n{test_only}\nfn after() {{}}\n");
+            let stripped = strip_cfg_test_modules(&source);
+            assert!(application_source_dependency_violations(&source).is_empty());
+            assert!(stripped.contains("fn before() {}"));
+            assert!(stripped.contains("fn after() {}"));
+            assert_eq!(stripped.len(), source.len());
+            assert_eq!(stripped.lines().count(), source.lines().count());
+            assert_eq!(
+                application_source_dependency_violations(&format!(
+                    "{source}\nuse crate::AppState;\nuse backend_school::AppState;\n#[path = \"runtime.rs\"]\nmod runtime;"
+                )),
+                vec!["crate::AppState", "backend_school::", "#[path ="]
+            );
+        }
+    }
+
+    let decoys = r##"
+// #[cfg(test)] mod tests { }
+const DECOY: &str = "#[cfg(test)] mod tests { }";
+#[cfg(test)]
+fn helper() {}
+#[path = "runtime.rs"]
+mod runtime { use crate::AppState; use backend_school::AppState; }
+"##;
+    assert_eq!(
+        application_source_dependency_violations(decoys),
+        vec!["crate::AppState", "backend_school::", "#[path ="]
+    );
 }
 
 fn collect_files(
@@ -3135,25 +3188,53 @@ fn is_rust_test_module(path: &Path) -> bool {
 fn strip_cfg_test_modules(source: &str) -> String {
     let lexical = lexical_mask(source, false);
     let structural = lexical.structural.as_str();
-    let marker = "#[cfg(test)]";
+    let attribute = Regex::new(r"#\s*\[").expect("valid outer attribute regex");
+    let test_cfg = Regex::new(r"^#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]$")
+        .expect("valid test configuration regex");
+    let module =
+        Regex::new(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+(?:r#)?[A-Za-z_][A-Za-z0-9_]*\s*")
+            .expect("valid module declaration regex");
     let mut runtime = source.as_bytes().to_vec();
     let mut cursor = 0;
 
-    while let Some(offset) = structural[cursor..].find(marker) {
-        let start = cursor + offset;
-        let after_marker = start + marker.len();
-        let Some(opening_offset) = structural[after_marker..].find('{') else {
-            break;
+    while let Some(found) = attribute.find(&structural[cursor..]) {
+        let start = cursor + found.start();
+        let mut next_attribute = start;
+        let mut test_only = false;
+        let attributes_end = loop {
+            let opening = next_attribute
+                + structural[next_attribute..]
+                    .find('[')
+                    .expect("attribute must contain its opening bracket");
+            let closing = balanced_delimiter_end(structural, opening, b'[', b']')
+                .expect("outer attribute must have balanced brackets");
+            test_only |= test_cfg.is_match(&structural[next_attribute..=closing]);
+            let after = closing + 1;
+            let following =
+                after + structural[after..].len() - structural[after..].trim_start().len();
+            if attribute
+                .find(&structural[following..])
+                .is_some_and(|next| next.start() == 0)
+            {
+                next_attribute = following;
+            } else {
+                break after;
+            }
         };
-        let opening = after_marker + opening_offset;
-        if !structural[after_marker..opening].contains("mod tests") {
-            cursor = after_marker;
+        cursor = attributes_end;
+        if !test_only {
             continue;
         }
-        let closing =
-            balanced_delimiter_end(structural, opening, b'{', b'}').unwrap_or_else(|| {
-                panic!("cfg(test) module at byte {start} must have balanced braces")
-            });
+        let Some(declaration) = module.find(&structural[attributes_end..]) else {
+            continue;
+        };
+        let delimiter = attributes_end + declaration.end();
+        let closing = match structural.as_bytes().get(delimiter) {
+            Some(b'{') => balanced_delimiter_end(structural, delimiter, b'{', b'}')
+                .expect("cfg(test) module must have balanced braces"),
+            Some(b';') => delimiter,
+            _ => continue,
+        };
         for byte in &mut runtime[start..=closing] {
             if *byte != b'\n' && *byte != b'\r' {
                 *byte = b' ';
