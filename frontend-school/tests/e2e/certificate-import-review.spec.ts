@@ -532,7 +532,7 @@ test('account search ignores a stale recipient-type response', async ({ page }) 
 	await expect
 		.poll(() => page.evaluate(() => window.certificateRecipientHarness.accountSearchQueries()))
 		.toEqual([{ recipientType: 'student', search: 'กมล' }]);
-	await page.getByRole('button', { name: 'ประเภทบัญชี', exact: true }).click();
+	await page.getByRole('combobox', { name: /ประเภทบัญชี/ }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.evaluate(() =>
 		window.certificateRecipientHarness.resolveAccountSearch(0, [

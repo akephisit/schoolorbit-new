@@ -152,6 +152,16 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add Rust advisory scanning, JavaScript audit policy, CodeQL or equivalent static analysis, secret scanning, SBOM generation, and artifact signing.
   - Define how vulnerabilities are triaged, waived with expiry, and verified after upgrades.
 
+- [ ] **CI-003: Retire unresolved School dependency advisories.**
+  - Track [`rsa` RUSTSEC-2023-0071 / CVE-2023-49092](https://rustsec.org/advisories/RUSTSEC-2023-0071.html), which has no fixed stable release and enters through `web-push → jwt-simple → superboring → rsa`. The current VAPID implementation uses ES256; that observation does not prove the transitive advisory cannot become reachable. Reassess upstream fixes and cryptographic call paths without suppressing the audit finding.
+  - Evaluate maintained replacements or upstream fixes for latest-stable [`rustybuzz` RUSTSEC-2026-0206](https://rustsec.org/advisories/RUSTSEC-2026-0206.html), [`ttf-parser` RUSTSEC-2026-0192](https://rustsec.org/advisories/RUSTSEC-2026-0192.html), and transitive [`paste` RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html). Keep typography changes scoped and preserve Thai shaping, glyph outlines, font inspection, and document/image rendering.
+  - Review upstream ExcelJS browser artifacts for [uuid GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq). The scoped `uuid` override fixes the resolved npm graph, but ExcelJS 4.4.0 ships a prebuilt browser bundle containing older uuid v3/v5 code; only its v4 caller is currently observed. An upstream or reviewed bundle fix must remove the bundled affected code while preserving browser XLSX import/export. A clean npm audit does not establish that bundled code is absent.
+  - Done when the affected dependencies are removed or maintained fixed releases resolve the findings, with notification cryptography, Thai typography, and file-inspection regressions verified, an unsuppressed RustSec audit recorded, and the ExcelJS browser artifact independently checked.
+
+- [ ] **CI-004: Adopt newer Svelte ESLint when dynamic navigation recognition supports SvelteKit 3.**
+  - Keep `eslint-plugin-svelte` at compatible exact version 3.23.0. Version 3.23.1 activates `svelte/no-navigation-without-resolve` for Kit 3 but rejects official `goto(URL)` flows, accepted navigation replay destinations, dynamic external URLs, and resolved paths with appended queries. Reproduce in an isolated checkout with `npm install --save-dev --save-exact eslint-plugin-svelte@3.23.1 && npm run lint` in each frontend.
+  - Adopt a fixed upstream release when those official URL and typed destination contracts pass without double base prefixes, changed query/hash/history semantics, type assertions, or disabled rules. Retain browser coverage for unsaved navigation replay, scoped filters, return destinations, and external links.
+
 - [ ] **OPS-002: Add production observability.**
   - Propagate request/correlation IDs across frontends, services, provider calls, jobs, and deployment history.
   - Add metrics, traces, dashboards, alerts, SLOs, and runbooks for authentication, tenant resolution, database pools, file access, jobs, and deployments.

@@ -21,7 +21,7 @@ use school_academic_lifecycle::services::{term_transitions, year_transitions};
 use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/opening-policy",operation_id="getAcademicOpeningPolicy",tag="academic",
-    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic opening policy returned",body=ApiResponse<OpeningPolicy>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn get_opening_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -34,7 +34,7 @@ pub async fn get_opening_policy(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/lifecycle/opening-policy",operation_id="updateAcademicOpeningPolicy",tag="academic",
     request_body=UpdateOpeningPolicyInput,
-    responses((status=200,body=ApiResponse<OpeningPolicy>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic opening policy updated",body=ApiResponse<OpeningPolicy>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn update_opening_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -55,7 +55,7 @@ pub async fn update_opening_policy(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies/options",operation_id="getPromotionPolicyOptions",tag="academic",
-    responses((status=200,body=ApiResponse<PromotionPolicyOptions>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Promotion policy options returned",body=ApiResponse<PromotionPolicyOptions>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_promotion_policy_options(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -67,7 +67,7 @@ pub async fn get_promotion_policy_options(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-policies",operation_id="listPromotionPolicies",tag="academic",
-    responses((status=200,body=ApiResponse<Vec<PromotionPolicyVersion>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Promotion policy versions returned",body=ApiResponse<Vec<PromotionPolicyVersion>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_promotion_policies(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -80,7 +80,7 @@ pub async fn list_promotion_policies(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/promotion-policies",operation_id="createPromotionPolicy",tag="academic",
     request_body=PromotionPolicyInput,
-    responses((status=200,body=ApiResponse<PromotionPolicyVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Promotion policy version created",body=ApiResponse<PromotionPolicyVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_promotion_policy(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -102,7 +102,7 @@ pub async fn create_promotion_policy(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}",operation_id="getYearLifecycleWorkspace",tag="academic",
     params(("year_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<YearLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic year lifecycle workspace returned",body=ApiResponse<YearLifecycleWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_year_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -116,7 +116,7 @@ pub async fn get_year_workspace(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/transitions",operation_id="transitionAcademicYear",tag="academic",
     params(("year_id"=Uuid,Path)),request_body=YearTransitionRequest,
-    responses((status=200,body=ApiResponse<YearTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic year transition result returned",body=ApiResponse<YearTransitionOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn transition_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -140,7 +140,7 @@ pub async fn transition_year(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}",operation_id="getTermLifecycleWorkspace",tag="academic",
     params(TermLifecycleQuery,("term_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<TermLifecycleWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic term lifecycle workspace returned",body=ApiResponse<TermLifecycleWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -162,7 +162,7 @@ pub async fn get_workspace(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/terms/{term_id}/activation",operation_id="getTermActivationWorkspace",tag="academic",
     params(TermLifecycleQuery,("term_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<TermActivationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic term activation workspace returned",body=ApiResponse<TermActivationWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn get_activation_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -183,7 +183,7 @@ pub async fn get_activation_workspace(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/terms/{term_id}/transitions",operation_id="transitionAcademicTerm",tag="academic",
     params(("term_id"=Uuid,Path)),request_body=TermTransitionRequest,
-    responses((status=200,body=ApiResponse<TermTransitionOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic term transition result returned",body=ApiResponse<TermTransitionOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn transition_term(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -212,7 +212,7 @@ pub async fn transition_term(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/term-preparations/preview",operation_id="previewAcademicTermPreparation",tag="academic",
     request_body=PreviewTermPreparationInput,
-    responses((status=200,body=ApiResponse<TermPreparationWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic term preparation preview returned",body=ApiResponse<TermPreparationWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn preview_term_preparation(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -226,7 +226,7 @@ pub async fn preview_term_preparation(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/term-preparations/apply",operation_id="applyAcademicTermPreparation",tag="academic",
     request_body=ApplyTermPreparationInput,
-    responses((status=200,body=ApiResponse<TermPreparationOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic term preparation result returned",body=ApiResponse<TermPreparationOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn apply_term_preparation(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

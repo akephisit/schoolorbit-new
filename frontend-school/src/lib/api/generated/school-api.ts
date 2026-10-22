@@ -8889,7 +8889,7 @@ export interface components {
 			learningGroupId: string;
 			/** Format: uuid */
 			learningOfferingId: string;
-			outcome?: null | components['schemas']['ActivityOutcome'];
+			outcome?: components['schemas']['ActivityOutcome'] | null;
 			/** Format: uuid */
 			resultId?: string | null;
 		};
@@ -8902,7 +8902,7 @@ export interface components {
 			cells: components['schemas']['ActivityCellInput'][];
 		};
 		ActivityCellInput: {
-			outcome?: null | components['schemas']['ActivityOutcome'];
+			outcome?: components['schemas']['ActivityOutcome'] | null;
 			/** Format: int64 */
 			rowVersion?: number | null;
 			/** Format: uuid */
@@ -8942,7 +8942,7 @@ export interface components {
 			blockers: components['schemas']['ResultBlocker'][];
 			canConfirm: boolean;
 			canManage: boolean;
-			confirmation?: null | components['schemas']['ResultConfirmation'];
+			confirmation?: components['schemas']['ResultConfirmation'] | null;
 			confirmationIsCurrent: boolean;
 			/** Format: uuid */
 			learningGroupId: string;
@@ -8977,7 +8977,7 @@ export interface components {
 		};
 		ActivityResultLockOutcome: {
 			blockers: components['schemas']['ResultBlocker'][];
-			lock?: null | components['schemas']['ActivityResultLock'];
+			lock?: components['schemas']['ActivityResultLock'] | null;
 		};
 		/** @enum {string} */
 		ActivitySchedulingMode: 'synchronized' | 'independent';
@@ -9160,7 +9160,7 @@ export interface components {
 			annualRevisionId: string;
 			correction: components['schemas']['ResultCorrectionRecord'];
 			criterionName?: string | null;
-			evaluationDomain?: null | components['schemas']['LearnerEvaluationDomain'];
+			evaluationDomain?: components['schemas']['LearnerEvaluationDomain'] | null;
 			offeringCode: string;
 			offeringName: string;
 			/** Format: uuid */
@@ -9219,7 +9219,7 @@ export interface components {
 			/** Format: uuid */
 			academicTermId: string;
 			isCurrent: boolean;
-			revision?: null | components['schemas']['TermAggregateRevision'];
+			revision?: components['schemas']['TermAggregateRevision'] | null;
 			/** Format: int32 */
 			sequence: number;
 			termName: string;
@@ -9455,7 +9455,7 @@ export interface components {
 				blockers: components['schemas']['ResultBlocker'][];
 				canConfirm: boolean;
 				canManage: boolean;
-				confirmation?: null | components['schemas']['ResultConfirmation'];
+				confirmation?: components['schemas']['ResultConfirmation'] | null;
 				confirmationIsCurrent: boolean;
 				/** Format: uuid */
 				learningGroupId: string;
@@ -9470,7 +9470,7 @@ export interface components {
 		ApiResponse_ActivityResultLockOutcome: {
 			data: {
 				blockers: components['schemas']['ResultBlocker'][];
-				lock?: null | components['schemas']['ActivityResultLock'];
+				lock?: components['schemas']['ActivityResultLock'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -10008,7 +10008,7 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				fiscalYearId: string;
-				from?: null | components['schemas']['BudgetAllocationRef'];
+				from?: components['schemas']['BudgetAllocationRef'] | null;
 				/** Format: uuid */
 				id: string;
 				kind: components['schemas']['BudgetAdjustmentKind'];
@@ -10021,7 +10021,7 @@ export interface components {
 				/** Format: int64 */
 				revision: number;
 				status: components['schemas']['BudgetStatus'];
-				to?: null | components['schemas']['BudgetAllocationRef'];
+				to?: components['schemas']['BudgetAllocationRef'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -10084,7 +10084,7 @@ export interface components {
 		};
 		ApiResponse_BudgetProcessDetail: {
 			data: {
-				process?: null | components['schemas']['ProcessInstance'];
+				process?: components['schemas']['ProcessInstance'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -10104,7 +10104,7 @@ export interface components {
 		};
 		ApiResponse_BudgetProjectWorkspace: {
 			data: {
-				acceptedPlan?: null | components['schemas']['BudgetPlanSnapshot'];
+				acceptedPlan?: components['schemas']['BudgetPlanSnapshot'] | null;
 				activities: components['schemas']['BudgetActivity'][];
 				balances: components['schemas']['BudgetBalance'][];
 				capabilities: components['schemas']['BudgetCapabilities'];
@@ -10565,7 +10565,7 @@ export interface components {
 				matchedUserId: string | null;
 				matchStatus: components['schemas']['CandidateMatchStatus'];
 				recipientType: components['schemas']['RecipientType'];
-				selectedNameSource: null | components['schemas']['CandidateNameSource'];
+				selectedNameSource: components['schemas']['CandidateNameSource'] | null;
 				staffUsername: string | null;
 				studentId: string | null;
 				/** Format: uuid */
@@ -10695,7 +10695,7 @@ export interface components {
 				/** Format: int64 */
 				missingVariableCertificateCount: number;
 				name: string;
-				pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+				pageGeometry: components['schemas']['CertificatePageGeometry'] | null;
 				/** Format: double */
 				safeMarginPoints: number;
 				showSafeArea: boolean;
@@ -10724,7 +10724,7 @@ export interface components {
 		};
 		ApiResponse_ConfirmationOutcome: {
 			data: {
-				confirmation?: null | components['schemas']['EvaluationConfirmation'];
+				confirmation?: components['schemas']['EvaluationConfirmation'] | null;
 				missing: components['schemas']['MissingEvaluation'][];
 			};
 			message?: string;
@@ -10738,8 +10738,8 @@ export interface components {
 				canManage: boolean;
 				document: components['schemas']['CorrespondenceDocumentRevision'];
 				history: components['schemas']['ProcessHistoryEntry'][];
-				instance?: null | components['schemas']['ProcessInstance'];
-				myReadReceipt?: null | components['schemas']['CorrespondenceReadReceipt'];
+				instance?: components['schemas']['ProcessInstance'] | null;
+				myReadReceipt?: components['schemas']['CorrespondenceReadReceipt'] | null;
 				record: components['schemas']['CorrespondenceSummary'];
 				revisions: components['schemas']['CorrespondenceDocumentRevision'][];
 				signatures: components['schemas']['CorrespondenceSigningEvidence'][];
@@ -10791,10 +10791,10 @@ export interface components {
 		ApiResponse_CorrespondenceRoutingSettings: {
 			data: {
 				defaultAllowOnwardAssignment: boolean;
-				defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+				defaultFirstRecipient?: components['schemas']['ProcessRecipient'] | null;
 				defaultPurpose: components['schemas']['DirectedPurpose'];
 				defaultRequireReview: boolean;
-				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+				defaultReviewer?: components['schemas']['ProcessRecipient'] | null;
 				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
 				numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 				register: components['schemas']['CorrespondenceRegister'];
@@ -10810,7 +10810,7 @@ export interface components {
 				blockers: components['schemas']['ResultBlocker'][];
 				canConfirm: boolean;
 				canManage: boolean;
-				confirmation?: null | components['schemas']['ResultConfirmation'];
+				confirmation?: components['schemas']['ResultConfirmation'] | null;
 				confirmationIsCurrent: boolean;
 				/** Format: uuid */
 				learningGroupId: string;
@@ -10828,7 +10828,7 @@ export interface components {
 		ApiResponse_CourseResultLockOutcome: {
 			data: {
 				groups: components['schemas']['GroupResultReadiness'][];
-				lock?: null | components['schemas']['CourseResultLock'];
+				lock?: components['schemas']['CourseResultLock'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -10844,7 +10844,7 @@ export interface components {
 		};
 		ApiResponse_CriterionRemoval: {
 			data: {
-				criterion?: null | components['schemas']['EvaluationCriterion'];
+				criterion?: components['schemas']['EvaluationCriterion'] | null;
 				deleted: boolean;
 				/** Format: uuid */
 				id: string;
@@ -11249,7 +11249,7 @@ export interface components {
 			data: {
 				canConfirm: boolean;
 				canManage: boolean;
-				confirmation?: null | components['schemas']['EvaluationConfirmation'];
+				confirmation?: components['schemas']['EvaluationConfirmation'] | null;
 				confirmationIsCurrent: boolean;
 				criteria: components['schemas']['EvaluationCriterion'][];
 				domain: components['schemas']['LearnerEvaluationDomain'];
@@ -11499,7 +11499,7 @@ export interface components {
 				assessmentPhaseId: string;
 				canConfirm: boolean;
 				canManage: boolean;
-				confirmation?: null | components['schemas']['PhaseConfirmation'];
+				confirmation?: components['schemas']['PhaseConfirmation'] | null;
 				confirmationIsCurrent: boolean;
 				items: components['schemas']['ScoreItem'][];
 				/** Format: uuid */
@@ -11577,7 +11577,7 @@ export interface components {
 				deliveryVersionEffectiveFrom: string | null;
 				/** Format: uuid */
 				deliveryVersionId: string | null;
-				deliveryVersionStatus: null | components['schemas']['DeliveryVersionStatus'];
+				deliveryVersionStatus: components['schemas']['DeliveryVersionStatus'] | null;
 				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 				unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 			};
@@ -11732,7 +11732,7 @@ export interface components {
 			data: {
 				items: {
 					available: boolean;
-					conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+					conflict?: components['schemas']['SupervisionEvaluatorConflict'] | null;
 					conflictReason?: string | null;
 					/** Format: uuid */
 					id: string;
@@ -11771,7 +11771,7 @@ export interface components {
 					/** Format: uuid */
 					learningGroupId?: string | null;
 					lessonSnapshot: components['schemas']['LessonSnapshot'];
-					manualLesson?: null | components['schemas']['ManualLesson'];
+					manualLesson?: components['schemas']['ManualLesson'] | null;
 					/** Format: date-time */
 					observedAt: string;
 					observedDisplayName?: string | null;
@@ -11806,7 +11806,7 @@ export interface components {
 					/** Format: date-time */
 					observedAt?: string | null;
 					organizationUnitNames: string[];
-					status?: null | components['schemas']['SupervisionObservationStatus'];
+					status?: components['schemas']['SupervisionObservationStatus'] | null;
 					teacherDisplayName: string;
 					/** Format: uuid */
 					teacherId: string;
@@ -12004,7 +12004,7 @@ export interface components {
 		};
 		ApiResponse_LeavePersonalOptions: {
 			data: {
-				personnelType?: null | components['schemas']['StaffPersonnelType'];
+				personnelType?: components['schemas']['StaffPersonnelType'] | null;
 				types: components['schemas']['LeaveType'][];
 			};
 			message?: string;
@@ -12059,8 +12059,8 @@ export interface components {
 				contentHash: string;
 				evidenceFileIds: string[];
 				history: components['schemas']['LeaveHistoryEntry'][];
-				instance?: null | components['schemas']['ProcessInstance'];
-				policy?: null | components['schemas']['LeavePolicyVersion'];
+				instance?: components['schemas']['ProcessInstance'] | null;
+				policy?: components['schemas']['LeavePolicyVersion'] | null;
 				processPurpose: components['schemas']['LeaveProcessPurpose'];
 				request: components['schemas']['LeaveRequestSummary'];
 			};
@@ -12125,7 +12125,7 @@ export interface components {
 		ApiResponse_LockOutcome: {
 			data: {
 				blockers: components['schemas']['LockBlocker'][];
-				lock?: null | components['schemas']['EvaluationLock'];
+				lock?: components['schemas']['EvaluationLock'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -12344,7 +12344,7 @@ export interface components {
 				/** Format: uuid */
 				createdBy: string;
 				currentStep: number;
-				directed?: null | components['schemas']['DirectedProcess'];
+				directed?: components['schemas']['DirectedProcess'] | null;
 				/** Format: date-time */
 				dueAt?: string | null;
 				/** Format: uuid */
@@ -12438,7 +12438,7 @@ export interface components {
 				itemId: string;
 				outcome: components['schemas']['PromotionImpactResolutionOutcome'];
 				reason: string;
-				replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+				replacementDecision?: components['schemas']['PromotionDecisionInput'] | null;
 				/** Format: uuid */
 				requestId: string;
 				resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
@@ -12618,7 +12618,7 @@ export interface components {
 		};
 		ApiResponse_PublicSchoolStatistics: {
 			data: {
-				academicYear: null | components['schemas']['PublicAcademicYear'];
+				academicYear: components['schemas']['PublicAcademicYear'] | null;
 				/** Format: date-time */
 				asOf: string;
 				grades: components['schemas']['PublicGradeStatistics'][];
@@ -12719,7 +12719,7 @@ export interface components {
 		ApiResponse_RevokeCertificateResult: {
 			data: {
 				certificate: components['schemas']['IssuedCertificateDetail'];
-				replacementCandidate: null | components['schemas']['CertificateReplacementCandidate'];
+				replacementCandidate: components['schemas']['CertificateReplacementCandidate'] | null;
 			};
 			message?: string;
 			success: boolean;
@@ -12958,7 +12958,7 @@ export interface components {
 				profile_image_file_id: string | null;
 				resigned_date: string | null;
 				roles: components['schemas']['RoleResponse'][];
-				staff_info: null | components['schemas']['StaffInfoResponse'];
+				staff_info: components['schemas']['StaffInfoResponse'] | null;
 				status: string;
 				subject_groups: components['schemas']['StaffSubjectGroupSummary'][];
 				teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
@@ -13225,7 +13225,7 @@ export interface components {
 				/** Format: uuid */
 				learningGroupId?: string | null;
 				lessonSnapshot: components['schemas']['LessonSnapshot'];
-				manualLesson?: null | components['schemas']['ManualLesson'];
+				manualLesson?: components['schemas']['ManualLesson'] | null;
 				/** Format: date-time */
 				observedAt: string;
 				observedDisplayName?: string | null;
@@ -13512,7 +13512,7 @@ export interface components {
 				opensYear: boolean;
 				plannedStudents: number;
 				policy: components['schemas']['OpeningPolicy'];
-				predecessor?: null | components['schemas']['YearLifecycleContext'];
+				predecessor?: components['schemas']['YearLifecycleContext'] | null;
 				sourceChecksum: string;
 			};
 			message?: string;
@@ -13649,11 +13649,11 @@ export interface components {
 				periodName: string;
 				/** Format: int64 */
 				rowVersion: number;
-				schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+				schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 				/** Format: uuid */
 				seriesId: string | null;
 				startTime: string;
-				structuralKind: null | components['schemas']['TimetableStructuralKind'];
+				structuralKind: components['schemas']['TimetableStructuralKind'] | null;
 				syncStates: components['schemas']['TimetableBlockSyncState'][];
 				teachers: components['schemas']['TimetableBlockTeacher'][];
 				/** Format: uuid */
@@ -13668,7 +13668,7 @@ export interface components {
 		ApiResponse_TimetableBlockPlacementPreview: {
 			data: {
 				conflicts: components['schemas']['TimetableBlockConflict'][];
-				mutation: null | components['schemas']['TimetableBlockMutationKind'];
+				mutation: components['schemas']['TimetableBlockMutationKind'] | null;
 				normalizedCandidate: components['schemas']['TimetableBlockPlacementCandidate'];
 				/** Format: uuid */
 				sourceBlockId: string | null;
@@ -13756,7 +13756,7 @@ export interface components {
 				createdBy: string | null;
 				/** Format: uuid */
 				deliveryVersionId: string;
-				displayState: null | components['schemas']['TimetableVersionDisplayState'];
+				displayState: components['schemas']['TimetableVersionDisplayState'] | null;
 				/** Format: date */
 				effectiveFrom: string | null;
 				/** Format: date */
@@ -14782,7 +14782,7 @@ export interface components {
 				/** Format: int64 */
 				missingVariableCertificateCount: number;
 				name: string;
-				pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+				pageGeometry: components['schemas']['CertificatePageGeometry'] | null;
 				/** Format: double */
 				safeMarginPoints: number;
 				showSafeArea: boolean;
@@ -14795,10 +14795,10 @@ export interface components {
 		ApiResponse_Vec_CorrespondenceRoutingSettings: {
 			data: {
 				defaultAllowOnwardAssignment: boolean;
-				defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+				defaultFirstRecipient?: components['schemas']['ProcessRecipient'] | null;
 				defaultPurpose: components['schemas']['DirectedPurpose'];
 				defaultRequireReview: boolean;
-				defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+				defaultReviewer?: components['schemas']['ProcessRecipient'] | null;
 				eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
 				numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 				register: components['schemas']['CorrespondenceRegister'];
@@ -16101,11 +16101,11 @@ export interface components {
 				periodName: string;
 				/** Format: int64 */
 				rowVersion: number;
-				schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+				schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 				/** Format: uuid */
 				seriesId: string | null;
 				startTime: string;
-				structuralKind: null | components['schemas']['TimetableStructuralKind'];
+				structuralKind: components['schemas']['TimetableStructuralKind'] | null;
 				syncStates: components['schemas']['TimetableBlockSyncState'][];
 				teachers: components['schemas']['TimetableBlockTeacher'][];
 				/** Format: uuid */
@@ -16147,7 +16147,7 @@ export interface components {
 				createdBy: string | null;
 				/** Format: uuid */
 				deliveryVersionId: string;
-				displayState: null | components['schemas']['TimetableVersionDisplayState'];
+				displayState: components['schemas']['TimetableVersionDisplayState'] | null;
 				/** Format: date */
 				effectiveFrom: string | null;
 				/** Format: date */
@@ -16591,7 +16591,7 @@ export interface components {
 		AttendanceRecord: {
 			/** Format: date-time */
 			arrivalAt: string | null;
-			arrivalResult: null | components['schemas']['AttendanceResult'];
+			arrivalResult: components['schemas']['AttendanceResult'] | null;
 			/** Format: int32 */
 			classNumber: number | null;
 			displayName: string;
@@ -17150,7 +17150,7 @@ export interface components {
 			createdAt: string;
 			/** Format: uuid */
 			fiscalYearId: string;
-			from?: null | components['schemas']['BudgetAllocationRef'];
+			from?: components['schemas']['BudgetAllocationRef'] | null;
 			/** Format: uuid */
 			id: string;
 			kind: components['schemas']['BudgetAdjustmentKind'];
@@ -17163,18 +17163,18 @@ export interface components {
 			/** Format: int64 */
 			revision: number;
 			status: components['schemas']['BudgetStatus'];
-			to?: null | components['schemas']['BudgetAllocationRef'];
+			to?: components['schemas']['BudgetAllocationRef'] | null;
 		};
 		BudgetAdjustmentInput: {
 			amountSatang: string;
 			/** Format: uuid */
 			fiscalYearId: string;
-			from?: null | components['schemas']['BudgetAllocationRef'];
+			from?: components['schemas']['BudgetAllocationRef'] | null;
 			kind: components['schemas']['BudgetAdjustmentKind'];
 			/** Format: uuid */
 			loanId?: string | null;
 			reason: string;
-			to?: null | components['schemas']['BudgetAllocationRef'];
+			to?: components['schemas']['BudgetAllocationRef'] | null;
 		};
 		/** @enum {string} */
 		BudgetAdjustmentKind: 'add' | 'reduce' | 'transfer' | 'loan' | 'repayment';
@@ -17342,7 +17342,7 @@ export interface components {
 			/** Format: uuid */
 			projectId?: string | null;
 			search?: string | null;
-			status?: null | components['schemas']['BudgetStatus'];
+			status?: components['schemas']['BudgetStatus'] | null;
 		};
 		BudgetMutationRequest: {
 			/** Format: int64 */
@@ -17432,7 +17432,7 @@ export interface components {
 			version: number;
 		};
 		BudgetProcessDetail: {
-			process?: null | components['schemas']['ProcessInstance'];
+			process?: components['schemas']['ProcessInstance'] | null;
 		};
 		BudgetProjectInput: {
 			/** Format: date */
@@ -17480,7 +17480,7 @@ export interface components {
 			totalSatang: string;
 		};
 		BudgetProjectWorkspace: {
-			acceptedPlan?: null | components['schemas']['BudgetPlanSnapshot'];
+			acceptedPlan?: components['schemas']['BudgetPlanSnapshot'] | null;
 			activities: components['schemas']['BudgetActivity'][];
 			balances: components['schemas']['BudgetBalance'][];
 			capabilities: components['schemas']['BudgetCapabilities'];
@@ -17508,7 +17508,7 @@ export interface components {
 			exportScope?: boolean | null;
 			/** Format: uuid */
 			fiscalYearId?: string | null;
-			metric?: null | components['schemas']['BudgetReportMetric'];
+			metric?: components['schemas']['BudgetReportMetric'] | null;
 			/** Format: uuid */
 			organizationUnitId?: string | null;
 			/** Format: uuid */
@@ -18121,7 +18121,7 @@ export interface components {
 			activity: components['schemas']['CatalogActivity'];
 			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
-			displayVersion?: null | components['schemas']['ActivityVersion'];
+			displayVersion?: components['schemas']['ActivityVersion'] | null;
 			/** Format: int64 */
 			draftCount: number;
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
@@ -18195,7 +18195,7 @@ export interface components {
 		CatalogSubjectOverviewItem: {
 			canManage: boolean;
 			displayState: components['schemas']['CatalogDisplayState'];
-			displayVersion?: null | components['schemas']['SubjectVersion'];
+			displayVersion?: components['schemas']['SubjectVersion'] | null;
 			/** Format: int64 */
 			draftCount: number;
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
@@ -18265,7 +18265,7 @@ export interface components {
 			/** Format: uuid */
 			academicYearId?: string | null;
 			search?: string | null;
-			status?: null | components['schemas']['CertificateCampaignStatus'];
+			status?: components['schemas']['CertificateCampaignStatus'] | null;
 		};
 		CertificateCampaignPurgeCounts: {
 			/** Format: int64 */
@@ -18417,7 +18417,7 @@ export interface components {
 			matchedUserId: string | null;
 			matchStatus: components['schemas']['CandidateMatchStatus'];
 			recipientType: components['schemas']['RecipientType'];
-			selectedNameSource: null | components['schemas']['CandidateNameSource'];
+			selectedNameSource: components['schemas']['CandidateNameSource'] | null;
 			staffUsername: string | null;
 			studentId: string | null;
 			/** Format: uuid */
@@ -18434,7 +18434,7 @@ export interface components {
 		};
 		CertificateCandidateListQuery: {
 			search?: string | null;
-			status?: null | components['schemas']['CandidateValidationStatus'];
+			status?: components['schemas']['CandidateValidationStatus'] | null;
 			/** Format: uuid */
 			templateId?: string | null;
 		};
@@ -18601,7 +18601,7 @@ export interface components {
 			validationStatus: components['schemas']['CandidateValidationStatus'];
 		};
 		CertificateIssueRequestListQuery: {
-			status?: null | components['schemas']['CertificateIssueRequestStatus'];
+			status?: components['schemas']['CertificateIssueRequestStatus'] | null;
 		};
 		/** @enum {string} */
 		CertificateIssueRequestStatus: 'pending' | 'reviewing' | 'returned' | 'withdrawn' | 'issued';
@@ -18680,7 +18680,7 @@ export interface components {
 		CertificatePreviewManifestRequest: {
 			/** Format: uuid */
 			candidateId?: string | null;
-			layout?: null | components['schemas']['CertificateLayoutV1'];
+			layout?: components['schemas']['CertificateLayoutV1'] | null;
 			previewKind: components['schemas']['CertificatePreviewKind'];
 			sampleValues?: {
 				[key: string]: string;
@@ -18812,7 +18812,7 @@ export interface components {
 			/** Format: int64 */
 			missingVariableCertificateCount: number;
 			name: string;
-			pageGeometry: null | components['schemas']['CertificatePageGeometry'];
+			pageGeometry: components['schemas']['CertificatePageGeometry'] | null;
 			/** Format: double */
 			safeMarginPoints: number;
 			showSafeArea: boolean;
@@ -18884,7 +18884,7 @@ export interface components {
 			sourceChecksum: string;
 		};
 		ConfirmationOutcome: {
-			confirmation?: null | components['schemas']['EvaluationConfirmation'];
+			confirmation?: components['schemas']['EvaluationConfirmation'] | null;
 			missing: components['schemas']['MissingEvaluation'][];
 		};
 		ConfirmInput: {
@@ -18948,8 +18948,8 @@ export interface components {
 			canManage: boolean;
 			document: components['schemas']['CorrespondenceDocumentRevision'];
 			history: components['schemas']['ProcessHistoryEntry'][];
-			instance?: null | components['schemas']['ProcessInstance'];
-			myReadReceipt?: null | components['schemas']['CorrespondenceReadReceipt'];
+			instance?: components['schemas']['ProcessInstance'] | null;
+			myReadReceipt?: components['schemas']['CorrespondenceReadReceipt'] | null;
 			record: components['schemas']['CorrespondenceSummary'];
 			revisions: components['schemas']['CorrespondenceDocumentRevision'][];
 			signatures: components['schemas']['CorrespondenceSigningEvidence'][];
@@ -19010,7 +19010,7 @@ export interface components {
 			currentStepTitle?: string | null;
 			/** Format: date-time */
 			dueAt?: string | null;
-			myAction?: null | components['schemas']['ProcessAction'];
+			myAction?: components['schemas']['ProcessAction'] | null;
 			pendingRecipients: components['schemas']['CorrespondenceUserOption'][];
 			stepCount: number;
 		};
@@ -19061,10 +19061,10 @@ export interface components {
 		CorrespondenceRegister: 'incoming' | 'outgoing' | 'internal';
 		CorrespondenceRoutingSettings: {
 			defaultAllowOnwardAssignment: boolean;
-			defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+			defaultFirstRecipient?: components['schemas']['ProcessRecipient'] | null;
 			defaultPurpose: components['schemas']['DirectedPurpose'];
 			defaultRequireReview: boolean;
-			defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+			defaultReviewer?: components['schemas']['ProcessRecipient'] | null;
 			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
 			numbering?: components['schemas']['CorrespondenceNumberingSettings'];
 			register: components['schemas']['CorrespondenceRegister'];
@@ -19080,7 +19080,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			signature: components['schemas']['SignatureInput'];
-			signatureFileSnapshot?: null | components['schemas']['CorrespondenceFileSnapshot'];
+			signatureFileSnapshot?: components['schemas']['CorrespondenceFileSnapshot'] | null;
 			/** Format: date-time */
 			signedAt: string;
 			signedContentHash: string;
@@ -19148,7 +19148,7 @@ export interface components {
 			/** Format: uuid */
 			learningOfferingId: string;
 			numericGrade?: string | null;
-			outcome?: null | components['schemas']['CourseOfficialOutcome'];
+			outcome?: components['schemas']['CourseOfficialOutcome'] | null;
 			/** Format: uuid */
 			resultId?: string | null;
 			/** Format: uuid */
@@ -19188,7 +19188,7 @@ export interface components {
 			blockers: components['schemas']['ResultBlocker'][];
 			canConfirm: boolean;
 			canManage: boolean;
-			confirmation?: null | components['schemas']['ResultConfirmation'];
+			confirmation?: components['schemas']['ResultConfirmation'] | null;
 			confirmationIsCurrent: boolean;
 			/** Format: uuid */
 			learningGroupId: string;
@@ -19224,7 +19224,7 @@ export interface components {
 		};
 		CourseResultLockOutcome: {
 			groups: components['schemas']['GroupResultReadiness'][];
-			lock?: null | components['schemas']['CourseResultLock'];
+			lock?: components['schemas']['CourseResultLock'] | null;
 		};
 		CreateAcademicTermChangeSetRequest: {
 			/** Format: uuid */
@@ -19668,7 +19668,7 @@ export interface components {
 			entries: components['schemas']['StaffCareerEntryInput'][];
 		};
 		CreateStaffInfoRequest: {
-			career?: null | components['schemas']['CreateStaffCareerRequest'];
+			career?: components['schemas']['CreateStaffCareerRequest'] | null;
 			educations?: components['schemas']['StaffEducationInput'][];
 			/** Format: date */
 			teaching_license_expiry?: string | null;
@@ -19698,7 +19698,7 @@ export interface components {
 			/** Format: uuid */
 			profile_image_file_id?: string | null;
 			role_ids: string[];
-			staff_info?: null | components['schemas']['CreateStaffInfoRequest'];
+			staff_info?: components['schemas']['CreateStaffInfoRequest'] | null;
 			title?: string | null;
 			title_en?: string | null;
 			username?: string | null;
@@ -19741,7 +19741,7 @@ export interface components {
 			parents?: components['schemas']['CreateParentRequest'][] | null;
 			password: string;
 			phone?: string | null;
-			registration_status?: null | components['schemas']['StudentRegistrationStatus'];
+			registration_status?: components['schemas']['StudentRegistrationStatus'] | null;
 			student_id: string;
 			title?: string | null;
 			username?: string | null;
@@ -19793,7 +19793,7 @@ export interface components {
 			endsAt: string;
 			/** Format: date-time */
 			startsAt: string;
-			status?: null | components['schemas']['SupervisionCycleStatus'];
+			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][];
 			/** Format: uuid */
 			templateId: string;
@@ -19823,7 +19823,7 @@ export interface components {
 			/** Format: int32 */
 			ratingMin?: number;
 			sections?: components['schemas']['CreateSupervisionTemplateSectionRequest'][];
-			status?: null | components['schemas']['SupervisionTemplateStatus'];
+			status?: components['schemas']['SupervisionTemplateStatus'] | null;
 			steps?: components['schemas']['CreateSupervisionTemplateStepRequest'][];
 			title: string;
 		};
@@ -19878,7 +19878,7 @@ export interface components {
 			rowVersion?: number | null;
 		};
 		CriterionRemoval: {
-			criterion?: null | components['schemas']['EvaluationCriterion'];
+			criterion?: components['schemas']['EvaluationCriterion'] | null;
 			deleted: boolean;
 			/** Format: uuid */
 			id: string;
@@ -19901,7 +19901,7 @@ export interface components {
 			/** Format: uuid */
 			catalogId: string;
 			code: string;
-			creditCategory?: null | components['schemas']['CurriculumCourseCreditCategory'];
+			creditCategory?: components['schemas']['CurriculumCourseCreditCategory'] | null;
 			/** Format: date */
 			effectiveFrom: string;
 			/** Format: date */
@@ -20084,7 +20084,7 @@ export interface components {
 			proposalId: string;
 			requirementIds: string[];
 			resourceKind: components['schemas']['LearningOfferingKind'];
-			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			targetHomeroomIds: string[];
 		};
 		/** @enum {string} */
@@ -20149,7 +20149,7 @@ export interface components {
 			/** Format: uuid */
 			catalogVersionId: string;
 			code: string;
-			creditCategory?: null | components['schemas']['CurriculumCourseCreditCategory'];
+			creditCategory?: components['schemas']['CurriculumCourseCreditCategory'] | null;
 			/** Format: int32 */
 			displayOrder: number;
 			gradeLevel: components['schemas']['GradeLevelLookupItem'];
@@ -20231,7 +20231,7 @@ export interface components {
 		DailyTeachingEntry: {
 			/** Format: uuid */
 			activityId?: string | null;
-			activitySchedulingMode?: null | components['schemas']['ActivitySchedulingMode'];
+			activitySchedulingMode?: components['schemas']['ActivitySchedulingMode'] | null;
 			activityVersionDisplayLabel?: string | null;
 			/** Format: uuid */
 			entryId: string;
@@ -20425,7 +20425,7 @@ export interface components {
 			kind: components['schemas']['LearningOfferingKind'];
 			label: string;
 			name: string;
-			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			/** Format: int32 */
 			standardPeriodsPerWeek: number | null;
 			/** Format: int32 */
@@ -20615,7 +20615,7 @@ export interface components {
 			purpose: components['schemas']['DirectedPurpose'];
 			recipient: components['schemas']['ProcessRecipientSnapshot'];
 			required: boolean;
-			reviewer?: null | components['schemas']['ProcessRecipientSnapshot'];
+			reviewer?: components['schemas']['ProcessRecipientSnapshot'] | null;
 			/** Format: uuid */
 			reviewWorkItemId?: string | null;
 			selector: components['schemas']['ProcessRecipient'];
@@ -20646,7 +20646,7 @@ export interface components {
 		DirectedRoutingRequest: {
 			recipients: components['schemas']['DirectedRouteRecipient'][];
 			requireReview?: boolean;
-			reviewer?: null | components['schemas']['ProcessRecipient'];
+			reviewer?: components['schemas']['ProcessRecipient'] | null;
 		};
 		DirectedSendCorrespondenceRequest: {
 			/** Format: date-time */
@@ -20697,7 +20697,7 @@ export interface components {
 			id: string;
 		};
 		DomainEvaluationSummary: {
-			average?: null | components['schemas']['ExactAverage'];
+			average?: components['schemas']['ExactAverage'] | null;
 			catalogCriteria: components['schemas']['CatalogEvaluationSummary'][];
 			complete: boolean;
 			domain: components['schemas']['LearnerEvaluationDomain'];
@@ -20724,7 +20724,7 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
-			kind?: null | components['schemas']['EffectiveResultKind'];
+			kind?: components['schemas']['EffectiveResultKind'] | null;
 			/** Format: int32 */
 			limit?: number | null;
 			search?: string | null;
@@ -20884,7 +20884,7 @@ export interface components {
 		EvaluationWorkspace: {
 			canConfirm: boolean;
 			canManage: boolean;
-			confirmation?: null | components['schemas']['EvaluationConfirmation'];
+			confirmation?: components['schemas']['EvaluationConfirmation'] | null;
 			confirmationIsCurrent: boolean;
 			criteria: components['schemas']['EvaluationCriterion'][];
 			domain: components['schemas']['LearnerEvaluationDomain'];
@@ -21313,7 +21313,7 @@ export interface components {
 			name_en: string | null;
 		};
 		FeatureToggleResponse: {
-			data: null | components['schemas']['FeatureToggle'];
+			data: components['schemas']['FeatureToggle'] | null;
 			message: string | null;
 			success: boolean;
 		};
@@ -21536,7 +21536,7 @@ export interface components {
 			assessmentPhaseId: string;
 			canConfirm: boolean;
 			canManage: boolean;
-			confirmation?: null | components['schemas']['PhaseConfirmation'];
+			confirmation?: components['schemas']['PhaseConfirmation'] | null;
 			confirmationIsCurrent: boolean;
 			items: components['schemas']['ScoreItem'][];
 			/** Format: uuid */
@@ -21645,7 +21645,7 @@ export interface components {
 			requirementId: string;
 			requirementKind: components['schemas']['RequirementKind'];
 			resourceKind: components['schemas']['LearningOfferingKind'];
-			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			/** Format: int32 */
 			standardPeriodsPerWeek?: number | null;
 			teacherState: components['schemas']['HomeroomTeacherState'];
@@ -21681,7 +21681,7 @@ export interface components {
 			deliveryVersionEffectiveFrom: string | null;
 			/** Format: uuid */
 			deliveryVersionId: string | null;
-			deliveryVersionStatus: null | components['schemas']['DeliveryVersionStatus'];
+			deliveryVersionStatus: components['schemas']['DeliveryVersionStatus'] | null;
 			homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 			unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 		};
@@ -21894,7 +21894,7 @@ export interface components {
 		};
 		IssuedCertificateListQuery: {
 			search?: string | null;
-			status?: null | components['schemas']['CertificateStatus'];
+			status?: components['schemas']['CertificateStatus'] | null;
 			/** Format: uuid */
 			templateId?: string | null;
 		};
@@ -21979,7 +21979,7 @@ export interface components {
 		ItemsData_SupervisionEvaluatorAvailability: {
 			items: {
 				available: boolean;
-				conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+				conflict?: components['schemas']['SupervisionEvaluatorConflict'] | null;
 				conflictReason?: string | null;
 				/** Format: uuid */
 				id: string;
@@ -22014,7 +22014,7 @@ export interface components {
 				/** Format: uuid */
 				learningGroupId?: string | null;
 				lessonSnapshot: components['schemas']['LessonSnapshot'];
-				manualLesson?: null | components['schemas']['ManualLesson'];
+				manualLesson?: components['schemas']['ManualLesson'] | null;
 				/** Format: date-time */
 				observedAt: string;
 				observedDisplayName?: string | null;
@@ -22045,7 +22045,7 @@ export interface components {
 				/** Format: date-time */
 				observedAt?: string | null;
 				organizationUnitNames: string[];
-				status?: null | components['schemas']['SupervisionObservationStatus'];
+				status?: components['schemas']['SupervisionObservationStatus'] | null;
 				teacherDisplayName: string;
 				/** Format: uuid */
 				teacherId: string;
@@ -22314,7 +22314,7 @@ export interface components {
 			purpose: components['schemas']['LeaveProcessPurpose'];
 			/** Format: uuid */
 			requestId: string;
-			signature?: null | components['schemas']['LeaveSignatureConsent'];
+			signature?: components['schemas']['LeaveSignatureConsent'] | null;
 		};
 		/** @enum {string} */
 		LeaveCountingMode: 'calendar_days' | 'working_days';
@@ -22340,7 +22340,7 @@ export interface components {
 			id: string;
 			/** Format: int64 */
 			revision: number;
-			signature?: null | components['schemas']['LeaveSignatureConsent'];
+			signature?: components['schemas']['LeaveSignatureConsent'] | null;
 		};
 		/** @enum {string} */
 		LeaveKind: 'leave' | 'exit';
@@ -22364,7 +22364,7 @@ export interface components {
 			typeId: string;
 		};
 		LeavePersonalOptions: {
-			personnelType?: null | components['schemas']['StaffPersonnelType'];
+			personnelType?: components['schemas']['StaffPersonnelType'] | null;
 			types: components['schemas']['LeaveType'][];
 		};
 		LeavePolicyVersion: {
@@ -22413,8 +22413,8 @@ export interface components {
 			contentHash: string;
 			evidenceFileIds: string[];
 			history: components['schemas']['LeaveHistoryEntry'][];
-			instance?: null | components['schemas']['ProcessInstance'];
-			policy?: null | components['schemas']['LeavePolicyVersion'];
+			instance?: components['schemas']['ProcessInstance'] | null;
+			policy?: components['schemas']['LeavePolicyVersion'] | null;
 			processPurpose: components['schemas']['LeaveProcessPurpose'];
 			request: components['schemas']['LeaveRequestSummary'];
 		};
@@ -22437,7 +22437,7 @@ export interface components {
 			/** Format: uuid */
 			ownerId: string;
 			ownerName: string;
-			personnelType?: null | components['schemas']['StaffPersonnelType'];
+			personnelType?: components['schemas']['StaffPersonnelType'] | null;
 			/** Format: uuid */
 			policyVersionId?: string | null;
 			reason: string;
@@ -22565,7 +22565,7 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			cycleId?: string | null;
-			status?: null | components['schemas']['SupervisionObservationStatus'];
+			status?: components['schemas']['SupervisionObservationStatus'] | null;
 		};
 		LockBlocker: {
 			/** Format: uuid */
@@ -22590,7 +22590,7 @@ export interface components {
 		};
 		LockOutcome: {
 			blockers: components['schemas']['LockBlocker'][];
-			lock?: null | components['schemas']['EvaluationLock'];
+			lock?: components['schemas']['EvaluationLock'] | null;
 		};
 		LoginData: {
 			user: components['schemas']['CurrentUserResponse'];
@@ -23040,7 +23040,7 @@ export interface components {
 		PreparationGroupingState: 'proposed' | 'deferred' | 'conflict';
 		PreparedActivityStudent: {
 			displayName: string;
-			outcome?: null | components['schemas']['ActivityOutcome'];
+			outcome?: components['schemas']['ActivityOutcome'] | null;
 			/** Format: int64 */
 			rowVersion?: number | null;
 			/** Format: uuid */
@@ -23127,8 +23127,8 @@ export interface components {
 			reassignUserId?: string | null;
 			/** Format: uuid */
 			requestId: string;
-			routing?: null | components['schemas']['DirectedRoutingRequest'];
-			signature?: null | components['schemas']['SignatureInput'];
+			routing?: components['schemas']['DirectedRoutingRequest'] | null;
+			signature?: components['schemas']['SignatureInput'] | null;
 		};
 		/** @enum {string} */
 		ProcessCompletionPolicy: 'all' | 'any';
@@ -23166,7 +23166,7 @@ export interface components {
 			/** Format: uuid */
 			createdBy: string;
 			currentStep: number;
-			directed?: null | components['schemas']['DirectedProcess'];
+			directed?: components['schemas']['DirectedProcess'] | null;
 			/** Format: date-time */
 			dueAt?: string | null;
 			/** Format: uuid */
@@ -23290,7 +23290,7 @@ export interface components {
 			id: string;
 			/** Format: uuid */
 			itemId: string;
-			resolution?: null | components['schemas']['PromotionImpactResolution'];
+			resolution?: components['schemas']['PromotionImpactResolution'] | null;
 			/** Format: uuid */
 			studentAcademicYearId: string;
 		};
@@ -23365,7 +23365,7 @@ export interface components {
 			itemId: string;
 			outcome: components['schemas']['PromotionImpactResolutionOutcome'];
 			reason: string;
-			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+			replacementDecision?: components['schemas']['PromotionDecisionInput'] | null;
 			/** Format: uuid */
 			requestId: string;
 			resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
@@ -23442,7 +23442,7 @@ export interface components {
 		};
 		PromotionRecommendation: {
 			findings: components['schemas']['PromotionRecommendationFinding'][];
-			suggestedOutcome?: null | components['schemas']['PromotionSuccessOutcome'];
+			suggestedOutcome?: components['schemas']['PromotionSuccessOutcome'] | null;
 			/** Format: uuid */
 			targetGradeLevelId?: string | null;
 			/** Format: uuid */
@@ -23517,7 +23517,7 @@ export interface components {
 			annualRevisionId?: string | null;
 			/** Format: date-time */
 			createdAt: string;
-			decision?: null | components['schemas']['PromotionDecisionInput'];
+			decision?: components['schemas']['PromotionDecisionInput'] | null;
 			/** Format: uuid */
 			existingTargetStudentYearId?: string | null;
 			/** Format: uuid */
@@ -23570,7 +23570,7 @@ export interface components {
 			annualResultCurrent: boolean;
 			item: components['schemas']['PromotionRunItem'];
 			needsRecalculation: boolean;
-			receipt?: null | components['schemas']['PromotionExecutionReceipt'];
+			receipt?: components['schemas']['PromotionExecutionReceipt'] | null;
 			studentCode?: string | null;
 			studentName: string;
 		};
@@ -23659,7 +23659,7 @@ export interface components {
 			units: components['schemas']['PublicOrganizationUnit'][];
 		};
 		PublicSchoolStatistics: {
-			academicYear: null | components['schemas']['PublicAcademicYear'];
+			academicYear: components['schemas']['PublicAcademicYear'] | null;
 			/** Format: date-time */
 			asOf: string;
 			grades: components['schemas']['PublicGradeStatistics'][];
@@ -23858,7 +23858,7 @@ export interface components {
 			/** Format: date-time */
 			createdAt: string;
 			difficulty: string;
-			explanationContent?: null | components['schemas']['RichContent'];
+			explanationContent?: components['schemas']['RichContent'] | null;
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
@@ -23866,7 +23866,7 @@ export interface components {
 			/** Format: double */
 			points: number;
 			questionType: string;
-			rubricContent?: null | components['schemas']['RichContent'];
+			rubricContent?: components['schemas']['RichContent'] | null;
 			status: string;
 			stemContent: components['schemas']['RichContent'];
 			subjectCode?: string | null;
@@ -23915,10 +23915,10 @@ export interface components {
 			 * @description Comparison only: reduction evidence and all other qualifications are unverified.
 			 */
 			conditionalReducedDate: string | null;
-			criteria: null | components['schemas']['RankCriteriaVersion'];
+			criteria: components['schemas']['RankCriteriaVersion'] | null;
 			/** Format: int64 */
 			daysUntilOrdinaryDate: number | null;
-			nextRank: null | components['schemas']['StaffAcademicRank'];
+			nextRank: components['schemas']['StaffAcademicRank'] | null;
 			/** Format: date */
 			ordinaryDate: string | null;
 			reasonLabels: string[];
@@ -24118,7 +24118,7 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			cycleId: string;
-			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			manualLesson?: components['schemas']['ManualLessonInput'] | null;
 			/** Format: date-time */
 			observedAt?: string | null;
 			/** Format: uuid */
@@ -24148,7 +24148,7 @@ export interface components {
 		};
 		ResolvePromotionImpactInput: {
 			reason: string;
-			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
+			replacementDecision?: components['schemas']['PromotionDecisionInput'] | null;
 			/** Format: uuid */
 			requestId: string;
 			resolutionKind: components['schemas']['PromotionImpactResolutionKind'];
@@ -24158,7 +24158,7 @@ export interface components {
 			cells: components['schemas']['ResponseInput'][];
 		};
 		ResponseInput: {
-			qualityLevel?: null | components['schemas']['LearnerEvaluationLevel'];
+			qualityLevel?: components['schemas']['LearnerEvaluationLevel'] | null;
 			/** Format: int64 */
 			rowVersion?: number | null;
 			/** Format: uuid */
@@ -24285,7 +24285,7 @@ export interface components {
 			content: string;
 			/** Format: int64 */
 			expectedRevision: number;
-			metadata?: null | components['schemas']['CorrespondenceDraftMetadata'];
+			metadata?: components['schemas']['CorrespondenceDraftMetadata'] | null;
 			/** Format: uuid */
 			originalFileId?: string | null;
 			/** Format: uuid */
@@ -24297,7 +24297,7 @@ export interface components {
 		};
 		RevokeCertificateResult: {
 			certificate: components['schemas']['IssuedCertificateDetail'];
-			replacementCandidate: null | components['schemas']['CertificateReplacementCandidate'];
+			replacementCandidate: components['schemas']['CertificateReplacementCandidate'] | null;
 		};
 		RichBlockNode:
 			| {
@@ -24552,14 +24552,14 @@ export interface components {
 			amountSatang: string;
 			/** Format: uuid */
 			fiscalYearId: string;
-			from?: null | components['schemas']['BudgetAllocationRef'];
+			from?: components['schemas']['BudgetAllocationRef'] | null;
 			kind: components['schemas']['BudgetAdjustmentKind'];
 			/** Format: uuid */
 			loanId?: string | null;
 			reason: string;
 			/** Format: uuid */
 			requestId: string;
-			to?: null | components['schemas']['BudgetAllocationRef'];
+			to?: components['schemas']['BudgetAllocationRef'] | null;
 		};
 		SaveBudgetProjectRequest: {
 			activities: components['schemas']['BudgetActivityInput'][];
@@ -24652,14 +24652,14 @@ export interface components {
 		};
 		SaveCorrespondenceRoutingSettingsRequest: {
 			defaultAllowOnwardAssignment?: boolean;
-			defaultFirstRecipient?: null | components['schemas']['ProcessRecipient'];
+			defaultFirstRecipient?: components['schemas']['ProcessRecipient'] | null;
 			defaultPurpose: components['schemas']['DirectedPurpose'];
 			defaultRequireReview?: boolean;
-			defaultReviewer?: null | components['schemas']['ProcessRecipient'];
+			defaultReviewer?: components['schemas']['ProcessRecipient'] | null;
 			eligibleDecisionMakers: components['schemas']['ProcessRecipient'][];
 			/** Format: int64 */
 			expectedRevision: number;
-			numbering?: null | components['schemas']['CorrespondenceNumberingSettings'];
+			numbering?: components['schemas']['CorrespondenceNumberingSettings'] | null;
 			register: components['schemas']['CorrespondenceRegister'];
 			/** Format: uuid */
 			requestId: string;
@@ -24764,7 +24764,7 @@ export interface components {
 			/** Format: uuid */
 			fileId: string;
 			fontFamily: string | null;
-			fontStyle: null | components['schemas']['SchoolFontStyle'];
+			fontStyle: components['schemas']['SchoolFontStyle'] | null;
 			/** Format: int32 */
 			fontWeight: number | null;
 			status: components['schemas']['SchoolFontUploadStatus'];
@@ -24969,14 +24969,14 @@ export interface components {
 		StaffAcademicRank:
 			'none' | 'not_applicable' | 'proficient' | 'senior_proficient' | 'expert' | 'senior_expert';
 		StaffCareerCurrent: {
-			academicRank: null | components['schemas']['StaffCareerEntry'];
-			jobPosition: null | components['schemas']['StaffCareerEntry'];
-			personnelType: null | components['schemas']['StaffCareerEntry'];
+			academicRank: components['schemas']['StaffCareerEntry'] | null;
+			jobPosition: components['schemas']['StaffCareerEntry'] | null;
+			personnelType: components['schemas']['StaffCareerEntry'] | null;
 		};
 		StaffCareerCurrentChange: {
 			correctionReason?: string | null;
 			entry: components['schemas']['StaffCareerEntryInput'];
-			expectedCurrent: null | components['schemas']['StaffCareerReference'];
+			expectedCurrent: components['schemas']['StaffCareerReference'] | null;
 		};
 		StaffCareerEntry: {
 			/** Format: date-time */
@@ -24987,7 +24987,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			isCurrent: boolean;
-			jobPosition: null | components['schemas']['StaffJobPositionSummary'];
+			jobPosition: components['schemas']['StaffJobPositionSummary'] | null;
 			note: string | null;
 			/** Format: date */
 			orderDate: string | null;
@@ -25013,7 +25013,7 @@ export interface components {
 			| {
 					/** @enum {string} */
 					kind: 'personnel_type';
-					value: null | components['schemas']['StaffPersonnelType'];
+					value: components['schemas']['StaffPersonnelType'] | null;
 			  }
 			| {
 					/** @enum {string} */
@@ -25024,7 +25024,7 @@ export interface components {
 			| {
 					/** @enum {string} */
 					kind: 'academic_rank';
-					value: null | components['schemas']['StaffAcademicRank'];
+					value: components['schemas']['StaffAcademicRank'] | null;
 			  };
 		StaffCareerHistoryPage: {
 			current: components['schemas']['StaffCareerCurrent'];
@@ -25063,14 +25063,14 @@ export interface components {
 			file: string;
 		};
 		StaffEducation: {
-			education_level: null | components['schemas']['StaffEducationLevel'];
+			education_level: components['schemas']['StaffEducationLevel'] | null;
 			/** Format: uuid */
 			id: string;
 			major: string | null;
 			university: string | null;
 		};
 		StaffEducationInput: {
-			education_level?: null | components['schemas']['StaffEducationLevel'];
+			education_level?: components['schemas']['StaffEducationLevel'] | null;
 			/** Format: uuid */
 			id?: string | null;
 			major?: string | null;
@@ -25089,13 +25089,13 @@ export interface components {
 			| 'doctorate'
 			| 'other';
 		StaffInfoResponse: {
-			academic_rank: null | components['schemas']['StaffAcademicRank'];
+			academic_rank: components['schemas']['StaffAcademicRank'] | null;
 			current_career: components['schemas']['StaffCareerCurrent'];
 			/** Format: int64 */
 			education_revision: number;
 			educations: components['schemas']['StaffEducation'][];
-			highest_education_level: null | components['schemas']['StaffEducationLevel'];
-			job_position: null | components['schemas']['StaffJobPositionSummary'];
+			highest_education_level: components['schemas']['StaffEducationLevel'] | null;
+			job_position: components['schemas']['StaffJobPositionSummary'] | null;
 			/** Format: date */
 			teaching_license_expiry: string | null;
 			/** Format: uuid */
@@ -25122,12 +25122,12 @@ export interface components {
 			total_pages: number;
 		};
 		StaffListItem: {
-			academic_rank: null | components['schemas']['StaffAcademicRank'];
+			academic_rank: components['schemas']['StaffAcademicRank'] | null;
 			display_name: string;
 			first_name: string;
 			/** Format: uuid */
 			id: string;
-			job_position: null | components['schemas']['StaffJobPositionSummary'];
+			job_position: components['schemas']['StaffJobPositionSummary'] | null;
 			last_name: string;
 			organization_units: string[];
 			/** Format: uuid */
@@ -25177,7 +25177,7 @@ export interface components {
 			profile_image_file_id: string | null;
 			resigned_date: string | null;
 			roles: components['schemas']['RoleResponse'][];
-			staff_info: null | components['schemas']['StaffInfoResponse'];
+			staff_info: components['schemas']['StaffInfoResponse'] | null;
 			status: string;
 			subject_groups: components['schemas']['StaffSubjectGroupSummary'][];
 			teaching_assignments: components['schemas']['TeachingAssignmentItem'][];
@@ -25307,7 +25307,7 @@ export interface components {
 			gradeLevelId?: string | null;
 			/** Format: uuid */
 			homeroomId?: string | null;
-			status?: null | components['schemas']['StudentAcademicYearStatus'];
+			status?: components['schemas']['StudentAcademicYearStatus'] | null;
 			/** Format: uuid */
 			studentId?: string | null;
 			/** Format: uuid */
@@ -25598,12 +25598,12 @@ export interface components {
 			comment?: string | null;
 			/** Format: date-time */
 			createdAt: string;
-			fromStatus?: null | components['schemas']['SupervisionObservationStatus'];
+			fromStatus?: components['schemas']['SupervisionObservationStatus'] | null;
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
 			observationId: string;
-			toStatus?: null | components['schemas']['SupervisionObservationStatus'];
+			toStatus?: components['schemas']['SupervisionObservationStatus'] | null;
 		};
 		SupervisionCycle: {
 			/** Format: uuid */
@@ -25700,7 +25700,7 @@ export interface components {
 		};
 		SupervisionEvaluatorAvailability: {
 			available: boolean;
-			conflict?: null | components['schemas']['SupervisionEvaluatorConflict'];
+			conflict?: components['schemas']['SupervisionEvaluatorConflict'] | null;
 			conflictReason?: string | null;
 			/** Format: uuid */
 			id: string;
@@ -25743,7 +25743,7 @@ export interface components {
 			/** Format: uuid */
 			learningGroupId?: string | null;
 			lessonSnapshot: components['schemas']['LessonSnapshot'];
-			manualLesson?: null | components['schemas']['ManualLesson'];
+			manualLesson?: components['schemas']['ManualLesson'] | null;
 			/** Format: date-time */
 			observedAt: string;
 			observedDisplayName?: string | null;
@@ -25824,7 +25824,7 @@ export interface components {
 			/** Format: date-time */
 			observedAt?: string | null;
 			organizationUnitNames: string[];
-			status?: null | components['schemas']['SupervisionObservationStatus'];
+			status?: components['schemas']['SupervisionObservationStatus'] | null;
 			teacherDisplayName: string;
 			/** Format: uuid */
 			teacherId: string;
@@ -26307,7 +26307,7 @@ export interface components {
 			opensYear: boolean;
 			plannedStudents: number;
 			policy: components['schemas']['OpeningPolicy'];
-			predecessor?: null | components['schemas']['YearLifecycleContext'];
+			predecessor?: components['schemas']['YearLifecycleContext'] | null;
 			sourceChecksum: string;
 		};
 		TermAggregatePreview: {
@@ -26580,7 +26580,7 @@ export interface components {
 			minFontSize: number;
 			/** Format: double */
 			rotation: number;
-			shadow?: null | components['schemas']['TextShadow'];
+			shadow?: components['schemas']['TextShadow'] | null;
 		};
 		TextShadow: {
 			/** Format: double */
@@ -26618,11 +26618,11 @@ export interface components {
 			periodName: string;
 			/** Format: int64 */
 			rowVersion: number;
-			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
+			schedulingMode: components['schemas']['ActivitySchedulingMode'] | null;
 			/** Format: uuid */
 			seriesId: string | null;
 			startTime: string;
-			structuralKind: null | components['schemas']['TimetableStructuralKind'];
+			structuralKind: components['schemas']['TimetableStructuralKind'] | null;
 			syncStates: components['schemas']['TimetableBlockSyncState'][];
 			teachers: components['schemas']['TimetableBlockTeacher'][];
 			/** Format: uuid */
@@ -26639,7 +26639,7 @@ export interface components {
 			message: string;
 			/** Format: uuid */
 			targetId: string | null;
-			targetKind: null | components['schemas']['TimetableTargetKind'];
+			targetKind: components['schemas']['TimetableTargetKind'] | null;
 		};
 		/** @enum {string} */
 		TimetableBlockConflictType:
@@ -26670,7 +26670,7 @@ export interface components {
 			roomName: string | null;
 			/** Format: int64 */
 			rowVersion: number;
-			syncStatus: null | components['schemas']['TimetableBlockSyncStatus'];
+			syncStatus: components['schemas']['TimetableBlockSyncStatus'] | null;
 		};
 		TimetableBlockHomeroom: {
 			code: string;
@@ -26713,7 +26713,7 @@ export interface components {
 		};
 		TimetableBlockPlacementPreview: {
 			conflicts: components['schemas']['TimetableBlockConflict'][];
-			mutation: null | components['schemas']['TimetableBlockMutationKind'];
+			mutation: components['schemas']['TimetableBlockMutationKind'] | null;
 			normalizedCandidate: components['schemas']['TimetableBlockPlacementCandidate'];
 			/** Format: uuid */
 			sourceBlockId: string | null;
@@ -27039,7 +27039,7 @@ export interface components {
 			createdBy: string | null;
 			/** Format: uuid */
 			deliveryVersionId: string;
-			displayState: null | components['schemas']['TimetableVersionDisplayState'];
+			displayState: components['schemas']['TimetableVersionDisplayState'] | null;
 			/** Format: date */
 			effectiveFrom: string | null;
 			/** Format: date */
@@ -27200,14 +27200,14 @@ export interface components {
 			expectedRevision: number;
 			/** Format: uuid */
 			fiscalYearId: string;
-			from?: null | components['schemas']['BudgetAllocationRef'];
+			from?: components['schemas']['BudgetAllocationRef'] | null;
 			kind: components['schemas']['BudgetAdjustmentKind'];
 			/** Format: uuid */
 			loanId?: string | null;
 			reason: string;
 			/** Format: uuid */
 			requestId: string;
-			to?: null | components['schemas']['BudgetAllocationRef'];
+			to?: components['schemas']['BudgetAllocationRef'] | null;
 		};
 		UpdateBuildingRequest: {
 			code?: string | null;
@@ -27253,7 +27253,7 @@ export interface components {
 			/** Format: date-time */
 			expectedUpdatedAt: string;
 			name?: string | null;
-			ownerOrganizationUnitId?: null | components['schemas']['NullableUuidUpdate'];
+			ownerOrganizationUnitId?: components['schemas']['NullableUuidUpdate'] | null;
 		};
 		UpdateCertificateCandidateRequest: {
 			activityItem?: string | null;
@@ -27267,7 +27267,7 @@ export interface components {
 			importedLastName: string;
 			importedTitle?: string | null;
 			recipientType: components['schemas']['RecipientType'];
-			selectedNameSource?: null | components['schemas']['CandidateNameSource'];
+			selectedNameSource?: components['schemas']['CandidateNameSource'] | null;
 			staffUsername?: string | null;
 			studentId?: string | null;
 			/** Format: uuid */
@@ -27279,7 +27279,7 @@ export interface components {
 			/** Format: date-time */
 			expectedUpdatedAt: string;
 			isActive?: boolean | null;
-			layout?: null | components['schemas']['CertificateLayoutV1'];
+			layout?: components['schemas']['CertificateLayoutV1'] | null;
 			name?: string | null;
 			/** Format: double */
 			safeMarginPoints?: number | null;
@@ -27438,7 +27438,7 @@ export interface components {
 			title?: string | null;
 		};
 		UpdateRequestedObservationRequest: {
-			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			manualLesson?: components['schemas']['ManualLessonInput'] | null;
 			/** Format: date-time */
 			observedAt?: string | null;
 			/** Format: uuid */
@@ -27484,11 +27484,11 @@ export interface components {
 			changes: components['schemas']['StaffCareerCurrentChange'][];
 		};
 		UpdateStaffInfoRequest: {
-			career?: null | components['schemas']['UpdateStaffCareerRequest'];
-			education?: null | components['schemas']['ReplaceStaffEducation'];
+			career?: components['schemas']['UpdateStaffCareerRequest'] | null;
+			education?: components['schemas']['ReplaceStaffEducation'] | null;
 			/** Format: date */
 			teaching_license_expiry?: string | null;
-			teaching_license_file?: null | components['schemas']['ReplaceStaffTeachingLicenseFile'];
+			teaching_license_file?: components['schemas']['ReplaceStaffTeachingLicenseFile'] | null;
 			teaching_license_number?: string | null;
 		};
 		UpdateStaffRequest: {
@@ -27513,7 +27513,7 @@ export interface components {
 			/** Format: uuid */
 			profile_image_file_id?: string | null;
 			role_ids?: string[] | null;
-			staff_info?: null | components['schemas']['UpdateStaffInfoRequest'];
+			staff_info?: components['schemas']['UpdateStaffInfoRequest'] | null;
 			status?: string | null;
 			title?: string | null;
 			title_en?: string | null;
@@ -27535,7 +27535,7 @@ export interface components {
 			gender?: string | null;
 			last_name?: string | null;
 			phone?: string | null;
-			registration_status?: null | components['schemas']['StudentRegistrationStatus'];
+			registration_status?: components['schemas']['StudentRegistrationStatus'] | null;
 			title?: string | null;
 		};
 		UpdateStudyProgramRequest: {
@@ -27587,14 +27587,14 @@ export interface components {
 			endsAt?: string | null;
 			/** Format: date-time */
 			startsAt?: string | null;
-			status?: null | components['schemas']['SupervisionCycleStatus'];
+			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][] | null;
 			/** Format: uuid */
 			templateId?: string | null;
 			title?: string | null;
 		};
 		UpdateSupervisionObservationRequest: {
-			manualLesson?: null | components['schemas']['ManualLessonInput'];
+			manualLesson?: components['schemas']['ManualLessonInput'] | null;
 			/** Format: date-time */
 			observedAt?: string | null;
 			/** Format: uuid */
@@ -27609,7 +27609,7 @@ export interface components {
 			/** Format: int32 */
 			ratingMin?: number | null;
 			sections?: components['schemas']['CreateSupervisionTemplateSectionRequest'][] | null;
-			status?: null | components['schemas']['SupervisionTemplateStatus'];
+			status?: components['schemas']['SupervisionTemplateStatus'] | null;
 			steps?: components['schemas']['CreateSupervisionTemplateStepRequest'][] | null;
 			title?: string | null;
 		};
@@ -27771,11 +27771,11 @@ export interface components {
 		UpsertQuestionRequest: {
 			choices: components['schemas']['UpsertQuestionChoiceRequest'][];
 			difficulty: string;
-			explanationContent?: null | components['schemas']['RichContent'];
+			explanationContent?: components['schemas']['RichContent'] | null;
 			/** Format: double */
 			points: number;
 			questionType: string;
-			rubricContent?: null | components['schemas']['RichContent'];
+			rubricContent?: components['schemas']['RichContent'] | null;
 			status: string;
 			stemContent: components['schemas']['RichContent'];
 			/** Format: uuid */
@@ -33430,6 +33430,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Gradebook controls returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33438,6 +33439,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_GradebookControl'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33466,6 +33468,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook control updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33474,6 +33477,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_GradebookControl'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33482,6 +33486,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33507,6 +33512,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Group phase gradebook workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33515,6 +33521,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_GroupPhaseWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33544,6 +33551,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook phase confirmation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33552,6 +33560,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PhaseConfirmation'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33560,6 +33569,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33589,6 +33599,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook score item created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33597,6 +33608,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ScoreItem'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33605,6 +33617,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33635,6 +33648,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook score item updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33643,6 +33657,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ScoreItem'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33651,6 +33666,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33681,6 +33697,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook score item removal result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33689,6 +33706,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ScoreItemRemovalOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33697,6 +33715,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33726,6 +33745,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Gradebook score batch saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33734,6 +33754,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ScoreBatchOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -33742,6 +33763,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -33764,6 +33786,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Gradebook subjects returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -33772,6 +33795,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_GradebookSubject'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34599,6 +34623,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation criterion catalog returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34607,6 +34632,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CatalogCriterion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34615,6 +34641,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34641,6 +34668,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation catalog criterion created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34649,6 +34677,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CatalogCriterion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34657,6 +34686,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34685,6 +34715,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation catalog criterion updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34693,6 +34724,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CatalogCriterion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34701,6 +34733,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34729,6 +34762,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation catalog criterion removed */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34737,6 +34771,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34745,6 +34780,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34767,6 +34803,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation controls returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34775,6 +34812,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_EvaluationControl'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34783,6 +34821,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34811,6 +34850,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation control updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34819,6 +34859,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationControl'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34827,6 +34868,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34852,6 +34894,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34860,6 +34903,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34868,6 +34912,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34897,6 +34942,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation group confirmation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34905,6 +34951,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ConfirmationOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34913,6 +34960,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34942,6 +34990,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation responses saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34950,6 +34999,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34958,6 +35008,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34980,6 +35031,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation subject lock readiness returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -34988,6 +35040,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_LearnerEvaluationSubjectLockReadiness'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34996,6 +35049,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35018,6 +35072,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation aggregation policies returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35026,6 +35081,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AggregationPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35034,6 +35090,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35060,6 +35117,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation aggregation policy created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35068,6 +35126,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AggregationPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35076,6 +35135,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35104,6 +35164,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation aggregation policy activated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35112,6 +35173,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AggregationPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35120,6 +35182,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35144,6 +35207,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student learner evaluation summary returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35152,6 +35216,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_StudentEvaluationSummary'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35160,6 +35225,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35182,6 +35248,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation subjects returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35190,6 +35257,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_EvaluationSubject'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35198,6 +35266,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35223,6 +35292,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation configuration returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35231,6 +35301,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationConfiguration'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35248,6 +35319,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35277,6 +35349,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation criterion created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35285,6 +35358,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationCriterion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35293,6 +35367,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35323,6 +35398,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation criterion updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35331,6 +35407,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EvaluationCriterion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35339,6 +35416,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35369,6 +35447,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Learner evaluation criterion removal result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35377,6 +35456,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CriterionRemoval'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35385,6 +35465,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -35410,6 +35491,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Learner evaluation subject lock result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -35418,6 +35500,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LockOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -35426,6 +35509,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36399,6 +36483,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic opening policy returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36407,6 +36492,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_OpeningPolicy'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36415,6 +36501,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36423,6 +36510,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36431,6 +36519,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36439,6 +36528,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36447,6 +36537,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -36470,6 +36561,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic opening policy updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36478,6 +36570,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_OpeningPolicy'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36486,6 +36579,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36494,6 +36588,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36502,6 +36597,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36510,6 +36606,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36518,6 +36615,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -36537,6 +36635,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Promotion policy versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36545,6 +36644,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_PromotionPolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36553,6 +36653,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36561,6 +36662,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36569,6 +36671,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36592,6 +36695,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion policy version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36600,6 +36704,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionPolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36608,6 +36713,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36616,6 +36722,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36624,6 +36731,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36643,6 +36751,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Promotion policy options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36651,6 +36760,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionPolicyOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36659,6 +36769,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36667,6 +36778,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36675,6 +36787,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36698,6 +36811,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Promotion runs returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36706,6 +36820,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionRunList'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36714,6 +36829,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36722,6 +36838,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36730,6 +36847,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -36738,6 +36856,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36746,6 +36865,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36754,6 +36874,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -36777,6 +36898,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36785,6 +36907,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionRun'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36793,6 +36916,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36801,6 +36925,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36809,6 +36934,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -36817,6 +36943,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36825,6 +36952,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36833,6 +36961,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -36854,6 +36983,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Promotion run workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36862,6 +36992,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionRunWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36870,6 +37001,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36878,6 +37010,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36886,6 +37019,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -36894,6 +37028,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36902,6 +37037,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36910,6 +37046,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -36935,6 +37072,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run approval result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -36943,6 +37081,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionRun'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -36951,6 +37090,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -36959,6 +37099,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -36967,6 +37108,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -36975,6 +37117,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -36983,6 +37126,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -36991,6 +37135,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37016,6 +37161,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run calculation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37024,6 +37170,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionRunCalculation'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37032,6 +37179,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37040,6 +37188,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37048,6 +37197,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37056,6 +37206,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37064,6 +37215,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37072,6 +37224,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37097,6 +37250,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run execution result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37105,6 +37259,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionExecutionResult'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37113,6 +37268,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37121,6 +37277,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37129,6 +37286,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37137,6 +37295,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37145,6 +37304,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37153,6 +37313,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37176,6 +37337,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Promotion run impacts returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37184,6 +37346,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionImpactWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37192,6 +37355,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37200,6 +37364,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37208,6 +37373,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37216,6 +37382,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37224,6 +37391,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37250,6 +37418,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run impact resolution result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37258,6 +37427,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionImpactResolution'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37266,6 +37436,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37274,6 +37445,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37282,6 +37454,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37290,6 +37463,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37298,6 +37472,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37306,6 +37481,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37332,6 +37508,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Promotion run item review saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37340,6 +37517,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_PromotionItemReview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37348,6 +37526,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37356,6 +37535,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37364,6 +37544,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37372,6 +37553,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37380,6 +37562,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37388,6 +37571,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37411,6 +37595,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic term preparation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37419,6 +37604,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermPreparationOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37427,6 +37613,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37435,6 +37622,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37443,6 +37631,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37451,6 +37640,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37459,6 +37649,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37467,6 +37658,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37490,6 +37682,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic term preparation preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37498,6 +37691,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermPreparationWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37506,6 +37700,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37514,6 +37709,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37522,6 +37718,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37530,6 +37727,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37538,6 +37736,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37546,6 +37745,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37569,6 +37769,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic term lifecycle workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37577,6 +37778,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermLifecycleWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37585,6 +37787,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37593,6 +37796,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37601,6 +37805,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37609,6 +37814,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37632,6 +37838,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic term activation workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37640,6 +37847,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermActivationWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37648,6 +37856,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37656,6 +37865,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37664,6 +37874,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37672,6 +37883,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37680,6 +37892,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37688,6 +37901,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37713,6 +37927,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic term transition result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37721,6 +37936,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermTransitionOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37729,6 +37945,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37737,6 +37954,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37745,6 +37963,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37753,6 +37972,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37761,6 +37981,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37782,6 +38003,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic year lifecycle workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37790,6 +38012,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_YearLifecycleWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37798,6 +38021,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37806,6 +38030,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37814,6 +38039,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37822,6 +38048,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37843,6 +38070,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic year reopening workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37851,6 +38079,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_YearReopeningWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37859,6 +38088,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37867,6 +38097,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37875,6 +38106,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37883,6 +38115,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37891,6 +38124,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37899,6 +38133,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -37924,6 +38159,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic year reopening result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -37932,6 +38168,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_YearReopeningOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -37940,6 +38177,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -37948,6 +38186,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -37956,6 +38195,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -37964,6 +38204,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -37972,6 +38213,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -37980,6 +38222,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Internal server error */
 			500: {
 				headers: {
 					[name: string]: unknown;
@@ -38005,6 +38248,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic year transition result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -38013,6 +38257,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_YearTransitionOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -38021,6 +38266,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -38029,6 +38275,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -38037,6 +38284,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -38045,6 +38293,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -38053,6 +38302,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -39161,6 +39411,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Ready activity result lock outcomes returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39169,6 +39420,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BulkActivityResultLockOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39177,6 +39429,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39196,6 +39449,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Result aggregation policy versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39204,6 +39458,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AggregatePolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39227,6 +39482,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Result aggregation policy version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39235,6 +39491,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AggregatePolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -39243,6 +39500,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39265,6 +39523,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Aggregate result student list returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39273,6 +39532,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AggregateStudent'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -39281,6 +39541,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -39289,6 +39550,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39297,6 +39559,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -39305,6 +39568,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39313,6 +39577,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -39334,6 +39599,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Annual result student list returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39342,6 +39608,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AnnualResultStudent'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -39350,6 +39617,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -39358,6 +39626,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39366,6 +39635,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -39374,6 +39644,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39382,6 +39653,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -39408,6 +39680,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Academic result correction result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39416,6 +39689,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EffectiveResult'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39424,6 +39698,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39449,6 +39724,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Effective academic result search results returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39457,6 +39733,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_EffectiveResultSearchItem'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39481,6 +39758,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Activity result preparation workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39489,6 +39767,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39497,6 +39776,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39525,6 +39805,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Activity result confirmation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39533,6 +39814,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39541,6 +39823,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39565,6 +39848,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Activity group result lock result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39573,6 +39857,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ActivityResultLockOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39581,6 +39866,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39609,6 +39895,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Activity result outcomes saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39617,6 +39904,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ActivityPreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39625,6 +39913,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39649,6 +39938,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Course result preparation workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39657,6 +39947,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39665,6 +39956,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39693,6 +39985,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Course result confirmation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39701,6 +39994,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39709,6 +40003,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39737,6 +40032,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Course result selection saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39745,6 +40041,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CoursePreparationWorkspace'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39753,6 +40050,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39775,6 +40073,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Grading policy versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39783,6 +40082,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_GradingPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39809,6 +40109,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Grading policy version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39817,6 +40118,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_GradingPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39825,6 +40127,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39853,6 +40156,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Grading policy activated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39861,6 +40165,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_GradingPolicyVersion'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39869,6 +40174,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39891,6 +40197,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Academic result readiness returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39899,6 +40206,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ResultReadiness'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39907,6 +40215,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -39932,6 +40241,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Term aggregate result preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39940,6 +40250,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermAggregatePreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -39948,6 +40259,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -39956,6 +40268,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -39980,6 +40293,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Term aggregate result revisions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -39988,6 +40302,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_TermAggregateRevision'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -39996,6 +40311,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40004,6 +40320,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40032,6 +40349,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Term aggregate result revision lock result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40040,6 +40358,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermAggregateRevision'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -40048,6 +40367,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40056,6 +40376,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40064,6 +40385,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -40087,6 +40409,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Annual result preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40095,6 +40418,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AnnualResultPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -40103,6 +40427,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -40111,6 +40436,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40119,6 +40445,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40127,6 +40454,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -40135,6 +40463,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -40158,6 +40487,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Annual result revisions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40166,6 +40496,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AnnualResultRevision'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -40174,6 +40505,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -40182,6 +40514,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40190,6 +40523,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40198,6 +40532,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -40206,6 +40541,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -40233,6 +40569,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Annual result revision lock result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40241,6 +40578,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AnnualResultRevision'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -40249,6 +40587,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -40257,6 +40596,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40265,6 +40605,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40273,6 +40614,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -40281,6 +40623,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -40307,6 +40650,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student term result preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40315,6 +40659,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TermResultPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -40323,6 +40668,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40331,6 +40677,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -40355,6 +40702,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Course subject result lock result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -40363,6 +40711,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CourseResultLockOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -40371,6 +40720,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42123,6 +42473,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42131,6 +42482,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42139,6 +42491,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42147,6 +42500,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42155,6 +42509,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -42163,6 +42518,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42187,6 +42543,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Timetable block deletion result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42195,6 +42552,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42220,6 +42578,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block group restoration result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42228,6 +42587,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42253,6 +42613,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block synchronization retry result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42261,6 +42622,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42286,6 +42648,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block target removal result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42294,6 +42657,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42302,6 +42666,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42310,6 +42675,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42318,6 +42684,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -42326,6 +42693,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42400,6 +42768,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Ordinary timetable block created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42408,6 +42777,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42416,6 +42786,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42424,6 +42795,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42432,6 +42804,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42455,6 +42828,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block placement preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42463,6 +42837,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlockPlacementPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42471,6 +42846,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42479,6 +42855,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42487,6 +42864,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42510,6 +42888,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Timetable block series deletion result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42518,6 +42897,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42541,6 +42921,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Structural timetable blocks created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42549,6 +42930,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42557,6 +42939,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42565,6 +42948,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42573,6 +42957,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42596,6 +42981,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable block swap result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42604,6 +42990,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SwapTimetableBlocksResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42627,6 +43014,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Synchronized timetable block created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42635,6 +43023,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlock'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42643,6 +43032,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42651,6 +43041,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42659,6 +43050,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -42682,6 +43074,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Timetable block workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -42690,6 +43083,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableBlockWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -42698,6 +43092,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -42706,6 +43101,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42714,6 +43110,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43143,6 +43540,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -43151,6 +43549,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -43159,6 +43558,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -43167,6 +43567,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -43175,6 +43576,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43183,6 +43585,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -43280,6 +43683,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable draft deletion result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -43288,6 +43692,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_DeletedTimetableDraft'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -43296,6 +43701,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -43304,6 +43710,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43312,6 +43719,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -43337,6 +43745,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable version delivery source updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -43345,6 +43754,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -43353,6 +43763,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -43361,6 +43772,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -43369,6 +43781,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43377,6 +43790,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -43402,6 +43816,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable publication preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -43410,6 +43825,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetablePublicationPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -43418,6 +43834,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -43426,6 +43843,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -43434,6 +43852,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43442,6 +43861,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -43467,6 +43887,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Timetable version publication result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -43475,6 +43896,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -43483,6 +43905,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -43491,6 +43914,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -43499,6 +43923,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -43507,6 +43932,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -43580,6 +44006,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Daily teaching overview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45570,6 +45997,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance audience group created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45578,6 +46006,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceAudienceGroup'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45586,6 +46015,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45594,6 +46024,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45617,6 +46048,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance calendar days returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45625,6 +46057,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AttendanceDay'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45633,6 +46066,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45641,6 +46075,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45666,6 +46101,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance calendar days saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45674,6 +46110,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45682,6 +46119,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45690,6 +46128,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45715,6 +46154,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance device saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45723,6 +46163,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceDevice'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45731,6 +46172,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45739,6 +46181,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45760,6 +46203,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance face enrollments returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45768,6 +46212,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AttendanceFaceEnrollment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45776,6 +46221,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45801,6 +46247,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance face enrollment saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45809,6 +46256,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45817,6 +46265,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45825,6 +46274,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45846,6 +46296,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance face enrollment removed */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45854,6 +46305,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45862,6 +46314,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45870,6 +46323,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45894,6 +46348,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance history returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45902,6 +46357,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_AttendanceHistoryItem'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45910,6 +46366,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45918,6 +46375,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45941,6 +46399,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance kiosk workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45949,6 +46408,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceKioskWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -45957,6 +46417,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -45965,6 +46426,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -45986,6 +46448,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -45994,6 +46457,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46002,6 +46466,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46010,6 +46475,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46034,6 +46500,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46042,6 +46509,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46050,6 +46518,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46058,6 +46527,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46084,6 +46554,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance report returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46092,6 +46563,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceReport'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46100,6 +46572,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46108,6 +46581,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46127,6 +46601,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance module reset impact returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46135,6 +46610,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceResetImpact'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46158,6 +46634,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance module reset result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46166,6 +46643,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceResetImpact'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46174,6 +46652,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46197,6 +46676,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance scan outcome returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46205,6 +46685,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceScanOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46213,6 +46694,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46221,6 +46703,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46242,6 +46725,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance session detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46250,6 +46734,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46258,6 +46743,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46266,6 +46752,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46291,6 +46778,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance results saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46299,6 +46787,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46307,6 +46796,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46315,6 +46805,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46340,6 +46831,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance session cancellation updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46348,6 +46840,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46356,6 +46849,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46364,6 +46858,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46385,6 +46880,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance settings returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46393,6 +46889,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46401,6 +46898,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46409,6 +46907,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46434,6 +46933,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance settings saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46442,6 +46942,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46450,6 +46951,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46458,6 +46960,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46483,6 +46986,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Special attendance template created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46491,6 +46995,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SpecialAttendanceTemplate'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46499,6 +47004,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46507,6 +47013,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46528,6 +47035,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance term purge impact returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46536,6 +47044,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendancePurgeImpact'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46544,6 +47053,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46552,6 +47062,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46577,6 +47088,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance term purge result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46585,6 +47097,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendancePurgeImpact'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46593,6 +47106,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46601,6 +47115,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -46623,6 +47138,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46631,6 +47147,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_AttendanceWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -46639,6 +47156,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -46647,6 +47165,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47081,6 +47600,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior score batch receipt returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47089,6 +47609,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorBatchReceipt'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47097,6 +47618,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47105,6 +47627,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47128,6 +47651,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior cleanup result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47136,6 +47660,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47144,6 +47669,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47152,6 +47678,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47173,6 +47700,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior cleanup job outcome returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47181,6 +47709,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47189,6 +47718,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -47212,6 +47742,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior cleanup preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47220,6 +47751,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCleanupPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47228,6 +47760,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47236,6 +47769,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47255,6 +47789,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior cycles returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47263,6 +47798,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_BehaviorCycle'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47271,6 +47807,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47279,6 +47816,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47314,6 +47852,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior entries report returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47322,6 +47861,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorReportPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47330,6 +47870,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47338,6 +47879,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47361,6 +47903,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior entry cancellation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47369,6 +47912,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCancellation'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47377,6 +47921,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47385,6 +47930,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47408,6 +47954,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior history adjustment result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47416,6 +47963,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorHistoryAdjustment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47424,6 +47972,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47432,6 +47981,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47454,6 +48004,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior score items returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47462,6 +48013,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_BehaviorItem'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47470,6 +48022,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47478,6 +48031,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47501,6 +48055,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior score item saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47509,6 +48064,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorItem'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47517,6 +48073,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47525,6 +48082,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47552,6 +48110,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior selector options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47560,6 +48119,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorSelectorOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47568,6 +48128,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47576,6 +48137,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47595,6 +48157,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student behavior overview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47603,6 +48166,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorOverview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47611,6 +48175,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47619,6 +48184,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47642,6 +48208,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior reset result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47650,6 +48217,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47658,6 +48226,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47666,6 +48235,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47689,6 +48259,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior reset preview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47697,6 +48268,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorCleanupPreview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47705,6 +48277,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47713,6 +48286,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47732,6 +48306,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Attendance behavior rules returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47740,6 +48315,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_BehaviorAttendanceRule'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47748,6 +48324,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47756,6 +48333,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47779,6 +48357,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Attendance behavior rule saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47787,6 +48366,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorAttendanceRule'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47795,6 +48375,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47803,6 +48384,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47822,6 +48404,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior settings returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47830,6 +48413,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47838,6 +48422,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47846,6 +48431,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47869,6 +48455,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Behavior settings saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47877,6 +48464,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47885,6 +48473,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47893,6 +48482,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47920,6 +48510,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Behavior student list returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47928,6 +48519,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorStudentPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47936,6 +48528,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -47944,6 +48537,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -47969,6 +48563,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student behavior summary returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47977,6 +48572,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BehaviorStudentSummary'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -47985,6 +48581,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48013,6 +48610,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget adjustments returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48021,6 +48619,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48029,6 +48628,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48037,6 +48637,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48045,6 +48646,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48053,6 +48655,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48076,6 +48679,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget adjustment created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48084,6 +48688,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48092,6 +48697,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48100,6 +48706,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48108,6 +48715,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48116,6 +48724,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48138,6 +48747,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget adjustment detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48146,6 +48756,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48154,6 +48765,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48162,6 +48774,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48170,6 +48783,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48178,6 +48792,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48204,6 +48819,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget adjustment saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48212,6 +48828,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48220,6 +48837,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48228,6 +48846,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48236,6 +48855,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48244,6 +48864,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48270,6 +48891,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget adjustment action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48278,6 +48900,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48286,6 +48909,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48294,6 +48918,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48302,6 +48927,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48310,6 +48936,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48341,6 +48968,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget adjustment history returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48349,6 +48977,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48357,6 +48986,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48365,6 +48995,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48373,6 +49004,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48381,6 +49013,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48403,6 +49036,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget adjustment process detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48411,6 +49045,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48419,6 +49054,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48427,6 +49063,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48435,6 +49072,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48443,6 +49081,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48469,6 +49108,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget adjustment submission result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48477,6 +49117,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetAdjustmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48485,6 +49126,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48493,6 +49135,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48501,6 +49144,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48509,6 +49153,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48528,6 +49173,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget catalogs returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48536,6 +49182,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetCatalogs'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48544,6 +49191,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48552,6 +49200,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48560,6 +49209,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48568,6 +49218,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48593,6 +49244,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget dashboard returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48601,6 +49253,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetDashboard'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48609,6 +49262,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48617,6 +49271,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48625,6 +49280,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48633,6 +49289,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48661,6 +49318,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget projects returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48669,6 +49327,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48677,6 +49336,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48685,6 +49345,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48693,6 +49354,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48701,6 +49363,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48724,6 +49387,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget project created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48732,6 +49396,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48740,6 +49405,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48748,6 +49414,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48756,6 +49423,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48764,6 +49432,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48786,6 +49455,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget project workspace returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48794,6 +49464,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48802,6 +49473,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48810,6 +49482,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48818,6 +49491,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48826,6 +49500,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48852,6 +49527,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget project saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48860,6 +49536,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48868,6 +49545,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48876,6 +49554,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48884,6 +49563,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48892,6 +49572,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48918,6 +49599,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget project action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48926,6 +49608,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -48934,6 +49617,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -48942,6 +49626,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -48950,6 +49635,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -48958,6 +49644,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -48984,6 +49671,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget project amendment result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -48992,6 +49680,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49000,6 +49689,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49008,6 +49698,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49016,6 +49707,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49024,6 +49716,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49055,6 +49748,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget project history returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49063,6 +49757,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49071,6 +49766,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49079,6 +49775,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49087,6 +49784,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49095,6 +49793,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49117,6 +49816,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget project process detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49125,6 +49825,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49133,6 +49834,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49141,6 +49843,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49149,6 +49852,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49157,6 +49861,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49183,6 +49888,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget spending request created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49191,6 +49897,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49199,6 +49906,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49207,6 +49915,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49215,6 +49924,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49223,6 +49933,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49249,6 +49960,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget project submission result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49257,6 +49969,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProjectWorkspace'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49265,6 +49978,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49273,6 +49987,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49281,6 +49996,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49289,6 +50005,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49323,6 +50040,7 @@ export interface operations {
 					'text/csv': string;
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49331,6 +50049,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49339,6 +50058,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49367,6 +50087,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget spending requests returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49375,6 +50096,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetRequestPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49383,6 +50105,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49391,6 +50114,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49399,6 +50123,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49407,6 +50132,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49429,6 +50155,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget spending request detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49437,6 +50164,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49445,6 +50173,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49453,6 +50182,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49461,6 +50191,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49469,6 +50200,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49495,6 +50227,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget spending request saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49503,6 +50236,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49511,6 +50245,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49519,6 +50254,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49527,6 +50263,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49535,6 +50272,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49561,6 +50299,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget spending request action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49569,6 +50308,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49577,6 +50317,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49585,6 +50326,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49593,6 +50335,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49601,6 +50344,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49627,6 +50371,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget spending request closure result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49635,6 +50380,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49643,6 +50389,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49651,6 +50398,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49659,6 +50407,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49667,6 +50416,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49698,6 +50448,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget spending request history returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49706,6 +50457,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetHistoryPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49714,6 +50466,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49722,6 +50475,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49730,6 +50484,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49738,6 +50493,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49769,6 +50525,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget spending request payments returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49777,6 +50534,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetPaymentPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49785,6 +50543,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49793,6 +50552,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49801,6 +50561,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49809,6 +50570,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49835,6 +50597,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget payment recording result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49843,6 +50606,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49851,6 +50615,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49859,6 +50624,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49867,6 +50633,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49875,6 +50642,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49903,6 +50671,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget payment refund result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49911,6 +50680,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49919,6 +50689,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49927,6 +50698,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49935,6 +50707,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -49943,6 +50716,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49965,6 +50739,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget spending request process detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -49973,6 +50748,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetProcessDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -49981,6 +50757,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -49989,6 +50766,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -49997,6 +50775,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -50005,6 +50784,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -50031,6 +50811,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget spending request submission result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -50039,6 +50820,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSpendingRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -50047,6 +50829,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -50055,6 +50838,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -50063,6 +50847,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -50071,6 +50856,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -50090,6 +50876,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Budget settings returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -50098,6 +50885,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -50106,6 +50894,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -50114,6 +50903,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -50122,6 +50912,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -50130,6 +50921,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -50153,6 +50945,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Budget settings saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -50161,6 +50954,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_BudgetSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -50169,6 +50963,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -50177,6 +50972,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -50185,6 +50981,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -50193,6 +50990,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53701,6 +54499,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Correspondence list returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53709,6 +54508,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceList'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -53717,6 +54517,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -53725,6 +54526,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53748,6 +54550,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53756,6 +54559,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -53764,6 +54568,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -53772,6 +54577,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53794,6 +54600,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Correspondence detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53802,6 +54609,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -53810,6 +54618,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -53818,6 +54627,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53844,6 +54654,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53852,6 +54663,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -53860,6 +54672,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -53868,6 +54681,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53893,6 +54707,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Directed correspondence sending result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53901,6 +54716,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -53909,6 +54725,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -53917,6 +54734,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -53988,6 +54806,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence read receipt returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -53996,6 +54815,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceReadReceipt'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54004,6 +54824,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54030,6 +54851,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence revision result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54038,6 +54860,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54046,6 +54869,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54054,6 +54878,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -54080,6 +54905,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence sending result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54088,6 +54914,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54096,6 +54923,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54104,6 +54932,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -54126,6 +54955,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Correspondence options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54134,6 +54964,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54142,6 +54973,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54150,6 +54982,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -54169,6 +55002,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Correspondence routing settings returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54177,6 +55011,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CorrespondenceRoutingSettings'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54200,6 +55035,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Correspondence routing settings saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54208,6 +55044,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CorrespondenceRoutingSettings'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54216,6 +55053,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54224,6 +55062,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -54243,6 +55082,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Signature assets returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54251,6 +55091,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_SignatureAsset'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54259,6 +55100,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54267,6 +55109,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -54290,6 +55133,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Signature asset created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -54298,6 +55142,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SignatureAsset'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -54306,6 +55151,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -54314,6 +55160,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -55759,6 +56606,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Current user timetable returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -55767,6 +56615,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_TimetableBlock'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57064,6 +57913,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Process instance returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -57072,6 +57922,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -57080,6 +57931,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57088,6 +57940,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -57113,6 +57966,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Process instance action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -57121,6 +57975,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessInstance'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -57129,6 +57984,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57137,6 +57993,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -57156,6 +58013,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Process templates returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -57164,6 +58022,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_ProcessTemplate'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -57172,6 +58031,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57180,6 +58040,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -57203,6 +58064,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Process template created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -57211,6 +58073,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -57219,6 +58082,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57227,6 +58091,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -57253,6 +58118,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Process template updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -57261,6 +58127,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_ProcessTemplate'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -57269,6 +58136,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -57277,6 +58145,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58585,6 +59454,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Personal staff leave options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58593,6 +59463,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeavePersonalOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58601,6 +59472,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58609,6 +59481,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58617,6 +59490,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58625,6 +59499,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58650,6 +59525,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave requests returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58658,6 +59534,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58666,6 +59543,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58674,6 +59552,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58682,6 +59561,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58690,6 +59570,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58713,6 +59594,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave request created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58721,6 +59603,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58729,6 +59612,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58737,6 +59621,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58745,6 +59630,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58753,6 +59639,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58775,6 +59662,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave request detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58783,6 +59671,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58791,6 +59680,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58799,6 +59689,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58807,6 +59698,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58815,6 +59707,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58841,6 +59734,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave request updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58849,6 +59743,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58857,6 +59752,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58865,6 +59761,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58873,6 +59770,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58881,6 +59779,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58907,6 +59806,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave request action result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58915,6 +59815,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58923,6 +59824,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58931,6 +59833,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -58939,6 +59842,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -58947,6 +59851,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -58973,6 +59878,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave cancellation request result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -58981,6 +59887,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -58989,6 +59896,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -58997,6 +59905,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59005,6 +59914,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59013,6 +59923,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59039,6 +59950,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave request submission result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59047,6 +59959,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59055,6 +59968,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59063,6 +59977,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59071,6 +59986,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59079,6 +59995,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59098,6 +60015,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave routing options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59106,6 +60024,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRoutingOptions'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59114,6 +60033,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59122,6 +60042,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59130,6 +60051,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59138,6 +60060,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59163,6 +60086,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave types returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59171,6 +60095,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_LeaveType'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59179,6 +60104,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59187,6 +60113,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59195,6 +60122,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59203,6 +60131,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59226,6 +60155,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave type created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59234,6 +60164,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveType'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59242,6 +60173,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59250,6 +60182,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59258,6 +60191,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59266,6 +60200,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59292,6 +60227,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave type updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59300,6 +60236,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveType'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59308,6 +60245,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59316,6 +60254,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59324,6 +60263,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59332,6 +60272,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59358,6 +60299,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave type removed */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59366,6 +60308,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_EmptyData'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59374,6 +60317,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59382,6 +60326,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59390,6 +60335,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59398,6 +60344,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59422,6 +60369,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Effective staff leave policy returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59430,6 +60378,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeavePolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59438,6 +60387,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59446,6 +60396,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59454,6 +60405,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59462,6 +60414,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59484,6 +60437,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave policy versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59492,6 +60446,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_LeavePolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59500,6 +60455,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59508,6 +60464,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59516,6 +60473,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59524,6 +60482,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59550,6 +60509,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Staff leave policy version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59558,6 +60518,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeavePolicyVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59566,6 +60527,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59574,6 +60536,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59582,6 +60545,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59590,6 +60554,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -59613,6 +60578,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Staff leave usage report returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -59621,6 +60587,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveUsageReport'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59629,6 +60596,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -59637,6 +60605,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -59645,6 +60614,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -59653,6 +60623,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60315,6 +61286,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care assignments returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60323,6 +61295,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareAssignment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60331,6 +61304,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60339,6 +61313,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60347,6 +61322,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60355,6 +61331,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60363,6 +61340,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60386,6 +61364,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assignments created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60394,6 +61373,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareAssignment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60402,6 +61382,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60410,6 +61391,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60418,6 +61400,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60426,6 +61409,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60434,6 +61418,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60455,6 +61440,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care assignment detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60463,6 +61449,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60471,6 +61458,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60479,6 +61467,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60487,6 +61476,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60495,6 +61485,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60503,6 +61494,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60528,6 +61520,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assignment acknowledgement result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60536,6 +61529,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60544,6 +61538,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60552,6 +61547,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60560,6 +61556,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60568,6 +61565,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60576,6 +61574,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60601,6 +61600,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assignment cancellation result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60609,6 +61609,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60617,6 +61618,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60625,6 +61627,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60633,6 +61636,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60641,6 +61645,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60649,6 +61654,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60674,6 +61680,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assessment draft saved */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60682,6 +61689,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60690,6 +61698,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60698,6 +61707,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60706,6 +61716,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60714,6 +61725,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60722,6 +61734,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60747,6 +61760,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assignment reviewers updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60755,6 +61769,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignment'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60763,6 +61778,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60771,6 +61787,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60779,6 +61796,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60787,6 +61805,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60795,6 +61814,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60820,6 +61840,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assessment submission result returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60828,6 +61849,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareAssignmentDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60836,6 +61858,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60844,6 +61867,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60852,6 +61876,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60860,6 +61885,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60868,6 +61894,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60895,6 +61922,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care cases returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60903,6 +61931,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareCase'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60911,6 +61940,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60919,6 +61949,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60927,6 +61958,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -60935,6 +61967,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -60943,6 +61976,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -60966,6 +62000,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care case created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60974,6 +62009,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60982,6 +62018,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -60990,6 +62027,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -60998,6 +62036,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61006,6 +62045,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61014,6 +62054,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61035,6 +62076,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care case detail returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61043,6 +62085,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61051,6 +62094,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61059,6 +62103,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61067,6 +62112,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61075,6 +62121,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61083,6 +62130,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61108,6 +62156,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care case updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61116,6 +62165,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61124,6 +62174,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61132,6 +62183,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61140,6 +62192,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61148,6 +62201,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61156,6 +62210,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61185,6 +62240,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care case events returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61193,6 +62249,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareCaseEvent'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61201,6 +62258,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61209,6 +62267,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61217,6 +62276,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61225,6 +62285,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61233,6 +62294,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61258,6 +62320,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care case event added */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61266,6 +62329,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareCaseDetail'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61274,6 +62338,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61282,6 +62347,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61290,6 +62356,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61298,6 +62365,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61306,6 +62374,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61333,6 +62402,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care instrument versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61341,6 +62411,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareInstrumentVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61349,6 +62420,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61357,6 +62429,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61365,6 +62438,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61373,6 +62447,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61381,6 +62456,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61404,6 +62480,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care instrument version created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61412,6 +62489,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareInstrumentVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61420,6 +62498,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61428,6 +62507,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61436,6 +62516,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61444,6 +62525,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61452,6 +62534,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61473,6 +62556,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care instrument version returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61481,6 +62565,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareInstrumentVersion'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61489,6 +62574,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61497,6 +62583,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61505,6 +62592,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61513,6 +62601,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61521,6 +62610,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61540,6 +62630,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care overview returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61548,6 +62639,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareOverview'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61556,6 +62648,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61564,6 +62657,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61572,6 +62666,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61580,6 +62675,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61588,6 +62684,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61615,6 +62712,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care assessment rounds returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61623,6 +62721,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareRound'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61631,6 +62730,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61639,6 +62739,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61647,6 +62748,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61655,6 +62757,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61663,6 +62766,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61686,6 +62790,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assessment round created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61694,6 +62799,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareRound'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61702,6 +62808,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61710,6 +62817,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61718,6 +62826,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61726,6 +62835,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61734,6 +62844,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61755,6 +62866,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care assessment round returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61763,6 +62875,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareRound'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61771,6 +62884,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61779,6 +62893,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61787,6 +62902,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61795,6 +62911,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61803,6 +62920,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61828,6 +62946,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care assessment round updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61836,6 +62955,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareRound'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61844,6 +62964,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61852,6 +62973,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61860,6 +62982,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61868,6 +62991,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61876,6 +63000,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61895,6 +63020,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care staff options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61903,6 +63029,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareStaffOption'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61911,6 +63038,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61919,6 +63047,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -61927,6 +63056,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -61935,6 +63065,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -61943,6 +63074,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -61968,6 +63100,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care student options returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -61976,6 +63109,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareStudentOption'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -61984,6 +63118,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -61992,6 +63127,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -62000,6 +63136,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -62008,6 +63145,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -62016,6 +63154,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -62043,6 +63182,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care visits returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -62051,6 +63191,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_CareVisit'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -62059,6 +63200,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -62067,6 +63209,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -62075,6 +63218,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -62083,6 +63227,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -62091,6 +63236,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -62114,6 +63260,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care visit record created */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -62122,6 +63269,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -62130,6 +63278,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -62138,6 +63287,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -62146,6 +63296,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -62154,6 +63305,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -62162,6 +63314,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -62183,6 +63336,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Student care visit record returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -62191,6 +63345,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -62199,6 +63354,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -62207,6 +63363,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -62215,6 +63372,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -62223,6 +63381,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -62231,6 +63390,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -62256,6 +63416,7 @@ export interface operations {
 			};
 		};
 		responses: {
+			/** @description Student care visit record updated */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -62264,6 +63425,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_CareVisitRecord'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -62272,6 +63434,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -62280,6 +63443,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -62288,6 +63452,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -62296,6 +63461,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request conflicts with the current resource state */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -62304,6 +63470,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Validation failed */
 			422: {
 				headers: {
 					[name: string]: unknown;
@@ -65470,6 +66637,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
+			/** @description Supply item versions returned */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -65478,6 +66646,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SupplyVersionPage'];
 				};
 			};
+			/** @description Invalid input */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -65486,6 +66655,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -65494,6 +66664,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -65502,6 +66673,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Resource not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

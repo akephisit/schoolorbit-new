@@ -12,7 +12,7 @@ use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError};
 use uuid::Uuid;
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/overview",operation_id="student_care_overview",tag="student-care",responses((status=200,body=ApiResponse<CareOverview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/overview",operation_id="student_care_overview",tag="student-care",responses((status=200, description = "Student care overview returned",body=ApiResponse<CareOverview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn overview(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -23,7 +23,7 @@ pub async fn overview(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/instruments",operation_id="student_care_list_instruments",tag="student-care",params(CareListQuery),responses((status=200,body=ApiResponse<Vec<CareInstrumentVersion>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/instruments",operation_id="student_care_list_instruments",tag="student-care",params(CareListQuery),responses((status=200, description = "Student care instrument versions returned",body=ApiResponse<Vec<CareInstrumentVersion>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_instruments(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -35,7 +35,7 @@ pub async fn list_instruments(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/instruments/{id}",operation_id="student_care_get_instrument",tag="student-care",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CareInstrumentVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/instruments/{id}",operation_id="student_care_get_instrument",tag="student-care",params(("id"=Uuid,Path)),responses((status=200, description = "Student care instrument version returned",body=ApiResponse<CareInstrumentVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_instrument(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -47,7 +47,7 @@ pub async fn get_instrument(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/instruments",operation_id="student_care_create_instrument",tag="student-care",request_body=CreateCareInstrumentVersion,responses((status=200,body=ApiResponse<CareInstrumentVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/instruments",operation_id="student_care_create_instrument",tag="student-care",request_body=CreateCareInstrumentVersion,responses((status=200, description = "Student care instrument version created",body=ApiResponse<CareInstrumentVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_instrument(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -60,7 +60,7 @@ pub async fn create_instrument(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/rounds/{id}",operation_id="student_care_get_round",tag="student-care",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CareRound>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/rounds/{id}",operation_id="student_care_get_round",tag="student-care",params(("id"=Uuid,Path)),responses((status=200, description = "Student care assessment round returned",body=ApiResponse<CareRound>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_round(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -72,7 +72,7 @@ pub async fn get_round(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/rounds",operation_id="student_care_list_rounds",tag="student-care",params(CareListQuery),responses((status=200,body=ApiResponse<Vec<CareRound>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/rounds",operation_id="student_care_list_rounds",tag="student-care",params(CareListQuery),responses((status=200, description = "Student care assessment rounds returned",body=ApiResponse<Vec<CareRound>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_rounds(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -84,7 +84,7 @@ pub async fn list_rounds(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/rounds",operation_id="student_care_create_round",tag="student-care",request_body=CreateCareRound,responses((status=200,body=ApiResponse<CareRound>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/rounds",operation_id="student_care_create_round",tag="student-care",request_body=CreateCareRound,responses((status=200, description = "Student care assessment round created",body=ApiResponse<CareRound>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_round(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -97,7 +97,7 @@ pub async fn create_round(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/rounds/{id}",operation_id="student_care_update_round",tag="student-care",params(("id"=Uuid,Path)),request_body=UpdateCareRound,responses((status=200,body=ApiResponse<CareRound>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/rounds/{id}",operation_id="student_care_update_round",tag="student-care",params(("id"=Uuid,Path)),request_body=UpdateCareRound,responses((status=200, description = "Student care assessment round updated",body=ApiResponse<CareRound>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn update_round(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -111,7 +111,7 @@ pub async fn update_round(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/students",operation_id="student_care_list_students",tag="student-care",params(CareStudentQuery),responses((status=200,body=ApiResponse<Vec<CareStudentOption>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/students",operation_id="student_care_list_students",tag="student-care",params(CareStudentQuery),responses((status=200, description = "Student care student options returned",body=ApiResponse<Vec<CareStudentOption>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_students(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -123,7 +123,7 @@ pub async fn list_students(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/staff",operation_id="student_care_list_staff",tag="student-care",responses((status=200,body=ApiResponse<Vec<CareStaffOption>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/staff",operation_id="student_care_list_staff",tag="student-care",responses((status=200, description = "Student care staff options returned",body=ApiResponse<Vec<CareStaffOption>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_staff(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -134,7 +134,7 @@ pub async fn list_staff(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/assignments",operation_id="student_care_list_assignments",tag="student-care",params(CareListQuery),responses((status=200,body=ApiResponse<Vec<CareAssignment>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/assignments",operation_id="student_care_list_assignments",tag="student-care",params(CareListQuery),responses((status=200, description = "Student care assignments returned",body=ApiResponse<Vec<CareAssignment>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_assignments(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -146,7 +146,7 @@ pub async fn list_assignments(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments",operation_id="student_care_create_assignments",tag="student-care",request_body=CreateCareAssignments,responses((status=200,body=ApiResponse<Vec<CareAssignment>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments",operation_id="student_care_create_assignments",tag="student-care",request_body=CreateCareAssignments,responses((status=200, description = "Student care assignments created",body=ApiResponse<Vec<CareAssignment>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_assignments(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -159,7 +159,7 @@ pub async fn create_assignments(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/assignments/{id}",operation_id="student_care_get_assignment",tag="student-care",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CareAssignmentDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/assignments/{id}",operation_id="student_care_get_assignment",tag="student-care",params(("id"=Uuid,Path)),responses((status=200, description = "Student care assignment detail returned",body=ApiResponse<CareAssignmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_assignment(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -171,7 +171,7 @@ pub async fn get_assignment(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/assignments/{id}/draft",operation_id="student_care_save_draft",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareResponse,responses((status=200,body=ApiResponse<CareAssignmentDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/assignments/{id}/draft",operation_id="student_care_save_draft",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareResponse,responses((status=200, description = "Student care assessment draft saved",body=ApiResponse<CareAssignmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn save_draft(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -185,7 +185,7 @@ pub async fn save_draft(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/submit",operation_id="student_care_submit_response",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareResponse,responses((status=200,body=ApiResponse<CareAssignmentDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/submit",operation_id="student_care_submit_response",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareResponse,responses((status=200, description = "Student care assessment submission result returned",body=ApiResponse<CareAssignmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn submit_response(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -199,7 +199,7 @@ pub async fn submit_response(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/cancel",operation_id="student_care_cancel_assignment",tag="student-care",params(("id"=Uuid,Path)),request_body=CareRevisionCommand,responses((status=200,body=ApiResponse<CareAssignment>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/cancel",operation_id="student_care_cancel_assignment",tag="student-care",params(("id"=Uuid,Path)),request_body=CareRevisionCommand,responses((status=200, description = "Student care assignment cancellation result returned",body=ApiResponse<CareAssignment>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn cancel_assignment(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -213,7 +213,7 @@ pub async fn cancel_assignment(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/acknowledge",operation_id="student_care_acknowledge_assignment",tag="student-care",params(("id"=Uuid,Path)),request_body=CareRevisionCommand,responses((status=200,body=ApiResponse<CareAssignment>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/acknowledge",operation_id="student_care_acknowledge_assignment",tag="student-care",params(("id"=Uuid,Path)),request_body=CareRevisionCommand,responses((status=200, description = "Student care assignment acknowledgement result returned",body=ApiResponse<CareAssignment>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn acknowledge_assignment(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -227,7 +227,7 @@ pub async fn acknowledge_assignment(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/visits",operation_id="student_care_list_visits",tag="student-care",params(CareListQuery),responses((status=200,body=ApiResponse<Vec<CareVisit>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/visits",operation_id="student_care_list_visits",tag="student-care",params(CareListQuery),responses((status=200, description = "Student care visits returned",body=ApiResponse<Vec<CareVisit>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_visits(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -239,7 +239,7 @@ pub async fn list_visits(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/visits",operation_id="student_care_create_visit",tag="student-care",request_body=SaveCareVisit,responses((status=200,body=ApiResponse<CareVisitRecord>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/visits",operation_id="student_care_create_visit",tag="student-care",request_body=SaveCareVisit,responses((status=200, description = "Student care visit record created",body=ApiResponse<CareVisitRecord>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_visit(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -252,7 +252,7 @@ pub async fn create_visit(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/visits/{id}",operation_id="student_care_get_visit",tag="student-care",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CareVisitRecord>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/visits/{id}",operation_id="student_care_get_visit",tag="student-care",params(("id"=Uuid,Path)),responses((status=200, description = "Student care visit record returned",body=ApiResponse<CareVisitRecord>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_visit(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -264,7 +264,7 @@ pub async fn get_visit(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/visits/{id}",operation_id="student_care_update_visit",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareVisit,responses((status=200,body=ApiResponse<CareVisitRecord>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/visits/{id}",operation_id="student_care_update_visit",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareVisit,responses((status=200, description = "Student care visit record updated",body=ApiResponse<CareVisitRecord>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn update_visit(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -278,7 +278,7 @@ pub async fn update_visit(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases/{id}/events",operation_id="student_care_list_case_events",tag="student-care",params(("id"=Uuid,Path),CareListQuery),responses((status=200,body=ApiResponse<Vec<CareCaseEvent>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases/{id}/events",operation_id="student_care_list_case_events",tag="student-care",params(("id"=Uuid,Path),CareListQuery),responses((status=200, description = "Student care case events returned",body=ApiResponse<Vec<CareCaseEvent>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_case_events(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -291,7 +291,7 @@ pub async fn list_case_events(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases",operation_id="student_care_list_cases",tag="student-care",params(CareListQuery),responses((status=200,body=ApiResponse<Vec<CareCase>>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases",operation_id="student_care_list_cases",tag="student-care",params(CareListQuery),responses((status=200, description = "Student care cases returned",body=ApiResponse<Vec<CareCase>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn list_cases(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -303,7 +303,7 @@ pub async fn list_cases(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/cases",operation_id="student_care_create_case",tag="student-care",request_body=SaveCareCase,responses((status=200,body=ApiResponse<CareCaseDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/cases",operation_id="student_care_create_case",tag="student-care",request_body=SaveCareCase,responses((status=200, description = "Student care case created",body=ApiResponse<CareCaseDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn create_case(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -316,7 +316,7 @@ pub async fn create_case(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases/{id}",operation_id="student_care_get_case",tag="student-care",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CareCaseDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/student-care/cases/{id}",operation_id="student_care_get_case",tag="student-care",params(("id"=Uuid,Path)),responses((status=200, description = "Student care case detail returned",body=ApiResponse<CareCaseDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn get_case(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -328,7 +328,7 @@ pub async fn get_case(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/cases/{id}",operation_id="student_care_update_case",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareCase,responses((status=200,body=ApiResponse<CareCaseDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/student-care/cases/{id}",operation_id="student_care_update_case",tag="student-care",params(("id"=Uuid,Path)),request_body=SaveCareCase,responses((status=200, description = "Student care case updated",body=ApiResponse<CareCaseDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn update_case(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -342,7 +342,7 @@ pub async fn update_case(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/cases/{id}/events",operation_id="student_care_add_case_event",tag="student-care",params(("id"=Uuid,Path)),request_body=AddCareCaseEvent,responses((status=200,body=ApiResponse<CareCaseDetail>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/cases/{id}/events",operation_id="student_care_add_case_event",tag="student-care",params(("id"=Uuid,Path)),request_body=AddCareCaseEvent,responses((status=200, description = "Student care case event added",body=ApiResponse<CareCaseDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn add_case_event(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -356,7 +356,7 @@ pub async fn add_case_event(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/reviewers",operation_id="student_care_update_assignment_reviewers",tag="student-care",params(("id"=Uuid,Path)),request_body=UpdateCareAssignmentReviewers,responses((status=200,body=ApiResponse<CareAssignment>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/student-care/assignments/{id}/reviewers",operation_id="student_care_update_assignment_reviewers",tag="student-care",params(("id"=Uuid,Path)),request_body=UpdateCareAssignmentReviewers,responses((status=200, description = "Student care assignment reviewers updated",body=ApiResponse<CareAssignment>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse))))]
 pub async fn update_assignment_reviewers(
     State(state): State<StudentCareHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

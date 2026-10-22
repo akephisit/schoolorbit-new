@@ -358,8 +358,15 @@ fn validate_pdf_structure(data: &[u8]) -> Result<lopdf::Document, FileInspection
         return Err(FileInspectionError::MalformedContent);
     }
 
-    let document =
-        lopdf::Document::load_mem(data).map_err(|_| FileInspectionError::MalformedContent)?;
+    // Upload inspection must reject damaged input rather than accept parser repairs.
+    let document = lopdf::Document::load_mem_with_options(
+        data,
+        lopdf::LoadOptions {
+            strict: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|_| FileInspectionError::MalformedContent)?;
     validate_pdf_cross_references(&document, data.len())?;
 
     let root_id = document
@@ -1253,6 +1260,34 @@ mod tests {
         );
 
         assert!(inspect_file(FilePurpose::Transcript, &xref_stream_pdf()).is_ok());
+    }
+
+    #[test]
+    fn rejects_pdf_cross_reference_offset_repairs_for_tables_and_streams() {
+        for valid in [xref_table_pdf(), xref_stream_pdf()] {
+            assert!(inspect_file(FilePurpose::Transcript, &valid).is_ok());
+            let marker = b"startxref\n";
+            let start = valid
+                .windows(marker.len())
+                .rposition(|window| window == marker)
+                .expect("fixture declares its cross-reference offset")
+                + marker.len();
+            let end = start
+                + valid[start..]
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .expect("fixture offset ends with a newline");
+            let offset = std::str::from_utf8(&valid[start..end])
+                .expect("fixture offset is ASCII")
+                .parse::<usize>()
+                .expect("fixture offset is numeric");
+            let mut shifted = valid;
+            shifted.splice(start..end, (offset + 1).to_string().into_bytes());
+            assert_eq!(
+                inspect_file(FilePurpose::Transcript, &shifted),
+                Err(FileInspectionError::MalformedContent)
+            );
+        }
     }
 
     #[test]

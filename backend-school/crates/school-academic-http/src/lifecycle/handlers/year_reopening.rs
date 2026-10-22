@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="getYearReopeningWorkspace",tag="academic",
     params(("year_id"=Uuid,Path)),
-    responses((status=200,body=ApiResponse<YearReopeningWorkspace>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic year reopening workspace returned",body=ApiResponse<YearReopeningWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn get_year_reopening_workspace(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -32,7 +32,7 @@ pub async fn get_year_reopening_workspace(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/lifecycle/years/{year_id}/reopening",operation_id="reopenAcademicYear",tag="academic",
     params(("year_id"=Uuid,Path)),request_body=YearReopeningRequest,
-    responses((status=200,body=ApiResponse<YearReopeningOutcome>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse),(status=422,body=ApiErrorResponse),(status=500,body=ApiErrorResponse))))]
+    responses((status=200, description = "Academic year reopening result returned",body=ApiResponse<YearReopeningOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse),(status=422, description = "Validation failed",body=ApiErrorResponse),(status=500, description = "Internal server error",body=ApiErrorResponse))))]
 pub async fn reopen_year(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
