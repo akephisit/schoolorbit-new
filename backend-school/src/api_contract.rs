@@ -2394,6 +2394,40 @@ mod tests {
     use std::collections::{BTreeSet, HashSet};
 
     #[test]
+    fn exported_openapi31_responses_have_required_descriptions() {
+        let document = school_api_value().expect("document should serialize");
+        assert_eq!(document["openapi"], "3.1.0");
+        let mut checked = 0;
+        for item in document["paths"].as_object().expect("paths").values() {
+            for method in [
+                "get", "put", "post", "delete", "options", "head", "patch", "trace",
+            ] {
+                let Some(responses) = item[method]["responses"].as_object() else {
+                    continue;
+                };
+                for (status, response) in responses {
+                    if !status.starts_with("x-") && response.get("$ref").is_none() {
+                        assert!(response["description"].is_string());
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        if let Some(responses) = document
+            .pointer("/components/responses")
+            .and_then(Value::as_object)
+        {
+            for response in responses.values() {
+                if response.get("$ref").is_none() {
+                    assert!(response["description"].is_string());
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 0, "the invariant must inspect actual responses");
+    }
+
+    #[test]
     fn schema_groups_preserve_explicit_override_order_and_handler_priority() {
         fn fixture(schema_type: &str) -> utoipa::openapi::OpenApi {
             serde_json::from_value(serde_json::json!({
