@@ -307,7 +307,7 @@ pub async fn reject_proposal(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get, path="/api/supply-catalog/items/{id}/versions", operation_id="supplyListVersions", tag="supply-catalog", params(("id"=Uuid, Path, description="Supply item ID"), SupplyPageQuery), responses((status=200,body=ApiResponse<SupplyVersionPage>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get, path="/api/supply-catalog/items/{id}/versions", operation_id="supplyListVersions", tag="supply-catalog", params(("id"=Uuid, Path, description="Supply item ID"), SupplyPageQuery), responses((status=200, description = "Supply item versions returned",body=ApiResponse<SupplyVersionPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse))))]
 pub async fn list_versions(
     State(state): State<AdministrationHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

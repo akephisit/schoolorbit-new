@@ -162,10 +162,6 @@ This file is the single active backlog for verified, unfinished technical work t
   - Keep `eslint-plugin-svelte` at compatible exact version 3.23.0. Version 3.23.1 activates `svelte/no-navigation-without-resolve` for Kit 3 but rejects official `goto(URL)` flows, accepted navigation replay destinations, dynamic external URLs, and resolved paths with appended queries. Reproduce in an isolated checkout with `npm install --save-dev --save-exact eslint-plugin-svelte@3.23.1 && npm run lint` in each frontend.
   - Adopt a fixed upstream release when those official URL and typed destination contracts pass without double base prefixes, changed query/hash/history semantics, type assertions, or disabled rules. Retain browser coverage for unsaved navigation replay, scoped filters, return destinations, and external links.
 
-- [ ] **CI-005: Adopt Utoipa 6 after its upstream serializer preserves OpenAPI 3.1 response descriptions.**
-  - Keep Utoipa at compatible 5.5.0. [Utoipa 6.0.0's Response serializer](https://github.com/juhaku/utoipa/blob/baa4d04c78fdcc86622e1a2775039fc1621157c0/utoipa/src/openapi/response.rs#L127) skips empty `description` strings, although the [OpenAPI 3.1 Response Object](https://spec.openapis.org/oas/v3.1.0#response-object) requires that field; 1,172 current responses lose it. Fix serialization upstream with the selected specification version, without downstream JSON filling or schema-order normalization.
-  - Done when a fixed upstream release passes the real-document required-description regression, both feature-mode checks and API contract tests, and canonical export is byte-identical or independently reviewed as semantically equivalent without missing required fields.
-
 - [ ] **OPS-002: Add production observability.**
   - Propagate request/correlation IDs across frontends, services, provider calls, jobs, and deployment history.
   - Add metrics, traces, dashboards, alerts, SLOs, and runbooks for authentication, tenant resolution, database pools, file access, jobs, and deployments.

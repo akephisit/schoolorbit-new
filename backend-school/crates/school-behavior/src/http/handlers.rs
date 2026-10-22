@@ -18,7 +18,7 @@ use school_http::{ApiResponse, HttpError as AppError};
 use school_permissions::registry::codes;
 use uuid::Uuid;
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/overview",operation_id="behavior_overview",tag="behavior",responses((status=200,body=ApiResponse<BehaviorOverview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/overview",operation_id="behavior_overview",tag="behavior",responses((status=200, description = "Student behavior overview returned",body=ApiResponse<BehaviorOverview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn overview(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -30,7 +30,7 @@ pub async fn overview(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/items",operation_id="behavior_list_items",tag="behavior",params(BehaviorItemsQuery),responses((status=200,body=ApiResponse<Vec<BehaviorItem>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/items",operation_id="behavior_list_items",tag="behavior",params(BehaviorItemsQuery),responses((status=200, description = "Behavior score items returned",body=ApiResponse<Vec<BehaviorItem>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_items(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -43,7 +43,7 @@ pub async fn list_items(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/items",operation_id="behavior_save_item",tag="behavior",request_body=SaveBehaviorItem,responses((status=200,body=ApiResponse<BehaviorItem>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/items",operation_id="behavior_save_item",tag="behavior",request_body=SaveBehaviorItem,responses((status=200, description = "Behavior score item saved",body=ApiResponse<BehaviorItem>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_item(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -56,7 +56,7 @@ pub async fn save_item(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/rules",operation_id="behavior_list_rules",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorAttendanceRule>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/rules",operation_id="behavior_list_rules",tag="behavior",responses((status=200, description = "Attendance behavior rules returned",body=ApiResponse<Vec<BehaviorAttendanceRule>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_rules(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -68,7 +68,7 @@ pub async fn list_rules(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/rules",operation_id="behavior_save_rule",tag="behavior",request_body=SaveBehaviorAttendanceRule,responses((status=200,body=ApiResponse<BehaviorAttendanceRule>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/rules",operation_id="behavior_save_rule",tag="behavior",request_body=SaveBehaviorAttendanceRule,responses((status=200, description = "Attendance behavior rule saved",body=ApiResponse<BehaviorAttendanceRule>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_rule(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -81,7 +81,7 @@ pub async fn save_rule(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/settings",operation_id="behavior_get_settings",tag="behavior",responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/settings",operation_id="behavior_get_settings",tag="behavior",responses((status=200, description = "Behavior settings returned",body=ApiResponse<BehaviorSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_settings(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -93,7 +93,7 @@ pub async fn get_settings(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/behavior/settings",operation_id="behavior_save_settings",tag="behavior",request_body=SaveBehaviorSettings,responses((status=200,body=ApiResponse<BehaviorSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/behavior/settings",operation_id="behavior_save_settings",tag="behavior",request_body=SaveBehaviorSettings,responses((status=200, description = "Behavior settings saved",body=ApiResponse<BehaviorSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_settings(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -114,7 +114,7 @@ pub async fn save_settings(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students",operation_id="behavior_students",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorStudentPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students",operation_id="behavior_students",tag="behavior",params(BehaviorStudentsQuery),responses((status=200, description = "Behavior student list returned",body=ApiResponse<BehaviorStudentPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn students(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -126,7 +126,7 @@ pub async fn students(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/options",operation_id="behavior_selector_options",tag="behavior",params(BehaviorStudentsQuery),responses((status=200,body=ApiResponse<BehaviorSelectorOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/options",operation_id="behavior_selector_options",tag="behavior",params(BehaviorStudentsQuery),responses((status=200, description = "Behavior selector options returned",body=ApiResponse<BehaviorSelectorOptions>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn selector_options(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -144,7 +144,7 @@ pub async fn selector_options(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/batches",operation_id="behavior_create_batch",tag="behavior",request_body=CreateBehaviorBatch,responses((status=200,body=ApiResponse<BehaviorBatchReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/batches",operation_id="behavior_create_batch",tag="behavior",request_body=CreateBehaviorBatch,responses((status=200, description = "Behavior score batch receipt returned",body=ApiResponse<BehaviorBatchReceipt>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn create_batch(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -156,7 +156,7 @@ pub async fn create_batch(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/entries",operation_id="behavior_report",tag="behavior",params(BehaviorReportQuery),responses((status=200,body=ApiResponse<BehaviorReportPage>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/entries",operation_id="behavior_report",tag="behavior",params(BehaviorReportQuery),responses((status=200, description = "Behavior entries report returned",body=ApiResponse<BehaviorReportPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn report(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -168,7 +168,7 @@ pub async fn report(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/entries/cancel",operation_id="behavior_cancel_entries",tag="behavior",request_body=CancelBehaviorEntries,responses((status=200,body=ApiResponse<BehaviorCancellation>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/entries/cancel",operation_id="behavior_cancel_entries",tag="behavior",request_body=CancelBehaviorEntries,responses((status=200, description = "Behavior entry cancellation result returned",body=ApiResponse<BehaviorCancellation>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn cancel_entries(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -180,7 +180,7 @@ pub async fn cancel_entries(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cycles",operation_id="behavior_cycles",tag="behavior",responses((status=200,body=ApiResponse<Vec<BehaviorCycle>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cycles",operation_id="behavior_cycles",tag="behavior",responses((status=200, description = "Behavior cycles returned",body=ApiResponse<Vec<BehaviorCycle>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn cycles(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -192,7 +192,7 @@ pub async fn cycles(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup/preview",operation_id="behavior_preview_cleanup",tag="behavior",request_body=PreviewBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup/preview",operation_id="behavior_preview_cleanup",tag="behavior",request_body=PreviewBehaviorCleanup,responses((status=200, description = "Behavior cleanup preview returned",body=ApiResponse<BehaviorCleanupPreview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn preview_cleanup(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -205,7 +205,7 @@ pub async fn preview_cleanup(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup",operation_id="behavior_execute_cleanup",tag="behavior",request_body=ExecuteBehaviorCleanup,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/cleanup",operation_id="behavior_execute_cleanup",tag="behavior",request_body=ExecuteBehaviorCleanup,responses((status=200, description = "Behavior cleanup result returned",body=ApiResponse<BehaviorCleanupOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn execute_cleanup(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -226,7 +226,7 @@ pub async fn execute_cleanup(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/history/adjustments",operation_id="behavior_adjust_history",tag="behavior",request_body=AdjustBehaviorHistory,responses((status=200,body=ApiResponse<BehaviorHistoryAdjustment>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/history/adjustments",operation_id="behavior_adjust_history",tag="behavior",request_body=AdjustBehaviorHistory,responses((status=200, description = "Behavior history adjustment result returned",body=ApiResponse<BehaviorHistoryAdjustment>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn adjust_history(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -239,7 +239,7 @@ pub async fn adjust_history(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset/preview",operation_id="behavior_preview_reset",tag="behavior",request_body=PreviewBehaviorReset,responses((status=200,body=ApiResponse<BehaviorCleanupPreview>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset/preview",operation_id="behavior_preview_reset",tag="behavior",request_body=PreviewBehaviorReset,responses((status=200, description = "Behavior reset preview returned",body=ApiResponse<BehaviorCleanupPreview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn preview_reset(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -252,7 +252,7 @@ pub async fn preview_reset(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset",operation_id="behavior_reset",tag="behavior",request_body=ResetBehaviorScores,responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/behavior/reset",operation_id="behavior_reset",tag="behavior",request_body=ResetBehaviorScores,responses((status=200, description = "Behavior reset result returned",body=ApiResponse<BehaviorCleanupOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn reset(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -276,7 +276,7 @@ pub async fn reset(
     Ok(Json(ApiResponse::ok(result)))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students/{id}/summary",operation_id="behavior_student_summary",tag="behavior",params(("id"=Uuid,Path),BehaviorSummaryQuery),responses((status=200,body=ApiResponse<BehaviorStudentSummary>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/students/{id}/summary",operation_id="behavior_student_summary",tag="behavior",params(("id"=Uuid,Path),BehaviorSummaryQuery),responses((status=200, description = "Student behavior summary returned",body=ApiResponse<BehaviorStudentSummary>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
 pub async fn student_summary(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -293,7 +293,7 @@ pub async fn student_summary(
     .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cleanup/{id}",operation_id="behavior_cleanup_job",tag="behavior",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/cleanup/{id}",operation_id="behavior_cleanup_job",tag="behavior",params(("id"=Uuid,Path)),responses((status=200, description = "Behavior cleanup job outcome returned",body=ApiResponse<BehaviorCleanupOutcome>),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse))))]
 pub async fn cleanup_job(
     State(state): State<BehaviorHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

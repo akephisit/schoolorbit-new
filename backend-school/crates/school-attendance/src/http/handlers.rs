@@ -15,7 +15,7 @@ use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, EmptyData, HttpError as AppError};
 use school_permissions::registry::codes;
 use uuid::Uuid;
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/settings/{term}",operation_id="attendance_get_settings",tag="attendance",params(("term"=Uuid,Path)),responses((status=200,body=ApiResponse<AttendanceSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/settings/{term}",operation_id="attendance_get_settings",tag="attendance",params(("term"=Uuid,Path)),responses((status=200, description = "Attendance settings returned",body=ApiResponse<AttendanceSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_settings(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -27,7 +27,7 @@ pub async fn get_settings(
     let result = settings::get(pool, term).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/settings/{term}",operation_id="attendance_save_settings",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceSettings,responses((status=200,body=ApiResponse<AttendanceSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/settings/{term}",operation_id="attendance_save_settings",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceSettings,responses((status=200, description = "Attendance settings saved",body=ApiResponse<AttendanceSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_settings(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -48,7 +48,7 @@ pub async fn save_settings(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/days",operation_id="attendance_list_days",tag="attendance",params(AttendanceMonthQuery),responses((status=200,body=ApiResponse<Vec<AttendanceDay>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/days",operation_id="attendance_list_days",tag="attendance",params(AttendanceMonthQuery),responses((status=200, description = "Attendance calendar days returned",body=ApiResponse<Vec<AttendanceDay>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_days(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -62,7 +62,7 @@ pub async fn list_days(
     let result = settings::days(pool, query.academic_term_id, query.start, query.end).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/days/{term}",operation_id="attendance_save_days",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceDays,responses((status=200,body=ApiResponse<AttendanceSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/days/{term}",operation_id="attendance_save_days",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceDays,responses((status=200, description = "Attendance calendar days saved",body=ApiResponse<AttendanceSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_days(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -83,7 +83,7 @@ pub async fn save_days(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/workspace",operation_id="attendance_workspace",tag="attendance",params(AttendanceQuery),responses((status=200,body=ApiResponse<AttendanceWorkspace>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/workspace",operation_id="attendance_workspace",tag="attendance",params(AttendanceQuery),responses((status=200, description = "Attendance workspace returned",body=ApiResponse<AttendanceWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn workspace(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -94,7 +94,7 @@ pub async fn workspace(
     let result = services::workspace(pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/preview",operation_id="attendance_open_session",tag="attendance",params(OpenAttendanceSession),responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/preview",operation_id="attendance_open_session",tag="attendance",params(OpenAttendanceSession),responses((status=200, description = "Attendance preview returned",body=ApiResponse<AttendanceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn open_session(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -105,7 +105,7 @@ pub async fn open_session(
     let result = services::open(pool, &context.actor, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/sessions/{id}",operation_id="attendance_get_session",tag="attendance",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/sessions/{id}",operation_id="attendance_get_session",tag="attendance",params(("id"=Uuid,Path)),responses((status=200, description = "Attendance session detail returned",body=ApiResponse<AttendanceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_session(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -116,7 +116,7 @@ pub async fn get_session(
     let result = sessions::detail(pool, &context.actor, id).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/sessions/{id}",operation_id="attendance_save_results",tag="attendance",params(("id"=Uuid,Path)),request_body=SaveAttendanceResults,responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/sessions/{id}",operation_id="attendance_save_results",tag="attendance",params(("id"=Uuid,Path)),request_body=SaveAttendanceResults,responses((status=200, description = "Attendance results saved",body=ApiResponse<AttendanceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_results(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -134,7 +134,7 @@ pub async fn save_results(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/sessions/{id}/cancellation",operation_id="attendance_cancel_session",tag="attendance",params(("id"=Uuid,Path)),request_body=AttendanceCancellation,responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/sessions/{id}/cancellation",operation_id="attendance_cancel_session",tag="attendance",params(("id"=Uuid,Path)),request_body=AttendanceCancellation,responses((status=200, description = "Attendance session cancellation updated",body=ApiResponse<AttendanceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn cancel_session(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -152,7 +152,7 @@ pub async fn cancel_session(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/options",operation_id="attendance_get_options",tag="attendance",params(AttendanceTermQuery),responses((status=200,body=ApiResponse<AttendanceOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/options",operation_id="attendance_get_options",tag="attendance",params(AttendanceTermQuery),responses((status=200, description = "Attendance options returned",body=ApiResponse<AttendanceOptions>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_options(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -163,7 +163,7 @@ pub async fn get_options(
     let result = services::options(pool, &context.actor, query.academic_term_id).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/audiences/{term}",operation_id="attendance_create_audience",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceAudience,responses((status=200,body=ApiResponse<AttendanceAudienceGroup>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/audiences/{term}",operation_id="attendance_create_audience",tag="attendance",params(("term"=Uuid,Path)),request_body=SaveAttendanceAudience,responses((status=200, description = "Attendance audience group created",body=ApiResponse<AttendanceAudienceGroup>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn create_audience(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -185,7 +185,7 @@ pub async fn create_audience(
     .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/specials/{term}",operation_id="attendance_create_special",tag="attendance",params(("term"=Uuid,Path)),request_body=SpecialAttendanceDefinition,responses((status=200,body=ApiResponse<SpecialAttendanceTemplate>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/specials/{term}",operation_id="attendance_create_special",tag="attendance",params(("term"=Uuid,Path)),request_body=SpecialAttendanceDefinition,responses((status=200, description = "Special attendance template created",body=ApiResponse<SpecialAttendanceTemplate>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn create_special(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -208,7 +208,7 @@ pub async fn create_special(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/devices/{id}",operation_id="attendance_save_device",tag="attendance",params(("id"=Uuid,Path)),request_body=SaveAttendanceDevice,responses((status=200,body=ApiResponse<AttendanceDevice>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/devices/{id}",operation_id="attendance_save_device",tag="attendance",params(("id"=Uuid,Path)),request_body=SaveAttendanceDevice,responses((status=200, description = "Attendance device saved",body=ApiResponse<AttendanceDevice>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_device(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -223,7 +223,7 @@ pub async fn save_device(
     let result = specials::save_device(pool, context.actor.user_id, id, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/faces",operation_id="attendance_face_enrollments",tag="attendance",params(AttendanceTermQuery),responses((status=200,body=ApiResponse<Vec<AttendanceFaceEnrollment>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/faces",operation_id="attendance_face_enrollments",tag="attendance",params(AttendanceTermQuery),responses((status=200, description = "Attendance face enrollments returned",body=ApiResponse<Vec<AttendanceFaceEnrollment>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
 pub async fn face_enrollments(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -235,7 +235,7 @@ pub async fn face_enrollments(
             .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/faces/{student}",operation_id="attendance_enroll_face",tag="attendance",params(("student"=Uuid,Path)),request_body=EnrollAttendanceFace,responses((status=200,body=ApiResponse<EmptyData>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/attendance/faces/{student}",operation_id="attendance_enroll_face",tag="attendance",params(("student"=Uuid,Path)),request_body=EnrollAttendanceFace,responses((status=200, description = "Attendance face enrollment saved",body=ApiResponse<EmptyData>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn enroll_face(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -253,7 +253,7 @@ pub async fn enroll_face(
     };
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/attendance/faces/{student}",operation_id="attendance_delete_face",tag="attendance",params(("student"=Uuid,Path)),responses((status=200,body=ApiResponse<EmptyData>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(delete,path="/api/attendance/faces/{student}",operation_id="attendance_delete_face",tag="attendance",params(("student"=Uuid,Path)),responses((status=200, description = "Attendance face enrollment removed",body=ApiResponse<EmptyData>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn delete_face(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -270,7 +270,7 @@ pub async fn delete_face(
     };
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/kiosk/open",operation_id="attendance_open_kiosk",tag="attendance",request_body=OpenAttendanceKiosk,responses((status=200,body=ApiResponse<AttendanceKioskWorkspace>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/kiosk/open",operation_id="attendance_open_kiosk",tag="attendance",request_body=OpenAttendanceKiosk,responses((status=200, description = "Attendance kiosk workspace returned",body=ApiResponse<AttendanceKioskWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn open_kiosk(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -281,7 +281,7 @@ pub async fn open_kiosk(
     let result = services::prepare_kiosk(pool, &context.actor, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/scans",operation_id="attendance_scan",tag="attendance",request_body=AttendanceScan,responses((status=200,body=ApiResponse<AttendanceScanOutcome>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/scans",operation_id="attendance_scan",tag="attendance",request_body=AttendanceScan,responses((status=200, description = "Attendance scan outcome returned",body=ApiResponse<AttendanceScanOutcome>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn scan(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -298,7 +298,7 @@ pub async fn scan(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/report",operation_id="attendance_report",tag="attendance",params(AttendanceReportQuery),responses((status=200,body=ApiResponse<AttendanceReport>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/report",operation_id="attendance_report",tag="attendance",params(AttendanceReportQuery),responses((status=200, description = "Attendance report returned",body=ApiResponse<AttendanceReport>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn report(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -309,7 +309,7 @@ pub async fn report(
     let result = services::report(pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/history",operation_id="attendance_history",tag="attendance",params(AttendanceHistoryQuery),responses((status=200,body=ApiResponse<Vec<AttendanceHistoryItem>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/history",operation_id="attendance_history",tag="attendance",params(AttendanceHistoryQuery),responses((status=200, description = "Attendance history returned",body=ApiResponse<Vec<AttendanceHistoryItem>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn history(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -320,7 +320,7 @@ pub async fn history(
     let result = services::history(pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/terms/{term}/purge",operation_id="attendance_purge_impact",tag="attendance",params(("term"=Uuid,Path)),responses((status=200,body=ApiResponse<AttendancePurgeImpact>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/terms/{term}/purge",operation_id="attendance_purge_impact",tag="attendance",params(("term"=Uuid,Path)),responses((status=200, description = "Attendance term purge impact returned",body=ApiResponse<AttendancePurgeImpact>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn purge_impact(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -334,7 +334,7 @@ pub async fn purge_impact(
     let result = reports::impact(pool, term).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/terms/{term}/purge",operation_id="attendance_purge_term",tag="attendance",params(("term"=Uuid,Path)),request_body=PurgeAttendanceTerm,responses((status=200,body=ApiResponse<AttendancePurgeImpact>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/terms/{term}/purge",operation_id="attendance_purge_term",tag="attendance",params(("term"=Uuid,Path)),request_body=PurgeAttendanceTerm,responses((status=200, description = "Attendance term purge result returned",body=ApiResponse<AttendancePurgeImpact>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn purge_term(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -355,7 +355,7 @@ pub async fn purge_term(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/reset",operation_id="attendance_reset_impact",tag="attendance",responses((status=200,body=ApiResponse<AttendanceResetImpact>),(status=403,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/reset",operation_id="attendance_reset_impact",tag="attendance",responses((status=200, description = "Attendance module reset impact returned",body=ApiResponse<AttendanceResetImpact>),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
 pub async fn reset_impact(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -366,7 +366,7 @@ pub async fn reset_impact(
         crate::services::reset::impact(&context.tenant.pool).await?,
     )))
 }
-#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/reset",operation_id="attendance_reset_module",tag="attendance",request_body=ResetAttendanceModule,responses((status=200,body=ApiResponse<AttendanceResetImpact>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/attendance/reset",operation_id="attendance_reset_module",tag="attendance",request_body=ResetAttendanceModule,responses((status=200, description = "Attendance module reset result returned",body=ApiResponse<AttendanceResetImpact>),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn reset_module(
     State(state): State<AttendanceHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

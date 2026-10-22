@@ -2407,7 +2407,9 @@ mod tests {
                 };
                 for (status, response) in responses {
                     if !status.starts_with("x-") && response.get("$ref").is_none() {
-                        assert!(response["description"].is_string());
+                        assert!(response["description"]
+                            .as_str()
+                            .is_some_and(|description| !description.trim().is_empty()));
                         checked += 1;
                     }
                 }
@@ -2419,7 +2421,9 @@ mod tests {
         {
             for response in responses.values() {
                 if response.get("$ref").is_none() {
-                    assert!(response["description"].is_string());
+                    assert!(response["description"]
+                        .as_str()
+                        .is_some_and(|description| !description.trim().is_empty()));
                     checked += 1;
                 }
             }

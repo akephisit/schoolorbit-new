@@ -28,7 +28,7 @@ use school_http::HttpError as AppError;
 use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions",operation_id="createTimetableVersion",request_body=CreateTimetableVersionRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
+    responses((status=200, description = "Timetable version created",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn create_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -165,7 +165,7 @@ pub async fn clone_version(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(put,path="/api/academic/timetable-versions/{version_id}/delivery-source",operation_id="updateTimetableDeliverySource",
     params(("version_id"=Uuid,Path)),request_body=UpdateTimetableDeliverySourceRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
+    responses((status=200, description = "Timetable version delivery source updated",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn update_delivery_source(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -203,7 +203,7 @@ pub async fn update_delivery_source(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/delete-draft",operation_id="deleteTimetableDraft",
     params(("version_id"=Uuid,Path)),request_body=DeleteTimetableDraftRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::DeletedTimetableDraft>),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
+    responses((status=200, description = "Timetable draft deletion result returned",body=ApiResponse<school_academic_timetable::models::timetable_version::DeletedTimetableDraft>),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn delete_draft(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -243,7 +243,7 @@ pub async fn delete_draft(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publication-preview",operation_id="previewTimetablePublication",
     params(("version_id"=Uuid,Path)),request_body=PreviewTimetablePublicationRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_publication::TimetablePublicationPreview>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
+    responses((status=200, description = "Timetable publication preview returned",body=ApiResponse<school_academic_timetable::models::timetable_publication::TimetablePublicationPreview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn preview_publication(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -268,7 +268,7 @@ pub async fn preview_publication(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post,path="/api/academic/timetable-versions/{version_id}/publish",operation_id="publishTimetableVersion",
     params(("version_id"=Uuid,Path)),request_body=PublishTimetableVersionRequest,
-    responses((status=200,body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),tag="academic"))]
+    responses((status=200, description = "Timetable version publication result returned",body=ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersion>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),tag="academic"))]
 pub async fn publish_version(
     State(state): State<AcademicHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

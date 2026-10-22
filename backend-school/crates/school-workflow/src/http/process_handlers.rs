@@ -18,7 +18,7 @@ use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError};
 use uuid::Uuid;
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence",tag="correspondence",params(CorrespondenceListQuery),responses((status=200,body=ApiResponse<CorrespondenceList>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence",tag="correspondence",params(CorrespondenceListQuery),responses((status=200, description = "Correspondence list returned",body=ApiResponse<CorrespondenceList>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -29,7 +29,7 @@ pub async fn list_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=CreateCorrespondenceRequest))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence",tag="correspondence",responses((status=200, description = "Correspondence created",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=CreateCorrespondenceRequest))]
 pub async fn create_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -51,7 +51,7 @@ pub async fn create_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/{id}",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/{id}",tag="correspondence",responses((status=200, description = "Correspondence detail returned",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn get_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -62,7 +62,7 @@ pub async fn get_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/read",tag="correspondence",request_body=CorrespondenceReadRequest,params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CorrespondenceReadReceipt>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/read",tag="correspondence",request_body=CorrespondenceReadRequest,params(("id"=Uuid,Path)),responses((status=200, description = "Correspondence read receipt returned",body=ApiResponse<CorrespondenceReadReceipt>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
 pub async fn read_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -79,7 +79,7 @@ pub async fn read_correspondence(
     Ok(Json(ApiResponse::ok(result.value)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/revisions",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=ReviseCorrespondenceRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/revisions",tag="correspondence",responses((status=200, description = "Correspondence revision result returned",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=ReviseCorrespondenceRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn revise_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -103,7 +103,7 @@ pub async fn revise_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/send",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=SendCorrespondenceRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/send",tag="correspondence",responses((status=200, description = "Correspondence sending result returned",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=SendCorrespondenceRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn send_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -117,7 +117,7 @@ pub async fn send_correspondence(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/directed-send",tag="correspondence",request_body=DirectedSendCorrespondenceRequest,params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/directed-send",tag="correspondence",request_body=DirectedSendCorrespondenceRequest,params(("id"=Uuid,Path)),responses((status=200, description = "Directed correspondence sending result returned",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn directed_send_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -131,7 +131,7 @@ pub async fn directed_send_correspondence(
     school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/routing-settings",tag="correspondence",responses((status=200,body=ApiResponse<Vec<CorrespondenceRoutingSettings>>),(status=403,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/routing-settings",tag="correspondence",responses((status=200, description = "Correspondence routing settings returned",body=ApiResponse<Vec<CorrespondenceRoutingSettings>>),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
 pub async fn correspondence_routing_settings(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -142,7 +142,7 @@ pub async fn correspondence_routing_settings(
     ))
     .into_response())
 }
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/correspondence/routing-settings",tag="correspondence",request_body=SaveCorrespondenceRoutingSettingsRequest,responses((status=200,body=ApiResponse<CorrespondenceRoutingSettings>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/correspondence/routing-settings",tag="correspondence",request_body=SaveCorrespondenceRoutingSettingsRequest,responses((status=200, description = "Correspondence routing settings saved",body=ApiResponse<CorrespondenceRoutingSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn save_correspondence_routing_settings(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -154,7 +154,7 @@ pub async fn save_correspondence_routing_settings(
     ))
     .into_response())
 }
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/actions",tag="correspondence",responses((status=200,body=ApiResponse<CorrespondenceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=ProcessActionRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/{id}/actions",tag="correspondence",responses((status=200, description = "Correspondence action result returned",body=ApiResponse<CorrespondenceDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=ProcessActionRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn act_correspondence(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -180,7 +180,7 @@ pub async fn act_correspondence(
     Ok(Json(ApiResponse::ok(result.value)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/options",tag="correspondence",params(CorrespondenceOptionsQuery),responses((status=200,body=ApiResponse<CorrespondenceOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/options",tag="correspondence",params(CorrespondenceOptionsQuery),responses((status=200, description = "Correspondence options returned",body=ApiResponse<CorrespondenceOptions>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn correspondence_options(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -203,7 +203,7 @@ pub async fn correspondence_options(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/signatures",tag="correspondence",responses((status=200,body=ApiResponse<Vec<SignatureAsset>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence/signatures",tag="correspondence",responses((status=200, description = "Signature assets returned",body=ApiResponse<Vec<SignatureAsset>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_signature_assets(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -213,7 +213,7 @@ pub async fn list_signature_assets(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/signatures",tag="correspondence",responses((status=200,body=ApiResponse<SignatureAsset>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=CreateSignatureAssetRequest))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/correspondence/signatures",tag="correspondence",responses((status=200, description = "Signature asset created",body=ApiResponse<SignatureAsset>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=CreateSignatureAssetRequest))]
 pub async fn create_signature_asset(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -227,7 +227,7 @@ pub async fn create_signature_asset(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/process/templates",tag="correspondence",responses((status=200,body=ApiResponse<Vec<ProcessTemplate>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/process/templates",tag="correspondence",responses((status=200, description = "Process templates returned",body=ApiResponse<Vec<ProcessTemplate>>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn list_process_templates(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -245,7 +245,7 @@ pub async fn list_process_templates(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/process/templates",tag="correspondence",responses((status=200,body=ApiResponse<ProcessTemplate>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=SaveProcessTemplateRequest))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/process/templates",tag="correspondence",responses((status=200, description = "Process template created",body=ApiResponse<ProcessTemplate>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=SaveProcessTemplateRequest))]
 pub async fn create_process_template(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -259,7 +259,7 @@ pub async fn create_process_template(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/process/templates/{id}",tag="correspondence",responses((status=200,body=ApiResponse<ProcessTemplate>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),request_body=SaveProcessTemplateRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/process/templates/{id}",tag="correspondence",responses((status=200, description = "Process template updated",body=ApiResponse<ProcessTemplate>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),request_body=SaveProcessTemplateRequest,params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn update_process_template(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -274,7 +274,7 @@ pub async fn update_process_template(
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/process/instances/{id}",tag="correspondence",responses((status=200,body=ApiResponse<ProcessInstance>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)),params(("id"=Uuid,Path,description="Resource identifier"))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/process/instances/{id}",tag="correspondence",responses((status=200, description = "Process instance returned",body=ApiResponse<ProcessInstance>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse)),params(("id"=Uuid,Path,description="Resource identifier"))))]
 pub async fn get_process_instance(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -312,7 +312,7 @@ pub async fn export_correspondence(
     )
         .into_response())
 }
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/process/instances/{id}/actions",tag="correspondence",params(("id"=Uuid,Path)),request_body=ProcessActionRequest,responses((status=200,body=ApiResponse<ProcessInstance>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/process/instances/{id}/actions",tag="correspondence",params(("id"=Uuid,Path)),request_body=ProcessActionRequest,responses((status=200, description = "Process instance action result returned",body=ApiResponse<ProcessInstance>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn act_process_instance(
     State(state): State<WorkflowHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
