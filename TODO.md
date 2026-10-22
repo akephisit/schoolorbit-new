@@ -152,6 +152,11 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add Rust advisory scanning, JavaScript audit policy, CodeQL or equivalent static analysis, secret scanning, SBOM generation, and artifact signing.
   - Define how vulnerabilities are triaged, waived with expiry, and verified after upgrades.
 
+- [ ] **CI-003: Retire unresolved School dependency advisories.**
+  - Track [`rsa` RUSTSEC-2023-0071 / CVE-2023-49092](https://rustsec.org/advisories/RUSTSEC-2023-0071.html), which has no fixed stable release and enters through `web-push → jwt-simple → superboring → rsa`. The current VAPID implementation uses ES256; that observation does not prove the transitive advisory cannot become reachable. Reassess upstream fixes and cryptographic call paths without suppressing the audit finding.
+  - Evaluate maintained replacements or upstream fixes for latest-stable [`rustybuzz` RUSTSEC-2026-0206](https://rustsec.org/advisories/RUSTSEC-2026-0206.html), [`ttf-parser` RUSTSEC-2026-0192](https://rustsec.org/advisories/RUSTSEC-2026-0192.html), and transitive [`paste` RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html). Keep typography changes scoped and preserve Thai shaping, glyph outlines, font inspection, and document/image rendering.
+  - Done when the affected dependencies are removed or maintained fixed releases resolve the findings, with notification cryptography, Thai typography, and file-inspection regressions verified and an unsuppressed RustSec audit recorded.
+
 - [ ] **OPS-002: Add production observability.**
   - Propagate request/correlation IDs across frontends, services, provider calls, jobs, and deployment history.
   - Add metrics, traces, dashboards, alerts, SLOs, and runbooks for authentication, tenant resolution, database pools, file access, jobs, and deployments.
