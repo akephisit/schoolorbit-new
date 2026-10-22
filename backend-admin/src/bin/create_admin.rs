@@ -30,7 +30,7 @@ fn bootstrap_settings() -> Result<OperatorBootstrap, String> {
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
     let url = std::env::var("ADMIN_MIGRATION_DATABASE_URL")
         .map_err(|_| "ADMIN_MIGRATION_DATABASE_URL is required")?;
     let pool = init_admin_pool(&url)

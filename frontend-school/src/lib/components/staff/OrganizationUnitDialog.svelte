@@ -32,14 +32,14 @@
 		onSuccess,
 		forcedCategory = undefined,
 		forcedParentId = undefined
-	} = $props<{
+	}: {
 		open: boolean;
 		organizationUnitToEdit?: OrganizationUnit | null;
 		organizationUnits: OrganizationUnit[];
 		onSuccess: () => void;
 		forcedCategory?: string;
 		forcedParentId?: string;
-	}>();
+	} = $props();
 
 	let loading = $state(false);
 	let formError = $state('');

@@ -55,13 +55,13 @@
 		organizationUnit,
 		onSuccess,
 		readOnly = false
-	} = $props<{
+	}: {
 		organizationUnit:
 			(Pick<OrganizationUnit, 'id'> & Partial<Pick<OrganizationUnit, 'name'>>) | null;
 		open: boolean;
 		onSuccess?: () => void;
 		readOnly?: boolean;
-	}>();
+	} = $props();
 
 	let permissionModules = $state<PermissionsByModule>({});
 	let selectedGrantKeys = new SvelteSet<string>();

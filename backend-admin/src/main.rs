@@ -1,5 +1,5 @@
 use backend_admin::{build_app, db::init_admin_pool, AppState};
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::env;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
