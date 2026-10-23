@@ -201,7 +201,7 @@ print(json.dumps({'commands':commands,'report':report}))`);
 
 const fakeProbe = `
 import email.message,os,urllib.parse,http.cookiejar
-os.environ.update({'SMOKE_USERNAME':'synthetic-private-observation-marker','SMOKE_PASSWORD':'synthetic-private-observation-marker','BASE_DOMAIN':'example.test','BACKEND_SCHOOL_URL':'https://school-api.example.test'})
+os.environ.update({'RUNTIME_PROBE_USERNAME':'synthetic-private-observation-marker','RUNTIME_PROBE_PASSWORD':'synthetic-private-observation-marker','PROBE_SUBDOMAIN':data.get('tenant','sandbox'),'BASE_DOMAIN':'example.test','BACKEND_SCHOOL_URL':'https://school-api.example.test'})
 calls=[];seen={}
 class Response:
  def __init__(self,path):
@@ -213,13 +213,16 @@ class Response:
   path=self.path
   if path=='/api/auth/login' and data.get('scenario')=='malformed_login':return b'{synthetic-private-observation-marker'
   if path=='/api/auth/login' and data.get('scenario')=='oversized_login':return b'x'*limit
-  user={'username':os.environ['SMOKE_USERNAME'],'userType':'staff','status':'active','permissions':['student.read.school']}
+  user={'username':os.environ['RUNTIME_PROBE_USERNAME'],'userType':'staff','status':'active','permissions':['student.read.school']}
   if data.get('scenario')=='wrong_user':user['username']='another-user'
+  if data.get('scenario')=='inactive_user':user['status']='inactive'
+  if data.get('scenario')=='non_staff':user['userType']='student'
   if data.get('scenario')=='no_student_permission':user['permissions']=[]
   if path=='/api/auth/me':value=user
   elif path=='/api/academic/context/options':
    year='11111111-1111-4111-8111-111111111111';value={'activeAcademicYearId':year,'years':[{'id':year}]}
    if data.get('scenario')=='no_context':value={'years':[]}
+   if data.get('scenario')=='unknown_active_year':value['years']=[{'id':'22222222-2222-4222-8222-222222222222'}]
   elif path=='/api/staff/dashboard':value={'totalStaff':2,'totalStudents':20,'activeHomerooms':1}
   elif path=='/api/students':value={'items':[{'private':'synthetic-private-observation-marker'}],'page':1,'page_size':20}
   elif path=='/api/me/work-items/counts':value={key:0 for key in ['open','dueSoon','overdue','submitted','closed','total']}
@@ -230,8 +233,8 @@ class Opener:
  def open(self,request,timeout):
   parsed=urllib.parse.urlsplit(request.full_url);path=parsed.path
   assert parsed.scheme=='https' and parsed.netloc=='school-api.example.test'
-  assert request.get_header('Origin')=='https://sandbox.example.test'
-  assert request.get_header('X-school-subdomain')=='sandbox'
+  assert request.get_header('Origin')=='https://'+os.environ['PROBE_SUBDOMAIN']+'.example.test'
+  assert request.get_header('X-school-subdomain')==os.environ['PROBE_SUBDOMAIN']
   assert request.get_header('Cache-control')=='no-store'
   assert 0<timeout<=15
   calls.append({'method':request.method,'path':path});seen[path]=seen.get(path,0)+1
@@ -247,27 +250,35 @@ class Opener:
    assert request.get_header('Cookie')=='__Host-schoolorbit_session='+('b'*42+'Y')
   if (path=='/api/students' and data.get('scenario')=='forbidden') or (path=='/api/auth/logout' and data.get('scenario')=='cleanup_failure') or (path=='/api/me/work-items/counts' and seen[path]==3 and data.get('scenario')=='partial_route'):
    raise m.urllib.error.HTTPError('https://synthetic-private-observation-marker',403,'synthetic-private-observation-marker',{},None)
+  if path=='/api/academic/context/options' and data.get('scenario')=='denied_context':raise m.urllib.error.HTTPError('https://synthetic-private-observation-marker',403,'synthetic-private-observation-marker',{},None)
   if path=='/api/auth/login' and data.get('scenario')=='timeout':raise m.ProbeFailure('request_timeout')
   return Response(path)
 m.urllib.request.build_opener=lambda *handlers:Opener(next(handler.cookiejar for handler in handlers if isinstance(handler,m.urllib.request.HTTPCookieProcessor)))
-report=m.sandbox_probe()
+report=m.tenant_probe()
 print(json.dumps({'report':report,'calls':calls}))
 `;
 
-test('optional sandbox probe uses one owned login, warmup plus five sequential reads and own logout', () => {
-  const { report, calls } = python(fakeProbe);
-  assert.equal(report.status, 'available');
-  assert.equal(report.cleanup, 'completed');
-  assert.equal(calls.filter(call => call.method === 'POST').length, 2);
-  assert.equal(calls[0].path, '/api/auth/login');
-  assert.equal(calls.at(-1).path, '/api/auth/logout');
-  for (const path of ['/api/staff/dashboard', '/api/students', '/api/me/work-items/counts'])
-    assert.equal(calls.filter(call => call.path === path).length, 6);
-  for (const route of report.routes) {
-    assert.equal(route.samples, 5);
-    assert.ok(route.client_wall_ms.min >= 0);
-    assert.ok(route.response_body_bytes.min > 0);
-    assert.ok(!Object.hasOwn(route, 'p95_ms'));
+test('optional tenant probe uses one owned login, warmup plus five sequential reads and own logout', () => {
+  // The approved interface now selects a tenant; both existing sandbox and a real
+  // school must use the same bounded owner with matching headers on every call.
+  for (const tenant of ['snwsb', 'sandbox']) {
+    const { report, calls } = python(fakeProbe, { tenant });
+    assert.equal(report.operation, 'tenant_route_observations');
+    assert.equal(report.scope, 'dedicated_tenant_staff_session');
+    assert.ok(!JSON.stringify(report).includes(tenant));
+    assert.equal(report.status, 'available');
+    assert.equal(report.cleanup, 'completed');
+    assert.equal(calls.filter(call => call.method === 'POST').length, 2);
+    assert.equal(calls[0].path, '/api/auth/login');
+    assert.equal(calls.at(-1).path, '/api/auth/logout');
+    for (const path of ['/api/staff/dashboard', '/api/students', '/api/me/work-items/counts'])
+      assert.equal(calls.filter(call => call.path === path).length, 6);
+    for (const route of report.routes) {
+      assert.equal(route.samples, 5);
+      assert.ok(route.client_wall_ms.min >= 0);
+      assert.ok(route.response_body_bytes.min > 0);
+      assert.ok(!Object.hasOwn(route, 'p95_ms'));
+    }
   }
 });
 
@@ -281,16 +292,18 @@ test('malformed or oversized login body still logs out using CSRF captured befor
 });
 
 test('probe eligibility and HTTP denial stop unavailable endpoints without retries or privilege changes', () => {
-  for (const scenario of ['no_student_permission', 'forbidden', 'no_context', 'wrong_user']) {
+  for (const scenario of ['no_student_permission', 'forbidden', 'no_context', 'unknown_active_year', 'denied_context', 'wrong_user', 'inactive_user', 'non_staff']) {
     const { report, calls } = python(fakeProbe, { scenario });
     assert.equal(report.cleanup, 'completed');
-    if (scenario === 'wrong_user') {
+    if (['wrong_user', 'inactive_user', 'non_staff'].includes(scenario)) {
       assert.equal(report.reason, 'active_staff_required');
       assert.equal(report.routes.length, 0);
     } else {
-      const route = report.routes.find(route => route.route === (scenario === 'no_context' ? 'dashboard' : 'students'));
+      const contextMissing = ['no_context', 'unknown_active_year', 'denied_context'].includes(scenario);
+      const route = report.routes.find(route => route.route === (contextMissing ? 'dashboard' : 'students'));
+      if (scenario === 'denied_context') assert.equal(route.reason, 'http_403');
       assert.equal(route.status, 'unavailable');
-      assert.equal(calls.filter(call => call.path === (scenario === 'no_context' ? '/api/staff/dashboard' : '/api/students')).length, scenario === 'forbidden' ? 1 : 0);
+      assert.equal(calls.filter(call => call.path === (contextMissing ? '/api/staff/dashboard' : '/api/students')).length, scenario === 'forbidden' ? 1 : 0);
     }
   }
 });
@@ -320,11 +333,13 @@ test('missing or ineligible session cookie cannot turn idempotent logout into cl
 
 test('missing credentials, untrusted target and redirects cannot cause arbitrary requests', () => {
   const result = python(`import os
-os.environ.pop('SMOKE_USERNAME',None);os.environ.pop('SMOKE_PASSWORD',None)
+os.environ['PROBE_SUBDOMAIN']='snwsb'
+os.environ.pop('RUNTIME_PROBE_USERNAME',None);os.environ.pop('RUNTIME_PROBE_PASSWORD',None)
+os.environ.update({'SMOKE_USERNAME':'synthetic-private-observation-marker','SMOKE_PASSWORD':'synthetic-private-observation-marker','E2E_STAFF_USERNAME':'synthetic-private-observation-marker','E2E_STAFF_PASSWORD':'synthetic-private-observation-marker'})
 m.urllib.request.build_opener=lambda *args:(_ for _ in ()).throw(AssertionError('must not connect'))
-missing=m.sandbox_probe()
-os.environ.update({'SMOKE_USERNAME':'synthetic-private-observation-marker','SMOKE_PASSWORD':'synthetic-private-observation-marker','BASE_DOMAIN':'example.test','BACKEND_SCHOOL_URL':'http://synthetic-private-observation-marker'})
-invalid=m.sandbox_probe()
+missing=m.tenant_probe()
+os.environ.update({'RUNTIME_PROBE_USERNAME':'synthetic-private-observation-marker','RUNTIME_PROBE_PASSWORD':'synthetic-private-observation-marker','PROBE_SUBDOMAIN':data.get('tenant','sandbox'),'BASE_DOMAIN':'example.test','BACKEND_SCHOOL_URL':'http://synthetic-private-observation-marker'})
+invalid=m.tenant_probe()
 class Response:
  closed=False
  def close(self):self.closed=True
@@ -337,6 +352,30 @@ print(json.dumps({'missing':missing,'invalid':invalid,'redirect':redirect}))`);
   assert.deepEqual(result.redirect, { reason: 'redirect_refused', closed: true });
 });
 
+test('missing, malformed and infrastructure tenant selectors fail before constructing network transport', () => {
+  const result = python(`import os
+os.environ.update({'RUNTIME_PROBE_USERNAME':'synthetic-private-observation-marker','RUNTIME_PROBE_PASSWORD':'synthetic-private-observation-marker','BASE_DOMAIN':'example.test','BACKEND_SCHOOL_URL':'https://school-api.example.test'})
+m.urllib.request.build_opener=lambda *args:(_ for _ in ()).throw(AssertionError('must not construct transport'))
+reports=[]
+for tenant in data['tenants']:
+ os.environ['PROBE_SUBDOMAIN']=tenant
+ reports.append(m.tenant_probe())
+print(json.dumps(reports))`, { tenants: ['', 'Snwsb', '-snwsb', 'snwsb-', 'snwsb.example.test', 'https://snwsb.example.test', 'snwsb/evil', 'snwsb@evil', 'snwsb\\evil', 'snwsb\nInjected: value', 'x'.repeat(64), 'www', 'admin', 'school-api', 'admin-api', 'server', 'api', 'mail', 'cdn', 'local', 'assets'] });
+  assert.ok(result.every(report => report.reason === 'tenant_configuration_invalid' && report.cleanup === 'not_required' && report.routes.length === 0));
+});
+
+test('trusted API configuration cannot override the selected tenant or fixed public HTTPS host', () => {
+  const result = python(`import os
+os.environ.update({'RUNTIME_PROBE_USERNAME':'synthetic-private-observation-marker','RUNTIME_PROBE_PASSWORD':'synthetic-private-observation-marker','PROBE_SUBDOMAIN':'snwsb','BASE_DOMAIN':'example.test'})
+m.urllib.request.build_opener=lambda *args:(_ for _ in ()).throw(AssertionError('must not construct transport'))
+reports=[]
+for api in data['urls']:
+ os.environ['BACKEND_SCHOOL_URL']=api
+ reports.append(m.tenant_probe())
+print(json.dumps(reports))`, { urls: ['http://school-api.example.test', 'https://snwsb.example.test', 'https://school-api.example.test.evil', 'https://school-api.example.test@evil', 'https://school-api.example.test:443', 'https://school-api.example.test/path', 'https://school-api.example.test?query', 'https://school-api.example.test#fragment'] });
+  assert.ok(result.every(report => report.reason === 'trusted_configuration_invalid' && report.cleanup === 'not_required'));
+});
+
 test('hard request deadline interrupts a blocking provider without printing its exception', () => {
   const result = python(`import time
 try:
@@ -345,19 +384,23 @@ except m.ProbeFailure as error:print(json.dumps({'reason':error.reason}))`);
   assert.equal(result.reason, 'request_timeout');
 });
 
-test('workflow exposes only boolean opt-in on main and probes before bounded log collection', () => {
+test('workflow requires explicit tenant selection and boolean opt-in on main and probes before bounded log collection', () => {
   const workflow = readFileSync(path.resolve(import.meta.dirname, '../../.github/workflows/runtime-diagnostics.yml'), 'utf8');
   const operations = readFileSync(path.resolve(import.meta.dirname, '../../.github/workflows/operations.yml'), 'utf8');
-  assert.match(workflow, /run_sandbox_probe:\s+type: boolean\s+default: false/);
-  assert.match(operations, /run_sandbox_probe: \$\{\{ fromJson\(inputs\.options\)\.run_sandbox_probe == true \}\}/);
-  assert.ok(workflow.indexOf('name: Measure selected sandbox reads') < workflow.indexOf('name: Collect sanitized runtime observations'));
+  assert.match(workflow, /run_tenant_probe:\s+type: boolean\s+default: false/);
+  assert.match(operations, /run_tenant_probe: \$\{\{ fromJson\(inputs\.options\)\.run_tenant_probe == true \}\}/);
+  assert.match(workflow, /probe_subdomain:\s+type: string\s+default: ""/);
+  assert.match(operations, /probe_subdomain: \$\{\{ fromJson\(inputs\.options\)\.probe_subdomain \|\| '' \}\}/);
+  assert.ok(workflow.indexOf('name: Measure selected tenant reads') < workflow.indexOf('name: Collect sanitized runtime observations'));
   assert.doesNotMatch(workflow, /podman logs|inputs\.(?:api_url|subdomain)|trace:|capture_stdout/);
-  const probeStep = workflow.split('name: Measure selected sandbox reads')[1].split('      - name:')[0];
-  assert.match(probeStep, /github.ref == 'refs\/heads\/main' && inputs.run_sandbox_probe/);
+  const probeStep = workflow.split('name: Measure selected tenant reads')[1].split('      - name:')[0];
+  assert.match(probeStep, /github.ref == 'refs\/heads\/main' && inputs.run_tenant_probe/);
   assert.match(probeStep, /vars\.BASE_DOMAIN/);
   assert.match(probeStep, /vars\.BACKEND_SCHOOL_URL/);
-  assert.match(probeStep, /secrets\.SMOKE_USERNAME/);
-  assert.match(probeStep, /secrets\.SMOKE_PASSWORD/);
+  assert.match(probeStep, /secrets\.RUNTIME_PROBE_USERNAME/);
+  assert.match(probeStep, /secrets\.RUNTIME_PROBE_PASSWORD/);
+  assert.match(probeStep, /PROBE_SUBDOMAIN: \$\{\{ inputs\.probe_subdomain \}\}/);
+  assert.doesNotMatch(workflow, /SMOKE_|E2E_|run_sandbox_probe|--sandbox-probe|sandbox-probe\.json/);
 });
 
 const artifactHelper = path.resolve(import.meta.dirname, '../lib/pipeline-runtime-observation-artifacts.py');
@@ -464,19 +507,55 @@ test('strict aggregate validator rejects private/unknown fields, masked numbers 
   }
 });
 
-test('runner sandbox output is privately retained and validated before explicit artifact upload', t => {
+test('runner tenant output is privately retained and validated before explicit artifact upload', t => {
   const { report } = python(fakeProbe);
   const fixture = transportFixture(t, report);
-  writeFileSync(path.join(fixture.root, 'scripts/lib/pipeline-runtime-observations.py'), `import os,sys\nassert sys.argv[1:]==['--sandbox-probe']\nsys.stdout.buffer.write(open(os.environ['REPORT_INPUT'],'rb').read())\n`);
-  const result = spawnSync('bash', ['-c', stepScript('Measure selected sandbox reads through the public API')], { cwd: fixture.root, env: fixture.env, encoding: 'utf8', timeout: 10000 });
+  writeFileSync(path.join(fixture.root, 'scripts/lib/pipeline-runtime-observations.py'), `import os,sys\nassert sys.argv[1:]==['--tenant-probe']\nsys.stdout.buffer.write(open(os.environ['REPORT_INPUT'],'rb').read())\n`);
+  const result = spawnSync('bash', ['-c', stepScript('Measure selected tenant reads through the public API')], { cwd: fixture.root, env: fixture.env, encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(readFileSync(path.join(fixture.root, 'temp/runtime-observation-artifacts/sandbox-probe.json')), fixture.input);
+  assert.deepEqual(readFileSync(path.join(fixture.root, 'temp/runtime-observation-artifacts/tenant-probe.json')), fixture.input);
   assert.ok(!readdirSync(path.join(fixture.root, 'temp')).some(name => name.startsWith('runtime-probe.')));
   const workflow = workflowText();
   const artifact = workflow.split('name: Retain validated aggregate JSON')[1].split('      - name:')[0];
   assert.match(artifact, /if: always\(\) && github\.ref == 'refs\/heads\/main'/);
   assert.match(artifact, /uses: actions\/upload-artifact@v4/);
   assert.match(artifact, /retention-days: 3/);
-  assert.match(artifact, /runtime-observation-artifacts\/runtime\.json\n\s+\$\{\{ runner.temp \}\}\/runtime-observation-artifacts\/sandbox-probe\.json/);
+  assert.match(artifact, /runtime-observation-artifacts\/runtime\.json\n\s+\$\{\{ runner.temp \}\}\/runtime-observation-artifacts\/tenant-probe\.json/);
   assert.doesNotMatch(artifact, /key|stderr|report\.json|\*|GITHUB_OUTPUT/);
+});
+
+
+test('tenant validator preserves original bytes and rejects legacy names, identifying fields and wrong filenames', t => {
+  const { report } = python(fakeProbe, { tenant: 'snwsb' });
+  for (const mutation of [
+    value => { value.operation = 'sandbox_route_observations'; },
+    value => { value.scope = 'dedicated_sandbox_staff_session'; },
+    value => { value.tenant = 'snwsb'; },
+    value => { value.username = sentinel; },
+    value => { value.origin = 'https://snwsb.example.test'; },
+  ]) {
+    const candidate = structuredClone(report); mutation(candidate);
+    const fixture = transportFixture(t, candidate);
+    const destination = path.join(fixture.root, 'temp/runtime-observation-artifacts/tenant-probe.json');
+    const result = spawnSync('python3', ['-B', artifactHelper, 'probe', fixture.env.REPORT_INPUT, destination], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.ok(!`${result.stdout}${result.stderr}`.includes(sentinel));
+    assert.ok(!existsSync(destination));
+  }
+  const fixture = transportFixture(t, report);
+  const wrongDestination = path.join(fixture.root, 'temp/runtime-observation-artifacts/sandbox-probe.json');
+  assert.notEqual(spawnSync('python3', ['-B', artifactHelper, 'probe', fixture.env.REPORT_INPUT, wrongDestination]).status, 0);
+  assert.ok(!existsSync(wrongDestination));
+});
+
+test('retired and unknown CLI flags fail closed without invoking runtime collection', () => {
+  for (const argument of ['--sandbox-probe', '--unknown']) {
+    const result = python(`import runpy
+m.subprocess.Popen=lambda *args,**kwargs:(_ for _ in ()).throw(AssertionError('must not collect'))
+sys.argv=[sys.argv[1],data['argument']]
+runpy.run_path(sys.argv[0],run_name='__main__')`, { argument });
+    assert.equal(result.reason, 'collector_failed');
+    assert.equal(result.status, 'unavailable');
+    assert.ok(!Object.hasOwn(result, 'sources'));
+  }
 });

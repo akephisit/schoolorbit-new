@@ -13,7 +13,7 @@ CONTAINERS = {"schoolorbit-backend-school", "schoolorbit-backend-admin", "school
 COLLECTIONS = {"complete", "command_timeout", "byte_limit", "command_failed", "command_unavailable"}
 EVENTS = {"http_response_headers", "http_request_cancelled", "password_work", "pool_acquisition", "school_proxy_request"}
 HTTP_STATUS = {"1xx", "2xx", "3xx", "4xx", "5xx", "401", "403", "429", "499", "500", "502", "503", "504"}
-PROBE_REASONS = {"credentials_missing", "trusted_configuration_invalid", "request_timeout", "probe_limit", "redirect_refused", "unexpected_status", "body_limit", "invalid_envelope", "request_failed", "csrf_missing", "context_missing", "invalid_route_data", "active_staff_required", "student_read_ineligible", "probe_failed", "session_cookie_unavailable", "cleanup_unknown", "cleanup_failed"} | {"http_" + value for value in HTTP_STATUS | {"other"}}
+PROBE_REASONS = {"tenant_configuration_invalid", "credentials_missing", "trusted_configuration_invalid", "request_timeout", "probe_limit", "redirect_refused", "unexpected_status", "body_limit", "invalid_envelope", "request_failed", "csrf_missing", "context_missing", "invalid_route_data", "active_staff_required", "student_read_ineligible", "probe_failed", "session_cookie_unavailable", "cleanup_unknown", "cleanup_failed"} | {"http_" + value for value in HTTP_STATUS | {"other"}}
 
 
 def require(condition):
@@ -149,7 +149,7 @@ def runtime(value):
 
 def probe(value):
     shape(value, {"operation", "scope", "profile", "population_latency", "status", "cleanup", "routes"}, {"reason", "phase", "cleanup_reason"})
-    require(value["operation"] == "sandbox_route_observations" and value["scope"] == "dedicated_sandbox_staff_session" and value["profile"] == "sequential_https_api_client" and value["population_latency"] == "unavailable")
+    require(value["operation"] == "tenant_route_observations" and value["scope"] == "dedicated_tenant_staff_session" and value["profile"] == "sequential_https_api_client" and value["population_latency"] == "unavailable")
     choice(value["status"], {"available", "partial", "unavailable"})
     choice(value["cleanup"], {"not_required", "unavailable", "completed"})
     for name in ("reason", "cleanup_reason"):
@@ -189,7 +189,7 @@ def unique_object(pairs):
 def promote(kind, candidate, destination):
     require(kind in {"runtime", "probe"})
     destination = Path(destination)
-    require(destination.name == ("runtime.json" if kind == "runtime" else "sandbox-probe.json"))
+    require(destination.name == ("runtime.json" if kind == "runtime" else "tenant-probe.json"))
     with open(candidate, "rb") as stream:
         raw = stream.read(MAX_BYTES + 1)
     require(0 < len(raw) <= MAX_BYTES)

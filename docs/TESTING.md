@@ -103,11 +103,15 @@ The fixtures verify malicious-input confidentiality, JSON and actual tracing fmt
 shapes, wrong types/nonfinite values, exact nearest-rank edge cases at 1/19/20/99/100
 samples, sparse-tail nulls, SQLx seconds-to-milliseconds conversion, separate proxy
 and backend stages, missing-data semantics, command/time/byte/line/group bounds,
-and Podman 5.4.2 resource fields. Sandbox transport fixtures verify fixed trusted
-HTTPS targets, eligibility, one warmup plus five reads, response/request bounds,
-redirect refusal, early CSRF capture, partial endpoint results and own-session
-cleanup after malformed/oversized login bodies. They use synthetic secrets and
-mocked transport only. They do not measure production latency or database plans.
+and Podman 5.4.2 resource fields. Tenant transport fixtures exercise both `snwsb`
+and `sandbox`, checking the fixed trusted HTTPS API and matching Origin/tenant
+header on every request, including login/logout. Invalid/missing labels,
+infrastructure names and wrong API hosts fail before transport construction;
+dedicated `RUNTIME_PROBE_*` credentials have no smoke/E2E fallback. Fixtures retain
+eligibility, active staff identity, existing active-year selection, one warmup
+plus five reads, response/request bounds, redirect refusal, early CSRF capture,
+partial endpoint results and own-session cleanup after malformed/oversized login
+bodies. They use synthetic secrets and mocked transport only. They do not measure production latency or database plans.
 Artifact transport fixtures execute the actual workflow shell steps with mock
 SSH/keyscan commands and actual producer report objects. They preserve original
 numeric JSON bytes, including benign sequences that can collide with log masking;
@@ -118,8 +122,13 @@ logs-only channel lost numeric evidence through Actions masking, so retaining
 validated aggregates is required while raw logs, key material and private stderr
 remain excluded. A successful workflow or partial report does not establish
 missing dashboard context or student-read eligibility.
-Operational interpretation and the opt-in main-only sandbox probe belong in
-[Operations](./OPERATIONS.md).
+Workflow guards require main-only `run_tenant_probe` opt-in and an explicit
+`probe_subdomain`; the canonical CLI and validated artifact are `--tenant-probe`
+and `tenant-probe.json`. Retired sandbox-only names and identifying artifact
+fields are rejected. Operational dispatch and interpretation belong in
+[Operations](./OPERATIONS.md). The selected-tenant API sample and process-wide
+runtime distributions represent different populations. Frontend timing requires
+the deployed browser recipe below and locally supplied E2E credentials.
 
 Compiler-service diagnostics use `node --test scripts/tests/pipeline-compiler-cache-diagnostic.test.mjs`
 locally, then Operations `compiler-cache-diagnostic` on the reviewed branch. Inspect its bounded
@@ -838,6 +847,16 @@ E2E_ROUTE_LOADING_LIVE=1 node --env-file=.env.e2e.local \
   node_modules/@playwright/test/cli.js test tests/e2e/route-loading-live-acceptance.spec.ts \
   --project=chromium --workers=1
 ```
+
+For staff-only browser measurements, add `--grep 'deployed staff:'` to the command
+above and supply local `E2E_STAFF_USERNAME/PASSWORD` for the selected HTTPS tenant.
+The [existing spec](../frontend-school/tests/e2e/route-loading-live-acceptance.spec.ts)
+measures its full staff route list, including dashboard and students; the account
+needs the relevant read permissions and existing academic context for those routes.
+The [timing helper](../frontend-school/tests/e2e/helpers/route-performance.ts)
+measures request timing, bytes and first useful paint separately. GitHub's
+`RUNTIME_PROBE_*` Actions secrets are not local E2E inputs; missing local credentials
+leave browser measurements unrun.
 
 The readonly live spec also accepts `SMOKE_USERNAME/PASSWORD` for its staff login when deliberately exported from the trusted Bash-owned `.env.smoke.local`. Do not load a Bash env file containing shell escapes with Node `--env-file`; encode literal values in the dedicated dotenv file instead. It navigates only, then logs out its own newly created session; it never opens mutation workflows or revokes other sessions. It discards one warm-up and records medians from exactly five warm runs with fixed role, permissions, academic context, Chromium and default network, using client navigation with preload disabled. Output contains route templates, region names, durations, bytes and available server phases only. Browser artifacts are disabled. Missing credentials or academic context are explicitly unrun. A missing baseline or query plan prevents claims of production speedup or SQL improvement.
 

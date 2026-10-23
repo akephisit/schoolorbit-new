@@ -2,9 +2,12 @@ name: Runtime Diagnostics
 on:
   workflow_call:
     inputs:
-      run_sandbox_probe:
+      run_tenant_probe:
         type: boolean
         default: false
+      probe_subdomain:
+        type: string
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -22,12 +25,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: scripts/lib/pipeline-runtime-observations.py
           target: /opt/stack/deployment
-      - name: Measure selected sandbox reads through the public API
-        if: github.ref == 'refs/heads/main' && inputs.run_sandbox_probe
+      - name: Measure selected tenant reads through the public API
+        if: github.ref == 'refs/heads/main' && inputs.run_tenant_probe
         timeout-minutes: 8
         env:
-          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
-          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          RUNTIME_PROBE_USERNAME: ${{ secrets.RUNTIME_PROBE_USERNAME }}
+          RUNTIME_PROBE_PASSWORD: ${{ secrets.RUNTIME_PROBE_PASSWORD }}
+          PROBE_SUBDOMAIN: ${{ inputs.probe_subdomain }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
         shell: bash
@@ -42,14 +46,14 @@ jobs:
           if ! (
             ulimit -f 2048
             timeout --signal=TERM --kill-after=5s 420s \
-              python3 -B scripts/lib/pipeline-runtime-observations.py --sandbox-probe
+              python3 -B scripts/lib/pipeline-runtime-observations.py --tenant-probe
           ) >"$private_directory/report.json" 2>"$private_directory/stderr"; then
             printf '%s\n' 'runtime_observation_artifact=unavailable reason=probe_failed'
             exit 1
           fi
           python3 -B scripts/lib/pipeline-runtime-observation-artifacts.py probe \
             "$private_directory/report.json" \
-            "$RUNNER_TEMP/runtime-observation-artifacts/sandbox-probe.json"
+            "$RUNNER_TEMP/runtime-observation-artifacts/tenant-probe.json"
       - name: Collect sanitized runtime observations
         if: always() && github.ref == 'refs/heads/main'
         timeout-minutes: 3
@@ -111,7 +115,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/runtime-observation-artifacts/runtime.json
-            ${{ runner.temp }}/runtime-observation-artifacts/sandbox-probe.json
+            ${{ runner.temp }}/runtime-observation-artifacts/tenant-probe.json
       - name: Inspect runtime state
         if: always()
         uses: appleboy/ssh-action@v1.2.5
