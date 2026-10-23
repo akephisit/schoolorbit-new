@@ -80,6 +80,8 @@ jobs:
     if: inputs.operation == 'diagnostics'
     uses: ./.github/workflows/runtime-diagnostics.yml
     secrets: inherit
+    with:
+      run_sandbox_probe: ${{ fromJson(inputs.options).run_sandbox_probe == true }}
   benchmark:
     if: inputs.operation == 'benchmark'
     uses: ./.github/workflows/backend-build-benchmark.yml

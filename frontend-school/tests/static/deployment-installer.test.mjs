@@ -1163,7 +1163,7 @@ test('explicit Admin Worker recreation holds the production lock and prepares be
 	assert.doesNotMatch(admin, /redirect_domain|custom_domain:true/);
 });
 
-test('runtime diagnostics expose container state without environment or application logs', async () => {
+test('runtime diagnostics preserve baseline checks and emit only collector aggregates from logs', async () => {
 	const workflow = await readRepo('.github/workflows/runtime-diagnostics.yml');
 
 	assert.match(workflow, /workflow_call/);
@@ -1193,6 +1193,18 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.doesNotMatch(workflow, /\$2 ~ \/\^\[0-9a-f\]\{40\}\$\//);
 	assert.doesNotMatch(workflow, /Config\.Env/);
 	assert.doesNotMatch(workflow, /podman logs/);
+	assert.match(workflow, /source: scripts\/lib\/pipeline-runtime-observations\.py/);
+	assert.match(workflow, /script: python3 -B \/opt\/stack\/deployment\/scripts\/lib\/pipeline-runtime-observations\.py/);
+	assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
+	assert.match(workflow, /command_timeout: 2m/);
+	assert.match(workflow, /run_sandbox_probe:\s*type: boolean\s*default: false/);
+	assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && inputs\.run_sandbox_probe/);
+	assert.match(workflow, /--sandbox-probe/);
+	const observations = await readRepo('scripts/lib/pipeline-runtime-observations.py');
+	assert.match(observations, /"podman", "logs", "--since", "15m", "--tail"/);
+	assert.match(observations, /MAX_BYTES = 4 \* 1024 \* 1024/);
+	assert.match(observations, /MAX_GROUPS = 256/);
+	assert.doesNotMatch(observations, /print\((?:raw|line|error|output|fields)\)/);
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);
 });
 

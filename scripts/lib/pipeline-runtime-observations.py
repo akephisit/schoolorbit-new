@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """Bounded runtime sampling. Raw subprocess output never leaves this collector."""
 import json
+import base64
+import contextlib
+import datetime
+import http.cookiejar
 import math
 import os
 import re
 import selectors
 import signal
 import subprocess
+import statistics
+import sys
 import time
+import urllib.error
+import urllib.request
+import urllib.parse
 
 WINDOW_SECONDS = 900
 MAX_LINES = 5000
@@ -35,14 +44,35 @@ def label(value, allowed, fallback):
     return value if isinstance(value, str) and value in allowed else fallback
 
 
+def timestamp(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.timestamp() if parsed.tzinfo is not None else None
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def canonical_token(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", value):
+        return False
+    decoded = base64.urlsafe_b64decode(value + "=")
+    return len(decoded) == 32 and base64.urlsafe_b64encode(decoded).decode().rstrip("=") == value
+
+
 def metric(values, quantiles=True):
     if not values:
         return {"status": "unavailable", "samples": 0}
     ordered = sorted(values)
     result = {"status": "available", "samples": len(values), "max_ms": ordered[-1], "mean_ms": sum(ordered) / len(ordered)}
     if quantiles:
-        for label, fraction in (("p50_ms", .5), ("p95_ms", .95), ("p99_ms", .99)):
-            result[label] = ordered[max(0, math.ceil(fraction * len(ordered)) - 1)]
+        result["p50_ms"] = ordered[math.ceil(.5 * len(ordered)) - 1]
+        result["tail_availability"] = {}
+        for name, fraction, minimum in (("p95", .95, 20), ("p99", .99, 100)):
+            enough = len(ordered) >= minimum
+            result[name + "_ms"] = ordered[math.ceil(fraction * len(ordered)) - 1] if enough else None
+            result["tail_availability"][name] = "empirical_only" if enough else "unavailable_sparse"
     return result
 
 
@@ -108,11 +138,11 @@ def event(line, source):
         if not isinstance(parsed, dict):
             return None
         if source == "proxy":
-            return parsed, "proxy"
+            return parsed, "proxy", timestamp(parsed.get("timestamp"))
         fields = parsed.get("fields")
         if not isinstance(fields, dict):
             return None
-        return fields, parsed.get("target")
+        return fields, parsed.get("target"), timestamp(parsed.get("timestamp"))
     except (ValueError, RecursionError):
         if source != "admin":
             return None
@@ -130,7 +160,7 @@ def event(line, source):
     if match[1] == "sqlx::pool::acquire":
         # SQLx's fmt message precedes structured numeric fields.
         fields["message"] = match[2].split(" acquired_after_secs=", 1)[0]
-    return fields, match[1]
+    return fields, match[1], timestamp(ANSI.sub("", line).split()[0])
 
 
 def status_family(value):
@@ -140,8 +170,11 @@ def status_family(value):
 
 
 def aggregate(raw, source, collection="complete"):
+    collection = label(collection, {"complete", "command_timeout", "byte_limit", "command_failed", "command_unavailable"}, "command_unavailable")
     groups = {}
-    counts = {"lines": 0, "accepted_events": 0, "ignored_lines": 0, "oversized_lines": 0, "invalid_events": 0}
+    observed_times = []
+    counts = {"lines": 0, "accepted_events": 0, "aggregated_events": 0, "dropped_events": 0, "ignored_lines": 0, "oversized_lines": 0, "invalid_events": 0}
+    reasons = set()
     bounded = collection != "complete"
 
     def add(labels, timings):
@@ -150,9 +183,12 @@ def aggregate(raw, source, collection="complete"):
         if key not in groups:
             if len(groups) >= MAX_GROUPS:
                 bounded = True
+                counts["dropped_events"] += 1
+                reasons.add("group_limit")
                 return
             groups[key] = {"labels": labels, "events": 0, "metrics": {}}
         group = groups[key]
+        counts["aggregated_events"] += 1
         group["events"] += 1
         for name, value in timings.items():
             group["metrics"].setdefault(name, [])
@@ -162,17 +198,19 @@ def aggregate(raw, source, collection="complete"):
     lines = raw.splitlines()
     if len(lines) >= MAX_LINES:
         bounded = True
+        reasons.add("line_limit")
     for line in lines[:MAX_LINES]:
         counts["lines"] += 1
         if len(line) > MAX_LINE_BYTES:
             counts["oversized_lines"] += 1
             bounded = True
+            reasons.add("oversized_line")
             continue
         parsed = event(line.decode("utf-8", errors="replace"), source)
         if not parsed:
             counts["ignored_lines"] += 1
             continue
-        fields, target = parsed
+        fields, target, observed_at = parsed
         operation = label(fields.get("operation"), {"http_response_headers", "http_request_cancelled", "password_work", "school_proxy_request"}, None)
         timings = {}
         labels = None
@@ -203,6 +241,8 @@ def aggregate(raw, source, collection="complete"):
             counts["invalid_events" if operation in {"http_response_headers", "http_request_cancelled", "password_work", "school_proxy_request"} else "ignored_lines"] += 1
             continue
         counts["accepted_events"] += 1
+        if observed_at is not None:
+            observed_times.append(observed_at)
         add(labels, timings)
     result = []
     for group in groups.values():
@@ -210,7 +250,19 @@ def aggregate(raw, source, collection="complete"):
         result.append(group)
     present = {group["labels"]["event"] for group in result}
     expected = {"school_proxy_request"} if source == "proxy" else {"http_response_headers", "http_request_cancelled", "password_work", "pool_acquisition"}
-    return {"source": source, "status": "partial" if bounded or counts["invalid_events"] else "available" if result else "unavailable", "collection": collection, "coverage": "bounded_log_sample", **counts, "unavailable_events": sorted(expected - present), "groups": result}
+    if collection != "complete":
+        reasons.add(collection)
+    if counts["invalid_events"]:
+        reasons.add("invalid_events")
+    route_samples = {route: 0 for route in ROUTES.values()} if source != "proxy" else None
+    if route_samples is not None:
+        for group in result:
+            route = group["labels"].get("route")
+            if route in route_samples:
+                route_samples[route] += group["events"]
+    span = max(observed_times) - min(observed_times) if observed_times else None
+    span = number(span, WINDOW_SECONDS) if span is not None else None
+    return {"source": source, "status": "partial" if bounded or counts["invalid_events"] else "available" if result else "unavailable", "collection": collection, "partial_reasons": sorted(reasons), "coverage": "bounded_log_sample", "timestamped_events": len(observed_times), "observed_event_span_seconds": span, **counts, "unavailable_events": sorted(expected - present), "selected_routes": {route: {"events": count, "status": "available" if count else "unavailable"} for route, count in (route_samples or {}).items()}, "groups": result}
 
 
 def bytes_value(value):
@@ -235,13 +287,17 @@ def container_snapshot(raw, collection):
         row = data[0] if isinstance(data, list) and len(data) == 1 else None
         if not isinstance(row, dict):
             return result
-        cpu = row.get("cpu", row.get("CPUPerc"))
+        # Podman v5.4.2 cmd/podman/containers/stats.go outputJSON uses
+        # cpu_percent, mem_usage and pids (all formatted strings).
+        cpu = row.get("cpu_percent", row.get("cpu", row.get("CPUPerc")))
         cpu_match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)%", cpu) if isinstance(cpu, str) else None
         cpu = number(float(cpu_match[1]), 1000000) if cpu_match else None
         memory = row.get("mem_usage", row.get("MemUsage"))
         used = limit = None
         if isinstance(memory, str) and memory.count("/") == 1:
             used, limit = (bytes_value(part) for part in memory.split("/"))
+            if limit == 0:
+                limit = None
         pids = row.get("pids", row.get("PIDs"))
         pids = int(pids) if isinstance(pids, str) and re.fullmatch(r"[0-9]{1,9}", pids) else number(pids, 1000000000)
         values = {"cpu_percent": cpu, "memory_used_bytes": used, "memory_limit_bytes": limit, "pids": pids}
@@ -285,9 +341,210 @@ def collect():
     return {"operation": "runtime_observations", "schema_version": 1, "window_seconds": WINDOW_SECONDS, "tail_lines_per_source": MAX_LINES, "byte_limit_per_source": MAX_BYTES, "quantiles": "nearest_rank_ceil_p_times_n", "population_latency": "unavailable", "database_host_resources": "unavailable", "database_query_plans": "unavailable", "host": host_snapshot(), "containers": containers, "sources": sources}
 
 
+PROBE_BODY_BYTES = 1024 * 1024
+PROBE_REQUEST_SECONDS = 15
+PROBE_TOTAL_SECONDS = 360
+
+
+class ProbeFailure(Exception):
+    def __init__(self, reason):
+        self.reason = reason
+
+
+class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        fp.close()
+        raise ProbeFailure("redirect_refused")
+
+
+@contextlib.contextmanager
+def request_deadline(seconds):
+    def expired(_signal, _frame):
+        raise ProbeFailure("request_timeout")
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+class SandboxClient:
+    def __init__(self, api, origin):
+        self.api, self.origin = api, origin
+        self.cookies = http.cookiejar.CookieJar()
+        # HTTPSHandler uses the default verified TLS context; redirects never
+        # forward this session or its credentials to another location.
+        self.opener = urllib.request.build_opener(RefuseRedirect(), urllib.request.HTTPCookieProcessor(self.cookies))
+        self.csrf = None
+        self.logout_credential_sent = False
+        self.deadline = time.monotonic() + PROBE_TOTAL_SECONDS
+        self.requests = 0
+
+    def session_cookie(self):
+        candidates = [cookie for cookie in self.cookies if cookie.name == "__Host-schoolorbit_session"]
+        if len(candidates) != 1:
+            return None
+        cookie = candidates[0]
+        attributes = {key.lower(): value for key, value in cookie._rest.items()}
+        if (cookie.domain != urllib.parse.urlsplit(self.api).hostname or cookie.domain_specified or
+                cookie.path != "/" or not cookie.path_specified or not cookie.secure or
+                cookie.is_expired() or not canonical_token(cookie.value) or
+                "httponly" not in attributes or str(attributes.get("samesite", "")).lower() != "lax"):
+            return None
+        return cookie
+
+    def request(self, method, path, payload=None, cleanup=False):
+        remaining = self.deadline + (PROBE_REQUEST_SECONDS if cleanup else 0) - time.monotonic()
+        if remaining <= 0 or self.requests >= 24:
+            raise ProbeFailure("probe_limit")
+        headers = {"Origin": self.origin, "X-School-Subdomain": "sandbox", "Cache-Control": "no-store", "Accept": "application/json"}
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode()
+            headers["Content-Type"] = "application/json"
+        if method == "POST" and path == "/api/auth/logout" and self.csrf:
+            headers["X-CSRF-Token"] = self.csrf
+        request = urllib.request.Request(self.api + path, data=body, headers=headers, method=method)
+        self.cookies.add_cookie_header(request)
+        if path == "/api/auth/logout":
+            cookie = self.session_cookie()
+            if cookie is None or cookie.name + "=" + cookie.value not in (request.get_header("Cookie") or "").split("; "):
+                raise ProbeFailure("cleanup_unknown")
+            self.logout_credential_sent = True
+        self.requests += 1
+        started = time.monotonic()
+        try:
+            timeout = min(PROBE_REQUEST_SECONDS, remaining)
+            with request_deadline(timeout):
+                with self.opener.open(request, timeout=timeout) as response:
+                    # Capture before body parsing/size validation, including login.
+                    tokens = response.headers.get_all("X-CSRF-Token", [])
+                    if len(tokens) == 1 and canonical_token(tokens[0]):
+                        self.csrf = tokens[0]
+                    if response.status != 200:
+                        raise ProbeFailure("unexpected_status")
+                    raw = response.read(PROBE_BODY_BYTES + 1)
+                    if len(raw) > PROBE_BODY_BYTES:
+                        raise ProbeFailure("body_limit")
+                    data = json.loads(raw)
+                    if not isinstance(data, dict) or data.get("success") is not True:
+                        raise ProbeFailure("invalid_envelope")
+                    return data.get("data"), len(raw), (time.monotonic() - started) * 1000
+        except urllib.error.HTTPError as error:
+            error.close()
+            raise ProbeFailure("http_" + (status_family(error.code) or "other")) from None
+        except (OSError, ValueError, RecursionError):
+            raise ProbeFailure("request_failed") from None
+
+
+def probe_summary(route, durations, sizes, reason=None):
+    summary = {"route": route, "status": "available" if len(durations) == 5 else "partial" if durations else "unavailable", "samples": len(durations), "expected_samples": 5}
+    if reason:
+        summary["reason"] = reason
+    if durations:
+        summary.update({"client_wall_ms": {"median": statistics.median(durations), "min": min(durations), "max": max(durations)}, "response_body_bytes": {"median": statistics.median(sizes), "min": min(sizes), "max": max(sizes)}})
+    return summary
+
+
+def valid_probe_data(route, data):
+    if not isinstance(data, dict):
+        return False
+    if route == "students":
+        return isinstance(data.get("items"), list) and len(data["items"]) <= 20 and type(data.get("page")) is int and data["page"] == 1 and type(data.get("page_size")) is int and data["page_size"] == 20
+    names = ("totalStaff", "totalStudents", "activeHomerooms") if route == "dashboard" else ("open", "dueSoon", "overdue", "submitted", "closed", "total")
+    return all(type(data.get(name)) is int and 0 <= data[name] <= 1000000000 for name in names)
+
+
+def sandbox_probe():
+    report = {"operation": "sandbox_route_observations", "scope": "dedicated_sandbox_staff_session", "profile": "sequential_https_api_client", "population_latency": "unavailable", "status": "unavailable", "cleanup": "not_required", "routes": []}
+    username, password = os.environ.get("SMOKE_USERNAME"), os.environ.get("SMOKE_PASSWORD")
+    if not username or not password:
+        return {**report, "reason": "credentials_missing"}
+    domain, api = os.environ.get("BASE_DOMAIN", ""), os.environ.get("BACKEND_SCHOOL_URL", "")
+    if not re.fullmatch(r"(?=.{1,253}$)[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,63}", domain) or api.rstrip("/") != f"https://school-api.{domain}":
+        return {**report, "reason": "trusted_configuration_invalid"}
+    client = SandboxClient(api.rstrip("/"), f"https://sandbox.{domain}")
+    login_attempted = False
+    phase = "login"
+    try:
+        login_attempted = True
+        client.request("POST", "/api/auth/login", {"username": username, "password": password, "rememberMe": False})
+        del password
+        if client.session_cookie() is None:
+            raise ProbeFailure("session_cookie_unavailable")
+        if client.csrf is None:
+            raise ProbeFailure("csrf_missing")
+        phase = "identity"
+        user, _, _ = client.request("GET", "/api/auth/me")
+        if not isinstance(user, dict) or user.get("username") != username or user.get("userType") != "staff" or user.get("status") != "active":
+            raise ProbeFailure("active_staff_required")
+        permissions = user.get("permissions")
+        student_eligible = isinstance(permissions, list) and any(label(permission, {"student.read.school", "student.read.assigned", "student.read.own"}, None) is not None for permission in permissions)
+        phase = "context"
+        year = None
+        context_reason = "context_missing"
+        try:
+            context, _, _ = client.request("GET", "/api/academic/context/options")
+            if isinstance(context, dict) and isinstance(context.get("years"), list):
+                active = context.get("activeAcademicYearId")
+                if isinstance(active, str) and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", active) and any(isinstance(row, dict) and row.get("id") == active for row in context["years"]):
+                    year = active
+        except ProbeFailure as error:
+            context_reason = error.reason
+        for route, path in (("dashboard", "/api/staff/dashboard"), ("students", "/api/students?page=1&pageSize=20"), ("work_counts", "/api/me/work-items/counts")):
+            phase = route
+            if route == "students" and not student_eligible:
+                report["routes"].append(probe_summary(route, [], [], "student_read_ineligible"))
+                continue
+            if route == "dashboard":
+                if year is None:
+                    report["routes"].append(probe_summary(route, [], [], context_reason))
+                    continue
+                path += "?academicYearId=" + year
+            durations, sizes = [], []
+            reason = None
+            try:
+                for run in range(6):
+                    data, size, duration = client.request("GET", path)
+                    if not valid_probe_data(route, data):
+                        raise ProbeFailure("invalid_route_data")
+                    if run:
+                        durations.append(duration)
+                        sizes.append(size)
+            except ProbeFailure as error:
+                reason = error.reason
+            report["routes"].append(probe_summary(route, durations, sizes, reason))
+        report["status"] = "available" if all(route["status"] == "available" for route in report["routes"]) else "partial"
+    except ProbeFailure as error:
+        report.update({"reason": error.reason, "phase": phase})
+    except Exception:
+        report.update({"reason": "probe_failed", "phase": phase})
+    finally:
+        if login_attempted:
+            report["cleanup"] = "unavailable"
+            try:
+                if client.csrf is not None and client.session_cookie() is not None:
+                    client.request("POST", "/api/auth/logout", {}, cleanup=True)
+                    report["cleanup"] = "completed" if client.logout_credential_sent else "unavailable"
+                elif client.session_cookie() is None:
+                    report["cleanup_reason"] = "cleanup_unknown"
+                else:
+                    report["cleanup_reason"] = "csrf_missing"
+            except ProbeFailure as error:
+                report["cleanup_reason"] = error.reason
+            except Exception:
+                report["cleanup_reason"] = "cleanup_failed"
+            if report["cleanup"] != "completed":
+                report["status"] = "partial"
+        client.cookies.clear()
+    return report
+
+
 if __name__ == "__main__":
     try:
-        report = collect()
+        report = sandbox_probe() if sys.argv[1:] == ["--sandbox-probe"] else collect()
     except Exception:
         # A future parser/provider defect still cannot spill a raw input/traceback.
         report = {"operation": "runtime_observations", "schema_version": 1, "status": "unavailable", "reason": "collector_failed"}

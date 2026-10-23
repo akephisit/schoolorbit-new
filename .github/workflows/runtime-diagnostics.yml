@@ -1,13 +1,46 @@
 name: Runtime Diagnostics
 on:
   workflow_call:
-    inputs: {}
+    inputs:
+      run_sandbox_probe:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+      - name: Upload bounded runtime observation collector
+        if: github.ref == 'refs/heads/main'
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: scripts/lib/pipeline-runtime-observations.py
+          target: /opt/stack/deployment
+      - name: Measure selected sandbox reads through the public API
+        if: github.ref == 'refs/heads/main' && inputs.run_sandbox_probe
+        timeout-minutes: 8
+        env:
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: python3 -B scripts/lib/pipeline-runtime-observations.py --sandbox-probe
+      - name: Collect sanitized runtime observations
+        if: github.ref == 'refs/heads/main'
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 2m
+          script: python3 -B /opt/stack/deployment/scripts/lib/pipeline-runtime-observations.py
       - name: Inspect runtime state
         uses: appleboy/ssh-action@v1.2.5
         with:
