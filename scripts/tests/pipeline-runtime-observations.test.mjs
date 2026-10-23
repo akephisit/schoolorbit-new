@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -350,11 +351,132 @@ test('workflow exposes only boolean opt-in on main and probes before bounded log
   assert.match(workflow, /run_sandbox_probe:\s+type: boolean\s+default: false/);
   assert.match(operations, /run_sandbox_probe: \$\{\{ fromJson\(inputs\.options\)\.run_sandbox_probe == true \}\}/);
   assert.ok(workflow.indexOf('name: Measure selected sandbox reads') < workflow.indexOf('name: Collect sanitized runtime observations'));
-  assert.doesNotMatch(workflow, /podman logs|inputs\.(?:api_url|subdomain)|artifact|trace:/);
+  assert.doesNotMatch(workflow, /podman logs|inputs\.(?:api_url|subdomain)|trace:|capture_stdout/);
   const probeStep = workflow.split('name: Measure selected sandbox reads')[1].split('      - name:')[0];
   assert.match(probeStep, /github.ref == 'refs\/heads\/main' && inputs.run_sandbox_probe/);
   assert.match(probeStep, /vars\.BASE_DOMAIN/);
   assert.match(probeStep, /vars\.BACKEND_SCHOOL_URL/);
   assert.match(probeStep, /secrets\.SMOKE_USERNAME/);
   assert.match(probeStep, /secrets\.SMOKE_PASSWORD/);
+});
+
+const artifactHelper = path.resolve(import.meta.dirname, '../lib/pipeline-runtime-observation-artifacts.py');
+const workflowText = () => readFileSync(path.resolve(import.meta.dirname, '../../.github/workflows/runtime-diagnostics.yml'), 'utf8');
+function stepScript(name) {
+  const step = workflowText().split(`      - name: ${name}\n`)[1].split('\n      - name:')[0];
+  return step.split('        run: |\n')[1].split('\n').map(line => line.slice(10)).join('\n');
+}
+function runtimeReport() {
+  const report = python(`m.capture=lambda *args,**kwargs:(b'', 'command_unavailable')
+m.host_snapshot=lambda:{'scope':'backend_host','status':'available','cpu_sample_seconds':1,'cpu_busy_percent':73.2138930000065,'memory_total_bytes':3210000000,'memory_available_bytes':1000000000}
+print(json.dumps(m.collect()))`);
+  report.sources[0] = aggregate([http(732.138930000065)]);
+  return report;
+}
+function transportFixture(t, report = runtimeReport()) {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'runtime-artifact-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const directory of ['scripts/lib', 'bin', 'temp']) mkdirSync(path.join(root, directory), { recursive: true });
+  copyFileSync(artifactHelper, path.join(root, 'scripts/lib/pipeline-runtime-observation-artifacts.py'));
+  const input = Buffer.from(JSON.stringify(report) + '\n');
+  writeFileSync(path.join(root, 'input.json'), input);
+  const mock = `#!${process.execPath}
+const fs=require('node:fs'),path=require('node:path');
+const args=process.argv.slice(2),mode=process.env.FIXTURE_MODE;
+if(path.basename(process.argv[1])==='ssh-keyscan'){
+ if(mode==='keyscan_failed'){process.stderr.write('${sentinel}');process.exit(3);}
+ process.stdout.write('fixture-host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture\\n');process.exit(0);
+}
+const key=args[args.indexOf('-i')+1];
+if((fs.statSync(key).mode&0o777)!==0o600||(fs.statSync(path.dirname(key)).mode&0o777)!==0o700)process.exit(80);
+if(process.env.SSH_PRIVATE_KEY!==undefined||!fs.readFileSync(key,'utf8').includes('${sentinel}'))process.exit(81);
+for(const flag of ['BatchMode=yes','IdentitiesOnly=yes','StrictHostKeyChecking=yes','ConnectTimeout=10'])if(!args.includes(flag))process.exit(82);
+if(args.at(-1)!=='python3 -B /opt/stack/deployment/scripts/lib/pipeline-runtime-observations.py')process.exit(83);
+fs.writeFileSync(process.env.KEY_RECORD,key);
+process.stderr.write('${sentinel}');
+if(mode==='empty')process.exit(0);
+if(mode==='banner')process.stdout.write('${sentinel}\\n');
+if(mode==='oversized'){process.stdout.write('x'.repeat(3*1024*1024));return;}
+process.stdout.write(fs.readFileSync(process.env.REPORT_INPUT));
+if(mode==='extra')process.stdout.write('{}\\n');
+if(mode==='failed')process.exit(42);
+`;
+  for (const name of ['ssh', 'ssh-keyscan']) writeFileSync(path.join(root, 'bin', name), mock, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${path.join(root, 'bin')}:${process.env.PATH}`, RUNNER_TEMP: path.join(root, 'temp'), SERVER_IP: '127.0.0.1', SERVER_USER: 'fixture', SERVER_PORT: '22', SSH_PRIVATE_KEY: `-----BEGIN OPENSSH PRIVATE KEY-----\n${sentinel}\n-----END OPENSSH PRIVATE KEY-----`, KEY_RECORD: path.join(root, 'key-record'), REPORT_INPUT: path.join(root, 'input.json') };
+  return { root, input, env, artifact: path.join(root, 'temp/runtime-observation-artifacts/runtime.json'), run(extra = {}) {
+    const result = spawnSync('bash', ['-c', stepScript('Collect sanitized runtime observations')], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 });
+    assert.ok(!`${result.stdout}${result.stderr}`.includes(sentinel));
+    assert.ok(!readdirSync(path.join(root, 'temp')).some(name => name.startsWith('runtime-observation-ssh.')), 'private SSH candidates/key/stderr must be cleaned');
+    if (existsSync(env.KEY_RECORD)) assert.ok(!existsSync(readFileSync(env.KEY_RECORD, 'utf8')), 'private key must be removed');
+    return result;
+  } };
+}
+
+test('SSH transports original validated numeric JSON bytes into a private artifact without log masking', t => {
+  const fixture = transportFixture(t);
+  const result = fixture.run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readFileSync(fixture.artifact), fixture.input);
+  assert.match(readFileSync(fixture.artifact, 'utf8'), /732\.138930000065/);
+  assert.match(readFileSync(fixture.artifact, 'utf8'), /3210000000/);
+  assert.equal(statSync(fixture.artifact).mode & 0o777, 0o600);
+  assert.ok(!result.stdout.includes('732.138930000065'), 'numeric evidence is retained as a file, not an action output/log');
+  assert.deepEqual(readdirSync(path.dirname(fixture.artifact)), ['runtime.json']);
+});
+
+test('failed, empty, extra, oversized or banner transport output never reaches artifact paths', t => {
+  for (const mode of ['failed', 'empty', 'extra', 'oversized', 'banner', 'keyscan_failed']) {
+    const fixture = transportFixture(t);
+    const result = fixture.run({ FIXTURE_MODE: mode });
+    assert.notEqual(result.status, 0, mode);
+    assert.ok(!existsSync(fixture.artifact), mode);
+  }
+});
+
+test('invalid SSH selectors fail before credentials or command options reach transport', t => {
+  for (const selectors of [{ SERVER_IP: `-oProxyCommand=${sentinel}` }, { SERVER_USER: `fixture;${sentinel}` }, { SERVER_PORT: '0' }, { SERVER_PORT: '65536' }, { SERVER_PORT: '22x' }]) {
+    const fixture = transportFixture(t);
+    assert.notEqual(fixture.run(selectors).status, 0);
+    assert.ok(!existsSync(fixture.env.KEY_RECORD));
+    assert.ok(!existsSync(fixture.artifact));
+  }
+});
+
+test('strict aggregate validator rejects private/unknown fields, masked numbers and wrong report objects', t => {
+  const mutations = [
+    report => { report.private = sentinel; },
+    report => { report.host.status = sentinel; },
+    report => { report.sources[0].groups[0].labels.route = sentinel; },
+    report => { report.sources[0].groups[0].metrics.duration_ms.max_ms = null; },
+    report => { report.operation = 'school_proxy_request'; },
+  ];
+  for (const mutate of mutations) {
+    const report = runtimeReport(); mutate(report);
+    const fixture = transportFixture(t, report);
+    assert.notEqual(fixture.run().status, 0);
+    assert.ok(!existsSync(fixture.artifact));
+  }
+  for (const raw of ['{"operation":"runtime_observations","schema_version":1,"schema_version":1}', '{"operation":"runtime_observations","schema_version":true,"status":"unavailable","reason":"collector_failed"}', '{"operation":"runtime_observations","value":NaN}', '{"operation":"runtime_observations","value":732.13***930000065}']) {
+    const fixture = transportFixture(t);
+    writeFileSync(fixture.env.REPORT_INPUT, raw);
+    assert.notEqual(fixture.run().status, 0);
+    assert.ok(!existsSync(fixture.artifact));
+  }
+});
+
+test('runner sandbox output is privately retained and validated before explicit artifact upload', t => {
+  const { report } = python(fakeProbe);
+  const fixture = transportFixture(t, report);
+  writeFileSync(path.join(fixture.root, 'scripts/lib/pipeline-runtime-observations.py'), `import os,sys\nassert sys.argv[1:]==['--sandbox-probe']\nsys.stdout.buffer.write(open(os.environ['REPORT_INPUT'],'rb').read())\n`);
+  const result = spawnSync('bash', ['-c', stepScript('Measure selected sandbox reads through the public API')], { cwd: fixture.root, env: fixture.env, encoding: 'utf8', timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readFileSync(path.join(fixture.root, 'temp/runtime-observation-artifacts/sandbox-probe.json')), fixture.input);
+  assert.ok(!readdirSync(path.join(fixture.root, 'temp')).some(name => name.startsWith('runtime-probe.')));
+  const workflow = workflowText();
+  const artifact = workflow.split('name: Retain validated aggregate JSON')[1].split('      - name:')[0];
+  assert.match(artifact, /if: always\(\) && github\.ref == 'refs\/heads\/main'/);
+  assert.match(artifact, /uses: actions\/upload-artifact@v4/);
+  assert.match(artifact, /retention-days: 3/);
+  assert.match(artifact, /runtime-observation-artifacts\/runtime\.json\n\s+\$\{\{ runner.temp \}\}\/runtime-observation-artifacts\/sandbox-probe\.json/);
+  assert.doesNotMatch(artifact, /key|stderr|report\.json|\*|GITHUB_OUTPUT/);
 });

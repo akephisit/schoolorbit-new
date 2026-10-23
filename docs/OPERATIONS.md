@@ -226,6 +226,27 @@ dropped-event counts are separate. `observed_event_span_seconds` describes the
 span between timestamped accepted events, not container uptime or continuous
 15-minute coverage; missing timestamps remain unavailable.
 
+Download the `runtime-observations-<run>-<attempt>` Actions artifact for numeric
+evidence. It retains only `runtime.json` and, when requested and successfully
+validated, `sandbox-probe.json`, for three days. Probe stdout and direct SSH
+collector stdout reach private runner files before any Actions log processing.
+The [artifact validator](../scripts/lib/pipeline-runtime-observation-artifacts.py)
+accepts exactly one expected aggregate object, rejects unknown fields/labels,
+nonfinite numbers and output over 2 MiB, then atomically preserves its original
+JSON bytes. Missing or failed transport, extra stdout or malformed JSON cannot
+promote a report. The SSH adapter follows the existing release owner's job-local
+host-key discovery, pins that discovered key for the job with strict checking,
+and bounds scan, connection and command time. This is trust on first use within
+the job, not an independently verified server fingerprint. Its mode-0600 private
+key, raw candidates and private stderr are cleaned up and are never uploaded.
+
+Actions log masking stays enabled and can replace coincidental digit sequences
+inside otherwise safe numeric aggregates. Masked log JSON is not numeric evidence;
+never reconstruct its digits, round around masking or treat missing measurements
+as complete. The ordinary validated JSON artifact is the authoritative transport,
+without encoding, obfuscation or changes to the producer's measurements. It
+contains no application logs, credentials, cookies, identities or browser captures.
+
 HTTP response-header completion, cancelled request futures and proxy request/body
 lifetimes remain separate distributions, including status/error groups. Selected
 backend dashboard, student-list, work-count and authentication routes have explicit
@@ -265,6 +286,10 @@ the first 20 students and work counts. A denied/failed endpoint stops immediatel
 missing credentials, eligibility or context are explicit. This API-client sample
 reports count, body bytes and client wall-time median/min/max, not browser paint,
 population p95, load capacity or a performance improvement.
+Python's urllib HTTP transport closes the connection after each request, so this
+GitHub-runner wall time includes fresh DNS/TCP/TLS setup and the response body.
+The warmup warms application data; it does not provide browser-like connection
+reuse. A large client/backend timing difference alone is not a database slowdown.
 
 The probe retains bodies, cookies, CSRF, IDs and credentials only in process memory,
 uses 15-second request and 1-MiB response limits, a six-minute total budget plus at

@@ -108,6 +108,16 @@ HTTPS targets, eligibility, one warmup plus five reads, response/request bounds,
 redirect refusal, early CSRF capture, partial endpoint results and own-session
 cleanup after malformed/oversized login bodies. They use synthetic secrets and
 mocked transport only. They do not measure production latency or database plans.
+Artifact transport fixtures execute the actual workflow shell steps with mock
+SSH/keyscan commands and actual producer report objects. They preserve original
+numeric JSON bytes, including benign sequences that can collide with log masking;
+reject masked/malformed/duplicate/extra/empty/oversized or failed output; check
+host/user/port validation, private key permissions and cleanup; and ensure that
+only the two explicitly validated aggregate files can be uploaded. The previous
+logs-only channel lost numeric evidence through Actions masking, so retaining
+validated aggregates is required while raw logs, key material and private stderr
+remain excluded. A successful workflow or partial report does not establish
+missing dashboard context or student-read eligibility.
 Operational interpretation and the opt-in main-only sandbox probe belong in
 [Operations](./OPERATIONS.md).
 
