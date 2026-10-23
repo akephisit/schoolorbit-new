@@ -20,6 +20,7 @@ function fixture(t) {
  writeFileSync(path.join(root,'bin/cargo'),`#!/usr/bin/env node
 const fs=require('node:fs');const args=process.argv.slice(2);
 fs.appendFileSync(process.env.COMMAND_LOG,JSON.stringify(args)+'\\n');
+if(args[0]==='clippy'&&process.env.FIXTURE_CLIPPY_FAIL===(args.includes('api-docs')?'api-docs':'default'))process.exit(42);
 if(args[0]==='metadata')process.stdout.write(JSON.stringify({target_directory:${JSON.stringify(path.join(root,'backend-school/target'))}}));
 if(args[0]==='tree'&&process.env.FIXTURE_DOCS_DEP)process.stdout.write('utoipa v5.5.0\\n');
 if(args[0]==='build'&&!process.env.FIXTURE_DOCS_LEAK)fs.writeFileSync(${JSON.stringify(path.join(root,'backend-school/target/debug/backend-school'))}, '#!/bin/sh\\necho "OpenAPI export requires --features api-docs" >&2\\nexit 2\\n', {mode:0o755});
@@ -35,6 +36,10 @@ test('ordinary verification explicitly refuses an ambient compile-only flag for 
  assert.equal(result.status,0,result.stderr);
  const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
  assert.ok(commands.some(args=>args[0]==='test'&&args.includes('--locked')&&!args.includes('--no-run')));
+ const clippy=commands.find(args=>args[0]==='clippy');
+ assert.ok(clippy);
+ for(const required of ['--lib','--bins','--locked','--no-deps','clippy::unwrap_used','clippy::expect_used','clippy::panic','clippy::unreachable'])assert.ok(clippy.includes(required),required);
+ assert.ok(!clippy.includes('--all-targets')&&!clippy.includes('warnings'));
 });
 test('removed priming command cannot execute Cargo or fixtures',t=>{
  const f=fixture(t);const result=f.run();assert.notEqual(result.status,0);
@@ -69,6 +74,13 @@ test('local School verification executes tests and database fixtures rather than
  assert.ok(commands.some(args=>args[0]==='check'&&args.includes('api-docs')));
  assert.ok(tests.some(args=>args.includes('api_contract::tests')&&args.includes('api-docs')));
  assert.ok(tests.some(args=>args.includes('school-staff')&&args.includes('api-docs')));
+ const clippy=commands.filter(args=>args[0]==='clippy');
+ assert.equal(clippy.length,2);
+ for(const args of clippy){
+  for(const required of ['--workspace','--lib','--bins','--locked','--no-deps','school-test-db','clippy::unwrap_used','clippy::expect_used','clippy::panic','clippy::unreachable'])assert.ok(args.includes(required),required);
+  assert.ok(!args.includes('--all-targets')&&!args.includes('warnings'));
+ }
+ assert.equal(clippy.filter(args=>args.includes('api-docs')).length,1);
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,0);
 });
 for (const [flag, message] of [['FIXTURE_DOCS_LEAK', /Production binary must reject OpenAPI/], ['FIXTURE_DOCS_DEP', /Production dependency graph must exclude Utoipa/]]) test(`School verification refuses production documentation leakage (${flag})`,t=>{
@@ -76,5 +88,15 @@ for (const [flag, message] of [['FIXTURE_DOCS_LEAK', /Production binary must rej
  const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{cwd:f.root,env:{...f.env,[flag]:'1'},encoding:'utf8'});
  assert.notEqual(result.status,0);
  assert.match(result.stderr,message);
+ assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,1);
+});
+
+for(const [scope,mode] of [['backend-school','default'],['backend-school','api-docs'],['backend-admin','default']])test(`production panic lint failure stops ${scope} verification (${mode})`,t=>{
+ const f=fixture(t);
+ const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope',scope],{cwd:f.root,env:{...f.env,FIXTURE_CLIPPY_FAIL:mode},encoding:'utf8'});
+ assert.notEqual(result.status,0);
+ assert.match(result.stderr,/cargo failed \(42\)|bash failed \(42\)/);
+ const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
+ assert.equal(commands.at(-1)[0],'clippy');
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,1);
 });

@@ -452,17 +452,31 @@ pub async fn create_manual_external(
     .await
 }
 
+#[derive(Debug)]
+enum AccountRecipientType {
+    Student,
+    Staff,
+}
+
+fn searchable_recipient_type(
+    recipient_type: RecipientType,
+) -> Result<AccountRecipientType, AppError> {
+    match recipient_type {
+        RecipientType::Student => Ok(AccountRecipientType::Student),
+        RecipientType::Staff => Ok(AccountRecipientType::Staff),
+        RecipientType::External => Err(AppError::ValidationError(
+            "ค้นหาบัญชีได้เฉพาะนักเรียนหรือบุคลากร".to_string(),
+        )),
+    }
+}
+
 pub async fn search_accounts(
     pool: &PgPool,
     actor: &ActorContext,
     campaign_id: Uuid,
     query: CertificateAccountSearchQuery,
 ) -> Result<Vec<CertificateCandidateAccount>, AppError> {
-    if query.recipient_type == RecipientType::External {
-        return Err(AppError::ValidationError(
-            "ค้นหาบัญชีได้เฉพาะนักเรียนหรือบุคลากร".to_string(),
-        ));
-    }
+    let recipient_type = searchable_recipient_type(query.recipient_type)?;
     let search = normalized_search(Some(&query.search))?
         .ok_or_else(|| AppError::ValidationError("กรุณาระบุคำค้นอย่างน้อย 2 ตัวอักษร".to_string()))?;
     if search.chars().count() < 2 {
@@ -479,8 +493,8 @@ pub async fn search_accounts(
     )
     .await?;
     let pattern = format!("%{search}%");
-    let rows = match query.recipient_type {
-        RecipientType::Student => sqlx::query_as::<_, AccountRow>(
+    let rows = match recipient_type {
+        AccountRecipientType::Student => sqlx::query_as::<_, AccountRow>(
             "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
                         person_name.last_name, u.user_type, u.status
                  FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -496,7 +510,7 @@ pub async fn search_accounts(
         .fetch_all(pool)
         .await
         .map_err(candidate_db_error)?,
-        RecipientType::Staff => sqlx::query_as::<_, AccountRow>(
+        AccountRecipientType::Staff => sqlx::query_as::<_, AccountRow>(
             "SELECT u.id, u.username, NULL::text AS student_id, person_name.title, person_name.first_name,
                         person_name.last_name, u.user_type, u.status
                  FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -510,7 +524,6 @@ pub async fn search_accounts(
         .fetch_all(pool)
         .await
         .map_err(candidate_db_error)?,
-        RecipientType::External => unreachable!(),
     };
     rows.into_iter().map(account_response).collect()
 }
@@ -2403,4 +2416,36 @@ fn invalid_db_value(field: &'static str) -> AppError {
 fn candidate_db_error(_error: sqlx::Error) -> AppError {
     // Never log database details here: constraint details may contain recipient values.
     AppError::InternalServerError("ไม่สามารถดำเนินการข้อมูลผู้รับเกียรติบัตรได้".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn external_account_search_is_rejected_before_query_validation_authorization_or_database_access(
+    ) {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: Vec::new(),
+        };
+        let error = search_accounts(
+            &pool,
+            &actor,
+            Uuid::new_v4(),
+            CertificateAccountSearchQuery {
+                recipient_type: RecipientType::External,
+                search: String::new(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, AppError::ValidationError(message) if message == "ค้นหาบัญชีได้เฉพาะนักเรียนหรือบุคลากร")
+        );
+    }
 }

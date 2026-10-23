@@ -9,7 +9,7 @@ pub async fn get_group_phase_workspace(
     context: &GradebookContext,
 ) -> Result<GroupPhaseWorkspace, AppError> {
     let (mut tx, scope) =
-        begin_scope(None, pool, actor, group, phase, context, false, false).await?;
+        begin_scope(ScopeAccess::Read, pool, actor, group, phase, context).await?;
     let workspace = load_workspace(&mut tx, actor, &scope).await?;
     tx.commit().await?;
     Ok(workspace)

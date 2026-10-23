@@ -136,6 +136,43 @@ struct RenderSchoolFontRow {
     scan_status: String,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum SamplePreviewKind {
+    Short,
+    Normal,
+    Long,
+}
+
+#[derive(Debug)]
+enum PreviewRecipient {
+    Sample(SamplePreviewKind),
+    Candidate(Uuid),
+}
+
+fn preview_recipient(
+    kind: CertificatePreviewKind,
+    candidate_id: Option<Uuid>,
+) -> Result<PreviewRecipient, AppError> {
+    match (kind, candidate_id) {
+        (CertificatePreviewKind::Candidate, Some(id)) => Ok(PreviewRecipient::Candidate(id)),
+        (CertificatePreviewKind::Candidate, None) => Err(AppError::ValidationError(
+            "การพรีวิวผู้รับจริงต้องระบุรายชื่อผู้รับ".to_string(),
+        )),
+        (_, Some(_)) => Err(AppError::ValidationError(
+            "รหัสผู้รับใช้ได้เฉพาะการพรีวิวผู้รับจริง".to_string(),
+        )),
+        (CertificatePreviewKind::Short, None) => {
+            Ok(PreviewRecipient::Sample(SamplePreviewKind::Short))
+        }
+        (CertificatePreviewKind::Normal, None) => {
+            Ok(PreviewRecipient::Sample(SamplePreviewKind::Normal))
+        }
+        (CertificatePreviewKind::Long, None) => {
+            Ok(PreviewRecipient::Sample(SamplePreviewKind::Long))
+        }
+    }
+}
+
 pub async fn preview_manifest(
     pool: &PgPool,
     actor: &ActorContext,
@@ -150,21 +187,8 @@ pub async fn preview_manifest(
         sample_values,
         layout,
     } = request;
-    let candidate_preview_id = match (preview_kind, candidate_id) {
-        (CertificatePreviewKind::Candidate, Some(candidate_id)) => Some(candidate_id),
-        (CertificatePreviewKind::Candidate, None) => {
-            return Err(AppError::ValidationError(
-                "การพรีวิวผู้รับจริงต้องระบุรายชื่อผู้รับ".to_string(),
-            ));
-        }
-        (_, Some(_)) => {
-            return Err(AppError::ValidationError(
-                "รหัสผู้รับใช้ได้เฉพาะการพรีวิวผู้รับจริง".to_string(),
-            ));
-        }
-        (_, None) => None,
-    };
-    if candidate_preview_id.is_some() && !sample_values.is_empty() {
+    let recipient = preview_recipient(preview_kind, candidate_id)?;
+    if matches!(recipient, PreviewRecipient::Candidate(_)) && !sample_values.is_empty() {
         return Err(AppError::ValidationError(
             "การพรีวิวผู้รับจริงไม่รับค่าตัวอย่างทับข้อมูล".to_string(),
         ));
@@ -198,10 +222,11 @@ pub async fn preview_manifest(
         .into_iter()
         .map(|value| normalize_name_for_match(&value))
         .collect::<BTreeSet<_>>();
-    let mut recipient_values = if let Some(candidate_id) = candidate_preview_id {
-        candidate_service::preview_values(pool, actor, candidate_id, template_id).await?
-    } else {
-        sample_recipient_values(preview_kind)
+    let mut recipient_values = match recipient {
+        PreviewRecipient::Candidate(candidate_id) => {
+            candidate_service::preview_values(pool, actor, candidate_id, template_id).await?
+        }
+        PreviewRecipient::Sample(kind) => sample_recipient_values(kind),
     };
     for (key, value) in sample_values {
         let display_key = normalize_display_text(&key);
@@ -937,12 +962,11 @@ fn invalid_school_font() -> AppError {
     AppError::InternalServerError("certificate_school_font_invalid".to_string())
 }
 
-fn sample_recipient_values(kind: CertificatePreviewKind) -> BTreeMap<String, String> {
+fn sample_recipient_values(kind: SamplePreviewKind) -> BTreeMap<String, String> {
     let (title, first_name, last_name) = match kind {
-        CertificatePreviewKind::Short => ("ด.ช.", "ปัน", "ดี"),
-        CertificatePreviewKind::Normal => ("เด็กหญิง", "กมลชนก", "สุขสวัสดิ์"),
-        CertificatePreviewKind::Long => ("เด็กหญิง", "ณัฏฐณิชาภัทรวรรณ", "รัตนสุวรรณกุลชัยวัฒนา"),
-        CertificatePreviewKind::Candidate => unreachable!("candidate preview is rejected above"),
+        SamplePreviewKind::Short => ("ด.ช.", "ปัน", "ดี"),
+        SamplePreviewKind::Normal => ("เด็กหญิง", "กมลชนก", "สุขสวัสดิ์"),
+        SamplePreviewKind::Long => ("เด็กหญิง", "ณัฏฐณิชาภัทรวรรณ", "รัตนสุวรรณกุลชัยวัฒนา"),
     };
     BTreeMap::from([
         ("คำนำหน้า".to_string(), title.to_string()),
@@ -1050,9 +1074,9 @@ mod tests {
 
     #[test]
     fn preview_samples_dates_and_filenames_are_deterministic() {
-        let short = sample_recipient_values(CertificatePreviewKind::Short);
-        let normal = sample_recipient_values(CertificatePreviewKind::Normal);
-        let long = sample_recipient_values(CertificatePreviewKind::Long);
+        let short = sample_recipient_values(SamplePreviewKind::Short);
+        let normal = sample_recipient_values(SamplePreviewKind::Normal);
+        let long = sample_recipient_values(SamplePreviewKind::Long);
 
         assert_eq!(short["ชื่อ"], "ปัน");
         assert_eq!(normal["ชื่อ"], "กมลชนก");

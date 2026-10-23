@@ -200,21 +200,21 @@ pub struct GlobalRankingResult {
     pub applications: Vec<GlobalRankingEntry>,
 }
 
+#[derive(sqlx::FromRow)]
+struct RoundRankRow {
+    track_id: Uuid,
+    track_name: String,
+    application_id: Option<Uuid>,
+    application_number: Option<String>,
+    full_name: String,
+    total_score: Option<f64>,
+}
+
 /// GET /api/admission/rounds/:id/ranking
 pub async fn get_round_ranking(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<RoundRankingResult>, AppError> {
-    #[derive(sqlx::FromRow)]
-    struct RoundRankRow {
-        track_id: Uuid,
-        track_name: String,
-        application_id: Option<Uuid>,
-        application_number: Option<String>,
-        full_name: String,
-        total_score: Option<f64>,
-    }
-
     let rows = sqlx::query_as::<_, RoundRankRow>(
         r#"SELECT track.id AS track_id, track.name AS track_name,
                   aa.id AS application_id, aa.application_number,
@@ -241,22 +241,30 @@ pub async fn get_round_ranking(
         AppError::InternalServerError("ไม่สามารถโหลดผลเรียงคะแนนได้".to_string())
     })?;
 
-    let mut rankings: Vec<RoundRankingResult> = Vec::new();
+    Ok(group_round_rankings(rows))
+}
+
+fn group_round_rankings(rows: Vec<RoundRankRow>) -> Vec<RoundRankingResult> {
+    let mut rankings = Vec::new();
+    let mut current: Option<RoundRankingResult> = None;
     for row in rows {
-        if rankings.last().map(|result| result.track_id) != Some(row.track_id) {
-            rankings.push(RoundRankingResult {
-                track_id: row.track_id,
-                track_name: row.track_name,
-                applications: Vec::new(),
-            });
-        }
+        let mut group = match current.take() {
+            Some(group) if group.track_id == row.track_id => group,
+            prior => {
+                if let Some(prior) = prior {
+                    rankings.push(prior);
+                }
+                RoundRankingResult {
+                    track_id: row.track_id,
+                    track_name: row.track_name,
+                    applications: Vec::new(),
+                }
+            }
+        };
         if let Some(application_id) = row.application_id {
-            let current = rankings
-                .last_mut()
-                .expect("the track group was just created");
             let score = row.total_score.unwrap_or(0.0);
-            current.applications.push(RoundRankingEntry {
-                rank: current.applications.len() + 1,
+            group.applications.push(RoundRankingEntry {
+                rank: group.applications.len() + 1,
                 application_id,
                 application_number: row.application_number,
                 full_name: row.full_name,
@@ -264,9 +272,12 @@ pub async fn get_round_ranking(
                 selection_score: score,
             });
         }
+        current = Some(group);
     }
-
-    Ok(rankings)
+    if let Some(group) = current {
+        rankings.push(group);
+    }
+    rankings
 }
 
 pub async fn get_track_ranking(
@@ -1123,6 +1134,44 @@ pub async fn update_selection_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn round_ranking_groups_preserve_empty_tracks_order_ties_and_per_track_ranks() {
+        let first = Uuid::from_u128(9);
+        let empty = Uuid::from_u128(2);
+        let last = Uuid::from_u128(1);
+        let row = |track, application, score| RoundRankRow {
+            track_id: track,
+            track_name: track.to_string(),
+            application_id: application,
+            application_number: None,
+            full_name: "Synthetic applicant".into(),
+            total_score: score,
+        };
+        assert!(group_round_rankings(Vec::new()).is_empty());
+        let rankings = group_round_rankings(vec![
+            row(first, Some(Uuid::from_u128(11)), Some(80.0)),
+            row(first, Some(Uuid::from_u128(12)), Some(80.0)),
+            row(empty, None, None),
+            row(last, Some(Uuid::from_u128(13)), None),
+        ]);
+        assert_eq!(
+            rankings.iter().map(|r| r.track_id).collect::<Vec<_>>(),
+            vec![first, empty, last]
+        );
+        assert!(rankings[1].applications.is_empty());
+        assert_eq!(
+            rankings[0]
+                .applications
+                .iter()
+                .map(|a| (a.application_id, a.rank))
+                .collect::<Vec<_>>(),
+            vec![(Uuid::from_u128(11), 1), (Uuid::from_u128(12), 2)]
+        );
+        assert_eq!(rankings[2].applications[0].rank, 1);
+        assert_eq!(rankings[2].applications[0].total_score, 0.0);
+        assert_eq!(rankings[2].applications[0].selection_score, 0.0);
+    }
 
     #[test]
     fn compute_room_assignments_fills_rooms_sequentially_by_default() {

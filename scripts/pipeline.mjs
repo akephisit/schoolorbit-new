@@ -66,6 +66,9 @@ try {
       if (suite === 'backend-school') {
         const cwd = path.join(root, suite);
         run('cargo', ['fmt', '--all', '--', '--check'], cwd);
+        const productionClippy = ['clippy', '--workspace', '--lib', '--bins', '--exclude', 'school-test-db', '--locked', '--no-deps'];
+        const panicLints = ['-D', 'clippy::unwrap_used', '-D', 'clippy::expect_used', '-D', 'clippy::panic', '-D', 'clippy::unreachable'];
+        run('cargo', [...productionClippy, '--', ...panicLints], cwd);
         run('cargo', ['check', '--workspace', '--all-targets', '--locked'], cwd);
         const productionDependencies = execFileSync('cargo', ['tree', '-p', 'backend-school', '--edges', 'normal', '--prefix', 'none', '--format', '{p}', '--locked'], { cwd, encoding: 'utf8' });
         if (/^utoipa(?:-gen)? v/m.test(productionDependencies)) throw new Error('Production dependency graph must exclude Utoipa');
@@ -76,6 +79,7 @@ try {
         const unsupportedExport = spawnSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8' });
         if (unsupportedExport.status !== 2 || unsupportedExport.stdout !== '' || !unsupportedExport.stderr.includes('--features api-docs')) throw new Error('Production binary must reject OpenAPI export before runtime startup');
         run('cargo', ['check', '--workspace', '--all-targets', '--features', 'api-docs', '--locked'], cwd);
+        run('cargo', [...productionClippy, '--features', 'api-docs', '--', ...panicLints], cwd);
         run('cargo', ['test', '--bin', 'backend-school', '--features', 'api-docs', 'api_contract::tests', '--locked'], cwd);
         for (const contractTest of ['gradebook_review_group_phase_contract_uses_phase_codes', 'learner_endpoint_contract_requires_full_context_and_typed_domains', 'results_endpoint_contract_requires_exact_context_and_typed_envelopes']) {
           run('cargo', ['test', '--bin', 'backend-school', '--features', 'api-docs', contractTest, '--locked'], cwd);

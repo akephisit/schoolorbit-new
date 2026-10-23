@@ -23,4 +23,5 @@ export DATABASE_URL="postgresql://schoolorbit_test:schoolorbit_test@${binding}/s
 export TEST_DATABASE_URL="$DATABASE_URL"
 cd backend-admin
 cargo check --all-targets --locked
+cargo clippy --lib --bins --locked --no-deps -- -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::unreachable
 cargo test --locked

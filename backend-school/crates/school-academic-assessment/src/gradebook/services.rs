@@ -116,16 +116,22 @@ pub(super) async fn validate_context(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ScopeAccess<'a> {
+    Read,
+    Write(&'a dyn ResultLockPort),
+    Confirm(&'a dyn ResultLockPort),
+}
+
 pub(super) async fn begin_scope<'a>(
-    result_locks: Option<&(dyn ResultLockPort + Send + Sync)>,
+    operation: ScopeAccess<'_>,
     pool: &'a PgPool,
     actor: &ActorContext,
     group: Uuid,
     phase: Uuid,
     context: &GradebookContext,
-    write: bool,
-    confirm: bool,
 ) -> Result<(Transaction<'a, Postgres>, Scope), AppError> {
+    let write = !matches!(operation, ScopeAccess::Read);
     let access = policy::list_access(pool, actor).await?;
     let mut tx = pool.begin().await?;
     if !write {
@@ -185,14 +191,16 @@ pub(super) async fn begin_scope<'a>(
     }
     if write {
         if !policy::can_manage_group(actor, scope.assigned)
-            || (confirm && !policy::can_confirm_group_phase(actor, scope.primary_teacher))
+            || (matches!(operation, ScopeAccess::Confirm(_))
+                && !policy::can_confirm_group_phase(actor, scope.primary_teacher))
         {
             return Err(AppError::Forbidden(
                 "Current group assignment and primary role are required for this action".into(),
             ));
         }
+    }
+    if let ScopeAccess::Write(result_locks) | ScopeAccess::Confirm(result_locks) = operation {
         result_locks
-            .expect("Gradebook writes require the Results lock adapter")
             .require_course_offering_unlocked(
                 &mut tx,
                 scope.offering_id,

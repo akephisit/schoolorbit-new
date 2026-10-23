@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::Serialize;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -1203,26 +1203,19 @@ fn build_roster_preview(
         .collect();
     let self_registration =
         source.registration_type == Some(ActivityRegistrationType::SelfRegistration);
-    let mut ids: Vec<Uuid> = candidate_map
-        .keys()
-        .chain(current_map.keys())
-        .copied()
+    let students_by_year: BTreeMap<Uuid, Uuid> = current_map
+        .iter()
+        .chain(candidate_map.iter())
+        .map(|(&year_id, &student_id)| (year_id, student_id))
         .collect();
-    ids.sort_unstable();
-    ids.dedup();
-    let mut students = Vec::with_capacity(ids.len());
-    for student_year_id in ids {
+    let mut students = Vec::with_capacity(students_by_year.len());
+    for (student_year_id, student_id) in students_by_year {
         let currently_active = current_map.contains_key(&student_year_id);
         let proposed_active = if self_registration {
             currently_active
         } else {
             candidate_map.contains_key(&student_year_id)
         };
-        let student_id = candidate_map
-            .get(&student_year_id)
-            .or_else(|| current_map.get(&student_year_id))
-            .copied()
-            .expect("roster preview union must resolve student id");
         students.push(RosterPreviewStudent {
             student_academic_year_id: student_year_id,
             student_id,
@@ -1419,7 +1412,97 @@ async fn append_group_audit(
 
 #[cfg(test)]
 mod tests {
-    use super::internal_group_code;
+    use super::*;
+
+    fn preview_current(year: u128, student: u128) -> LearningGroupStudentRow {
+        LearningGroupStudentRow {
+            id: Uuid::new_v4(),
+            learning_group_id: Uuid::new_v4(),
+            student_academic_year_id: Uuid::from_u128(year),
+            student_id: Uuid::from_u128(student),
+            membership_status: crate::models::MembershipStatus::Active,
+            roster_source: "manual".into(),
+            joined_at: chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+            left_at: None,
+            published_at: None,
+            row_version: 1,
+        }
+    }
+
+    #[test]
+    fn roster_preview_union_preserves_all_identities_candidate_precedence_and_order() {
+        for registration_type in [
+            Some(ActivityRegistrationType::Assigned),
+            Some(ActivityRegistrationType::SelfRegistration),
+        ] {
+            let preview = build_roster_preview(
+                Uuid::new_v4(),
+                RosterSource {
+                    hash: "source".into(),
+                    candidates: vec![
+                        RosterSourceStudent {
+                            student_academic_year_id: Uuid::from_u128(3),
+                            student_id: Uuid::from_u128(30),
+                        },
+                        RosterSourceStudent {
+                            student_academic_year_id: Uuid::from_u128(2),
+                            student_id: Uuid::from_u128(20),
+                        },
+                    ],
+                    registration_type,
+                },
+                vec![preview_current(2, 99), preview_current(1, 10)],
+            );
+            assert_eq!(preview.source_hash, "source");
+            assert_eq!(
+                preview
+                    .students
+                    .iter()
+                    .map(|s| (s.student_academic_year_id, s.student_id))
+                    .collect::<Vec<_>>(),
+                vec![
+                    (Uuid::from_u128(1), Uuid::from_u128(10)),
+                    (Uuid::from_u128(2), Uuid::from_u128(20)),
+                    (Uuid::from_u128(3), Uuid::from_u128(30))
+                ]
+            );
+            assert_eq!(
+                preview.retained,
+                if registration_type == Some(ActivityRegistrationType::SelfRegistration) {
+                    2
+                } else {
+                    1
+                }
+            );
+            assert_eq!(
+                (preview.added, preview.removed),
+                if registration_type == Some(ActivityRegistrationType::SelfRegistration) {
+                    (0, 0)
+                } else {
+                    (1, 1)
+                }
+            );
+            assert_eq!(preview.conflicts, 0);
+        }
+    }
+
+    #[test]
+    fn roster_preview_handles_empty_and_current_only_unions_without_dropping_students() {
+        let source = || RosterSource {
+            hash: "source".into(),
+            candidates: Vec::new(),
+            registration_type: None,
+        };
+        assert!(build_roster_preview(Uuid::new_v4(), source(), Vec::new())
+            .students
+            .is_empty());
+        let preview = build_roster_preview(Uuid::new_v4(), source(), vec![preview_current(1, 10)]);
+        assert_eq!(preview.students.len(), 1);
+        assert_eq!(preview.students[0].student_id, Uuid::from_u128(10));
+        assert!(preview.students[0].currently_active);
+        assert!(!preview.students[0].proposed_active);
+        assert_eq!(preview.removed, 1);
+    }
 
     #[test]
     fn internal_group_code_is_stable_across_terms_without_user_input() {

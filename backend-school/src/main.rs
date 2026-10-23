@@ -14,6 +14,7 @@ mod system;
 
 mod scheduling;
 mod services;
+mod startup;
 mod utils;
 
 use dotenvy::dotenv;
@@ -26,6 +27,7 @@ use school_file_platform::{
 };
 use school_notifications::events::{TenantNotificationEvent, WorkChangeEvent};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, PoolManagerConfig};
+use startup::{required_environment, StartupError};
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
@@ -56,8 +58,15 @@ impl AppState {
 }
 
 #[tokio::main]
-async fn main() {
-    let command_args = env::args().skip(1).collect::<Vec<_>>();
+async fn main() -> Result<(), StartupError> {
+    let command_args = env::args_os()
+        .skip(1)
+        .map(|argument| {
+            argument
+                .into_string()
+                .map_err(|_| StartupError::new("arguments", "invalid_unicode"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     if command_args.first().map(String::as_str) == Some("export-openapi") {
         if command_args.len() != 1 {
             eprintln!("usage: backend-school export-openapi");
@@ -85,34 +94,40 @@ async fn main() {
                     std::process::exit(1);
                 }
             }
-            return;
+            return Ok(());
         }
     }
+    let result = run().await;
+    if let Err(error) = &result {
+        tracing::error!(
+            stage = error.stage(),
+            reason = error.reason(),
+            "School startup or server failed"
+        );
+    }
+    result
+}
 
+async fn run() -> Result<(), StartupError> {
     dotenv().ok();
 
     if env::var("LOG_FORMAT").as_deref() == Ok("json") {
-        utils::logging::init();
+        utils::logging::init()
+            .map_err(|_| StartupError::new("logging", "subscriber_install_failed"))?;
     } else {
-        utils::logging::init_pretty();
+        utils::logging::init_pretty()
+            .map_err(|_| StartupError::new("logging", "subscriber_install_failed"))?;
     }
 
     tracing::info!("🚀 Starting SchoolOrbit Backend School Service...");
 
     let port = env::var("PORT").unwrap_or_else(|_| "8081".to_string());
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let backend_admin_url = env::var("BACKEND_ADMIN_URL")
-        .expect("BACKEND_ADMIN_URL must be set (e.g. http://backend-admin:8080)");
-    let internal_secret = env::var("INTERNAL_API_SECRET")
-        .expect("INTERNAL_API_SECRET must be set for internal API authentication");
-
-    let admin_client_config = match AdminClientConfig::from_env() {
-        Ok(config) => config,
-        Err(error) => {
-            tracing::error!(error = %error, "Invalid backend-admin client configuration");
-            std::process::exit(1);
-        }
-    };
+    let backend_admin_url = required_environment("BACKEND_ADMIN_URL")?;
+    let internal_secret = required_environment("INTERNAL_API_SECRET")?;
+    let admin_client_config = AdminClientConfig::from_env().map_err(|error| {
+        StartupError::tenancy_configuration("admin_client_configuration", &error)
+    })?;
     let admin_client = Arc::new(AdminClient::new(
         backend_admin_url,
         internal_secret,
@@ -120,16 +135,12 @@ async fn main() {
     ));
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
 
-    let pool_manager_config = PoolManagerConfig::from_env().unwrap_or_else(|error| {
-        tracing::error!(%error, "Invalid tenant connection budget");
-        std::process::exit(1)
-    });
+    let pool_manager_config = PoolManagerConfig::from_env()
+        .map_err(|error| StartupError::tenancy_configuration("tenant_connection_budget", &error))?;
     let background_turns = Arc::new(
-        school_tenancy::background::TenantTurnExecutor::from_env(&pool_manager_config)
-            .unwrap_or_else(|error| {
-                tracing::error!(%error, "Invalid tenant background admission configuration");
-                std::process::exit(1)
-            }),
+        school_tenancy::background::TenantTurnExecutor::from_env(&pool_manager_config).map_err(
+            |error| StartupError::tenancy_configuration("tenant_background_admission", &error),
+        )?,
     );
     let pool_manager = Arc::new(PoolManager::with_config(pool_manager_config));
     let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
@@ -152,46 +163,25 @@ async fn main() {
     tracing::info!("ℹ️  Multi-tenant architecture ready");
     tracing::info!("ℹ️  Each school has its own database connection pool (cached)");
 
-    let storage_provider = match R2StorageProvider::new().await {
-        Ok(provider) => Arc::new(provider),
-        Err(error) => {
-            tracing::error!(
-                error_code = error.log_safe_code(),
-                "File Platform storage configuration is invalid"
-            );
-            std::process::exit(1);
-        }
-    };
-    let scanner_config = match ClamdConfig::from_env() {
-        Ok(config) => config,
-        Err(_) => {
-            tracing::error!("File Platform malware scanner configuration is invalid");
-            std::process::exit(1);
-        }
-    };
-    let file_runtime_config = match FilePlatformRuntimeConfig::from_env() {
-        Ok(config) => config,
-        Err(error) => {
-            tracing::error!(
-                error_code = error.log_safe_code(),
-                "File Platform runtime configuration is invalid"
-            );
-            std::process::exit(1);
-        }
-    };
+    let storage_provider =
+        Arc::new(R2StorageProvider::new().await.map_err(|error| {
+            StartupError::new("file_storage_configuration", error.log_safe_code())
+        })?);
+    let scanner_config = ClamdConfig::from_env().map_err(|_| {
+        StartupError::new("malware_scanner_configuration", "invalid_CLAMD_settings")
+    })?;
+    let file_runtime_config = FilePlatformRuntimeConfig::from_env()
+        .map_err(|error| StartupError::new("file_runtime_configuration", error.log_safe_code()))?;
     let file_platform = Arc::new(FilePlatform::with_config(
         storage_provider,
         Arc::new(ClamdScanner::new(scanner_config)),
         file_runtime_config,
     ));
 
-    let session_config = match school_auth::config::SessionConfig::from_env() {
-        Ok(config) => Arc::new(config),
-        Err(_) => {
-            tracing::error!(reason = "session_config_invalid");
-            std::process::exit(1);
-        }
-    };
+    let session_config = Arc::new(
+        school_auth::config::SessionConfig::from_env()
+            .map_err(|_| StartupError::new("session_configuration", "session_config_invalid"))?,
+    );
     let permission_cache = Arc::new(PermissionCache::new());
     let identity_cache = Arc::new(school_auth::session_cache::SessionCache::new());
     let auth_runtime = school_auth::runtime::AuthRuntime {
@@ -221,7 +211,7 @@ async fn main() {
     let app = app::build_app(state.clone());
 
     let addr = format!("{}:{}", host, port);
-    tracing::info!("🌐 Server starting on http://{}", addr);
+    tracing::info!("🌐 Server starting on configured listener");
     tracing::info!("\n✅ Available endpoints:");
     tracing::info!("  GET  /                          - API info");
     tracing::info!("  GET  /health                    - Health check");
@@ -238,17 +228,13 @@ async fn main() {
     tracing::info!("  GET  /internal/migration-status - Get migration status");
     tracing::info!("  GET  /ws/timetable              - Real-time Timetable Collaboration");
 
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(listener) => listener,
-        Err(error) => {
-            tracing::error!(address = %addr, error = %error, "Failed to bind server listener");
-            std::process::exit(1);
-        }
-    };
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|error| StartupError::io("listener_bind", error))?;
 
     let mut sched = JobScheduler::new()
         .await
-        .expect("Failed to initialize job scheduler");
+        .map_err(|error| StartupError::scheduler("scheduler_initialization", error))?;
     let admin_client_for_job = Arc::clone(&state.admin_client);
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
     let file_platform_for_job = Arc::clone(&state.file_platform);
@@ -308,7 +294,7 @@ async fn main() {
             })
         },
     )
-    .expect("Failed to create cleaner job");
+    .map_err(|error| StartupError::scheduler("file_reconciliation_job", error))?;
 
     let cleanup_state = state.clone();
     let auth_retention = Arc::new(school_auth::retention::AuthRetentionRuntime::new(
@@ -327,11 +313,11 @@ async fn main() {
             })
         },
     )
-    .expect("Auth cleanup schedule is invalid");
+    .map_err(|error| StartupError::scheduler("auth_cleanup_job", error))?;
     sched
         .add(auth_cleanup_job)
         .await
-        .expect("Auth cleanup registration failed");
+        .map_err(|error| StartupError::scheduler("auth_cleanup_registration", error))?;
 
     let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
     let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
@@ -361,22 +347,22 @@ async fn main() {
                 .await;
             })
         })
-        .expect("Failed to create calendar reminder job");
+        .map_err(|error| StartupError::scheduler("calendar_reminder_job", error))?;
 
     let cleaner_job_id = cleaner_job.guid();
     let calendar_reminder_job_id = calendar_reminder_job.guid();
     sched
         .add(cleaner_job)
         .await
-        .expect("Failed to add job to scheduler");
+        .map_err(|error| StartupError::scheduler("file_reconciliation_registration", error))?;
     sched
         .add(calendar_reminder_job)
         .await
-        .expect("Failed to add calendar reminder job");
+        .map_err(|error| StartupError::scheduler("calendar_reminder_registration", error))?;
 
     let cleaner_next_run = scheduling::next_run_for_job(&mut sched, cleaner_job_id)
         .await
-        .expect("Failed to resolve next File Platform reconciliation");
+        .map_err(|error| StartupError::scheduler("file_reconciliation_next_run", error))?;
     scheduling::log_next_run(
         "file_platform_reconciliation",
         scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
@@ -384,13 +370,16 @@ async fn main() {
     );
     let calendar_next_run = scheduling::next_run_for_job(&mut sched, calendar_reminder_job_id)
         .await
-        .expect("Failed to resolve next calendar reminder");
+        .map_err(|error| StartupError::scheduler("calendar_reminder_next_run", error))?;
     scheduling::log_next_run(
         "calendar_reminder",
         scheduling::CALENDAR_REMINDER_CRON,
         calendar_next_run,
     );
-    sched.start().await.expect("Failed to start scheduler");
+    sched
+        .start()
+        .await
+        .map_err(|error| StartupError::scheduler("scheduler_start", error))?;
     tokio::spawn(school_notifications::runtime::start(
         school_notifications::runtime::NotificationRuntimeState {
             admin_client: state.admin_client.clone(),
@@ -413,5 +402,6 @@ async fn main() {
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await
-    .expect("Server failed");
+    .map_err(|error| StartupError::io("server", error))?;
+    Ok(())
 }

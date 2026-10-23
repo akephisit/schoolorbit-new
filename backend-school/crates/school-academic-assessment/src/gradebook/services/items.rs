@@ -21,14 +21,12 @@ pub async fn create_item(
         return Err(conflict());
     }
     let (mut tx, scope) = begin_scope(
-        Some(result_locks),
+        ScopeAccess::Write(result_locks),
         pool,
         actor,
         group,
         phase,
         context,
-        true,
-        false,
     )
     .await?;
     validate_allocation(&mut tx, &scope, &maximum, None).await?;
@@ -55,14 +53,12 @@ pub async fn update_item(
 ) -> Result<ScoreItem, AppError> {
     let maximum = validate_item(&input)?;
     let (mut tx, scope) = begin_scope(
-        Some(result_locks),
+        ScopeAccess::Write(result_locks),
         pool,
         actor,
         group,
         phase,
         context,
-        true,
-        false,
     )
     .await?;
     let prior = load_item(&mut tx, &scope, item_id).await?;
@@ -94,14 +90,12 @@ pub async fn remove_item(
     row_version: i64,
 ) -> Result<ScoreItemRemovalOutcome, AppError> {
     let (mut tx, scope) = begin_scope(
-        Some(result_locks),
+        ScopeAccess::Write(result_locks),
         pool,
         actor,
         group,
         phase,
         context,
-        true,
-        false,
     )
     .await?;
     let prior = load_item(&mut tx, &scope, item_id).await?;
