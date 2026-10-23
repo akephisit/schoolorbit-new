@@ -284,6 +284,7 @@ async fn missing_unverified_and_incorrect_passwords_preserve_dummy_work_and_deni
 #[tokio::test]
 async fn concurrent_logins_preserve_session_cap_and_current_account_fields() {
     let fixture = Fixture::new().await;
+    let concurrent_pool = fixture.independent_pool().await;
     sqlx::query(
         "UPDATE platform_accounts SET role='operator',name='Current operator fixture' WHERE id=$1",
     )
@@ -299,7 +300,7 @@ async fn concurrent_logins_preserve_session_cap_and_current_account_fields() {
     let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(8));
     let mut requests = Vec::new();
     for _ in 0..8 {
-        let pool = fixture.pool.clone();
+        let pool = concurrent_pool.clone();
         let barrier = barrier.clone();
         requests.push(tokio::spawn(async move {
             login_with_verifier(&pool, credentials(), |_, _| async move {
@@ -330,5 +331,6 @@ async fn concurrent_logins_preserve_session_cap_and_current_account_fields() {
     let old_sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_sessions WHERE account_id=$1 AND created_at<now()-interval '30 minutes'")
         .bind(fixture.id).fetch_one(&fixture.pool).await.unwrap();
     assert_eq!(old_sessions, 2);
+    concurrent_pool.close().await;
     fixture.close().await;
 }
