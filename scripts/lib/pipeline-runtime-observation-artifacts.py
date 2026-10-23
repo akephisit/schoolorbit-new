@@ -118,6 +118,7 @@ def source(value):
 
 def runtime(value):
     if set(value) == {"operation", "schema_version", "status", "reason"}:
+        require(type(value["schema_version"]) is int)
         require(value == {"operation": "runtime_observations", "schema_version": 1, "status": "unavailable", "reason": "collector_failed"})
         return
     shape(value, {"operation", "schema_version", "window_seconds", "tail_lines_per_source", "byte_limit_per_source", "quantiles", "population_latency", "database_host_resources", "database_query_plans", "host", "containers", "sources"})

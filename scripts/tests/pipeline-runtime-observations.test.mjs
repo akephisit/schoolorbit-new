@@ -456,7 +456,7 @@ test('strict aggregate validator rejects private/unknown fields, masked numbers 
     assert.notEqual(fixture.run().status, 0);
     assert.ok(!existsSync(fixture.artifact));
   }
-  for (const raw of ['{"operation":"runtime_observations","schema_version":1,"schema_version":1}', '{"operation":"runtime_observations","value":NaN}', '{"operation":"runtime_observations","value":732.13***930000065}']) {
+  for (const raw of ['{"operation":"runtime_observations","schema_version":1,"schema_version":1}', '{"operation":"runtime_observations","schema_version":true,"status":"unavailable","reason":"collector_failed"}', '{"operation":"runtime_observations","value":NaN}', '{"operation":"runtime_observations","value":732.13***930000065}']) {
     const fixture = transportFixture(t);
     writeFileSync(fixture.env.REPORT_INPUT, raw);
     assert.notEqual(fixture.run().status, 0);
