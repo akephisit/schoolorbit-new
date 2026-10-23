@@ -104,6 +104,19 @@ work memory can multiply across
 sort/hash operations, connections and parallel workers; these are initial budgets,
 not a guarantee of fixed RAM consumption. Keep autovacuum and worker AIO enabled.
 
+School bcrypt work shares the [password worker](../backend-school/crates/school-crypto/src/password_work.rs)
+across authentication, enrollment, student/guardian and staff creation, and tenant provisioning.
+It admits at most four blocking jobs per School process; excess callers wait at most one second
+before a safe 503. There is no environment override or automatic mutation retry. Cancelling a
+queued request removes its wait, while an already-started hash/verification retains its slot until
+it finishes. This protects async executor responsiveness and limits CPU concurrency; it does not
+promise lower hash latency. Existing costs and legacy truncation rules remain unchanged. Login
+revalidates the verified credential/account snapshot under a user row lock before session insertion,
+so a concurrent password change or disabled/deleted/renamed/retyped account rejects stale login.
+Admin has its own application-owned budget. Keep the supported single-process topology; additional
+processes multiply these independent CPU limits. Diagnose overload using safe status/reason codes;
+never record plaintext passwords or database URLs in observations.
+
 Tenant directory lookups cache only successful UUID/runtime credentials, for 30
 seconds and at most 1024 entries by default (`TENANT_DIRECTORY_TTL_SECONDS`,
 `TENANT_DIRECTORY_CAPACITY`). At most four distinct directory fills run concurrently

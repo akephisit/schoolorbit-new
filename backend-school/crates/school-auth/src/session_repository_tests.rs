@@ -21,12 +21,35 @@ use super::{
     },
     session_policy::{BucketKind, SessionLifetime, SessionTimes},
     session_repository::{
-        authenticate_and_maintain, cleanup_auth_state, create_login_session, list_user_sessions,
-        revalidate_session, revoke_sessions, NewSession, PresentedTokenKind,
-        SessionMaintenanceMode, SessionRevocationReason, SessionRevocationTarget,
+        authenticate_and_maintain, cleanup_auth_state, list_user_sessions, revalidate_session,
+        revoke_sessions, NewSession, PresentedTokenKind, SessionMaintenanceMode,
+        SessionRevocationReason, SessionRevocationTarget,
     },
     throttle_repository::{check_login_throttles, record_login_failure},
 };
+
+// Fixture setup still uses the production guarded insertion contract.
+async fn create_login_session(
+    pool: &PgPool,
+    session: &NewSession,
+    identifier_hash: ThrottleBucketHash,
+) -> Result<(), school_errors::AppError> {
+    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id=$1")
+        .bind(session.user_id)
+        .fetch_one(pool)
+        .await?;
+    let user = super::services::find_session_login_user_by_username(pool, &username)
+        .await?
+        .unwrap();
+    let result =
+        super::session_repository::create_login_session(pool, session, identifier_hash, &user)
+            .await?;
+    assert_eq!(
+        result,
+        super::session_repository::LoginSessionCreation::Created
+    );
+    Ok(())
+}
 
 struct SessionFixture {
     pool: PgPool,

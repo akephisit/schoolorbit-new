@@ -25,3 +25,4 @@ aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "al
 hex = "0.4.3"
 rand = { version = "0.10.3", default-features = false, features = ["sys_rng"] }
 log = "0.4.34"
+zeroize = "1.9.1"

@@ -13,27 +13,22 @@ use std::collections::HashSet;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 // Two-int namespace is separate from Attendance/Behavior bigint entity locks.
 const STUDENT_NUMBER_NAMESPACE: i32 = 0x534F_4144;
 
-// Hold permits inside the blocking job so cancellation cannot oversubscribe CPU.
-static PASSWORD_HASH_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
-
 async fn hash_enrollment_password(password: &str) -> Result<String, AppError> {
-    let permit = PASSWORD_HASH_WORKERS
-        .acquire()
+    school_crypto::password_work::hash(password, 8)
         .await
-        .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?;
-    let password = Zeroizing::new(password.to_string());
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        bcrypt::hash(password.as_bytes(), 8)
-    })
-    .await
-    .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?
-    .map_err(|_| AppError::InternalServerError("Password hash failed".into()))
+        .map_err(|error| match error {
+            school_crypto::password_work::PasswordWorkError::BcryptFailed => {
+                AppError::InternalServerError("Password hash failed".into())
+            }
+            school_crypto::password_work::PasswordWorkError::AdmissionTimeout
+            | school_crypto::password_work::PasswordWorkError::WorkerUnavailable => {
+                AppError::ServiceUnavailable("password_worker".into())
+            }
+        })
 }
 
 fn pii_error(context: &str, error: String) -> AppError {
@@ -1205,8 +1200,7 @@ pub async fn complete_enrollment(
         .bind(id)
         .bind(fd)
         .execute(&mut *tx)
-        .await
-        .ok();
+        .await?;
     }
     sqlx::query(
         "UPDATE admission_enrollment_forms SET completed_at = NOW(), completed_by = $1 WHERE application_id = $2",
@@ -1214,8 +1208,7 @@ pub async fn complete_enrollment(
     .bind(enroller_id)
     .bind(id)
     .execute(&mut *tx)
-    .await
-    .ok();
+    .await?;
 
     // สร้าง parent accounts (ครอบคลุม father / mother / guardians)
     {
@@ -1224,8 +1217,7 @@ pub async fn complete_enrollment(
         )
         .bind(id)
         .fetch_optional(&mut *tx)
-        .await
-        .unwrap_or(None);
+        .await?;
 
         if let Some(fd) = form_data {
             let mut parent_entries: Vec<(String, String, String, String, String)> = Vec::new();
@@ -1334,8 +1326,7 @@ pub async fn complete_enrollment(
                     sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
                         .bind(&phone)
                         .fetch_optional(&mut *tx)
-                        .await
-                        .unwrap_or(None);
+                        .await?;
 
                 let parent_id = if let Some(pid) = existing_parent_id {
                     pid
@@ -1377,18 +1368,16 @@ pub async fn complete_enrollment(
                         "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
                     )
                     .fetch_optional(&mut *tx)
-                    .await
-                    .ok()
-                    .flatten();
+                    .await?;
 
                     if let Some(rid) = parent_role_id.filter(|_| inserted_id.is_some()) {
-                        let _ = sqlx::query(
+                        sqlx::query(
                             "INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)",
                         )
                         .bind(pid)
                         .bind(rid)
                         .execute(&mut *tx)
-                        .await;
+                        .await?;
                     }
 
                     pid

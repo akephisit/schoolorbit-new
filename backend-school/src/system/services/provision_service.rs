@@ -10,6 +10,21 @@ fn teacher_username_from_sequence(sequence: i64) -> String {
     format!("T{sequence:04}")
 }
 
+async fn next_admin_username(pool: &sqlx::PgPool) -> Result<String, AppError> {
+    let next_num: Option<i64> = sqlx::query_scalar(
+        r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
+           WHERE NOT EXISTS (
+               SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
+           )"#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|_| AppError::InternalServerError("Failed to allocate admin username".into()))?;
+    let next_num =
+        next_num.ok_or_else(|| AppError::Conflict("No available admin username".into()))?;
+    Ok(teacher_username_from_sequence(next_num))
+}
+
 pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutcome, AppError> {
     school_auth::session_policy::validate_new_password(&payload.admin_password)
         .map_err(|_| AppError::ValidationError("รหัสผ่านผู้ดูแลไม่ผ่านข้อกำหนด".into()))?;
@@ -46,28 +61,23 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
         ))
     })?;
 
+    let password_hash =
+        school_crypto::password_work::hash(&payload.admin_password, bcrypt::DEFAULT_COST)
+            .await
+            .map_err(|error| {
+                if error != school_crypto::password_work::PasswordWorkError::BcryptFailed {
+                    return AppError::ServiceUnavailable("password_worker".into());
+                }
+                tracing::error!("Password hashing failed during provisioning: {}", error);
+                AppError::InternalServerError("Password hashing failed".to_string())
+            })?;
+
     let mut tx = pool.begin().await.map_err(|error| {
         tracing::error!("Failed to start provisioning transaction: {}", error);
         AppError::InternalServerError("Failed to start transaction".to_string())
     })?;
 
-    let password_hash =
-        bcrypt::hash(&payload.admin_password, bcrypt::DEFAULT_COST).map_err(|error| {
-            tracing::error!("Password hashing failed during provisioning: {}", error);
-            AppError::InternalServerError("Password hashing failed".to_string())
-        })?;
-
-    let next_num: i64 = sqlx::query_scalar(
-        r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
-           WHERE NOT EXISTS (
-               SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
-           )"#,
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .unwrap_or(Some(1))
-    .unwrap_or(1);
-    let username = teacher_username_from_sequence(next_num);
+    let username = next_admin_username(pool.as_ref()).await?;
 
     let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
         r#"
@@ -149,5 +159,37 @@ mod tests {
     #[test]
     fn teacher_username_from_sequence_keeps_longer_numbers() {
         assert_eq!(teacher_username_from_sequence(12000), "T12000");
+    }
+
+    #[tokio::test]
+    async fn provision_admin_username_lookup_preserves_gaps_and_rejects_exhaustion_or_database_failure(
+    ) {
+        let pool = school_test_db::create_named_test_pool("provision_admin_username_lookup").await;
+        sqlx::query("CREATE TABLE users(username text PRIMARY KEY,password_hash text NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(next_admin_username(&pool).await.unwrap(), "T0001");
+        sqlx::query("INSERT INTO users VALUES ('T0001','existing-secret-hash'),('T0003','other-secret-hash')")
+            .execute(&pool).await.unwrap();
+        assert_eq!(next_admin_username(&pool).await.unwrap(), "T0002");
+        sqlx::query("INSERT INTO users SELECT 'T' || LPAD(n::text,4,'0'),'fixture-hash' FROM generate_series(1,9999) AS n ON CONFLICT DO NOTHING")
+            .execute(&pool).await.unwrap();
+        assert!(matches!(
+            next_admin_username(&pool).await,
+            Err(AppError::Conflict(_))
+        ));
+        let preserved: String =
+            sqlx::query_scalar("SELECT password_hash FROM users WHERE username='T0001'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(preserved, "existing-secret-hash");
+        sqlx::query("ALTER TABLE users RENAME COLUMN username TO unavailable_username")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(matches!(next_admin_username(&pool).await,
+            Err(AppError::InternalServerError(message)) if message == "Failed to allocate admin username"));
     }
 }

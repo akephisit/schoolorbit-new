@@ -477,9 +477,35 @@ fn admin_auth_dependencies_follow_the_reviewed_policy() {
     let token_validation = function_source("pub fn valid_token(");
     assert!(token_validation.contains("token.len() == 64"));
     assert!(token_validation.contains("b.is_ascii_hexdigit()"));
-    let login = function_source("pub async fn login(");
+    let login_entry = function_source("pub async fn login(");
+    assert!(login_entry.contains("login_with_verifier(pool, input,"));
+    assert!(login_entry.contains("crate::auth::password_work::verify(password, stored)"));
+    let login = function_source("async fn login_with_verifier<");
     assert!(login.contains("INSERT INTO platform_sessions(token_hash,account_id,expires_at)"));
     assert!(login.contains(".bind(digest(&token))"));
+    let verification = login
+        .find("verifier(input.password, stored).await?")
+        .expect("login must verify the owned credential snapshot");
+    let before_verification = &login[..verification];
+    assert!(before_verification.contains(".fetch_optional(pool)"));
+    assert!(!before_verification.contains(".acquire("));
+    assert!(!before_verification.contains(".begin("));
+    assert!(!before_verification.contains("FOR UPDATE"));
+    let transaction = login
+        .find("let mut tx = pool.begin().await?")
+        .expect("session issuance must use a transaction");
+    let revalidation = login
+        .find("SELECT id FROM platform_accounts WHERE id=$1 AND email=$2 AND password_hash=$3 AND verified_at IS NOT NULL FOR UPDATE")
+        .expect("session issuance must lock and revalidate the exact verified account");
+    assert!(login.contains(".bind(snapshot.id).bind(&email).bind(&snapshot.password_hash)"));
+    let insertion = login
+        .find("INSERT INTO platform_sessions(token_hash,account_id,expires_at)")
+        .expect("session insertion must remain owned by the guarded login helper");
+    let commit = login.find("tx.commit().await?").expect("login must commit");
+    assert!(verification < transaction && transaction < revalidation);
+    assert!(revalidation < insertion && insertion < commit);
+    assert!(login[revalidation..insertion].contains(".fetch_optional(&mut *tx)"));
+    assert!(login[insertion..commit].contains(".execute(&mut *tx)"));
     let authenticate = function_source("pub async fn authenticate(");
     assert!(authenticate.contains("if !valid_token(token)"));
     assert!(authenticate.contains("return Err(PortalError::unauthorized())"));

@@ -129,7 +129,8 @@ pub async fn list_students(
         (status = 400, description = "Invalid or duplicate student data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student creation permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
+        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse),
+        (status = 503, description = "Password processing is temporarily at capacity", body = ApiErrorResponse)
     )
 ))]
 pub async fn create_student(
