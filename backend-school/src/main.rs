@@ -211,7 +211,7 @@ async fn run() -> Result<(), StartupError> {
     let app = app::build_app(state.clone());
 
     let addr = format!("{}:{}", host, port);
-    tracing::info!("🌐 Server starting on http://{}", addr);
+    tracing::info!("🌐 Server starting on configured listener");
     tracing::info!("\n✅ Available endpoints:");
     tracing::info!("  GET  /                          - API info");
     tracing::info!("  GET  /health                    - Health check");
