@@ -90,6 +90,27 @@ Production acceptance also checks aliases and socket source addresses after star
 
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+Runtime observations use the stdlib Python collector and isolated Node contract fixtures:
+
+```bash
+node --test scripts/tests/pipeline-runtime-observations.test.mjs \
+  frontend-school/tests/static/deployment-installer.test.mjs \
+  frontend-school/tests/static/documentation-policy.test.mjs
+actionlint .github/workflows/runtime-diagnostics.yml .github/workflows/operations.yml
+```
+
+The fixtures verify malicious-input confidentiality, JSON and actual tracing fmt
+shapes, wrong types/nonfinite values, exact nearest-rank edge cases at 1/19/20/99/100
+samples, sparse-tail nulls, SQLx seconds-to-milliseconds conversion, separate proxy
+and backend stages, missing-data semantics, command/time/byte/line/group bounds,
+and Podman 5.4.2 resource fields. Sandbox transport fixtures verify fixed trusted
+HTTPS targets, eligibility, one warmup plus five reads, response/request bounds,
+redirect refusal, early CSRF capture, partial endpoint results and own-session
+cleanup after malformed/oversized login bodies. They use synthetic secrets and
+mocked transport only. They do not measure production latency or database plans.
+Operational interpretation and the opt-in main-only sandbox probe belong in
+[Operations](./OPERATIONS.md).
+
 Compiler-service diagnostics use `node --test scripts/tests/pipeline-compiler-cache-diagnostic.test.mjs`
 locally, then Operations `compiler-cache-diagnostic` on the reviewed branch. Inspect its bounded
 evidence for a successful new write followed by a hit in a fresh container; raw daemon logs must

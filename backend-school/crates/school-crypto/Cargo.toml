@@ -15,7 +15,12 @@ hmac = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

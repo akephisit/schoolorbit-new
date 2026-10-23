@@ -212,6 +212,72 @@ For a bounded diagnostic window, set
 to limit journal volume. `LOG_FORMAT=pretty` is available for interactive diagnosis;
 restore `json` for normal production operation.
 
+Operations `diagnostics` on main uploads and executes the bounded
+[`pipeline-runtime-observations.py`](../scripts/lib/pipeline-runtime-observations.py)
+collector through the existing SSH workflow. It keeps the existing readiness,
+container/topology, ClamAV, storage/image and control-plane activity checks. The
+collector alone reads application logs; its output contains closed labels and
+numeric aggregates, never raw lines, identities, diagnostic UUIDs, SQL, URLs or
+environment values. Each of School, Admin and Nginx uses a requested 15-minute
+lookback capped at 5,000 lines, 4 MiB and five seconds. Lines over 16 KiB are
+discarded; at most 256 groups are retained per source. A limit, failed command or
+malformed recognized event marks coverage partial. Accepted, aggregated and
+dropped-event counts are separate. `observed_event_span_seconds` describes the
+span between timestamped accepted events, not container uptime or continuous
+15-minute coverage; missing timestamps remain unavailable.
+
+HTTP response-header completion, cancelled request futures and proxy request/body
+lifetimes remain separate distributions, including status/error groups. Selected
+backend dashboard, student-list, work-count and authentication routes have explicit
+sample availability; other routes are bucketed. Selected route names refer to
+School; Admin's `/api/v1` traffic is bucketed as `other` rather than reported as
+missing School-route traffic. Current proxy families are broader: dashboard,
+student-list and work-count requests fall into `other`, so that proxy
+bucket cannot identify those individual routes. Millisecond summaries use sorted
+nearest rank `ceil(p*n)`: p50 for any nonempty group, p95 only at 20 or more samples,
+and p99 only at 100 or more. Smaller tails are null with `unavailable_sparse`;
+eligible tails are marked `empirical_only`. These thresholds do not establish
+population confidence. Empty groups have no latency value. SQLx summaries contain
+only counts/mean/max for logged successful acquisitions, which include connection
+checks as well as waiting. School's default slow-only samples cannot describe the
+pool population or failed acquisitions.
+
+Password observations split admission, blocking-queue and bcrypt execution time by
+operation kind and terminal outcome. Unreached stages are unavailable.
+`admission_timeout` identifies admission saturation; `admission_unavailable`
+identifies a closed worker. An HTTP 503 alone does not establish either cause.
+Completion can arrive after the awaiting request was cancelled; verification match results,
+credentials and hashes are never observations. The collector also takes a one-second
+backend-host CPU sample, available/total host memory and numeric resource snapshots
+for the four fixed runtime containers. Missing or unsupported counters and zero or
+unreported container memory limits remain unavailable. These are backend-host
+observations, not database-host CPU/RAM or query-plan evidence.
+
+To opt into representative reads, dispatch main Operations `diagnostics` with
+`options={"run_sandbox_probe":true}`. The runner uses the existing dedicated
+`SMOKE_USERNAME`/`SMOKE_PASSWORD` secrets and trusted `BASE_DOMAIN` and
+`BACKEND_SCHOOL_URL` repository variables. It accepts only the normal HTTPS
+`school-api.<domain>` API and `sandbox.<domain>` Origin, refuses redirects and
+verifies TLS. It checks the expected active staff identity and student-read
+eligibility without elevating permissions, selects only the existing active year,
+then discards one warmup and records five sequential reads each for dashboard,
+the first 20 students and work counts. A denied/failed endpoint stops immediately;
+missing credentials, eligibility or context are explicit. This API-client sample
+reports count, body bytes and client wall-time median/min/max, not browser paint,
+population p95, load capacity or a performance improvement.
+
+The probe retains bodies, cookies, CSRF, IDs and credentials only in process memory,
+uses 15-second request and 1-MiB response limits, a six-minute total budget plus at
+most 15 seconds reserved for cleanup, and creates no browser artifacts. Its own
+session is logged out in `finally`, using CSRF captured before parsing the login
+body and the canonical host-only, Secure, HttpOnly, SameSite=Lax, root-path session
+cookie. Logout must send that owned credential; an idempotent unauthenticated 200
+does not establish cleanup. Cleanup failure is explicit; a timed-out login without received session state
+is `cleanup_unknown` and is not retried. Normal login session limits still apply
+to the dedicated smoke account. The probe runs before log aggregation; do not
+combine its small sequential sample with the wider, potentially censored log
+distribution as if they were the same population.
+
 Backend DNS aliases are declared in `podman-compose.yml` before process startup.
 The release network gate checks attachment metadata and resolves both the service
 and container hostname from Nginx to the current container address. DNS retries are
