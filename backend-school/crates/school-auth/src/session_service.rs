@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 use super::{
     audit::{self, LoginRejectionReason, SessionFailureReason},
@@ -788,22 +787,26 @@ fn throttle_error(state: ThrottleState, now: DateTime<Utc>) -> Option<AppError> 
 }
 
 async fn verify_password(password: &str, password_hash: &str) -> Result<bool, AppError> {
-    let password = Zeroizing::new(password.to_string());
-    let password_hash = password_hash.to_string();
-    tokio::task::spawn_blocking(move || bcrypt::verify(password.as_bytes(), &password_hash))
+    school_crypto::password_work::verify(password, password_hash)
         .await
-        .map_err(|_| AppError::ServiceUnavailable("password_worker".to_string()))?
-        .map_err(|_| AppError::ServiceUnavailable("password_hash".to_string()))
+        .map_err(password_work_error)
 }
 
 async fn hash_password(password: &str) -> Result<String, AppError> {
-    let password = Zeroizing::new(password.to_string());
-    tokio::task::spawn_blocking(move || {
-        bcrypt::non_truncating_hash(password.as_bytes(), bcrypt::DEFAULT_COST)
-    })
-    .await
-    .map_err(|_| AppError::ServiceUnavailable("password_worker".to_string()))?
-    .map_err(|_| AppError::ServiceUnavailable("password_hash".to_string()))
+    school_crypto::password_work::non_truncating_hash(password, bcrypt::DEFAULT_COST)
+        .await
+        .map_err(password_work_error)
+}
+
+fn password_work_error(error: school_crypto::password_work::PasswordWorkError) -> AppError {
+    use school_crypto::password_work::PasswordWorkError;
+    let reason = match error {
+        PasswordWorkError::AdmissionTimeout | PasswordWorkError::WorkerUnavailable => {
+            "password_worker"
+        }
+        PasswordWorkError::BcryptFailed => "password_hash",
+    };
+    AppError::ServiceUnavailable(reason.to_string())
 }
 
 async fn cleanup_after_operation(pool: &sqlx::PgPool, now: DateTime<Utc>) {

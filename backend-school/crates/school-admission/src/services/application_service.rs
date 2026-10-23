@@ -13,27 +13,22 @@ use std::collections::HashSet;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 // Two-int namespace is separate from Attendance/Behavior bigint entity locks.
 const STUDENT_NUMBER_NAMESPACE: i32 = 0x534F_4144;
 
-// Hold permits inside the blocking job so cancellation cannot oversubscribe CPU.
-static PASSWORD_HASH_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
-
 async fn hash_enrollment_password(password: &str) -> Result<String, AppError> {
-    let permit = PASSWORD_HASH_WORKERS
-        .acquire()
+    school_crypto::password_work::hash(password, 8)
         .await
-        .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?;
-    let password = Zeroizing::new(password.to_string());
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        bcrypt::hash(password.as_bytes(), 8)
-    })
-    .await
-    .map_err(|_| AppError::ServiceUnavailable("password_worker".into()))?
-    .map_err(|_| AppError::InternalServerError("Password hash failed".into()))
+        .map_err(|error| match error {
+            school_crypto::password_work::PasswordWorkError::BcryptFailed => {
+                AppError::InternalServerError("Password hash failed".into())
+            }
+            school_crypto::password_work::PasswordWorkError::AdmissionTimeout
+            | school_crypto::password_work::PasswordWorkError::WorkerUnavailable => {
+                AppError::ServiceUnavailable("password_worker".into())
+            }
+        })
 }
 
 fn pii_error(context: &str, error: String) -> AppError {

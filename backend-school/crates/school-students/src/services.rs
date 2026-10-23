@@ -1,4 +1,4 @@
-use bcrypt::{hash, DEFAULT_COST};
+use bcrypt::DEFAULT_COST;
 use chrono::NaiveDate;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -212,10 +212,15 @@ pub async fn create_student(
     mut payload: CreateStudentRequest,
 ) -> Result<CreatedStudent, AppError> {
     crate::validation::normalize_create(&mut payload)?;
-    let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
-        tracing::error!("Student password hashing failed: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
-    })?;
+    let password_hash = school_crypto::password_work::hash(&payload.password, DEFAULT_COST)
+        .await
+        .map_err(|e| {
+            if e != school_crypto::password_work::PasswordWorkError::BcryptFailed {
+                return AppError::ServiceUnavailable("password_worker".into());
+            }
+            tracing::error!("Student password hashing failed: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
+        })?;
     let date_of_birth = parse_optional_date(payload.date_of_birth.as_deref())?;
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {
@@ -750,10 +755,15 @@ async fn create_parent_user(
     tx: &mut Transaction<'_, Postgres>,
     payload: &CreateParentRequest,
 ) -> Result<Uuid, AppError> {
-    let password_hash = hash(&payload.phone, DEFAULT_COST).map_err(|e| {
-        tracing::error!("Parent password hashing failed: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
-    })?;
+    let password_hash = school_crypto::password_work::hash(&payload.phone, DEFAULT_COST)
+        .await
+        .map_err(|e| {
+            if e != school_crypto::password_work::PasswordWorkError::BcryptFailed {
+                return AppError::ServiceUnavailable("password_worker".into());
+            }
+            tracing::error!("Parent password hashing failed: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่านผู้ปกครอง".to_string())
+        })?;
 
     let encrypted_national_id = field_encryption::encrypt_optional(payload.national_id.as_deref())
         .map_err(|e| {

@@ -918,10 +918,15 @@ pub async fn create_staff(
             "กรุณาสร้างบุคลากรก่อนอัปโหลดรูปโปรไฟล์".to_string(),
         ));
     }
-    let password_hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|e| {
-        tracing::error!("❌ Password hashing failed: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
-    })?;
+    let password_hash = school_crypto::password_work::hash(&payload.password, bcrypt::DEFAULT_COST)
+        .await
+        .map_err(|e| {
+            if e != school_crypto::password_work::PasswordWorkError::BcryptFailed {
+                return AppError::ServiceUnavailable("password_worker".into());
+            }
+            tracing::error!("❌ Password hashing failed: {}", e);
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
+        })?;
 
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("❌ Failed to start transaction: {}", e);

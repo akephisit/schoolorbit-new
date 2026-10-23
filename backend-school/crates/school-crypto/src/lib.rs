@@ -1,5 +1,7 @@
 //! Environment-backed field encryption and domain-separated blind indexes.
 
+pub mod password_work;
+
 use aes_gcm::{
     aead::{consts::U12, Aead},
     Aes256Gcm, Nonce,
