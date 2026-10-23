@@ -94077,6 +94077,16 @@
               }
             },
             "description": "Academic year is closed or enrollment context changed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Password processing is temporarily at capacity"
           }
         },
         "tags": [
@@ -112665,6 +112675,16 @@
               }
             },
             "description": "Staff creation permission denied"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Password processing is temporarily at capacity"
           }
         },
         "tags": [
@@ -118262,6 +118282,16 @@
               }
             },
             "description": "Required default role or parent account is unavailable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Password processing is temporarily at capacity"
           }
         },
         "summary": "POST /api/students - เพิ่มนักเรียนใหม่",
@@ -118589,6 +118619,16 @@
               }
             },
             "description": "Required default role or parent account is unavailable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Password processing is temporarily at capacity"
           }
         },
         "summary": "POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่",

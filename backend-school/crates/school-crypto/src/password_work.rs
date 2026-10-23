@@ -150,6 +150,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn shared_budget_caps_cpu_jobs_without_blocking_the_async_executor() {
+        let expected_jobs = 4;
+        assert_eq!(
+            MAX_ACTIVE_JOBS, expected_jobs,
+            "School password CPU policy is four jobs"
+        );
         let budget = Arc::new(PasswordWork::new(MAX_ACTIVE_JOBS, ADMISSION_TIMEOUT));
         let gate = Gate::new();
         let active = Arc::new(AtomicUsize::new(0));
@@ -175,18 +180,21 @@ mod tests {
                     .await
             }));
         }
-        for _ in 0..MAX_ACTIVE_JOBS {
-            starts.recv().await.unwrap();
+        for _ in 0..expected_jobs {
+            tokio::time::timeout(Duration::from_secs(2), starts.recv())
+                .await
+                .expect("password jobs must start without blocking the executor")
+                .unwrap();
         }
         // On one async executor thread this code can run while all four CPU jobs are blocked.
         tokio::task::yield_now().await;
-        assert_eq!(active.load(Ordering::SeqCst), MAX_ACTIVE_JOBS);
+        assert_eq!(active.load(Ordering::SeqCst), expected_jobs);
         assert_eq!(budget.permits.available_permits(), 0);
         gate.open();
         for job in jobs {
             job.await.unwrap().unwrap();
         }
-        assert_eq!(peak.load(Ordering::SeqCst), MAX_ACTIVE_JOBS);
+        assert_eq!(peak.load(Ordering::SeqCst), expected_jobs);
         assert_eq!(active.load(Ordering::SeqCst), 0);
     }
 
