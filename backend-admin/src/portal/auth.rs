@@ -244,6 +244,24 @@ pub async fn consume_token(
     Ok(())
 }
 pub async fn login(pool: &PgPool, input: Credentials) -> Result<(Account, String), PortalError> {
+    login_with_verifier(pool, input, |password, stored| async move {
+        tokio::task::spawn_blocking(move || verify_password(&password, &stored))
+            .await
+            .map_err(|_| PortalError::unavailable())?
+            .map_err(|_| PortalError::unavailable())
+    })
+    .await
+}
+
+async fn login_with_verifier<F, Fut>(
+    pool: &PgPool,
+    input: Credentials,
+    verifier: F,
+) -> Result<(Account, String), PortalError>
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: std::future::Future<Output = Result<bool, PortalError>>,
+{
     let email = normalize_email(&input.email)?;
     validate_password(&input.password)?;
     #[derive(sqlx::FromRow)]
@@ -258,10 +276,7 @@ pub async fn login(pool: &PgPool, input: Credentials) -> Result<(Account, String
         .as_ref()
         .map(|r| r.password_hash.clone())
         .unwrap_or_else(|| "$2b$12$rri4KlbA4XkEM.JADCiBdu3/cjxESITAXMOYiKoklPN9HW6vgjEP2".into());
-    let valid = tokio::task::spawn_blocking(move || verify_password(&input.password, &stored))
-        .await
-        .map_err(|_| PortalError::unavailable())?
-        .map_err(|_| PortalError::unavailable())?;
+    let valid = verifier(input.password, stored).await?;
     if !valid {
         return Err(PortalError(
             StatusCode::UNAUTHORIZED,
@@ -283,6 +298,9 @@ pub async fn login(pool: &PgPool, input: Credentials) -> Result<(Account, String
     let user = authenticate(pool, &token).await?;
     Ok((user, token))
 }
+
+#[cfg(test)]
+mod password_runtime_tests;
 pub async fn authenticate(pool: &PgPool, token: &str) -> Result<Account, PortalError> {
     if !valid_token(token) {
         return Err(PortalError::unauthorized());
