@@ -613,6 +613,139 @@ async fn successful_login_resets_identifier_and_loads_role_permissions_before_in
     assert_eq!(failing.session_count().await, 0);
 }
 
+async fn login_racing_verified_snapshot<F>(
+    fixture: &AuthServiceFixture,
+    mutation: F,
+) -> Result<LoginResult, AppError>
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let (start, ready) = tokio::sync::oneshot::channel();
+    let (finished, completion) = mpsc::channel();
+    let updater = tokio::spawn(async move {
+        ready.await.unwrap();
+        mutation.await;
+        finished.send(()).unwrap();
+    });
+    let result = login(
+        &fixture.context,
+        LoginCommand {
+            username: "teacher.one",
+            password: "old-password",
+            remember_me: false,
+            source: "203.0.113.9".parse().unwrap(),
+            user_agent: None,
+            now: fixture.now,
+        },
+        move || {
+            // The production token generator boundary is after bcrypt and the response snapshot,
+            // before the final insertion transaction. No production test hook is required.
+            start.send(()).unwrap();
+            completion
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+            Ok(RawSessionToken::from_bytes([220; 32]))
+        },
+    )
+    .await;
+    updater.await.unwrap();
+    result
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn login_verified_before_password_change_cannot_create_a_session_after_revocation() {
+    let fixture = AuthServiceFixture::new("service_login_password_race").await;
+    fixture
+        .insert_user("teacher.one", "old-password", "active")
+        .await;
+    let current = fixture.login("teacher.one", "old-password").await.unwrap();
+    let other = fixture.login("teacher.one", "old-password").await.unwrap();
+    fixture.login("teacher.one", "wrong").await.unwrap_err();
+    let context = fixture.context.clone();
+    let authenticated = current.authenticated.clone();
+    let now = fixture.now;
+    let error = login_racing_verified_snapshot(&fixture, async move {
+        change_password(
+            &context,
+            &authenticated,
+            "old-password",
+            "new-password-123",
+            now,
+            AuthServiceFixture::credentials([221; 32]),
+        )
+        .await
+        .unwrap();
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::UNAUTHORIZED);
+    assert_eq!(fixture.identifier_failure_count("teacher.one").await, 2);
+    assert_eq!(
+        fixture.session_count().await,
+        2,
+        "stale login must not insert another session"
+    );
+    assert!(
+        fixture
+            .session_is_active(current.authenticated.session_id)
+            .await
+    );
+    assert!(
+        !fixture
+            .session_is_active(other.authenticated.session_id)
+            .await
+    );
+    assert!(
+        fixture
+            .password_verifies("teacher.one", "new-password-123")
+            .await
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn login_rejects_disabled_deleted_renamed_or_retyped_verified_identity() {
+    for (name, update) in [
+        ("disabled", "UPDATE users SET status='inactive' WHERE id=$1"),
+        ("deleted", "DELETE FROM users WHERE id=$1"),
+        (
+            "renamed",
+            "UPDATE users SET username='renamed.teacher' WHERE id=$1",
+        ),
+        (
+            "retyped",
+            "UPDATE users SET user_type='student' WHERE id=$1",
+        ),
+    ] {
+        let fixture = AuthServiceFixture::new(&format!("service_login_{name}_race")).await;
+        let user = fixture
+            .insert_user("teacher.one", "old-password", "active")
+            .await;
+        fixture.assign_teacher_role(user).await;
+        fixture.login("teacher.one", "wrong").await.unwrap_err();
+        let pool = fixture.pool.clone();
+        let error = login_racing_verified_snapshot(&fixture, async move {
+            sqlx::query(sqlx::AssertSqlSafe(update))
+                .bind(user)
+                .execute(&pool)
+                .await
+                .unwrap();
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(error.status_code(), StatusCode::UNAUTHORIZED, "{name}");
+        assert_eq!(
+            fixture.session_count().await,
+            0,
+            "{name} must not issue stale identity/privileges"
+        );
+        assert_eq!(
+            fixture.identifier_failure_count("teacher.one").await,
+            2,
+            "{name} must not reset throttles"
+        );
+    }
+}
+
 #[tokio::test]
 async fn csrf_is_stable_across_rotation_and_password_change_and_cookie_lifetime_shrinks() {
     let fixture = AuthServiceFixture::new("service_csrf_rotation").await;

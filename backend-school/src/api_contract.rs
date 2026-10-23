@@ -4452,6 +4452,24 @@ mod tests {
     }
 
     #[test]
+    fn password_work_consumers_document_typed_service_unavailable_responses() {
+        let document = school_api_value().expect("document should serialize");
+        for path in [
+            "/api/students",
+            "/api/students/{id}/parents",
+            "/api/staff",
+            "/api/admission/applications/{id}/enroll",
+        ] {
+            assert_eq!(
+                document["paths"][path]["post"]["responses"]["503"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                "#/components/schemas/ApiErrorResponse",
+                "{path} overload must use the standard safe error response"
+            );
+        }
+    }
+
+    #[test]
     fn admission_enrollment_documents_typed_receipts_and_lifecycle_conflicts() {
         let document = school_api_value().expect("document should serialize");
         let operation = &document["paths"]["/api/admission/applications/{id}/enroll"]["post"];

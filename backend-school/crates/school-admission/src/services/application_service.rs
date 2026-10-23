@@ -1200,8 +1200,7 @@ pub async fn complete_enrollment(
         .bind(id)
         .bind(fd)
         .execute(&mut *tx)
-        .await
-        .ok();
+        .await?;
     }
     sqlx::query(
         "UPDATE admission_enrollment_forms SET completed_at = NOW(), completed_by = $1 WHERE application_id = $2",
@@ -1209,8 +1208,7 @@ pub async fn complete_enrollment(
     .bind(enroller_id)
     .bind(id)
     .execute(&mut *tx)
-    .await
-    .ok();
+    .await?;
 
     // สร้าง parent accounts (ครอบคลุม father / mother / guardians)
     {
@@ -1219,8 +1217,7 @@ pub async fn complete_enrollment(
         )
         .bind(id)
         .fetch_optional(&mut *tx)
-        .await
-        .unwrap_or(None);
+        .await?;
 
         if let Some(fd) = form_data {
             let mut parent_entries: Vec<(String, String, String, String, String)> = Vec::new();
@@ -1329,8 +1326,7 @@ pub async fn complete_enrollment(
                     sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
                         .bind(&phone)
                         .fetch_optional(&mut *tx)
-                        .await
-                        .unwrap_or(None);
+                        .await?;
 
                 let parent_id = if let Some(pid) = existing_parent_id {
                     pid
@@ -1372,18 +1368,16 @@ pub async fn complete_enrollment(
                         "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
                     )
                     .fetch_optional(&mut *tx)
-                    .await
-                    .ok()
-                    .flatten();
+                    .await?;
 
                     if let Some(rid) = parent_role_id.filter(|_| inserted_id.is_some()) {
-                        let _ = sqlx::query(
+                        sqlx::query(
                             "INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)",
                         )
                         .bind(pid)
                         .bind(rid)
                         .execute(&mut *tx)
-                        .await;
+                        .await?;
                     }
 
                     pid

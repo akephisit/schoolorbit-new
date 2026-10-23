@@ -2,7 +2,7 @@ use school_errors::AppError;
 use school_test_db::{create_test_pool, run_test_migrations};
 use uuid::Uuid;
 
-use school_students::models::{CreateParentRequest, UpdateStudentRequest};
+use school_students::models::{CreateParentRequest, CreateStudentRequest, UpdateStudentRequest};
 use school_students::services;
 
 #[tokio::test]
@@ -179,4 +179,102 @@ async fn newly_created_parent_is_provisioned_and_linked_atomically() {
         .unwrap();
     assert!(sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id JOIN role_permissions rp ON rp.role_id=r.id JOIN permissions p ON p.id=rp.permission_id WHERE ur.user_id=$1 AND r.code='PARENT' AND p.code='attendance.read.own')").bind(parent).fetch_one(&pool).await.unwrap());
     assert!(sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM student_parents WHERE parent_user_id=$1 AND student_user_id=$2)").bind(parent).bind(student).fetch_one(&pool).await.unwrap());
+}
+
+#[tokio::test]
+async fn create_student_with_new_parent_persists_working_passwords_and_required_roles() {
+    let pool = school_test_db::create_named_test_pool("student_parent_password_creation").await;
+    run_test_migrations(&pool).await;
+    let actor = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,'not-a-login','Registrar','Fixture','staff','active')")
+        .bind(actor).bind(format!("registrar-{actor}")).execute(&pool).await.unwrap();
+    let password = "Student-fixture-password";
+    let username = format!("student-{}", Uuid::new_v4());
+    let mut parent = parent_payload();
+    parent.relationship = "guardian".into();
+    let parent_phone = parent.phone.clone();
+    let created = services::create_student(
+        &pool,
+        actor,
+        CreateStudentRequest {
+            national_id: None,
+            username: Some(username.clone()),
+            email: None,
+            password: password.into(),
+            first_name: "Student".into(),
+            last_name: "Fixture".into(),
+            title: None,
+            student_id: "STUDENT-WITH-PARENT".into(),
+            registration_status: None,
+            enrollment_date: None,
+            phone: None,
+            address: None,
+            date_of_birth: None,
+            gender: None,
+            parents: Some(vec![parent]),
+        },
+    )
+    .await
+    .expect("student and new parent creation should succeed");
+    assert_eq!(created.student.username, username);
+    assert_eq!(created.parent_ids.len(), 1);
+    let parent_id = created.parent_ids[0];
+    assert_ne!(created.student.id, parent_id);
+
+    let registration: (String, String, Uuid) = sqlx::query_as(
+        "SELECT student_id,registration_status,registration_status_updated_by FROM student_info WHERE user_id=$1",
+    )
+    .bind(created.student.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        registration,
+        ("STUDENT-WITH-PARENT".into(), "pending".into(), actor)
+    );
+
+    for (user_id, expected_username, credential, user_type, role) in [
+        (
+            created.student.id,
+            username.as_str(),
+            password,
+            "student",
+            "STUDENT",
+        ),
+        (
+            parent_id,
+            parent_phone.as_str(),
+            parent_phone.as_str(),
+            "parent",
+            "PARENT",
+        ),
+    ] {
+        let persisted: (String, String, String, String) =
+            sqlx::query_as("SELECT username,password_hash,user_type,status FROM users WHERE id=$1")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(persisted.0, expected_username);
+        assert_eq!(persisted.2, user_type);
+        assert_eq!(persisted.3, "active");
+        let hash = persisted.1;
+        assert_eq!(
+            hash.parse::<bcrypt::HashParts>().unwrap().get_cost(),
+            bcrypt::DEFAULT_COST
+        );
+        assert!(bcrypt::verify(credential, &hash).unwrap());
+        assert!(!bcrypt::verify("incorrect-fixture-password", &hash).unwrap());
+        assert!(sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.code=$2 AND r.user_type=$3 AND r.is_active=true AND ur.is_primary=true AND ur.ended_at IS NULL)")
+            .bind(user_id).bind(role).bind(user_type).fetch_one(&pool).await.unwrap());
+    }
+    let relationship: (String, bool) = sqlx::query_as(
+        "SELECT relationship,is_primary FROM student_parents WHERE student_user_id=$1 AND parent_user_id=$2",
+    )
+    .bind(created.student.id)
+    .bind(parent_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(relationship, ("guardian".into(), true));
 }

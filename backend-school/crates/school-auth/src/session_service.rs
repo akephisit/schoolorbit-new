@@ -326,12 +326,32 @@ where
             rotated_at: command.now,
         },
     };
-    super::session_repository::create_login_session(
+    let creation = super::session_repository::create_login_session(
         &context.tenant.pool,
         &new_session,
         identifier_hash,
+        &user,
     )
     .await?;
+    if creation == super::session_repository::LoginSessionCreation::StaleIdentity {
+        let throttle = record_login_failure(
+            &context.tenant.pool,
+            identifier_hash,
+            source_hash,
+            command.now,
+        )
+        .await?;
+        let blocked = throttle_error(throttle, command.now);
+        audit::login_rejected(
+            context.tenant.tenant_id,
+            if blocked.is_some() {
+                LoginRejectionReason::RateLimited
+            } else {
+                LoginRejectionReason::InvalidCredentials
+            },
+        );
+        return Err(blocked.unwrap_or_else(invalid_login));
+    }
 
     let authenticated = authenticated(context, session_id, &user);
     let csrf_token = session_csrf_token(

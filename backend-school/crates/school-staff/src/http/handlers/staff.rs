@@ -155,7 +155,8 @@ pub async fn get_staff_profile(
         (status = 201, description = "Staff member created", body = ApiResponse<school_http::UuidIdData>),
         (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Staff creation permission denied", body = ApiErrorResponse),
+        (status = 503, description = "Password processing is temporarily at capacity", body = ApiErrorResponse)
     )
 ))]
 pub async fn create_staff(

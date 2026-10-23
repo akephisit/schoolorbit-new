@@ -36,7 +36,8 @@ use crate::models::CreateParentRequest;
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
         (status = 404, description = "Student not found", body = ApiErrorResponse),
-        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
+        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse),
+        (status = 503, description = "Password processing is temporarily at capacity", body = ApiErrorResponse)
     )
 ))]
 pub async fn add_parent_to_student(

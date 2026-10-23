@@ -6,6 +6,7 @@ use uuid::Uuid;
 use school_errors::AppError;
 
 use super::{
+    services::SessionLoginUser,
     session_crypto::{RawSessionToken, ThrottleBucketHash, TokenHash},
     session_policy::{
         SessionLifetime, SessionTimes, CLEANUP_BATCH_SIZE, PREVIOUS_TOKEN_GRACE, ROTATION_INTERVAL,
@@ -146,12 +147,44 @@ const AUTHENTICATION_COLUMNS: &str = r#"
     LIMIT 2
 "#;
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum LoginSessionCreation {
+    Created,
+    StaleIdentity,
+}
+
 pub async fn create_login_session(
     pool: &PgPool,
     session: &NewSession,
     identifier_hash: ThrottleBucketHash,
-) -> Result<(), AppError> {
+    verified_user: &SessionLoginUser,
+) -> Result<LoginSessionCreation, AppError> {
     let mut transaction = pool.begin().await.map_err(session_store_error)?;
+    // Serialize final credential validation with password changes and account updates.
+    // User locks precede session/token locks; bcrypt has already completed outside this tx.
+    let locked: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT username,password_hash,status,user_type FROM users WHERE id=$1 FOR UPDATE",
+    )
+    .bind(verified_user.id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(session_store_error)?;
+    let valid = locked.is_some_and(|(username, password_hash, status, user_type)| {
+        session.user_id == verified_user.id
+            && username == verified_user.username
+            && status == "active"
+            && verified_user.status == "active"
+            && user_type == verified_user.user_type
+            && bool::from(
+                password_hash
+                    .as_bytes()
+                    .ct_eq(verified_user.password_hash.as_bytes()),
+            )
+    });
+    if !valid {
+        transaction.rollback().await.map_err(session_store_error)?;
+        return Ok(LoginSessionCreation::StaleIdentity);
+    }
     lock_token_hash(&mut transaction, session.current_token_hash).await?;
     ensure_token_hash_available(&mut transaction, session.current_token_hash).await?;
 
@@ -186,7 +219,8 @@ pub async fn create_login_session(
     .await
     .map_err(session_store_error)?;
 
-    transaction.commit().await.map_err(session_store_error)
+    transaction.commit().await.map_err(session_store_error)?;
+    Ok(LoginSessionCreation::Created)
 }
 
 pub async fn authenticate_and_maintain<F>(

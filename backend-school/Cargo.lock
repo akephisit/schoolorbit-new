@@ -4571,10 +4571,13 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
+ "bcrypt",
  "hex",
  "hmac 0.13.0",
  "rand 0.10.3",
  "sha2 0.11.1",
+ "tokio",
+ "zeroize",
 ]
 
 [[package]]

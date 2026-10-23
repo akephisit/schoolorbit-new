@@ -578,6 +578,153 @@ mod tests {
         );
     }
 
+    fn guardian_enrollment_payload() -> CompleteEnrollmentRequest {
+        CompleteEnrollmentRequest {
+            student_code: Some("970001".into()),
+            form_data: Some(serde_json::json!({
+                "father": { "phone": "0800000001", "firstName": "Guardian", "lastName": "Fixture" }
+            })),
+        }
+    }
+
+    async fn assert_guardian_failure_rolled_back(fixture: &EnrollmentFixture, users_before: i64) {
+        let state: (String, Option<Uuid>, i64, i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT status,created_user_id,
+             (SELECT count(*) FROM users),
+             (SELECT count(*) FROM student_academic_years WHERE academic_year_id=$2),
+             (SELECT count(*) FROM homeroom_placements WHERE academic_year_id=$2),
+             (SELECT count(*) FROM admission_enrollment_forms WHERE application_id=$1),
+             (SELECT count(*) FROM student_parents WHERE parent_user_id IN
+                (SELECT id FROM users WHERE username='0800000001'))
+             FROM admission_applications WHERE id=$1",
+        )
+        .bind(fixture.application_id)
+        .bind(fixture.academic_year_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(state, ("accepted".into(), None, users_before, 0, 0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn enrollment_guardian_lookup_permission_denial_propagates_and_rolls_back() {
+        let fixture = enrollment_fixture("enrollment_guardian_lookup_denied", 1).await;
+        let users_before: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        let schema: String = sqlx::query_scalar("SELECT current_schema()")
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        let role = format!("guardian_fixture_{}", Uuid::new_v4().simple());
+        // This role belongs only to this disposable fixture. Student INSERT RETURNING id remains
+        // allowed, while the later guardian username lookup genuinely lacks SELECT permission.
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "CREATE ROLE {role} NOLOGIN; GRANT USAGE ON SCHEMA \"{schema}\" TO {role};
+             GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA \"{schema}\" TO {role};
+             REVOKE SELECT ON \"{schema}\".users FROM {role};
+             GRANT SELECT(id) ON \"{schema}\".users TO {role};"
+        )))
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        let setup = format!("SET ROLE {role}; SET search_path TO \"{schema}\", public");
+        let restricted = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |connection, _| {
+                let setup = setup.clone();
+                Box::pin(async move {
+                    sqlx::raw_sql(sqlx::AssertSqlSafe(setup))
+                        .execute(connection)
+                        .await?;
+                    Ok(())
+                })
+            })
+            .connect_with((*fixture.pool.connect_options()).clone())
+            .await
+            .unwrap();
+        let rosters = EnrollmentRosters {
+            actor: fixture.enroller_id,
+            fail: false,
+            calls: AtomicUsize::new(0),
+        };
+        let result = complete_enrollment(
+            &restricted,
+            fixture.application_id,
+            guardian_enrollment_payload(),
+            fixture.enroller_id,
+            &rosters,
+        )
+        .await;
+        restricted.close().await;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP OWNED BY {role}; DROP ROLE {role}"
+        )))
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+        let error = result.err().expect("guardian lookup must fail closed");
+        assert_eq!(error.database_code().as_deref(), Some("42501"));
+        assert_eq!(rosters.calls.load(Ordering::SeqCst), 0);
+        assert_guardian_failure_rolled_back(&fixture, users_before).await;
+    }
+
+    #[tokio::test]
+    async fn enrollment_guardian_form_and_role_database_failures_preserve_the_original_error() {
+        for (stage, setup, expected_code) in [
+            ("form_write", "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected form' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON admission_enrollment_forms FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();", "23514"),
+            ("role_read", "ALTER TABLE roles RENAME COLUMN code TO unavailable_code", "42703"),
+            ("role_write", "CREATE FUNCTION reject_guardian_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected role' USING ERRCODE='23514'; END $$; CREATE TRIGGER reject_guardian_fixture BEFORE INSERT ON user_roles FOR EACH ROW EXECUTE FUNCTION reject_guardian_fixture();", "23514"),
+        ] {
+            let fixture = enrollment_fixture(&format!("enrollment_guardian_{stage}"), 1).await;
+            let users_before: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+                .fetch_one(&fixture.pool).await.unwrap();
+            if stage == "role_write" {
+                // The cutover fixture intentionally has no default parent role. Seed one so
+                // this fault reaches the real role INSERT rather than the optional-None branch.
+                sqlx::query("INSERT INTO roles(code,name,user_type,is_active) VALUES('PARENT','Guardian fixture','parent',true)")
+                    .execute(&fixture.pool).await.unwrap();
+            }
+            sqlx::raw_sql(sqlx::AssertSqlSafe(setup)).execute(&fixture.pool).await.unwrap();
+            let rosters = EnrollmentRosters { actor: fixture.enroller_id, fail: false, calls: AtomicUsize::new(0) };
+            let result = complete_enrollment(&fixture.pool, fixture.application_id,
+                guardian_enrollment_payload(), fixture.enroller_id, &rosters).await;
+            let error = result.err().unwrap_or_else(|| panic!("{stage}: critical guardian database error must propagate"));
+            assert_eq!(error.database_code().as_deref(), Some(expected_code), "{stage}: {error:?}");
+            assert_eq!(rosters.calls.load(Ordering::SeqCst), 0, "{stage}");
+            assert_guardian_failure_rolled_back(&fixture, users_before).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn enrollment_guardian_missing_optional_role_still_creates_and_links_the_parent() {
+        let fixture = enrollment_fixture("enrollment_guardian_optional_role", 1).await;
+        sqlx::query("UPDATE roles SET is_active=false WHERE code='PARENT'")
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let result = complete_enrollment(
+            &fixture.pool,
+            fixture.application_id,
+            guardian_enrollment_payload(),
+            fixture.enroller_id,
+            &crate::http_state::PLACEMENT_ROSTERS,
+        )
+        .await
+        .unwrap();
+        let state: (String, i64) = sqlx::query_as(
+            "SELECT relationship,(SELECT count(*) FROM user_roles WHERE user_id=parent.id)
+             FROM student_parents link JOIN users parent ON parent.id=link.parent_user_id
+             WHERE link.student_user_id=$1 AND parent.username='0800000001'",
+        )
+        .bind(result.user_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(state, ("father".into(), 0));
+    }
+
     #[tokio::test]
     async fn admission_lifecycle_closed_year_rejects_new_enrollment_without_partial_records() {
         let fixture = enrollment_fixture("admission_lifecycle_closed", 1).await;

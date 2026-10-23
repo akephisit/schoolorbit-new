@@ -295,7 +295,7 @@ cargo test -p school-migrations
 cargo test -p school-errors
 cargo test -p school-http
 cargo test -p school-authorization
-cargo test -p school-auth -- --test-threads=8
+cargo test -p school-auth -- --test-threads=4
 cargo test -p school-academic-core -- --test-threads=8
 cargo test -p school-academic-delivery -- --test-threads=8
 cargo test -p school-academic-timetable -- --test-threads=8
@@ -304,10 +304,10 @@ cargo test -p school-academic-results -- --test-threads=8
 cargo test -p school-academic-lifecycle -- --test-threads=8
 cargo test -p school-workflow
 cargo test -p school-question-bank -- --test-threads=8
-cargo test -p school-admission -- --test-threads=8
+cargo test -p school-admission -- --test-threads=4
 cargo test -p school-supervision -- --test-threads=8
-cargo test -p school-students -- --test-threads=8
-cargo test -p school-staff -- --test-threads=8
+cargo test -p school-students -- --test-threads=4
+cargo test -p school-staff -- --test-threads=4
 cargo test -p school-calendar -- --test-threads=8
 cargo test -p school-tenancy
 cargo test -p school-file-platform
@@ -543,9 +543,9 @@ repository, cache, and service tests against disposable PostgreSQL:
 
 ```bash
 ./scripts/test_backend_school.sh --package school-auth session_schema_tests -- --nocapture --test-threads=8
-./scripts/test_backend_school.sh --package school-auth session_repository_tests -- --nocapture --test-threads=8
+./scripts/test_backend_school.sh --package school-auth session_repository_tests -- --nocapture --test-threads=4
 ./scripts/test_backend_school.sh --package school-auth session_cache_tests -- --nocapture --test-threads=8
-./scripts/test_backend_school.sh --package school-auth session_service_tests -- --nocapture --test-threads=8
+./scripts/test_backend_school.sh --package school-auth session_service_tests -- --nocapture --test-threads=4
 ```
 
 From the repository root, use the disposable local PostgreSQL runner for application-owned HTTP,
@@ -1169,6 +1169,35 @@ Active migrations remain contiguous from the existing immutable baseline. Preser
 SQLx checksums; do not rewrite or squash an applied migration to upgrade PostgreSQL.
 Runtime rollout, data reconciliation and actual-data restore gates are in
 [Operations](./OPERATIONS.md).
+
+## Password work and enrollment failure handling
+
+From the repository root, run the shared worker's deterministic cap, admission deadline,
+queued/inflight cancellation, current-thread executor progress and real bcrypt compatibility tests:
+
+```bash
+cargo test --manifest-path backend-school/Cargo.toml -p school-crypto password_work::tests --locked
+./scripts/test_backend_school.sh --package school-auth session_service_tests -- --test-threads=4
+./scripts/test_backend_school.sh --package school-auth session_repository_tests -- --test-threads=4
+./scripts/test_backend_school.sh admission::application_service_tests -- --test-threads=4
+./scripts/test_backend_school.sh provision_admin_username_lookup -- --test-threads=1
+./scripts/test_backend_school.sh students::mutation_tests -- --test-threads=4
+```
+
+Use the existing Staff creation fixture for staff hash consumers. Auth regressions must fence a
+verified login against actual password change/revocation and disabled, deleted, renamed or retyped
+accounts without moving bcrypt under the database lock. Enrollment regressions must distinguish
+missing optional form/role data from query/role-write failures and verify complete rollback,
+including new parent accounts and links. Keep disposable fixtures owned; concurrency tests retain
+their intentional races. Limit unrelated password-heavy fixture parallelism to four, matching the
+production budget, and test overload explicitly rather than extending its admission deadline.
+
+For before/after observations, use a temporary local controlled fixture with synthetic passwords,
+the same locked bcrypt cost, toolchain, machine and workload. Record batch duration and async timer
+responsiveness separately; compare direct synchronous baseline work with the shared worker, retain
+raw timings in temporary logs and report limitations. Do not present fixture delays as production
+p95 or infer a throughput gain from moving CPU work off the async executor. Avoid a permanent
+benchmark framework or real accounts/provider calls merely to obtain timing data.
 
 ## Encryption and PII
 

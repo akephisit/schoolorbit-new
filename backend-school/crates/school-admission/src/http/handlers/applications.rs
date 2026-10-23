@@ -308,7 +308,8 @@ pub async fn list_enrollment_pending(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Enrollment permission denied", body = ApiErrorResponse),
         (status = 404, description = "Application or academic year not found", body = ApiErrorResponse),
-        (status = 409, description = "Academic year is closed or enrollment context changed", body = ApiErrorResponse)
+        (status = 409, description = "Academic year is closed or enrollment context changed", body = ApiErrorResponse),
+        (status = 503, description = "Password processing is temporarily at capacity", body = ApiErrorResponse)
     )
 ))]
 pub async fn complete_enrollment(
