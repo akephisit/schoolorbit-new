@@ -262,23 +262,23 @@ test('optional tenant probe uses one owned login, warmup plus five sequential re
   // The approved interface now selects a tenant; both existing sandbox and a real
   // school must use the same bounded owner with matching headers on every call.
   for (const tenant of ['snwsb', 'sandbox']) {
-  const { report, calls } = python(fakeProbe, { tenant });
-  assert.equal(report.operation, 'tenant_route_observations');
-  assert.equal(report.scope, 'dedicated_tenant_staff_session');
-  assert.ok(!JSON.stringify(report).includes(tenant));
-  assert.equal(report.status, 'available');
-  assert.equal(report.cleanup, 'completed');
-  assert.equal(calls.filter(call => call.method === 'POST').length, 2);
-  assert.equal(calls[0].path, '/api/auth/login');
-  assert.equal(calls.at(-1).path, '/api/auth/logout');
-  for (const path of ['/api/staff/dashboard', '/api/students', '/api/me/work-items/counts'])
-    assert.equal(calls.filter(call => call.path === path).length, 6);
-  for (const route of report.routes) {
-    assert.equal(route.samples, 5);
-    assert.ok(route.client_wall_ms.min >= 0);
-    assert.ok(route.response_body_bytes.min > 0);
-    assert.ok(!Object.hasOwn(route, 'p95_ms'));
-  }
+    const { report, calls } = python(fakeProbe, { tenant });
+    assert.equal(report.operation, 'tenant_route_observations');
+    assert.equal(report.scope, 'dedicated_tenant_staff_session');
+    assert.ok(!JSON.stringify(report).includes(tenant));
+    assert.equal(report.status, 'available');
+    assert.equal(report.cleanup, 'completed');
+    assert.equal(calls.filter(call => call.method === 'POST').length, 2);
+    assert.equal(calls[0].path, '/api/auth/login');
+    assert.equal(calls.at(-1).path, '/api/auth/logout');
+    for (const path of ['/api/staff/dashboard', '/api/students', '/api/me/work-items/counts'])
+      assert.equal(calls.filter(call => call.path === path).length, 6);
+    for (const route of report.routes) {
+      assert.equal(route.samples, 5);
+      assert.ok(route.client_wall_ms.min >= 0);
+      assert.ok(route.response_body_bytes.min > 0);
+      assert.ok(!Object.hasOwn(route, 'p95_ms'));
+    }
   }
 });
 

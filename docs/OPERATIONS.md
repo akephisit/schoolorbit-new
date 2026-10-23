@@ -228,7 +228,7 @@ span between timestamped accepted events, not container uptime or continuous
 
 Download the `runtime-observations-<run>-<attempt>` Actions artifact for numeric
 evidence. It retains only `runtime.json` and, when requested and successfully
-validated, `sandbox-probe.json`, for three days. Probe stdout and direct SSH
+validated, `tenant-probe.json`, for three days. Probe stdout and direct SSH
 collector stdout reach private runner files before any Actions log processing.
 The [artifact validator](../scripts/lib/pipeline-runtime-observation-artifacts.py)
 accepts exactly one expected aggregate object, rejects unknown fields/labels,
@@ -275,12 +275,24 @@ unreported container memory limits remain unavailable. These are backend-host
 observations, not database-host CPU/RAM or query-plan evidence.
 
 To opt into representative reads, dispatch main Operations `diagnostics` with
-`options={"run_sandbox_probe":true}`. The runner uses the existing dedicated
-`SMOKE_USERNAME`/`SMOKE_PASSWORD` secrets and trusted `BASE_DOMAIN` and
-`BACKEND_SCHOOL_URL` repository variables. It accepts only the normal HTTPS
-`school-api.<domain>` API and `sandbox.<domain>` Origin, refuses redirects and
-verifies TLS. It checks the expected active staff identity and student-read
-eligibility without elevating permissions, selects only the existing active year,
+`options={"run_tenant_probe":true,"probe_subdomain":"snwsb"}`, selecting the intended
+school explicitly. The probe is off by default; its tenant input defaults to empty,
+which fails closed when opted in. The runner uses only dedicated
+`RUNTIME_PROBE_USERNAME`/`RUNTIME_PROBE_PASSWORD` Actions secrets and trusted
+`BASE_DOMAIN` and `BACKEND_SCHOOL_URL` repository variables. Set the secrets for
+the selected school's existing staff account before dispatch; deployment smoke
+credentials and local E2E credentials are independent and are never fallbacks.
+
+The canonical `--tenant-probe` client accepts only the normal HTTPS
+`school-api.<domain>` API. Before any network request it validates the explicitly
+selected lowercase DNS label against the release smoke boundary (1–63 characters,
+letters/digits/hyphens, no edge hyphens), rejecting infrastructure hostnames, full
+hosts and URLs. Existing `sandbox` remains a valid explicit tenant selection.
+Every request, including login and logout, sends exactly
+`Origin: https://<selected-label>.<domain>` and matching `X-School-Subdomain`.
+The client verifies TLS and refuses redirects. It checks the expected active
+staff identity and student-read eligibility without elevating permissions,
+selects only the existing active year,
 then discards one warmup and records five sequential reads each for dashboard,
 the first 20 students and work counts. A denied/failed endpoint stops immediately;
 missing credentials, eligibility or context are explicit. This API-client sample
@@ -292,16 +304,25 @@ The warmup warms application data; it does not provide browser-like connection
 reuse. A large client/backend timing difference alone is not a database slowdown.
 
 The probe retains bodies, cookies, CSRF, IDs and credentials only in process memory,
-uses 15-second request and 1-MiB response limits, a six-minute total budget plus at
-most 15 seconds reserved for cleanup, and creates no browser artifacts. Its own
-session is logged out in `finally`, using CSRF captured before parsing the login
+uses 15-second request and 1-MiB response limits, at most 24 requests, a six-minute
+total budget plus at most 15 seconds reserved for cleanup, and creates no browser
+artifacts. Its own session is logged out in `finally`, using CSRF captured before parsing the login
 body and the canonical host-only, Secure, HttpOnly, SameSite=Lax, root-path session
 cookie. Logout must send that owned credential; an idempotent unauthenticated 200
 does not establish cleanup. Cleanup failure is explicit; a timed-out login without received session state
 is `cleanup_unknown` and is not retried. Normal login session limits still apply
-to the dedicated smoke account. The probe runs before log aggregation; do not
-combine its small sequential sample with the wider, potentially censored log
-distribution as if they were the same population.
+to the dedicated probe account. The selected label is available in dispatch
+provenance; the aggregate artifact contains no tenant label, identity or raw URL.
+The probe runs before log aggregation. Its API-client sample targets the selected
+tenant; runtime HTTP-header, bcrypt and pool distributions remain process-wide
+across all tenants. They cannot be attributed to the selected school or combined
+with its small sequential sample as if they were the same population.
+
+For frontend navigation and first useful paint, use the existing credentialed
+[deployed browser recipe](./TESTING.md) and
+[route acceptance spec](../frontend-school/tests/e2e/route-loading-live-acceptance.spec.ts).
+It requires locally supplied E2E credentials and browser execution; successful
+Actions API sampling alone does not provide those measurements.
 
 Backend DNS aliases are declared in `podman-compose.yml` before process startup.
 The release network gate checks attachment metadata and resolves both the service
