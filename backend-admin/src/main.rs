@@ -2,17 +2,16 @@ mod startup;
 
 use backend_admin::{build_app, db::init_admin_pool, AppState};
 use dotenvy::dotenv;
-use startup::{required_environment, StartupError};
+use startup::{logging_filter, required_environment, StartupError};
 use std::env;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), StartupError> {
     dotenv().ok();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(logging_filter()?)
         .try_init()
         .map_err(|_| StartupError::logging())?;
 

@@ -1,5 +1,6 @@
 //! Only bounded, sanitized operational context may reach startup diagnostics.
 use std::{env, io};
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 
 #[derive(Debug)]
 pub(crate) struct StartupError {
@@ -47,6 +48,16 @@ impl StartupError {
             "initialization_failed",
             "Check the tracing subscriber configuration.",
         )
+    }
+
+    fn logging_configuration(reason: &'static str) -> Self {
+        let mut error = Self::new(
+            "logging",
+            reason,
+            "Set RUST_LOG to valid Unicode tracing filter directives, or leave it unset for error-level logging.",
+        );
+        error.variable = Some("RUST_LOG");
+        error
     }
 
     pub(crate) fn operation(reason: &'static str) -> Self {
@@ -190,6 +201,22 @@ impl StartupError {
 
 pub(crate) fn required_environment(variable: &'static str) -> Result<String, StartupError> {
     env::var(variable).map_err(|error| StartupError::environment(variable, error))
+}
+
+pub(crate) fn logging_filter() -> Result<EnvFilter, StartupError> {
+    let directives = match env::var("RUST_LOG") {
+        Ok(directives) => directives,
+        Err(env::VarError::NotPresent) => String::new(),
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(StartupError::logging_configuration("invalid_unicode"));
+        }
+    };
+    // Match from_default_env's error-level fallback without its lossy parser,
+    // which prints rejected directives (including their raw values) to stderr.
+    EnvFilter::builder()
+        .with_default_directive(LevelFilter::ERROR.into())
+        .parse(directives)
+        .map_err(|_| StartupError::logging_configuration("invalid_filter_directive"))
 }
 
 #[cfg(test)]

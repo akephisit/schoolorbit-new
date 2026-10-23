@@ -76,6 +76,26 @@ impl StartupProcess {
         assert!(!diagnostic.contains("panicked at"), "{diagnostic}");
         diagnostic
     }
+
+    fn fails_before_logging(&mut self, reason: &str) {
+        let output = self.command.output().expect("run Admin logging subprocess");
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.status.code(), Some(1), "{diagnostic}");
+        assert!(diagnostic.contains("Error: StartupError"), "{diagnostic}");
+        assert!(diagnostic.contains("logging"), "{diagnostic}");
+        assert!(diagnostic.contains(reason), "{diagnostic}");
+        assert!(diagnostic.contains("RUST_LOG"), "{diagnostic}");
+        assert!(diagnostic.contains("Set RUST_LOG"), "{diagnostic}");
+        assert!(
+            !diagnostic.contains(PRIVATE_MARKER),
+            "logging initialization leaked a synthetic private marker"
+        );
+        assert!(!diagnostic.contains("panicked at"), "{diagnostic}");
+    }
 }
 
 impl Drop for StartupProcess {
@@ -120,6 +140,34 @@ fn unsupported_operation_reports_usage_without_echoing_arguments() {
     startup.command.arg(format!("--{PRIVATE_MARKER}"));
     let diagnostic = startup.fails("arguments", "unsupported_operation", None);
     assert!(diagnostic.contains("--migrate-admin"));
+}
+
+#[test]
+fn malformed_log_filter_fails_safely_before_logger_initialization() {
+    let mut startup = StartupProcess::new();
+    startup
+        .command
+        .env("RUST_LOG", format!("{PRIVATE_MARKER}=invalid"));
+    startup.fails_before_logging("invalid_filter_directive");
+}
+
+#[test]
+fn unset_and_empty_log_filters_preserve_default_error_diagnostics() {
+    let mut unset = StartupProcess::new();
+    unset.command.env_remove("RUST_LOG");
+    unset.fails(
+        "configuration",
+        "missing_variable",
+        Some("DATABASE_CREDENTIALS_KEY"),
+    );
+
+    let mut empty = StartupProcess::new();
+    empty.command.env("RUST_LOG", "");
+    empty.fails(
+        "configuration",
+        "missing_variable",
+        Some("DATABASE_CREDENTIALS_KEY"),
+    );
 }
 
 #[test]
@@ -189,4 +237,8 @@ fn invalid_unicode_arguments_and_environment_fail_without_panics_or_values() {
         "invalid_unicode",
         Some("DATABASE_CREDENTIALS_KEY"),
     );
+
+    let mut logging = StartupProcess::new();
+    logging.command.env("RUST_LOG", invalid);
+    logging.fails_before_logging("invalid_unicode");
 }
