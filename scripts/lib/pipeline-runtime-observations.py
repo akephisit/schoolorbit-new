@@ -370,9 +370,9 @@ def request_deadline(seconds):
         signal.signal(signal.SIGALRM, previous)
 
 
-class SandboxClient:
-    def __init__(self, api, origin):
-        self.api, self.origin = api, origin
+class TenantClient:
+    def __init__(self, api, origin, subdomain):
+        self.api, self.origin, self.subdomain = api, origin, subdomain
         self.cookies = http.cookiejar.CookieJar()
         # HTTPSHandler uses the default verified TLS context; redirects never
         # forward this session or its credentials to another location.
@@ -399,7 +399,7 @@ class SandboxClient:
         remaining = self.deadline + (PROBE_REQUEST_SECONDS if cleanup else 0) - time.monotonic()
         if remaining <= 0 or self.requests >= 24:
             raise ProbeFailure("probe_limit")
-        headers = {"Origin": self.origin, "X-School-Subdomain": "sandbox", "Cache-Control": "no-store", "Accept": "application/json"}
+        headers = {"Origin": self.origin, "X-School-Subdomain": self.subdomain, "Cache-Control": "no-store", "Accept": "application/json"}
         body = None
         if payload is not None:
             body = json.dumps(payload).encode()
@@ -457,15 +457,21 @@ def valid_probe_data(route, data):
     return all(type(data.get(name)) is int and 0 <= data[name] <= 1000000000 for name in names)
 
 
-def sandbox_probe():
-    report = {"operation": "sandbox_route_observations", "scope": "dedicated_sandbox_staff_session", "profile": "sequential_https_api_client", "population_latency": "unavailable", "status": "unavailable", "cleanup": "not_required", "routes": []}
-    username, password = os.environ.get("SMOKE_USERNAME"), os.environ.get("SMOKE_PASSWORD")
+def tenant_probe():
+    report = {"operation": "tenant_route_observations", "scope": "dedicated_tenant_staff_session", "profile": "sequential_https_api_client", "population_latency": "unavailable", "status": "unavailable", "cleanup": "not_required", "routes": []}
+    subdomain = os.environ.get("PROBE_SUBDOMAIN", "")
+    # Match the release smoke DNS-label boundary. Sandbox is an existing tenant,
+    # while infrastructure hosts cannot identify a school session.
+    reserved = {"www", "admin", "school-api", "admin-api", "server", "api", "mail", "cdn", "local", "assets"}
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", subdomain) or subdomain in reserved:
+        return {**report, "reason": "tenant_configuration_invalid"}
+    username, password = os.environ.get("RUNTIME_PROBE_USERNAME"), os.environ.get("RUNTIME_PROBE_PASSWORD")
     if not username or not password:
         return {**report, "reason": "credentials_missing"}
     domain, api = os.environ.get("BASE_DOMAIN", ""), os.environ.get("BACKEND_SCHOOL_URL", "")
     if not re.fullmatch(r"(?=.{1,253}$)[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,63}", domain) or api.rstrip("/") != f"https://school-api.{domain}":
         return {**report, "reason": "trusted_configuration_invalid"}
-    client = SandboxClient(api.rstrip("/"), f"https://sandbox.{domain}")
+    client = TenantClient(api.rstrip("/"), f"https://{subdomain}.{domain}", subdomain)
     login_attempted = False
     phase = "login"
     try:
@@ -544,7 +550,12 @@ def sandbox_probe():
 
 if __name__ == "__main__":
     try:
-        report = sandbox_probe() if sys.argv[1:] == ["--sandbox-probe"] else collect()
+        if not sys.argv[1:]:
+            report = collect()
+        elif sys.argv[1:] == ["--tenant-probe"]:
+            report = tenant_probe()
+        else:
+            raise ValueError("unsupported collector arguments")
     except Exception:
         # A future parser/provider defect still cannot spill a raw input/traceback.
         report = {"operation": "runtime_observations", "schema_version": 1, "status": "unavailable", "reason": "collector_failed"}

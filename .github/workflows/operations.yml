@@ -81,7 +81,8 @@ jobs:
     uses: ./.github/workflows/runtime-diagnostics.yml
     secrets: inherit
     with:
-      run_sandbox_probe: ${{ fromJson(inputs.options).run_sandbox_probe == true }}
+      run_tenant_probe: ${{ fromJson(inputs.options).run_tenant_probe == true }}
+      probe_subdomain: ${{ fromJson(inputs.options).probe_subdomain || '' }}
   benchmark:
     if: inputs.operation == 'benchmark'
     uses: ./.github/workflows/backend-build-benchmark.yml

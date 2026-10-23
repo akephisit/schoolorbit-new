@@ -1208,11 +1208,11 @@ test('runtime diagnostics preserve baseline checks and emit only collector aggre
 	assert.match(artifact, /uses: actions\/upload-artifact@v4/);
 	assert.match(artifact, /retention-days: 3/);
 	assert.match(artifact, /runtime-observation-artifacts\/runtime\.json/);
-	assert.match(artifact, /runtime-observation-artifacts\/sandbox-probe\.json/);
+	assert.match(artifact, /runtime-observation-artifacts\/tenant-probe\.json/);
 	assert.doesNotMatch(artifact, /key|stderr|report\.json|\*/);
-	assert.match(workflow, /run_sandbox_probe:\s*type: boolean\s*default: false/);
-	assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && inputs\.run_sandbox_probe/);
-	assert.match(workflow, /--sandbox-probe/);
+	assert.match(workflow, /run_tenant_probe:\s*type: boolean\s*default: false/);
+	assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && inputs\.run_tenant_probe/);
+	assert.match(workflow, /--tenant-probe/);
 	const observations = await readRepo('scripts/lib/pipeline-runtime-observations.py');
 	assert.match(observations, /"podman", "logs", "--since", "15m", "--tail"/);
 	assert.match(observations, /MAX_BYTES = 4 \* 1024 \* 1024/);
