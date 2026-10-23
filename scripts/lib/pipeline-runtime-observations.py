@@ -254,7 +254,7 @@ def aggregate(raw, source, collection="complete"):
         reasons.add(collection)
     if counts["invalid_events"]:
         reasons.add("invalid_events")
-    route_samples = {route: 0 for route in ROUTES.values()} if source != "proxy" else None
+    route_samples = {route: 0 for route in ROUTES.values()} if source == "school" else None
     if route_samples is not None:
         for group in result:
             route = group["labels"].get("route")

@@ -50,6 +50,16 @@ test('Admin fmt and ANSI parse only known targets and numeric producer fields', 
   assert.equal(result.groups[1].metrics.execution_ms.p50_ms, 300);
   assert.equal(result.groups[1].metrics.execution_ms.p99_ms, null);
   assert.equal(result.groups[0].labels.status, '401');
+  assert.deepEqual(result.selected_routes, {});
+  const ordinaryAdmin = aggregate([
+    '2026-10-23T01:02:03Z INFO backend_admin::app: operation="http_response_headers" route="/api/v1/schools" method=GET status=200 duration_ms=3',
+  ], 'admin');
+  assert.equal(ordinaryAdmin.groups[0].labels.route, 'other');
+  assert.equal(ordinaryAdmin.groups[0].events, 1);
+  assert.deepEqual(ordinaryAdmin.selected_routes, {});
+  const emptySchool = aggregate([]);
+  assert.deepEqual(emptySchool.selected_routes.dashboard, { events: 0, status: 'unavailable' });
+  assert.deepEqual(emptySchool.selected_routes.students, { events: 0, status: 'unavailable' });
 });
 
 test('password outcomes and absent stages stay separate; missing is never zero duration', () => {
