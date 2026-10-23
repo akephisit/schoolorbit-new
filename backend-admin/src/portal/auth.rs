@@ -1,5 +1,4 @@
 use super::{models::*, PortalError};
-use crate::auth::{hash_password, verify_password};
 use axum::http::{HeaderMap, StatusCode};
 use rand::TryRng;
 use sha2::{Digest, Sha256};
@@ -123,9 +122,8 @@ pub async fn throttle(pool: &PgPool, key: &str, limit: i32) -> Result<(), Portal
 }
 pub async fn password_hash(password: String) -> Result<String, PortalError> {
     validate_password(&password)?;
-    tokio::task::spawn_blocking(move || hash_password(&password))
+    crate::auth::password_work::hash(password)
         .await
-        .map_err(|_| PortalError::unavailable())?
         .map_err(|_| PortalError::unavailable())
 }
 pub async fn register(pool: &PgPool, input: Registration) -> Result<(), PortalError> {
@@ -245,9 +243,8 @@ pub async fn consume_token(
 }
 pub async fn login(pool: &PgPool, input: Credentials) -> Result<(Account, String), PortalError> {
     login_with_verifier(pool, input, |password, stored| async move {
-        tokio::task::spawn_blocking(move || verify_password(&password, &stored))
+        crate::auth::password_work::verify(password, stored)
             .await
-            .map_err(|_| PortalError::unavailable())?
             .map_err(|_| PortalError::unavailable())
     })
     .await
@@ -269,9 +266,12 @@ where
         id: Uuid,
         password_hash: String,
     }
-    let mut tx = pool.begin().await?;
-    let row: Option<LoginRow> = sqlx::query_as("SELECT id,password_hash FROM platform_accounts WHERE email=$1 AND verified_at IS NOT NULL FOR UPDATE")
-        .bind(&email).fetch_optional(&mut *tx).await?;
+    let row: Option<LoginRow> = sqlx::query_as(
+        "SELECT id,password_hash FROM platform_accounts WHERE email=$1 AND verified_at IS NOT NULL",
+    )
+    .bind(&email)
+    .fetch_optional(pool)
+    .await?;
     let stored = row
         .as_ref()
         .map(|r| r.password_hash.clone())
@@ -283,12 +283,20 @@ where
             "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือยังไม่ได้ยืนยันอีเมล",
         ));
     }
-    let id = row
+    let snapshot = row.ok_or(PortalError(
+        StatusCode::UNAUTHORIZED,
+        "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือยังไม่ได้ยืนยันอีเมล",
+    ))?;
+    // Password work holds no database connection or row lock. Serialize session
+    // issuance only after proving the exact verified snapshot is still current.
+    let mut tx = pool.begin().await?;
+    let id: Uuid = sqlx::query_scalar("SELECT id FROM platform_accounts WHERE id=$1 AND email=$2 AND password_hash=$3 AND verified_at IS NOT NULL FOR UPDATE")
+        .bind(snapshot.id).bind(&email).bind(&snapshot.password_hash)
+        .fetch_optional(&mut *tx).await?
         .ok_or(PortalError(
             StatusCode::UNAUTHORIZED,
             "อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือยังไม่ได้ยืนยันอีเมล",
-        ))?
-        .id;
+        ))?;
     let token = random_token()?;
     sqlx::query("DELETE FROM platform_sessions WHERE token_hash IN (SELECT token_hash FROM platform_sessions WHERE account_id=$1 ORDER BY created_at DESC OFFSET 9)")
         .bind(id).execute(&mut *tx).await?;
