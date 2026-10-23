@@ -391,18 +391,17 @@ pub async fn create_structural_blocks(
     request: CreateStructuralTimetableBlocksRequest,
 ) -> Result<Vec<TimetableBlock>, AppError> {
     let title = request.title.trim();
-    if title.is_empty() || request.slots.is_empty() {
+    if title.is_empty() {
         return Err(AppError::ValidationError(
             "ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".to_string(),
         ));
     }
+    let first_slot = request.slots.first().ok_or_else(|| {
+        AppError::ValidationError("ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ".to_string())
+    })?;
     let mut homeroom_ids = canonical_ids(&request.homeroom_ids);
     let mut teacher_ids = canonical_ids(&request.teacher_ids);
     let mut transaction = pool.begin().await?;
-    let first_slot = request
-        .slots
-        .first()
-        .expect("validated structural slots must not be empty");
     let version = lock_draft_version(
         &mut transaction,
         request.timetable_version_id,
@@ -1442,4 +1441,39 @@ fn structural_kind_wire(kind: TimetableStructuralKind) -> &'static str {
 
 fn stale_block() -> AppError {
     AppError::Conflict("ตารางสอนถูกแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn empty_structural_slots_are_rejected_before_accessing_the_database() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        let error = create_structural_blocks(
+            &pool,
+            Uuid::new_v4(),
+            CreateStructuralTimetableBlocksRequest {
+                timetable_version_id: Uuid::new_v4(),
+                academic_term_id: Uuid::new_v4(),
+                structural_kind: TimetableStructuralKind::Break,
+                title: "Synthetic break".into(),
+                note: None,
+                slots: Vec::new(),
+                homeroom_ids: Vec::new(),
+                teacher_ids: Vec::new(),
+                all_homerooms: false,
+                all_teachers: false,
+                room_id: None,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, AppError::ValidationError(message) if message == "ต้องระบุชื่อและอย่างน้อยหนึ่งช่วงเวลาสำหรับคาบพิเศษ")
+        );
+    }
 }

@@ -17,14 +17,12 @@ pub async fn save_scores_batch(
     }
     let cells = normalize(mutations)?;
     let (mut tx, scope) = begin_scope(
-        Some(result_locks),
+        ScopeAccess::Write(result_locks),
         pool,
         actor,
         group,
         phase,
         context,
-        true,
-        false,
     )
     .await?;
     let workspace = workspace::load_workspace(&mut tx, actor, &scope).await?;

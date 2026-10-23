@@ -10,14 +10,12 @@ pub async fn confirm_phase(
     input: ConfirmInput,
 ) -> Result<PhaseConfirmation, AppError> {
     let (mut tx, scope) = begin_scope(
-        Some(result_locks),
+        ScopeAccess::Confirm(result_locks),
         pool,
         actor,
         group,
         phase,
         context,
-        true,
-        true,
     )
     .await?;
     let workspace = workspace::load_workspace(&mut tx, actor, &scope).await?;
