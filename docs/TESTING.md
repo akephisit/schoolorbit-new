@@ -552,11 +552,14 @@ From the repository root, use the disposable local PostgreSQL runner for applica
 realtime, profile/File Platform, and cross-domain behavior:
 
 ```bash
-./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --nocapture
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4 --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture
 ```
+
+The session-auth HTTP target also exercises encrypted Student Care data. Generate a fresh
+test-only key for that command as shown; never use a production encryption key.
 
 From `frontend-school`, verify the browser security boundary and client state:
 
