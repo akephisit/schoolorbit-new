@@ -13,7 +13,7 @@ CONTAINERS = {"schoolorbit-backend-school", "schoolorbit-backend-admin", "school
 COLLECTIONS = {"complete", "command_timeout", "byte_limit", "command_failed", "command_unavailable"}
 EVENTS = {"http_response_headers", "http_request_cancelled", "password_work", "pool_acquisition", "school_proxy_request"}
 HTTP_STATUS = {"1xx", "2xx", "3xx", "4xx", "5xx", "401", "403", "429", "499", "500", "502", "503", "504"}
-PROBE_REASONS = {"tenant_configuration_invalid", "credentials_missing", "trusted_configuration_invalid", "request_timeout", "probe_limit", "redirect_refused", "unexpected_status", "body_limit", "invalid_envelope", "request_failed", "csrf_missing", "context_missing", "invalid_route_data", "active_staff_required", "student_read_ineligible", "probe_failed", "session_cookie_unavailable", "cleanup_unknown", "cleanup_failed"} | {"http_" + value for value in HTTP_STATUS | {"other"}}
+PROBE_REASONS = {"tenant_configuration_invalid", "credentials_missing", "trusted_configuration_invalid", "request_timeout", "probe_limit", "redirect_refused", "unexpected_status", "body_limit", "invalid_envelope", "request_failed", "csrf_missing", "context_missing", "invalid_route_data", "active_staff_required", "probe_failed", "session_cookie_unavailable", "cleanup_unknown", "cleanup_failed"} | {"http_" + value for value in HTTP_STATUS | {"other"}}
 
 
 def require(condition):

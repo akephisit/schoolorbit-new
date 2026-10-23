@@ -291,11 +291,13 @@ hosts and URLs. Existing `sandbox` remains a valid explicit tenant selection.
 Every request, including login and logout, sends exactly
 `Origin: https://<selected-label>.<domain>` and matching `X-School-Subdomain`.
 The client verifies TLS and refuses redirects. It checks the expected active
-staff identity and student-read eligibility without elevating permissions,
-selects only the existing active year,
+staff identity before business reads and selects only the existing active year,
 then discards one warmup and records five sequential reads each for dashboard,
-the first 20 students and work counts. A denied/failed endpoint stops immediately;
-missing credentials, eligibility or context are explicit. This API-client sample
+the first 20 students and work counts. The account needs actual student-read
+access: the backend student API owns authorization and scope. The probe does not
+infer access from permission metadata or elevate permissions. A student HTTP 403
+records `http_403` with zero measured samples after one attempt, then stops that
+endpoint without retrying. Missing credentials or context are explicit. This API-client sample
 reports count, body bytes and client wall-time median/min/max, not browser paint,
 population p95, load capacity or a performance improvement.
 Python's urllib HTTP transport closes the connection after each request, so this

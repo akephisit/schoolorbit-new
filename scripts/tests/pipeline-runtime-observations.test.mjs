@@ -217,6 +217,8 @@ class Response:
   if data.get('scenario')=='wrong_user':user['username']='another-user'
   if data.get('scenario')=='inactive_user':user['status']='inactive'
   if data.get('scenario')=='non_staff':user['userType']='student'
+  if 'permissions' in data:user['permissions']=data['permissions']
+  if data.get('missing_permissions'):user.pop('permissions')
   if data.get('scenario')=='no_student_permission':user['permissions']=[]
   if path=='/api/auth/me':value=user
   elif path=='/api/academic/context/options':
@@ -248,7 +250,7 @@ class Opener:
   if path=='/api/auth/logout':
    assert request.get_header('X-csrf-token')==('a'*42+'Y')
    assert request.get_header('Cookie')=='__Host-schoolorbit_session='+('b'*42+'Y')
-  if (path=='/api/students' and data.get('scenario')=='forbidden') or (path=='/api/auth/logout' and data.get('scenario')=='cleanup_failure') or (path=='/api/me/work-items/counts' and seen[path]==3 and data.get('scenario')=='partial_route'):
+  if (path=='/api/students' and (data.get('scenario') in ['forbidden','no_student_permission'] or data.get('deny_students'))) or (path=='/api/auth/logout' and data.get('scenario')=='cleanup_failure') or (path=='/api/me/work-items/counts' and seen[path]==3 and data.get('scenario')=='partial_route'):
    raise m.urllib.error.HTTPError('https://synthetic-private-observation-marker',403,'synthetic-private-observation-marker',{},None)
   if path=='/api/academic/context/options' and data.get('scenario')=='denied_context':raise m.urllib.error.HTTPError('https://synthetic-private-observation-marker',403,'synthetic-private-observation-marker',{},None)
   if path=='/api/auth/login' and data.get('scenario')=='timeout':raise m.ProbeFailure('request_timeout')
@@ -291,20 +293,63 @@ test('malformed or oversized login body still logs out using CSRF captured befor
   }
 });
 
-test('probe eligibility and HTTP denial stop unavailable endpoints without retries or privilege changes', () => {
+test('active identity, context and authoritative HTTP denial stop unavailable endpoints without retries', () => {
   for (const scenario of ['no_student_permission', 'forbidden', 'no_context', 'unknown_active_year', 'denied_context', 'wrong_user', 'inactive_user', 'non_staff']) {
     const { report, calls } = python(fakeProbe, { scenario });
     assert.equal(report.cleanup, 'completed');
     if (['wrong_user', 'inactive_user', 'non_staff'].includes(scenario)) {
       assert.equal(report.reason, 'active_staff_required');
       assert.equal(report.routes.length, 0);
+      assert.deepEqual(calls.map(call => call.path), ['/api/auth/login', '/api/auth/me', '/api/auth/logout']);
     } else {
       const contextMissing = ['no_context', 'unknown_active_year', 'denied_context'].includes(scenario);
       const route = report.routes.find(route => route.route === (contextMissing ? 'dashboard' : 'students'));
       if (scenario === 'denied_context') assert.equal(route.reason, 'http_403');
       assert.equal(route.status, 'unavailable');
-      assert.equal(calls.filter(call => call.path === (contextMissing ? '/api/staff/dashboard' : '/api/students')).length, scenario === 'forbidden' ? 1 : 0);
+      if (!contextMissing) {
+        assert.equal(report.status, 'partial');
+        assert.equal(route.reason, 'http_403');
+        assert.equal(route.samples, 0);
+        assert.ok(!Object.hasOwn(route, 'client_wall_ms'));
+      }
+      assert.equal(calls.filter(call => call.path === (contextMissing ? '/api/staff/dashboard' : '/api/students')).length, contextMissing ? 0 : 1);
     }
+  }
+});
+
+test('student API response owns authorization regardless of identity permission metadata', () => {
+  // The former exact-list preflight rejected wildcard grants and shadowed backend
+  // policy. Keep active identity validation; measure only backend-authorized reads.
+  for (const metadata of [
+    { permissions: ['*'] },
+    { permissions: ['student.read.school'] },
+    { permissions: ['student.read.assigned'] },
+    { permissions: ['student.read.own'] },
+    { permissions: ['synthetic-private-observation-marker'] },
+    { permissions: [] },
+    { permissions: null },
+    { missing_permissions: true },
+  ]) {
+    const { report, calls } = python(fakeProbe, metadata);
+    assert.equal(report.status, 'available');
+    assert.equal(report.cleanup, 'completed');
+    const students = report.routes.find(route => route.route === 'students');
+    assert.equal(students.samples, 5);
+    assert.equal(students.status, 'available');
+    assert.ok(!Object.hasOwn(students, 'reason'));
+    assert.equal(calls.filter(call => call.path === '/api/students').length, 6);
+    assert.ok(calls.length <= 24);
+    assert.ok(!Object.hasOwn(report, 'permissions'));
+  }
+  for (const permissions of [['*'], ['student.read.school']]) {
+    const { report, calls } = python(fakeProbe, { permissions, deny_students: true });
+    const students = report.routes.find(route => route.route === 'students');
+    assert.equal(students.reason, 'http_403');
+    assert.equal(students.samples, 0);
+    assert.equal(students.status, 'unavailable');
+    assert.equal(calls.filter(call => call.path === '/api/students').length, 1);
+    assert.equal(report.cleanup, 'completed');
+    assert.equal(calls.at(-1).path, '/api/auth/logout');
   }
 });
 
@@ -533,6 +578,7 @@ test('tenant validator preserves original bytes and rejects legacy names, identi
     value => { value.tenant = 'snwsb'; },
     value => { value.username = sentinel; },
     value => { value.origin = 'https://snwsb.example.test'; },
+    value => { value.routes.find(route => route.route === 'students').reason = 'student_read_ineligible'; },
   ]) {
     const candidate = structuredClone(report); mutation(candidate);
     const fixture = transportFixture(t, candidate);

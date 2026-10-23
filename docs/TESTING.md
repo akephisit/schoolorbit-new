@@ -108,10 +108,16 @@ and `sandbox`, checking the fixed trusted HTTPS API and matching Origin/tenant
 header on every request, including login/logout. Invalid/missing labels,
 infrastructure names and wrong API hosts fail before transport construction;
 dedicated `RUNTIME_PROBE_*` credentials have no smoke/E2E fallback. Fixtures retain
-eligibility, active staff identity, existing active-year selection, one warmup
+active staff identity, existing active-year selection, one warmup
 plus five reads, response/request bounds, redirect refusal, early CSRF capture,
 partial endpoint results and own-session cleanup after malformed/oversized login
-bodies. They use synthetic secrets and mocked transport only. They do not measure production latency or database plans.
+bodies. Student-read fixtures defer authorization to the backend response:
+wildcard, exact scoped grants and absent/unrecognized identity permission metadata
+cannot suppress an API-authorized read. A backend 403 wins even when metadata
+claims access, stops after one request and retains own-session cleanup. This
+replaces the probe's faulty exact-list preflight without changing backend policy.
+Fixtures use synthetic secrets and mocked transport only; they do not measure
+production latency or database plans.
 Artifact transport fixtures execute the actual workflow shell steps with mock
 SSH/keyscan commands and actual producer report objects. They preserve original
 numeric JSON bytes, including benign sequences that can collide with log masking;
@@ -121,7 +127,7 @@ only the two explicitly validated aggregate files can be uploaded. The previous
 logs-only channel lost numeric evidence through Actions masking, so retaining
 validated aggregates is required while raw logs, key material and private stderr
 remain excluded. A successful workflow or partial report does not establish
-missing dashboard context or student-read eligibility.
+missing dashboard context or successful student API authorization.
 Workflow guards require main-only `run_tenant_probe` opt-in and an explicit
 `probe_subdomain`; the canonical CLI and validated artifact are `--tenant-probe`
 and `tenant-probe.json`. Retired sandbox-only names and identifying artifact

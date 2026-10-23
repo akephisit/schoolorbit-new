@@ -486,8 +486,6 @@ def tenant_probe():
         user, _, _ = client.request("GET", "/api/auth/me")
         if not isinstance(user, dict) or user.get("username") != username or user.get("userType") != "staff" or user.get("status") != "active":
             raise ProbeFailure("active_staff_required")
-        permissions = user.get("permissions")
-        student_eligible = isinstance(permissions, list) and any(label(permission, {"student.read.school", "student.read.assigned", "student.read.own"}, None) is not None for permission in permissions)
         phase = "context"
         year = None
         context_reason = "context_missing"
@@ -501,9 +499,6 @@ def tenant_probe():
             context_reason = error.reason
         for route, path in (("dashboard", "/api/staff/dashboard"), ("students", "/api/students?page=1&pageSize=20"), ("work_counts", "/api/me/work-items/counts")):
             phase = route
-            if route == "students" and not student_eligible:
-                report["routes"].append(probe_summary(route, [], [], "student_read_ineligible"))
-                continue
             if route == "dashboard":
                 if year is None:
                     report["routes"].append(probe_summary(route, [], [], context_reason))
