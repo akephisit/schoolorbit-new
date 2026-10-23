@@ -35,6 +35,11 @@ pub enum TimetableAction {
     Publish,
 }
 
+enum ScopedTimetableAction {
+    Read,
+    Manage,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TimetableResourceSet {
     pub timetable_version_ids: Vec<Uuid>,
@@ -74,13 +79,17 @@ pub async fn timetable_list_access(
     actor: &ActorContext,
     action: TimetableAction,
 ) -> Result<TimetableAccessFilter, AppError> {
-    if action == TimetableAction::Publish {
-        actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
-        return Ok(TimetableAccessFilter {
-            includes_school_owned: true,
-            ..TimetableAccessFilter::default()
-        });
-    }
+    let action = match action {
+        TimetableAction::Publish => {
+            actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
+            return Ok(TimetableAccessFilter {
+                includes_school_owned: true,
+                ..TimetableAccessFilter::default()
+            });
+        }
+        TimetableAction::Read => ScopedTimetableAction::Read,
+        TimetableAction::Manage => ScopedTimetableAction::Manage,
+    };
 
     let resolved = resource_access_policy::resolve_academic_resource_list_filter(
         pool,
@@ -268,21 +277,20 @@ fn normalized_ids(ids: &[Uuid]) -> Vec<Uuid> {
     normalized
 }
 
-fn timetable_permissions(action: TimetableAction) -> AcademicResourcePermissions {
+fn timetable_permissions(action: ScopedTimetableAction) -> AcademicResourcePermissions {
     match action {
-        TimetableAction::Read => AcademicResourcePermissions {
+        ScopedTimetableAction::Read => AcademicResourcePermissions {
             assigned: READ_ASSIGNED_PERMISSIONS,
             organization_unit: READ_UNIT_PERMISSIONS,
             organization_tree: READ_TREE_PERMISSIONS,
             school: READ_SCHOOL_PERMISSIONS,
         },
-        TimetableAction::Manage => AcademicResourcePermissions {
+        ScopedTimetableAction::Manage => AcademicResourcePermissions {
             assigned: MANAGE_ASSIGNED_PERMISSIONS,
             organization_unit: MANAGE_UNIT_PERMISSIONS,
             organization_tree: MANAGE_TREE_PERMISSIONS,
             school: MANAGE_SCHOOL_PERMISSIONS,
         },
-        TimetableAction::Publish => unreachable!("publish is checked before scope resolution"),
     }
 }
 
@@ -302,6 +310,38 @@ mod tests {
                 .map(|permission| permission.to_string())
                 .collect(),
         }
+    }
+
+    #[tokio::test]
+    async fn publish_requires_school_publish_permission_without_resolving_resource_scopes() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        for permissions in [
+            vec![],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
+        ] {
+            assert!(matches!(
+                timetable_list_access(&pool, &actor(&permissions), TimetableAction::Publish).await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
+        let access = timetable_list_access(
+            &pool,
+            &actor(&[codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL]),
+            TimetableAction::Publish,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            access,
+            TimetableAccessFilter {
+                includes_school_owned: true,
+                ..Default::default()
+            }
+        );
     }
 
     #[tokio::test]

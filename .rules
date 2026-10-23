@@ -405,7 +405,8 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
 
 ### Errors, logging, and types
 
-- Do not use `unwrap()` or `expect()` in runtime request paths. Propagate with `?` and add useful context.
+- Production request, background and startup paths must not use `unwrap()`, `expect()`, `panic!` or `unreachable!`. Represent valid states in types and propagate failures with useful context; startup must fail closed with an explicit error, a safe stage and actionable setting/error categories. Never format untrusted provider errors or environment values into startup diagnostics. Tests and disposable test fixtures may intentionally panic.
+- The owning local verifier runs production-only Clippy guards for these four panic forms with `--no-deps`: School default and `api-docs` library/binary targets exclude only `school-test-db`; Admin library/binary targets run through its disposable database fixture. Keep tests usable and unrelated warning policy unchanged.
 - Do not discard meaningful errors with `let _ =`. Map them into `AppError`/`IntoResponse` and preserve actionable client messages without leaking internals.
 - Runtime logging uses `tracing::{debug, info, warn, error}`. `println!`/`eprintln!` are only for intentional CLI output.
 - Never log plaintext PII, national IDs, credentials, tokens, cookies, database URLs, encryption keys, or raw request bodies.

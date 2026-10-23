@@ -1,7 +1,7 @@
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initialize tracing subscriber for structured logging
-pub fn init() {
+pub fn init() -> Result<(), tracing_subscriber::util::TryInitError> {
     // Try to read log level from RUST_LOG environment variable
     // Default to "info" if not set
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -18,11 +18,11 @@ pub fn init() {
                 .with_line_number(true)
                 .json(),
         )
-        .init();
+        .try_init()
 }
 
 /// Initialize tracing subscriber with pretty formatting (for development)
-pub fn init_pretty() {
+pub fn init_pretty() -> Result<(), tracing_subscriber::util::TryInitError> {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug,sqlx=warn"));
 
@@ -36,5 +36,5 @@ pub fn init_pretty() {
                 .with_line_number(true)
                 .pretty(),
         )
-        .init();
+        .try_init()
 }

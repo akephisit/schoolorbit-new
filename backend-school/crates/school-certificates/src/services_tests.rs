@@ -1121,45 +1121,59 @@ async fn preview_manifest_preserves_exact_shared_font_style_and_omits_unused_fon
         Err(AppError::Conflict(_))
     ));
 
-    let requested_at = chrono::Utc::now();
-    let manifest = render_service::preview_manifest(
-        &pool,
-        &actor,
-        &platform,
-        "โรงเรียนตัวอย่าง".to_string(),
-        template.id,
-        CertificatePreviewManifestRequest {
-            preview_kind: CertificatePreviewKind::Long,
-            candidate_id: None,
-            sample_values: Default::default(),
-            layout: Some(local_layout.clone()),
-        },
-    )
-    .await
-    .unwrap();
+    for (preview_kind, first_name, last_name) in [
+        (CertificatePreviewKind::Short, "ปัน", "ดี"),
+        (CertificatePreviewKind::Normal, "กมลชนก", "สุขสวัสดิ์"),
+        (
+            CertificatePreviewKind::Long,
+            "ณัฏฐณิชาภัทรวรรณ",
+            "รัตนสุวรรณกุลชัยวัฒนา",
+        ),
+    ] {
+        let requested_at = chrono::Utc::now();
+        let manifest = render_service::preview_manifest(
+            &pool,
+            &actor,
+            &platform,
+            "โรงเรียนตัวอย่าง".to_string(),
+            template.id,
+            CertificatePreviewManifestRequest {
+                preview_kind,
+                candidate_id: None,
+                sample_values: Default::default(),
+                layout: Some(local_layout.clone()),
+            },
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(manifest.certificate_number, "ตัวอย่าง");
-    assert!(manifest.qr_payload.contains("ตัวอย่าง"));
-    assert_eq!(manifest.recipient_values["ชื่อโรงเรียนผู้ออก"], "โรงเรียนตัวอย่าง");
-    assert!(manifest
-        .background_grant
-        .url
-        .starts_with("https://private.example.test/"));
-    assert!(manifest.background_grant.expires_at > requested_at);
-    assert!(manifest.background_grant.expires_at <= requested_at + chrono::Duration::minutes(5));
-    assert_eq!(manifest.built_in_fonts.len(), 2);
-    assert!(manifest
-        .built_in_fonts
-        .iter()
-        .all(|font| font.style == SchoolFontStyle::Normal));
-    assert_eq!(manifest.layout, local_layout);
-    assert_eq!(manifest.font_grants.len(), 1);
-    assert_eq!(manifest.font_grants[0].school_font_id, font.id);
-    assert_eq!(manifest.font_grants[0].style, SchoolFontStyle::Italic);
-    assert!(manifest
-        .font_grants
-        .iter()
-        .all(|grant| grant.school_font_id != unused_font.id));
+        assert_eq!(manifest.certificate_number, "ตัวอย่าง");
+        assert!(manifest.qr_payload.contains("ตัวอย่าง"));
+        assert_eq!(manifest.recipient_values["ชื่อโรงเรียนผู้ออก"], "โรงเรียนตัวอย่าง");
+        assert!(manifest
+            .background_grant
+            .url
+            .starts_with("https://private.example.test/"));
+        assert!(manifest.background_grant.expires_at > requested_at);
+        assert!(
+            manifest.background_grant.expires_at <= requested_at + chrono::Duration::minutes(5)
+        );
+        assert_eq!(manifest.built_in_fonts.len(), 2);
+        assert!(manifest
+            .built_in_fonts
+            .iter()
+            .all(|font| font.style == SchoolFontStyle::Normal));
+        assert_eq!(manifest.layout, local_layout);
+        assert_eq!(manifest.font_grants.len(), 1);
+        assert_eq!(manifest.font_grants[0].school_font_id, font.id);
+        assert_eq!(manifest.font_grants[0].style, SchoolFontStyle::Italic);
+        assert!(manifest
+            .font_grants
+            .iter()
+            .all(|grant| grant.school_font_id != unused_font.id));
+        assert_eq!(manifest.recipient_values["ชื่อ"], first_name);
+        assert_eq!(manifest.recipient_values["นามสกุล"], last_name);
+    }
 }
 #[tokio::test]
 async fn background_rejects_wrong_relation_unready_pages_and_unsafe_geometry() {

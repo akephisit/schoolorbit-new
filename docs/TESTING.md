@@ -48,7 +48,16 @@ production release optimization is unchanged. Keep incomplete or failing work in
 School performs workspace checking, architecture/unit checks, generated OpenAPI and clean-environment
 export, then database consumers with one Docker PostgreSQL server and a fresh owned database per
 invocation. Admin applies migrations only to its disposable Docker fixture before SQLx all-target
-compilation and tests. Frontend suites run lint, type checks and actual contract/unit tests.
+compilation and tests. Both backend suites also run production library/binary Clippy with
+`--no-deps` and deny only `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic` and
+`clippy::unreachable`. School checks default and `api-docs` workspace targets, excluding only
+`school-test-db`; Admin runs against its owned disposable SQLx fixture. Test targets remain
+outside this guard so assertions and intentional failure fixtures remain usable. Do not replace
+this focused gate with `-D warnings` or suppress it to accept a runtime panic. Startup subprocess
+regressions use isolated empty configuration and synthetic invalid values to verify nonzero exits,
+actionable sanitized diagnostics and the offline export boundary without external service access.
+Run `node --test scripts/tests/pipeline-local.test.mjs` to verify that all three Clippy invocations
+execute and their failures stop local verification. Frontend suites run lint, type checks and actual contract/unit tests.
 Auth/session Playwright discovery uses synthetic values with `--list` and loopback URLs only;
 it performs no browser or network execution. Run affected browser workflows locally as required
 by the change-type matrix; discovery alone is not browser coverage.
