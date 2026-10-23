@@ -296,8 +296,10 @@ then discards one warmup and records five sequential reads each for dashboard,
 the first 20 students and work counts. The account needs actual student-read
 access: the backend student API owns authorization and scope. The probe does not
 infer access from permission metadata or elevate permissions. A student HTTP 403
-records `http_403` with zero measured samples after one attempt, then stops that
-endpoint without retrying. Missing credentials or context are explicit. This API-client sample
+on the initial warmup records `http_403` with zero measured samples after one
+attempt. A later 403 retains already collected samples; either denial stops the
+remaining reads for that endpoint without retries. Missing credentials or context
+are explicit. This API-client sample
 reports count, body bytes and client wall-time median/min/max, not browser paint,
 population p95, load capacity or a performance improvement.
 Python's urllib HTTP transport closes the connection after each request, so this
