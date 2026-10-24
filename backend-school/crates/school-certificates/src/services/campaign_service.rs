@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::HashSet;
 
@@ -175,7 +176,16 @@ pub async fn list_campaigns(
            AND ($7::text IS NULL OR c.name ILIKE '%' || $7 || '%')
          ORDER BY c.event_date DESC, c.created_at DESC, c.id"
     );
-    let rows = sqlx::query_as::<_, CampaignRow>(sqlx::AssertSqlSafe(sql))
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.campaign_service.list_campaigns",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<CampaignRow>(
+            "certificates.services.campaign_service.list_campaigns",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(read_school_scope)
         .bind(read_exact_units)
         .bind(delete_school_scope)
@@ -183,7 +193,7 @@ pub async fn list_campaigns(
         .bind(query.academic_year_id)
         .bind(status)
         .bind(search)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(campaign_db_error)?;
 
@@ -223,24 +233,38 @@ pub async fn create_campaign(
         CertificateAction::Create,
     )
     .await?;
-    require_valid_owner(pool, payload.owner_organization_unit_id).await?;
-    require_academic_year(pool, payload.academic_year_id).await?;
+    {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.campaign_service.create_campaign.references",
+        )
+        .await?;
+        require_valid_owner(&mut connection, payload.owner_organization_unit_id).await?;
+        require_academic_year(&mut connection, payload.academic_year_id).await?;
+    }
 
-    let mut tx = pool.begin().await.map_err(campaign_db_error)?;
-    let campaign_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO certificate_campaigns
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.campaign_service.create_campaign",
+    )
+    .await
+    .map_err(campaign_db_error)?;
+    let campaign_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "certificates.services.campaign_service.create_campaign",
+            "INSERT INTO certificate_campaigns
             (academic_year_id, owner_organization_unit_id, name, event_date, created_by, updated_by)
          VALUES ($1, $2, $3, $4, $5, $5)
          RETURNING id",
-    )
-    .bind(payload.academic_year_id)
-    .bind(payload.owner_organization_unit_id)
-    .bind(name)
-    .bind(payload.event_date)
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(payload.academic_year_id)
+        .bind(payload.owner_organization_unit_id)
+        .bind(name)
+        .bind(payload.event_date)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(campaign_db_error)?;
     record_campaign_audit(
         &mut tx,
         actor.user_id,
@@ -294,20 +318,57 @@ pub async fn update_campaign(
         authorization_row.owner_organization_unit_id,
     )
     .await?;
-    require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
+    if (authorization_row.owner_organization_unit_id).is_none() {
+        Ok(())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.campaign_service.update_campaign.require_valid_owner",
+        )
+        .await
+        .map_err(AppError::from)?;
+        require_valid_owner(
+            &mut read_stage,
+            authorization_row.owner_organization_unit_id,
+        )
+        .await
+    }?;
     if let Some(next_owner) = requested_owner {
         if next_owner != authorization_row.owner_organization_unit_id {
             require_owner_action(pool, actor, next_owner, CertificateAction::Create).await?;
-            require_valid_owner(pool, next_owner).await?;
+            if (next_owner).is_none() {
+                Ok(())
+            } else {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "certificates.campaign_service.update_campaign.require_valid_owner",
+                )
+                .await
+                .map_err(AppError::from)?;
+                require_valid_owner(&mut read_stage, next_owner).await
+            }?;
         }
     }
     if let Some(academic_year_id) = payload.academic_year_id {
         if academic_year_id != authorization_row.academic_year_id {
-            require_academic_year(pool, academic_year_id).await?;
+            {
+                let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool,
+                    "certificates.campaign_service.update_campaign.require_academic_year",
+                )
+                .await
+                .map_err(AppError::from)?;
+                require_academic_year(&mut read_stage, academic_year_id).await
+            }?;
         }
     }
 
-    let mut tx = pool.begin().await.map_err(campaign_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.campaign_service.update_campaign",
+    )
+    .await
+    .map_err(campaign_db_error)?;
     let current = lock_campaign(&mut tx, campaign_id).await?;
     require_authorized_owner_unchanged(
         authorization_row.owner_organization_unit_id,
@@ -369,8 +430,10 @@ pub async fn update_campaign(
         return Ok(fetch_detail_with_capabilities(pool, actor, campaign_id).await?);
     }
 
-    sqlx::query(
-        "UPDATE certificate_campaigns
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.campaign_service.update_campaign",
+            "UPDATE certificate_campaigns
          SET academic_year_id = $2,
              owner_organization_unit_id = $3,
              name = $4,
@@ -378,16 +441,16 @@ pub async fn update_campaign(
              updated_by = $6,
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(campaign_id)
-    .bind(next_academic_year_id)
-    .bind(next_owner)
-    .bind(next_name)
-    .bind(next_event_date)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(next_academic_year_id)
+        .bind(next_owner)
+        .bind(next_name)
+        .bind(next_event_date)
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(campaign_db_error)?;
     record_campaign_audit(
         &mut tx,
         actor.user_id,
@@ -425,9 +488,28 @@ pub async fn change_campaign_status(
         authorization_row.owner_organization_unit_id,
     )
     .await?;
-    require_valid_owner(pool, authorization_row.owner_organization_unit_id).await?;
+    if (authorization_row.owner_organization_unit_id).is_none() {
+        Ok(())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.campaign_service.change_campaign_status.require_valid_owner",
+        )
+        .await
+        .map_err(AppError::from)?;
+        require_valid_owner(
+            &mut read_stage,
+            authorization_row.owner_organization_unit_id,
+        )
+        .await
+    }?;
 
-    let mut tx = pool.begin().await.map_err(campaign_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.campaign_service.change_campaign_status",
+    )
+    .await
+    .map_err(campaign_db_error)?;
     let current = lock_campaign(&mut tx, campaign_id).await?;
     require_authorized_owner_unchanged(
         authorization_row.owner_organization_unit_id,
@@ -443,17 +525,19 @@ pub async fn change_campaign_status(
     require_campaign_not_open_locked(&mut tx, campaign_id, can_read_locked_request).await?;
     validate_manual_status_transition(current_status, payload.status)?;
 
-    sqlx::query(
-        "UPDATE certificate_campaigns
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.campaign_service.change_campaign_status",
+            "UPDATE certificate_campaigns
          SET status = $2, updated_by = $3, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(campaign_id)
-    .bind(payload.status.as_str())
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(payload.status.as_str())
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(campaign_db_error)?;
     record_campaign_audit(
         &mut tx,
         actor.user_id,
@@ -481,20 +565,27 @@ pub async fn list_owner_options(
         CertificateOwnerListScope::School => (true, Vec::new()),
         CertificateOwnerListScope::ExactUnits(units) => (false, units),
     };
-    let rows = sqlx::query_as::<_, OwnerOptionRow>(
-        "SELECT id, code, name, name_en, description, category, display_order,
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.campaign_service.list_owner_options",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<OwnerOptionRow>(
+            "certificates.services.campaign_service.list_owner_options",
+            "SELECT id, code, name, name_en, description, category, display_order,
                 is_active, parent_unit_id, unit_type, subject_group_id
          FROM organization_units
          WHERE is_active IS TRUE
            AND upper(code) <> 'SCHOOL'
            AND ($1::boolean OR id = ANY($2::uuid[]))
          ORDER BY display_order, name, id",
-    )
-    .bind(school_scope)
-    .bind(units)
-    .fetch_all(pool)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(school_scope)
+        .bind(units)
+        .fetch_all()
+        .await
+        .map_err(campaign_db_error)?;
     Ok(rows
         .into_iter()
         .map(|row| CertificateOwnerOption {
@@ -524,10 +615,24 @@ async fn fetch_detail_with_capabilities(
 }
 
 async fn fetch_campaign_row(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignRow, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.fetch_campaign_row")
+            .await?;
+    fetch_campaign_row_on_connection(&mut connection, campaign_id).await
+}
+
+async fn fetch_campaign_row_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<CampaignRow, AppError> {
     let sql = format!("{CAMPAIGN_SELECT} WHERE c.id = $1 AND c.status <> 'purging'");
-    sqlx::query_as::<_, CampaignRow>(sqlx::AssertSqlSafe(sql))
+    DbSession::new(&mut *connection)
+        .query_as::<CampaignRow>(
+            "certificates.services.campaign_service.fetch_campaign_row_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(campaign_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(campaign_db_error)?
         .ok_or_else(campaign_not_found)
@@ -537,18 +642,20 @@ async fn lock_campaign(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<LockedCampaign, AppError> {
-    sqlx::query_as(
-        "SELECT academic_year_id, owner_organization_unit_id, name, event_date,
+    DbSession::new(&mut **tx)
+        .query_as(
+            "certificates.services.campaign_service.lock_campaign",
+            "SELECT academic_year_id, owner_organization_unit_id, name, event_date,
                 status, activity_sequence, updated_at
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(campaign_db_error)?
-    .ok_or_else(campaign_not_found)
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(campaign_db_error)?
+        .ok_or_else(campaign_not_found)
 }
 
 async fn load_capability_scopes(
@@ -738,20 +845,26 @@ fn normalize_optional_search(value: Option<String>) -> Result<Option<String>, Ap
         .unwrap_or(Ok(None))
 }
 
-async fn require_valid_owner(pool: &PgPool, owner_id: Option<Uuid>) -> Result<(), AppError> {
+async fn require_valid_owner(
+    connection: &mut sqlx::PgConnection,
+    owner_id: Option<Uuid>,
+) -> Result<(), AppError> {
     let Some(owner_id) = owner_id else {
         return Ok(());
     };
-    let valid: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
+
+    let valid: bool = DbSession::new(&mut *connection)
+        .scalar(
+            "certificates.services.campaign_service.require_valid_owner",
+            "SELECT EXISTS (
             SELECT 1 FROM organization_units
             WHERE id = $1 AND is_active IS TRUE AND upper(code) <> 'SCHOOL'
         )",
-    )
-    .bind(owner_id)
-    .fetch_one(pool)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(owner_id)
+        .fetch_one()
+        .await
+        .map_err(campaign_db_error)?;
     if valid {
         Ok(())
     } else {
@@ -761,13 +874,19 @@ async fn require_valid_owner(pool: &PgPool, owner_id: Option<Uuid>) -> Result<()
     }
 }
 
-async fn require_academic_year(pool: &PgPool, academic_year_id: Uuid) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)")
-            .bind(academic_year_id)
-            .fetch_one(pool)
-            .await
-            .map_err(campaign_db_error)?;
+async fn require_academic_year(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<(), AppError> {
+    let exists: bool = DbSession::new(&mut *connection)
+        .scalar(
+            "certificates.services.campaign_service.require_academic_year",
+            "SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)",
+        )
+        .bind(academic_year_id)
+        .fetch_one()
+        .await
+        .map_err(campaign_db_error)?;
     if exists {
         Ok(())
     } else {
@@ -782,16 +901,18 @@ async fn require_valid_owner_in_transaction(
     let Some(owner_id) = owner_id else {
         return Ok(());
     };
-    let valid: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
+    let valid: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.campaign_service.require_valid_owner_in_transaction",
+            "SELECT EXISTS (
             SELECT 1 FROM organization_units
             WHERE id = $1 AND is_active IS TRUE AND upper(code) <> 'SCHOOL'
         )",
-    )
-    .bind(owner_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(owner_id)
+        .fetch_one()
+        .await
+        .map_err(campaign_db_error)?;
     if valid {
         Ok(())
     } else {
@@ -805,12 +926,15 @@ async fn require_academic_year_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)")
-            .bind(academic_year_id)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(campaign_db_error)?;
+    let exists: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.campaign_service.require_academic_year_in_transaction",
+            "SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)",
+        )
+        .bind(academic_year_id)
+        .fetch_one()
+        .await
+        .map_err(campaign_db_error)?;
     if exists {
         Ok(())
     } else {
@@ -849,16 +973,18 @@ async fn require_campaign_not_open_locked(
     campaign_id: Uuid,
     can_read_locked_request: bool,
 ) -> Result<(), super::request_service::CertificateServiceError> {
-    let request_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM certificate_issue_requests
+    let request_id: Option<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.campaign_service.require_campaign_not_open_locked",
+            "SELECT id FROM certificate_issue_requests
          WHERE campaign_id = $1 AND status IN ('pending', 'reviewing')
          ORDER BY submitted_at, id
          LIMIT 1",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(campaign_db_error)?;
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(campaign_db_error)?;
     if let Some(request_id) = request_id {
         Err(super::request_service::resource_locked_error(
             request_id,
@@ -873,9 +999,13 @@ async fn campaign_has_issued_certificates(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<bool, AppError> {
-    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM certificates WHERE campaign_id = $1)")
+    DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.campaign_service.campaign_has_issued_certificates",
+            "SELECT EXISTS (SELECT 1 FROM certificates WHERE campaign_id = $1)",
+        )
         .bind(campaign_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await
         .map_err(campaign_db_error)
 }
@@ -938,7 +1068,10 @@ fn campaign_not_found() -> AppError {
 }
 
 fn campaign_db_error(error: sqlx::Error) -> AppError {
-    tracing::error!(%error, "certificate campaign database operation failed");
+    tracing::error!(
+        error_class = school_database::error_class(&error),
+        "certificate campaign database operation failed"
+    );
     AppError::DbError(error)
 }
 

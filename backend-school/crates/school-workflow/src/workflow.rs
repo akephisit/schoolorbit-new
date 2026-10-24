@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -151,8 +152,15 @@ pub async fn create_workflow_window(
     validate_workflow_window_schedule(input.schedule)
         .map_err(|error| AppError::ValidationError(error.message().to_string()))?;
 
-    sqlx::query_as::<_, WorkflowWindow>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.workflow.create_workflow_window",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<WorkflowWindow>(
+            "workflow.src.workflow.create_workflow_window",
+            r#"
         INSERT INTO workflow_windows (
             module_code, workflow_code, title, description, organization_unit_id,
             managed_by_permission, opens_at, due_at, closes_at, metadata, created_by
@@ -162,24 +170,27 @@ pub async fn create_workflow_window(
                   managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                   created_by, created_at, updated_at
         "#,
-    )
-    .bind(&input.module_code)
-    .bind(&input.workflow_code)
-    .bind(&input.title)
-    .bind(&input.description)
-    .bind(input.organization_unit_id)
-    .bind(&input.managed_by_permission)
-    .bind(input.schedule.opens_at)
-    .bind(input.schedule.due_at)
-    .bind(input.schedule.closes_at)
-    .bind(Json(input.metadata))
-    .bind(input.created_by)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to create workflow window: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้างรอบงานได้".to_string())
-    })
+        )
+        .bind(&input.module_code)
+        .bind(&input.workflow_code)
+        .bind(&input.title)
+        .bind(&input.description)
+        .bind(input.organization_unit_id)
+        .bind(&input.managed_by_permission)
+        .bind(input.schedule.opens_at)
+        .bind(input.schedule.due_at)
+        .bind(input.schedule.closes_at)
+        .bind(Json(input.metadata))
+        .bind(input.created_by)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to create workflow window: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างรอบงานได้".to_string())
+        })
 }
 
 pub async fn list_manageable_workflow_windows(
@@ -188,14 +199,28 @@ pub async fn list_manageable_workflow_windows(
     filter: WorkflowWindowFilter,
 ) -> Result<Vec<WorkflowWindow>, AppError> {
     let WorkflowWindowManageAccess::Permissions(permissions) = &access else {
-        return list_workflow_windows_query(pool, access, filter).await;
+        return {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "workflow.workflow.list_manageable_workflow_windows.list_workflow_windows_query",
+            )
+            .await?;
+            list_workflow_windows_query(&mut read_stage, access, filter).await
+        };
     };
 
     if permissions.is_empty() {
         return Ok(Vec::new());
     }
 
-    list_workflow_windows_query(pool, access, filter).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "workflow.workflow.list_manageable_workflow_windows.list_workflow_windows_query",
+        )
+        .await?;
+        list_workflow_windows_query(&mut read_stage, access, filter).await
+    }
 }
 
 pub async fn close_workflow_window(pool: &PgPool, id: Uuid) -> Result<WorkflowWindow, AppError> {
@@ -207,23 +232,33 @@ pub async fn open_workflow_window(pool: &PgPool, id: Uuid) -> Result<WorkflowWin
 }
 
 pub async fn get_workflow_window(pool: &PgPool, id: Uuid) -> Result<WorkflowWindow, AppError> {
-    sqlx::query_as::<_, WorkflowWindow>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.workflow.get_workflow_window",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<WorkflowWindow>(
+            "workflow.src.workflow.get_workflow_window",
+            r#"
         SELECT id, module_code, workflow_code, title, description, organization_unit_id,
                managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                created_by, created_at, updated_at
         FROM workflow_windows
         WHERE id = $1 AND workflow_code <> 'process_step'
         "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get workflow window: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลรอบงานได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get workflow window: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลรอบงานได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))
 }
 
 pub async fn set_workflow_window_status(
@@ -231,17 +266,27 @@ pub async fn set_workflow_window_status(
     id: Uuid,
     status: WorkflowWindowStatus,
 ) -> Result<WorkflowWindow, AppError> {
-    let current_status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM workflow_windows WHERE id = $1 AND workflow_code <> 'process_step'",
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "workflow.workflow.set_workflow_window_status",
     )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load workflow window status: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะรอบงานได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))?;
+    .await?;
+    let current_status = DbSession::new(&mut *database_stage_0)
+        .scalar::<String>(
+            "workflow.src.workflow.set_workflow_window_status",
+            "SELECT status FROM workflow_windows WHERE id = $1 AND workflow_code <> 'process_step'",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load workflow window status: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะรอบงานได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))?;
 
     let Some(current_status) = WorkflowWindowStatus::from_code(&current_status) else {
         return Err(AppError::InternalServerError(
@@ -255,8 +300,10 @@ pub async fn set_workflow_window_status(
         ));
     }
 
-    sqlx::query_as::<_, WorkflowWindow>(
-        r#"
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<WorkflowWindow>(
+            "workflow.src.workflow.set_workflow_window_status",
+            r#"
         UPDATE workflow_windows
         SET status = $2
         WHERE id = $1 AND workflow_code <> 'process_step'
@@ -264,20 +311,23 @@ pub async fn set_workflow_window_status(
                   managed_by_permission, opens_at, due_at, closes_at, status, metadata,
                   created_by, created_at, updated_at
         "#,
-    )
-    .bind(id)
-    .bind(status.as_str())
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update workflow window status: {}", error);
-        AppError::InternalServerError("ไม่สามารถอัปเดตรอบงานได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))
+        )
+        .bind(id)
+        .bind(status.as_str())
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update workflow window status: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถอัปเดตรอบงานได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบงาน".to_string()))
 }
 
 async fn list_workflow_windows_query(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     access: WorkflowWindowManageAccess,
     filter: WorkflowWindowFilter,
 ) -> Result<Vec<WorkflowWindow>, AppError> {
@@ -310,12 +360,18 @@ async fn list_workflow_windows_query(
 
     query.push(" ORDER BY COALESCE(due_at, closes_at, opens_at, created_at), created_at DESC");
 
-    query
-        .build_query_as::<WorkflowWindow>()
-        .fetch_all(pool)
+    DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "workflow.src.workflow.list_workflow_windows_query",
+            query.build_query_as::<WorkflowWindow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to list workflow windows: {}", error);
+            tracing::error!(
+                "Failed to list workflow windows: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลรอบงานได้".to_string())
         })
 }

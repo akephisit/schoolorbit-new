@@ -1,4 +1,5 @@
 use crate::services::pii;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, PgPool};
@@ -58,8 +59,20 @@ pub async fn list_exam_rooms(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<ListExamRoomsResult, AppError> {
-    let rooms = sqlx::query_as::<_, ExamRoomRow>(
-        r#"SELECT er.id, er.room_id,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.list_exam_rooms")
+            .await?;
+    list_exam_rooms_on_connection(&mut connection, round_id).await
+}
+
+pub async fn list_exam_rooms_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<ListExamRoomsResult, AppError> {
+    let rooms = DbSession::new(&mut *connection)
+        .query_as::<ExamRoomRow>(
+            "admission.services.exam_room_service.list_exam_rooms_on_connection",
+            r#"SELECT er.id, er.room_id,
                   COALESCE(er.custom_name, r.name_th, r.name_en) AS room_name,
                   b.name_th AS building_name,
                   COALESCE(er.capacity_override, r.capacity, 40)::INT AS capacity,
@@ -73,14 +86,17 @@ pub async fn list_exam_rooms(
            GROUP BY er.id, er.room_id, er.custom_name, r.name_th, r.name_en, b.name_th,
                     er.capacity_override, r.capacity, er.display_order
            ORDER BY er.display_order ASC, er.created_at ASC"#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list exam rooms: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to list exam rooms: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
+        })?;
 
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
     let total_assigned: i64 = rooms.iter().map(|r| r.assigned_count).sum();
@@ -97,8 +113,20 @@ pub async fn get_exam_room(
     round_id: Uuid,
     exam_room_id: Uuid,
 ) -> Result<ExamRoomRow, AppError> {
-    sqlx::query_as::<_, ExamRoomRow>(
-        r#"SELECT er.id, er.room_id,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_exam_room").await?;
+    get_exam_room_on_connection(&mut connection, round_id, exam_room_id).await
+}
+
+pub async fn get_exam_room_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+    exam_room_id: Uuid,
+) -> Result<ExamRoomRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<ExamRoomRow>(
+            "admission.services.exam_room_service.get_exam_room_on_connection",
+            r#"SELECT er.id, er.room_id,
                   COALESCE(er.custom_name, r.name_th, r.name_en) AS room_name,
                   b.name_th AS building_name,
                   COALESCE(er.capacity_override, r.capacity, 40)::INT AS capacity,
@@ -111,16 +139,19 @@ pub async fn get_exam_room(
            WHERE er.admission_round_id = $1 AND er.id = $2
            GROUP BY er.id, er.room_id, er.custom_name, r.name_th, r.name_en, b.name_th,
                     er.capacity_override, r.capacity, er.display_order"#,
-    )
-    .bind(round_id)
-    .bind(exam_room_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get exam room: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบห้องสอบ".to_string()))
+        )
+        .bind(round_id)
+        .bind(exam_room_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to get exam room: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบห้องสอบ".to_string()))
 }
 
 pub async fn add_exam_room(
@@ -133,34 +164,47 @@ pub async fn add_exam_room(
 ) -> Result<ExamRoomRow, AppError> {
     validate_exam_room_source(room_id, custom_name.clone())?;
 
-    let max_order: Option<i32> = sqlx::query_scalar(
-        "SELECT MAX(display_order) FROM admission_exam_rooms WHERE admission_round_id = $1",
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.exam_room_service.add_exam_room",
     )
-    .bind(round_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None)
-    .flatten();
+    .await?;
+    let max_order: Option<i32> = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.exam_room_service.add_exam_room",
+            "SELECT MAX(display_order) FROM admission_exam_rooms WHERE admission_round_id = $1",
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await
+        .unwrap_or(None)
+        .flatten();
 
     let display_order = exam_room_display_order(display_order, max_order);
 
-    let exam_room_id = sqlx::query_scalar::<_, Uuid>(
-        r#"INSERT INTO admission_exam_rooms
+    let exam_room_id = DbSession::new(&mut *database_stage_0)
+        .scalar::<Uuid>(
+            "admission.services.exam_room_service.add_exam_room",
+            r#"INSERT INTO admission_exam_rooms
            (admission_round_id, room_id, custom_name, capacity_override, display_order)
            VALUES ($1, $2, $3, $4, $5)
            RETURNING id"#,
-    )
-    .bind(round_id)
-    .bind(room_id)
-    .bind(&custom_name)
-    .bind(capacity_override)
-    .bind(display_order)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to add exam room: {}", e);
-        AppError::InternalServerError("ไม่สามารถเพิ่มห้องสอบได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .bind(room_id)
+        .bind(&custom_name)
+        .bind(capacity_override)
+        .bind(display_order)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to add exam room: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถเพิ่มห้องสอบได้".to_string())
+        })?;
+    drop(database_stage_0);
     get_exam_room(pool, round_id, exam_room_id).await
 }
 
@@ -172,26 +216,37 @@ pub async fn update_exam_room(
     display_order: Option<i32>,
     custom_name: Option<String>,
 ) -> Result<ExamRoomRow, AppError> {
-    let updated_id = sqlx::query_scalar::<_, Uuid>(
-        r#"UPDATE admission_exam_rooms
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.exam_room_service.update_exam_room",
+    )
+    .await?;
+    let updated_id = DbSession::new(&mut *database_stage_0)
+        .scalar::<Uuid>(
+            "admission.services.exam_room_service.update_exam_room",
+            r#"UPDATE admission_exam_rooms
            SET capacity_override = COALESCE($3, capacity_override),
                display_order = COALESCE($4, display_order),
                custom_name = COALESCE($5, custom_name)
            WHERE id = $1 AND admission_round_id = $2
            RETURNING id"#,
-    )
-    .bind(room_id)
-    .bind(round_id)
-    .bind(capacity_override)
-    .bind(display_order)
-    .bind(&custom_name)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to update exam room: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัปเดตห้องสอบได้".to_string())
-    })?;
+        )
+        .bind(room_id)
+        .bind(round_id)
+        .bind(capacity_override)
+        .bind(display_order)
+        .bind(&custom_name)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to update exam room: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถอัปเดตห้องสอบได้".to_string())
+        })?;
     let updated_id = updated_id.ok_or_else(|| AppError::NotFound("ไม่พบห้องสอบ".to_string()))?;
+    drop(database_stage_0);
     get_exam_room(pool, round_id, updated_id).await
 }
 
@@ -200,16 +255,33 @@ pub async fn remove_exam_room(
     round_id: Uuid,
     room_id: Uuid,
 ) -> Result<(), AppError> {
-    let result =
-        sqlx::query("DELETE FROM admission_exam_rooms WHERE id = $1 AND admission_round_id = $2")
-            .bind(room_id)
-            .bind(round_id)
-            .execute(pool)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to remove exam room: {}", e);
-                AppError::InternalServerError("ไม่สามารถลบห้องสอบได้".to_string())
-            })?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.remove_exam_room")
+            .await?;
+    remove_exam_room_on_connection(&mut connection, round_id, room_id).await
+}
+
+pub async fn remove_exam_room_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+    room_id: Uuid,
+) -> Result<(), AppError> {
+    let result = DbSession::new(&mut *connection)
+        .query(
+            "admission.services.exam_room_service.remove_exam_room_on_connection",
+            "DELETE FROM admission_exam_rooms WHERE id = $1 AND admission_round_id = $2",
+        )
+        .bind(room_id)
+        .bind(round_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to remove exam room: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถลบห้องสอบได้".to_string())
+        })?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบห้องสอบ".to_string()));
     }
@@ -221,27 +293,42 @@ pub async fn copy_exam_rooms_from_round(
     round_id: Uuid,
     from_round_id: Uuid,
 ) -> Result<ListExamRoomsResult, AppError> {
-    sqlx::query("DELETE FROM admission_exam_rooms WHERE admission_round_id = $1")
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.exam_room_service.copy_exam_rooms_from_round",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "admission.services.exam_room_service.copy_exam_rooms_from_round",
+            "DELETE FROM admission_exam_rooms WHERE admission_round_id = $1",
+        )
         .bind(round_id)
-        .execute(pool)
+        .execute()
         .await
         .ok();
 
-    sqlx::query(
-        r#"INSERT INTO admission_exam_rooms
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "admission.services.exam_room_service.copy_exam_rooms_from_round",
+            r#"INSERT INTO admission_exam_rooms
            (admission_round_id, room_id, custom_name, capacity_override, display_order)
            SELECT $1, room_id, custom_name, capacity_override, display_order
            FROM admission_exam_rooms WHERE admission_round_id = $2
            ORDER BY display_order ASC"#,
-    )
-    .bind(round_id)
-    .bind(from_round_id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to copy exam rooms: {}", e);
-        AppError::InternalServerError("ไม่สามารถ copy ห้องสอบได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .bind(from_round_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to copy exam rooms: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถ copy ห้องสอบได้".to_string())
+        })?;
+    drop(database_stage_0);
     list_exam_rooms(pool, round_id).await
 }
 
@@ -249,16 +336,33 @@ async fn load_exam_config_storage(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Option<ExamConfigStorage>, AppError> {
-    let config = sqlx::query_scalar::<_, Json<ExamConfigStorage>>(
-        "SELECT COALESCE(exam_config, '{}'::jsonb) FROM admission_rounds WHERE id = $1",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.load_exam_config_storage",
     )
-    .bind(round_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to load exam config: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึง config ได้".to_string())
-    })?;
+    .await?;
+    load_exam_config_storage_on_connection(&mut connection, round_id).await
+}
+
+async fn load_exam_config_storage_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Option<ExamConfigStorage>, AppError> {
+    let config = DbSession::new(&mut *connection)
+        .scalar::<Json<ExamConfigStorage>>(
+            "admission.services.exam_room_service.load_exam_config_storage_on_connection",
+            "SELECT COALESCE(exam_config, '{}'::jsonb) FROM admission_rounds WHERE id = $1",
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to load exam config: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึง config ได้".to_string())
+        })?;
 
     let config = config.map(|Json(config)| config);
     Ok(config)
@@ -285,13 +389,25 @@ pub async fn update_exam_config(
         config.sort_order = Some(value);
     }
 
-    sqlx::query("UPDATE admission_rounds SET exam_config = $2 WHERE id = $1")
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.exam_room_service.update_exam_config",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "admission.services.exam_room_service.update_exam_config",
+            "UPDATE admission_rounds SET exam_config = $2 WHERE id = $1",
+        )
         .bind(round_id)
         .bind(Json(config))
-        .execute(pool)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to update exam config: {}", e);
+            tracing::error!(
+                "Failed to update exam config: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถอัปเดต config ได้".to_string())
         })?;
     Ok(())
@@ -339,24 +455,29 @@ async fn insert_exam_seat_assignments(
         .map(|(_, _, _, exam_id)| exam_id.clone())
         .collect();
 
-    sqlx::query(
-        r#"INSERT INTO admission_exam_seat_assignments
+    DbSession::new(&mut **tx)
+        .query(
+            "admission.services.exam_room_service.insert_exam_seat_assignments",
+            r#"INSERT INTO admission_exam_seat_assignments
            (application_id, exam_room_id, seat_number, exam_id, assigned_by)
            SELECT application_id, exam_room_id, seat_number, exam_id, $5
            FROM UNNEST($1::uuid[], $2::uuid[], $3::int4[], $4::text[])
                 AS t(application_id, exam_room_id, seat_number, exam_id)"#,
-    )
-    .bind(&application_ids)
-    .bind(&room_ids)
-    .bind(&seat_numbers)
-    .bind(&exam_ids)
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to insert seat assignments: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
-    })?;
+        )
+        .bind(&application_ids)
+        .bind(&room_ids)
+        .bind(&seat_numbers)
+        .bind(&exam_ids)
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to insert seat assignments: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกที่นั่งสอบได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -400,12 +521,24 @@ pub async fn assign_exam_seats(
         order_clause
     );
 
-    let applicants = sqlx::query_as::<_, AppRow>(sqlx::AssertSqlSafe(query))
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.exam_room_service.assign_exam_seats",
+    )
+    .await?;
+    let applicants = DbSession::new(&mut *database_stage_0)
+        .query_as::<AppRow>(
+            "admission.services.exam_room_service.assign_exam_seats",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(round_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to fetch applicants: {}", e);
+            tracing::error!(
+                "Failed to fetch applicants: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้สมัครได้".to_string())
         })?;
 
@@ -420,22 +553,27 @@ pub async fn assign_exam_seats(
         capacity: i32,
     }
 
-    let rooms = sqlx::query_as::<_, RoomCapRow>(
-        r#"SELECT er.id,
+    let rooms = DbSession::new(&mut *database_stage_0)
+        .query_as::<RoomCapRow>(
+            "admission.services.exam_room_service.assign_exam_seats",
+            r#"SELECT er.id,
                   COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
                   COALESCE(er.capacity_override, r.capacity, 40)::INT AS capacity
            FROM admission_exam_rooms er
            LEFT JOIN rooms r ON r.id = er.room_id
            WHERE er.admission_round_id = $1
            ORDER BY er.display_order ASC, er.created_at ASC"#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to fetch exam rooms: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to fetch exam rooms: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลห้องสอบได้".to_string())
+        })?;
 
     if rooms.is_empty() {
         return Err(AppError::BadRequest(
@@ -452,12 +590,12 @@ pub async fn assign_exam_seats(
             exam_room_id: Uuid,
         }
 
-        let existing: Vec<ExistingRow> = sqlx::query_as(
+        let existing: Vec<ExistingRow> = DbSession::new(&mut *database_stage_0).query_as("admission.services.exam_room_service.assign_exam_seats",
             r#"SELECT application_id, exam_room_id
                FROM admission_exam_seat_assignments
                WHERE exam_room_id IN (SELECT id FROM admission_exam_rooms WHERE admission_round_id = $1)"#
         )
-        .bind(round_id).fetch_all(pool).await
+        .bind(round_id).fetch_all().await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งเดิมได้".to_string()))?;
 
         let existing_app_ids: std::collections::HashSet<Uuid> =
@@ -536,10 +674,13 @@ pub async fn assign_exam_seats(
             new_assignments.push((app.id, current_room.id, seat_in_room, exam_id));
         }
 
-        let mut tx = pool
-            .begin()
-            .await
-            .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
+        drop(database_stage_0);
+        let mut tx = school_tenancy::TenantPool::begin_observed(
+            &pool,
+            "admission.exam_room_service.assign_exam_seats",
+        )
+        .await
+        .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
         insert_exam_seat_assignments(&mut tx, &new_assignments, user_id).await?;
         tx.commit()
             .await
@@ -619,16 +760,19 @@ pub async fn assign_exam_seats(
         assignments.push((app.id, current_room.id, seat_in_room, exam_id));
     }
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
+    drop(database_stage_0);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.exam_room_service.assign_exam_seats",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction error".to_string()))?;
 
-    sqlx::query(
+    DbSession::new(&mut *tx).query("admission.services.exam_room_service.assign_exam_seats",
         r#"DELETE FROM admission_exam_seat_assignments
            WHERE exam_room_id IN (SELECT id FROM admission_exam_rooms WHERE admission_round_id = $1)"#
     )
-    .bind(round_id).execute(&mut *tx).await
+    .bind(round_id).execute().await
     .map_err(|_| AppError::InternalServerError("ไม่สามารถล้างข้อมูลเดิมได้".to_string()))?;
 
     insert_exam_seat_assignments(&mut tx, &assignments, user_id).await?;
@@ -697,8 +841,20 @@ fn pii_error(context: &str, error: String) -> AppError {
 }
 
 pub async fn get_exam_seats(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomGroup>, AppError> {
-    let mut rows = sqlx::query_as::<_, SeatRow>(
-        r#"SELECT
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_exam_seats")
+            .await?;
+    get_exam_seats_on_connection(&mut connection, round_id).await
+}
+
+pub async fn get_exam_seats_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<RoomGroup>, AppError> {
+    let mut rows = DbSession::new(&mut *connection)
+        .query_as::<SeatRow>(
+            "admission.services.exam_room_service.get_exam_seats_on_connection",
+            r#"SELECT
             er.id AS exam_room_id,
             COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
             b.name_th AS building_name,
@@ -715,14 +871,17 @@ pub async fn get_exam_seats(pool: &PgPool, round_id: Uuid) -> Result<Vec<RoomGro
            LEFT JOIN buildings b ON b.id = r.building_id
            WHERE er.admission_round_id = $1
            ORDER BY er.display_order ASC, er.created_at ASC, sa.seat_number ASC"#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to fetch exam seats: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งสอบได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to fetch exam seats: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลที่นั่งสอบได้".to_string())
+        })?;
 
     for row in &mut rows {
         row.national_id = pii::decrypt_required(&row.national_id)
@@ -762,8 +921,22 @@ pub async fn get_application_exam_seat(
     pool: &PgPool,
     application_id: Uuid,
 ) -> Result<Option<ExamSeatDetail>, AppError> {
-    sqlx::query_as::<_, ExamSeatDetail>(
-        r#"SELECT sa.seat_number, sa.exam_id,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.get_application_exam_seat",
+    )
+    .await?;
+    get_application_exam_seat_on_connection(&mut connection, application_id).await
+}
+
+pub async fn get_application_exam_seat_on_connection(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+) -> Result<Option<ExamSeatDetail>, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<ExamSeatDetail>(
+            "admission.services.exam_room_service.get_application_exam_seat_on_connection",
+            r#"SELECT sa.seat_number, sa.exam_id,
                   COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
                   b.name_th AS building_name, ar.exam_date
            FROM admission_exam_seat_assignments sa
@@ -772,11 +945,11 @@ pub async fn get_application_exam_seat(
            LEFT JOIN rooms r ON r.id = er.room_id
            LEFT JOIN buildings b ON b.id = r.building_id
            WHERE sa.application_id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+        )
+        .bind(application_id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))
 }
 
 fn validate_exam_room_source(

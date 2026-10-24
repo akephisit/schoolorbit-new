@@ -22,24 +22,35 @@ pub async fn get_own_parent_profile(
 ) -> Result<ParentProfile, AppError> {
     ensure_parent_user(pool, parent_id).await?;
 
-    let mut parent = sqlx::query_as::<_, ParentDbRow>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.services.get_own_parent_profile",
+    )
+    .await?;
+    let mut parent = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as::<ParentDbRow>(
+            "students.parents.services.get_own_parent_profile",
+            r#"
         SELECT
             id, username, first_name, last_name, title, phone, email, national_id
         FROM users
         WHERE id = $1 AND status = 'active'
         "#,
-    )
-    .bind(parent_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get parent profile: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
-    })?
-    .ok_or(AppError::NotFound("Parent not found".to_string()))?;
+        )
+        .bind(parent_id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to get parent profile: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
+        })?
+        .ok_or(AppError::NotFound("Parent not found".to_string()))?;
 
     decrypt_parent_fields(&mut parent);
+    drop(database_stage_0);
     let children = list_children(pool, parent_id, academic_year_id).await?;
 
     Ok(ParentProfile {
@@ -64,7 +75,12 @@ pub async fn get_child_profile(
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
-    let mut student_row = sqlx::query_as::<_, StudentDbRow>(
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.services.get_child_profile",
+    )
+    .await?;
+    let mut student_row = school_database::DbSession::new(&mut *database_stage_0).query_as::<StudentDbRow>("students.parents.services.get_child_profile",
         r#"
         SELECT
             u.id, u.username, u.national_id, u.email, u.first_name, u.last_name,
@@ -99,15 +115,16 @@ pub async fn get_child_profile(
     )
     .bind(student_id)
     .bind(academic_year_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|e| {
-        tracing::error!("Failed to get child profile: {}", e);
+        tracing::error!("Failed to get child profile: {}", school_database::error_class(&e));
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูลนักเรียน".to_string())
     })?
     .ok_or(AppError::NotFound("Student not found".to_string()))?;
 
     decrypt_child_student_fields(&mut student_row);
+    drop(database_stage_0);
     let parents = list_student_parents(pool, student_id).await?;
 
     Ok(StudentProfile {
@@ -183,12 +200,29 @@ pub async fn get_child_calendar_events(
 }
 
 async fn ensure_parent_user(pool: &PgPool, parent_id: Uuid) -> Result<(), AppError> {
-    let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.ensure_parent_user")
+            .await?;
+    ensure_parent_user_on_connection(&mut connection, parent_id).await
+}
+
+async fn ensure_parent_user_on_connection(
+    connection: &mut sqlx::PgConnection,
+    parent_id: Uuid,
+) -> Result<(), AppError> {
+    let user_type: Option<String> = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "students.parents.services.ensure_parent_user_on_connection",
+            "SELECT user_type FROM users WHERE id = $1",
+        )
         .bind(parent_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to load parent user type: {}", e);
+            tracing::error!(
+                "Failed to load parent user type: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ใช้ได้".to_string())
         })?;
 
@@ -200,8 +234,23 @@ async fn ensure_parent_student_link(
     parent_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), AppError> {
-    let is_linked: bool = sqlx::query_scalar(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.ensure_parent_student_link",
+    )
+    .await?;
+    ensure_parent_student_link_on_connection(&mut connection, parent_id, student_id).await
+}
+
+async fn ensure_parent_student_link_on_connection(
+    connection: &mut sqlx::PgConnection,
+    parent_id: Uuid,
+    student_id: Uuid,
+) -> Result<(), AppError> {
+    let is_linked: bool = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "students.parents.services.ensure_parent_student_link_on_connection",
+            r#"
         SELECT EXISTS(
             SELECT 1
             FROM student_parents
@@ -212,15 +261,18 @@ async fn ensure_parent_student_link(
               AND u.status = 'active'
         )
         "#,
-    )
-    .bind(parent_id)
-    .bind(student_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Parent-child link check failed: {}", e);
-        AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
-    })?;
+        )
+        .bind(parent_id)
+        .bind(student_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Parent-child link check failed: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ตรวจสอบสิทธิ์ผิดพลาด".to_string())
+        })?;
 
     if !is_linked {
         return Err(AppError::Forbidden(
@@ -236,8 +288,20 @@ async fn list_children(
     parent_id: Uuid,
     academic_year_id: Uuid,
 ) -> Result<Vec<ChildDto>, AppError> {
-    sqlx::query_as::<_, ChildDto>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.list_children").await?;
+    list_children_on_connection(&mut connection, parent_id, academic_year_id).await
+}
+
+async fn list_children_on_connection(
+    connection: &mut sqlx::PgConnection,
+    parent_id: Uuid,
+    academic_year_id: Uuid,
+) -> Result<Vec<ChildDto>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<ChildDto>(
+            "students.parents.services.list_children_on_connection",
+            r#"
         SELECT
             u.id, u.first_name, u.last_name, u.profile_image_file_id,
             si.student_id,
@@ -268,20 +332,35 @@ async fn list_children(
         WHERE sp.parent_user_id = $1 AND u.status = 'active'
         ORDER BY u.first_name ASC
         "#,
-    )
-    .bind(parent_id)
-    .bind(academic_year_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list parent children: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลบุตรหลานได้".to_string())
-    })
+        )
+        .bind(parent_id)
+        .bind(academic_year_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to list parent children: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลบุตรหลานได้".to_string())
+        })
 }
 
 async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<ParentDto>, AppError> {
-    sqlx::query_as::<_, ParentDto>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "students.list_student_parents")
+            .await?;
+    list_student_parents_on_connection(&mut connection, student_id).await
+}
+
+async fn list_student_parents_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_id: Uuid,
+) -> Result<Vec<ParentDto>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<ParentDto>(
+            "students.parents.services.list_student_parents_on_connection",
+            r#"
         SELECT
             u.id, u.username, u.first_name, u.last_name, u.phone,
             sp.relationship, sp.is_primary
@@ -289,14 +368,17 @@ async fn list_student_parents(pool: &PgPool, student_id: Uuid) -> Result<Vec<Par
         INNER JOIN users u ON sp.parent_user_id = u.id
         WHERE sp.student_user_id = $1
         "#,
-    )
-    .bind(student_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to list child parents: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
-    })
+        )
+        .bind(student_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to list child parents: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลผู้ปกครองได้".to_string())
+        })
 }
 
 fn decrypt_parent_fields(parent: &mut ParentDbRow) {

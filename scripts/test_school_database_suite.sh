@@ -61,8 +61,19 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 ./scripts/test_backend_school.sh --package school-authorization --lib -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-tenancy --lib -- --test-threads=4
 
+# Actual bound-session, managed admission and policy regressions require the owned server.
+./scripts/test_backend_school.sh integration_tests::database -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::notification_dispatch -- --test-threads=4
+./scripts/test_backend_school.sh services::cleaner::phase_tests -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::policies -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::services -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::gradebook -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::learner_evaluation -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::results -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::certificates -- --test-threads=4
+
 # Domain transport moves retain every affected provider and cross-domain boundary fixture.
-for package in school-test-db school-academic-core school-file-platform school-students school-staff school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-administration school-files-http; do
+for package in school-test-db school-academic-core school-academic-delivery school-academic-timetable school-academic-assessment school-academic-results school-academic-lifecycle school-budget school-student-care school-certificates school-file-platform school-students school-staff school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-administration school-files-http; do
     ./scripts/test_backend_school.sh --package "$package" -- --test-threads=4
 done
 for domain in students staff calendar supervision admission question_bank; do

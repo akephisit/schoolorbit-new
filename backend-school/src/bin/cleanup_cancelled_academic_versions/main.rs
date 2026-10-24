@@ -1,8 +1,19 @@
 use school_tenancy::{get_school_database_info, AdminClient, AdminClientConfig};
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions,
+};
 use std::{env, error::Error};
 use uuid::Uuid;
 mod cleanup;
+
+fn database_failure(error: sqlx::Error) -> Box<dyn Error + Send + Sync> {
+    format!(
+        "Database operation failed: {}",
+        school_database::error_class(&error)
+    )
+    .into()
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -26,8 +37,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     let pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(&school.database_url)
+        .connect_with(
+            school
+                .database_url
+                .parse::<PgConnectOptions>()
+                .map_err(database_failure)?
+                .disable_statement_logging(),
+        )
         .await
+        .map_err(database_failure)
         .map_err(|_| "Cannot connect to authorized school")?;
     let actor = school_authorization::load_actor_context(
         actor_id,
@@ -35,9 +53,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         &pool,
         &school_authorization::PermissionCache::new(),
     )
-    .await?;
+    .await
+    .map_err(|error| error.to_string())?;
     let hash = env::var("ACADEMIC_CLEANUP_PREVIEW_HASH").ok();
-    let report = cleanup::cleanup(&pool, &actor, year, term, hash.as_deref()).await?;
+    let report = cleanup::cleanup(&pool, &actor, year, term, hash.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
     println!("{}", serde_json::to_string(&report)?);
     pool.close().await;
     Ok(())

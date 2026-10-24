@@ -75,8 +75,22 @@ async fn student_resource_target(
     pool: &PgPool,
     target_user_id: Uuid,
 ) -> Result<ResourceAccessTarget, AppError> {
-    let assigned_user_ids = sqlx::query_scalar(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "students.student_resource_target",
+    )
+    .await?;
+    student_resource_target_on_connection(&mut connection, target_user_id).await
+}
+
+async fn student_resource_target_on_connection(
+    connection: &mut sqlx::PgConnection,
+    target_user_id: Uuid,
+) -> Result<ResourceAccessTarget, AppError> {
+    let assigned_user_ids = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "students.src.access_policy.student_resource_target_on_connection",
+            r#"
         SELECT DISTINCT advisor.user_id
         FROM student_academic_years student_year
         JOIN homeroom_placements placement
@@ -86,14 +100,17 @@ async fn student_resource_target(
         WHERE student_year.student_id = $1
           AND student_year.status = 'active'
         "#,
-    )
-    .bind(target_user_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load assigned student advisors: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้รับผิดชอบนักเรียนได้".to_string())
-    })?;
+        )
+        .bind(target_user_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load assigned student advisors: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบผู้รับผิดชอบนักเรียนได้".to_string())
+        })?;
 
     Ok(ResourceAccessTarget {
         owner_user_id: Some(target_user_id),

@@ -4242,7 +4242,7 @@ async fn attendance_report_snapshot_allows_reports_and_first_save_without_mixed_
     let mode: (String, String) = sqlx::query_as(
         "SELECT current_setting('transaction_isolation'),current_setting('transaction_read_only')",
     )
-    .fetch_one(&mut *snapshot)
+    .fetch_one(&mut **snapshot)
     .await
     .unwrap();
     assert_eq!(mode, ("repeatable read".into(), "on".into()));
@@ -4323,7 +4323,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4342,7 +4342,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4393,7 +4393,7 @@ async fn attendance_report_snapshot_blocks_reset_purge_and_lifecycle_until_relea
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *snapshot)
+        .fetch_one(&mut **snapshot)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4455,7 +4455,7 @@ async fn attendance_report_snapshot_queued_behind_reset_keeps_transaction_start_
         .await
         .unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *reset_tx)
+        .fetch_one(&mut **reset_tx)
         .await
         .unwrap();
     let pool = f.pool.clone();
@@ -4656,7 +4656,7 @@ async fn attendance_history_snapshot_queued_behind_reset_keeps_transaction_start
         .await
         .unwrap();
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *reset_tx)
+        .fetch_one(&mut **reset_tx)
         .await
         .unwrap();
     let pool = f.pool.clone();

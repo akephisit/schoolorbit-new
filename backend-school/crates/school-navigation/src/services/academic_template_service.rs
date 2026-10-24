@@ -133,7 +133,11 @@ struct RevisionSnapshot<'a> {
 pub async fn preview_academic_template(
     pool: &PgPool,
 ) -> Result<AcademicMenuTemplatePreview, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        &pool,
+        "navigation.academic_template_service.preview_academic_template",
+    )
+    .await?;
     build_preview(&mut connection, false).await
 }
 

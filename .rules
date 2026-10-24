@@ -407,6 +407,23 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   completion/cancellation status and safe error categories. Never record SQL, binds,
   raw database errors, URLs, credentials or personal data. Domain context logs may
   use the provider's `error_class`; preserve original errors for normal typed mapping.
+- Resolve control-plane metadata before shared background database admission. Use
+  tenancy's opaque validated work snapshots; validate the current cache value revision,
+  expiry, fence and expected UUID before and after physical pool acquisition. Do not
+  refetch HTTP under a database permit or silently retry a stale proof. Preserve the
+  original whole-phase/item deadline across resolution, admission, pool wait and SQL;
+  this local proof does not replace domain transaction/source/lease fences.
+- Resource work entries choose observed checkout or owned `ObservedTransaction`
+  explicitly. Connection/transaction helpers accept that existing connection and
+  never acquire another pool connection. A pool-carrying repository factory may be
+  constructed under a transaction only when construction performs no checkout and
+  the called operation uses the borrowed transaction. Pure authorization/cache hits,
+  empty inputs and validation failures must retain their original database-free path.
+- Query duration measures the client await (driver/network/decoding included), not
+  server execution time. Cancellation observations describe client future lifetime;
+  they do not assert that PostgreSQL has already cancelled a statement. Transaction
+  `begin_wait_us` includes acquisition and `BEGIN`; physical-budget admission,
+  background admission, checkout and hold are distinct resource observations.
 
 ### Request context and architecture
 

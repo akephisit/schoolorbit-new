@@ -13,3 +13,5 @@ pub mod staff;
 pub mod students;
 pub mod supervision;
 pub mod supply_catalog;
+
+pub(crate) mod tenant_directory;

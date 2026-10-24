@@ -61,11 +61,14 @@ pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
         return Ok(());
     }
     let changes = {
-        let mut connection = pool.acquire().await?;
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(&pool, "school.behavior.run")
+                .await?;
         score_changes::pending_on_connection(&mut connection, 20).await?
     };
     for change in changes {
-        let mut transaction = pool.begin().await?;
+        let mut transaction =
+            school_tenancy::TenantPool::begin_observed(&pool, "school.behavior.run").await?;
         // Module -> academic lifecycle -> Attendance term -> Behavior. Never take
         // an Attendance lock after the Behavior lock held by the consumer.
         school_attendance::services::lock_term(
@@ -116,7 +119,8 @@ pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
     let today = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "school.behavior.run").await?;
     school_attendance::services::lock_module_exclusive(&mut transaction).await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut transaction)
         .await?;
@@ -151,7 +155,8 @@ pub(crate) async fn reset_scores(
     actor: uuid::Uuid,
     payload: school_behavior::models::ResetBehaviorScores,
 ) -> Result<school_behavior::models::BehaviorCleanupOutcome, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "school.behavior.reset_scores").await?;
     school_attendance::services::lock_module_exclusive(&mut transaction).await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut transaction)
         .await?;

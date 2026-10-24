@@ -28,3 +28,40 @@ The API preserves SQLx 0.9 `SqlSafeStr`, `Type`, `Encode`, `FromRow`, typed bind
 `school-tenancy` remains the connection/pool/logical-lease and background-admission owner. An observed checked-out guard retains both its SQLx connection and originating logical lease, measures acquire/hold, and lends a connection to `DbSession`. `school-database` depends only on SQLx and tracing, with no tenancy, error, migration or domain backedges. This crate is justified by the concrete connection-bound execution contract shared by workspace consumers; no generic business repository or transaction manager is introduced.
 
 Implementation begins with a compiled public API probe and focused type/cancellation/rollback/trace regressions before migrating production consumers. Existing one-connection Attendance and Calendar regressions will exercise the new API. QA recorded the unchanged 6943dd5d warm workspace baseline at 0.59 seconds; this is a same-environment comparison input, not a speedup claim. New membership/dependency edges are captured through Cargo without version upgrades, and the same toolchain/cache/build concurrency is used for the after check. Root disposable integration fixtures avoid a development dependency cycle through test-db, migrations and this new lower owner.
+
+
+Owned pool transactions use `ObservedTransaction`, retaining the origin lease before
+beginning and measuring the combined checkout/BEGIN wait plus the owned hold. Explicit
+consuming commit/rollback releases transaction ownership without a borrowed checkout
+surviving it. Pool adapters are declared work entries; helpers reuse a connection or
+borrowed transaction. Pure cache/direct-grant/denied/empty/validation paths stay before
+checkout. Repository construction under a borrowed transaction is permitted only as
+an inert factory, with all operation database effects using that transaction.
+
+The tracked syntax guard scans production module graphs in default and api-docs
+configurations, including negative feature gates and supported async join macros.
+It rejects executor-bearing native execution, hidden opaque database macros, native
+pool entry outside exact infrastructure/bootstrap functions, and pool helper calls
+while an observed connection/transaction is live. Schema identity/history/privilege
+setup has function-scoped exceptions; permission synchronization uses `DbSession`
+with a cycle-required native transaction boundary. Query observations are client-await
+durations and cancellation lifetimes, not server execution/cancellation guarantees.
+
+
+Control-plane resolution is outside shared database admission. Notification and Cleaner
+phases use opaque `ResolvedTenantDatabase` proofs issued from one current cache value
+and its revision/expiry atomically. Every successful fill changes the value revision,
+including same-UUID credential rotation. Admission uses local proof validation before
+and after the nonmigrating physical pool acquisition; an expired, evicted or fenced
+proof defers without an HTTP fallback or implicit query retry. Original whole-phase and
+whole-item deadlines include resolution and all admission/pool/SQL waits. Logical
+same-key exclusion survives external I/O while DB permits and leases are released.
+The post-acquisition proof closes the queued stale-work window without claiming atomic
+serialization between directory mutations and later SQL. Domain fences remain intact.
+
+Managed disposable regressions exercise slow loopback Admin HTTP and actual other-kind
+SQL with a sole shared permit, cancellation without mutation, queued UUID/credential
+proof invalidation before endpoint cleanup/ack or file metadata finish, TTL/eviction,
+and a real physical capacity wait followed by revision invalidation. Fixed safe phase
+observations coordinate these tests; the actual production resolver/phase/completion
+algorithm runs unchanged. Test-only cache capacity/TTL configuration is feature-gated.

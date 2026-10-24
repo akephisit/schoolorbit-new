@@ -290,7 +290,9 @@ pub async fn approve_request(
     payload: UpsertCalendarEventRequest,
 ) -> Result<CalendarRequestApproval, AppError> {
     require_request_access(actor, true)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.requests.approve_request")
+            .await?;
     let status: Option<CalendarRequestStatus> = school_database::DbSession::new(&mut *tx)
         .scalar(
             "calendar.src.requests.approve_request",
@@ -321,7 +323,9 @@ pub async fn reject_request(
     if reason.is_empty() || reason.chars().count() > 2000 {
         return Err(AppError::BadRequest("กรุณาระบุเหตุผลไม่เกิน 2000 ตัวอักษร".into()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.requests.reject_request")
+            .await?;
     let status = school_database::DbSession::new(&mut *tx)
         .scalar(
             "calendar.src.requests.reject_request",

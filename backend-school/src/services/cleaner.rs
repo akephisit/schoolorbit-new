@@ -61,8 +61,16 @@ impl FileCleaner {
 }
 
 async fn request_expired_file_deletions(repository: &SqlFileRepository) -> usize {
-    let file_ids = match sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let listed = async {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            repository.pool(),
+            "file_cleaner.expired_rows",
+        )
+        .await?;
+        school_database::DbSession::new(&mut connection)
+            .scalar::<Uuid>(
+                "file_cleaner.expired_rows",
+                r#"
 SELECT id
 FROM files
 WHERE retention_class = 'temporary'
@@ -72,11 +80,13 @@ WHERE retention_class = 'temporary'
 ORDER BY expires_at, id
 LIMIT $1
 "#,
-    )
-    .bind(EXPIRY_BATCH_SIZE)
-    .fetch_all(repository.pool())
-    .await
-    {
+            )
+            .bind(EXPIRY_BATCH_SIZE)
+            .fetch_all()
+            .await
+    }
+    .await;
+    let file_ids = match listed {
         Ok(file_ids) => file_ids,
         Err(_) => {
             warn!("Expired File Platform rows could not be listed");
@@ -106,48 +116,68 @@ enum FileDatabase<'a> {
     Unmanaged(&'a PgPool),
 }
 impl FileDatabase<'_> {
-    async fn pool(&self, tenant: &str, expected: Option<Uuid>) -> Result<(Uuid, TenantPool), ()> {
+    async fn resolve(
+        &self,
+        tenant: &str,
+    ) -> Result<Option<school_tenancy::ResolvedTenantDatabase>, ()> {
         match self {
-            Self::Managed { admin, pools } => resolve_pool(admin, pools, tenant, expected).await,
+            Self::Managed { admin, .. } => admin
+                .resolve_database_work(tenant)
+                .await
+                .map(Some)
+                .map_err(|_| ()),
+            #[cfg(test)]
+            Self::Unmanaged(_) => Ok(None),
+        }
+    }
+    async fn pool(
+        &self,
+        resolved: Option<&school_tenancy::ResolvedTenantDatabase>,
+        expected: Option<Uuid>,
+    ) -> Result<(Uuid, TenantPool), ()> {
+        match self {
+            Self::Managed { admin, pools } => admin
+                .pool_for_resolved_work(pools, resolved.ok_or(())?, expected)
+                .await
+                .map_err(|_| ()),
             #[cfg(test)]
             Self::Unmanaged(pool) => Ok((Uuid::nil(), (*pool).clone().into())),
         }
     }
 }
 
-async fn resolve_pool(
-    admin: &AdminClient,
-    pools: &PoolManager,
+async fn database_phase<T, F, Fut>(
+    access: &FileDatabase<'_>,
     tenant: &str,
     expected: Option<Uuid>,
-) -> Result<(Uuid, TenantPool), ()> {
-    let school = admin
-        .get_school_database_info(tenant)
-        .await
-        .map_err(|_| ())?;
-    if expected.is_some_and(|id| id != school.tenant_id) {
-        return Err(());
-    }
-    let pool = pools
-        .get_pool_without_migrations(&school.database_url, tenant)
-        .await
-        .map_err(|_| ())?;
-    Ok((school.tenant_id, pool))
-}
-
-async fn database_phase<T, F, Fut>(
     turn: &TenantTurn<'_>,
     timeout: Duration,
+    phase_name: &'static str,
     phase: F,
 ) -> Result<T, ()>
 where
-    F: FnOnce() -> Fut,
+    F: FnOnce(Uuid, TenantPool, Instant) -> Fut,
     Fut: std::future::Future<Output = Result<T, ()>>,
 {
-    tokio::time::timeout(timeout, turn.run(phase))
+    // This one deadline includes control-plane resolution, shared admission,
+    // physical pool admission and SQL. Resolution never occupies a DB permit.
+    tokio::time::timeout(timeout, async {
+        let resolved = access.resolve(tenant).await?;
+        tracing::debug!(
+            operation = "file_database_phase",
+            phase = phase_name,
+            "Tenant database work resolved"
+        );
+        turn.run(|| async {
+            let admitted_at = Instant::now();
+            let (id, pool) = access.pool(resolved.as_ref(), expected).await?;
+            phase(id, pool, admitted_at).await
+        })
         .await
-        .map_err(|_| ())?
         .ok_or(())?
+    })
+    .await
+    .map_err(|_| ())?
 }
 
 /// A bounded batch; only owned operation data crosses the provider-I/O boundary.
@@ -161,63 +191,91 @@ async fn reconcile_tenant_batch(
 ) -> Result<(bool, Instant), ()> {
     let config = platform.runtime_config();
     let phase_timeout = (config.reconciliation_lease / 4).min(Duration::from_secs(5));
-    let (tenant_id, expired, started) = database_phase(turn, phase_timeout, || async {
-        let started = started.unwrap_or_else(Instant::now);
-        let (id, pool) = access.pool(tenant, None).await?;
-        let repository = SqlFileRepository::new(pool.as_ref().clone());
-        Ok::<_, ()>((
-            id,
-            request_expired_file_deletions(&repository).await,
-            started,
-        ))
-    })
+    let (tenant_id, expired, started) = database_phase(
+        access,
+        tenant,
+        None,
+        turn,
+        phase_timeout,
+        "expire",
+        |id, pool, admitted_at| async move {
+            let started = started.unwrap_or(admitted_at);
+            let repository = SqlFileRepository::new(pool.as_ref().clone());
+            Ok::<_, ()>((
+                id,
+                request_expired_file_deletions(&repository).await,
+                started,
+            ))
+        },
+    )
     .await?;
     let mut leased = 0;
     for _ in 0..config.reconciliation_batch_size {
         // Lease immediately before this item's external work, rather than aging
         // later items in a sequential batch while the first provider is slow.
-        let operation = database_phase(turn, phase_timeout, || async {
-            let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-            let repository = SqlFileRepository::new(pool.as_ref().clone());
-            repository
-                .lease_due_operations(worker, config.reconciliation_lease, 1)
-                .await
-                .map(|mut work| work.pop())
-                .map_err(|_| ())
-        })
+        let operation = database_phase(
+            access,
+            tenant,
+            Some(tenant_id),
+            turn,
+            phase_timeout,
+            "claim",
+            |_, pool, _| async move {
+                let repository = SqlFileRepository::new(pool.as_ref().clone());
+                repository
+                    .lease_due_operations(worker, config.reconciliation_lease, 1)
+                    .await
+                    .map(|mut work| work.pop())
+                    .map_err(|_| ())
+            },
+        )
         .await?;
         let Some(operation) = operation else {
             break;
         };
         leased += 1;
         let result = perform_leased_operation(platform, &operation).await;
-        database_phase(turn, phase_timeout, || async {
-            let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-            let repository = SqlFileRepository::new(pool.as_ref().clone());
-            match repository.finish_leased_operation(&operation, result).await {
-                Ok(()) | Err(RepositoryError::LeaseLost) => Ok(()),
-                Err(error) => {
-                    warn!(
-                        error_code = error.log_safe_code(),
-                        "File reconciliation completion fenced or deferred"
-                    );
-                    Err(())
+        database_phase(
+            access,
+            tenant,
+            Some(tenant_id),
+            turn,
+            phase_timeout,
+            "finish",
+            |_, pool, _| async move {
+                let repository = SqlFileRepository::new(pool.as_ref().clone());
+                match repository.finish_leased_operation(&operation, result).await {
+                    Ok(()) | Err(RepositoryError::LeaseLost) => Ok(()),
+                    Err(error) => {
+                        warn!(
+                            error_code = error.log_safe_code(),
+                            "File reconciliation completion fenced or deferred"
+                        );
+                        Err(())
+                    }
                 }
-            }
-        })
+            },
+        )
         .await?;
         // Finish the current external operation, then yield before another claim.
         if started.elapsed() >= RECONCILIATION_BUDGET {
             return Ok((true, started));
         }
     }
-    database_phase(turn, phase_timeout, || async {
-        let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-        purge_service::reconcile_pending_purges(&pool)
-            .await
-            .map_err(|_| ())?;
-        Ok::<_, ()>(())
-    })
+    database_phase(
+        access,
+        tenant,
+        Some(tenant_id),
+        turn,
+        phase_timeout,
+        "purge",
+        |_, pool, _| async move {
+            purge_service::reconcile_pending_purges(&pool)
+                .await
+                .map_err(|_| ())?;
+            Ok::<_, ()>(())
+        },
+    )
     .await?;
     Ok((
         expired == EXPIRY_BATCH_SIZE as usize
@@ -512,5 +570,172 @@ mod phase_tests {
             Some(1)
         );
         blocker.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn managed_slow_admin_http_allows_other_kind_sql_and_cancels_without_file_mutation() {
+        use crate::integration_tests::tenant_directory::{database_url, DirectoryServer};
+        use school_tenancy::PoolManagerConfig;
+        let fixture = fixture("cleaner_slow_admin", 1).await;
+        let url = database_url(&fixture).await;
+        let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), true).await;
+        let admin = directory.client(2, Duration::from_secs(30));
+        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+            2, 1, 1,
+        )));
+        let (provider, _) = platform(false);
+        let platform = Arc::new(FilePlatform::with_config(
+            provider,
+            Arc::new(Scanner),
+            FilePlatformRuntimeConfig {
+                reconciliation_lease: Duration::from_secs(20),
+                reconciliation_batch_size: 1,
+                ..FilePlatformRuntimeConfig::default()
+            },
+        ));
+        let (worker_manager, worker_admin) = (manager.clone(), admin.clone());
+        let worker = tokio::spawn(async move {
+            let turns = worker_manager.background_turns();
+            let turn = turns
+                .begin("cleaner_slow_admin", TenantJobKind::FileReconciliation)
+                .unwrap();
+            reconcile_tenant_batch(
+                &FileDatabase::Managed {
+                    admin: &worker_admin,
+                    pools: &worker_manager,
+                },
+                &platform,
+                "cleaner_slow_admin",
+                "worker",
+                &turn,
+                None,
+            )
+            .await
+        });
+        directory.wait_for_request().await;
+        let turns = manager.background_turns();
+        assert_eq!(turns.limit(), 1);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            turns.run("healthy", TenantJobKind::AuthRetention, || async {
+                let pool = manager
+                    .get_pool_without_migrations(url.as_str(), "healthy")
+                    .await
+                    .unwrap();
+                let mut connection = pool
+                    .checkout("fixture.cleaner_admin_other_kind")
+                    .await
+                    .unwrap();
+                school_database::DbSession::new(&mut connection)
+                    .scalar::<i32>("fixture.cleaner_admin_other_kind", "SELECT 1")
+                    .fetch_one()
+                    .await
+                    .unwrap()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, Some(1));
+        assert!(!worker.is_finished());
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        directory.unblock();
+        assert!(turns
+            .begin("cleaner_slow_admin", TenantJobKind::FileReconciliation)
+            .is_some());
+        let (ready, operations): (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM files WHERE lifecycle_status='ready'),(SELECT count(*) FROM file_operations)").fetch_one(&fixture).await.unwrap();
+        assert_eq!((ready, operations), (1, 0));
+        assert_eq!(directory.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn managed_queued_finish_same_uuid_rotation_defers_file_metadata_without_http_retry() {
+        use crate::integration_tests::tenant_directory::{
+            database_url, DirectoryServer, PhaseSignals,
+        };
+        use school_tenancy::PoolManagerConfig;
+        use tracing::instrument::WithSubscriber;
+        let fixture = fixture("cleaner_queued_rotation", 1).await;
+        let url = database_url(&fixture).await;
+        let tenant_id = Uuid::new_v4();
+        let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
+        let admin = directory.client(2, Duration::from_secs(30));
+        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+            2, 1, 1,
+        )));
+        let (provider, platform) = platform(true);
+        let (signals, dispatcher) = PhaseSignals::for_phase("finish");
+        let (worker_manager, worker_admin) = (manager.clone(), admin.clone());
+        let worker = tokio::spawn(
+            async move {
+                let turns = worker_manager.background_turns();
+                let turn = turns
+                    .begin("cleaner_queued_rotation", TenantJobKind::FileReconciliation)
+                    .unwrap();
+                reconcile_tenant_batch(
+                    &FileDatabase::Managed {
+                        admin: &worker_admin,
+                        pools: &worker_manager,
+                    },
+                    &platform,
+                    "cleaner_queued_rotation",
+                    "worker",
+                    &turn,
+                    None,
+                )
+                .await
+            }
+            .with_subscriber(dispatcher),
+        );
+        tokio::time::timeout(Duration::from_secs(3), provider.started.notified())
+            .await
+            .unwrap();
+        let turns = manager.background_turns();
+        assert_eq!(turns.limit(), 1);
+        let blocker = turns
+            .begin("hold-cleaner-finish", TenantJobKind::AuthRetention)
+            .unwrap();
+        let mut held = Box::pin(blocker.run(|| std::future::pending::<()>()));
+        std::future::poll_fn(|context| {
+            assert!(std::future::Future::poll(held.as_mut(), context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        provider.release.notify_one();
+        tokio::time::timeout(Duration::from_millis(500), signals.resolved.notified())
+            .await
+            .unwrap();
+        let token = Uuid::new_v4();
+        admin
+            .begin_directory_mutation("cleaner_queued_rotation", token)
+            .unwrap();
+        let mut rotated = url.clone();
+        rotated
+            .set_password(Some("synthetic-cleaner-rotated"))
+            .unwrap();
+        directory.set_mapping(tenant_id, rotated.to_string());
+        admin
+            .finish_directory_mutation("cleaner_queued_rotation", token)
+            .unwrap();
+        admin
+            .resolve_database_work("cleaner_queued_rotation")
+            .await
+            .unwrap();
+        drop(held);
+        assert!(tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+        let (lifecycle, operation, stored): (String, String, String) = sqlx::query_as("SELECT f.lifecycle_status,o.status,v.storage_status FROM files f JOIN file_operations o ON o.file_id=f.id JOIN file_versions v ON v.id=f.current_version_id LIMIT 1").fetch_one(&fixture).await.unwrap();
+        assert_eq!(
+            (lifecycle.as_str(), operation.as_str(), stored.as_str()),
+            ("delete_requested", "leased", "stored")
+        );
+        assert_eq!(
+            directory.calls(),
+            2,
+            "explicit rotation refill is the only extra HTTP request"
+        );
     }
 }

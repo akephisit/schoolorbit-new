@@ -1,8 +1,10 @@
 use school_authorization::{
-    accessible_exact_units_for_permission, has_exact_unit_permission, ActorContext,
+    accessible_exact_units_for_permission_on_connection, has_exact_unit_permission_on_connection,
+    ActorContext,
 };
+use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use school_permissions::registry::codes;
@@ -40,22 +42,59 @@ pub async fn require_template_action(
     template_id: Uuid,
     action: CertificateAction,
 ) -> Result<CertificateAccessGrant, AppError> {
-    let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT campaign.owner_organization_unit_id
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.require_template_action",
+    )
+    .await?;
+    require_template_action_on_connection(&mut connection, actor, template_id, action).await
+}
+
+pub async fn require_template_action_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    template_id: Uuid,
+    action: CertificateAction,
+) -> Result<CertificateAccessGrant, AppError> {
+    let owner_organization_unit_id = DbSession::new(&mut *connection)
+        .scalar::<Option<Uuid>>(
+            "certificates.src.access_policy.require_template_action_on_connection",
+            "SELECT campaign.owner_organization_unit_id
          FROM certificate_templates template
          JOIN certificate_campaigns campaign ON campaign.id = template.campaign_id
          WHERE template.id = $1
            AND campaign.status <> 'purging'",
-    )
-    .bind(template_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
-    require_owner_action(pool, actor, owner_organization_unit_id, action).await
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))?;
+    require_owner_action_on_connection(&mut *connection, actor, owner_organization_unit_id, action)
+        .await
 }
 
 pub async fn require_owner_action(
     pool: &PgPool,
+    actor: &ActorContext,
+    owner_organization_unit_id: Option<Uuid>,
+    action: CertificateAction,
+) -> Result<CertificateAccessGrant, AppError> {
+    if actor.has_permission(action_permissions(action).school) {
+        return Ok(CertificateAccessGrant {
+            scope: CertificateAccessScope::School,
+        });
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.require_owner_action",
+    )
+    .await?;
+    require_owner_action_on_connection(&mut connection, actor, owner_organization_unit_id, action)
+        .await
+}
+
+pub async fn require_owner_action_on_connection(
+    connection: &mut PgConnection,
     actor: &ActorContext,
     owner_organization_unit_id: Option<Uuid>,
     action: CertificateAction,
@@ -73,7 +112,14 @@ pub async fn require_owner_action(
     let Some(exact_unit_permission) = permissions.organization_unit else {
         return Err(certificate_forbidden());
     };
-    if has_exact_unit_permission(pool, actor.user_id, owner_id, exact_unit_permission).await? {
+    if has_exact_unit_permission_on_connection(
+        &mut *connection,
+        actor.user_id,
+        owner_id,
+        exact_unit_permission,
+    )
+    .await?
+    {
         return Ok(CertificateAccessGrant {
             scope: CertificateAccessScope::OrganizationUnit(owner_id),
         });
@@ -87,6 +133,20 @@ pub async fn owner_list_scope(
     actor: &ActorContext,
     action: CertificateAction,
 ) -> Result<CertificateOwnerListScope, AppError> {
+    if actor.has_permission(action_permissions(action).school) {
+        return Ok(CertificateOwnerListScope::School);
+    }
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.owner_list_scope")
+            .await?;
+    owner_list_scope_on_connection(&mut connection, actor, action).await
+}
+
+pub async fn owner_list_scope_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    action: CertificateAction,
+) -> Result<CertificateOwnerListScope, AppError> {
     let permissions = action_permissions(action);
     if actor.has_permission(permissions.school) {
         return Ok(CertificateOwnerListScope::School);
@@ -94,8 +154,12 @@ pub async fn owner_list_scope(
     let Some(exact_unit_permission) = permissions.organization_unit else {
         return Err(certificate_forbidden());
     };
-    let units =
-        accessible_exact_units_for_permission(pool, actor.user_id, exact_unit_permission).await?;
+    let units = accessible_exact_units_for_permission_on_connection(
+        &mut *connection,
+        actor.user_id,
+        exact_unit_permission,
+    )
+    .await?;
     if units.is_empty() {
         Err(certificate_forbidden())
     } else {

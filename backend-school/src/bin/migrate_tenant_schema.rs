@@ -1,7 +1,18 @@
-use sqlx::postgres::PgPoolOptions;
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    ConnectOptions,
+};
 use std::{env, error::Error, time::Duration};
 
 type MigrationResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+fn database_failure(error: sqlx::Error) -> Box<dyn Error + Send + Sync> {
+    format!(
+        "Database operation failed: {}",
+        school_database::error_class(&error)
+    )
+    .into()
+}
 
 #[tokio::main]
 async fn main() -> MigrationResult<()> {
@@ -22,14 +33,24 @@ async fn main() -> MigrationResult<()> {
         .after_connect(move |connection, _metadata| {
             let search_path_sql = search_path_sql.clone();
             Box::pin(async move {
-                sqlx::query(sqlx::AssertSqlSafe(search_path_sql))
-                    .execute(connection)
+                school_database::DbSession::new(connection)
+                    .query(
+                        "school.bin.migrate_tenant_schema.main",
+                        sqlx::AssertSqlSafe(search_path_sql),
+                    )
+                    .execute()
                     .await?;
                 Ok(())
             })
         })
-        .connect(&database_url)
-        .await?;
+        .connect_with(
+            database_url
+                .parse::<PgConnectOptions>()
+                .map_err(database_failure)?
+                .disable_statement_logging(),
+        )
+        .await
+        .map_err(database_failure)?;
 
     school_migrations::run_tenant_migrations(&pool).await?;
     pool.close().await;

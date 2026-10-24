@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use sqlx::types::Json;
@@ -137,12 +138,23 @@ WHERE q.deleted_at IS NULL
     builder.push(" OFFSET ");
     builder.push_bind(page_params.offset);
 
-    let rows = builder
-        .build_query_as::<QuestionRow>()
-        .fetch_all(pool)
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.services.list_questions",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .prepared_query_as(
+            "question-bank.src.services.list_questions",
+            builder.build_query_as::<QuestionRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to list question bank questions: {}", error);
+            tracing::error!(
+                "Failed to list question bank questions: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงรายการข้อสอบได้".to_string())
         })?;
 
@@ -159,6 +171,16 @@ WHERE q.deleted_at IS NULL
 
 pub async fn list_options(
     pool: &PgPool,
+    access: &QuestionBankAccess,
+) -> Result<QuestionBankOptions, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "question-bank.list_options")
+            .await?;
+    list_options_on_connection(&mut connection, access).await
+}
+
+pub async fn list_options_on_connection(
+    connection: &mut sqlx::PgConnection,
     access: &QuestionBankAccess,
 ) -> Result<QuestionBankOptions, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(
@@ -196,12 +218,18 @@ ORDER BY s.code ASC, subject_version.name_th ASC, s.id ASC
 "#,
     );
 
-    let subjects = builder
-        .build_query_as::<QuestionBankSubjectOption>()
-        .fetch_all(pool)
+    let subjects = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "question-bank.src.services.list_options_on_connection",
+            builder.build_query_as::<QuestionBankSubjectOption>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to list question bank subject options: {}", error);
+            tracing::error!(
+                "Failed to list question bank subject options: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงรายวิชาสำหรับคลังข้อสอบได้".to_string())
         })?;
 
@@ -216,7 +244,14 @@ pub async fn get_question(
     let scope = fetch_question_scope(pool, question_id).await?;
     question_bank_access_policy::require_question_read_access(pool, actor, &scope).await?;
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
-    fetch_question_detail(pool, question_id, &access).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "question-bank.services.get_question.fetch_question_detail",
+        )
+        .await?;
+        fetch_question_detail(&mut read_stage, question_id, &access).await
+    }
 }
 
 pub async fn export_question_data(
@@ -278,12 +313,23 @@ WHERE q.id = ANY("#,
         builder.push(")");
     }
 
-    let rows = builder
-        .build_query_as::<QuestionRow>()
-        .fetch_all(pool)
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.services.export_question_data",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .prepared_query_as(
+            "question-bank.src.services.export_question_data",
+            builder.build_query_as::<QuestionRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to fetch question export rows: {}", error);
+            tracing::error!(
+                "Failed to fetch question export rows: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถเตรียมข้อมูลส่งออกข้อสอบได้".to_string())
         })?;
     if rows.len() != question_ids.len() {
@@ -295,21 +341,26 @@ WHERE q.id = ANY("#,
         .map(QuestionSummary::from)
         .map(|question| (question.id, question))
         .collect::<HashMap<_, _>>();
-    let choice_rows = sqlx::query_as::<_, QuestionChoiceRow>(
-        r#"
+    let choice_rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<QuestionChoiceRow>(
+            "question-bank.src.services.export_question_data",
+            r#"
 SELECT id, question_id, label, content, is_correct, sort_order
 FROM academic_question_bank_choices
 WHERE question_id = ANY($1)
 ORDER BY question_id ASC, sort_order ASC, label ASC, id ASC
 "#,
-    )
-    .bind(question_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch question export choices: {}", error);
-        AppError::InternalServerError("ไม่สามารถเตรียมตัวเลือกข้อสอบได้".to_string())
-    })?;
+        )
+        .bind(question_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch question export choices: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถเตรียมตัวเลือกข้อสอบได้".to_string())
+        })?;
     let mut choices_by_question_id: HashMap<Uuid, Vec<QuestionChoice>> = HashMap::new();
     for choice in choice_rows.into_iter().map(QuestionChoice::from) {
         choices_by_question_id
@@ -335,7 +386,7 @@ ORDER BY question_id ASC, sort_order ASC, label ASC, id ASC
         parts.push((question, choices, file_ids));
     }
 
-    let available_file_ids = fetch_question_files(pool, &all_file_ids)
+    let available_file_ids = fetch_question_files(&mut database_stage_0, &all_file_ids)
         .await?
         .into_iter()
         .map(|file| file.id)
@@ -389,17 +440,33 @@ pub async fn create_question(
         .await?;
 
     let image_file_ids = collect_payload_image_file_ids(&payload);
-    let temporary_image_file_ids =
-        validate_payload_files(pool, actor_id, &image_file_ids, &HashSet::new()).await?;
+    let temporary_image_file_ids = if (&image_file_ids).is_empty() {
+        Ok(HashSet::new())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "question-bank.services.create_question.validate_payload_files",
+        )
+        .await?;
+        validate_payload_files(&mut read_stage, actor_id, &image_file_ids, &HashSet::new()).await
+    }?;
     let stem_search_text = payload.stem_content.search_text();
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to start question create transaction: {}", error);
-        AppError::InternalServerError("ไม่สามารถเริ่มบันทึกข้อสอบได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "question-bank.services.create_question")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to start question create transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มบันทึกข้อสอบได้".to_string())
+            })?;
 
-    let question_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let question_id = DbSession::new(&mut *tx)
+        .scalar::<Uuid>(
+            "question-bank.src.services.create_question",
+            r#"
 INSERT INTO academic_question_bank_questions (
     subject_id,
     owner_user_id,
@@ -418,35 +485,48 @@ INSERT INTO academic_question_bank_questions (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
 RETURNING id
 "#,
-    )
-    .bind(payload.subject_id)
-    .bind(actor_id)
-    .bind(&payload.question_type)
-    .bind(&payload.difficulty)
-    .bind(payload.points)
-    .bind(Json(payload.stem_content.clone()))
-    .bind(stem_search_text)
-    .bind(payload.explanation_content.clone().map(Json))
-    .bind(payload.rubric_content.clone().map(Json))
-    .bind(&payload.tags)
-    .bind(&payload.status)
-    .bind(actor_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to create question bank question: {}", error);
-        AppError::InternalServerError("บันทึกข้อสอบไม่สำเร็จ".to_string())
-    })?;
+        )
+        .bind(payload.subject_id)
+        .bind(actor_id)
+        .bind(&payload.question_type)
+        .bind(&payload.difficulty)
+        .bind(payload.points)
+        .bind(Json(payload.stem_content.clone()))
+        .bind(stem_search_text)
+        .bind(payload.explanation_content.clone().map(Json))
+        .bind(payload.rubric_content.clone().map(Json))
+        .bind(&payload.tags)
+        .bind(&payload.status)
+        .bind(actor_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to create question bank question: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("บันทึกข้อสอบไม่สำเร็จ".to_string())
+        })?;
 
     insert_choices(&mut tx, question_id, &payload.choices).await?;
     finalize_temporary_files(&mut tx, actor_id, &temporary_image_file_ids).await?;
     tx.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit question create transaction: {}", error);
+        tracing::error!(
+            "Failed to commit question create transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("บันทึกข้อสอบไม่สำเร็จ".to_string())
     })?;
 
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
-    fetch_question_detail(pool, question_id, &access).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "question-bank.services.create_question.fetch_question_detail",
+        )
+        .await?;
+        fetch_question_detail(&mut read_stage, question_id, &access).await
+    }
 }
 
 pub async fn update_question(
@@ -471,17 +551,39 @@ pub async fn update_question(
         .difference(&image_file_ids)
         .copied()
         .collect();
-    let temporary_image_file_ids =
-        validate_payload_files(pool, actor_id, &image_file_ids, &existing_file_ids).await?;
+    let temporary_image_file_ids = if (&image_file_ids).is_empty() {
+        Ok(HashSet::new())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "question-bank.services.update_question.validate_payload_files",
+        )
+        .await?;
+        validate_payload_files(
+            &mut read_stage,
+            actor_id,
+            &image_file_ids,
+            &existing_file_ids,
+        )
+        .await
+    }?;
     let stem_search_text = payload.stem_content.search_text();
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to start question update transaction: {}", error);
-        AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขข้อสอบได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "question-bank.services.update_question")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to start question update transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขข้อสอบได้".to_string())
+            })?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "question-bank.src.services.update_question",
+            r#"
 UPDATE academic_question_bank_questions
 SET
     subject_id = $2,
@@ -500,44 +602,64 @@ SET
 WHERE id = $1
   AND deleted_at IS NULL
 "#,
-    )
-    .bind(question_id)
-    .bind(payload.subject_id)
-    .bind(&payload.question_type)
-    .bind(&payload.difficulty)
-    .bind(payload.points)
-    .bind(Json(payload.stem_content.clone()))
-    .bind(stem_search_text)
-    .bind(payload.explanation_content.clone().map(Json))
-    .bind(payload.rubric_content.clone().map(Json))
-    .bind(&payload.tags)
-    .bind(&payload.status)
-    .bind(actor_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update question bank question: {}", error);
-        AppError::InternalServerError("แก้ไขข้อสอบไม่สำเร็จ".to_string())
-    })?;
-
-    sqlx::query("DELETE FROM academic_question_bank_choices WHERE question_id = $1")
+        )
         .bind(question_id)
-        .execute(&mut *tx)
+        .bind(payload.subject_id)
+        .bind(&payload.question_type)
+        .bind(&payload.difficulty)
+        .bind(payload.points)
+        .bind(Json(payload.stem_content.clone()))
+        .bind(stem_search_text)
+        .bind(payload.explanation_content.clone().map(Json))
+        .bind(payload.rubric_content.clone().map(Json))
+        .bind(&payload.tags)
+        .bind(&payload.status)
+        .bind(actor_id)
+        .execute()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to replace question choices: {}", error);
+            tracing::error!(
+                "Failed to update question bank question: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("แก้ไขข้อสอบไม่สำเร็จ".to_string())
+        })?;
+
+    DbSession::new(&mut *tx)
+        .query(
+            "question-bank.src.services.update_question",
+            "DELETE FROM academic_question_bank_choices WHERE question_id = $1",
+        )
+        .bind(question_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to replace question choices: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("แก้ไขตัวเลือกไม่สำเร็จ".to_string())
         })?;
     insert_choices(&mut tx, question_id, &payload.choices).await?;
     finalize_temporary_files(&mut tx, actor_id, &temporary_image_file_ids).await?;
     tx.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit question update transaction: {}", error);
+        tracing::error!(
+            "Failed to commit question update transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("แก้ไขข้อสอบไม่สำเร็จ".to_string())
     })?;
 
     let access = question_bank_access_policy::resolve_access(pool, actor).await?;
     Ok(QuestionMutationResult {
-        question: fetch_question_detail(pool, question_id, &access).await?,
+        question: {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "question-bank.services.update_question.fetch_question_detail",
+            )
+            .await?;
+            fetch_question_detail(&mut read_stage, question_id, &access).await
+        }?,
         detached_file_ids,
     })
 }
@@ -554,21 +676,31 @@ pub async fn delete_question(
         .into_iter()
         .collect();
 
-    sqlx::query(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.services.delete_question",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "question-bank.src.services.delete_question",
+            r#"
 UPDATE academic_question_bank_questions
 SET deleted_at = NOW(), updated_at = NOW()
 WHERE id = $1
   AND deleted_at IS NULL
 "#,
-    )
-    .bind(question_id)
-    .execute(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to delete question bank question: {}", error);
-        AppError::InternalServerError("ลบข้อสอบไม่สำเร็จ".to_string())
-    })?;
+        )
+        .bind(question_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to delete question bank question: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ลบข้อสอบไม่สำเร็จ".to_string())
+        })?;
 
     Ok(file_ids)
 }
@@ -707,7 +839,7 @@ fn collect_payload_image_file_ids(payload: &UpsertQuestionRequest) -> HashSet<Uu
 }
 
 async fn validate_payload_files(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor_id: Uuid,
     file_ids: &HashSet<Uuid>,
     existing_file_ids: &HashSet<Uuid>,
@@ -716,8 +848,11 @@ async fn validate_payload_files(
         return Ok(HashSet::new());
     }
     let requested: Vec<Uuid> = file_ids.iter().copied().collect();
-    let rows = sqlx::query_as::<_, PayloadFileRow>(
-        r#"
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<PayloadFileRow>(
+            "question-bank.src.services.validate_payload_files",
+            r#"
 SELECT id, owner_user_id, purpose_code, lifecycle_status, retention_class
 FROM files
 WHERE id = ANY($1)
@@ -729,14 +864,17 @@ WHERE id = ANY($1)
       OR expires_at > NOW()
   )
 "#,
-    )
-    .bind(&requested)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to validate question bank files: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปข้อสอบได้".to_string())
-    })?;
+        )
+        .bind(&requested)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to validate question bank files: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรูปข้อสอบได้".to_string())
+        })?;
 
     if rows.len() != requested.len() {
         return Err(AppError::ValidationError(
@@ -776,8 +914,10 @@ async fn finalize_temporary_files(
         return Ok(());
     }
     let file_ids: Vec<Uuid> = file_ids.iter().copied().collect();
-    let result = sqlx::query(
-        r#"
+    let result = DbSession::new(&mut **tx)
+        .query(
+            "question-bank.src.services.finalize_temporary_files",
+            r#"
 UPDATE files
 SET retention_class = 'standard',
     expires_at = NULL,
@@ -787,15 +927,18 @@ WHERE id = ANY($1)
   AND retention_class = 'temporary'
   AND deleted_at IS NULL
 "#,
-    )
-    .bind(&file_ids)
-    .bind(actor_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to finalize question bank files: {}", error);
-        AppError::InternalServerError("ไม่สามารถยืนยันรูปข้อสอบได้".to_string())
-    })?;
+        )
+        .bind(&file_ids)
+        .bind(actor_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to finalize question bank files: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถยืนยันรูปข้อสอบได้".to_string())
+        })?;
     if result.rows_affected() != file_ids.len() as u64 {
         return Err(AppError::ValidationError(
             "รูปข้อสอบบางไฟล์หมดอายุแล้ว กรุณาเลือกไฟล์ใหม่".to_string(),
@@ -831,15 +974,35 @@ INSERT INTO academic_question_bank_choices (
             .push_bind(choice.is_correct)
             .push_bind(choice.sort_order);
     });
-    builder.build().execute(&mut **tx).await.map_err(|error| {
-        tracing::error!("Failed to insert question choices: {}", error);
-        AppError::InternalServerError("บันทึกตัวเลือกไม่สำเร็จ".to_string())
-    })?;
+    DbSession::new(&mut **tx)
+        .prepared_query("question-bank.src.services.insert_choices", builder.build())
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert question choices: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("บันทึกตัวเลือกไม่สำเร็จ".to_string())
+        })?;
     Ok(())
 }
 
 async fn fetch_question_summary(
     pool: &PgPool,
+    query: &QuestionBankListQuery,
+    access: &QuestionBankAccess,
+) -> Result<QuestionBankSummary, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.fetch_question_summary",
+    )
+    .await?;
+    fetch_question_summary_on_connection(&mut connection, query, access).await
+}
+
+async fn fetch_question_summary_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: &QuestionBankListQuery,
     access: &QuestionBankAccess,
 ) -> Result<QuestionBankSummary, AppError> {
@@ -858,12 +1021,18 @@ LEFT JOIN subjects s ON s.id = q.subject_id
     builder.push("WHERE q.deleted_at IS NULL\n");
     push_list_filters(&mut builder, query, access);
 
-    let row = builder
-        .build_query_as::<QuestionBankSummaryRow>()
-        .fetch_one(pool)
+    let row = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "question-bank.src.services.fetch_question_summary_on_connection",
+            builder.build_query_as::<QuestionBankSummaryRow>(),
+        )
+        .fetch_one()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to summarize question bank questions: {}", error);
+            tracing::error!(
+                "Failed to summarize question bank questions: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถสรุปคลังข้อสอบได้".to_string())
         })?;
     Ok(QuestionBankSummary {
@@ -875,7 +1044,7 @@ LEFT JOIN subjects s ON s.id = q.subject_id
 }
 
 async fn fetch_question_detail(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     question_id: Uuid,
     access: &QuestionBankAccess,
 ) -> Result<QuestionDetail, AppError> {
@@ -925,36 +1094,48 @@ WHERE q.id = "#,
     builder.push_bind(question_id);
     builder.push(" AND q.deleted_at IS NULL");
 
-    let question = builder
-        .build_query_as::<QuestionRow>()
-        .fetch_optional(pool)
+    let question = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "question-bank.src.services.fetch_question_detail",
+            builder.build_query_as::<QuestionRow>(),
+        )
+        .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to fetch question detail: {}", error);
+            tracing::error!(
+                "Failed to fetch question detail: {}",
+                school_database::error_class(&error)
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อสอบได้".to_string())
         })?
         .ok_or_else(|| AppError::NotFound("ไม่พบข้อสอบ".to_string()))?;
 
-    let choices = sqlx::query_as::<_, QuestionChoiceRow>(
-        r#"
+    let choices = DbSession::new(&mut *connection)
+        .query_as::<QuestionChoiceRow>(
+            "question-bank.src.services.fetch_question_detail",
+            r#"
 SELECT id, question_id, label, content, is_correct, sort_order
 FROM academic_question_bank_choices
 WHERE question_id = $1
 ORDER BY sort_order ASC, label ASC, id ASC
 "#,
-    )
-    .bind(question_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch question choices: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงตัวเลือกได้".to_string())
-    })?;
+        )
+        .bind(question_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch question choices: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงตัวเลือกได้".to_string())
+        })?;
 
     let question = QuestionSummary::from(question);
     let choices: Vec<QuestionChoice> = choices.into_iter().map(QuestionChoice::from).collect();
     let file_ids = collect_question_file_ids(&question, &choices);
-    let files = fetch_question_files(pool, &file_ids).await?;
+
+    let files = fetch_question_files(connection, &file_ids).await?;
 
     Ok(QuestionDetail {
         question,
@@ -968,8 +1149,22 @@ pub async fn fetch_question_scope(
     pool: &PgPool,
     question_id: Uuid,
 ) -> Result<QuestionScopeRow, AppError> {
-    sqlx::query_as::<_, QuestionScopeRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.fetch_question_scope",
+    )
+    .await?;
+    fetch_question_scope_on_connection(&mut connection, question_id).await
+}
+
+pub async fn fetch_question_scope_on_connection(
+    connection: &mut sqlx::PgConnection,
+    question_id: Uuid,
+) -> Result<QuestionScopeRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<QuestionScopeRow>(
+            "question-bank.src.services.fetch_question_scope_on_connection",
+            r#"
 SELECT
     q.owner_user_id,
     q.subject_id,
@@ -979,15 +1174,18 @@ LEFT JOIN subjects s ON s.id = q.subject_id
 WHERE q.id = $1
   AND q.deleted_at IS NULL
 "#,
-    )
-    .bind(question_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch question scope: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ข้อสอบได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบข้อสอบ".to_string()))
+        )
+        .bind(question_id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch question scope: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์ข้อสอบได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบข้อสอบ".to_string()))
 }
 
 /// Loads the file references used by the application-level File Platform adapter.
@@ -995,37 +1193,56 @@ pub async fn fetch_question_file_ids(
     pool: &PgPool,
     question_id: Uuid,
 ) -> Result<HashSet<Uuid>, AppError> {
-    let question = sqlx::query_as::<
-        _,
-        (
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "question-bank.fetch_question_file_ids",
+    )
+    .await?;
+    fetch_question_file_ids_on_connection(&mut connection, question_id).await
+}
+
+pub async fn fetch_question_file_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    question_id: Uuid,
+) -> Result<HashSet<Uuid>, AppError> {
+    let question = DbSession::new(&mut *connection)
+        .query_as::<(
             Json<RichContent>,
             Option<Json<RichContent>>,
             Option<Json<RichContent>>,
-        ),
-    >(
-        r#"
+        )>(
+            "question-bank.src.services.fetch_question_file_ids_on_connection",
+            r#"
 SELECT stem_content, explanation_content, rubric_content
 FROM academic_question_bank_questions
 WHERE id = $1 AND deleted_at IS NULL
 "#,
-    )
-    .bind(question_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch existing question files: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของข้อสอบได้".to_string())
-    })?;
-    let choices = sqlx::query_scalar::<_, Json<RichContent>>(
-        "SELECT content FROM academic_question_bank_choices WHERE question_id = $1",
-    )
-    .bind(question_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch existing choice files: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของตัวเลือกได้".to_string())
-    })?;
+        )
+        .bind(question_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch existing question files: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของข้อสอบได้".to_string())
+        })?;
+    let choices = DbSession::new(&mut *connection)
+        .scalar::<Json<RichContent>>(
+            "question-bank.src.services.fetch_question_file_ids_on_connection",
+            "SELECT content FROM academic_question_bank_choices WHERE question_id = $1",
+        )
+        .bind(question_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch existing choice files: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบรูปเดิมของตัวเลือกได้".to_string())
+        })?;
 
     let mut ids: HashSet<Uuid> = question.0.image_file_ids().collect();
     if let Some(content) = question.1 {
@@ -1058,15 +1275,18 @@ fn collect_question_file_ids(
 }
 
 async fn fetch_question_files(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     file_ids: &HashSet<Uuid>,
 ) -> Result<Vec<QuestionFile>, AppError> {
     if file_ids.is_empty() {
         return Ok(Vec::new());
     }
     let file_ids: Vec<Uuid> = file_ids.iter().copied().collect();
-    let rows = sqlx::query_scalar::<_, Uuid>(
-        r#"
+
+    let rows = DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "question-bank.src.services.fetch_question_files",
+            r#"
 SELECT id
 FROM files
 WHERE id = ANY($1)
@@ -1074,14 +1294,17 @@ WHERE id = ANY($1)
   AND lifecycle_status = 'ready'
   AND deleted_at IS NULL
 "#,
-    )
-    .bind(&file_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to fetch question file URLs: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
-    })?;
+        )
+        .bind(&file_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch question file URLs: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงรูปประกอบข้อสอบได้".to_string())
+        })?;
     if rows.len() != file_ids.len() {
         return Err(AppError::NotFound("ไม่พบรูปประกอบข้อสอบบางไฟล์".to_string()));
     }

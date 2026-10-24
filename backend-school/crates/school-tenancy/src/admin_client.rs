@@ -120,6 +120,16 @@ impl AdminClientConfig {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
+impl AdminClientConfig {
+    pub fn with_directory_for_tests(mut self, capacity: usize, ttl: Duration) -> Self {
+        assert!(capacity > 0 && !ttl.is_zero());
+        self.directory_capacity = capacity;
+        self.directory_ttl = ttl;
+        self
+    }
+}
+
 fn parse_bounded<T>(
     name: &str,
     value: Option<&str>,

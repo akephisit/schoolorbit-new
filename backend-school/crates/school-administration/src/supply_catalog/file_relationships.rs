@@ -149,17 +149,21 @@ pub async fn require_file_access(
     }
 }
 /// Retains the file row lock until the platform's durable lifecycle transition commits.
-pub async fn authorize_delete_guard<'a>(
-    pool: &'a PgPool,
+pub async fn authorize_delete_guard(
+    pool: &PgPool,
     actor: &ActorContext,
     file: &PlatformFile,
     resource_id: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     if resource_id.is_some() || file.visibility != FileVisibility::Private {
         return Err(denied());
     }
     require_upload(actor, file.purpose)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "administration.file_relationships.authorize_delete_guard",
+    )
+    .await?;
     lock_files(&mut tx, [file.id]).await?;
     let own:bool=school_database::DbSession::new(&mut *tx).scalar("administration.supply_catalog.file_relationships.authorize_delete_guard", "SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2 AND purpose_code=$3 AND visibility='private')").bind(file.id).bind(actor.user_id).bind(file.purpose.code()).fetch_one().await?;
     if !own {

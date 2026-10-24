@@ -73,6 +73,11 @@ test('local School verification executes tests and database fixtures rather than
  assert.ok(commands.some(args=>args[0]==='check'&&!args.includes('--features')));
  assert.ok(commands.some(args=>args[0]==='check'&&args.includes('api-docs')));
  assert.ok(tests.some(args=>args.includes('api_contract::tests')&&args.includes('api-docs')));
+ assert.ok(tests.some(args=>args.includes('database_execution_architecture')&&args.includes('static_architecture')),'both architecture targets execute');
+ const queryApi=tests.find(args=>args.includes('school-database')&&args.includes('school-errors')&&args.includes('school-http'));
+ assert.ok(queryApi,'bound query API, safe errors and HTTP mappings execute');
+ assert.ok(!queryApi.includes('--lib')&&!queryApi.includes('--test')&&!queryApi.includes('--doc'),'full packages include positive integration probes and compile-fail doctests');
+ assert.ok(!tests.some(args=>args.includes('school-behavior')),'DB-backed Behavior unit suite belongs exclusively to the owned fixture stage');
  assert.ok(tests.some(args=>args.includes('school-staff')&&args.includes('api-docs')));
  const clippy=commands.filter(args=>args[0]==='clippy');
  assert.equal(clippy.length,2);
@@ -99,4 +104,29 @@ for(const [scope,mode] of [['backend-school','default'],['backend-school','api-d
  const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
  assert.equal(commands.at(-1)[0],'clippy');
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,1);
+});
+
+
+test('owned School database suite executes migrated packages and actual managed regression filters', t => {
+ const f=fixture(t);
+ cpSync(path.join(repo,'scripts/test_school_database_suite.sh'),path.join(f.root,'scripts/test_school_database_suite.sh'));
+ writeFileSync(path.join(f.root,'scripts/test_backend_school.sh'), `#!/usr/bin/env node
+const fs=require('node:fs');
+fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.slice(2),owned:Boolean(process.env.SCHOOLORBIT_TEST_CONTAINER&&process.env.SCHOOLORBIT_TEST_OWNER)})+'\\n');
+`, {mode:0o755});
+ const log=path.join(f.root,'database-commands');
+ const result=spawnSync('bash',['scripts/test_school_database_suite.sh'],{cwd:f.root,env:{...f.env,DB_COMMAND_LOG:log},encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
+ const commands=readFileSync(log,'utf8').trim().split('\n').map(JSON.parse);
+ assert.ok(commands.every(command=>command.owned),'every invocation reuses the explicitly owned disposable server');
+ for(const owner of ['school-behavior','school-academic-delivery','school-academic-assessment','school-academic-results','school-academic-lifecycle','school-budget','school-student-care','school-academic-timetable','school-certificates']) {
+  assert.ok(commands.some(({args})=>args[0]==='--package'&&args[1]===owner&&args[2]==='--'),`${owner} executes its whole fixture-backed package`);
+ }
+ for(const filter of ['integration_tests::database','integration_tests::notification_dispatch','services::cleaner::phase_tests','integration_tests::policies','integration_tests::academic::services','integration_tests::academic::gradebook','integration_tests::academic::learner_evaluation','integration_tests::academic::results','integration_tests::certificates','integration_tests::attendance','integration_tests::supply_catalog','integration_tests::auth::session_http_tests','integration_tests::auth::profile_integration_tests','integration_tests::auth::staff_integration_tests']) {
+  assert.ok(commands.some(({args})=>args.includes(filter)),`${filter} executes under PostgreSQL`);
+ }
+ assert.ok(commands.every(({args})=>!args.includes('--no-run')),'no suite becomes compile-only');
+ const suite=readFileSync(path.join(f.root,'scripts/test_school_database_suite.sh'),'utf8');
+ assert.match(suite,/postgres:18\.6-alpine@sha256:/);
+ assert.match(suite,/One server, a new owned disposable database for each invocation/);
 });

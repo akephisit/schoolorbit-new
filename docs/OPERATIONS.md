@@ -132,6 +132,27 @@ is claimed and removed in the same transaction as the school mutation; School
 finish invalidates before reopening. Pending barriers fail the internal all-tenant
 list as a whole, preventing incomplete migration acceptance.
 
+Notification and Cleaner database phases resolve control-plane metadata before shared
+DB admission. `AdminClient::resolve_database_work` issues an opaque work snapshot from
+one current cache value, revision and expiry under the cache lock. Every successful
+fill changes its value revision, including same-UUID credential rotation; mutation,
+eviction or expiry invalidates older proofs. Inside admission,
+`pool_for_resolved_work` validates the proof and expected tenant UUID locally before
+and after the nonmigrating PoolManager acquisition. It never refetches HTTP or retries
+a failed proof inside admission. Work defers through the existing durable retry path.
+Claim/status retain their single five-second deadline; each Notification item retains
+its whole five-second deadline, and Cleaner phases retain `min(5 seconds, lease / 4)`.
+These deadlines include resolution, admission, pool waiting and database work. The
+logical same-key guard spans network phases; database permits, pools and checked-out
+connections end before external delivery/storage I/O.
+
+The second local validation covers a mapping/credential change during a physical
+pool wait. It does not make directory mutation and subsequent SQL atomic; the existing
+domain transaction, source, claim-token and lease fences remain authoritative. A
+fixed `tenant_physical_budget`/`waiting` event identifies contested physical admission;
+its completion/cancellation event retains the separate admission duration. No event
+contains credentials or a database URL.
+
 PostgreSQL query execution uses the connection-bound `school-database::DbSession`
 provider. Domains retain SQL, transactions, snapshots, locks and typed error mapping;
 the provider neither acquires pools nor retries writes. Its fixed operation labels,
@@ -139,8 +160,24 @@ duration, status and safe error class identify query work and cancellation witho
 logging statements or values. Tenant observed checkout guards separately measure
 connection wait/hold and retain logical eviction protection. A query duration excludes
 pool admission; a connection hold includes gaps between that work boundary's queries.
+Query duration is the client await, including driver/network work and decoding; a
+cancelled client future does not prove PostgreSQL has already stopped the query.
+Owned transactions use tenancy's `ObservedTransaction`: `begin_wait_us` includes
+checkout plus `BEGIN`, and the owned hold/lease ends after consuming commit, rollback,
+or drop. No borrowed checkout survives a successful consuming commit. Request-side
+physical-budget admission is measured separately from background-turn admission,
+checkout, transaction begin and query duration.
 Use these observations together with PostgreSQL aggregate statistics, and never enable
 raw SQL/parameter logging to diagnose saturation.
+
+Native execution is limited to schema identity/history and privilege setup:
+`school-migrations::{run_tenant_migrations,verify_tenant_schema,grant_runtime_privileges}`
+and the migration handler's `get_current_version`, plus SQLx execution inside the
+connection-bound provider itself. Permission reconciliation is application SQL: both
+its deactivation and typed bulk upsert execute through `DbSession`; only its native
+pool transaction entry remains bootstrap-owned to avoid a tenancy/migrations cycle.
+Disposable fixture/fault setup is separate from this production inventory. Native
+QueryBuilder construction is allowed; executing its result uses a prepared adapter.
 
 Calendar, Auth retention, Notification dispatch, Attendance maintenance and File Platform
 reconciliation share `TENANT_BACKGROUND_MAX_TURNS` database admission (default

@@ -36,31 +36,35 @@ pub async fn cleanup(
     expected_hash: Option<&str>,
 ) -> Result<CleanupReport, AppError> {
     authorize(actor)?;
-    let mut tx = pool.begin().await?;
-    let actual_year: Uuid =
-        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1 FOR UPDATE")
-            .bind(term)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนเป้าหมาย".into()))?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "school.cleanup.cleanup").await?;
+    let actual_year: Uuid = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "school.cleanup_cancelled_academic_versions.cleanup.cleanup",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1 FOR UPDATE",
+        )
+        .bind(term)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนเป้าหมาย".into()))?;
     if actual_year != year {
         return Err(AppError::Conflict("ปีการศึกษาไม่ตรงกับภาคเรียนเป้าหมาย".into()));
     }
-    let active: bool = sqlx::query_scalar(
+    let active: bool = school_database::DbSession::new(&mut *tx).scalar("school.cleanup_cancelled_academic_versions.cleanup.cleanup",
         "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND user_type='staff' AND status='active')",
     )
     .bind(actor.user_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
     if !active {
         return Err(AppError::Forbidden("ผู้ดำเนินการต้องเป็นบุคลากรที่ยังใช้งาน".into()));
     }
-    let tables:Vec<(Uuid,i64,i64)>=sqlx::query_as("SELECT version.id,version.row_version,(SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=version.id) FROM academic_timetable_versions version WHERE version.academic_term_id=$1 AND version.status='cancelled' ORDER BY version.id FOR UPDATE OF version").bind(term).fetch_all(&mut *tx).await?;
-    let openings:Vec<(Uuid,i64,i64,i64,i64,i64)>=sqlx::query_as("SELECT version.id,version.row_version,COALESCE(journal.row_version,0),
+    let tables:Vec<(Uuid,i64,i64)>=school_database::DbSession::new(&mut *tx).query_as("school.cleanup_cancelled_academic_versions.cleanup.cleanup", "SELECT version.id,version.row_version,(SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=version.id) FROM academic_timetable_versions version WHERE version.academic_term_id=$1 AND version.status='cancelled' ORDER BY version.id FOR UPDATE OF version").bind(term).fetch_all().await?;
+    let openings:Vec<(Uuid,i64,i64,i64,i64,i64)>=school_database::DbSession::new(&mut *tx).query_as("school.cleanup_cancelled_academic_versions.cleanup.cleanup", "SELECT version.id,version.row_version,COALESCE(journal.row_version,0),
         (SELECT count(*) FROM academic_term_change_items WHERE change_set_id=journal.id),jsonb_array_length(version.snapshot->'offerings')::bigint,
         COALESCE((SELECT sum(jsonb_array_length(offering->'groups')) FROM jsonb_array_elements(version.snapshot->'offerings') offering),0)::bigint
         FROM academic_delivery_versions version LEFT JOIN academic_term_change_sets journal ON journal.target_delivery_version_id=version.id
-        WHERE version.academic_term_id=$1 AND version.status='cancelled' ORDER BY version.id FOR UPDATE OF version").bind(term).fetch_all(&mut *tx).await?;
+        WHERE version.academic_term_id=$1 AND version.status='cancelled' ORDER BY version.id FOR UPDATE OF version").bind(term).fetch_all().await?;
     let preview_hash = hex::encode(Sha256::digest(
         serde_json::to_vec(&(year, term, &tables, &openings))
             .map_err(|_| AppError::InternalServerError("ไม่สามารถตรวจรายการล้างข้อมูล".into()))?,
@@ -173,11 +177,11 @@ async fn published_fingerprint(
     term: Uuid,
 ) -> Result<String, AppError> {
     // Bounded aggregate evidence; the captured graphs and rows never leave the database.
-    Ok(sqlx::query_scalar("SELECT md5(jsonb_build_object(
+    Ok(school_database::DbSession::new(&mut **tx).scalar("school.cleanup_cancelled_academic_versions.cleanup.published_fingerprint", "SELECT md5(jsonb_build_object(
         'delivery',(SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE academic_term_id=$1 AND status='published'),
         'timetable',(SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_timetable_versions version WHERE academic_term_id=$1 AND status='published'),
         'blocks',(SELECT jsonb_agg(to_jsonb(block) ORDER BY block.id) FROM academic_timetable_blocks block JOIN academic_timetable_versions version ON version.id=block.timetable_version_id WHERE version.academic_term_id=$1 AND version.status='published')
-        )::text)").bind(term).fetch_one(&mut **tx).await?)
+        )::text)").bind(term).fetch_one().await?)
 }
 
 #[cfg(test)]

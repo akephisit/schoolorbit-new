@@ -1,4 +1,6 @@
+use crate::access_policy::owner_list_scope_on_connection;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -7,9 +9,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    access_policy::{
-        owner_list_scope, require_owner_action, CertificateAction, CertificateOwnerListScope,
-    },
+    access_policy::{require_owner_action, CertificateAction, CertificateOwnerListScope},
     models::{
         CandidateValidationCode, CandidateValidationStatus, CertificateIssueCode,
         CertificateIssueRequestCapabilities, CertificateIssueRequestDetail,
@@ -224,7 +224,12 @@ pub async fn submit_issue_request(
 
     let can_read_request =
         can_read_request(pool, actor, authorized_campaign.owner_organization_unit_id).await?;
-    let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.request_service.submit_issue_request",
+    )
+    .await
+    .map_err(request_db_error)?;
     let campaign = lock_campaign(&mut tx, campaign_id).await?;
     require_same_owner(&authorized_campaign, &campaign)?;
     lock_and_require_active_owner(&mut tx, campaign.owner_organization_unit_id).await?;
@@ -244,42 +249,48 @@ pub async fn submit_issue_request(
     }
     require_candidates_ready(&mut tx, &candidates).await?;
 
-    let request_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)
+    let request_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "certificates.services.request_service.submit_issue_request",
+            "INSERT INTO certificate_issue_requests (campaign_id, submitted_by)
          VALUES ($1, $2) RETURNING id",
-    )
-    .bind(campaign_id)
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(request_db_error)?;
-    sqlx::query(
-        "INSERT INTO certificate_issue_request_items (request_id, candidate_id, campaign_id)
+        )
+        .bind(campaign_id)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(request_db_error)?;
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.request_service.submit_issue_request",
+            "INSERT INTO certificate_issue_request_items (request_id, candidate_id, campaign_id)
          SELECT $1, selected.candidate_id, $2
          FROM UNNEST($3::uuid[]) AS selected(candidate_id)",
-    )
-    .bind(request_id)
-    .bind(campaign_id)
-    .bind(&candidate_ids)
-    .execute(&mut *tx)
-    .await
-    .map_err(request_db_error)?;
-    sqlx::query(
-        "INSERT INTO certificate_candidate_issue_locks (candidate_id, request_id)
+        )
+        .bind(request_id)
+        .bind(campaign_id)
+        .bind(&candidate_ids)
+        .execute()
+        .await
+        .map_err(request_db_error)?;
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.request_service.submit_issue_request",
+            "INSERT INTO certificate_candidate_issue_locks (candidate_id, request_id)
          SELECT selected.candidate_id, $1
          FROM UNNEST($2::uuid[]) AS selected(candidate_id)",
-    )
-    .bind(request_id)
-    .bind(&candidate_ids)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        if database_code(&error).as_deref() == Some("23505") {
-            resource_locked_error(request_id, false)
-        } else {
-            request_db_error(error).into()
-        }
-    })?;
+        )
+        .bind(request_id)
+        .bind(&candidate_ids)
+        .execute()
+        .await
+        .map_err(|error| {
+            if database_code(&error).as_deref() == Some("23505") {
+                resource_locked_error(request_id, false)
+            } else {
+                request_db_error(error).into()
+            }
+        })?;
     record_request_audit(
         &mut tx,
         actor.user_id,
@@ -294,7 +305,15 @@ pub async fn submit_issue_request(
     .await?;
     tx.commit().await.map_err(request_db_error)?;
 
-    Ok(fetch_request_detail_unchecked(pool, actor, request_id).await?)
+    Ok({
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.submit_issue_request.fetch_request_detail_unchecked",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_request_detail_unchecked(&mut read_stage, actor, request_id).await
+    }?)
 }
 
 pub async fn withdraw(
@@ -314,7 +333,10 @@ pub async fn withdraw(
         return Err(AppError::Forbidden("ถอนคำขอได้เฉพาะผู้ส่งคำขอนี้".to_string()));
     }
 
-    let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "certificates.request_service.withdraw")
+            .await
+            .map_err(request_db_error)?;
     let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
     require_request_owner_unchanged(&authorized, &campaign)?;
@@ -324,7 +346,15 @@ pub async fn withdraw(
     transition_to_withdrawn(&mut tx, actor.user_id, &locked).await?;
     tx.commit().await.map_err(request_db_error)?;
 
-    fetch_request_detail_unchecked(pool, actor, request_id).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.withdraw.fetch_request_detail_unchecked",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_request_detail_unchecked(&mut read_stage, actor, request_id).await
+    }
 }
 
 pub async fn start_review(
@@ -334,7 +364,12 @@ pub async fn start_review(
 ) -> Result<CertificateIssueRequestDetail, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let authorized = fetch_request_access(pool, request_id).await?;
-    let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.request_service.start_review",
+    )
+    .await
+    .map_err(request_db_error)?;
     let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
     require_request_owner_unchanged(&authorized, &campaign)?;
@@ -342,17 +377,19 @@ pub async fn start_review(
     require_same_request(&authorized, &locked)?;
     require_request_status(&locked.status, CertificateIssueRequestStatus::Pending)?;
 
-    sqlx::query(
-        "UPDATE certificate_issue_requests
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.request_service.start_review",
+            "UPDATE certificate_issue_requests
          SET status = 'reviewing', reviewed_by = $2, reviewed_at = clock_timestamp(),
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(request_id)
-    .bind(actor.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(request_db_error)?;
+        )
+        .bind(request_id)
+        .bind(actor.user_id)
+        .execute()
+        .await
+        .map_err(request_db_error)?;
     record_request_audit(
         &mut tx,
         actor.user_id,
@@ -367,7 +404,15 @@ pub async fn start_review(
     .await?;
     tx.commit().await.map_err(request_db_error)?;
 
-    fetch_request_detail_unchecked(pool, actor, request_id).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.start_review.fetch_request_detail_unchecked",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_request_detail_unchecked(&mut read_stage, actor, request_id).await
+    }
 }
 
 pub async fn return_request(
@@ -381,7 +426,12 @@ pub async fn return_request(
     let issue_codes = normalize_issue_codes(issue_codes)?;
     let return_note = validate_return_note(&return_note)?;
     let authorized = fetch_request_access(pool, request_id).await?;
-    let mut tx = pool.begin().await.map_err(request_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.request_service.return_request",
+    )
+    .await
+    .map_err(request_db_error)?;
     let campaign = lock_campaign(&mut tx, authorized.campaign_id).await?;
     require_campaign_not_purging(&campaign.status)?;
     require_request_owner_unchanged(&authorized, &campaign)?;
@@ -393,18 +443,20 @@ pub async fn return_request(
         .map(|code| code.as_str())
         .collect::<Vec<_>>();
 
-    sqlx::query(
-        "UPDATE certificate_issue_requests
+    DbSession::new(&mut *tx)
+        .query(
+            "certificates.services.request_service.return_request",
+            "UPDATE certificate_issue_requests
          SET status = 'returned', returned_at = clock_timestamp(), return_note = $2,
              issue_codes = $3, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(request_id)
-    .bind(return_note)
-    .bind(&issue_code_values)
-    .execute(&mut *tx)
-    .await
-    .map_err(request_db_error)?;
+        )
+        .bind(request_id)
+        .bind(return_note)
+        .bind(&issue_code_values)
+        .execute()
+        .await
+        .map_err(request_db_error)?;
     record_request_audit(
         &mut tx,
         actor.user_id,
@@ -422,7 +474,15 @@ pub async fn return_request(
     .await?;
     tx.commit().await.map_err(request_db_error)?;
 
-    fetch_request_detail_unchecked(pool, actor, request_id).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.return_request.fetch_request_detail_unchecked",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_request_detail_unchecked(&mut read_stage, actor, request_id).await
+    }
 }
 
 pub async fn list_campaign_requests(
@@ -438,15 +498,25 @@ pub async fn list_campaign_requests(
         CertificateAction::Read,
     )
     .await?;
-    let rows = sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
-        "{REQUEST_SELECT}
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.request_service.list_campaign_requests",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .query_as::<IssueRequestRow>(
+            "certificates.services.request_service.list_campaign_requests",
+            sqlx::AssertSqlSafe(format!(
+                "{REQUEST_SELECT}
          WHERE request.campaign_id = $1
          ORDER BY request.submitted_at DESC, request.id DESC"
-    )))
-    .bind(campaign_id)
-    .fetch_all(pool)
-    .await
-    .map_err(request_db_error)?;
+            )),
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(request_db_error)?;
+    drop(database_stage_0);
     rows_to_summaries(pool, actor, rows).await
 }
 
@@ -456,26 +526,40 @@ pub async fn list_issue_queue(
     query: CertificateIssueRequestListQuery,
 ) -> Result<Vec<CertificateIssueRequestSummary>, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.request_service.list_issue_queue",
+    )
+    .await?;
     let rows = if let Some(status) = query.status {
-        sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
-            "{REQUEST_SELECT}
+        DbSession::new(&mut *database_stage_0)
+            .query_as::<IssueRequestRow>(
+                "certificates.services.request_service.list_issue_queue",
+                sqlx::AssertSqlSafe(format!(
+                    "{REQUEST_SELECT}
              WHERE request.status = $1
              ORDER BY request.submitted_at, request.id"
-        )))
-        .bind(status.as_str())
-        .fetch_all(pool)
-        .await
-        .map_err(request_db_error)?
+                )),
+            )
+            .bind(status.as_str())
+            .fetch_all()
+            .await
+            .map_err(request_db_error)?
     } else {
-        sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
-            "{REQUEST_SELECT}
+        DbSession::new(&mut *database_stage_0)
+            .query_as::<IssueRequestRow>(
+                "certificates.services.request_service.list_issue_queue",
+                sqlx::AssertSqlSafe(format!(
+                    "{REQUEST_SELECT}
              ORDER BY CASE request.status WHEN 'pending' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END,
                       request.submitted_at, request.id"
-        )))
-        .fetch_all(pool)
-        .await
-        .map_err(request_db_error)?
+                )),
+            )
+            .fetch_all()
+            .await
+            .map_err(request_db_error)?
     };
+    drop(database_stage_0);
     rows_to_summaries(pool, actor, rows).await
 }
 
@@ -494,7 +578,15 @@ pub async fn get_issue_request(
         )
         .await?;
     }
-    fetch_request_detail_unchecked(pool, actor, request_id).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.get_issue_request.fetch_request_detail_unchecked",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_request_detail_unchecked(&mut read_stage, actor, request_id).await
+    }
 }
 
 pub fn resource_locked_error(request_id: Uuid, can_read_request: bool) -> CertificateServiceError {
@@ -575,37 +667,41 @@ async fn require_candidates_ready(
     let accounts = if account_ids.is_empty() {
         BTreeMap::new()
     } else {
-        sqlx::query_as::<_, AccountStateRow>(
-            "SELECT id, username, user_type, status
+        DbSession::new(&mut **tx)
+            .query_as::<AccountStateRow>(
+                "certificates.services.request_service.require_candidates_ready",
+                "SELECT id, username, user_type, status
              FROM users
              WHERE id = ANY($1::uuid[])
              ORDER BY id
              FOR SHARE",
-        )
-        .bind(&account_ids)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(request_db_error)?
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect()
+            )
+            .bind(&account_ids)
+            .fetch_all()
+            .await
+            .map_err(request_db_error)?
+            .into_iter()
+            .map(|row| (row.id, row))
+            .collect()
     };
     let student_ids = if account_ids.is_empty() {
         BTreeMap::new()
     } else {
-        sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT user_id, student_id
+        DbSession::new(&mut **tx)
+            .query_as::<(Uuid, String)>(
+                "certificates.services.request_service.require_candidates_ready",
+                "SELECT user_id, student_id
              FROM student_info
              WHERE user_id = ANY($1::uuid[])
              ORDER BY user_id
              FOR SHARE",
-        )
-        .bind(&account_ids)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(request_db_error)?
-        .into_iter()
-        .collect()
+            )
+            .bind(&account_ids)
+            .fetch_all()
+            .await
+            .map_err(request_db_error)?
+            .into_iter()
+            .collect()
     };
     let template_ids = candidates
         .iter()
@@ -616,17 +712,19 @@ async fn require_candidates_ready(
     let asset_states = if template_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as::<_, TemplateAssetStateRow>(
-            "SELECT asset.template_id, asset.id AS asset_id, file.lifecycle_status
+        DbSession::new(&mut **tx)
+            .query_as::<TemplateAssetStateRow>(
+                "certificates.services.request_service.require_candidates_ready",
+                "SELECT asset.template_id, asset.id AS asset_id, file.lifecycle_status
              FROM certificate_template_assets asset
              JOIN files file ON file.id = asset.file_id
              WHERE asset.template_id = ANY($1::uuid[])
              ORDER BY asset.template_id, asset.id",
-        )
-        .bind(&template_ids)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(request_db_error)?
+            )
+            .bind(&template_ids)
+            .fetch_all()
+            .await
+            .map_err(request_db_error)?
     };
     let mut assets_by_template = BTreeMap::<Uuid, BTreeMap<Uuid, String>>::new();
     for asset in asset_states {
@@ -719,37 +817,51 @@ fn candidate_ready(
 }
 
 async fn fetch_campaign(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignRow, AppError> {
-    sqlx::query_as::<_, CampaignRow>(
-        "SELECT campaign.id, campaign.owner_organization_unit_id,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.fetch_campaign")
+            .await?;
+    fetch_campaign_on_connection(&mut connection, campaign_id).await
+}
+
+async fn fetch_campaign_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<CampaignRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<CampaignRow>(
+            "certificates.services.request_service.fetch_campaign_on_connection",
+            "SELECT campaign.id, campaign.owner_organization_unit_id,
                 owner.is_active AS owner_is_active, campaign.status
          FROM certificate_campaigns campaign
          LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
          WHERE campaign.id = $1 AND campaign.status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(request_db_error)?
-    .ok_or_else(request_not_found)
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?
+        .ok_or_else(request_not_found)
 }
 
 async fn lock_campaign(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<CampaignRow, AppError> {
-    sqlx::query_as::<_, CampaignRow>(
-        "SELECT campaign.id, campaign.owner_organization_unit_id,
+    DbSession::new(&mut **tx)
+        .query_as::<CampaignRow>(
+            "certificates.services.request_service.lock_campaign",
+            "SELECT campaign.id, campaign.owner_organization_unit_id,
                 owner.is_active AS owner_is_active, campaign.status
          FROM certificate_campaigns campaign
          LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
          WHERE campaign.id = $1
          FOR UPDATE OF campaign",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(request_db_error)?
-    .ok_or_else(request_not_found)
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?
+        .ok_or_else(request_not_found)
 }
 
 async fn lock_and_require_active_owner(
@@ -759,16 +871,18 @@ async fn lock_and_require_active_owner(
     let Some(owner_id) = owner_organization_unit_id else {
         return Ok(());
     };
-    let is_active = sqlx::query_scalar::<_, bool>(
-        "SELECT is_active
+    let is_active = DbSession::new(&mut **tx)
+        .scalar::<bool>(
+            "certificates.services.request_service.lock_and_require_active_owner",
+            "SELECT is_active
          FROM organization_units
          WHERE id = $1
          FOR SHARE",
-    )
-    .bind(owner_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(request_db_error)?;
+        )
+        .bind(owner_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?;
     if is_active == Some(true) {
         Ok(())
     } else {
@@ -782,8 +896,10 @@ async fn lock_submission_candidates(
     tx: &mut Transaction<'_, Postgres>,
     candidate_ids: &[Uuid],
 ) -> Result<Vec<SubmissionCandidateRow>, AppError> {
-    sqlx::query_as::<_, SubmissionCandidateRow>(
-        "SELECT candidate.campaign_id, candidate.template_id,
+    DbSession::new(&mut **tx)
+        .query_as::<SubmissionCandidateRow>(
+            "certificates.services.request_service.lock_submission_candidates",
+            "SELECT candidate.campaign_id, candidate.template_id,
                 candidate.recipient_type, candidate.matched_user_id,
                 candidate.lookup_student_id, candidate.lookup_staff_username,
                 candidate.selected_name_source, candidate.match_status,
@@ -801,38 +917,54 @@ async fn lock_submission_candidates(
          WHERE candidate.id = ANY($1::uuid[])
          ORDER BY candidate.id
          FOR UPDATE OF candidate",
-    )
-    .bind(candidate_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(request_db_error)
+        )
+        .bind(candidate_ids)
+        .fetch_all()
+        .await
+        .map_err(request_db_error)
 }
 
 async fn active_lock_for_candidates(
     tx: &mut Transaction<'_, Postgres>,
     candidate_ids: &[Uuid],
 ) -> Result<Option<Uuid>, AppError> {
-    sqlx::query_scalar(
-        "SELECT candidate_lock.request_id
+    DbSession::new(&mut **tx)
+        .scalar(
+            "certificates.services.request_service.active_lock_for_candidates",
+            "SELECT candidate_lock.request_id
          FROM certificate_candidate_issue_locks candidate_lock
          JOIN certificate_issue_requests request ON request.id = candidate_lock.request_id
          WHERE candidate_lock.candidate_id = ANY($1::uuid[])
            AND request.status IN ('pending', 'reviewing')
          ORDER BY candidate_lock.candidate_id, candidate_lock.request_id
          LIMIT 1",
-    )
-    .bind(candidate_ids)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(request_db_error)
+        )
+        .bind(candidate_ids)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)
 }
 
 async fn fetch_request_access(
     pool: &PgPool,
     request_id: Uuid,
 ) -> Result<RequestAccessRow, AppError> {
-    sqlx::query_as::<_, RequestAccessRow>(
-        "SELECT request.id, request.campaign_id, campaign.owner_organization_unit_id,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.fetch_request_access",
+    )
+    .await?;
+    fetch_request_access_on_connection(&mut connection, request_id).await
+}
+
+async fn fetch_request_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    request_id: Uuid,
+) -> Result<RequestAccessRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<RequestAccessRow>(
+            "certificates.services.request_service.fetch_request_access_on_connection",
+            "SELECT request.id, request.campaign_id, campaign.owner_organization_unit_id,
                 request.status, request.submitted_by,
                 (SELECT COUNT(*)::bigint FROM certificate_issue_request_items item
                  WHERE item.request_id = request.id) AS item_count
@@ -841,20 +973,22 @@ async fn fetch_request_access(
            ON campaign.id = request.campaign_id
           AND campaign.status <> 'purging'
          WHERE request.id = $1",
-    )
-    .bind(request_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(request_db_error)?
-    .ok_or_else(request_not_found)
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?
+        .ok_or_else(request_not_found)
 }
 
 async fn lock_request(
     tx: &mut Transaction<'_, Postgres>,
     request_id: Uuid,
 ) -> Result<RequestAccessRow, AppError> {
-    sqlx::query_as::<_, RequestAccessRow>(
-        "SELECT request.id, request.campaign_id, campaign.owner_organization_unit_id,
+    DbSession::new(&mut **tx)
+        .query_as::<RequestAccessRow>(
+            "certificates.services.request_service.lock_request",
+            "SELECT request.id, request.campaign_id, campaign.owner_organization_unit_id,
                 request.status, request.submitted_by,
                 (SELECT COUNT(*)::bigint FROM certificate_issue_request_items item
                  WHERE item.request_id = request.id) AS item_count
@@ -862,12 +996,12 @@ async fn lock_request(
          JOIN certificate_campaigns campaign ON campaign.id = request.campaign_id
          WHERE request.id = $1
          FOR UPDATE OF request",
-    )
-    .bind(request_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(request_db_error)?
-    .ok_or_else(request_not_found)
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?
+        .ok_or_else(request_not_found)
 }
 
 async fn transition_to_withdrawn(
@@ -875,16 +1009,18 @@ async fn transition_to_withdrawn(
     actor_user_id: Uuid,
     request: &RequestAccessRow,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE certificate_issue_requests
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.request_service.transition_to_withdrawn",
+            "UPDATE certificate_issue_requests
          SET status = 'withdrawn', withdrawn_at = clock_timestamp(),
              updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(request.id)
-    .execute(&mut **tx)
-    .await
-    .map_err(request_db_error)?;
+        )
+        .bind(request.id)
+        .execute()
+        .await
+        .map_err(request_db_error)?;
     record_request_audit(
         tx,
         actor_user_id,
@@ -900,29 +1036,34 @@ async fn transition_to_withdrawn(
 }
 
 async fn fetch_request_detail_unchecked(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     request_id: Uuid,
 ) -> Result<CertificateIssueRequestDetail, AppError> {
-    let row = sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
-        "{REQUEST_SELECT} WHERE request.id = $1"
-    )))
-    .bind(request_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(request_db_error)?
-    .ok_or_else(request_not_found)?;
-    let items = fetch_request_items(pool, request_id).await?;
-    let context = capability_context(pool, actor).await?;
+    let row = DbSession::new(&mut *connection)
+        .query_as::<IssueRequestRow>(
+            "certificates.services.request_service.fetch_request_detail_unchecked",
+            sqlx::AssertSqlSafe(format!("{REQUEST_SELECT} WHERE request.id = $1")),
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await
+        .map_err(request_db_error)?
+        .ok_or_else(request_not_found)?;
+
+    let items = fetch_request_items_on_connection(connection, request_id).await?;
+    let context = capability_context(connection, actor).await?;
     detail_from_row(row, items, actor, &context)
 }
 
-async fn fetch_request_items(
-    pool: &PgPool,
+async fn fetch_request_items_on_connection(
+    connection: &mut sqlx::PgConnection,
     request_id: Uuid,
 ) -> Result<Vec<CertificateIssueRequestItem>, AppError> {
-    let rows = sqlx::query_as::<_, IssueRequestItemRow>(
-        "SELECT candidate.id AS candidate_id, candidate.template_id,
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<IssueRequestItemRow>(
+            "certificates.services.request_service.fetch_request_items_on_connection",
+            "SELECT candidate.id AS candidate_id, candidate.template_id,
                 template.name AS template_name, candidate.recipient_type,
                 CASE WHEN candidate.selected_name_source = 'account'
                      THEN candidate.account_title ELSE candidate.imported_title END AS title,
@@ -939,11 +1080,11 @@ async fn fetch_request_items(
          LEFT JOIN certificate_templates template ON template.id = candidate.template_id
          WHERE item.request_id = $1
          ORDER BY item.created_at, candidate.id",
-    )
-    .bind(request_id)
-    .fetch_all(pool)
-    .await
-    .map_err(request_db_error)?;
+        )
+        .bind(request_id)
+        .fetch_all()
+        .await
+        .map_err(request_db_error)?;
     rows.into_iter().map(item_from_row).collect()
 }
 
@@ -952,21 +1093,30 @@ async fn rows_to_summaries(
     actor: &ActorContext,
     rows: Vec<IssueRequestRow>,
 ) -> Result<Vec<CertificateIssueRequestSummary>, AppError> {
-    let context = capability_context(pool, actor).await?;
+    let context = {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.request_service.rows_to_summaries.capability_context",
+        )
+        .await
+        .map_err(AppError::from)?;
+        capability_context(&mut read_stage, actor).await
+    }?;
     rows.into_iter()
         .map(|row| summary_from_row(row, actor, &context))
         .collect()
 }
 
 async fn capability_context(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
 ) -> Result<CapabilityContext, AppError> {
-    let submit_scope = match owner_list_scope(pool, actor, CertificateAction::Submit).await {
-        Ok(scope) => Some(scope),
-        Err(AppError::Forbidden(_)) => None,
-        Err(error) => return Err(error),
-    };
+    let submit_scope =
+        match owner_list_scope_on_connection(connection, actor, CertificateAction::Submit).await {
+            Ok(scope) => Some(scope),
+            Err(AppError::Forbidden(_)) => None,
+            Err(error) => return Err(error),
+        };
     Ok(CapabilityContext {
         submit_scope,
         can_issue: actor.has_permission(codes::CERTIFICATE_ISSUE_SCHOOL),

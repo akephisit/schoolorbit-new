@@ -935,3 +935,346 @@ async fn notification_managed_batch_releases_real_pool_lease_and_shared_permit_d
 async fn notification_managed_batch_uuid_remap_refuses_endpoint_cleanup_and_acknowledgment() {
     managed_batch_phase_case("dispatch_managed_uuid_remap", true).await;
 }
+
+#[tokio::test]
+async fn notification_managed_slow_admin_http_allows_actual_other_kind_sql_and_cancels_without_claim(
+) {
+    use crate::integration_tests::tenant_directory::{database_url, DirectoryServer};
+    use school_tenancy::{background::TenantJobKind, PoolManager, PoolManagerConfig};
+    use std::{sync::Arc, time::Duration};
+    let (fixture, recipient) = fixture("dispatch_slow_admin").await;
+    let queued = item(recipient);
+    enqueue(&fixture, std::slice::from_ref(&queued)).await;
+    let url = database_url(&fixture).await;
+    let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), true).await;
+    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+        2, 1, 1,
+    )));
+    assert_eq!(manager.background_turns().limit(), 1);
+    let state = school_notifications::runtime::NotificationRuntimeState {
+        admin_client: directory.client(2, Duration::from_secs(30)),
+        pool_manager: manager.clone(),
+        notification_channel: tokio::sync::broadcast::channel(8).0,
+        eligibility: &ELIGIBILITY,
+    };
+    let transport = Arc::new(ControlledBatchTransport {
+        started: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        endpoint: "synthetic".into(),
+    });
+    let worker_state = state.clone();
+    let worker_transport = transport.clone();
+    let worker = tokio::spawn(async move {
+        school_notifications::runtime::test_support::deliver_managed_batch(
+            &worker_state,
+            "dispatch_slow_admin",
+            worker_transport.as_ref(),
+        )
+        .await
+    });
+    directory.wait_for_request().await;
+    let turns = manager.background_turns();
+    let progress = tokio::time::timeout(
+        Duration::from_secs(1),
+        turns.run("healthy", TenantJobKind::AttendanceMaintenance, || async {
+            let pool = manager
+                .get_pool_without_migrations(url.as_str(), "healthy")
+                .await
+                .unwrap();
+            let mut connection = pool
+                .checkout("fixture.slow_admin_other_kind")
+                .await
+                .unwrap();
+            school_database::DbSession::new(&mut connection)
+                .scalar::<i32>("fixture.slow_admin_other_kind", "SELECT 1")
+                .fetch_one()
+                .await
+                .unwrap()
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(progress, Some(1));
+    assert!(!worker.is_finished());
+    worker.abort();
+    assert!(worker.await.unwrap_err().is_cancelled());
+    directory.unblock();
+    assert!(turns
+        .begin("dispatch_slow_admin", TenantJobKind::NotificationDispatch)
+        .is_some());
+    let attempts: i32 =
+        sqlx::query_scalar("SELECT attempts FROM notification_dispatch_jobs WHERE id=$1")
+            .bind(queued.id)
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+    assert_eq!(attempts, 0);
+    assert_eq!(directory.calls(), 1);
+}
+
+#[derive(Clone, Copy)]
+enum QueuedDirectoryChange {
+    Fence,
+    Rotation,
+    Expiry,
+    Eviction,
+}
+
+async fn notification_managed_queued_finish_case(name: &str, change: QueuedDirectoryChange) {
+    use crate::integration_tests::tenant_directory::{database_url, DirectoryServer, PhaseSignals};
+    use school_tenancy::{background::TenantJobKind, PoolManager, PoolManagerConfig};
+    use std::{sync::Arc, time::Duration};
+    use tracing::instrument::WithSubscriber;
+    let (fixture, recipient) = fixture(name).await;
+    let queued = item(recipient);
+    enqueue(&fixture, std::slice::from_ref(&queued)).await;
+    let endpoint = "https://synthetic.invalid/queued-directory";
+    sqlx::query("INSERT INTO push_subscriptions(user_id,endpoint,p256dh_key,auth_key) VALUES($1,$2,'synthetic','synthetic')").bind(recipient).bind(endpoint).execute(&fixture).await.unwrap();
+    let url = database_url(&fixture).await;
+    let tenant_id = Uuid::new_v4();
+    let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
+    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+        2, 1, 1,
+    )));
+    let ttl = if matches!(change, QueuedDirectoryChange::Expiry) {
+        Duration::from_secs(1)
+    } else {
+        Duration::from_secs(30)
+    };
+    let state = school_notifications::runtime::NotificationRuntimeState {
+        admin_client: directory.client(1, ttl),
+        pool_manager: manager.clone(),
+        notification_channel: tokio::sync::broadcast::channel(8).0,
+        eligibility: &ELIGIBILITY,
+    };
+    let transport = Arc::new(ControlledBatchTransport {
+        started: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        endpoint: endpoint.into(),
+    });
+    let (signals, dispatcher) = PhaseSignals::for_phase("finish");
+    let worker_state = state.clone();
+    let worker_transport = transport.clone();
+    let tenant = name.to_string();
+    let worker = tokio::spawn(
+        async move {
+            school_notifications::runtime::test_support::deliver_managed_batch(
+                &worker_state,
+                &tenant,
+                worker_transport.as_ref(),
+            )
+            .await
+        }
+        .with_subscriber(dispatcher),
+    );
+    tokio::time::timeout(Duration::from_secs(3), transport.started.notified())
+        .await
+        .unwrap();
+    let turns = manager.background_turns();
+    assert_eq!(turns.limit(), 1);
+    let blocker = turns
+        .begin("hold-for-finish", TenantJobKind::AuthRetention)
+        .unwrap();
+    let mut held = Box::pin(blocker.run(|| std::future::pending::<()>()));
+    std::future::poll_fn(|context| {
+        assert!(std::future::Future::poll(held.as_mut(), context).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    transport.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(1), signals.resolved.notified())
+        .await
+        .unwrap();
+    let calls = directory.calls();
+    let extra_requests = match change {
+        QueuedDirectoryChange::Fence => {
+            state
+                .admin_client
+                .begin_directory_mutation(name, Uuid::new_v4())
+                .unwrap();
+            0
+        }
+        QueuedDirectoryChange::Rotation => {
+            let token = Uuid::new_v4();
+            state
+                .admin_client
+                .begin_directory_mutation(name, token)
+                .unwrap();
+            let mut rotated = url.clone();
+            rotated
+                .set_password(Some("synthetic-rotated-credential"))
+                .unwrap();
+            directory.set_mapping(tenant_id, rotated.to_string());
+            state
+                .admin_client
+                .finish_directory_mutation(name, token)
+                .unwrap();
+            state
+                .admin_client
+                .resolve_database_work(name)
+                .await
+                .unwrap();
+            1
+        }
+        QueuedDirectoryChange::Expiry => {
+            tokio::time::sleep(Duration::from_millis(1100)).await;
+            1
+        }
+        QueuedDirectoryChange::Eviction => {
+            state
+                .admin_client
+                .resolve_database_work("evicting-tenant")
+                .await
+                .unwrap();
+            2
+        }
+    };
+    assert!(!worker.is_finished());
+    drop(held);
+    let result = tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    if let Ok(status) = result {
+        assert!(status.pending);
+    }
+    let (endpoint_present, published): (bool, bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE endpoint=$1),(SELECT published_at IS NOT NULL FROM notification_dispatch_jobs WHERE id=$2)").bind(endpoint).bind(queued.id).fetch_one(&fixture).await.unwrap();
+    assert!(
+        endpoint_present,
+        "invalidated proof must not delete an endpoint"
+    );
+    assert!(!published, "invalidated proof must not acknowledge a claim");
+    assert_eq!(directory.calls(), calls + extra_requests, "finish cannot refetch inside admission; only explicit rotation/eviction and later status resolution fetch");
+}
+
+#[tokio::test]
+async fn notification_managed_queued_finish_fence_refuses_cleanup_and_ack_without_http_retry() {
+    notification_managed_queued_finish_case("dispatch_queued_fence", QueuedDirectoryChange::Fence)
+        .await;
+}
+#[tokio::test]
+async fn notification_managed_queued_finish_same_uuid_credential_rotation_refuses_cleanup_and_ack()
+{
+    notification_managed_queued_finish_case(
+        "dispatch_queued_rotation",
+        QueuedDirectoryChange::Rotation,
+    )
+    .await;
+}
+#[tokio::test]
+async fn notification_managed_queued_finish_expired_snapshot_refuses_cleanup_and_ack() {
+    notification_managed_queued_finish_case(
+        "dispatch_queued_expiry",
+        QueuedDirectoryChange::Expiry,
+    )
+    .await;
+}
+#[tokio::test]
+async fn notification_managed_queued_finish_evicted_snapshot_refuses_cleanup_and_ack() {
+    notification_managed_queued_finish_case(
+        "dispatch_queued_eviction",
+        QueuedDirectoryChange::Eviction,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn notification_managed_physical_pool_wait_rechecks_same_uuid_rotated_credentials_before_claim(
+) {
+    use crate::integration_tests::tenant_directory::{database_url, DirectoryServer, PhaseSignals};
+    use school_tenancy::{PoolManager, PoolManagerConfig};
+    use std::{sync::Arc, time::Duration};
+    use tracing::instrument::WithSubscriber;
+    let (fixture, recipient) = fixture("dispatch_physical_rotation").await;
+    let queued = item(recipient);
+    enqueue(&fixture, std::slice::from_ref(&queued)).await;
+    let url = database_url(&fixture).await;
+    let tenant_id = Uuid::new_v4();
+    let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
+    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+        2, 1, 1,
+    )));
+    let mut first_url = url.clone();
+    first_url
+        .query_pairs_mut()
+        .append_pair("application_name", "occupied-one");
+    let first = manager
+        .get_pool_without_migrations(first_url.as_str(), "occupied-one")
+        .await
+        .unwrap();
+    let mut second_url = url.clone();
+    second_url
+        .query_pairs_mut()
+        .append_pair("application_name", "occupied-two");
+    let second = manager
+        .get_pool_without_migrations(second_url.as_str(), "occupied-two")
+        .await
+        .unwrap();
+    let state = school_notifications::runtime::NotificationRuntimeState {
+        admin_client: directory.client(2, Duration::from_secs(30)),
+        pool_manager: manager,
+        notification_channel: tokio::sync::broadcast::channel(8).0,
+        eligibility: &ELIGIBILITY,
+    };
+    let transport = Arc::new(ControlledBatchTransport {
+        started: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        endpoint: "synthetic".into(),
+    });
+    let (signals, dispatcher) = PhaseSignals::for_phase("claim");
+    let worker_state = state.clone();
+    let worker_transport = transport.clone();
+    let worker = tokio::spawn(
+        async move {
+            school_notifications::runtime::test_support::deliver_managed_batch(
+                &worker_state,
+                "dispatch_physical_rotation",
+                worker_transport.as_ref(),
+            )
+            .await
+        }
+        .with_subscriber(dispatcher),
+    );
+    tokio::time::timeout(Duration::from_secs(1), signals.physical_wait.notified())
+        .await
+        .unwrap();
+    let token = Uuid::new_v4();
+    state
+        .admin_client
+        .begin_directory_mutation("dispatch_physical_rotation", token)
+        .unwrap();
+    let mut rotated = url.clone();
+    rotated
+        .set_password(Some("synthetic-new-password"))
+        .unwrap();
+    directory.set_mapping(tenant_id, rotated.to_string());
+    state
+        .admin_client
+        .finish_directory_mutation("dispatch_physical_rotation", token)
+        .unwrap();
+    state
+        .admin_client
+        .resolve_database_work("dispatch_physical_rotation")
+        .await
+        .unwrap();
+    drop(first);
+    assert!(tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap()
+        .is_err());
+    let (attempts, published): (i32, bool) = sqlx::query_as(
+        "SELECT attempts,published_at IS NOT NULL FROM notification_dispatch_jobs WHERE id=$1",
+    )
+    .bind(queued.id)
+    .fetch_one(&fixture)
+    .await
+    .unwrap();
+    assert_eq!(
+        attempts, 0,
+        "second local check must reject before business claim SQL"
+    );
+    assert!(!published);
+    assert_eq!(directory.calls(), 2);
+    drop(second);
+}

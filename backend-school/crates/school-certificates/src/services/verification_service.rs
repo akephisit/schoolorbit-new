@@ -1,4 +1,5 @@
 use school_crypto as field_encryption;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::net::IpAddr;
 
@@ -152,8 +153,22 @@ async fn load_by_number(
     pool: &PgPool,
     certificate_number: &str,
 ) -> Result<Option<PublicVerificationRow>, AppError> {
-    verification_query(certificate_number, None)
-        .fetch_optional(pool)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.load_by_number")
+            .await?;
+    load_by_number_on_connection(&mut connection, certificate_number).await
+}
+
+async fn load_by_number_on_connection(
+    connection: &mut sqlx::PgConnection,
+    certificate_number: &str,
+) -> Result<Option<PublicVerificationRow>, AppError> {
+    DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "certificates.verify.number",
+            verification_query(certificate_number, None),
+        )
+        .fetch_optional()
         .await
         .map_err(AppError::from)
 }
@@ -163,8 +178,25 @@ async fn load_by_number_and_proof(
     certificate_number: &str,
     proof_hash: &str,
 ) -> Result<Option<PublicVerificationRow>, AppError> {
-    verification_query(certificate_number, Some(proof_hash))
-        .fetch_optional(pool)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.load_by_number_and_proof",
+    )
+    .await?;
+    load_by_number_and_proof_on_connection(&mut connection, certificate_number, proof_hash).await
+}
+
+async fn load_by_number_and_proof_on_connection(
+    connection: &mut sqlx::PgConnection,
+    certificate_number: &str,
+    proof_hash: &str,
+) -> Result<Option<PublicVerificationRow>, AppError> {
+    DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "certificates.verify.proof",
+            verification_query(certificate_number, Some(proof_hash)),
+        )
+        .fetch_optional()
         .await
         .map_err(AppError::from)
 }

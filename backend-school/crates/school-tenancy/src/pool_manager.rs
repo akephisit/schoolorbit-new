@@ -241,6 +241,7 @@ impl PoolManager {
         };
         let result = tokio::time::timeout_at(deadline, async {
             let _admission = self.admission.lock().await;
+            let mut reported_wait = false;
             loop {
                 if let Ok(permit) = self
                     .budget
@@ -248,6 +249,14 @@ impl PoolManager {
                     .try_acquire_many_owned(self.max_connections_per_school)
                 {
                     return Ok(permit);
+                }
+                if !reported_wait {
+                    tracing::debug!(
+                        operation = "tenant_physical_budget",
+                        phase = "waiting",
+                        "Tenant physical connection admission waiting"
+                    );
+                    reported_wait = true;
                 }
                 let mut pools = self.pools.write().await;
                 let victim = pools

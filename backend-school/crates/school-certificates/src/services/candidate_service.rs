@@ -1,4 +1,6 @@
+use crate::access_policy::require_owner_action_on_connection;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -218,7 +220,12 @@ pub async fn import_candidates(
         CertificateAction::Update,
     )
     .await?;
-    let mut tx = pool.begin().await.map_err(candidate_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.candidate_service.import_candidates",
+    )
+    .await
+    .map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
     require_mutable_campaign(&locked_access.status)?;
@@ -250,24 +257,26 @@ pub async fn import_candidates(
     let ready_count = count_status(&prepared, CandidateValidationStatus::Ready);
     let review_count = count_status(&prepared, CandidateValidationStatus::NeedsReview);
     let invalid_count = count_status(&prepared, CandidateValidationStatus::Invalid);
-    let (batch_id, batch_created_at): (Uuid, DateTime<Utc>) = sqlx::query_as(
-        "INSERT INTO certificate_import_batches
+    let (batch_id, batch_created_at): (Uuid, DateTime<Utc>) = DbSession::new(&mut *tx)
+        .query_as(
+            "certificates.services.candidate_service.import_candidates",
+            "INSERT INTO certificate_import_batches
             (campaign_id, source, row_count, custom_headers, ready_count, review_count,
              invalid_count, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, created_at",
-    )
-    .bind(campaign_id)
-    .bind(request.source.as_str())
-    .bind(i32::try_from(request.rows.len()).map_err(|_| invalid_import())?)
-    .bind(&validated_headers.custom_headers)
-    .bind(ready_count)
-    .bind(review_count)
-    .bind(invalid_count)
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(candidate_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(request.source.as_str())
+        .bind(i32::try_from(request.rows.len()).map_err(|_| invalid_import())?)
+        .bind(&validated_headers.custom_headers)
+        .bind(ready_count)
+        .bind(review_count)
+        .bind(invalid_count)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(candidate_db_error)?;
     for candidate in &mut prepared {
         candidate.batch_id = Some(batch_id);
     }
@@ -296,7 +305,17 @@ pub async fn import_candidates(
         .iter()
         .map(|candidate| candidate.id)
         .collect::<Vec<_>>();
-    let candidates = fetch_candidate_details(pool, actor, &candidate_ids, true).await?;
+    let candidates = if (&candidate_ids).is_empty() {
+        Ok(Vec::new())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.candidate_service.import_candidates.fetch_candidate_details",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_candidate_details(&mut read_stage, actor, &candidate_ids, true).await
+    }?;
     Ok(CertificateCandidateImportResult {
         batch: CertificateImportBatchSummary {
             id: batch_id,
@@ -362,28 +381,38 @@ pub async fn list_candidates(
         builder.push(")");
     }
     builder.push(" ORDER BY candidate.created_at, candidate.id");
-    let rows = builder
-        .build_query_as::<CandidateRow>()
-        .fetch_all(pool)
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.candidate_service.list_candidates",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .prepared_query_as(
+            "certificates.services.candidate_service.list_candidates",
+            builder.build_query_as::<CandidateRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(candidate_db_error)?;
     let items = rows
         .into_iter()
         .map(|row| candidate_detail(row, can_update))
         .collect::<Result<Vec<_>, _>>()?;
-    let summary = sqlx::query_as::<_, (i64, i64, i64, i64)>(
-        "SELECT
+    let summary = DbSession::new(&mut *database_stage_0)
+        .query_as::<(i64, i64, i64, i64)>(
+            "certificates.services.candidate_service.list_candidates",
+            "SELECT
             COUNT(*)::bigint,
             COUNT(*) FILTER (WHERE validation_status = 'ready')::bigint,
             COUNT(*) FILTER (WHERE validation_status = 'needs_review')::bigint,
             COUNT(*) FILTER (WHERE validation_status = 'invalid')::bigint
          FROM certificate_candidates
          WHERE campaign_id = $1 AND deleted_at IS NULL",
-    )
-    .bind(campaign_id)
-    .fetch_one(pool)
-    .await
-    .map_err(candidate_db_error)?;
+        )
+        .bind(campaign_id)
+        .fetch_one()
+        .await
+        .map_err(candidate_db_error)?;
     Ok(CertificateCandidateListResponse {
         items,
         summary: CertificateCandidateSummary {
@@ -493,8 +522,13 @@ pub async fn search_accounts(
     )
     .await?;
     let pattern = format!("%{search}%");
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.candidate_service.search_accounts",
+    )
+    .await?;
     let rows = match recipient_type {
-        AccountRecipientType::Student => sqlx::query_as::<_, AccountRow>(
+        AccountRecipientType::Student => DbSession::new(&mut *database_stage_0).query_as::<AccountRow>("certificates.services.candidate_service.search_accounts",
             "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
                         person_name.last_name, u.user_type, u.status
                  FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -507,10 +541,10 @@ pub async fn search_accounts(
                  LIMIT 20",
         )
         .bind(pattern)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(candidate_db_error)?,
-        AccountRecipientType::Staff => sqlx::query_as::<_, AccountRow>(
+        AccountRecipientType::Staff => DbSession::new(&mut *database_stage_0).query_as::<AccountRow>("certificates.services.candidate_service.search_accounts",
             "SELECT u.id, u.username, NULL::text AS student_id, person_name.title, person_name.first_name,
                         person_name.last_name, u.user_type, u.status
                  FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -521,7 +555,7 @@ pub async fn search_accounts(
                  LIMIT 20",
         )
         .bind(pattern)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(candidate_db_error)?,
     };
@@ -595,7 +629,12 @@ pub async fn update_candidate(
         super::request_service::can_read_request(pool, actor, access.owner_organization_unit_id)
             .await?;
 
-    let mut tx = pool.begin().await.map_err(candidate_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.candidate_service.update_candidate",
+    )
+    .await
+    .map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, existing.campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
     require_mutable_campaign(&locked_access.status)?;
@@ -764,7 +803,12 @@ async fn create_single_candidate(
     .await?;
     let canonical = canonical_custom_headers(&row.custom_values)?;
     let custom_headers = canonical.values().cloned().collect::<Vec<_>>();
-    let mut tx = pool.begin().await.map_err(candidate_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.candidate_service.create_single_candidate",
+    )
+    .await
+    .map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
     require_mutable_campaign(&locked_access.status)?;
@@ -805,23 +849,25 @@ async fn create_single_candidate(
     let review_count =
         i32::from(prepared.validation_status == CandidateValidationStatus::NeedsReview);
     let invalid_count = i32::from(prepared.validation_status == CandidateValidationStatus::Invalid);
-    let (batch_id, created_at): (Uuid, DateTime<Utc>) = sqlx::query_as(
-        "INSERT INTO certificate_import_batches
+    let (batch_id, created_at): (Uuid, DateTime<Utc>) = DbSession::new(&mut *tx)
+        .query_as(
+            "certificates.services.candidate_service.create_single_candidate",
+            "INSERT INTO certificate_import_batches
             (campaign_id, source, row_count, custom_headers, ready_count, review_count,
              invalid_count, created_by)
          VALUES ($1, $2, 1, $3, $4, $5, $6, $7)
          RETURNING id, created_at",
-    )
-    .bind(campaign_id)
-    .bind(source.as_str())
-    .bind(&custom_headers)
-    .bind(ready_count)
-    .bind(review_count)
-    .bind(invalid_count)
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(candidate_db_error)?;
+        )
+        .bind(campaign_id)
+        .bind(source.as_str())
+        .bind(&custom_headers)
+        .bind(ready_count)
+        .bind(review_count)
+        .bind(invalid_count)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await
+        .map_err(candidate_db_error)?;
     prepared.batch_id = Some(batch_id);
     insert_candidates(&mut tx, actor.user_id, std::slice::from_ref(&prepared)).await?;
     recompute_campaign_duplicate_warnings(&mut tx, actor.user_id, campaign_id).await?;
@@ -855,7 +901,17 @@ async fn create_single_candidate(
             invalid_count,
             created_at,
         },
-        candidates: fetch_candidate_details(pool, actor, &[prepared.id], true).await?,
+        candidates: if (&[prepared.id]).is_empty() {
+            Ok(Vec::new())
+        } else {
+            let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "certificates.candidate_service.create_single_candidate.fetch_candidate_details",
+            )
+            .await
+            .map_err(AppError::from)?;
+            fetch_candidate_details(&mut read_stage, actor, &[prepared.id], true).await
+        }?,
     })
 }
 
@@ -889,7 +945,12 @@ async fn bulk_update_inner(
     let can_read_locked_request =
         super::request_service::can_read_request(pool, actor, access.owner_organization_unit_id)
             .await?;
-    let mut tx = pool.begin().await.map_err(candidate_db_error)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.candidate_service.bulk_update_inner",
+    )
+    .await
+    .map_err(candidate_db_error)?;
     let locked_access = lock_campaign(&mut tx, first.campaign_id).await?;
     require_same_owner(&access, &locked_access)?;
     require_mutable_campaign(&locked_access.status)?;
@@ -1016,17 +1077,19 @@ async fn bulk_update_inner(
     }
 
     if matches!(request, CertificateCandidateBulkRequest::SoftDelete { .. }) {
-        sqlx::query(
-            "UPDATE certificate_candidates
+        DbSession::new(&mut *tx)
+            .query(
+                "certificates.services.candidate_service.bulk_update_inner",
+                "UPDATE certificate_candidates
              SET deleted_at = clock_timestamp(), updated_by = $1,
                  updated_at = clock_timestamp()
              WHERE id = ANY($2::uuid[])",
-        )
-        .bind(actor.user_id)
-        .bind(&candidate_ids)
-        .execute(&mut *tx)
-        .await
-        .map_err(candidate_db_error)?;
+            )
+            .bind(actor.user_id)
+            .bind(&candidate_ids)
+            .execute()
+            .await
+            .map_err(candidate_db_error)?;
     } else {
         apply_bulk_duplicate_warnings(&mut tx, first.campaign_id, &candidate_ids, &mut updated)
             .await?;
@@ -1053,7 +1116,17 @@ async fn bulk_update_inner(
     )
     .await?;
     tx.commit().await.map_err(candidate_db_error)?;
-    let candidates = fetch_candidate_details(pool, actor, &candidate_ids, true).await?;
+    let candidates = if (&candidate_ids).is_empty() {
+        Ok(Vec::new())
+    } else {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "certificates.candidate_service.bulk_update_inner.fetch_candidate_details",
+        )
+        .await
+        .map_err(AppError::from)?;
+        fetch_candidate_details(&mut read_stage, actor, &candidate_ids, true).await
+    }?;
     Ok(CertificateCandidateBulkResult {
         updated_count: candidate_ids.len() as u32,
         candidates,
@@ -1353,24 +1426,26 @@ async fn load_import_accounts(
     let student_rows = if student_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as::<_, AccountRow>(
-            "SELECT u.id, u.username, student.student_id, u.title, u.first_name,
+        DbSession::new(&mut **tx)
+            .query_as::<AccountRow>(
+                "certificates.services.candidate_service.load_import_accounts",
+                "SELECT u.id, u.username, student.student_id, u.title, u.first_name,
                     u.last_name, u.user_type, u.status
              FROM student_info student
              JOIN users u ON u.id = student.user_id
              WHERE student.student_id = ANY($1::text[]) AND u.user_type = 'student'
              ORDER BY u.id
              FOR SHARE OF student, u",
-        )
-        .bind(&student_ids)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(candidate_db_error)?
+            )
+            .bind(&student_ids)
+            .fetch_all()
+            .await
+            .map_err(candidate_db_error)?
     };
     let staff_rows = if staff_usernames.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as::<_, AccountRow>(
+        DbSession::new(&mut **tx).query_as::<AccountRow>("certificates.services.candidate_service.load_import_accounts",
             "SELECT u.id, u.username, NULL::text AS student_id, person_name.title, person_name.first_name,
                     person_name.last_name, u.user_type, u.status
              FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -1380,7 +1455,7 @@ async fn load_import_accounts(
              FOR SHARE OF u",
         )
         .bind(&staff_usernames)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await
         .map_err(candidate_db_error)?
     };
@@ -1400,8 +1475,10 @@ async fn load_templates(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Vec<TemplateRow>, AppError> {
-    sqlx::query_as::<_, TemplateRow>(
-        "SELECT template.id, template.normalized_name,
+    DbSession::new(&mut **tx)
+        .query_as::<TemplateRow>(
+            "certificates.services.candidate_service.load_templates",
+            "SELECT template.id, template.normalized_name,
                 template.allowed_recipient_types, template.is_active,
                 (template.background_file_id IS NOT NULL
                  AND background.lifecycle_status = 'ready'
@@ -1411,11 +1488,11 @@ async fn load_templates(
          LEFT JOIN files background ON background.id = template.background_file_id
          WHERE template.campaign_id = $1
          ORDER BY template.created_at, template.id",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(candidate_db_error)
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)
 }
 
 async fn apply_duplicate_warnings(
@@ -1472,16 +1549,20 @@ async fn fetch_duplicate_fingerprints_excluding(
     campaign_id: Uuid,
     excluded_ids: &[Uuid],
 ) -> Result<BTreeSet<DuplicateFingerprint>, AppError> {
-    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT}
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.fetch_duplicate_fingerprints_excluding",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT}
          WHERE candidate.campaign_id = $1 AND candidate.deleted_at IS NULL
            AND NOT (candidate.id = ANY($2::uuid[]))"
-    )))
-    .bind(campaign_id)
-    .bind(excluded_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?;
+            )),
+        )
+        .bind(campaign_id)
+        .bind(excluded_ids)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)?;
     rows.into_iter()
         .map(prepared_from_row)
         .map(|candidate| candidate.map(|candidate| duplicate_fingerprint(&candidate)))
@@ -1521,16 +1602,20 @@ async fn recompute_campaign_duplicate_warnings(
     actor_user_id: Uuid,
     campaign_id: Uuid,
 ) -> Result<(), AppError> {
-    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT}
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.recompute_campaign_duplicate_warnings",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT}
          WHERE candidate.campaign_id = $1 AND candidate.deleted_at IS NULL
          ORDER BY candidate.id
          FOR UPDATE OF candidate"
-    )))
-    .bind(campaign_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?;
+            )),
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)?;
     let mut candidates = rows
         .into_iter()
         .map(prepared_from_row)
@@ -1562,25 +1647,27 @@ async fn recompute_campaign_duplicate_warnings(
         {
             continue;
         }
-        sqlx::query(
-            "UPDATE certificate_candidates
+        DbSession::new(&mut **tx)
+            .query(
+                "certificates.services.candidate_service.recompute_campaign_duplicate_warnings",
+                "UPDATE certificate_candidates
              SET validation_codes = $2, validation_status = $3,
                  updated_by = $4, updated_at = clock_timestamp()
              WHERE id = $1",
-        )
-        .bind(candidate.id)
-        .bind(
-            candidate
-                .validation_codes
-                .iter()
-                .map(|code| code.as_str())
-                .collect::<Vec<_>>(),
-        )
-        .bind(candidate.validation_status.as_str())
-        .bind(actor_user_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(candidate_db_error)?;
+            )
+            .bind(candidate.id)
+            .bind(
+                candidate
+                    .validation_codes
+                    .iter()
+                    .map(|code| code.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .bind(candidate.validation_status.as_str())
+            .bind(actor_user_id)
+            .execute()
+            .await
+            .map_err(candidate_db_error)?;
     }
     Ok(())
 }
@@ -1667,9 +1754,12 @@ async fn insert_candidates(
                 .push_bind(actor_user_id)
                 .push_bind(actor_user_id);
         });
-        builder
-            .build()
-            .execute(&mut **tx)
+        DbSession::new(&mut **tx)
+            .prepared_query(
+                "certificates.services.candidate_service.insert_candidates",
+                builder.build(),
+            )
+            .execute()
             .await
             .map_err(candidate_db_error)?;
     }
@@ -1681,8 +1771,10 @@ async fn update_prepared_candidate(
     actor_user_id: Uuid,
     candidate: &PreparedCandidate,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE certificate_candidates
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.candidate_service.update_prepared_candidate",
+            "UPDATE certificate_candidates
          SET template_id = $2, recipient_type = $3, matched_user_id = $4,
              lookup_student_id = $5, lookup_staff_username = $6, imported_title = $7,
              imported_first_name = $8, imported_last_name = $9, account_title = $10,
@@ -1691,41 +1783,41 @@ async fn update_prepared_candidate(
              match_status = $17, validation_status = $18, validation_codes = $19,
              duplicate_confirmed = $20, updated_by = $21, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(candidate.id)
-    .bind(candidate.template_id)
-    .bind(candidate.recipient_type.as_str())
-    .bind(candidate.matched_user_id)
-    .bind(&candidate.lookup_student_id)
-    .bind(&candidate.lookup_staff_username)
-    .bind(&candidate.imported_title)
-    .bind(&candidate.imported_first_name)
-    .bind(&candidate.imported_last_name)
-    .bind(&candidate.account_title)
-    .bind(&candidate.account_first_name)
-    .bind(&candidate.account_last_name)
-    .bind(
-        candidate
-            .selected_name_source
-            .map(CandidateNameSource::as_str),
-    )
-    .bind(&candidate.activity_item)
-    .bind(&candidate.award_or_role)
-    .bind(sqlx::types::Json(candidate.custom_values.clone()))
-    .bind(candidate.match_status.as_str())
-    .bind(candidate.validation_status.as_str())
-    .bind(
-        candidate
-            .validation_codes
-            .iter()
-            .map(|code| code.as_str())
-            .collect::<Vec<_>>(),
-    )
-    .bind(candidate.duplicate_confirmed)
-    .bind(actor_user_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?;
+        )
+        .bind(candidate.id)
+        .bind(candidate.template_id)
+        .bind(candidate.recipient_type.as_str())
+        .bind(candidate.matched_user_id)
+        .bind(&candidate.lookup_student_id)
+        .bind(&candidate.lookup_staff_username)
+        .bind(&candidate.imported_title)
+        .bind(&candidate.imported_first_name)
+        .bind(&candidate.imported_last_name)
+        .bind(&candidate.account_title)
+        .bind(&candidate.account_first_name)
+        .bind(&candidate.account_last_name)
+        .bind(
+            candidate
+                .selected_name_source
+                .map(CandidateNameSource::as_str),
+        )
+        .bind(&candidate.activity_item)
+        .bind(&candidate.award_or_role)
+        .bind(sqlx::types::Json(candidate.custom_values.clone()))
+        .bind(candidate.match_status.as_str())
+        .bind(candidate.validation_status.as_str())
+        .bind(
+            candidate
+                .validation_codes
+                .iter()
+                .map(|code| code.as_str())
+                .collect::<Vec<_>>(),
+        )
+        .bind(candidate.duplicate_confirmed)
+        .bind(actor_user_id)
+        .execute()
+        .await
+        .map_err(candidate_db_error)?;
     Ok(())
 }
 
@@ -1738,31 +1830,35 @@ async fn authoritative_account_exists(
             let Some(student_id) = candidate.lookup_student_id.as_deref() else {
                 return Ok(false);
             };
-            sqlx::query_scalar(
-                "SELECT EXISTS (
+            DbSession::new(&mut **tx)
+                .scalar(
+                    "certificates.services.candidate_service.authoritative_account_exists",
+                    "SELECT EXISTS (
                     SELECT 1 FROM student_info student
                     JOIN users u ON u.id = student.user_id
                     WHERE student.student_id = $1 AND u.user_type = 'student'
                  )",
-            )
-            .bind(student_id)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(candidate_db_error)
+                )
+                .bind(student_id)
+                .fetch_one()
+                .await
+                .map_err(candidate_db_error)
         }
         RecipientType::Staff => {
             let Some(username) = candidate.lookup_staff_username.as_deref() else {
                 return Ok(false);
             };
-            sqlx::query_scalar(
-                "SELECT EXISTS (
+            DbSession::new(&mut **tx)
+                .scalar(
+                    "certificates.services.candidate_service.authoritative_account_exists",
+                    "SELECT EXISTS (
                     SELECT 1 FROM users WHERE username = $1 AND user_type = 'staff'
                  )",
-            )
-            .bind(username)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(candidate_db_error)
+                )
+                .bind(username)
+                .fetch_one()
+                .await
+                .map_err(candidate_db_error)
         }
         RecipientType::External => Ok(false),
     }
@@ -1771,39 +1867,57 @@ async fn authoritative_account_exists(
 async fn lock_account_identity_writes(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
     // A missing identity has no row to lock. SHARE table locks serialize this short,
     // explicit confirmation path with every INSERT/UPDATE that could create the account.
-    sqlx::query("LOCK TABLE users, student_info IN SHARE MODE")
-        .execute(&mut **tx)
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.candidate_service.lock_account_identity_writes",
+            "LOCK TABLE users, student_info IN SHARE MODE",
+        )
+        .execute()
         .await
         .map_err(candidate_db_error)?;
     Ok(())
 }
 
 async fn campaign_access(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignAccessRow, AppError> {
-    sqlx::query_as(
-        "SELECT owner_organization_unit_id, status
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.campaign_access")
+            .await?;
+    campaign_access_on_connection(&mut connection, campaign_id).await
+}
+
+async fn campaign_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<CampaignAccessRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as(
+            "certificates.services.candidate_service.campaign_access_on_connection",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1 AND status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(candidate_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(candidate_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
 }
 
 async fn lock_campaign(
     tx: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<CampaignAccessRow, AppError> {
-    sqlx::query_as(
-        "SELECT owner_organization_unit_id, status
+    DbSession::new(&mut **tx)
+        .query_as(
+            "certificates.services.candidate_service.lock_campaign",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns WHERE id = $1 FOR UPDATE",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await
+        .map_err(candidate_db_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))
 }
 
 fn require_same_owner(
@@ -1841,30 +1955,38 @@ async fn lock_candidate(
     tx: &mut Transaction<'_, Postgres>,
     candidate_id: Uuid,
 ) -> Result<CandidateRow, AppError> {
-    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT} WHERE candidate.id = $1 FOR UPDATE OF candidate"
-    )))
-    .bind(candidate_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?
-    .ok_or_else(candidate_not_found)
+    DbSession::new(&mut **tx)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.lock_candidate",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT} WHERE candidate.id = $1 FOR UPDATE OF candidate"
+            )),
+        )
+        .bind(candidate_id)
+        .fetch_optional()
+        .await
+        .map_err(candidate_db_error)?
+        .ok_or_else(candidate_not_found)
 }
 
 async fn lock_candidates(
     tx: &mut Transaction<'_, Postgres>,
     candidate_ids: &[Uuid],
 ) -> Result<Vec<CandidateRow>, AppError> {
-    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT}
+    DbSession::new(&mut **tx)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.lock_candidates",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT}
          WHERE candidate.id = ANY($1::uuid[])
          ORDER BY candidate.id
          FOR UPDATE OF candidate"
-    )))
-    .bind(candidate_ids)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(candidate_db_error)
+            )),
+        )
+        .bind(candidate_ids)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)
 }
 
 fn require_candidate_mutable(
@@ -1892,23 +2014,40 @@ async fn fetch_candidate_row(
     candidate_id: Uuid,
     include_deleted: bool,
 ) -> Result<CandidateRow, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.fetch_candidate_row",
+    )
+    .await?;
+    fetch_candidate_row_on_connection(&mut connection, candidate_id, include_deleted).await
+}
+
+async fn fetch_candidate_row_on_connection(
+    connection: &mut sqlx::PgConnection,
+    candidate_id: Uuid,
+    include_deleted: bool,
+) -> Result<CandidateRow, AppError> {
     let deleted_filter = if include_deleted {
         ""
     } else {
         " AND candidate.deleted_at IS NULL"
     };
-    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT} WHERE candidate.id = $1{deleted_filter}"
-    )))
-    .bind(candidate_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(candidate_db_error)?
-    .ok_or_else(candidate_not_found)
+    DbSession::new(&mut *connection)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.fetch_candidate_row_on_connection",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT} WHERE candidate.id = $1{deleted_filter}"
+            )),
+        )
+        .bind(candidate_id)
+        .fetch_optional()
+        .await
+        .map_err(candidate_db_error)?
+        .ok_or_else(candidate_not_found)
 }
 
 async fn fetch_candidate_details(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     candidate_ids: &[Uuid],
     include_deleted: bool,
@@ -1921,34 +2060,40 @@ async fn fetch_candidate_details(
     } else {
         " AND candidate.deleted_at IS NULL"
     };
-    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
-        "{CANDIDATE_SELECT}
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<CandidateRow>(
+            "certificates.services.candidate_service.fetch_candidate_details",
+            sqlx::AssertSqlSafe(format!(
+                "{CANDIDATE_SELECT}
          WHERE candidate.id = ANY($1::uuid[]){deleted_filter}
          ORDER BY candidate.created_at, candidate.id"
-    )))
-    .bind(candidate_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(candidate_db_error)?;
+            )),
+        )
+        .bind(candidate_ids)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)?;
     if rows.len() != candidate_ids.len() {
         return Err(candidate_not_found());
     }
-    let access = campaign_access(pool, rows[0].campaign_id).await?;
+
+    let access = campaign_access_on_connection(connection, rows[0].campaign_id).await?;
     if rows
         .iter()
         .any(|candidate| candidate.campaign_id != rows[0].campaign_id)
     {
         return Err(candidate_not_found());
     }
-    require_owner_action(
-        pool,
+    require_owner_action_on_connection(
+        connection,
         actor,
         access.owner_organization_unit_id,
         CertificateAction::Read,
     )
     .await?;
-    let can_update = require_owner_action(
-        pool,
+    let can_update = require_owner_action_on_connection(
+        connection,
         actor,
         access.owner_organization_unit_id,
         CertificateAction::Update,
@@ -2164,19 +2309,21 @@ async fn require_known_campaign_custom_headers(
     if requested.is_empty() {
         return Ok(());
     }
-    let known = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT custom.header
+    let known = DbSession::new(&mut **tx)
+        .scalar::<String>(
+            "certificates.services.candidate_service.require_known_campaign_custom_headers",
+            "SELECT DISTINCT custom.header
          FROM certificate_import_batches batch
          CROSS JOIN LATERAL unnest(batch.custom_headers) AS custom(header)
          WHERE batch.campaign_id = $1",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?
-    .into_iter()
-    .map(|header| normalize_name_for_match(&header))
-    .collect::<BTreeSet<_>>();
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(candidate_db_error)?
+        .into_iter()
+        .map(|header| normalize_name_for_match(&header))
+        .collect::<BTreeSet<_>>();
     if requested.keys().all(|header| known.contains(header)) {
         Ok(())
     } else {
@@ -2266,7 +2413,17 @@ fn selected_name(candidate: &CertificateCandidateDetail) -> (Option<String>, Str
 }
 
 async fn load_account_by_id(pool: &PgPool, user_id: Uuid) -> Result<AccountRow, AppError> {
-    sqlx::query_as(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.load_account_by_id")
+            .await?;
+    load_account_by_id_on_connection(&mut connection, user_id).await
+}
+
+async fn load_account_by_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<AccountRow, AppError> {
+    DbSession::new(&mut *connection).query_as("certificates.services.candidate_service.load_account_by_id_on_connection",
         "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
                 person_name.last_name, u.user_type, u.status
          FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -2275,7 +2432,7 @@ async fn load_account_by_id(pool: &PgPool, user_id: Uuid) -> Result<AccountRow, 
          WHERE u.id = $1 AND u.user_type IN ('student', 'staff')",
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(candidate_db_error)?
     .ok_or_else(|| AppError::NotFound("ไม่พบบัญชีนักเรียนหรือบุคลากร".to_string()))
@@ -2285,7 +2442,7 @@ async fn load_account_by_id_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
 ) -> Result<AccountRow, AppError> {
-    sqlx::query_as(
+    DbSession::new(&mut **tx).query_as("certificates.services.candidate_service.load_account_by_id_tx",
         "SELECT u.id, u.username, student.student_id, person_name.title, person_name.first_name,
                 person_name.last_name, u.user_type, u.status
          FROM users u JOIN user_display_names person_name ON person_name.id=u.id
@@ -2295,7 +2452,7 @@ async fn load_account_by_id_tx(
          FOR SHARE OF u",
     )
     .bind(user_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await
     .map_err(candidate_db_error)?
     .ok_or_else(|| AppError::NotFound("ไม่พบบัญชีนักเรียนหรือบุคลากร".to_string()))
@@ -2367,17 +2524,19 @@ async fn record_candidate_audit(
     let entity_id = metadata.candidate_id.unwrap_or(metadata.campaign_id);
     let metadata = serde_json::to_value(metadata)
         .map_err(|_| AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string()))?;
-    sqlx::query(
-        "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
+    DbSession::new(&mut **tx)
+        .query(
+            "certificates.services.candidate_service.record_candidate_audit",
+            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, $2, 'certificate_candidate', $3, $4)",
-    )
-    .bind(actor_user_id)
-    .bind(action)
-    .bind(entity_id)
-    .bind(metadata)
-    .execute(&mut **tx)
-    .await
-    .map_err(candidate_db_error)?;
+        )
+        .bind(actor_user_id)
+        .bind(action)
+        .bind(entity_id)
+        .bind(metadata)
+        .execute()
+        .await
+        .map_err(candidate_db_error)?;
     Ok(())
 }
 

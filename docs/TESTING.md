@@ -290,6 +290,36 @@ query cancellation and error-trace fixtures from the repository root:
 ./scripts/test_backend_school.sh integration_tests::database -- --test-threads=1
 ```
 
+Run the tracked production module-graph guards (default and api-docs reachability,
+async join expressions, aliases, private connection helpers and explicit resource entries):
+
+```bash
+cargo test --test database_execution_architecture
+cargo test --test static_architecture
+```
+
+The guard is a syntax/lifetime-boundary check with explicit infrastructure and domain
+work-entry scopes, not a formal interprocedural proof. Its negative cases include an
+unsuffixed private `hydrate_templates(pool)` that performs its own checkout/query.
+Actual managed regressions use the real AdminClient, DirectoryCache, PoolManager and
+production Notification/Cleaner phase orchestration with only loopback Admin HTTP and
+external delivery/storage fakes. They cover slow Admin HTTP plus another kind's actual
+SQL under the sole permit, cancellation without a claim/file mutation, queued fence,
+same-UUID credentials, expiry/eviction, endpoint cleanup/ack refusal, and invalidation
+while waiting for actual physical PoolManager capacity. The physical-wait case asserts
+no business claim SQL occurred after stale admission; pool bootstrap verification may
+still have run before the second local validation.
+
+```bash
+./scripts/test_backend_school.sh integration_tests::notification_dispatch::notification_managed -- --test-threads=1
+./scripts/test_backend_school.sh services::cleaner::phase_tests::managed_ -- --test-threads=1
+```
+
+All timeouts remain the production phase/item budgets. Fixed-label trace observations
+provide deterministic queue handshakes; no test swaps in a separate resolver or database
+completion algorithm. DirectoryCache unit tests separately cover refill revisions,
+real TTL expiry, eviction, mutation and cancellation without a stale fallback.
+
 These fixtures create only disposable synthetic tables and preserve the native SQLx
 error. They do not test production throughput. Compare workspace compile evidence on
 the same pinned toolchain, target cache and concurrency; distinguish warm-cache effects

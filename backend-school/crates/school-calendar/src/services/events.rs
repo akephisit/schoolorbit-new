@@ -26,7 +26,8 @@ pub async fn create_event(
     actor_user_id: Uuid,
     payload: UpsertCalendarEventRequest,
 ) -> Result<CalendarEventMutationOutcome, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.events.create_event").await?;
     let id = create_event_in_transaction(&mut transaction, actor_user_id, &payload).await?;
     transaction.commit().await?;
     event_outcome(
@@ -148,7 +149,8 @@ pub async fn update_event(
     payload: UpsertCalendarEventRequest,
 ) -> Result<CalendarEventMutationOutcome, AppError> {
     validate_event_payload(&payload)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.events.update_event").await?;
     let exists = school_database::DbSession::new(&mut *transaction)
         .scalar::<Uuid>(
             "calendar.services.events.update_event",
@@ -184,7 +186,9 @@ pub async fn soft_delete_event(
     id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "calendar.events.soft_delete_event")
+            .await?;
     let result=school_database::DbSession::new(&mut *transaction).query("calendar.services.events.soft_delete_event", "UPDATE calendar_events SET deleted_at=NOW(),updated_by=$2 WHERE id=$1 AND deleted_at IS NULL")
         .bind(id).bind(actor_user_id).execute().await?;
     if result.rows_affected() == 0 {

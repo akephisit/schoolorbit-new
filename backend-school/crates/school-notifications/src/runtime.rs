@@ -8,7 +8,7 @@ use futures::{stream, StreamExt};
 use school_errors::AppError;
 use school_tenancy::{
     background::{TenantJobKind, TenantTurn},
-    AdminClient, PoolManager, TenantPool,
+    AdminClient, PoolManager, ResolvedTenantDatabase, TenantPool,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -162,38 +162,67 @@ enum DeliveryDatabase<'a> {
     Unmanaged(&'a sqlx::PgPool),
 }
 impl DeliveryDatabase<'_> {
+    async fn resolve(&self, tenant: &str) -> Result<Option<ResolvedTenantDatabase>, AppError> {
+        match self {
+            Self::Unmanaged(_) => Ok(None),
+            Self::Managed(state) => state
+                .admin_client
+                .resolve_database_work(tenant)
+                .await
+                .map(Some)
+                .map_err(|_| {
+                    AppError::ServiceUnavailable("notification_tenant_unavailable".into())
+                }),
+        }
+    }
     async fn pool(
         &self,
-        tenant: &str,
+        resolved: Option<&ResolvedTenantDatabase>,
         expected: Option<uuid::Uuid>,
     ) -> Result<(uuid::Uuid, TenantPool), AppError> {
         match self {
             Self::Unmanaged(pool) => Ok((uuid::Uuid::nil(), (*pool).clone().into())),
             Self::Managed(state) => {
-                let school = state
+                let resolved = resolved.ok_or_else(|| {
+                    AppError::ServiceUnavailable("notification_tenant_unavailable".into())
+                })?;
+                state
                     .admin_client
-                    .get_school_database_info(tenant)
+                    .pool_for_resolved_work(&state.pool_manager, resolved, expected)
                     .await
                     .map_err(|_| {
                         AppError::ServiceUnavailable("notification_tenant_unavailable".into())
-                    })?;
-                if expected.is_some_and(|id| id != school.tenant_id) {
-                    return Err(AppError::ServiceUnavailable(
-                        "notification_tenant_changed".into(),
-                    ));
-                }
-                let pool = state
-                    .pool_manager
-                    .get_pool(&school.database_url, tenant)
-                    .await
-                    .map_err(|_| {
-                        AppError::ServiceUnavailable("notification_tenant_unavailable".into())
-                    })?;
-                Ok((school.tenant_id, pool))
+                    })
             }
         }
     }
 }
+
+async fn resolved_phase<T, F, Fut>(
+    access: &DeliveryDatabase<'_>,
+    tenant: &str,
+    expected: Option<uuid::Uuid>,
+    turn: Option<&TenantTurn<'_>>,
+    phase: &'static str,
+    work: F,
+) -> Result<T, AppError>
+where
+    F: FnOnce(uuid::Uuid, TenantPool) -> Fut,
+    Fut: std::future::Future<Output = Result<T, AppError>>,
+{
+    let resolved = access.resolve(tenant).await?;
+    tracing::debug!(
+        operation = "notification_database_phase",
+        phase,
+        "Tenant database work resolved"
+    );
+    admitted(turn, || async {
+        let (id, pool) = access.pool(resolved.as_ref(), expected).await?;
+        work(id, pool).await
+    })
+    .await
+}
+
 async fn admitted<T, F, Fut>(turn: Option<&TenantTurn<'_>>, phase: F) -> Result<T, AppError>
 where
     F: FnOnce() -> Fut,
@@ -250,35 +279,46 @@ async fn deliver_database_batch(
     transport: DeliveryTransport<'_>,
 ) -> Result<dispatch::QueueStatus, AppError> {
     let claimed_at = tokio::time::Instant::now();
-    let (tenant_id, batch) = database(admitted(turn, || async {
-        let (id, pool) = access.pool(tenant, None).await?;
-        Ok((id, dispatch::claim(&pool).await?))
-    }))
+    let (tenant_id, batch) = database(resolved_phase(
+        access,
+        tenant,
+        None,
+        turn,
+        "claim",
+        |id, pool| async move { Ok((id, dispatch::claim(&pool).await?)) },
+    ))
     .await?;
     let outcome = deliver_batch(
         batch,
         DELIVERY_CONCURRENCY,
         DELIVERY_ITEM_TIMEOUT,
         |claimed| async move {
-            let prepared = admitted(turn, || async {
-                let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-                let Some(notification) =
-                    dispatch::materialize(&pool, &claimed, eligibility).await?
-                else {
-                    return Ok(None);
-                };
-                NotificationService::prepare_stored(
-                    &pool,
-                    claimed.notification.recipient_id,
-                    notification,
-                    claimed.attempts,
-                )
-                .await
-                .map(Some)
-                .map_err(|_| {
-                    AppError::ServiceUnavailable("notification_subscription_unavailable".into())
-                })
-            })
+            let claimed = &claimed;
+            let prepared = resolved_phase(
+                access,
+                tenant,
+                Some(tenant_id),
+                turn,
+                "prepare",
+                |_, pool| async move {
+                    let Some(notification) =
+                        dispatch::materialize(&pool, &claimed, eligibility).await?
+                    else {
+                        return Ok(None);
+                    };
+                    NotificationService::prepare_stored(
+                        &pool,
+                        claimed.notification.recipient_id,
+                        notification,
+                        claimed.attempts,
+                    )
+                    .await
+                    .map(Some)
+                    .map_err(|_| {
+                        AppError::ServiceUnavailable("notification_subscription_unavailable".into())
+                    })
+                },
+            )
             .await?;
             let Some(prepared) = prepared else {
                 return Ok(());
@@ -296,10 +336,14 @@ async fn deliver_database_batch(
                 .map_err(|_| {
                     AppError::ServiceUnavailable("notification_transport_unavailable".into())
                 })?;
-            admitted(turn, || async {
-                let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-                dispatch::finish_delivery(&pool, &claimed, receipt).await
-            })
+            resolved_phase(
+                access,
+                tenant,
+                Some(tenant_id),
+                turn,
+                "finish",
+                |_, pool| async move { dispatch::finish_delivery(&pool, claimed, receipt).await },
+            )
             .await
         },
     )
@@ -312,10 +356,14 @@ async fn deliver_database_batch(
             "Notification jobs remain leased for retry"
         );
     }
-    database(admitted(turn, || async {
-        let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
-        dispatch::status(&pool).await
-    }))
+    database(resolved_phase(
+        access,
+        tenant,
+        Some(tenant_id),
+        turn,
+        "status",
+        |_, pool| async move { dispatch::status(&pool).await },
+    ))
     .await
 }
 

@@ -19,7 +19,12 @@ pub async fn sync_routes(
     );
 
     let active_codes = desired_route_codes(&data.routes)?;
-    let mut transaction = pool.begin().await.map_err(|error| {
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "navigation.route_registration_service.sync_routes",
+    )
+    .await
+    .map_err(|error| {
         tracing::error!(
             "Failed to begin route synchronization transaction: {}",
             error

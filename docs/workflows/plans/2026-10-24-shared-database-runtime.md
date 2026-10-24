@@ -18,3 +18,15 @@ Focused validation recipes: run the existing package suites for `school-tenancy`
 4. Verify type-safety and rejection of alternate executors/concurrent connection reborrows, and use disposable root integration fixtures for query results, rollback, cancellation observations and safe trace fields. Re-run the existing Attendance/Calendar one-connection regressions through the actual new API.
 5. Update canonical rules/testing/operations and architecture guards for dependency direction, query boundary and documented exceptions. Compare before/after compilation on pinned 1.98.1 with the shared cache and jobs4; report actual evidence without attributing cache effects to the crate split.
 6. Freeze each coherent API/migration checkpoint in Draft PR 171 under Senior ownership. Independent review and QA remain required; do not merge, deploy, run production/load tests or upgrade dependencies.
+
+7. Close the reviewed control-plane/admission gap: issue opaque current-cache work
+   snapshots outside DB admission, validate locally before/after nonmigrating pool
+   acquisition, and retain each original phase/item deadline. Do not fall back to HTTP
+   or replay SQL under a stale proof. Cover queued fences, same-UUID credential rotation,
+   expiry/eviction/cancellation, real physical capacity waiting, endpoint/ack and file
+   metadata suppression using the actual managed orchestration. Distinguish local
+   revision proof guarantees from atomic directory/SQL serialization.
+8. Keep private query/hydration helpers connection-only, with exact documented domain
+   transaction/snapshot work-entry scopes. Run macro/alias/cfg-aware syntax guard negative
+   cases plus actual root fixture and package checks on the final frozen candidate;
+   standalone guard diagnostics are development evidence, not final Cargo acceptance.
