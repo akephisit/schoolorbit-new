@@ -14,36 +14,40 @@ pub async fn get_on_connection(
     connection: &mut PgConnection,
     term: Uuid,
 ) -> Result<AttendanceSettings, AppError> {
-    let archived: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)",
-    )
-    .bind(term)
-    .fetch_one(&mut *connection)
-    .await?;
-    let row: Option<(Json<AttendanceConfiguration>, i64)> = sqlx::query_as(
-        "SELECT configuration,row_version FROM attendance_settings WHERE academic_term_id=$1",
-    )
-    .bind(term)
-    .fetch_optional(&mut *connection)
-    .await?;
-    let (configuration, row_version) = row.map(|(c, v)| (c.0, v)).unwrap_or_default();
-    let auto_finalize_from = sqlx::query_scalar(
-        "SELECT auto_finalize_from FROM attendance_module_state WHERE singleton",
-    )
-    .fetch_one(&mut *connection)
-    .await?;
-    Ok(AttendanceSettings {
-        academic_term_id: term,
-        configuration: if row_version == 0 {
-            AttendanceConfiguration::default()
-        } else {
-            configuration
-        },
-        row_version,
-        archived,
-        auto_finalize_from,
-    })
+    Ok(AttendanceReadContext::load(connection, term)
+        .await?
+        .settings)
 }
+
+/// Read once per database stage; callers retain their existing transaction guards.
+pub(crate) struct AttendanceReadContext {
+    pub settings: AttendanceSettings,
+    pub term_writable: Option<bool>,
+}
+impl AttendanceReadContext {
+    pub async fn load(connection: &mut PgConnection, term: Uuid) -> Result<Self, AppError> {
+        let (configuration, row_version, archived, auto_finalize_from, term_writable):
+            (Option<Json<AttendanceConfiguration>>, Option<i64>, bool, NaiveDate, Option<bool>) =
+            sqlx::query_as("SELECT s.configuration,s.row_version,EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=$1),m.auto_finalize_from,t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM attendance_module_state m LEFT JOIN attendance_settings s ON s.academic_term_id=$1 LEFT JOIN academic_terms t ON t.id=$1 LEFT JOIN academic_years y ON y.id=t.academic_year_id WHERE m.singleton")
+                .bind(term).fetch_one(&mut *connection).await?;
+        let row_version = row_version.unwrap_or(0);
+        Ok(Self {
+            settings: AttendanceSettings {
+                academic_term_id: term,
+                configuration: if row_version == 0 {
+                    AttendanceConfiguration::default()
+                } else {
+                    configuration.map(|v| v.0).unwrap_or_default()
+                },
+                row_version,
+                archived,
+                auto_finalize_from,
+            },
+            term_writable,
+        })
+    }
+}
+
 pub async fn save(
     pool: &PgPool,
     actor: Uuid,
@@ -167,12 +171,20 @@ pub async fn is_counted(
     date: NaiveDate,
     c: &AttendanceConfiguration,
 ) -> Result<bool, AppError> {
+    is_counted_on_connection(&mut *pool.acquire().await?, term, date, c).await
+}
+pub(crate) async fn is_counted_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+    c: &AttendanceConfiguration,
+) -> Result<bool, AppError> {
     let day: Option<bool> = sqlx::query_scalar(
         "SELECT counted FROM attendance_days WHERE academic_term_id=$1 AND date=$2",
     )
     .bind(term)
     .bind(date)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?;
     Ok(counted(c, date, day))
 }

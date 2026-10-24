@@ -1,5 +1,7 @@
 use crate::{events::TenantNotificationEvent, models::Notification};
-use std::env;
+use futures::{stream, StreamExt};
+use sqlx::Connection;
+use std::{env, time::Duration};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use web_push::*;
@@ -50,6 +52,23 @@ impl NotificationType {
     }
 }
 
+#[derive(sqlx::FromRow)]
+struct PushSubscription {
+    endpoint: String,
+    p256dh_key: String,
+    auth_key: String,
+}
+
+/// Owned transport input; it cannot retain a pool, transaction or database permit.
+pub(crate) struct PreparedNotification {
+    notification: Notification,
+    subscriptions: Vec<PushSubscription>,
+}
+pub(crate) struct DeliveryReceipt {
+    invalid_endpoints: Vec<String>,
+    retryable: bool,
+}
+
 impl NotificationService {
     /// Deliver an already durably stored notification without inserting a second row.
     pub async fn deliver_stored(
@@ -58,32 +77,94 @@ impl NotificationService {
         user_id: Uuid,
         notification: Notification,
     ) -> Result<(), &'static str> {
-        publisher.publish(user_id, notification.clone());
-        let subscribed: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE user_id=$1)")
+        let prepared = Self::prepare_stored(pool, user_id, notification).await?;
+        let receipt = Self::deliver_prepared(publisher, user_id, prepared).await?;
+        Self::complete_delivery(pool, user_id, receipt).await
+    }
+
+    pub(crate) async fn prepare_stored(
+        pool: &sqlx::PgPool,
+        user_id: Uuid,
+        notification: Notification,
+    ) -> Result<PreparedNotification, &'static str> {
+        let subscriptions = sqlx::query_as::<_, PushSubscription>(
+            "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id=$1 ORDER BY endpoint")
+            .bind(user_id).fetch_all(pool).await.map_err(|_| "notification_subscription_unavailable")?;
+        Ok(PreparedNotification {
+            notification,
+            subscriptions,
+        })
+    }
+
+    pub(crate) async fn deliver_prepared(
+        publisher: &TenantNotificationPublisher<'_>,
+        user_id: Uuid,
+        prepared: PreparedNotification,
+    ) -> Result<DeliveryReceipt, &'static str> {
+        publisher.publish(user_id, prepared.notification.clone());
+        Self::send_web_push(prepared)
+            .await
+            .map_err(|_| "notification_transport_unavailable")
+    }
+
+    pub(crate) async fn complete_delivery(
+        pool: &sqlx::PgPool,
+        user_id: Uuid,
+        receipt: DeliveryReceipt,
+    ) -> Result<(), &'static str> {
+        let mut connection = pool
+            .acquire()
+            .await
+            .map_err(|_| "notification_database_unavailable")?;
+        Self::complete_delivery_on_connection(&mut connection, user_id, receipt).await
+    }
+    pub(crate) async fn complete_delivery_on_connection(
+        connection: &mut sqlx::PgConnection,
+        user_id: Uuid,
+        receipt: DeliveryReceipt,
+    ) -> Result<(), &'static str> {
+        for endpoint in receipt.invalid_endpoints {
+            sqlx::query("DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2")
+                .bind(endpoint)
                 .bind(user_id)
-                .fetch_one(pool)
+                .execute(&mut *connection)
                 .await
                 .map_err(|_| "notification_subscription_unavailable")?;
-        if !subscribed {
-            return Ok(());
         }
-        Self::send_web_push(
-            pool,
-            user_id,
-            notification.id,
-            &notification.title,
-            &notification.message,
-            notification.link.as_deref(),
-        )
-        .await
-        .map_err(|_| "notification_transport_unavailable")
+        if receipt.retryable {
+            Err("notification_push_retry")
+        } else {
+            Ok(())
+        }
     }
 
     /// Send a notification to a specific user.
     /// Store the inbox and durable dispatch job atomically; transport follows commit.
     pub async fn send(
         pool: &sqlx::PgPool,
+        publisher: &TenantNotificationPublisher<'_>,
+        user_id: Uuid,
+        title: &str,
+        message: &str,
+        type_: NotificationType,
+        link: Option<&str>,
+    ) -> Result<Uuid, sqlx::Error> {
+        let mut connection = pool.acquire().await?;
+        Self::send_on_connection(
+            &mut connection,
+            publisher,
+            user_id,
+            title,
+            message,
+            type_,
+            link,
+        )
+        .await
+    }
+
+    /// Preserve the caller's held session while committing each recipient independently.
+    pub async fn send_on_connection(
+        connection: &mut sqlx::PgConnection,
         publisher: &TenantNotificationPublisher<'_>,
         user_id: Uuid,
         title: &str,
@@ -102,7 +183,7 @@ impl NotificationService {
             type_,
             link: link.map(str::to_owned),
         };
-        let mut tx = pool.begin().await?;
+        let mut tx = connection.begin().await?;
         // Direct notifications select their recipient once at acceptance, not retry.
         sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE id=$1 AND status='active'")
             .bind(user_id)
@@ -116,34 +197,20 @@ impl NotificationService {
         Ok(id)
     }
 
-    /// Internal helper to send Web Push
+    /// External I/O only. Invalid endpoint cleanup returns to the admitted DB phase.
     async fn send_web_push(
-        pool: &sqlx::PgPool,
-        user_id: Uuid,
-        notification_id: Uuid,
-        title: &str,
-        message: &str,
-        link: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // 3. Get user subscriptions
-        #[derive(sqlx::FromRow)]
-        struct SubRow {
-            endpoint: String,
-            p256dh_key: String,
-            auth_key: String,
-        }
-
-        let subs = sqlx::query_as::<_, SubRow>(
-            "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?;
-
+        prepared: PreparedNotification,
+    ) -> Result<DeliveryReceipt, Box<dyn std::error::Error + Send + Sync>> {
+        let PreparedNotification {
+            notification,
+            subscriptions: subs,
+        } = prepared;
         if subs.is_empty() {
-            return Ok(());
+            return Ok(DeliveryReceipt {
+                invalid_endpoints: Vec::new(),
+                retryable: false,
+            });
         }
-
         // 1. Get VAPID config from .env
         let _vapid_public = env::var("VAPID_PUBLIC_KEY")?;
         let vapid_private = env::var("VAPID_PRIVATE_KEY")?;
@@ -151,10 +218,10 @@ impl NotificationService {
             env::var("VAPID_SUBJECT").unwrap_or_else(|_| "mailto:admin@localhost".to_string());
 
         let payload = serde_json::to_vec(&PushPayload {
-            id: notification_id,
-            title,
-            body: message,
-            link,
+            id: notification.id,
+            title: &notification.title,
+            body: &notification.message,
+            link: notification.link.as_deref(),
         })?;
 
         let client = IsahcWebPushClient::new()?;
@@ -185,42 +252,28 @@ impl NotificationService {
                 match result {
                     Ok(()) => Ok(EndpointDelivery::Delivered),
                     Err(WebPushError::EndpointNotValid(_) | WebPushError::EndpointNotFound(_)) => {
-                        if sqlx::query(
-                            "DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2",
-                        )
-                        .bind(&sub.endpoint)
-                        .bind(user_id)
-                        .execute(pool)
-                        .await
-                        .is_ok()
-                        {
-                            Ok(EndpointDelivery::Removed)
-                        } else {
-                            Err(())
-                        }
+                        Ok(EndpointDelivery::Removed(sub.endpoint))
                     }
                     Err(_) => Err(()),
                 }
             }
         })
         .await;
-        let (counts, retry) = match result {
+        let (counts, retryable) = match result {
             Ok(counts) => (counts, false),
             Err(counts) => (counts, true),
         };
-        if counts.removed > 0 {
-            tracing::debug!(
-                error_code = "notification_subscription_removed",
-                removed = counts.removed,
-                "Invalid push subscriptions removed"
+        if retryable {
+            tracing::warn!(
+                error_code = "notification_push_retry",
+                retryable = counts.retryable,
+                "Push subscription delivery will retry"
             );
         }
-        if retry {
-            tracing::warn!(error_code="notification_push_retry",retryable=counts.retryable,notification_id=%notification_id,"Push subscription delivery will retry");
-            return Err(std::io::Error::other("notification_push_retry").into());
-        }
-
-        Ok(())
+        Ok(DeliveryReceipt {
+            invalid_endpoints: counts.invalid_endpoints,
+            retryable,
+        })
     }
 }
 
@@ -236,25 +289,34 @@ struct SubscriptionCounts {
     delivered: usize,
     removed: usize,
     retryable: usize,
+    invalid_endpoints: Vec<String>,
 }
 enum EndpointDelivery {
     Delivered,
-    Removed,
+    Removed(String),
 }
 async fn attempt_subscriptions<T, F, Fut>(
     items: Vec<T>,
-    mut deliver: F,
+    deliver: F,
 ) -> Result<SubscriptionCounts, SubscriptionCounts>
 where
-    F: FnMut(T) -> Fut,
+    F: Fn(T) -> Fut,
     Fut: std::future::Future<Output = Result<EndpointDelivery, ()>>,
 {
+    // Four item futures each poll at most four endpoints: at most 16 push requests.
+    // A stalled first endpoint times out independently so later devices still run.
+    let mut attempts = stream::iter(items)
+        .map(|item| tokio::time::timeout(Duration::from_secs(2), deliver(item)))
+        .buffer_unordered(4);
     let mut counts = SubscriptionCounts::default();
-    for item in items {
-        match deliver(item).await {
-            Ok(EndpointDelivery::Delivered) => counts.delivered += 1,
-            Ok(EndpointDelivery::Removed) => counts.removed += 1,
-            Err(()) => counts.retryable += 1,
+    while let Some(result) = attempts.next().await {
+        match result {
+            Ok(Ok(EndpointDelivery::Delivered)) => counts.delivered += 1,
+            Ok(Ok(EndpointDelivery::Removed(endpoint))) => {
+                counts.removed += 1;
+                counts.invalid_endpoints.push(endpoint);
+            }
+            Ok(Err(())) | Err(_) => counts.retryable += 1,
         }
     }
     if counts.retryable > 0 {
@@ -301,7 +363,7 @@ mod tests {
             async move {
                 match item {
                     0 => Err(()),
-                    1 => Ok(EndpointDelivery::Removed),
+                    1 => Ok(EndpointDelivery::Removed("synthetic".into())),
                     _ => Ok(EndpointDelivery::Delivered),
                 }
             }
@@ -313,18 +375,59 @@ mod tests {
             Err(SubscriptionCounts {
                 delivered: 1,
                 removed: 1,
-                retryable: 1
+                retryable: 1,
+                invalid_endpoints: vec!["synthetic".into()],
             })
         );
         assert_eq!(
-            attempt_subscriptions(vec![()], |_| async { Ok(EndpointDelivery::Removed) }).await,
+            attempt_subscriptions(vec![()], |_| async {
+                Ok(EndpointDelivery::Removed("synthetic".into()))
+            })
+            .await,
             Ok(SubscriptionCounts {
                 delivered: 0,
                 removed: 1,
-                retryable: 0
+                retryable: 0,
+                invalid_endpoints: vec!["synthetic".into()],
             })
         );
     }
+    #[tokio::test]
+    async fn slow_first_endpoint_does_not_block_later_endpoints_or_outlive_cancellation() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Active(Arc<AtomicUsize>);
+        impl Drop for Active {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        let active = Arc::new(AtomicUsize::new(0));
+        let delivered = Arc::new(AtomicUsize::new(0));
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            attempt_subscriptions((0..8).collect(), |item| {
+                let active = active.clone();
+                let delivered = delivered.clone();
+                async move {
+                    active.fetch_add(1, Ordering::SeqCst);
+                    let _active = Active(active);
+                    if item == 0 {
+                        std::future::pending::<()>().await;
+                    }
+                    delivered.fetch_add(1, Ordering::SeqCst);
+                    Ok(EndpointDelivery::Delivered)
+                }
+            }),
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(delivered.load(Ordering::SeqCst), 7);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
     #[test]
     fn tenant_publisher_emits_supplied_tenant_and_user() {
         let (notification_tx, mut notification_rx) = broadcast::channel(1);

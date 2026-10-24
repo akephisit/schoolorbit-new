@@ -3,8 +3,9 @@ use crate::file_hash::FileHasher;
 use super::{
     platform_service::{generate_derivative_body, FilePlatform},
     purpose_registry::purpose_definition,
-    repository::{FileRepository, OperationWork},
-    runtime_config::FilePlatformRuntimeConfig,
+    repository::{
+        FileRepository, LeasedOperation, LeasedOperationResult, OperationWork, RepositoryError,
+    },
     storage_provider::StorageError,
 };
 
@@ -16,292 +17,133 @@ pub struct ReconcileSummary {
     pub terminal: usize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OperationDisposition {
-    Succeeded,
-    Retried,
-    Terminal,
-}
-
+/// Standalone orchestration also claims just before each item, so waiting for
+/// earlier provider calls cannot consume a later item's lease.
 pub async fn reconcile_due_operations(
     platform: &FilePlatform,
     repository: &dyn FileRepository,
     worker: &str,
-) -> Result<ReconcileSummary, super::repository::RepositoryError> {
-    let runtime_config = platform.runtime_config();
-    let operations = repository
-        .lease_due_operations(
-            worker,
-            runtime_config.reconciliation_lease,
-            runtime_config.reconciliation_batch_size,
-        )
-        .await?;
-    let mut summary = ReconcileSummary {
-        leased: operations.len(),
-        ..ReconcileSummary::default()
-    };
-
-    for operation in operations {
-        let terminal = operation.attempt_count >= runtime_config.max_operation_attempts;
-        let result = match &operation.work {
-            OperationWork::ReconcileUpload {
-                version_id,
-                original,
-                required_derivative_ids,
-                required_derivatives,
-            } => match platform.provider().head(original).await {
-                Ok(Some(_)) => {
-                    let mut required_failure = None;
-                    for derivative in required_derivatives {
-                        match platform.provider().head(derivative).await {
-                            Ok(Some(_)) => {}
-                            Ok(None) => {
-                                required_failure = Some("file_required_derivative_pending");
-                                break;
-                            }
-                            Err(error) => {
-                                required_failure = Some(error.log_safe_code());
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(error_code) = required_failure {
-                        retry(
-                            repository,
-                            operation.id,
-                            operation.attempt_count,
-                            error_code,
-                            terminal,
-                            runtime_config,
-                        )
-                        .await
-                    } else {
-                        repository
-                            .finalize_ready(operation.file_id, *version_id, required_derivative_ids)
-                            .await
-                            .map(|_| OperationDisposition::Succeeded)
-                    }
-                }
-                Ok(None) => repository
-                    .mark_upload_failed(operation.file_id, *version_id, "file_original_missing")
-                    .await
-                    .map(|_| OperationDisposition::Terminal),
-                Err(error) => {
-                    retry(
-                        repository,
-                        operation.id,
-                        operation.attempt_count,
-                        error.log_safe_code(),
-                        terminal,
-                        runtime_config,
-                    )
-                    .await
-                }
-            },
-            OperationWork::GenerateDerivative(work) => {
-                let maximum = purpose_definition(work.purpose)
-                    .map(|definition| definition.limits.max_bytes)
-                    .unwrap_or(1);
-                match platform.provider().get(&work.source, maximum).await {
-                    Ok(source) => {
-                        match generate_derivative_body(work.purpose, work.recipe, &source) {
-                            Ok(body) => {
-                                let identity_matches = i64::try_from(body.len()).ok()
-                                    == Some(work.expected_byte_size)
-                                    && FileHasher::sha256(&body) == work.expected_checksum;
-                                if !identity_matches {
-                                    retry_derivative(
-                                        repository,
-                                        &operation,
-                                        work.derivative_id,
-                                        "file_derivative_identity_mismatch",
-                                        true,
-                                        runtime_config,
-                                    )
-                                    .await
-                                } else {
-                                    match platform.provider().put(&work.target, body).await {
-                                        Ok(()) => {
-                                            commit_derivative(
-                                                platform,
-                                                repository,
-                                                &operation,
-                                                work.derivative_id,
-                                                &work.target,
-                                            )
-                                            .await
-                                        }
-                                        Err(StorageError::AlreadyExists) => {
-                                            match platform.provider().head(&work.target).await {
-                                                Ok(Some(_)) => {
-                                                    commit_derivative(
-                                                        platform,
-                                                        repository,
-                                                        &operation,
-                                                        work.derivative_id,
-                                                        &work.target,
-                                                    )
-                                                    .await
-                                                }
-                                                _ => {
-                                                    retry_derivative(
-                                                        repository,
-                                                        &operation,
-                                                        work.derivative_id,
-                                                        "storage_object_conflict",
-                                                        terminal,
-                                                        runtime_config,
-                                                    )
-                                                    .await
-                                                }
-                                            }
-                                        }
-                                        Err(error) => {
-                                            retry_derivative(
-                                                repository,
-                                                &operation,
-                                                work.derivative_id,
-                                                error.log_safe_code(),
-                                                terminal,
-                                                runtime_config,
-                                            )
-                                            .await
-                                        }
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                retry_derivative(
-                                    repository,
-                                    &operation,
-                                    work.derivative_id,
-                                    error.log_safe_code(),
-                                    true,
-                                    runtime_config,
-                                )
-                                .await
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        retry_derivative(
-                            repository,
-                            &operation,
-                            work.derivative_id,
-                            error.log_safe_code(),
-                            terminal,
-                            runtime_config,
-                        )
-                        .await
-                    }
-                }
-            }
-            OperationWork::DeleteObject(work) => {
-                match platform.provider().delete(&work.object).await {
-                    Ok(()) => repository
-                        .mark_delete_succeeded(work)
-                        .await
-                        .map(|_| OperationDisposition::Succeeded),
-                    Err(error) => {
-                        retry(
-                            repository,
-                            operation.id,
-                            operation.attempt_count,
-                            error.log_safe_code(),
-                            terminal,
-                            runtime_config,
-                        )
-                        .await
-                    }
-                }
-            }
+) -> Result<ReconcileSummary, RepositoryError> {
+    let config = platform.runtime_config();
+    let mut summary = ReconcileSummary::default();
+    for _ in 0..config.reconciliation_batch_size {
+        let Some(operation) = repository
+            .lease_due_operations(worker, config.reconciliation_lease, 1)
+            .await?
+            .pop()
+        else {
+            break;
         };
-
-        match result {
-            Ok(OperationDisposition::Succeeded) => summary.succeeded += 1,
-            Ok(OperationDisposition::Retried) => summary.retried += 1,
-            Ok(OperationDisposition::Terminal) => summary.terminal += 1,
-            Err(_) if terminal => summary.terminal += 1,
+        summary.leased += 1;
+        let result = perform_leased_operation(platform, &operation).await;
+        match repository.finish_leased_operation(&operation, result).await {
+            Ok(()) => match result {
+                LeasedOperationResult::Succeeded => summary.succeeded += 1,
+                LeasedOperationResult::OriginalMissing
+                | LeasedOperationResult::Failed { terminal: true, .. } => summary.terminal += 1,
+                LeasedOperationResult::Failed {
+                    terminal: false, ..
+                } => summary.retried += 1,
+            },
+            Err(RepositoryError::LeaseLost) => {}
             Err(_) => summary.retried += 1,
         }
     }
-
     Ok(summary)
 }
 
-async fn commit_derivative(
+/// Only owned operation data enters provider work. No pool, connection or
+/// transaction is retained here. Leave half of the lease for the fenced commit.
+pub async fn perform_leased_operation(
     platform: &FilePlatform,
-    repository: &dyn FileRepository,
-    operation: &super::repository::LeasedOperation,
-    derivative_id: uuid::Uuid,
-    target: &super::storage_provider::StoredObject,
-) -> Result<OperationDisposition, super::repository::RepositoryError> {
-    platform
-        .commit_reconciled_derivative(
-            repository,
-            operation.file_id,
-            derivative_id,
-            operation.id,
-            target,
-        )
-        .await
-        .map(|stored| {
-            if stored {
-                OperationDisposition::Succeeded
-            } else {
-                OperationDisposition::Terminal
-            }
-        })
+    operation: &LeasedOperation,
+) -> LeasedOperationResult {
+    let config = platform.runtime_config();
+    let result = tokio::time::timeout(
+        config.reconciliation_lease / 2,
+        perform(platform, operation),
+    )
+    .await;
+    match result {
+        Ok(Ok(())) => LeasedOperationResult::Succeeded,
+        Ok(Err(ProviderFailure::OriginalMissing)) => LeasedOperationResult::OriginalMissing,
+        Ok(Err(ProviderFailure::Retry(error_code, permanent))) => LeasedOperationResult::Failed {
+            error_code,
+            retry_delay: config.retry_delay(operation.attempt_count),
+            terminal: permanent || operation.attempt_count >= config.max_operation_attempts,
+        },
+        Err(_) => LeasedOperationResult::Failed {
+            error_code: "file_operation_deadline",
+            retry_delay: config.retry_delay(operation.attempt_count),
+            terminal: operation.attempt_count >= config.max_operation_attempts,
+        },
+    }
 }
 
-async fn retry(
-    repository: &dyn FileRepository,
-    operation_id: uuid::Uuid,
-    attempt: i32,
-    error_code: &'static str,
-    terminal: bool,
-    runtime_config: FilePlatformRuntimeConfig,
-) -> Result<OperationDisposition, super::repository::RepositoryError> {
-    repository
-        .retry_operation(
-            operation_id,
-            error_code,
-            runtime_config.retry_delay(attempt),
-            terminal,
-        )
-        .await
-        .map(|_| {
-            if terminal {
-                OperationDisposition::Terminal
-            } else {
-                OperationDisposition::Retried
-            }
-        })
+enum ProviderFailure {
+    OriginalMissing,
+    Retry(&'static str, bool),
+}
+impl From<StorageError> for ProviderFailure {
+    fn from(error: StorageError) -> Self {
+        Self::Retry(error.log_safe_code(), false)
+    }
 }
 
-async fn retry_derivative(
-    repository: &dyn FileRepository,
-    operation: &super::repository::LeasedOperation,
-    derivative_id: uuid::Uuid,
-    error_code: &'static str,
-    terminal: bool,
-    runtime_config: FilePlatformRuntimeConfig,
-) -> Result<OperationDisposition, super::repository::RepositoryError> {
-    repository
-        .mark_derivative_failed(
-            operation.file_id,
-            derivative_id,
-            operation.id,
-            error_code,
-            runtime_config.retry_delay(operation.attempt_count),
-            terminal,
-        )
-        .await
-        .map(|_| {
-            if terminal {
-                OperationDisposition::Terminal
-            } else {
-                OperationDisposition::Retried
+async fn perform(
+    platform: &FilePlatform,
+    operation: &LeasedOperation,
+) -> Result<(), ProviderFailure> {
+    match &operation.work {
+        OperationWork::ReconcileUpload {
+            original,
+            required_derivatives,
+            ..
+        } => {
+            if platform.provider().head(original).await?.is_none() {
+                return Err(ProviderFailure::OriginalMissing);
             }
-        })
+            for derivative in required_derivatives {
+                if platform.provider().head(derivative).await?.is_none() {
+                    return Err(ProviderFailure::Retry(
+                        "file_required_derivative_pending",
+                        false,
+                    ));
+                }
+            }
+            Ok(())
+        }
+        OperationWork::GenerateDerivative(work) => {
+            let maximum = purpose_definition(work.purpose)
+                .map(|definition| definition.limits.max_bytes)
+                .unwrap_or(1);
+            let source = platform.provider().get(&work.source, maximum).await?;
+            let body = generate_derivative_body(work.purpose, work.recipe, &source)
+                .map_err(|error| ProviderFailure::Retry(error.log_safe_code(), true))?;
+            if i64::try_from(body.len()).ok() != Some(work.expected_byte_size)
+                || FileHasher::sha256(&body) != work.expected_checksum
+            {
+                return Err(ProviderFailure::Retry(
+                    "file_derivative_identity_mismatch",
+                    true,
+                ));
+            }
+            match platform.provider().put(&work.target, body).await {
+                Ok(()) => Ok(()),
+                Err(StorageError::AlreadyExists) => {
+                    if platform.provider().head(&work.target).await?.is_some() {
+                        Ok(())
+                    } else {
+                        Err(ProviderFailure::Retry("storage_object_conflict", false))
+                    }
+                }
+                Err(error) => Err(error.into()),
+            }
+        }
+        OperationWork::DeleteObject(work) => platform
+            .provider()
+            .delete(&work.object)
+            .await
+            .map_err(Into::into),
+    }
 }

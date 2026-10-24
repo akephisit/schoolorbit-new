@@ -3,10 +3,47 @@ use std::{
     collections::HashMap,
     ops::Deref,
     sync::{Arc, Mutex, OnceLock, Weak},
+    time::Instant,
 };
 
 #[derive(Debug)]
-pub(crate) struct Lease;
+pub(crate) struct Lease {
+    started: Instant,
+}
+impl Lease {
+    pub(crate) fn new() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+}
+impl Drop for Lease {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = "tenant_operation",
+            lease_ms = self.started.elapsed().as_millis() as u64,
+            "Tenant database logical lease released"
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum TenantDatabaseOperation {
+    CalendarReminder,
+    NotificationDispatch,
+    FileReconciliation,
+    AttendanceMaintenance,
+}
+impl TenantDatabaseOperation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CalendarReminder => "calendar_reminder",
+            Self::NotificationDispatch => "notification_dispatch",
+            Self::FileReconciliation => "file_reconciliation",
+            Self::AttendanceMaintenance => "attendance_maintenance",
+        }
+    }
+}
 
 struct RegistryEntry {
     options: Weak<PgConnectOptions>,
@@ -53,6 +90,20 @@ pub struct TenantPoolRetention {
     _lease: Arc<Lease>,
 }
 impl TenantPool {
+    /// Observe a fixed-label checkout without changing SQLx connection ownership.
+    pub async fn checkout_pool(
+        pool: &PgPool,
+        operation: TenantDatabaseOperation,
+    ) -> Result<sqlx::pool::PoolConnection<sqlx::Postgres>, sqlx::Error> {
+        let started = Instant::now();
+        let connection = pool.acquire().await?;
+        tracing::debug!(
+            operation = operation.label(),
+            checkout_ms = started.elapsed().as_millis() as u64,
+            "Tenant database connection checked out"
+        );
+        Ok(connection)
+    }
     pub(crate) fn managed(pool: PgPool, lease: Arc<Lease>) -> Result<Self, String> {
         let options = pool.connect_options();
         let key = Arc::as_ptr(&options) as usize;

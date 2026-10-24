@@ -9,7 +9,9 @@ use std::{collections::VecDeque, future::Future};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::services::{get_event_for_response, tenant_today, CalendarNotificationKind};
+use crate::services::{
+    get_event_for_response_on_connection, tenant_today, CalendarNotificationKind,
+};
 use school_errors::AppError;
 use school_notifications::events::TenantNotificationEvent;
 use school_tenancy::{
@@ -17,7 +19,7 @@ use school_tenancy::{
     AdminClient, PoolManager,
 };
 
-use super::notifications::send_event_notification;
+use super::notifications::send_event_notification_on_connection;
 
 const SELECT_DUE_CALENDAR_REMINDER_CANDIDATES_SQL: &str = r#"
 SELECT id, event_id, days_before, remind_on, created_at
@@ -145,7 +147,11 @@ async fn process_due_reminder_candidate(
     candidate: DueCalendarEventReminderRow,
 ) -> Result<bool, AppError> {
     let lock_keys = calendar_reminder_advisory_lock_keys(candidate.id);
-    let mut connection = pool.acquire().await?;
+    let mut connection = school_tenancy::TenantPool::checkout_pool(
+        pool,
+        school_tenancy::TenantDatabaseOperation::CalendarReminder,
+    )
+    .await?;
     // Cancellation can happen while PostgreSQL accepts the lock but before the
     // driver receives its result. Such a session must never return to the pool.
     connection.close_on_drop();
@@ -162,7 +168,6 @@ async fn process_due_reminder_candidate(
     }
 
     let processing_result = process_advisory_locked_reminder(
-        pool,
         notification_channel,
         tenant,
         &mut connection,
@@ -191,7 +196,6 @@ async fn process_due_reminder_candidate(
 }
 
 async fn process_advisory_locked_reminder(
-    pool: &PgPool,
     notification_channel: &broadcast::Sender<TenantNotificationEvent>,
     tenant: &str,
     connection: &mut PoolConnection<Postgres>,
@@ -210,7 +214,7 @@ async fn process_advisory_locked_reminder(
         return Ok(false);
     };
 
-    let event = match get_event_for_response(pool, reminder.event_id).await {
+    let event = match get_event_for_response_on_connection(connection, reminder.event_id).await {
         Ok(event) => event,
         Err(AppError::NotFound(_)) => {
             tracing::warn!(
@@ -231,8 +235,8 @@ async fn process_advisory_locked_reminder(
         }
     };
 
-    let send_outcome = match send_event_notification(
-        pool,
+    let send_outcome = match send_event_notification_on_connection(
+        connection,
         notification_channel,
         tenant,
         &event,
@@ -296,6 +300,9 @@ async fn release_calendar_reminder_advisory_lock(
             reminder_id = %reminder_id,
             "Calendar reminder advisory lock was not held during release"
         );
+        return Err(AppError::ServiceUnavailable(
+            "calendar_reminder_unlock_unconfirmed".into(),
+        ));
     }
 
     Ok(())
@@ -441,6 +448,71 @@ mod turn_tests {
         sqlx::query("INSERT INTO calendar_event_reminders(id,event_id,days_before,remind_on,created_at) SELECT gen_random_uuid(),$1,n,CURRENT_DATE,'2026-01-01 00:00:00+00'::timestamptz FROM generate_series(1,$2) n")
             .bind(event).bind(count).execute(&pool).await.unwrap();
         pool
+    }
+
+    #[tokio::test]
+    async fn one_connection_reminder_accepts_all_recipients_and_releases_advisory_lock() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "calendar_one_connection",
+            1,
+        )
+        .await;
+        school_test_db::run_test_migrations(&pool).await;
+        let event = Uuid::new_v4();
+        sqlx::query("INSERT INTO calendar_events(id,title,start_date,end_date) VALUES($1,'synthetic',CURRENT_DATE,CURRENT_DATE)")
+            .bind(event).execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO calendar_event_targets(event_id,audience_type) VALUES($1,'staff')",
+        )
+        .bind(event)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let recipients = [Uuid::new_v4(), Uuid::new_v4()];
+        for recipient in recipients {
+            sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'test-only','Synthetic','Recipient','staff','active')")
+                .bind(recipient).execute(&pool).await.unwrap();
+        }
+        let reminder = Uuid::new_v4();
+        sqlx::query("INSERT INTO calendar_event_reminders(id,event_id,days_before,remind_on) VALUES($1,$2,1,CURRENT_DATE)")
+            .bind(reminder).bind(event).execute(&pool).await.unwrap();
+        let (notifications, _) = broadcast::channel(8);
+        let marked = tokio::time::timeout(
+            Duration::from_secs(3),
+            process_due_reminders(&pool, &notifications, "synthetic", tenant_today()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(marked, 1);
+        let stored: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM notifications WHERE user_id=ANY($1)")
+                .bind(recipients.as_slice())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, 2);
+        let jobs: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM notification_dispatch_jobs WHERE recipient_id=ANY($1)",
+        )
+        .bind(recipients.as_slice())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(jobs, 2);
+        let keys = calendar_reminder_advisory_lock_keys(reminder);
+        let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1,$2)")
+            .bind(keys.0)
+            .bind(keys.1)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(acquired);
+        sqlx::query("SELECT pg_advisory_unlock_all()")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
     }
 
     #[tokio::test]

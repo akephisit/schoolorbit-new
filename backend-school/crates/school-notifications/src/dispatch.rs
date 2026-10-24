@@ -405,6 +405,36 @@ pub async fn acknowledge(pool: &PgPool, claimed: &ClaimedNotification) -> Result
         .bind(claimed.notification.id).bind(claimed.lease_token).execute(pool).await?;
     Ok(())
 }
+/// Fence endpoint cleanup and acknowledgment together against a stale claim.
+pub(crate) async fn finish_delivery(
+    pool: &PgPool,
+    claimed: &ClaimedNotification,
+    receipt: crate::publisher::DeliveryReceipt,
+) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    let current: Option<Job> = sqlx::query_as("SELECT id,notification_id,recipient_id,source_kind,source_id,dedup_key,title,message,type type_,link,stored_at,lease_token FROM notification_dispatch_jobs WHERE id=$1 AND lease_token=$2 AND published_at IS NULL AND next_attempt_at>now() FOR UPDATE")
+        .bind(claimed.notification.id).bind(claimed.lease_token).fetch_optional(&mut *tx).await?;
+    let Some(current) = current else {
+        tx.commit().await?;
+        return Ok(());
+    };
+    if !same_identity(&current.notification()?, &claimed.notification) {
+        return Err(integrity("notification_identity_conflict"));
+    }
+    let delivery = crate::publisher::NotificationService::complete_delivery_on_connection(
+        &mut tx,
+        claimed.notification.recipient_id,
+        receipt,
+    )
+    .await;
+    if delivery.is_ok() {
+        sqlx::query("UPDATE notification_dispatch_jobs SET published_at=now(),lease_token=NULL WHERE id=$1 AND lease_token=$2 AND next_attempt_at>now()")
+            .bind(claimed.notification.id).bind(claimed.lease_token).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    delivery.map_err(|_| AppError::ServiceUnavailable("notification_transport_unavailable".into()))
+}
+
 #[derive(Debug, Clone, Copy, sqlx::FromRow)]
 pub struct QueueStatus {
     pub pending: bool,

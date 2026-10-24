@@ -8,7 +8,7 @@ use chrono::Utc;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub const COLUMNS: &str = "id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -58,16 +58,30 @@ pub fn token_with_generation(
     Ok(s)
 }
 pub async fn get_optional(pool: &PgPool, id: Uuid) -> Result<Option<AttendanceSession>, AppError> {
+    get_optional_on_connection(&mut *pool.acquire().await?, id).await
+}
+pub(crate) async fn get_optional_on_connection(
+    connection: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<AttendanceSession>, AppError> {
     let sql = format!("SELECT {COLUMNS} FROM attendance_sessions WHERE id=$1");
     let row = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *connection)
         .await?;
     match row {
-        Some(s) => Ok(Some(with_token(pool, s).await?)),
+        Some(s) => {
+            let generation = sqlx::query_scalar(
+                "SELECT generation FROM attendance_module_state WHERE singleton",
+            )
+            .fetch_one(&mut *connection)
+            .await?;
+            Ok(Some(token_with_generation(s, generation)?))
+        }
         None => Ok(None),
     }
 }
+
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<AttendanceSession, AppError> {
     get_optional(pool, id)
         .await?
@@ -143,10 +157,29 @@ pub async fn detail_unchecked(
     pool: &PgPool,
     s: AttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
-    let settings = settings::get(pool, s.academic_term_id).await?;
-    let counted = s.count_override.unwrap_or(
-        settings::is_counted(pool, s.academic_term_id, s.date, &settings.configuration).await?,
-    ) && !s.cancelled;
+    let mut connection = pool.acquire().await?;
+    let context =
+        settings::AttendanceReadContext::load(&mut connection, s.academic_term_id).await?;
+    detail_with_context(&mut connection, s, &context).await
+}
+pub(crate) async fn detail_with_context(
+    connection: &mut PgConnection,
+    s: AttendanceSession,
+    context: &settings::AttendanceReadContext,
+) -> Result<AttendanceDetail, AppError> {
+    let settings = &context.settings;
+    let counted = match s.count_override {
+        Some(value) => value,
+        None => {
+            settings::is_counted_on_connection(
+                connection,
+                s.academic_term_id,
+                s.date,
+                &settings.configuration,
+            )
+            .await?
+        }
+    } && !s.cancelled;
     let students=sqlx::query_as(r#"WITH participants AS (
         SELECT * FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)
     ), arrivals AS (
@@ -164,8 +197,10 @@ pub async fn detail_unchecked(
         LEFT JOIN attendance_scan_events e ON e.session_id=$1 AND e.student_id=p."studentId"
         LEFT JOIN arrivals a ON a.student_id=p."studentId"
         ORDER BY p."classNumber" NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,u.id"#)
-        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(pool).await?;
-    let term_writable:bool=sqlx::query_scalar("SELECT t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(s.academic_term_id).fetch_one(pool).await?;
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(&mut *connection).await?;
+    let term_writable = context
+        .term_writable
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".into()))?;
     Ok(AttendanceDetail {
         writable: term_writable
             && !settings.archived

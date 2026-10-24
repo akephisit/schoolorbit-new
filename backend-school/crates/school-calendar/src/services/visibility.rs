@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
-use sqlx::{PgPool, Postgres, QueryBuilder};
+use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::models::{
@@ -61,8 +61,8 @@ struct CalendarEventTagRow {
     name: String,
 }
 
-async fn list_targets_for_events(
-    pool: &PgPool,
+async fn list_targets_for_events<'e>(
+    executor: impl PgExecutor<'e>,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventTarget>>, AppError> {
     if event_ids.is_empty() {
@@ -78,7 +78,7 @@ async fn list_targets_for_events(
         "#,
     )
     .bind(event_ids)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     let mut targets = HashMap::new();
@@ -97,8 +97,8 @@ async fn list_targets_for_events(
     Ok(targets)
 }
 
-async fn list_reminders_for_events(
-    pool: &PgPool,
+async fn list_reminders_for_events<'e>(
+    executor: impl PgExecutor<'e>,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventReminder>>, AppError> {
     if event_ids.is_empty() {
@@ -114,7 +114,7 @@ async fn list_reminders_for_events(
         "#,
     )
     .bind(event_ids)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     let mut reminders = HashMap::new();
@@ -133,8 +133,8 @@ async fn list_reminders_for_events(
     Ok(reminders)
 }
 
-async fn list_tags_for_events(
-    pool: &PgPool,
+async fn list_tags_for_events<'e>(
+    executor: impl PgExecutor<'e>,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventTag>>, AppError> {
     if event_ids.is_empty() {
@@ -151,7 +151,7 @@ async fn list_tags_for_events(
         "#,
     )
     .bind(event_ids)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     let mut tags = HashMap::new();
@@ -167,14 +167,14 @@ async fn list_tags_for_events(
     Ok(tags)
 }
 
-async fn hydrate_events(
-    pool: &PgPool,
+async fn hydrate_events_on_connection(
+    connection: &mut PgConnection,
     rows: Vec<CalendarEventRow>,
 ) -> Result<Vec<CalendarEvent>, AppError> {
     let event_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
-    let targets = list_targets_for_events(pool, &event_ids).await?;
-    let reminders = list_reminders_for_events(pool, &event_ids).await?;
-    let tags = list_tags_for_events(pool, &event_ids).await?;
+    let targets = list_targets_for_events(&mut *connection, &event_ids).await?;
+    let reminders = list_reminders_for_events(&mut *connection, &event_ids).await?;
+    let tags = list_tags_for_events(&mut *connection, &event_ids).await?;
 
     Ok(rows
         .into_iter()
@@ -203,9 +203,25 @@ async fn hydrate_events(
         .collect())
 }
 
+async fn hydrate_events(
+    pool: &PgPool,
+    rows: Vec<CalendarEventRow>,
+) -> Result<Vec<CalendarEvent>, AppError> {
+    let mut connection = pool.acquire().await?;
+    hydrate_events_on_connection(&mut connection, rows).await
+}
+
 /// Hydrate one non-deleted event for application-owned notification delivery.
 pub async fn get_event_for_response(
     pool: &PgPool,
+    event_id: Uuid,
+) -> Result<CalendarEvent, AppError> {
+    let mut connection = pool.acquire().await?;
+    get_event_for_response_on_connection(&mut connection, event_id).await
+}
+
+pub async fn get_event_for_response_on_connection(
+    connection: &mut PgConnection,
     event_id: Uuid,
 ) -> Result<CalendarEvent, AppError> {
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
@@ -215,9 +231,9 @@ pub async fn get_event_for_response(
 
     let rows = builder
         .build_query_as::<CalendarEventRow>()
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?;
-    let mut events = hydrate_events(pool, rows).await?;
+    let mut events = hydrate_events_on_connection(connection, rows).await?;
 
     events
         .pop()

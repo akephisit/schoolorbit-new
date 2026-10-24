@@ -259,60 +259,60 @@ pub async fn open(
     actor: &ActorContext,
     p: OpenAttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
-    let seed = resolve_seed(pool, &p).await?;
-    preview_seed(pool, actor, seed).await
+    if p.kind == AttendanceKind::Arrival {
+        let mut connection = pool.acquire().await?;
+        let context =
+            settings::AttendanceReadContext::load(&mut connection, p.academic_term_id).await?;
+        let seed = resolve_arrival_on_connection(&mut connection, &p, &context).await?;
+        preview_seed_with_context(&mut connection, actor, seed, &context).await
+    } else {
+        let seed = resolve_seed(pool, &p).await?;
+        preview_seed(pool, actor, seed).await
+    }
 }
 pub async fn preview_seed(
     pool: &PgPool,
     actor: &ActorContext,
     seed: AttendanceSeed,
 ) -> Result<AttendanceDetail, AppError> {
+    let mut connection = pool.acquire().await?;
+    let context =
+        settings::AttendanceReadContext::load(&mut connection, seed.session.academic_term_id)
+            .await?;
+    preview_seed_with_context(&mut connection, actor, seed, &context).await
+}
+async fn preview_seed_with_context(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    seed: AttendanceSeed,
+    context: &settings::AttendanceReadContext,
+) -> Result<AttendanceDetail, AppError> {
     policy::require_session(actor, &seed.session, false)?;
-    let mut session = match sessions::get_optional(pool, seed.session.id).await? {
-        Some(s) => s,
-        None => seed.session,
-    };
+    let mut session =
+        match sessions::get_optional_on_connection(connection, seed.session.id).await? {
+            Some(s) => s,
+            None => seed.session,
+        };
     if session.row_version == 0 {
         session.roster = seed.students;
-        session = sessions::with_token(pool, session).await?;
+        let generation =
+            sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
+                .fetch_one(&mut *connection)
+                .await?;
+        session = sessions::token_with_generation(session, generation)?;
     }
     policy::require_session(actor, &session, false)?;
-    sessions::detail_unchecked(pool, session).await
+    sessions::detail_with_context(connection, session, context).await
 }
 pub async fn resolve_seed(
     pool: &PgPool,
     p: &OpenAttendanceSession,
 ) -> Result<AttendanceSeed, AppError> {
     if p.kind == AttendanceKind::Arrival {
-        crate::services::validate_date(pool, p.academic_term_id, p.date).await?;
-        let id = Uuid::parse_str(&p.source_key)
-            .map_err(|_| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
-        if id.to_string() != p.source_key {
-            return Err(AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()));
-        }
-        let room = core::room(pool, p.academic_term_id, id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
-        let students = core::students_in_room(pool, p.academic_term_id, p.date, id)
-            .await?
-            .into_iter()
-            .map(|s| AttendanceRosterStudent {
-                student_id: s.student_id,
-                student_academic_year_id: s.student_academic_year_id,
-                class_number: s.class_number,
-            })
-            .collect();
-        let late_after = settings::get(pool, p.academic_term_id)
-            .await?
-            .configuration
-            .late_after;
-        return Ok(arrival_seed(
-            p.academic_term_id,
-            p.date,
-            room,
-            students,
-            late_after,
-        ));
+        let mut connection = pool.acquire().await?;
+        let context =
+            settings::AttendanceReadContext::load(&mut connection, p.academic_term_id).await?;
+        return resolve_arrival_on_connection(&mut connection, p, &context).await;
     }
     let all = if p.kind == AttendanceKind::Special {
         crate::services::validate_date(pool, p.academic_term_id, p.date).await?;
@@ -323,6 +323,38 @@ pub async fn resolve_seed(
     all.into_iter()
         .find(|s| s.session.kind == p.kind && s.session.source_key == p.source_key)
         .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))
+}
+async fn resolve_arrival_on_connection(
+    connection: &mut sqlx::PgConnection,
+    p: &OpenAttendanceSession,
+    context: &settings::AttendanceReadContext,
+) -> Result<AttendanceSeed, AppError> {
+    crate::services::validate_date_on_connection(connection, p.academic_term_id, p.date).await?;
+    let id = Uuid::parse_str(&p.source_key)
+        .map_err(|_| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
+    if id.to_string() != p.source_key {
+        return Err(AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()));
+    }
+    let room = core::room_on_connection(connection, p.academic_term_id, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
+    let students = core::students_in_room_on_connection(connection, p.academic_term_id, p.date, id)
+        .await?
+        .into_iter()
+        .map(|s| AttendanceRosterStudent {
+            student_id: s.student_id,
+            student_academic_year_id: s.student_academic_year_id,
+            class_number: s.class_number,
+        })
+        .collect();
+    let late_after = context.settings.configuration.late_after;
+    Ok(arrival_seed(
+        p.academic_term_id,
+        p.date,
+        room,
+        students,
+        late_after,
+    ))
 }
 pub async fn save(
     pool: &PgPool,
@@ -553,13 +585,6 @@ pub async fn face_enrollments(
         .collect();
     crate::services::faces::enrollments(pool, &ids).await
 }
-async fn own_student_read(
-    pool: &PgPool,
-    actor: &ActorContext,
-    student: Uuid,
-) -> Result<bool, AppError> {
-    own_student_read_on_connection(&mut *pool.acquire().await?, actor, student).await
-}
 async fn own_student_read_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
@@ -689,15 +714,13 @@ pub async fn history(
     let mut guard = crate::services::begin_report_snapshot(pool, q.academic_term_id).await?;
     let full = policy::read_school(actor)
         || own_student_read_on_connection(&mut *guard, actor, q.student_id).await?;
-    let virtual_rows = if settings::get_on_connection(&mut *guard, q.academic_term_id)
-        .await?
-        .archived
-    {
+    let context = settings::AttendanceReadContext::load(&mut guard, q.academic_term_id).await?;
+    let virtual_rows = if context.settings.archived {
         vec![]
     } else {
         projection::history(
             &mut *guard,
-            q.academic_term_id,
+            &context,
             q.start,
             q.end,
             q.student_id,
@@ -770,8 +793,15 @@ pub async fn require_evidence_upload(
     actor: &ActorContext,
     student: Uuid,
 ) -> Result<(), AppError> {
+    require_evidence_upload_on_connection(&mut *pool.acquire().await?, actor, student).await
+}
+async fn require_evidence_upload_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    student: Uuid,
+) -> Result<(), AppError> {
     actor.require_permission(codes::ATTENDANCE_VERIFY_ASSIGNED)?;
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_devices d JOIN users u ON u.id=$2 AND u.user_type='student' AND u.status='active' WHERE d.enabled AND d.operator_id=$1)").bind(actor.user_id).bind(student).fetch_one(pool).await?;
+    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_devices d JOIN users u ON u.id=$2 AND u.user_type='student' AND u.status='active' WHERE d.enabled AND d.operator_id=$1)").bind(actor.user_id).bind(student).fetch_one(&mut *connection).await?;
     if valid {
         Ok(())
     } else {
@@ -780,6 +810,16 @@ pub async fn require_evidence_upload(
 }
 pub async fn require_evidence_file(
     pool: &PgPool,
+    actor: &ActorContext,
+    file: &school_file_platform::repository::PlatformFile,
+    action: school_file_platform::access::FilePolicyAction,
+    resource: Option<Uuid>,
+) -> Result<(), AppError> {
+    require_evidence_file_on_connection(&mut *pool.acquire().await?, actor, file, action, resource)
+        .await
+}
+async fn require_evidence_file_on_connection(
+    connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
     file: &school_file_platform::repository::PlatformFile,
     action: school_file_platform::access::FilePolicyAction,
@@ -794,7 +834,7 @@ pub async fn require_evidence_file(
         "SELECT session_id,student_id FROM attendance_scan_events WHERE evidence_file_id=$1",
     )
     .bind(file.id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?;
     if let Some((session, student)) = linked {
         if action != FilePolicyAction::Read {
@@ -802,11 +842,13 @@ pub async fn require_evidence_file(
                 "ล้างภาพหลักฐานผ่านอายุการเก็บหรือการล้างภาคเรียน".into(),
             ));
         }
-        let s = sessions::get(pool, session).await?;
+        let s = sessions::get_optional_on_connection(connection, session)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
         if policy::require_session(actor, &s, false).is_ok() {
             return Ok(());
         }
-        if own_student_read(pool, actor, student).await? {
+        if own_student_read_on_connection(connection, actor, student).await? {
             Ok(())
         } else {
             Err(AppError::Forbidden("ไม่มีสิทธิ์ดูภาพหลักฐานนี้".into()))
@@ -816,10 +858,10 @@ pub async fn require_evidence_file(
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2)")
                 .bind(file.id)
                 .bind(actor.user_id)
-                .fetch_one(pool)
+                .fetch_one(&mut *connection)
                 .await?;
         if uploaded {
-            require_evidence_upload(pool, actor, student).await
+            require_evidence_upload_on_connection(connection, actor, student).await
         } else {
             Err(AppError::Forbidden("ไม่มีสิทธิ์ดูภาพที่ยังไม่ผูกกับผลเช็คชื่อ".into()))
         }
@@ -836,8 +878,8 @@ pub async fn evidence_delete_guard<'a>(
         .bind(file.id)
         .execute(&mut *tx)
         .await?;
-    require_evidence_file(
-        pool,
+    require_evidence_file_on_connection(
+        &mut tx,
         actor,
         file,
         school_file_platform::access::FilePolicyAction::Delete,
@@ -862,13 +904,11 @@ pub async fn report(
         codes::ATTENDANCE_MANAGE_SCHOOL,
     ])?;
     let mut guard = crate::services::begin_report_snapshot(pool, q.academic_term_id).await?;
-    let expected = if settings::get_on_connection(&mut *guard, q.academic_term_id)
-        .await?
-        .archived
-    {
+    let context = settings::AttendanceReadContext::load(&mut guard, q.academic_term_id).await?;
+    let expected = if context.settings.archived {
         vec![]
     } else {
-        projection::expected(&mut *guard, q.academic_term_id, None).await?
+        projection::expected_with_context(&mut *guard, &context, None).await?
     };
     let mut full = policy::read_school(actor);
     if let Some(student) = q.student_id {
@@ -890,11 +930,12 @@ pub async fn report(
             codes::ATTENDANCE_UPDATE_ASSIGNED,
         ])?;
     }
-    crate::services::reports::page_with_expected_on_connection(
+    crate::services::reports::page_with_context(
         &mut *guard,
         &q,
         if full { None } else { Some(actor.user_id) },
         &expected,
+        &context,
     )
     .await
 }

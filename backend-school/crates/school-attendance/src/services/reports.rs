@@ -124,8 +124,18 @@ pub async fn page_with_expected_on_connection(
     teacher: Option<Uuid>,
     expected: &[AttendanceExpectedSummary],
 ) -> Result<AttendanceReport, AppError> {
+    let context = settings::AttendanceReadContext::load(connection, q.academic_term_id).await?;
+    page_with_context(connection, q, teacher, expected, &context).await
+}
+pub(crate) async fn page_with_context(
+    connection: &mut PgConnection,
+    q: &AttendanceReportQuery,
+    teacher: Option<Uuid>,
+    expected: &[AttendanceExpectedSummary],
+    context: &settings::AttendanceReadContext,
+) -> Result<AttendanceReport, AppError> {
     q.validate()?;
-    let settings = settings::get_on_connection(connection, q.academic_term_id).await?;
+    let settings = &context.settings;
     let source = if settings.archived {
         archived_summary_sql(teacher.is_some())
     } else {

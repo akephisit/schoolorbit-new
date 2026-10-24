@@ -574,16 +574,25 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   stale completion cannot release a newer operation. Internal all-tenant lists fail
   closed while a relevant barrier is pending.
 - Bound connection pools, cache entries/revision maps, background batches and log retention.
-  Calendar and Auth retention share bounded tenant-turn admission in `school-tenancy`;
-  their callers bound queued futures and exclude the same tenant/job kind without
-  occupying a shared slot while waiting for that exclusion. Keep turn progress and
-  durable work with each domain, and retain the logical pool lease for the full turn.
-  Calendar cron invocations do not overlap or accumulate waiting queues. Calendar
-  yields between bounded reminder attempts, never hard-cancels a partial
-  recipient fan-out, and advances a stable keyset past failed/contended reminders
-  before revisiting a tenant. Auth advances its tenant rotation before admission so
-  sweep cancellation cannot repeatedly starve the suffix. Existing Notification,
-  Attendance and File Platform worker bounds remain independent.
+  Calendar, Auth retention, Notification dispatch, Attendance maintenance and File
+  Platform reconciliation share bounded database-phase admission owned by `PoolManager`
+  in `school-tenancy`. Consumers use that manager's executor, bound pending futures and
+  exclude the same tenant/job kind without occupying a shared slot for exclusion.
+  A same-key turn may span external I/O, but database permits and logical pool leases
+  cover only its database phases: owned DTOs cross the network boundary, then tenant
+  UUID and durable lease fences are checked again before completion effects. Each
+  concurrent claimed item's database phase consumes its own shared permit. Domains
+  retain business transactions, durable work, schedules and progress. Calendar and
+  File reconciliation cron sweeps exclude overlaps. Calendar keeps its advisory-lock
+  session through event/recipient reads and per-recipient acceptance on that same
+  connection; never hard-cancel partial fan-out. Confirm unlock before session reuse.
+  Calendar advances a stable keyset past failed/contended reminders. Auth advances its
+  tenant rotation before admission so cancellation cannot repeatedly starve the suffix.
+  Notification retains its 32-item batch, four item futures and five-second whole-item
+  deadline, with bounded endpoint attempts and token-fenced endpoint cleanup/ack.
+  File worker effects require the exact unexpired owner/attempt claim; external work
+  cannot retain a database permit or write through a stale lease. Keep synchronous
+  upload/delete semantics with the File Platform provider.
   Revision pruning must reject stale async fills. Session/file retention uses existing domain
   owners; never delete business history merely to free disk. Autovacuum reuses dead row space
   and is not business retention, RAM cleanup or a guarantee that files shrink.

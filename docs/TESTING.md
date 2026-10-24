@@ -279,14 +279,19 @@ cargo test -p school-tenancy directory_cache::tests -- --test-threads=1
 cargo test -p school-tenancy background::tests -- --test-threads=1
 cargo test -p school-auth retention::tests -- --test-threads=1
 cargo test -p school-notifications http::handlers::tests -- --test-threads=1
+cargo test -p school-notifications runtime::tests -- --test-threads=1
+cargo test -p school-notifications publisher::tests -- --test-threads=1
 ```
 
 These exercise shared success/failure cohorts without negative caching, independent
 retry, leader/waiter cancellation, bounded distinct-key admission including evicted
-fills, completed-result mutation fencing, shared Calendar/Auth admission, same-key
+fills, completed-result mutation fencing, shared all-kind database admission, same-key
 exclusion, release after cancellation, Auth rotation after a sweep waits behind
 occupied slots, and payload-free SSE reconciliation with retained tenant filtering
-and identity fail-close. They do not measure production capacity.
+and identity fail-close. Notification fake transport cases hold two slow item futures
+while every other kind obtains shared database admission, and confirm cancellation
+joins delivery work. Slow-first-endpoint coverage verifies later device progress and
+no surviving endpoint future after the enclosing deadline. They do not measure production capacity.
 
 From the repository root, run the database-dependent owners with the disposable
 PostgreSQL wrapper:
@@ -298,7 +303,9 @@ PostgreSQL wrapper:
 
 The Calendar cases use 401 durable reminders, lock the first 200, verify suffix
 progress and next-invocation retry, observe a real advisory lock before cancelling
-a blocked event load, and verify that its session releases the lock before retry.
+a blocked event load, and verify that its session releases the lock before retry. A one-connection pool
+also verifies complete event hydration, two recipient acceptance transactions, durable
+queue/inbox rows and confirmed advisory unlock without nested pool acquisition.
 A controlled slow tenant and a healthy multi-turn backlog verify completion-driven
 fair revisits without a round barrier. Auth cases preserve 100-row batches and
 `SKIP LOCKED`, and cancel after an earlier cleanup statement to verify transaction

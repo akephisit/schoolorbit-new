@@ -5151,3 +5151,127 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
         )
     );
 }
+
+#[tokio::test]
+async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
+    use school_file_platform::{
+        access::FilePolicyAction,
+        repository::{FileRepository, SqlFileRepository},
+    };
+    let f = fixture("attendance_evidence_one_connection").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let device = specials::save_device(
+        &f.pool,
+        TEACHER,
+        Uuid::new_v4(),
+        SaveAttendanceDevice {
+            name: "one connection".into(),
+            enabled: true,
+            operator_id: TEACHER,
+        },
+    )
+    .await
+    .unwrap();
+    let orphan_id = evidence_file(&f.pool, STUDENT).await;
+    let linked_id = evidence_file(&f.pool, STUDENT).await;
+    let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES(gen_random_uuid(),$1,$2,$3,$4,now())")
+        .bind(session.id).bind(STUDENT).bind(device.id).bind(linked_id).execute(&f.pool).await.unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let options = (*f.pool.connect_options())
+        .clone()
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(std::time::Duration::from_secs(1))
+        .connect_with(options)
+        .await
+        .unwrap();
+    let repository = SqlFileRepository::new(pool.clone());
+    let orphan = repository
+        .load_delivery(orphan_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .file;
+    let linked = repository
+        .load_delivery(linked_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .file;
+    let mut guard = evidence_delete_guard(&pool, &f.actor, &orphan, Some(STUDENT))
+        .await
+        .unwrap();
+    repository
+        .request_delete_in_transaction(&mut guard, orphan_id)
+        .await
+        .unwrap();
+    guard.commit().await.unwrap();
+    assert_eq!(
+        repository
+            .load_delivery(orphan_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .file
+            .lifecycle_status,
+        school_file_platform::platform_types::FileLifecycleStatus::DeleteRequested
+    );
+    assert!(matches!(
+        evidence_delete_guard(&pool, &f.actor, &linked, Some(STUDENT)).await,
+        Err(AppError::Forbidden(_))
+    ));
+    assert!(matches!(
+        evidence_delete_guard(&pool, &f.actor, &linked, Some(Uuid::new_v4())).await,
+        Err(AppError::Forbidden(_))
+    ));
+    require_evidence_file(
+        &pool,
+        &f.actor,
+        &linked,
+        FilePolicyAction::Read,
+        Some(STUDENT),
+    )
+    .await
+    .unwrap();
+    let own = ActorContext {
+        user_id: STUDENT,
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    require_evidence_file(&pool, &own, &linked, FilePolicyAction::Read, Some(STUDENT))
+        .await
+        .unwrap();
+    let room: Uuid = sqlx::query_scalar("SELECT homeroom_id FROM homeroom_placements WHERE student_academic_year_id=$1 AND status IN ('current','ended') AND start_date<=$2 AND (end_date IS NULL OR end_date>=$2) ORDER BY start_date DESC,id LIMIT 1")
+        .bind(f.students[0].student_academic_year_id).bind(date).fetch_one(&pool).await.unwrap();
+    let school = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    let preview = open(
+        &pool,
+        &school,
+        OpenAttendanceSession {
+            academic_term_id: TERM,
+            date,
+            kind: AttendanceKind::Arrival,
+            source_key: room.to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(preview
+        .students
+        .iter()
+        .any(|student| student.student_id == STUDENT));
+    assert_eq!(preview.session.row_version, 0);
+    assert!(!preview.session.roster_token.is_empty());
+    // The context query preserves absent-settings defaults and lifecycle state.
+    assert_eq!(settings::get(&pool, TERM).await.unwrap().row_version, 0);
+    assert!(preview.writable);
+}

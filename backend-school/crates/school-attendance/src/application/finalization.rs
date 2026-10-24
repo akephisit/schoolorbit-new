@@ -9,7 +9,16 @@ pub async fn expected_rounds_on_connection(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceSeed>, AppError> {
-    let settings = settings::get_on_connection(connection, term).await?;
+    let context = settings::AttendanceReadContext::load(connection, term).await?;
+    expected_rounds_with_context(connection, &context, date).await
+}
+async fn expected_rounds_with_context(
+    connection: &mut PgConnection,
+    context: &settings::AttendanceReadContext,
+    date: NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let settings = &context.settings;
+    let term = settings.academic_term_id;
     let students = core::students_on_connection(connection, term, date).await?;
     let rooms = core::rooms_for_date_on_connection(connection, term, date).await?;
     let saved_arrivals: HashSet<Uuid> = sqlx::query_scalar(
@@ -152,10 +161,10 @@ pub async fn catch_up(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Result<u
     let count = due.len();
     for (term, date, generation) in due {
         let mut tx = pool.begin().await?;
-        crate::services::lock_term(&mut tx, term, true, true).await?;
-        let seeds = expected_rounds_on_connection(&mut tx, term, date).await?;
-        crate::services::finalization::finalize_date_in_transaction(
-            &mut tx, term, date, generation, &seeds, now,
+        let guard = crate::services::finalization::guard_finalization(&mut tx, term).await?;
+        let seeds = expected_rounds_with_context(&mut tx, &guard.context, date).await?;
+        crate::services::finalization::finalize_guarded(
+            &mut tx, &guard, date, generation, &seeds, now,
         )
         .await?;
         tx.commit().await?;

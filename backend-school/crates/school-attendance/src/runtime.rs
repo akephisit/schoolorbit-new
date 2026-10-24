@@ -20,8 +20,12 @@ use chrono::{NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
 use school_errors::AppError;
 use school_notifications::events::TenantNotificationEvent;
+use school_tenancy::background::TenantJobKind;
 use sqlx::{types::Json, PgPool};
-use std::{collections::HashSet, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 #[derive(Clone)]
@@ -34,7 +38,6 @@ struct TermSchedule {
 }
 #[derive(Clone)]
 struct Registration {
-    pool: PgPool,
     terms: Vec<TermSchedule>,
     generation: Uuid,
     module_generation: Uuid,
@@ -55,24 +58,38 @@ pub async fn touch(
     pool: PgPool,
     _channel: broadcast::Sender<TenantNotificationEvent>,
 ) -> Result<(), AppError> {
-    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=sqlx::query_as("SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all(&pool).await?;
-    let mut terms = vec![];
-    for (term, start, end, c) in rows {
-        let days = sqlx::query_as(
-            "SELECT date,counted,note FROM attendance_days WHERE academic_term_id=$1 ORDER BY date",
-        )
-        .bind(term)
-        .fetch_all(&pool)
-        .await?;
-        terms.push(TermSchedule {
+    let mut connection = school_tenancy::TenantPool::checkout_pool(
+        &pool,
+        school_tenancy::TenantDatabaseOperation::AttendanceMaintenance,
+    )
+    .await?;
+    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=sqlx::query_as("SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all(&mut *connection).await?;
+    let ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
+    let day_rows: Vec<(Uuid,NaiveDate,bool,String)> = sqlx::query_as("SELECT academic_term_id,date,counted,note FROM attendance_days WHERE academic_term_id=ANY($1) ORDER BY academic_term_id,date")
+        .bind(&ids).fetch_all(&mut *connection).await?;
+    let mut days_by_term = HashMap::<Uuid, Vec<AttendanceDay>>::new();
+    for (term, date, counted, note) in day_rows {
+        days_by_term.entry(term).or_default().push(AttendanceDay {
+            date,
+            counted,
+            note,
+        });
+    }
+    let terms = rows
+        .into_iter()
+        .map(|(term, start, end, c)| TermSchedule {
             term,
             start,
             end,
             configuration: c.0,
-            days,
-        });
-    }
-    let module_generation = crate::services::sessions::module_generation(&pool).await?;
+            days: days_by_term.remove(&term).unwrap_or_default(),
+        })
+        .collect();
+    let module_generation =
+        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
+            .fetch_one(&mut *connection)
+            .await?;
+    drop(connection);
     let prior = tenants()
         .get(tenant)
         .filter(|v| v.module_generation == module_generation)
@@ -81,7 +98,6 @@ pub async fn touch(
     tenants().insert(
         tenant.into(),
         Registration {
-            pool,
             terms,
             generation: Uuid::new_v4(),
             module_generation,
@@ -103,30 +119,35 @@ async fn refresh_directory(state: &AttendanceRuntimeState) {
             tenants().retain(|tenant, _| active.contains(tenant));
             for school in schools {
                 if let Some(url) = school.db_connection_string.filter(|s| !s.is_empty()) {
-                    match state
-                        .pool_manager
-                        .get_pool_without_migrations(&url, &school.subdomain)
-                        .await
-                    {
-                        Ok(pool) => {
-                            if touch(
-                                &school.subdomain,
-                                pool.as_ref().clone(),
-                                state.notification_channel.clone(),
-                            )
-                            .await
-                            .is_err()
-                            {
-                                tracing::warn!(
-                                    error_code = "attendance_schedule_unavailable",
-                                    "Attendance startup schedule could not load"
-                                );
-                            }
-                        }
-                        Err(_) => tracing::warn!(
-                            error_code = "attendance_tenant_unavailable",
-                            "Attendance startup tenant unavailable"
-                        ),
+                    let executor = state.pool_manager.background_turns();
+                    let result = executor
+                        .run(
+                            &school.subdomain,
+                            TenantJobKind::AttendanceMaintenance,
+                            || async {
+                                let pool = state
+                                    .pool_manager
+                                    .get_pool_without_migrations(&url, &school.subdomain)
+                                    .await
+                                    .map_err(|_| {
+                                        AppError::ServiceUnavailable(
+                                            "Attendance tenant unavailable".into(),
+                                        )
+                                    })?;
+                                touch(
+                                    &school.subdomain,
+                                    pool.as_ref().clone(),
+                                    state.notification_channel.clone(),
+                                )
+                                .await
+                            },
+                        )
+                        .await;
+                    if matches!(result, Some(Err(_))) {
+                        tracing::warn!(
+                            error_code = "attendance_schedule_unavailable",
+                            "Attendance startup schedule could not load"
+                        );
                     }
                 }
             }
@@ -161,16 +182,23 @@ pub async fn start(state: AttendanceRuntimeState) {
                 Ok(school) => school,
                 Err(_) => continue,
             };
-            let operation_pool = match state
-                .pool_manager
-                .get_pool(&school.database_url, &tenant)
-                .await
-            {
-                Ok(pool) => pool,
-                Err(_) => continue,
-            };
-            r.pool = operation_pool.as_ref().clone();
-            if run(&tenant, &mut r, state.behavior).await.is_err() {
+            let executor = state.pool_manager.background_turns();
+            let result = executor
+                .run(&tenant, TenantJobKind::AttendanceMaintenance, || async {
+                    let operation_pool = state
+                        .pool_manager
+                        .get_pool(&school.database_url, &tenant)
+                        .await
+                        .map_err(|_| {
+                            AppError::ServiceUnavailable("Attendance tenant unavailable".into())
+                        })?;
+                    run(&tenant, &mut r, &operation_pool, state.behavior).await
+                })
+                .await;
+            if result.is_none() {
+                continue;
+            }
+            if matches!(result, Some(Err(_))) {
                 tracing::warn!(
                     error_code = "attendance_background_retry",
                     "Attendance background work will retry"
@@ -190,12 +218,13 @@ pub async fn start(state: AttendanceRuntimeState) {
 async fn run(
     tenant: &str,
     r: &mut Registration,
+    pool: &PgPool,
     behavior: &dyn AttendanceBehaviorPort,
 ) -> Result<(), AppError> {
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
     let date = now.date_naive();
     if r.last_finalization_poll != Some(date) {
-        let processed = crate::application::finalization::catch_up(&r.pool, Utc::now(), 4).await?;
+        let processed = crate::application::finalization::catch_up(pool, Utc::now(), 4).await?;
         if processed > 0 {
             school_notifications::runtime::wake_after_commit(tenant);
         }
@@ -203,7 +232,7 @@ async fn run(
             r.last_finalization_poll = Some(date);
         }
     }
-    if behavior.run(&r.pool).await.is_err() {
+    if behavior.run(pool).await.is_err() {
         tracing::warn!(
             error_code = "behavior_background_retry",
             "Score delivery remains queued and will retry"
@@ -225,7 +254,7 @@ async fn run(
             let current = now.hour() * 60 + now.minute();
             let due = time.hour() * 60 + time.minute();
             if digest_due(current, due, r.digests.contains(&key)) {
-                let mut tx = r.pool.begin().await?;
+                let mut tx = pool.begin().await?;
                 crate::services::lock_term(&mut tx, t.term, false, true).await?;
                 let expected =
                     crate::application::projection::expected(&mut *tx, t.term, Some((date, date)))
@@ -245,7 +274,7 @@ async fn run(
         }
     }
     if r.last_retention != Some(date) {
-        if faces::expire_evidence(&r.pool).await? < faces::EVIDENCE_EXPIRY_BATCH {
+        if faces::expire_evidence(pool).await? < faces::EVIDENCE_EXPIRY_BATCH {
             r.last_retention = Some(date);
         }
     }

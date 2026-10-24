@@ -41,6 +41,7 @@ pub enum RepositoryError {
     OperationFailed,
     InvalidPersistedState,
     MaterializationRevoked,
+    LeaseLost,
 }
 
 impl RepositoryError {
@@ -49,6 +50,7 @@ impl RepositoryError {
             Self::OperationFailed => "file_repository_operation_failed",
             Self::InvalidPersistedState => "file_repository_state_invalid",
             Self::MaterializationRevoked => "file_materialization_revoked",
+            Self::LeaseLost => "file_operation_lease_lost",
         }
     }
 }
@@ -148,8 +150,27 @@ pub enum OperationWork {
     DeleteObject(DeleteWork),
 }
 
+/// Owner plus the monotonically increasing attempt fences every reclaim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationClaim {
+    pub owner: String,
+    pub attempt_count: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LeasedOperationResult {
+    Succeeded,
+    OriginalMissing,
+    Failed {
+        error_code: &'static str,
+        retry_delay: Duration,
+        terminal: bool,
+    },
+}
+
 #[derive(Clone)]
 pub struct LeasedOperation {
+    pub claim: OperationClaim,
     pub id: Uuid,
     pub file_id: Uuid,
     pub attempt_count: i32,
@@ -207,6 +228,12 @@ pub trait FileRepository: Send + Sync {
         lease_duration: Duration,
         limit: i64,
     ) -> Result<Vec<LeasedOperation>, RepositoryError>;
+    /// Worker-only completion; validates the exact live claim before any metadata effect.
+    async fn finish_leased_operation(
+        &self,
+        operation: &LeasedOperation,
+        result: LeasedOperationResult,
+    ) -> Result<(), RepositoryError>;
     async fn retry_operation(
         &self,
         operation_id: Uuid,
@@ -253,19 +280,26 @@ impl SqlFileRepository {
         RepositoryError::OperationFailed
     }
 
-    async fn load_operation(&self, operation_id: Uuid) -> Result<LeasedOperation, RepositoryError> {
+    async fn load_operation(
+        &self,
+        operation_id: Uuid,
+        claim: OperationClaim,
+    ) -> Result<LeasedOperation, RepositoryError> {
         let operation = sqlx::query(
             r#"
 SELECT id, file_id, file_version_id, file_derivative_id, operation_type, attempt_count
 FROM file_operations
-WHERE id = $1 AND status = 'leased'
+WHERE id = $1 AND status = 'leased' AND lease_owner = $2
+  AND attempt_count = $3 AND lease_expires_at > statement_timestamp()
 "#,
         )
         .bind(operation_id)
+        .bind(&claim.owner)
+        .bind(claim.attempt_count)
         .fetch_optional(&self.pool)
         .await
         .map_err(Self::database_error)?
-        .ok_or(RepositoryError::InvalidPersistedState)?;
+        .ok_or(RepositoryError::LeaseLost)?;
 
         let file_id: Uuid = operation.try_get("file_id").map_err(Self::database_error)?;
         let operation_type: String = operation
@@ -306,6 +340,7 @@ WHERE id = $1 AND status = 'leased'
         };
 
         Ok(LeasedOperation {
+            claim,
             id: operation_id,
             file_id,
             attempt_count,
@@ -818,34 +853,8 @@ INSERT INTO file_operations (
         error_code: &'static str,
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        sqlx::query(
-            "UPDATE file_versions SET storage_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
-        )
-        .bind(version_id)
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            "UPDATE files SET lifecycle_status = 'failed', updated_at = now() WHERE id = $1 AND lifecycle_status <> 'deleted'",
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
-UPDATE file_operations
-SET status = 'failed', last_error_code = $2, completed_at = now(),
-    lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
-WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
-"#,
-        )
-        .bind(file_id)
-        .bind(error_code)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+        mark_upload_failed_in_transaction(&mut transaction, file_id, version_id, error_code, None)
+            .await?;
         transaction.commit().await.map_err(Self::database_error)
     }
 
@@ -856,27 +865,13 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
         operation_id: Uuid,
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        let result = sqlx::query(
-            r#"
-UPDATE file_derivatives d
-SET storage_status = 'stored', lifecycle_status = 'ready'
-FROM files f
-WHERE d.id = $1
-  AND d.file_id = $2
-  AND f.id = d.file_id
-  AND f.lifecycle_status IN ('processing', 'failed', 'ready')
-  AND d.storage_status IN ('pending', 'failed', 'stored')
-"#,
+        mark_derivative_stored_in_transaction(
+            &mut transaction,
+            file_id,
+            derivative_id,
+            operation_id,
         )
-        .bind(derivative_id)
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        if result.rows_affected() != 1 {
-            return Err(RepositoryError::MaterializationRevoked);
-        }
-        mark_operation_succeeded(&mut transaction, operation_id).await?;
+        .await?;
         transaction.commit().await.map_err(Self::database_error)
     }
 
@@ -889,21 +884,14 @@ WHERE d.id = $1
         retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError> {
-        let retry_microseconds = duration_microseconds(retry_delay)?;
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        sqlx::query(
-            "UPDATE file_derivatives SET storage_status = 'failed', lifecycle_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
-        )
-        .bind(derivative_id)
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        retry_operation_query(
+        mark_derivative_failed_in_transaction(
             &mut transaction,
+            file_id,
+            derivative_id,
             operation_id,
             error_code,
-            retry_microseconds,
+            retry_delay,
             terminal,
         )
         .await?;
@@ -917,70 +905,14 @@ WHERE d.id = $1
         required_derivative_ids: &[Uuid],
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        let original_ready = sqlx::query_scalar::<_, bool>(
-            r#"
-SELECT EXISTS (
-    SELECT 1 FROM file_versions
-    WHERE id = $1 AND file_id = $2
-      AND storage_status = 'stored' AND scan_status = 'clean' AND deleted_at IS NULL
-)
-"#,
+        finalize_ready_in_transaction(
+            &mut transaction,
+            file_id,
+            version_id,
+            required_derivative_ids,
+            None,
         )
-        .bind(version_id)
-        .bind(file_id)
-        .fetch_one(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        if !original_ready {
-            return Err(RepositoryError::InvalidPersistedState);
-        }
-
-        if !required_derivative_ids.is_empty() {
-            let ready_count = sqlx::query_scalar::<_, i64>(
-                r#"
-SELECT COUNT(*)
-FROM file_derivatives
-WHERE file_id = $1 AND id = ANY($2)
-  AND storage_status = 'stored' AND lifecycle_status = 'ready' AND deleted_at IS NULL
-"#,
-            )
-            .bind(file_id)
-            .bind(required_derivative_ids)
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(Self::database_error)?;
-            if ready_count != required_derivative_ids.len() as i64 {
-                return Err(RepositoryError::InvalidPersistedState);
-            }
-        }
-
-        let result = sqlx::query(
-            r#"
-UPDATE files
-SET current_version_id = $2, lifecycle_status = 'ready', updated_at = now()
-WHERE id = $1 AND lifecycle_status IN ('processing', 'failed', 'ready')
-"#,
-        )
-        .bind(file_id)
-        .bind(version_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
-        if result.rows_affected() != 1 {
-            return Err(RepositoryError::MaterializationRevoked);
-        }
-        sqlx::query(
-            r#"
-UPDATE file_operations
-SET status = 'succeeded', completed_at = now(), last_error_code = NULL,
-    lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
-WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
-"#,
-        )
-        .bind(file_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+        .await?;
         transaction.commit().await.map_err(Self::database_error)
     }
 
@@ -1032,30 +964,7 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
 
     async fn mark_delete_succeeded(&self, work: &DeleteWork) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
-        match work.target {
-            ObjectTarget::Version(version_id) => {
-                sqlx::query(
-                    "UPDATE file_versions SET storage_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
-                )
-                .bind(version_id)
-                .bind(work.file_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(Self::database_error)?;
-            }
-            ObjectTarget::Derivative(derivative_id) => {
-                sqlx::query(
-                    "UPDATE file_derivatives SET storage_status = 'deleted', lifecycle_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
-                )
-                .bind(derivative_id)
-                .bind(work.file_id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(Self::database_error)?;
-            }
-        }
-        mark_operation_succeeded(&mut transaction, work.operation_id).await?;
-        finalize_deleted_if_absent(&mut transaction, work.file_id).await?;
+        mark_delete_succeeded_in_transaction(&mut transaction, work).await?;
         transaction.commit().await.map_err(Self::database_error)
     }
 
@@ -1094,7 +1003,7 @@ SET status = 'leased', attempt_count = attempt_count + 1,
     started_at = COALESCE(started_at, statement_timestamp())
 FROM due
 WHERE o.id = due.id AND o.attempt_count < 100
-RETURNING o.id
+RETURNING o.id, o.lease_owner, o.attempt_count
 "#,
         )
         .bind(limit)
@@ -1107,11 +1016,163 @@ RETURNING o.id
         let mut operations = Vec::with_capacity(rows.len());
         for row in rows {
             operations.push(
-                self.load_operation(row.try_get("id").map_err(Self::database_error)?)
-                    .await?,
+                self.load_operation(
+                    row.try_get("id").map_err(Self::database_error)?,
+                    OperationClaim {
+                        owner: row.try_get("lease_owner").map_err(Self::database_error)?,
+                        attempt_count: row
+                            .try_get("attempt_count")
+                            .map_err(Self::database_error)?,
+                    },
+                )
+                .await?,
             );
         }
         Ok(operations)
+    }
+
+    async fn finish_leased_operation(
+        &self,
+        operation: &LeasedOperation,
+        result: LeasedOperationResult,
+    ) -> Result<(), RepositoryError> {
+        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        // Deletion also locks file before operation; retain that lock order.
+        sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+            .bind(operation.file_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(Self::database_error)?;
+        sqlx::query("SELECT id FROM file_operations WHERE id=$1 FOR UPDATE")
+            .bind(operation.id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(Self::database_error)?;
+        let (kind, version, derivative) = match &operation.work {
+            OperationWork::ReconcileUpload { version_id, .. } => {
+                ("reconcile", Some(*version_id), None)
+            }
+            OperationWork::GenerateDerivative(work) => {
+                ("generate_derivative", None, Some(work.derivative_id))
+            }
+            OperationWork::DeleteObject(work) => {
+                if work.file_id != operation.file_id || work.operation_id != operation.id {
+                    return Err(RepositoryError::InvalidPersistedState);
+                }
+                match work.target {
+                    ObjectTarget::Version(id) => ("delete_object", Some(id), None),
+                    ObjectTarget::Derivative(id) => ("delete_object", None, Some(id)),
+                }
+            }
+        };
+        // A separate statement checks wall time after any row-lock wait.
+        let live: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_operations WHERE id=$1 AND file_id=$2 AND status='leased' AND lease_owner=$3 AND attempt_count=$4 AND lease_expires_at>statement_timestamp() AND operation_type=$5 AND file_version_id IS NOT DISTINCT FROM $6 AND file_derivative_id IS NOT DISTINCT FROM $7)")
+            .bind(operation.id).bind(operation.file_id).bind(&operation.claim.owner).bind(operation.claim.attempt_count)
+            .bind(kind).bind(version).bind(derivative)
+            .fetch_one(&mut *transaction).await.map_err(Self::database_error)?;
+        if operation.attempt_count != operation.claim.attempt_count {
+            return Err(RepositoryError::LeaseLost);
+        }
+        if !live {
+            // A late PUT can recreate a derivative after deletion finished. Only
+            // the exact cancelled generation may request a NEW deletion of its
+            // immutable target. Reclaimed/expired claims cause no effects.
+            if let (OperationWork::GenerateDerivative(work), LeasedOperationResult::Succeeded) =
+                (&operation.work, result)
+            {
+                let cancelled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_operations o JOIN files f ON f.id=o.file_id JOIN file_derivatives d ON d.id=o.file_derivative_id AND d.file_id=f.id WHERE o.id=$1 AND o.file_id=$2 AND o.attempt_count=$3 AND o.status='cancelled' AND o.last_error_code='file_delete_requested' AND o.operation_type='generate_derivative' AND d.id=$4 AND d.object_key=$5 AND f.lifecycle_status IN ('delete_requested','deleted'))")
+                    .bind(operation.id).bind(operation.file_id).bind(operation.claim.attempt_count).bind(work.derivative_id).bind(work.target.object_key.as_str())
+                    .fetch_one(&mut *transaction).await.map_err(Self::database_error)?;
+                if cancelled {
+                    sqlx::query("INSERT INTO file_operations(file_id,file_derivative_id,operation_type,status,next_retry_at,last_error_code) VALUES($1,$2,'delete_object','retryable_failure',statement_timestamp(),'file_delete_requested')")
+                        .bind(operation.file_id).bind(work.derivative_id).execute(&mut *transaction).await.map_err(Self::database_error)?;
+                    transaction.commit().await.map_err(Self::database_error)?;
+                }
+            }
+            return Err(RepositoryError::LeaseLost);
+        }
+        match (&operation.work, result) {
+            (
+                OperationWork::ReconcileUpload {
+                    version_id,
+                    required_derivative_ids,
+                    ..
+                },
+                LeasedOperationResult::Succeeded,
+            ) => {
+                finalize_ready_in_transaction(
+                    &mut transaction,
+                    operation.file_id,
+                    *version_id,
+                    required_derivative_ids,
+                    Some(operation.id),
+                )
+                .await?;
+            }
+            (
+                OperationWork::ReconcileUpload { version_id, .. },
+                LeasedOperationResult::OriginalMissing,
+            ) => {
+                mark_upload_failed_in_transaction(
+                    &mut transaction,
+                    operation.file_id,
+                    *version_id,
+                    "file_original_missing",
+                    Some(operation.id),
+                )
+                .await?;
+            }
+            (OperationWork::GenerateDerivative(work), LeasedOperationResult::Succeeded) => {
+                mark_derivative_stored_in_transaction(
+                    &mut transaction,
+                    operation.file_id,
+                    work.derivative_id,
+                    operation.id,
+                )
+                .await?;
+            }
+            (OperationWork::DeleteObject(work), LeasedOperationResult::Succeeded) => {
+                mark_delete_succeeded_in_transaction(&mut transaction, work).await?;
+            }
+            (
+                OperationWork::GenerateDerivative(work),
+                LeasedOperationResult::Failed {
+                    error_code,
+                    retry_delay,
+                    terminal,
+                },
+            ) => {
+                mark_derivative_failed_in_transaction(
+                    &mut transaction,
+                    operation.file_id,
+                    work.derivative_id,
+                    operation.id,
+                    error_code,
+                    retry_delay,
+                    terminal,
+                )
+                .await?;
+            }
+            (
+                _,
+                LeasedOperationResult::Failed {
+                    error_code,
+                    retry_delay,
+                    terminal,
+                },
+            ) => {
+                retry_operation_query(
+                    &mut transaction,
+                    operation.id,
+                    error_code,
+                    duration_microseconds(retry_delay)?,
+                    terminal,
+                )
+                .await?;
+            }
+            _ => return Err(RepositoryError::InvalidPersistedState),
+        }
+        transaction.commit().await.map_err(Self::database_error)
     }
 
     async fn retry_operation(
@@ -1168,6 +1229,210 @@ VALUES (
         .map_err(Self::database_error)?;
         Ok(())
     }
+}
+
+async fn mark_upload_failed_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    version_id: Uuid,
+    error_code: &'static str,
+    operation_id: Option<Uuid>,
+) -> Result<(), RepositoryError> {
+    sqlx::query(
+            "UPDATE file_versions SET storage_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
+        )
+        .bind(version_id)
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    sqlx::query(
+            "UPDATE files SET lifecycle_status = 'failed', updated_at = now() WHERE id = $1 AND lifecycle_status <> 'deleted'",
+        )
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    sqlx::query(
+            r#"
+UPDATE file_operations
+SET status = 'failed', last_error_code = $2, completed_at = now(),
+    lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
+WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded' AND ($3::uuid IS NULL OR id=$3)
+"#,
+        )
+        .bind(file_id)
+        .bind(error_code)
+        .bind(operation_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    Ok(())
+}
+
+async fn mark_derivative_stored_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    derivative_id: Uuid,
+    operation_id: Uuid,
+) -> Result<(), RepositoryError> {
+    let result = sqlx::query(
+        r#"
+UPDATE file_derivatives d
+SET storage_status = 'stored', lifecycle_status = 'ready'
+FROM files f
+WHERE d.id = $1
+  AND d.file_id = $2
+  AND f.id = d.file_id
+  AND f.lifecycle_status IN ('processing', 'failed', 'ready')
+  AND d.storage_status IN ('pending', 'failed', 'stored')
+"#,
+    )
+    .bind(derivative_id)
+    .bind(file_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(SqlFileRepository::database_error)?;
+    if result.rows_affected() != 1 {
+        return Err(RepositoryError::MaterializationRevoked);
+    }
+    mark_operation_succeeded(transaction, operation_id).await?;
+    Ok(())
+}
+
+async fn mark_derivative_failed_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    derivative_id: Uuid,
+    operation_id: Uuid,
+    error_code: &'static str,
+    retry_delay: Duration,
+    terminal: bool,
+) -> Result<(), RepositoryError> {
+    let retry_microseconds = duration_microseconds(retry_delay)?;
+    sqlx::query(
+            "UPDATE file_derivatives SET storage_status = 'failed', lifecycle_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
+        )
+        .bind(derivative_id)
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    retry_operation_query(
+        transaction,
+        operation_id,
+        error_code,
+        retry_microseconds,
+        terminal,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn finalize_ready_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    version_id: Uuid,
+    required_derivative_ids: &[Uuid],
+    operation_id: Option<Uuid>,
+) -> Result<(), RepositoryError> {
+    let original_ready = sqlx::query_scalar::<_, bool>(
+        r#"
+SELECT EXISTS (
+    SELECT 1 FROM file_versions
+    WHERE id = $1 AND file_id = $2
+      AND storage_status = 'stored' AND scan_status = 'clean' AND deleted_at IS NULL
+)
+"#,
+    )
+    .bind(version_id)
+    .bind(file_id)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(SqlFileRepository::database_error)?;
+    if !original_ready {
+        return Err(RepositoryError::InvalidPersistedState);
+    }
+
+    if !required_derivative_ids.is_empty() {
+        let ready_count = sqlx::query_scalar::<_, i64>(
+            r#"
+SELECT COUNT(*)
+FROM file_derivatives
+WHERE file_id = $1 AND id = ANY($2)
+  AND storage_status = 'stored' AND lifecycle_status = 'ready' AND deleted_at IS NULL
+"#,
+        )
+        .bind(file_id)
+        .bind(required_derivative_ids)
+        .fetch_one(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+        if ready_count != required_derivative_ids.len() as i64 {
+            return Err(RepositoryError::InvalidPersistedState);
+        }
+    }
+
+    let result = sqlx::query(
+        r#"
+UPDATE files
+SET current_version_id = $2, lifecycle_status = 'ready', updated_at = now()
+WHERE id = $1 AND lifecycle_status IN ('processing', 'failed', 'ready')
+"#,
+    )
+    .bind(file_id)
+    .bind(version_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(SqlFileRepository::database_error)?;
+    if result.rows_affected() != 1 {
+        return Err(RepositoryError::MaterializationRevoked);
+    }
+    sqlx::query(
+            r#"
+UPDATE file_operations
+SET status = 'succeeded', completed_at = now(), last_error_code = NULL,
+    lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
+WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded' AND ($2::uuid IS NULL OR id=$2)
+"#,
+        )
+        .bind(file_id)
+        .bind(operation_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    Ok(())
+}
+
+async fn mark_delete_succeeded_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    work: &DeleteWork,
+) -> Result<(), RepositoryError> {
+    match work.target {
+        ObjectTarget::Version(version_id) => {
+            sqlx::query(
+                    "UPDATE file_versions SET storage_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
+                )
+                .bind(version_id)
+                .bind(work.file_id)
+                .execute(&mut **transaction)
+                .await
+                .map_err(SqlFileRepository::database_error)?;
+        }
+        ObjectTarget::Derivative(derivative_id) => {
+            sqlx::query(
+                    "UPDATE file_derivatives SET storage_status = 'deleted', lifecycle_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
+                )
+                .bind(derivative_id)
+                .bind(work.file_id)
+                .execute(&mut **transaction)
+                .await
+                .map_err(SqlFileRepository::database_error)?;
+        }
+    }
+    mark_operation_succeeded(transaction, work.operation_id).await?;
+    finalize_deleted_if_absent(transaction, work.file_id).await?;
+    Ok(())
 }
 
 async fn mark_operation_succeeded(
@@ -1807,5 +2072,298 @@ WHERE file_id = $1
         for work in &deletion {
             repository.mark_delete_succeeded(work).await.unwrap();
         }
+    }
+    fn worker_upload() -> NewUpload {
+        let tenant = Uuid::new_v4();
+        let file_id = Uuid::new_v4();
+        NewUpload {
+            file_id,
+            version_id: Uuid::new_v4(),
+            reconcile_operation_id: Uuid::new_v4(),
+            scan_operation_id: Uuid::new_v4(),
+            owner_user_id: None,
+            created_by: None,
+            purpose: FilePurpose::SchoolLogo,
+            visibility: FileVisibility::Public,
+            retention_class: RetentionClass::Standard,
+            display_filename: "worker.png".into(),
+            original: StoredObject::new(
+                original_object_key(
+                    tenant,
+                    FilePurpose::SchoolLogo,
+                    file_id,
+                    1,
+                    DetectedContent::Png,
+                )
+                .unwrap(),
+                "image/png",
+            ),
+            byte_size: 4,
+            checksum: "a".repeat(64),
+            inspection_metadata: FileInspectionMetadata::Image {
+                width_px: 1,
+                height_px: 1,
+            },
+            derivatives: vec![NewDerivative {
+                id: Uuid::new_v4(),
+                operation_id: Uuid::new_v4(),
+                recipe: DerivativeRecipe::Thumbnail256Webp,
+                object: StoredObject::new(
+                    derivative_object_key(
+                        tenant,
+                        FilePurpose::SchoolLogo,
+                        file_id,
+                        1,
+                        DerivativeRecipe::Thumbnail256Webp,
+                    )
+                    .unwrap(),
+                    "image/webp",
+                ),
+                byte_size: 4,
+                checksum: "b".repeat(64),
+                required: true,
+            }],
+        }
+    }
+    async fn expire_claim(repository: &SqlFileRepository, id: Uuid) {
+        sqlx::query("UPDATE file_operations SET leased_at=statement_timestamp()-interval '2 minutes',lease_expires_at=statement_timestamp()-interval '1 second' WHERE id=$1")
+            .bind(id).execute(repository.pool()).await.unwrap();
+    }
+    async fn worker_snapshot(repository: &SqlFileRepository, file: Uuid) -> serde_json::Value {
+        sqlx::query_scalar("SELECT jsonb_build_object('file',to_jsonb(f),'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM file_versions v WHERE v.file_id=f.id),'derivatives',(SELECT jsonb_agg(to_jsonb(d) ORDER BY d.id) FROM file_derivatives d WHERE d.file_id=f.id),'operations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY o.id) FROM file_operations o WHERE o.file_id=f.id)) FROM files f WHERE f.id=$1")
+            .bind(file).fetch_one(repository.pool()).await.unwrap()
+    }
+    fn worker_retry() -> LeasedOperationResult {
+        LeasedOperationResult::Failed {
+            error_code: "storage_operation_failed",
+            retry_delay: Duration::ZERO,
+            terminal: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn worker_claims_fence_reclaimed_completion_and_retry_before_metadata_effects() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let upload = worker_upload();
+        repository.reserve_upload(&upload).await.unwrap();
+        repository
+            .mark_original_stored(upload.file_id, upload.version_id)
+            .await
+            .unwrap();
+        let first = repository
+            .lease_due_operations("same-owner", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        assert_eq!(first.len(), 2);
+        for operation in &first {
+            expire_claim(&repository, operation.id).await;
+        }
+        // Even an expired lease that has not been reclaimed must cause no write.
+        let expired = worker_snapshot(&repository, upload.file_id).await;
+        for operation in &first {
+            assert_eq!(
+                repository
+                    .finish_leased_operation(operation, worker_retry())
+                    .await,
+                Err(RepositoryError::LeaseLost)
+            );
+        }
+        assert_eq!(worker_snapshot(&repository, upload.file_id).await, expired);
+        // Reuse the worker name to prove the attempt generation is required.
+        let second = repository
+            .lease_due_operations("same-owner", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        assert!(second.iter().all(|operation| operation.attempt_count == 2));
+        let derivative = second
+            .iter()
+            .find(|operation| matches!(operation.work, OperationWork::GenerateDerivative(_)))
+            .unwrap();
+        repository
+            .finish_leased_operation(derivative, LeasedOperationResult::Succeeded)
+            .await
+            .unwrap();
+        let reconcile = second
+            .iter()
+            .find(|operation| matches!(operation.work, OperationWork::ReconcileUpload { .. }))
+            .unwrap();
+        repository
+            .finish_leased_operation(reconcile, LeasedOperationResult::Succeeded)
+            .await
+            .unwrap();
+        let committed = worker_snapshot(&repository, upload.file_id).await;
+        for operation in &first {
+            assert_eq!(
+                repository
+                    .finish_leased_operation(operation, LeasedOperationResult::Succeeded)
+                    .await,
+                Err(RepositoryError::LeaseLost)
+            );
+            assert_eq!(
+                repository
+                    .finish_leased_operation(operation, worker_retry())
+                    .await,
+                Err(RepositoryError::LeaseLost)
+            );
+            if matches!(operation.work, OperationWork::ReconcileUpload { .. }) {
+                assert_eq!(
+                    repository
+                        .finish_leased_operation(operation, LeasedOperationResult::OriginalMissing)
+                        .await,
+                    Err(RepositoryError::LeaseLost)
+                );
+            }
+        }
+        assert_eq!(
+            worker_snapshot(&repository, upload.file_id).await,
+            committed
+        );
+        let deletion = repository.request_delete(upload.file_id).await.unwrap();
+        assert_eq!(deletion.len(), 2);
+        let first = repository
+            .lease_due_operations("delete-a", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        for operation in &first {
+            expire_claim(&repository, operation.id).await;
+        }
+        let second = repository
+            .lease_due_operations("delete-b", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        for operation in &second {
+            repository
+                .finish_leased_operation(operation, LeasedOperationResult::Succeeded)
+                .await
+                .unwrap();
+        }
+        let deleted = worker_snapshot(&repository, upload.file_id).await;
+        for operation in &first {
+            assert_eq!(
+                repository
+                    .finish_leased_operation(operation, worker_retry())
+                    .await,
+                Err(RepositoryError::LeaseLost)
+            );
+            assert_eq!(
+                repository
+                    .finish_leased_operation(operation, LeasedOperationResult::Succeeded)
+                    .await,
+                Err(RepositoryError::LeaseLost)
+            );
+        }
+        assert_eq!(worker_snapshot(&repository, upload.file_id).await, deleted);
+    }
+
+    #[tokio::test]
+    async fn cancelled_derivative_late_put_queues_new_delete_after_prior_delete_succeeded() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let upload = worker_upload();
+        repository.reserve_upload(&upload).await.unwrap();
+        let claimed = repository
+            .lease_due_operations("put-a", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        let derivative = claimed
+            .iter()
+            .find(|operation| matches!(operation.work, OperationWork::GenerateDerivative(_)))
+            .unwrap();
+        let deletion = repository.request_delete(upload.file_id).await.unwrap();
+        for work in &deletion {
+            repository.mark_delete_succeeded(work).await.unwrap();
+        }
+        let state: (String, String) = sqlx::query_as("SELECT f.lifecycle_status,d.storage_status FROM files f JOIN file_derivatives d ON d.file_id=f.id WHERE f.id=$1")
+            .bind(upload.file_id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(state, ("deleted".into(), "deleted".into()));
+        assert_eq!(
+            repository
+                .finish_leased_operation(derivative, LeasedOperationResult::Succeeded)
+                .await,
+            Err(RepositoryError::LeaseLost)
+        );
+        let status: (String, i32) =
+            sqlx::query_as("SELECT status,attempt_count FROM file_operations WHERE id=$1")
+                .bind(derivative.id)
+                .fetch_one(repository.pool())
+                .await
+                .unwrap();
+        assert_eq!(status, ("cancelled".into(), derivative.attempt_count));
+        let cleanup = repository
+            .lease_due_operations("late-put-cleanup", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        assert_eq!(cleanup.len(), 1);
+        assert!(
+            matches!(&cleanup[0].work, OperationWork::DeleteObject(work) if work.target == ObjectTarget::Derivative(upload.derivatives[0].id))
+        );
+        repository
+            .finish_leased_operation(&cleanup[0], LeasedOperationResult::Succeeded)
+            .await
+            .unwrap();
+        let unchanged: (String, String) = sqlx::query_as("SELECT f.lifecycle_status,d.storage_status FROM files f JOIN file_derivatives d ON d.file_id=f.id WHERE f.id=$1")
+            .bind(upload.file_id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(unchanged, state);
+    }
+
+    #[tokio::test]
+    async fn worker_finish_rechecks_expiry_after_waiting_for_the_operation_lock() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let mut upload = worker_upload();
+        upload.derivatives.clear();
+        repository.reserve_upload(&upload).await.unwrap();
+        repository
+            .mark_original_stored(upload.file_id, upload.version_id)
+            .await
+            .unwrap();
+        let operation = repository
+            .lease_due_operations("blocked-worker", Duration::from_secs(60), 1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        sqlx::query("UPDATE file_operations SET lease_expires_at=statement_timestamp()+interval '1 second' WHERE id=$1")
+            .bind(operation.id).execute(repository.pool()).await.unwrap();
+        let mut blocker = repository.pool().begin().await.unwrap();
+        sqlx::query("SELECT id FROM file_operations WHERE id=$1 FOR UPDATE")
+            .bind(operation.id)
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        let worker_repository = repository.clone();
+        let worker_operation = operation.clone();
+        let worker = tokio::spawn(async move {
+            worker_repository
+                .finish_leased_operation(&worker_operation, LeasedOperationResult::Succeeded)
+                .await
+        });
+        // Observe the actual blocked backend, rather than guessing scheduling.
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM file_operations WHERE id=%FOR UPDATE%')")
+                    .fetch_one(&mut *blocker).await.unwrap();
+                if waiting { break; }
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("worker should wait for the operation lock");
+        // Do not change the locked row: its lease expires by wall time while
+        // the finishing statement waits. A pre-lock statement timestamp (and
+        // transaction-stable now()) would incorrectly accept this completion.
+        sqlx::query("SELECT pg_sleep(1.1)")
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        blocker.commit().await.unwrap();
+        let expired = worker_snapshot(&repository, upload.file_id).await;
+        assert_eq!(worker.await.unwrap(), Err(RepositoryError::LeaseLost));
+        assert_eq!(worker_snapshot(&repository, upload.file_id).await, expired);
     }
 }

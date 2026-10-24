@@ -7278,32 +7278,27 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
         }
 
         if file_name == "crates/school-attendance/src/runtime.rs" {
-            // Background work has no HTTP request context. Its exact exception must
-            // reacquire through the central directory/manager and retain a logical
-            // operation lease throughout the scheduled run.
+            // Background work reacquires through the central directory/manager;
+            // dormant schedule registrations retain no pool or credentials.
+            let registration = extract_braced_block(&source, "struct Registration", false);
+            for forbidden in ["PgPool", "TenantPool", "database_url", "SchoolDatabaseInfo"] {
+                assert!(!registration.contains(forbidden));
+            }
             let runtime = extract_braced_block(&source, "pub async fn start", false);
             let work = extract_braced_block(&runtime, "for (tenant, mut r) in work", false);
-            let directory = work
-                .find("state.admin_client.get_school_database_info(&tenant).await")
-                .expect("Attendance work must refresh the authoritative tenant directory");
-            let operation_lease = work
-                .find("let operation_pool = match state")
-                .expect("Attendance must own a lease for the complete logical run");
+            assert!(work.contains("get_school_database_info(&tenant)"));
+            assert!(work.contains("background_turns()"));
+            assert!(work.contains("TenantJobKind::AttendanceMaintenance"));
             let pool = work
                 .find(".get_pool(&school.database_url, &tenant)")
-                .expect("Attendance work must reacquire through the central pool manager");
-            let refreshed = work
-                .find("r.pool = operation_pool.as_ref().clone()")
-                .expect("Attendance must replace any dormant pool handle before work");
+                .unwrap();
             let run = work
-                .find("run(&tenant, &mut r, state.behavior).await")
-                .expect("Attendance must run while the operation lease is in scope");
-            assert!(directory < operation_lease && operation_lease < pool);
-            assert!(pool < refreshed && refreshed < run);
+                .find("run(&tenant, &mut r, &operation_pool, state.behavior)")
+                .unwrap();
+            assert!(pool < run);
             assert!(!work[..run].contains("drop(operation_pool)"));
+            assert!(!work.contains("spawn("));
         } else if file_name == "crates/school-notifications/src/runtime.rs" {
-            // Central dispatch has no request context. Its registry must stay
-            // dormant between turns and each admitted batch must own its lease.
             let runtime = extract_braced_block(&source, "pub async fn start", false);
             assert!(runtime.contains("BTreeMap<String, TenantSchedule>"));
             let schedule = extract_braced_block(&source, "struct TenantSchedule", false);
@@ -7312,31 +7307,31 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             }
             assert!(schedule.contains("pending: bool"));
             assert!(schedule.contains("next_probe: tokio::time::Instant"));
-            let work =
-                extract_braced_block(&runtime, "for (tenant, schedule) in &mut tenants", false);
-            let directory = work
-                .find("state.admin_client.get_school_database_info(tenant).await")
-                .expect("Notification work must refresh the authoritative tenant directory");
-            let admission = work
-                .find(".get_pool(&school.database_url, tenant)")
-                .expect("Notification work must use the central pool manager");
-            let operation_lease = work
-                .find("let pool = match admitted")
-                .expect("Notification work must retain its admitted logical lease");
-            let run = work
-                .find("match deliver_tenant_batch(")
-                .expect("Notification work must use its bounded central dispatcher");
-            let result = work[run..]
-                .find("Ok(progress)")
-                .expect("Notification work must await its batch outcome");
-            let delivery = &work[run..run + result];
-            assert!(directory < admission && admission < operation_lease && operation_lease < run);
-            assert!(delivery.contains("&pool,"));
-            assert!(delivery.contains(".await"));
-            assert!(!work.contains("drop(pool)"));
-            assert!(!work.contains("spawn("));
-            assert!(!work.contains("spawn_local("));
-            assert!(!work.contains("pool.clone()"));
+            assert!(runtime.contains(".buffer_unordered(limit)"));
+            assert!(runtime.contains("deliver_managed_tenant_batch"));
+            let managed =
+                extract_braced_block(&source, "async fn deliver_managed_tenant_batch", false);
+            assert!(managed.contains("background_turns()"));
+            assert!(managed.contains("TenantJobKind::NotificationDispatch"));
+            assert!(managed.contains("deliver_database_batch"));
+            let access = extract_braced_block(&source, "impl DeliveryDatabase", false);
+            assert!(access.contains("get_school_database_info(tenant)"));
+            assert!(access.contains(".get_pool(&school.database_url, tenant)"));
+            assert!(access.contains("id != school.tenant_id"));
+            let batch = extract_braced_block(&source, "async fn deliver_database_batch", false);
+            assert!(batch.contains("admitted(turn"));
+            assert!(batch.contains("dispatch::materialize"));
+            assert!(batch.contains("NotificationService::prepare_stored"));
+            assert!(batch.contains("NotificationService::deliver_prepared"));
+            assert!(batch.contains("dispatch::finish_delivery"));
+            assert!(!batch.contains("spawn("));
+            let publisher = read_source(
+                repo_root().join("backend-school/crates/school-notifications/src/publisher.rs"),
+            );
+            let prepared = extract_braced_block(&publisher, "struct PreparedNotification", false);
+            for forbidden in ["PgPool", "TenantPool", "Transaction", "Semaphore"] {
+                assert!(!prepared.contains(forbidden));
+            }
         } else if file_name != "src/system/handlers/migration.rs"
             && pool_manager_get_pool.is_match(&source)
         {

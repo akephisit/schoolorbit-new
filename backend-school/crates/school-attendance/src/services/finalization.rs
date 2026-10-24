@@ -27,7 +27,31 @@ pub async fn finalize_date_in_transaction(
     seeds: &[AttendanceSeed],
     processed_at: DateTime<Utc>,
 ) -> Result<FinalizationOutcome, AppError> {
+    let guard = guard_finalization(tx, term).await?;
+    finalize_guarded(tx, &guard, date, generation, seeds, processed_at).await
+}
+
+pub(crate) struct GuardedFinalization {
+    pub context: super::settings::AttendanceReadContext,
+}
+pub(crate) async fn guard_finalization(
+    tx: &mut Transaction<'_, Postgres>,
+    term: Uuid,
+) -> Result<GuardedFinalization, AppError> {
     super::lock_term(tx, term, true, true).await?;
+    Ok(GuardedFinalization {
+        context: super::settings::AttendanceReadContext::load(&mut *tx, term).await?,
+    })
+}
+pub(crate) async fn finalize_guarded(
+    tx: &mut Transaction<'_, Postgres>,
+    guard: &GuardedFinalization,
+    date: NaiveDate,
+    generation: Uuid,
+    seeds: &[AttendanceSeed],
+    processed_at: DateTime<Utc>,
+) -> Result<FinalizationOutcome, AppError> {
+    let term = guard.context.settings.academic_term_id;
     let (actual, start, coverage): (Uuid, NaiveDate, NaiveDate) = sqlx::query_as(
         "SELECT generation,auto_finalize_from,coverage_start FROM attendance_module_state WHERE singleton",
     )
@@ -54,7 +78,7 @@ pub async fn finalize_date_in_transaction(
             already_completed: true,
         });
     }
-    let settings = super::settings::get_on_connection(&mut *tx, term).await?;
+    let settings = &guard.context.settings;
     let day: Option<bool> = sqlx::query_scalar(
         "SELECT counted FROM attendance_days WHERE academic_term_id=$1 AND date=$2",
     )
