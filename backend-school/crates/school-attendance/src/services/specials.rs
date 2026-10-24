@@ -1,7 +1,7 @@
 use super::{audit, lock_term};
 use crate::{models::*, rules::invalid};
 use school_errors::AppError;
-use sqlx::{types::Json, PgPool};
+use sqlx::{types::Json, PgConnection, PgPool};
 use uuid::Uuid;
 pub async fn audiences(
     pool: &PgPool,
@@ -181,7 +181,14 @@ pub async fn seeds(
     term: Uuid,
     date: chrono::NaiveDate,
 ) -> Result<Vec<AttendanceSeed>, AppError> {
-    let rows:Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)>=sqlx::query_as("SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id").bind(term).bind(date).fetch_all(pool).await?;
+    seeds_on_connection(&mut *pool.acquire().await?, term, date).await
+}
+pub async fn seeds_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: chrono::NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let rows:Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)>=sqlx::query_as("SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id").bind(term).bind(date).fetch_all(&mut *connection).await?;
     Ok(rows
         .into_iter()
         .flat_map(|(round, Json(groups))| {

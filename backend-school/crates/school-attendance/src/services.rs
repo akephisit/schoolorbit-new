@@ -10,7 +10,7 @@ pub mod specials;
 use crate::rules::invalid;
 use chrono::NaiveDate;
 use school_errors::AppError;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub async fn lock_term(
     tx: &mut Transaction<'_, Postgres>,
@@ -83,7 +83,14 @@ pub async fn begin_report_snapshot(
 }
 
 pub async fn validate_date(pool: &PgPool, term: Uuid, date: NaiveDate) -> Result<(), AppError> {
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND $2 BETWEEN t.start_date AND COALESCE(t.closed_on,t.planned_end_date,y.end_date))").bind(term).bind(date).fetch_one(pool).await?;
+    validate_date_on_connection(&mut *pool.acquire().await?, term, date).await
+}
+pub async fn validate_date_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<(), AppError> {
+    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND $2 BETWEEN t.start_date AND COALESCE(t.closed_on,t.planned_end_date,y.end_date))").bind(term).bind(date).fetch_one(&mut *connection).await?;
     if valid {
         Ok(())
     } else {

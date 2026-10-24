@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::timetable_block_conflicts::map_write_error;
@@ -170,13 +170,20 @@ pub async fn resolve_for_date(
     term_id: Uuid,
     on_date: NaiveDate,
 ) -> Result<TimetableVersion, AppError> {
-    let version_id = resolve_version_id_for_date(pool, term_id, on_date).await?;
+    resolve_for_date_on_connection(&mut *pool.acquire().await?, term_id, on_date).await
+}
+pub async fn resolve_for_date_on_connection(
+    connection: &mut PgConnection,
+    term_id: Uuid,
+    on_date: NaiveDate,
+) -> Result<TimetableVersion, AppError> {
+    let version_id = resolve_version_id_for_date(&mut *connection, term_id, on_date).await?;
     let sql = format!("{VERSION_SELECT} WHERE version.id = $1");
     let row = sqlx::query_as::<_, TimetableVersionRow>(sqlx::AssertSqlSafe(sql))
         .bind(version_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *connection)
         .await?;
-    let mut versions = hydrate_versions(pool, vec![row], on_date).await?;
+    let mut versions = hydrate_versions(&mut *connection, vec![row], on_date).await?;
     versions.pop().ok_or_else(|| {
         AppError::InternalServerError("ไม่สามารถโหลดตารางเรียนตามวันที่เลือกได้".to_string())
     })
@@ -613,8 +620,8 @@ pub async fn get_version(
         .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดรุ่นตารางเรียนได้".to_string()))
 }
 
-async fn hydrate_versions(
-    pool: &PgPool,
+async fn hydrate_versions<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
     rows: Vec<TimetableVersionRow>,
     display_date: NaiveDate,
 ) -> Result<Vec<TimetableVersion>, AppError> {
@@ -624,7 +631,7 @@ async fn hydrate_versions(
 
     let source_ids: Vec<Uuid> = rows.iter().map(|row| row.delivery_version_id).collect();
     let snapshots =
-        school_academic_delivery::services::versions::snapshots(pool, &source_ids).await?;
+        school_academic_delivery::services::versions::snapshots(executor, &source_ids).await?;
     let mut targets_by_version: HashMap<Uuid, Vec<TimetableVersionTarget>> = HashMap::new();
     for row in &rows {
         let snapshot = snapshots

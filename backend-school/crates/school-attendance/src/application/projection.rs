@@ -30,7 +30,7 @@ pub async fn expected(
     term: Uuid,
     range: Option<(NaiveDate, NaiveDate)>,
 ) -> Result<Vec<AttendanceExpectedSummary>, AppError> {
-    Ok(project(connection, term, range, None).await?.0)
+    Ok(project(connection, term, range, None, None).await?.0)
 }
 pub(super) async fn history(
     connection: &mut sqlx::PgConnection,
@@ -38,6 +38,7 @@ pub(super) async fn history(
     start: NaiveDate,
     end: NaiveDate,
     student: Uuid,
+    configuration: &AttendanceConfiguration,
     teacher: Option<Uuid>,
 ) -> Result<Vec<AttendanceHistoryItem>, AppError> {
     Ok(project(
@@ -45,6 +46,7 @@ pub(super) async fn history(
         term,
         Some((start, end)),
         Some((student, teacher)),
+        Some(configuration),
     )
     .await?
     .1)
@@ -79,6 +81,7 @@ async fn project(
     term: Uuid,
     range: Option<(NaiveDate, NaiveDate)>,
     history_scope: Option<(Uuid, Option<Uuid>)>,
+    configuration: Option<&AttendanceConfiguration>,
 ) -> Result<(Vec<AttendanceExpectedSummary>, Vec<AttendanceHistoryItem>), AppError> {
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
     let (term_start,term_end,coverage_start):(NaiveDate,NaiveDate,NaiveDate)=sqlx::query_as("SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),m.coverage_start FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id CROSS JOIN attendance_module_state m WHERE t.id=$1 AND m.singleton")
@@ -95,9 +98,16 @@ async fn project(
     if (end - start).num_days() > 369 {
         return Err(invalid("ช่วงภาคเรียนเกินขนาดที่รองรับ"));
     }
-    let configuration = settings::get_on_connection(connection, term)
-        .await?
-        .configuration;
+    let loaded_configuration;
+    let configuration = match configuration {
+        Some(configuration) => configuration,
+        None => {
+            loaded_configuration = settings::get_on_connection(connection, term)
+                .await?
+                .configuration;
+            &loaded_configuration
+        }
+    };
     let days = settings::days_on_connection(connection, term, start, end).await?;
     let overrides: HashMap<_, _> = days.into_iter().map(|d| (d.date, d.counted)).collect();
     // Existing occurrences suppress virtual recreation even if their frozen roster

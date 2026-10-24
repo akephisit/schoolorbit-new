@@ -46,11 +46,19 @@ pub async fn students_in_room(
     date: NaiveDate,
     homeroom: Uuid,
 ) -> Result<Vec<AttendanceCoreRosterStudent>, AppError> {
+    students_in_room_on_connection(&mut *pool.acquire().await?, term, date, homeroom).await
+}
+pub async fn students_in_room_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+    homeroom: Uuid,
+) -> Result<Vec<AttendanceCoreRosterStudent>, AppError> {
     let rows: Vec<AttendanceCoreRosterStudent> = sqlx::query_as(ROOM_ROSTER_SQL)
         .bind(term)
         .bind(date)
         .bind(homeroom)
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?;
     if rows.len() > 10000 {
         return Err(AppError::ValidationError(
@@ -65,8 +73,15 @@ pub async fn room(
     term: Uuid,
     homeroom: Uuid,
 ) -> Result<Option<AttendanceCoreRoom>, AppError> {
+    room_on_connection(&mut *pool.acquire().await?, term, homeroom).await
+}
+pub async fn room_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    homeroom: Uuid,
+) -> Result<Option<AttendanceCoreRoom>, AppError> {
     Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.id=$2 AND h.is_active")
-        .bind(term).bind(homeroom).fetch_optional(pool).await?)
+        .bind(term).bind(homeroom).fetch_optional(&mut *connection).await?)
 }
 #[derive(Debug, Clone, FromRow)]
 pub struct AttendancePlacementSpan {

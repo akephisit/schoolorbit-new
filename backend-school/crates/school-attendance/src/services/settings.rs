@@ -14,24 +14,16 @@ pub async fn get_on_connection(
     connection: &mut PgConnection,
     term: Uuid,
 ) -> Result<AttendanceSettings, AppError> {
-    let archived: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)",
+    let (configuration, row_version, archived, auto_finalize_from): (
+        Option<Json<AttendanceConfiguration>>, Option<i64>, bool, NaiveDate,
+    ) = sqlx::query_as(
+        "SELECT s.configuration,s.row_version,EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1),m.auto_finalize_from FROM attendance_module_state m LEFT JOIN attendance_settings s ON s.academic_term_id=$1 WHERE m.singleton",
     )
     .bind(term)
     .fetch_one(&mut *connection)
     .await?;
-    let row: Option<(Json<AttendanceConfiguration>, i64)> = sqlx::query_as(
-        "SELECT configuration,row_version FROM attendance_settings WHERE academic_term_id=$1",
-    )
-    .bind(term)
-    .fetch_optional(&mut *connection)
-    .await?;
-    let (configuration, row_version) = row.map(|(c, v)| (c.0, v)).unwrap_or_default();
-    let auto_finalize_from = sqlx::query_scalar(
-        "SELECT auto_finalize_from FROM attendance_module_state WHERE singleton",
-    )
-    .fetch_one(&mut *connection)
-    .await?;
+    let row_version = row_version.unwrap_or(0);
+    let configuration = configuration.map(|value| value.0).unwrap_or_default();
     Ok(AttendanceSettings {
         academic_term_id: term,
         configuration: if row_version == 0 {
@@ -167,12 +159,20 @@ pub async fn is_counted(
     date: NaiveDate,
     c: &AttendanceConfiguration,
 ) -> Result<bool, AppError> {
+    is_counted_on_connection(&mut *pool.acquire().await?, term, date, c).await
+}
+pub async fn is_counted_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+    c: &AttendanceConfiguration,
+) -> Result<bool, AppError> {
     let day: Option<bool> = sqlx::query_scalar(
         "SELECT counted FROM attendance_days WHERE academic_term_id=$1 AND date=$2",
     )
     .bind(term)
     .bind(date)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?;
     Ok(counted(c, date, day))
 }

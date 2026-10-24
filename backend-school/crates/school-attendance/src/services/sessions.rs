@@ -8,7 +8,7 @@ use chrono::Utc;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub const COLUMNS: &str = "id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -19,9 +19,14 @@ struct ResultSnapshot {
     row_version: i64,
 }
 pub async fn module_generation(pool: &PgPool) -> Result<Uuid, AppError> {
+    module_generation_on_connection(&mut *pool.acquire().await?).await
+}
+pub async fn module_generation_on_connection(
+    connection: &mut PgConnection,
+) -> Result<Uuid, AppError> {
     Ok(
         sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
-            .fetch_one(pool)
+            .fetch_one(&mut *connection)
             .await?,
     )
 }
@@ -29,7 +34,13 @@ pub async fn with_token(
     pool: &PgPool,
     s: AttendanceSession,
 ) -> Result<AttendanceSession, AppError> {
-    let epoch = module_generation(pool).await?;
+    with_token_on_connection(&mut *pool.acquire().await?, s).await
+}
+pub async fn with_token_on_connection(
+    connection: &mut PgConnection,
+    s: AttendanceSession,
+) -> Result<AttendanceSession, AppError> {
+    let epoch = module_generation_on_connection(connection).await?;
     token_with_generation(s, epoch)
 }
 pub fn token_with_generation(
@@ -58,13 +69,19 @@ pub fn token_with_generation(
     Ok(s)
 }
 pub async fn get_optional(pool: &PgPool, id: Uuid) -> Result<Option<AttendanceSession>, AppError> {
+    get_optional_on_connection(&mut *pool.acquire().await?, id).await
+}
+pub async fn get_optional_on_connection(
+    connection: &mut PgConnection,
+    id: Uuid,
+) -> Result<Option<AttendanceSession>, AppError> {
     let sql = format!("SELECT {COLUMNS} FROM attendance_sessions WHERE id=$1");
     let row = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *connection)
         .await?;
     match row {
-        Some(s) => Ok(Some(with_token(pool, s).await?)),
+        Some(s) => Ok(Some(with_token_on_connection(connection, s).await?)),
         None => Ok(None),
     }
 }
@@ -143,9 +160,26 @@ pub async fn detail_unchecked(
     pool: &PgPool,
     s: AttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
-    let settings = settings::get(pool, s.academic_term_id).await?;
+    let mut connection = pool.acquire().await?;
+    let settings = settings::get_on_connection(&mut connection, s.academic_term_id).await?;
+    detail_unchecked_on_connection(&mut connection, s, &settings).await
+}
+pub(crate) async fn detail_unchecked_on_connection(
+    connection: &mut PgConnection,
+    s: AttendanceSession,
+    settings: &AttendanceSettings,
+) -> Result<AttendanceDetail, AppError> {
+    if settings.academic_term_id != s.academic_term_id {
+        return Err(invalid("บริบทการตั้งค่าไม่ตรงกับรอบเช็คชื่อ"));
+    }
     let counted = s.count_override.unwrap_or(
-        settings::is_counted(pool, s.academic_term_id, s.date, &settings.configuration).await?,
+        settings::is_counted_on_connection(
+            connection,
+            s.academic_term_id,
+            s.date,
+            &settings.configuration,
+        )
+        .await?,
     ) && !s.cancelled;
     let students=sqlx::query_as(r#"WITH participants AS (
         SELECT * FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)
@@ -164,8 +198,8 @@ pub async fn detail_unchecked(
         LEFT JOIN attendance_scan_events e ON e.session_id=$1 AND e.student_id=p."studentId"
         LEFT JOIN arrivals a ON a.student_id=p."studentId"
         ORDER BY p."classNumber" NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,u.id"#)
-        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(pool).await?;
-    let term_writable:bool=sqlx::query_scalar("SELECT t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(s.academic_term_id).fetch_one(pool).await?;
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(&mut *connection).await?;
+    let term_writable:bool=sqlx::query_scalar("SELECT t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(s.academic_term_id).fetch_one(&mut *connection).await?;
     Ok(AttendanceDetail {
         writable: term_writable
             && !settings.archived

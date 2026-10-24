@@ -336,6 +336,11 @@ async fn baseline() {
         serde_json::to_value(&expected_history).unwrap()
     );
     assert_eq!(history_sample.checkouts, 1);
+    assert!(
+        history_sample.query + history_sample.execute <= 27,
+        "history must not reload the same snapshot settings"
+    );
+    assert!(history_sample.ready <= 29);
     assert!(history_sample.query + history_sample.execute > 0);
     assert!(history_sample.standalone_sync >= 2);
     assert!(history_sample.ready >= history_sample.query + history_sample.execute);
@@ -351,7 +356,15 @@ async fn baseline() {
         serde_json::to_value(&actual_preview).unwrap(),
         serde_json::to_value(&expected_preview).unwrap()
     );
-    assert!(preview_sample.checkouts > 0);
+    assert_eq!(
+        preview_sample.checkouts, 1,
+        "preview must retain its one snapshot connection"
+    );
+    assert_eq!(preview_sample.standalone_sync, 2);
+    assert!(
+        preview_sample.ready <= 18,
+        "preview must avoid repeated checkout/return health checks"
+    );
     assert!(preview_sample.query + preview_sample.execute > 0);
     assert!(preview_sample.ready >= preview_sample.query + preview_sample.execute);
     eprintln!("attendance_read_checkout preview {preview_sample:?}");

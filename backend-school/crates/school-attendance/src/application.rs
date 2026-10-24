@@ -10,7 +10,7 @@ use school_academic_timetable::models::timetable_block::TimetableBlockKind;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_permissions::registry::codes;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 pub mod finalization;
@@ -27,11 +27,29 @@ async fn seeds_with_choices(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<(Vec<AttendanceSeed>, Vec<AttendanceLessonChoice>), AppError> {
-    crate::services::validate_date(pool, term, date).await?;
-    let students = core::students(pool, term, date).await?;
-    let rooms = core::rooms(pool, term).await?;
+    let mut connection = pool.acquire().await?;
+    seeds_with_choices_on_connection(&mut connection, term, date, None).await
+}
+async fn seeds_with_choices_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+    configuration: Option<&AttendanceConfiguration>,
+) -> Result<(Vec<AttendanceSeed>, Vec<AttendanceLessonChoice>), AppError> {
+    crate::services::validate_date_on_connection(connection, term, date).await?;
+    let students = core::students_on_connection(connection, term, date).await?;
+    let rooms = core::rooms_on_connection(connection, term).await?;
+    let loaded_configuration;
+    let c = match configuration {
+        Some(configuration) => configuration,
+        None => {
+            loaded_configuration = settings::get_on_connection(connection, term)
+                .await?
+                .configuration;
+            &loaded_configuration
+        }
+    };
     let room_names: HashMap<_, _> = rooms.iter().map(|r| (r.id, r.name.clone())).collect();
-    let c = settings::get(pool, term).await?.configuration;
     let mut seeds = vec![];
     let mut lesson_choices = vec![];
     for room in rooms {
@@ -46,12 +64,15 @@ async fn seeds_with_choices(
             .collect::<Vec<_>>();
         seeds.push(arrival_seed(term, date, room, roster, c.late_after));
     }
-    let blocks =
-        match school_academic_timetable::services::attendance::blocks(pool, term, date).await {
-            Ok(b) => b,
-            Err(AppError::NotFound(_)) => vec![],
-            Err(e) => return Err(e),
-        };
+    let blocks = match school_academic_timetable::services::attendance::blocks_on_connection(
+        connection, term, date,
+    )
+    .await
+    {
+        Ok(b) => b,
+        Err(AppError::NotFound(_)) => vec![],
+        Err(e) => return Err(e),
+    };
     let groups = blocks
         .iter()
         .filter(|b| b.block_kind != TimetableBlockKind::Structural)
@@ -65,8 +86,10 @@ async fn seeds_with_choices(
         .into_iter()
         .collect::<Vec<_>>();
     let memberships =
-        school_academic_delivery::services::attendance_roster::students(pool, &groups, date)
-            .await?;
+        school_academic_delivery::services::attendance_roster::students_on_connection(
+            connection, &groups, date,
+        )
+        .await?;
     let student_map: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
     for block in blocks {
         if block.block_kind == TimetableBlockKind::Structural {
@@ -259,53 +282,82 @@ pub async fn open(
     actor: &ActorContext,
     p: OpenAttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
-    let seed = resolve_seed(pool, &p).await?;
-    preview_seed(pool, actor, seed).await
+    let mut guard = crate::services::begin_report_snapshot(pool, p.academic_term_id).await?;
+    let settings = settings::get_on_connection(&mut guard, p.academic_term_id).await?;
+    let seed = resolve_seed_on_connection(&mut guard, &p, Some(&settings.configuration)).await?;
+    preview_seed_on_connection(&mut guard, actor, seed, &settings).await
 }
 pub async fn preview_seed(
     pool: &PgPool,
     actor: &ActorContext,
     seed: AttendanceSeed,
 ) -> Result<AttendanceDetail, AppError> {
+    let mut guard =
+        crate::services::begin_report_snapshot(pool, seed.session.academic_term_id).await?;
+    let settings = settings::get_on_connection(&mut guard, seed.session.academic_term_id).await?;
+    preview_seed_on_connection(&mut guard, actor, seed, &settings).await
+}
+async fn preview_seed_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    seed: AttendanceSeed,
+    settings: &AttendanceSettings,
+) -> Result<AttendanceDetail, AppError> {
     policy::require_session(actor, &seed.session, false)?;
-    let mut session = match sessions::get_optional(pool, seed.session.id).await? {
-        Some(s) => s,
-        None => seed.session,
-    };
+    let mut session =
+        match sessions::get_optional_on_connection(connection, seed.session.id).await? {
+            Some(s) => s,
+            None => seed.session,
+        };
     if session.row_version == 0 {
         session.roster = seed.students;
-        session = sessions::with_token(pool, session).await?;
+        session = sessions::with_token_on_connection(connection, session).await?;
     }
     policy::require_session(actor, &session, false)?;
-    sessions::detail_unchecked(pool, session).await
+    sessions::detail_unchecked_on_connection(connection, session, settings).await
 }
 pub async fn resolve_seed(
     pool: &PgPool,
     p: &OpenAttendanceSession,
 ) -> Result<AttendanceSeed, AppError> {
+    let mut connection = pool.acquire().await?;
+    resolve_seed_on_connection(&mut connection, p, None).await
+}
+async fn resolve_seed_on_connection(
+    connection: &mut PgConnection,
+    p: &OpenAttendanceSession,
+    configuration: Option<&AttendanceConfiguration>,
+) -> Result<AttendanceSeed, AppError> {
     if p.kind == AttendanceKind::Arrival {
-        crate::services::validate_date(pool, p.academic_term_id, p.date).await?;
+        crate::services::validate_date_on_connection(connection, p.academic_term_id, p.date)
+            .await?;
         let id = Uuid::parse_str(&p.source_key)
             .map_err(|_| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
         if id.to_string() != p.source_key {
             return Err(AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()));
         }
-        let room = core::room(pool, p.academic_term_id, id)
+        let room = core::room_on_connection(connection, p.academic_term_id, id)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
-        let students = core::students_in_room(pool, p.academic_term_id, p.date, id)
-            .await?
-            .into_iter()
-            .map(|s| AttendanceRosterStudent {
-                student_id: s.student_id,
-                student_academic_year_id: s.student_academic_year_id,
-                class_number: s.class_number,
-            })
-            .collect();
-        let late_after = settings::get(pool, p.academic_term_id)
-            .await?
-            .configuration
-            .late_after;
+        let students =
+            core::students_in_room_on_connection(connection, p.academic_term_id, p.date, id)
+                .await?
+                .into_iter()
+                .map(|s| AttendanceRosterStudent {
+                    student_id: s.student_id,
+                    student_academic_year_id: s.student_academic_year_id,
+                    class_number: s.class_number,
+                })
+                .collect();
+        let late_after = match configuration {
+            Some(configuration) => configuration.late_after,
+            None => {
+                settings::get_on_connection(connection, p.academic_term_id)
+                    .await?
+                    .configuration
+                    .late_after
+            }
+        };
         return Ok(arrival_seed(
             p.academic_term_id,
             p.date,
@@ -315,10 +367,13 @@ pub async fn resolve_seed(
         ));
     }
     let all = if p.kind == AttendanceKind::Special {
-        crate::services::validate_date(pool, p.academic_term_id, p.date).await?;
-        specials::seeds(pool, p.academic_term_id, p.date).await?
+        crate::services::validate_date_on_connection(connection, p.academic_term_id, p.date)
+            .await?;
+        specials::seeds_on_connection(connection, p.academic_term_id, p.date).await?
     } else {
-        seeds(pool, p.academic_term_id, p.date).await?
+        seeds_with_choices_on_connection(connection, p.academic_term_id, p.date, configuration)
+            .await?
+            .0
     };
     all.into_iter()
         .find(|s| s.session.kind == p.kind && s.session.source_key == p.source_key)
@@ -689,10 +744,8 @@ pub async fn history(
     let mut guard = crate::services::begin_report_snapshot(pool, q.academic_term_id).await?;
     let full = policy::read_school(actor)
         || own_student_read_on_connection(&mut *guard, actor, q.student_id).await?;
-    let virtual_rows = if settings::get_on_connection(&mut *guard, q.academic_term_id)
-        .await?
-        .archived
-    {
+    let settings = settings::get_on_connection(&mut *guard, q.academic_term_id).await?;
+    let virtual_rows = if settings.archived {
         vec![]
     } else {
         projection::history(
@@ -701,6 +754,7 @@ pub async fn history(
             q.start,
             q.end,
             q.student_id,
+            &settings.configuration,
             if full { None } else { Some(actor.user_id) },
         )
         .await?
