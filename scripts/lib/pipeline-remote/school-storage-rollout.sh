@@ -206,6 +206,16 @@ verify_expected() {
 }
 sync_path "$journal"
 if [[ $mode == preflight ]]; then
+    if [[ ! -e $journal/old-context.json ]]; then
+        # Prior progress or partial proof cannot authorize recapturing a replacement.
+        # Only this invocation's scratch is safe to exclude; stale entries need review.
+        for entry in "$journal"/* "$journal"/.[!.]* "$journal"/..?*; do
+            [[ $entry == "$scratch" ]] && continue
+            if [[ -e $entry || -L $entry ]]; then
+                fail old_context_missing
+            fi
+        done
+    fi
     podman image exists "$image" || fail prepared_image_unavailable
     configured "$scratch/context" schoolorbit-web storage-namespace context-admin
     valid_routing "$scratch/context" || fail invalid_context
@@ -231,7 +241,6 @@ if [[ $mode == preflight ]]; then
             jq -n --arg release "$RELEASE_SHA" --arg digest "$BACKEND_IMAGE_DIGEST" --arg id "$old_id" --arg image "$old_image" --arg config_sha "$config_sha" --slurpfile routing "$scratch/old-routing" \
                 '{schema_version:1,release_sha:$release,prepared_image_digest:$digest,old_container_id:$id,old_image:$image,old_config_sha256:$config_sha,routing:$routing[0]}' >"$scratch/old-context"
         else
-            [[ ! -e $journal/migration-attempted ]] || fail old_context_missing
             jq -n --arg release "$RELEASE_SHA" --arg digest "$BACKEND_IMAGE_DIGEST" \
                 '{schema_version:1,release_sha:$release,prepared_image_digest:$digest,old_container_id:null,old_image:null,old_config_sha256:null,routing:null}' >"$scratch/old-context"
         fi

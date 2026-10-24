@@ -13,6 +13,7 @@ import {
   chmodSync,
   appendFileSync,
   readdirSync,
+  symlinkSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -367,6 +368,59 @@ test("missing or unsafe journal proof cannot be reconstructed from target config
   unlinkSync(path.join(f.journal, "old-context.json"));
   assert.notEqual(f.run("preflight").status, 0);
 });
+for (const priorEvidence of [
+  "migration-attempted",
+  "drain-container",
+  "stopped-" + "f".repeat(64),
+  "manifests",
+  "old-routing-config.json",
+  ".run.interrupted",
+  "dangling-proof",
+  "future-progress-marker",
+]) {
+  test(`missing historical proof with replacement backend refuses prior ${priorEvidence}`, (t) => {
+    const f = fixture(t);
+    const original = f.run("preflight");
+    assert.equal(original.status, 0, original.stderr);
+    const routing = readFileSync(
+      path.join(f.journal, "old-routing-config.json"),
+    );
+    for (const entry of readdirSync(f.journal))
+      rmSync(path.join(f.journal, entry), { recursive: true });
+    const evidencePath = path.join(f.journal, priorEvidence);
+    if (priorEvidence === "manifests" || priorEvidence === ".run.interrupted")
+      mkdirSync(evidencePath, { mode: 0o700 });
+    else if (priorEvidence === "dangling-proof")
+      symlinkSync("missing-original-proof", evidencePath);
+    else
+      writeFileSync(
+        evidencePath,
+        priorEvidence === "old-routing-config.json" ? routing : sha + "\n",
+        { mode: 0o600 },
+      );
+    const containerPath = path.join(f.stack, "container.json");
+    const replacement = JSON.parse(readFileSync(containerPath, "utf8"));
+    replacement.Id = "2".repeat(64);
+    replacement.Image = "3".repeat(64);
+    writeFileSync(containerPath, JSON.stringify(replacement));
+    const before = f.commands().length;
+    const r = f.run("preflight");
+    assert.notEqual(r.status, 0, "must not recapture replacement as old proof");
+    assert.match(r.stderr, /storage_rollout_error code=old_context_missing/);
+    assert.equal(existsSync(path.join(f.journal, "old-context.json")), false);
+    assert.deepEqual(
+      f.commands().slice(before),
+      [],
+      "missing proof must fail before inspecting or executing any container",
+    );
+    assert.deepEqual(
+      JSON.parse(readFileSync(containerPath, "utf8")),
+      replacement,
+    );
+    assert.deepEqual(readdirSync(f.journal), [priorEvidence]);
+    assert.equal(existsSync(path.join(f.stack, "started")), false);
+  });
+}
 test("public mode on private routing proof is refused", (t) => {
   const f = fixture(t);
   assert.equal(f.run("preflight").status, 0);

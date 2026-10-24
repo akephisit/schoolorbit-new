@@ -1,4 +1,5 @@
 //! Authenticated all-tenant release operations, independent of server/runtime state.
+use super::cli_output::json as output;
 use school_database::DbSession;
 use school_file_platform::{
     namespace_binding::{self, BindingError, BindingManifest, ConfiguredNamespaces},
@@ -171,10 +172,6 @@ impl CheckResult {
             && self.unresolved == 0
             && self.mismatched == 0
     }
-}
-fn output(value: &impl Serialize) -> Result<(), BindingError> {
-    println!("{}", serde_json::to_string(value).map_err(|_| failure())?);
-    Ok(())
 }
 async fn check_snapshot(
     tenants: &[OperationalTenant],

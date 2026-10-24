@@ -1,6 +1,5 @@
 //! Compatibility executable delegates to the same application-owned operational CLI.
-#[path = "../operations/mod.rs"]
-pub mod operations;
+use backend_school::operations;
 use std::process::ExitCode;
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -8,7 +7,7 @@ async fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(error) => {
-            eprintln!("{error}");
+            operations::cli_output::diagnostic(&error);
             ExitCode::FAILURE
         }
     }

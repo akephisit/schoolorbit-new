@@ -10,7 +10,6 @@ mod http_state;
 #[cfg(test)]
 mod integration_tests;
 mod middleware;
-pub mod operations;
 mod system;
 
 mod scheduling;
@@ -18,6 +17,7 @@ mod services;
 mod startup;
 mod utils;
 
+use backend_school::operations;
 use dotenvy::dotenv;
 use school_authorization::PermissionCache;
 use school_file_platform::{
@@ -67,7 +67,7 @@ async fn main() -> Result<(), StartupError> {
     {
         Ok(arguments) => arguments,
         Err(_) => {
-            eprintln!("unsupported_operational_arguments");
+            operations::cli_output::invalid_arguments();
             std::process::exit(2);
         }
     };
@@ -110,7 +110,7 @@ async fn main() -> Result<(), StartupError> {
             _ => false,
         };
         if !valid {
-            eprintln!("unsupported_operational_arguments");
+            operations::cli_output::invalid_arguments();
             std::process::exit(2);
         }
         dotenv().ok();
@@ -123,7 +123,7 @@ async fn main() -> Result<(), StartupError> {
             Ok(true) => return Ok(()),
             Ok(false) => std::process::exit(1),
             Err(error) => {
-                eprintln!("{error}");
+                operations::cli_output::diagnostic(&error);
                 std::process::exit(1);
             }
         }

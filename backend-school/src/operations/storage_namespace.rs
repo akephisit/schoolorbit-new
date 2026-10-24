@@ -1,4 +1,5 @@
 //! Offline explicit namespace attestation. This command never migrates or calls storage.
+use super::cli_output;
 use school_file_platform::{
     namespace_binding::{self, BindingError, BindingManifest, ConfiguredNamespaces},
     r2_storage_provider::R2StorageRouting,
@@ -206,7 +207,14 @@ async fn check_inventory(command: &Command) -> Result<bool, BindingError> {
             }
         }
     }
-    println!("storage_namespace_inventory tenants={} checked={} failed={} watches={} unresolved={} mismatched={}",total_tenants,checked,failed,watches,unresolved,mismatched);
+    cli_output::legacy_inventory(
+        total_tenants,
+        checked,
+        failed,
+        watches,
+        unresolved,
+        mismatched,
+    );
     Ok(checked == total_tenants && failed == 0 && unresolved == 0 && mismatched == 0)
 }
 
@@ -271,10 +279,7 @@ pub async fn execute(command_arguments: Vec<String>) -> Result<bool, BindingErro
                 .map_err(|_| BindingError::InvalidManifest)?;
             file.write_all(&data)
                 .map_err(|_| BindingError::InvalidManifest)?;
-            println!(
-                "storage_namespace_manifest watches={}",
-                manifest.watches.len()
-            );
+            cli_output::legacy_manifest(manifest.watches.len());
             Ok(true)
         }
         "dry-run" | "apply" => {
@@ -300,11 +305,7 @@ pub async fn execute(command_arguments: Vec<String>) -> Result<bool, BindingErro
                 apply,
             )
             .await?;
-            println!(
-                "storage_namespace_binding selected={} applied={}",
-                selected,
-                if apply { selected } else { 0 }
-            );
+            cli_output::legacy_binding(selected, if apply { selected } else { 0 });
             Ok(true)
         }
         _ => Err(BindingError::InvalidManifest),
