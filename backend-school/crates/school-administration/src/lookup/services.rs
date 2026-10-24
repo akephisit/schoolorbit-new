@@ -105,7 +105,10 @@ pub async fn verify_active_user_on_connection(
         .fetch_one()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -163,7 +166,10 @@ pub async fn lookup_staff_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -217,7 +223,10 @@ pub async fn lookup_roles_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -300,7 +309,10 @@ pub async fn lookup_organization_units_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -338,7 +350,10 @@ pub async fn lookup_organization_unit_by_id_on_connection(
         .fetch_optional()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?
         .map(organization_unit_lookup_item)
@@ -401,7 +416,10 @@ pub async fn lookup_grade_levels_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -463,7 +481,10 @@ pub async fn lookup_homerooms_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -523,7 +544,10 @@ pub async fn lookup_academic_years_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -604,7 +628,10 @@ pub async fn lookup_students_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 
@@ -646,7 +673,10 @@ pub async fn lookup_rooms_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Lookup Rooms Error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Lookup Rooms Error"
+            );
             AppError::InternalServerError("Failed to fetch rooms".to_string())
         })
 }
@@ -727,7 +757,10 @@ pub async fn lookup_subjects_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Database error: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?;
 

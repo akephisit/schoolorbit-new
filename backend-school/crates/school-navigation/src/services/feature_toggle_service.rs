@@ -17,7 +17,7 @@ pub async fn list_features_on_connection(
         "SELECT id, code, name, name_en, module, is_enabled FROM feature_toggles ORDER BY module, name"
     )
     .fetch_all().await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch features: {}", e)))
+    .map_err(|e| super::database_failure("Failed to fetch features", e))
 }
 
 pub async fn get_feature(pool: &PgPool, id: Uuid) -> Result<FeatureToggle, AppError> {
@@ -38,7 +38,7 @@ pub async fn get_feature_on_connection(
         .bind(id)
         .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Database error: {}", e)))?
+        .map_err(|e| super::database_failure("Database error", e))?
         .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
 }
 
@@ -69,7 +69,7 @@ pub async fn update_feature_on_connection(
         .bind(id)
         .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update feature: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to update feature", e))?
         .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
 }
 
@@ -93,7 +93,7 @@ pub async fn toggle_feature_on_connection(
         .bind(id)
         .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to toggle feature: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to toggle feature", e))?
         .ok_or(AppError::NotFound("Feature toggle not found".to_string()))
 }
 

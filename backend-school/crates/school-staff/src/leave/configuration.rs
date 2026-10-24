@@ -12,6 +12,8 @@ pub async fn list_types(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<Vec<LeaveType>, AppError> {
+    require_type_list_access(actor, &q)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.leave.configuration.list_types",
@@ -25,6 +27,18 @@ pub async fn list_types_on_connection(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<Vec<LeaveType>, AppError> {
+    require_type_list_access(actor, &q)?;
+    let kind = q.kind.map(|k| {
+        if k == LeaveKind::Leave {
+            "leave"
+        } else {
+            "exit"
+        }
+    });
+    Ok(DbSession::new(connection).scalar::<Json<LeaveType>>("staff.leave.configuration.list_types_on_connection", "SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all().await?.into_iter().map(|r|r.0).collect())
+}
+
+fn require_type_list_access(actor: &ActorContext, q: &LeaveListQuery) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::STAFF_LEAVE_READ_OWN,
         codes::STAFF_LEAVE_READ_ASSIGNED,
@@ -35,15 +49,9 @@ pub async fn list_types_on_connection(
     if q.include_archived == Some(true) {
         actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
     }
-    let kind = q.kind.map(|k| {
-        if k == LeaveKind::Leave {
-            "leave"
-        } else {
-            "exit"
-        }
-    });
-    Ok(DbSession::new(connection).scalar::<Json<LeaveType>>("staff.leave.configuration.list_types_on_connection", "SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all().await?.into_iter().map(|r|r.0).collect())
+    Ok(())
 }
+
 pub async fn save_type(
     pool: &PgPool,
     actor: &ActorContext,
@@ -188,6 +196,8 @@ pub async fn policies(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<Vec<LeavePolicyVersion>, AppError> {
+    require_configuration_manage(actor)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.leave.configuration.policies",
@@ -201,7 +211,7 @@ pub async fn policies_on_connection(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<Vec<LeavePolicyVersion>, AppError> {
-    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
+    require_configuration_manage(actor)?;
     Ok(DbSession::new(connection).scalar::<Json<LeavePolicyVersion>>("staff.leave.configuration.policies_on_connection", "SELECT document FROM staff_leave_policies WHERE type_id=$1 ORDER BY version DESC LIMIT 200").bind(id).fetch_all().await?.into_iter().map(|r|r.0).collect())
 }
 pub async fn effective_policy(

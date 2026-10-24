@@ -26,9 +26,7 @@ pub async fn list_menu_workspaces_on_connection(
         )
         .fetch_all()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to fetch menu workspaces: {}", e))
-        })
+        .map_err(|e| super::database_failure("Failed to fetch menu workspaces", e))
 }
 
 pub struct CreateMenuWorkspaceInput {
@@ -72,9 +70,7 @@ pub async fn create_menu_workspace_on_connection(
         .bind(menu_display_order(input.display_order))
         .fetch_one()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to create menu workspace: {}", e))
-        })
+        .map_err(|e| super::database_failure("Failed to create menu workspace", e))
 }
 
 pub struct UpdateMenuWorkspaceInput {
@@ -160,9 +156,7 @@ pub async fn update_menu_workspace_on_connection(
         .prepared_query_as("navigation.menu.update", qb)
         .fetch_optional()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to update menu workspace: {}", e))
-        })?
+        .map_err(|e| super::database_failure("Failed to update menu workspace", e))?
         .ok_or(AppError::NotFound("Menu workspace not found".to_string()))
 }
 
@@ -182,9 +176,7 @@ pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppEr
         .bind(id)
         .fetch_optional()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to fetch menu workspace: {}", e))
-        })?
+        .map_err(|e| super::database_failure("Failed to fetch menu workspace", e))?
         .ok_or(AppError::NotFound("Menu workspace not found".to_string()))?;
 
     if matches!(workspace.code.as_str(), "home" | "operations" | "settings") {
@@ -197,7 +189,7 @@ pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppEr
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "navigation.delete_menu_workspace")
             .await
-            .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+            .map_err(|e| super::database_failure("Transaction failed", e))?;
 
     let moved = school_database::DbSession::new(&mut *tx)
         .query(
@@ -209,7 +201,7 @@ pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppEr
         .bind(&workspace.code)
         .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to move menu groups: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to move menu groups", e))?
         .rows_affected();
 
     school_database::DbSession::new(&mut *tx)
@@ -220,13 +212,11 @@ pub async fn delete_menu_workspace(pool: &PgPool, id: Uuid) -> Result<u64, AppEr
         .bind(id)
         .execute()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to delete menu workspace: {}", e))
-        })?;
+        .map_err(|e| super::database_failure("Failed to delete menu workspace", e))?;
 
     tx.commit()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to commit", e))?;
 
     Ok(moved)
 }
@@ -263,9 +253,7 @@ pub async fn reorder_menu_workspaces(
         .bind(&display_orders)
         .execute()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to reorder menu workspaces: {}", e))
-        })?;
+        .map_err(|e| super::database_failure("Failed to reorder menu workspaces", e))?;
 
     Ok(ids.len())
 }
@@ -296,7 +284,7 @@ pub async fn list_menu_groups_on_connection(
         )
         .fetch_all()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu groups: {}", e)))
+        .map_err(|e| super::database_failure("Failed to fetch menu groups", e))
 }
 
 pub struct CreateMenuGroupInput {
@@ -340,7 +328,7 @@ pub async fn create_menu_group_on_connection(
         .bind(menu_display_order(input.display_order))
         .fetch_one()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to create menu group: {}", e)))
+        .map_err(|e| super::database_failure("Failed to create menu group", e))
 }
 
 pub struct UpdateMenuGroupInput {
@@ -432,7 +420,7 @@ pub async fn update_menu_group_on_connection(
         .prepared_query_as("navigation.menu.update", qb)
         .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu group: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to update menu group", e))?
         .ok_or(AppError::NotFound("Menu group not found".to_string()))
 }
 
@@ -475,7 +463,7 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
     drop(connection);
     let mut tx = school_tenancy::TenantPool::begin_observed(pool, "navigation.delete_menu_group")
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Transaction failed: {}", e)))?;
+        .map_err(|e| super::database_failure("Transaction failed", e))?;
 
     let moved = school_database::DbSession::new(&mut *tx)
         .query(
@@ -486,7 +474,7 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
         .bind(id)
         .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to move items: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to move items", e))?
         .rows_affected();
 
     school_database::DbSession::new(&mut *tx)
@@ -497,11 +485,11 @@ pub async fn delete_menu_group(pool: &PgPool, id: Uuid) -> Result<u64, AppError>
         .bind(id)
         .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to delete group: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to delete group", e))?;
 
     tx.commit()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to commit: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to commit", e))?;
 
     Ok(moved)
 }
@@ -546,7 +534,7 @@ pub async fn list_menu_items_on_connection(
             .fetch_all()
             .await
     }
-    .map_err(|e| AppError::InternalServerError(format!("Failed to fetch menu items: {}", e)))
+    .map_err(|e| super::database_failure("Failed to fetch menu items", e))
 }
 
 pub struct CreateMenuItemInput {
@@ -587,7 +575,7 @@ pub async fn create_menu_item_on_connection(
     .bind(&input.path).bind(&input.icon).bind(input.group_id).bind(input.parent_id)
     .bind(&input.required_permission).bind(menu_display_order(input.display_order))
     .fetch_one().await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to create menu item: {}", e)))
+    .map_err(|e| super::database_failure("Failed to create menu item", e))
 }
 
 pub struct UpdateMenuItemInput {
@@ -704,7 +692,7 @@ pub async fn update_menu_item_on_connection(
         .prepared_query_as("navigation.menu.update", qb)
         .fetch_optional()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to update menu item: {}", e)))?
+        .map_err(|e| super::database_failure("Failed to update menu item", e))?
         .ok_or(AppError::NotFound("Menu item not found".to_string()))
 }
 
@@ -727,7 +715,7 @@ pub async fn delete_menu_item_on_connection(
         .bind(id)
         .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to delete menu item: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to delete menu item", e))?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Menu item not found".to_string()));
     }
@@ -756,9 +744,7 @@ pub async fn reorder_menu_items(
         .bind(&item_ids)
         .fetch_all()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to fetch items batch: {}", e))
-        })?;
+        .map_err(|e| super::database_failure("Failed to fetch items batch", e))?;
 
     use std::collections::HashMap;
     let current_groups: HashMap<Uuid, Option<Uuid>> =
@@ -792,9 +778,7 @@ pub async fn reorder_menu_items(
         .bind(&group_ids)
         .execute()
         .await
-        .map_err(|e| {
-            AppError::InternalServerError(format!("Failed to batch reorder items: {}", e))
-        })?;
+        .map_err(|e| super::database_failure("Failed to batch reorder items", e))?;
 
     Ok(ids.len())
 }
@@ -829,7 +813,7 @@ pub async fn reorder_menu_groups(
         .bind(&display_orders)
         .execute()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to reorder groups: {}", e)))?;
+        .map_err(|e| super::database_failure("Failed to reorder groups", e))?;
 
     Ok(ids.len())
 }
@@ -856,7 +840,7 @@ pub async fn move_item_to_group_on_connection(
                      group_id, parent_id, required_permission, user_type, display_order, is_active"#
     )
     .bind(group_id).bind(id).fetch_one().await
-    .map_err(|e| AppError::InternalServerError(format!("Failed to move item: {}", e)))
+    .map_err(|e| super::database_failure("Failed to move item", e))
 }
 
 fn menu_display_order(display_order: Option<i32>) -> i32 {

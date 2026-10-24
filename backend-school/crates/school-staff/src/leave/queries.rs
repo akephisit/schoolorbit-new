@@ -33,6 +33,8 @@ pub async fn routing_options(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<LeaveRoutingOptions, AppError> {
+    require_configuration_manage(actor)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.leave.queries.routing_options",
@@ -45,7 +47,7 @@ pub async fn routing_options_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
 ) -> Result<LeaveRoutingOptions, AppError> {
-    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
+    require_configuration_manage(actor)?;
     let users=DbSession::new(connection).query_as::<(Uuid,String)>("staff.leave.queries.routing_options_on_connection", "SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY display_name,id LIMIT 500").fetch_all().await?.into_iter().map(|(id,display_name)|LeaveRoutingUser{id,display_name}).collect();
     let organizations: Vec<LeaveRoutingOrganization> = DbSession::new(connection)
         .query_as::<(Uuid, String)>(
@@ -182,6 +184,10 @@ pub async fn list(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<LeaveRequestPage, AppError> {
+    require_leave_list_access(actor)?;
+    validate_leave_page(q.limit.unwrap_or(30), q.offset.unwrap_or(0))?;
+    let _preflight_status = serialized_leave_status(q.status)?;
+
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.queries.list")
             .await?;
@@ -193,16 +199,10 @@ pub async fn list_on_connection(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<LeaveRequestPage, AppError> {
-    actor.require_any_permission(&[
-        codes::STAFF_LEAVE_READ_OWN,
-        codes::STAFF_LEAVE_READ_ASSIGNED,
-        codes::STAFF_LEAVE_READ_SCHOOL,
-    ])?;
+    require_leave_list_access(actor)?;
     let limit = q.limit.unwrap_or(30);
     let offset = q.offset.unwrap_or(0);
-    if !(1..=100).contains(&limit) || !(0..=10000).contains(&offset) {
-        return Err(invalid("ขนาดหน้าหรือจุดเริ่มต้นไม่ถูกต้อง"));
-    }
+    validate_leave_page(limit, offset)?;
     let kind = q.kind.map(|v| {
         if v == LeaveKind::Leave {
             "leave"
@@ -210,21 +210,29 @@ pub async fn list_on_connection(
             "exit"
         }
     });
-    let status = q
-        .status
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|_| invalid("สถานะไม่ถูกต้อง"))?;
+    let status = serialized_leave_status(q.status)?;
     let mut items:Vec<_>=DbSession::new(connection).scalar::<Json<LeaveRequestSummary>>("staff.leave.queries.list_on_connection", "SELECT r.document FROM staff_leave_requests r WHERE ($1 OR ($2 AND r.owner_id=$3) OR ($4 AND EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$3 AND i.source_module='staff_leave' AND (i.source_id=r.id OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=r.id AND h.entry->>'action'='cancellation_requested' AND i.source_id=h.id))))) AND ($5::text IS NULL OR r.document->>'kind'=$5) AND ($6::text IS NULL OR r.status=$6) ORDER BY r.created_at DESC,r.id DESC LIMIT $7 OFFSET $8").bind(actor.has_permission(codes::STAFF_LEAVE_READ_SCHOOL)).bind(actor.has_permission(codes::STAFF_LEAVE_READ_OWN)).bind(actor.user_id).bind(actor.has_permission(codes::STAFF_LEAVE_READ_ASSIGNED)).bind(kind).bind(status.as_ref().and_then(|s|s.as_str())).bind(limit+1).bind(offset).fetch_all().await?.into_iter().map(|r|r.0).collect();
     let has_more = items.len() > limit as usize;
     items.truncate(limit as usize);
     Ok(LeaveRequestPage { items, has_more })
 }
+
+fn require_leave_list_access(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::STAFF_LEAVE_READ_OWN,
+        codes::STAFF_LEAVE_READ_ASSIGNED,
+        codes::STAFF_LEAVE_READ_SCHOOL,
+    ])?;
+    Ok(())
+}
+
 pub async fn usage(
     pool: &PgPool,
     actor: &ActorContext,
     q: LeaveUsageQuery,
 ) -> Result<LeaveUsageReport, AppError> {
+    validate_leave_usage_request(actor, &q)?;
+
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.queries.usage")
             .await?;
@@ -236,13 +244,7 @@ pub async fn usage_on_connection(
     actor: &ActorContext,
     q: LeaveUsageQuery,
 ) -> Result<LeaveUsageReport, AppError> {
-    actor.require_any_permission(&[
-        codes::STAFF_LEAVE_DOWNLOAD_OWN,
-        codes::STAFF_LEAVE_DOWNLOAD_SCHOOL,
-    ])?;
-    if q.to < q.from || (q.to - q.from).num_days() > 1096 {
-        return Err(invalid("ช่วงรายงานต้องไม่เกินสามปี"));
-    }
+    validate_leave_usage_request(actor, &q)?;
     let kind = q.kind.map(|v| {
         if v == LeaveKind::Leave {
             "leave"
@@ -259,4 +261,31 @@ pub async fn usage_on_connection(
         from: q.from,
         to: q.to,
     })
+}
+
+fn validate_leave_usage_request(actor: &ActorContext, q: &LeaveUsageQuery) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::STAFF_LEAVE_DOWNLOAD_OWN,
+        codes::STAFF_LEAVE_DOWNLOAD_SCHOOL,
+    ])?;
+    if q.to < q.from || (q.to - q.from).num_days() > 1096 {
+        return Err(invalid("ช่วงรายงานต้องไม่เกินสามปี"));
+    }
+    Ok(())
+}
+
+fn validate_leave_page(limit: i64, offset: i64) -> Result<(), AppError> {
+    if !(1..=100).contains(&limit) || !(0..=10000).contains(&offset) {
+        return Err(invalid("ขนาดหน้าหรือจุดเริ่มต้นไม่ถูกต้อง"));
+    }
+    Ok(())
+}
+
+fn serialized_leave_status(
+    status: Option<LeaveStatus>,
+) -> Result<Option<serde_json::Value>, AppError> {
+    status
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|_| invalid("สถานะไม่ถูกต้อง"))
 }

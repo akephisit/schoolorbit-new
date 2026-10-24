@@ -527,6 +527,8 @@ pub async fn list_staff(
     filter: StaffListFilter,
     access: StaffListAccess,
 ) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
+    validate_directory_filters(&filter)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.services.staff_service.list_staff",

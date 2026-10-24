@@ -39,7 +39,10 @@ pub async fn get_settings_row_on_connection(
         .fetch_optional()
         .await
         .map_err(|error| {
-            tracing::error!("Failed to fetch school settings: {}", error);
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "Failed to fetch school settings"
+            );
             AppError::InternalServerError("Database error".to_string())
         })
         .map(|row| row.unwrap_or_else(empty_settings_row))

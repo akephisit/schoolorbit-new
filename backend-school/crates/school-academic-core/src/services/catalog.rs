@@ -305,6 +305,8 @@ pub async fn create_subject(
     pool: &PgPool,
     request: CreateCatalogSubjectRequest,
 ) -> Result<CatalogSubject, AppError> {
+    let _preflight_code = normalize_code(&request.code)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.create_subject",
@@ -345,6 +347,9 @@ pub async fn update_subject(
     id: Uuid,
     request: UpdateCatalogSubjectRequest,
 ) -> Result<CatalogSubject, AppError> {
+    parse_row_version(request.row_version)?;
+    let _preflight_code = normalize_code(&request.code)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.update_subject",
@@ -787,6 +792,8 @@ pub async fn create_activity(
     pool: &PgPool,
     request: CreateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
+    let _preflight_activity_type = normalize_activity_type(&request.activity_type)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.create_activity",
@@ -828,6 +835,9 @@ pub async fn update_activity(
     id: Uuid,
     request: UpdateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
+    parse_row_version(request.row_version)?;
+    let _preflight_activity_type = normalize_activity_type(&request.activity_type)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.update_activity",
@@ -1054,6 +1064,16 @@ pub async fn update_activity_version(
     id: Uuid,
     request: UpdateActivityVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
+    parse_row_version(request.row_version)?;
+    validate_activity_version_fields(
+        &request.name,
+        &request.scheduling_mode,
+        &request.hours_per_week,
+        request.hours_per_term.as_deref(),
+        request.effective_from,
+        request.effective_until,
+    )?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.update_activity_version",
@@ -1744,19 +1764,30 @@ fn validate_subject_version(request: &CreateSubjectVersionRequest) -> Result<(),
 }
 
 fn validate_activity_version(request: &CreateActivityVersionRequest) -> Result<(), AppError> {
-    validate_effective_range(request.effective_from, request.effective_until)?;
-    validate_canonical_decimal(&request.hours_per_week, 2)?;
-    request
-        .hours_per_term
-        .as_deref()
+    validate_activity_version_fields(
+        &request.name,
+        &request.scheduling_mode,
+        &request.hours_per_week,
+        request.hours_per_term.as_deref(),
+        request.effective_from,
+        request.effective_until,
+    )
+}
+
+fn validate_activity_version_fields(
+    name: &str,
+    scheduling_mode: &str,
+    hours_per_week: &str,
+    hours_per_term: Option<&str>,
+    effective_from: chrono::NaiveDate,
+    effective_until: Option<chrono::NaiveDate>,
+) -> Result<(), AppError> {
+    validate_effective_range(effective_from, effective_until)?;
+    validate_canonical_decimal(hours_per_week, 2)?;
+    hours_per_term
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
-    if request.name.trim().is_empty()
-        || !matches!(
-            request.scheduling_mode.as_str(),
-            "synchronized" | "independent"
-        )
-    {
+    if name.trim().is_empty() || !matches!(scheduling_mode, "synchronized" | "independent") {
         return Err(AppError::ValidationError(
             "ข้อมูลเวอร์ชันกิจกรรมไม่ถูกต้อง".to_string(),
         ));
@@ -2086,6 +2117,10 @@ pub async fn subject_groups_for_versions(
     pool: &PgPool,
     version_ids: &[Uuid],
 ) -> Result<Vec<SubjectVersionSubjectGroup>, AppError> {
+    if version_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.catalog.subject_groups_for_versions",
@@ -2119,3 +2154,86 @@ pub async fn subject_groups_for_versions_on_connection(
 #[cfg(test)]
 #[path = "catalog_revision_selection_tests.rs"]
 mod revision_selection_tests;
+
+#[cfg(test)]
+mod pool_facade_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_empty_catalog_metadata_needs_no_database() {
+        let pool = closed_pool().await;
+        assert!(subject_groups_for_versions(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_scope_denials_precede_checkout() {
+        let pool = closed_pool().await;
+        let filter = school_authorization::AcademicResourceListFilter::default();
+        assert!(matches!(
+            crate::services::curriculum::list(&pool, &filter).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            crate::services::workspaces::curriculum_create_options(&pool, &filter).await,
+            Err(AppError::Forbidden(_))
+        ));
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            crate::services::workspaces::setup_workspace(&pool, &actor).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_conflicting_view_is_a_validation_error() {
+        let pool = closed_pool().await;
+        let query = crate::models::CurriculumViewQuery {
+            draft_id: Some(Uuid::new_v4()),
+            publication_id: Some(Uuid::new_v4()),
+        };
+        assert!(matches!(
+            crate::services::curriculum_publications::resolve_view(&pool, Uuid::new_v4(), &query)
+                .await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_exhausted_catalog_and_scope_paths_need_no_available_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "catalog_facade_exhausted",
+            1,
+        )
+        .await;
+        let held = pool.acquire().await.unwrap();
+        let filter = school_authorization::AcademicResourceListFilter::default();
+        tokio::time::timeout(std::time::Duration::from_millis(250), async {
+            assert!(subject_groups_for_versions(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty());
+            assert!(matches!(
+                crate::services::curriculum::list(&pool, &filter).await,
+                Err(AppError::Forbidden(_))
+            ));
+            assert!(matches!(
+                crate::services::workspaces::curriculum_create_options(&pool, &filter).await,
+                Err(AppError::Forbidden(_))
+            ));
+        })
+        .await
+        .expect("pure facade paths must finish while the only connection is held");
+        drop(held);
+        pool.close().await;
+    }
+}

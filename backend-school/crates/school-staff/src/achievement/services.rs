@@ -21,6 +21,8 @@ pub async fn list_achievements(
     actor: &ActorContext,
     filter: AchievementListFilter,
 ) -> Result<Vec<Achievement>, AppError> {
+    let _preflight_access = achievement_access_policy::resolve_achievement_list_access(actor)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.achievement.services.list_achievements",

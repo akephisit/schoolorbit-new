@@ -26,8 +26,8 @@ pub async fn sync_routes(
     .await
     .map_err(|error| {
         tracing::error!(
-            "Failed to begin route synchronization transaction: {}",
-            error
+            error_class = school_database::error_class(&error),
+            "Failed to begin route synchronization transaction"
         );
         AppError::InternalServerError("Failed to synchronize menu routes".to_string())
     })?;
@@ -87,8 +87,7 @@ pub async fn sync_routes(
             .map_err(|error| {
                 tracing::error!(
                     route_code = %code,
-                    "Failed to synchronize menu route: {}",
-                    error
+                    error_class = school_database::error_class(&error), "Failed to synchronize menu route"
                 );
                 AppError::InternalServerError("Failed to synchronize menu routes".to_string())
             })?;
@@ -103,8 +102,8 @@ pub async fn sync_routes(
 
     transaction.commit().await.map_err(|error| {
         tracing::error!(
-            "Failed to commit route synchronization transaction: {}",
-            error
+            error_class = school_database::error_class(&error),
+            "Failed to commit route synchronization transaction"
         );
         AppError::InternalServerError("Failed to synchronize menu routes".to_string())
     })?;
@@ -174,8 +173,8 @@ async fn ensure_route_navigation_defaults(
         .map_err(|error| {
             tracing::error!(
                 workspace_code,
-                "Failed to ensure route workspace: {}",
-                error
+                error_class = school_database::error_class(&error),
+                "Failed to ensure route workspace"
             );
             AppError::InternalServerError("Failed to synchronize menu routes".to_string())
         })?;
@@ -202,7 +201,11 @@ async fn ensure_route_navigation_defaults(
         .execute()
         .await
         .map_err(|error| {
-            tracing::error!(group_code, "Failed to ensure route menu group: {}", error);
+            tracing::error!(
+                group_code,
+                error_class = school_database::error_class(&error),
+                "Failed to ensure route menu group"
+            );
             AppError::InternalServerError("Failed to synchronize menu routes".to_string())
         })?;
 
@@ -226,8 +229,8 @@ async fn cleanup_orphaned_menu_items(
         .map(|result| result.rows_affected())
         .map_err(|error| {
             tracing::error!(
-                "Failed to clean up stale frontend-owned menu items: {}",
-                error
+                error_class = school_database::error_class(&error),
+                "Failed to clean up stale frontend-owned menu items"
             );
             AppError::InternalServerError("Failed to synchronize menu routes".to_string())
         })

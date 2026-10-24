@@ -147,6 +147,10 @@ pub async fn restrict_targets(
     versions: &mut [TimetableVersion],
     access: &crate::policy::TimetableAccessFilter,
 ) -> Result<(), AppError> {
+    if access.includes_school_owned {
+        return Ok(());
+    }
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_timetable.services.timetable_version_service.restrict_targets",
@@ -834,5 +838,27 @@ mod tests {
             ),
             TimetableVersionDisplayState::Historical
         );
+    }
+}
+
+#[cfg(test)]
+mod pool_facade_preflight_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_school_target_grant_needs_no_database() {
+        let pool = closed_pool().await;
+        let access = crate::policy::TimetableAccessFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        };
+        restrict_targets(&pool, &mut [], &access).await.unwrap();
     }
 }

@@ -110,6 +110,8 @@ pub async fn curriculum_create_options(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
 ) -> Result<CurriculumCreateOptions, AppError> {
+    require_filter_scope(filter)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.workspaces.curriculum_create_options",
@@ -286,6 +288,8 @@ pub async fn setup_workspace(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<AcademicSetupWorkspace, AppError> {
+    require_setup_workspace_access(actor)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.workspaces.setup_workspace",
@@ -298,14 +302,7 @@ pub async fn setup_workspace_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
 ) -> Result<AcademicSetupWorkspace, AppError> {
-    actor.require_any_permission(&[
-        codes::ACADEMIC_YEAR_READ_SCHOOL,
-        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
-    ])?;
-    actor.require_any_permission(&[
-        codes::ACADEMIC_TERM_READ_SCHOOL,
-        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
-    ])?;
+    require_setup_workspace_access(actor)?;
 
     let years = years_terms::list_years_on_connection(connection).await?;
     ensure_workspace_size(years.len(), MAX_SETUP_YEARS, "จำนวนปีการศึกษา")?;
@@ -322,6 +319,18 @@ pub async fn setup_workspace_on_connection(
         terms,
         bell_schedules,
     })
+}
+
+fn require_setup_workspace_access(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::ACADEMIC_YEAR_READ_SCHOOL,
+        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(())
 }
 
 fn ensure_workspace_size(actual: usize, maximum: usize, label: &str) -> Result<(), AppError> {

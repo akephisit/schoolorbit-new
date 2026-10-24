@@ -496,6 +496,7 @@ pub async fn list_staff_career_history(
     staff_id: Uuid,
     query: StaffCareerHistoryQuery,
 ) -> Result<StaffCareerHistoryPage, AppError> {
+    validate_history_page_size(query.page_size.unwrap_or(20))?;
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.services.staff_career_service.list_staff_career_history",
@@ -510,11 +511,7 @@ pub async fn list_staff_career_history_on_connection(
     query: StaffCareerHistoryQuery,
 ) -> Result<StaffCareerHistoryPage, AppError> {
     let size = query.page_size.unwrap_or(20);
-    if !(1..=50).contains(&size) {
-        return Err(AppError::BadRequest(
-            "จำนวนรายการต้องอยู่ระหว่าง 1 ถึง 50".into(),
-        ));
-    }
+    validate_history_page_size(size)?;
     let sql = history_read_sql();
     let (exists, cursor_valid, Json(mut data)): (bool, bool, Json<HistoryRead>) =
         DbSession::new(connection)
@@ -547,6 +544,15 @@ pub async fn list_staff_career_history_on_connection(
         current: data.current,
         next_cursor,
     })
+}
+
+fn validate_history_page_size(size: i64) -> Result<(), AppError> {
+    if !(1..=50).contains(&size) {
+        return Err(AppError::BadRequest(
+            "จำนวนรายการต้องอยู่ระหว่าง 1 ถึง 50".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

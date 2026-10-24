@@ -29,6 +29,8 @@ pub async fn authorize_upload(
     actor: &ActorContext,
     resource: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
+    let _preflight = upload_request_staff(actor, resource)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.services.staff_license_service.authorize_upload",
@@ -42,8 +44,7 @@ pub async fn authorize_upload_on_connection(
     actor: &ActorContext,
     resource: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
-    let staff_id = resource.ok_or_else(denied)?;
-    require_manage(actor, staff_id)?;
+    let staff_id = upload_request_staff(actor, resource)?;
     let exists: bool = DbSession::new(connection)
         .scalar(
             "staff.services.staff_license_service.authorize_upload_on_connection",
@@ -58,6 +59,12 @@ pub async fn authorize_upload_on_connection(
     Ok(staff_id)
 }
 
+fn upload_request_staff(actor: &ActorContext, resource: Option<Uuid>) -> Result<Uuid, AppError> {
+    let staff_id = resource.ok_or_else(denied)?;
+    require_manage(actor, staff_id)?;
+    Ok(staff_id)
+}
+
 pub async fn authorize_file(
     pool: &PgPool,
     actor: &ActorContext,
@@ -65,6 +72,8 @@ pub async fn authorize_file(
     action: FilePolicyAction,
     resource: Option<Uuid>,
 ) -> Result<(), AppError> {
+    let _preflight = read_request_staff(actor, file, action, resource)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.services.staff_license_service.authorize_file",
@@ -80,15 +89,7 @@ pub async fn authorize_file_on_connection(
     action: FilePolicyAction,
     resource: Option<Uuid>,
 ) -> Result<(), AppError> {
-    let staff_id = file.owner_user_id.ok_or_else(denied)?;
-    if file.purpose != FilePurpose::TeachingLicense
-        || file.visibility != FileVisibility::Private
-        || resource != Some(staff_id)
-        || action != FilePolicyAction::Read
-        || !staff_access_policy::can_read_staff_pii(actor, staff_id)
-    {
-        return Err(denied());
-    }
+    let staff_id = read_request_staff(actor, file, action, resource)?;
     let relation: Option<(bool, bool)> = DbSession::new(connection)
         .query_as(
             "staff.services.staff_license_service.authorize_file_on_connection",
@@ -111,6 +112,24 @@ pub async fn authorize_file_on_connection(
         Some((false, true)) => require_manage(actor, staff_id),
         _ => Err(denied()),
     }
+}
+
+fn read_request_staff(
+    actor: &ActorContext,
+    file: &PlatformFile,
+    action: FilePolicyAction,
+    resource: Option<Uuid>,
+) -> Result<Uuid, AppError> {
+    let staff_id = file.owner_user_id.ok_or_else(denied)?;
+    if file.purpose != FilePurpose::TeachingLicense
+        || file.visibility != FileVisibility::Private
+        || resource != Some(staff_id)
+        || action != FilePolicyAction::Read
+        || !staff_access_policy::can_read_staff_pii(actor, staff_id)
+    {
+        return Err(denied());
+    }
+    Ok(staff_id)
 }
 
 /// Lock order matches staff mutation: user, then file. Hold until Files transitions lifecycle.

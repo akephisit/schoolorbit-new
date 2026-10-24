@@ -51,6 +51,8 @@ pub async fn list(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CurriculumEdition>, AppError> {
+    require_school_filter(filter)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.curriculum.list",
@@ -107,6 +109,9 @@ pub async fn create(
     pool: &PgPool,
     request: CreateCurriculumRequest,
 ) -> Result<CurriculumEdition, AppError> {
+    validate_name(&request.name)?;
+    validate_revision_year(request.revision_year)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.curriculum.create",
@@ -138,6 +143,10 @@ pub async fn update(
     id: Uuid,
     request: UpdateCurriculumRequest,
 ) -> Result<CurriculumEdition, AppError> {
+    validate_name(&request.name)?;
+    validate_revision_year(request.revision_year)?;
+    parse_row_version(request.row_version)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.curriculum.update",
@@ -634,6 +643,8 @@ pub async fn list_study_program_options_for_year(
     academic_year_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<StudyProgramOption>, AppError> {
+    require_school_filter(filter)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.curriculum.list_study_program_options_for_year",

@@ -28,7 +28,10 @@ pub async fn get_user_type_on_connection(
         .fetch_one()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to get user type for menu: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to get user type for menu"
+            );
             AppError::InternalServerError("ไม่สามารถตรวจสอบประเภทผู้ใช้ได้".to_string())
         })
 }
@@ -84,7 +87,10 @@ pub async fn fetch_menu_items_on_connection(
         .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to fetch menu items: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to fetch menu items"
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
         })
 }

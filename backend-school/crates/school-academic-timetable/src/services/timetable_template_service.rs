@@ -142,6 +142,8 @@ pub async fn create_template(
     actor_user_id: Uuid,
     request: CreateTemplateRequest,
 ) -> Result<TimetableTemplate, AppError> {
+    let _preflight_name = require_name(&request.name)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_timetable.services.timetable_template_service.create_template",
@@ -177,6 +179,8 @@ pub async fn update_template(
     id: Uuid,
     request: UpdateTemplateRequest,
 ) -> Result<TimetableTemplate, AppError> {
+    let _preflight_name = request.name.as_deref().map(require_name).transpose()?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_timetable.services.timetable_template_service.update_template",

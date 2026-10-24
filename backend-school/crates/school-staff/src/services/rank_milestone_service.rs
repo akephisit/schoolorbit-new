@@ -78,6 +78,7 @@ pub async fn get_rank_milestone_overview(
     query: RankMilestoneOverviewQuery,
     access: StaffListAccess,
 ) -> Result<RankMilestoneOverview, AppError> {
+    validate_rank_page(query.page.unwrap_or(1))?;
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "staff.services.rank_milestone_service.get_rank_milestone_overview",
@@ -92,9 +93,7 @@ pub async fn get_rank_milestone_overview_on_connection(
     access: StaffListAccess,
 ) -> Result<RankMilestoneOverview, AppError> {
     let page = query.page.unwrap_or(1);
-    if !(1..=10_000).contains(&page) {
-        return Err(AppError::BadRequest("หน้ารายการไม่ถูกต้อง".into()));
-    }
+    validate_rank_page(page)?;
     let status = query.status.unwrap_or(PersonnelStatusFilter::Active);
     let bucket = query.bucket.unwrap_or(RankMilestoneStatus::DueSoon);
     let as_of = Utc::now()
@@ -168,6 +167,13 @@ pub async fn get_rank_milestone_overview_on_connection(
         page_size: 50,
     })
 }
+fn validate_rank_page(page: i64) -> Result<(), AppError> {
+    if !(1..=10_000).contains(&page) {
+        return Err(AppError::BadRequest("หน้ารายการไม่ถูกต้อง".into()));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

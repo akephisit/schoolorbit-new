@@ -58,6 +58,8 @@ pub async fn list_promotion_policies(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<Vec<PromotionPolicyVersion>, AppError> {
+    require_promotion_policy_read(actor)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_lifecycle.services.promotion_policy.list_promotion_policies",
@@ -70,7 +72,7 @@ pub async fn list_promotion_policies_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
 ) -> Result<Vec<PromotionPolicyVersion>, AppError> {
-    actor.require_permission(codes::ACADEMIC_PROMOTION_READ_SCHOOL)?;
+    require_promotion_policy_read(actor)?;
     let rows: Vec<StoredPolicy> = DbSession::new(connection).query_as("academic_lifecycle.services.promotion_policy.list_promotion_policies_on_connection", "SELECT id,name,rules,progression_row_version,reviewed_by,reviewed_at FROM academic_promotion_policy_versions ORDER BY reviewed_at DESC,id LIMIT 101")
         .fetch_all().await?;
     if rows.len() > 100 {
@@ -79,6 +81,11 @@ pub async fn list_promotion_policies_on_connection(
         ));
     }
     Ok(rows.into_iter().map(Into::into).collect())
+}
+
+fn require_promotion_policy_read(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::ACADEMIC_PROMOTION_READ_SCHOOL)?;
+    Ok(())
 }
 
 pub async fn create_promotion_policy(
@@ -107,4 +114,29 @@ pub async fn create_promotion_policy(
         .execute().await?;
     tx.commit().await?;
     Ok(stored.into())
+}
+
+#[cfg(test)]
+mod pool_facade_preflight_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_promotion_policy_denial_precedes_checkout() {
+        let pool = closed_pool().await;
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            list_promotion_policies(&pool, &actor).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
 }

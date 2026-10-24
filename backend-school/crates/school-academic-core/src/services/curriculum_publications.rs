@@ -283,6 +283,8 @@ pub async fn resolve_view(
     edition_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<Option<Uuid>, AppError> {
+    validate_view_query(query)?;
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_core.services.curriculum_publications.resolve_view",
@@ -296,11 +298,7 @@ pub async fn resolve_view_on_connection(
     edition_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<Option<Uuid>, AppError> {
-    if query.draft_id.is_some() && query.publication_id.is_some() {
-        return Err(AppError::ValidationError(
-            "เลือกดูร่างหรือประวัติการเผยแพร่เพียงอย่างเดียว".into(),
-        ));
-    }
+    validate_view_query(query)?;
     let edition = super::curriculum::get_on_connection(connection, edition_id).await?;
     if let Some(draft) = query.draft_id {
         validate_draft_token(edition.draft_id, draft)?;
@@ -320,6 +318,15 @@ pub async fn resolve_view_on_connection(
         return Ok(Some(publication));
     }
     Ok(edition.current_publication_id)
+}
+
+fn validate_view_query(query: &CurriculumViewQuery) -> Result<(), AppError> {
+    if query.draft_id.is_some() && query.publication_id.is_some() {
+        return Err(AppError::ValidationError(
+            "เลือกดูร่างหรือประวัติการเผยแพร่เพียงอย่างเดียว".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn level_edition(

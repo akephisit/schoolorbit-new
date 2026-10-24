@@ -274,6 +274,9 @@ pub async fn load_labels(
     pool: &sqlx::PgPool,
     graphs: &[&DeliverySnapshot],
 ) -> Result<BTreeMap<Uuid, String>, AppError> {
+    if label_ids(graphs).is_empty() {
+        return Ok(BTreeMap::new());
+    }
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_delivery.services.version_changes.load_labels",
@@ -285,7 +288,20 @@ pub async fn load_labels_on_connection(
     connection: &mut sqlx::PgConnection,
     graphs: &[&DeliverySnapshot],
 ) -> Result<BTreeMap<Uuid, String>, AppError> {
-    let ids = graphs
+    let ids = label_ids(graphs);
+    if ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let labels:Vec<(Uuid,String)>=DbSession::new(connection).query_as("academic_delivery.services.version_changes.load_labels_on_connection", "SELECT id,name FROM homerooms WHERE id=ANY($1)
+        UNION ALL SELECT id,CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||year::text FROM grade_levels WHERE id=ANY($1)
+        UNION ALL SELECT id,name_th FROM published_study_programs WHERE id=ANY($1)
+        UNION ALL SELECT id,concat_ws(' — ',code,name_th) FROM rooms WHERE id=ANY($1)")
+        .bind(ids).fetch_all().await?;
+    Ok(labels.into_iter().collect())
+}
+
+fn label_ids(graphs: &[&DeliverySnapshot]) -> Vec<Uuid> {
+    graphs
         .iter()
         .flat_map(|s| &s.offerings)
         .flat_map(|o| {
@@ -310,16 +326,7 @@ pub async fn load_labels_on_connection(
         })
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect::<Vec<_>>();
-    if ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let labels:Vec<(Uuid,String)>=DbSession::new(connection).query_as("academic_delivery.services.version_changes.load_labels_on_connection", "SELECT id,name FROM homerooms WHERE id=ANY($1)
-        UNION ALL SELECT id,CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||year::text FROM grade_levels WHERE id=ANY($1)
-        UNION ALL SELECT id,name_th FROM published_study_programs WHERE id=ANY($1)
-        UNION ALL SELECT id,concat_ws(' — ',code,name_th) FROM rooms WHERE id=ANY($1)")
-        .bind(ids).fetch_all().await?;
-    Ok(labels.into_iter().collect())
+        .collect::<Vec<_>>()
 }
 
 #[cfg(test)]

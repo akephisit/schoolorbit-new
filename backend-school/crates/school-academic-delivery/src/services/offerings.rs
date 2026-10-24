@@ -922,6 +922,10 @@ pub async fn signal_descriptors(
     pool: &PgPool,
     offering_ids: &[Uuid],
 ) -> Result<Vec<LearningOfferingSignalDescriptor>, AppError> {
+    if offering_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_delivery.services.offerings.signal_descriptors",
@@ -2453,4 +2457,30 @@ async fn record_curriculum_sources(
         .execute()
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod pool_facade_preflight_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_empty_signal_batch_needs_no_database() {
+        let pool = closed_pool().await;
+        assert!(signal_descriptors(&pool, &[]).await.unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_empty_snapshot_labels_need_no_database() {
+        let pool = closed_pool().await;
+        assert!(super::super::version_changes::load_labels(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
+    }
 }
