@@ -271,6 +271,30 @@ implementation paths; cross-domain/database fixtures retain application-level ow
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+For the connection-bound query provider, run its public API/type/observation checks
+from `backend-school`:
+
+```bash
+cargo check -p school-database --all-targets
+cargo test -p school-database
+```
+
+The compile-pass probe includes borrowed binds, raw/typed/scalar results and native
+QueryBuilder adapters. Compile-fail examples reference their functions so dead-code
+lints cannot supply a false success; they reject overlapping mutable queries, alternate
+executors and unchecked dynamic SQL. Unit traces verify completion, safe error classes
+and cancellation without payloads. Run actual PostgreSQL result, caller-owned rollback,
+query cancellation and error-trace fixtures from the repository root:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::database -- --test-threads=1
+```
+
+These fixtures create only disposable synthetic tables and preserve the native SQLx
+error. They do not test production throughput. Compare workspace compile evidence on
+the same pinned toolchain, target cache and concurrency; distinguish warm-cache effects
+from ownership/invalidation changes.
+
 For single-process tenant fairness, run the focused pure/concurrency checks from
 `backend-school`:
 

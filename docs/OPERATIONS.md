@@ -132,6 +132,16 @@ is claimed and removed in the same transaction as the school mutation; School
 finish invalidates before reopening. Pending barriers fail the internal all-tenant
 list as a whole, preventing incomplete migration acceptance.
 
+PostgreSQL query execution uses the connection-bound `school-database::DbSession`
+provider. Domains retain SQL, transactions, snapshots, locks and typed error mapping;
+the provider neither acquires pools nor retries writes. Its fixed operation labels,
+duration, status and safe error class identify query work and cancellation without
+logging statements or values. Tenant observed checkout guards separately measure
+connection wait/hold and retain logical eviction protection. A query duration excludes
+pool admission; a connection hold includes gaps between that work boundary's queries.
+Use these observations together with PostgreSQL aggregate statistics, and never enable
+raw SQL/parameter logging to diagnose saturation.
+
 Calendar, Auth retention, Notification dispatch, Attendance maintenance and File Platform
 reconciliation share `TENANT_BACKGROUND_MAX_TURNS` database admission (default
 2, range 1–64), clamped to `max(1, floor(runtime connections / per-tenant maximum) - 1)`.

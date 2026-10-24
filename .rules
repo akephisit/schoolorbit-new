@@ -386,6 +386,28 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   configuration, broadly consumed contracts or uncertain dependency impact require workspace coverage;
   a bounded domain edit does not automatically require every workspace package or database suite.
 
+### Connection-bound PostgreSQL execution
+
+- `school-database` owns the shared PostgreSQL query execution/observation boundary.
+  Its `DbSession` receives only `&mut PgConnection`; query, typed-row and scalar
+  builders retain that exclusive borrow and accept no replacement executor. Preserve
+  SQLx 0.9 safe strings, binds, result types and `sqlx::Error`; native QueryBuilder
+  results use the prepared adapters. Do not rebuild SQL or cast away safety checks.
+- SQL, authorization, transactions, snapshots, advisory/row locks and domain error
+  mapping remain with their existing owners. Acquire once at a declared work boundary,
+  then pass the connection/session to helpers. No query helper may acquire another
+  pool connection, accept a pool escape hatch, silently start a transaction or retry
+  an ambiguous write. Explicit bootstrap/schema verification, SQLx migrator internals
+  and disposable fixture setup retain narrow native-SQLx exceptions.
+- Keep `school-database` below tenancy, migrations and all domains: production
+  dependencies are SQLx and tracing only. `school-tenancy` owns observed checkout and
+  logical lease retention; its connection guard lends only `PgConnection` and exposes
+  explicit cancellation-safe return/close methods without detach/inner-pool access.
+- Query observations use static source-owned operation labels and fixed duration,
+  completion/cancellation status and safe error categories. Never record SQL, binds,
+  raw database errors, URLs, credentials or personal data. Domain context logs may
+  use the provider's `error_class`; preserve original errors for normal typed mapping.
+
 ### Request context and architecture
 
 - Share pools and configuration through the application state and cloneable narrow HTTP state.

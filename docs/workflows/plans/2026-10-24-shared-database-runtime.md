@@ -8,3 +8,13 @@
 6. Freeze the integrated candidate for independent review and QA; repair assigned findings. Senior owns Git and final handoff. Open a Draft PR early and push reviewable checkpoints under Senior ownership; do not merge, deploy or run production/load tests.
 
 Focused validation recipes: run the existing package suites for `school-tenancy`, `school-calendar`, `school-notifications`, `school-attendance` and `school-file-platform` using `./scripts/test_backend_school.sh --package <package>` for database cases. Add focused filters for single-connection evidence/reminders, preview/history/report settings reuse, guarded finalization, batched maintenance and stale File Platform lease transitions. Run `./scripts/pipeline verify --scope documentation` for canonical documentation and the existing backend architecture checks. Senior assigns the sole Cargo/fixture slot and exact filtered commands before execution.
+
+
+## Expanded query-boundary implementation
+
+1. Preserve the unchanged 6943dd5d baseline evidence and previous shared-admission changes. Implement `school-database` with SQLx/tracing only, workspace membership and no version upgrades. Compile a public API probe for raw rows, typed rows, scalars, binds and native QueryBuilder adapters before dependent source migration.
+2. Add tenancy's observed checked-out connection guard retaining the originating logical lease. Keep pool reservation/drain/cancellation semantics and query-only observations in the lower crate.
+3. Migrate the approved production PostgreSQL consumers by assigned nonoverlapping owners using the stable connection-bound API. Keep SQL meaning, authorization, transaction/snapshot/advisory locks, recipient snapshots and domain error mapping intact; record justified native-SQLx exceptions rather than bypassing safe typing.
+4. Verify type-safety and rejection of alternate executors/concurrent connection reborrows, and use disposable root integration fixtures for query results, rollback, cancellation observations and safe trace fields. Re-run the existing Attendance/Calendar one-connection regressions through the actual new API.
+5. Update canonical rules/testing/operations and architecture guards for dependency direction, query boundary and documented exceptions. Compare before/after compilation on pinned 1.98.1 with the shared cache and jobs4; report actual evidence without attributing cache effects to the crate split.
+6. Freeze each coherent API/migration checkpoint in Draft PR 171 under Senior ownership. Independent review and QA remain required; do not merge, deploy, run production/load tests or upgrade dependencies.

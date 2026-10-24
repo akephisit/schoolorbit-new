@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/school-database",
     "crates/school-budget",
     "crates/school-student-care",
     "crates/school-files-http",
@@ -48,6 +49,7 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-database = { path = "crates/school-database" }
 school-budget = { path = "crates/school-budget" }
 school-student-care = { path = "crates/school-student-care" }
 rustybuzz = "0.20.1"
@@ -183,6 +185,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 school-budget = { workspace = true }
 school-student-care = { workspace = true }
 school-files-http = { workspace = true }

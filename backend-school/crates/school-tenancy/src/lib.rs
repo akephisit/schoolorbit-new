@@ -13,7 +13,9 @@ pub use pool_manager::{
     PoolManagerConfig, PrivilegedConnection, PrivilegedPool,
 };
 pub use school_mapping::get_school_database_info;
-pub use tenant_pool::{TenantDatabaseOperation, TenantPool, TenantPoolRetention};
+pub use tenant_pool::{
+    ObservedConnection, TenantDatabaseOperation, TenantPool, TenantPoolRetention,
+};
 
 #[derive(Clone)]
 pub struct TenantContext {

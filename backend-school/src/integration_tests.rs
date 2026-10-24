@@ -4,6 +4,7 @@ pub mod attendance;
 pub mod auth;
 pub mod calendar;
 pub mod certificates;
+pub mod database;
 pub mod notification_dispatch;
 pub mod policies;
 pub mod question_bank;

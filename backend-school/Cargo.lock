@@ -832,6 +832,7 @@ dependencies = [
  "school-certificates",
  "school-certificates-http",
  "school-crypto",
+ "school-database",
  "school-errors",
  "school-file-platform",
  "school-files-http",
@@ -4581,6 +4582,14 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zeroize",
+]
+
+[[package]]
+name = "school-database"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "tracing",
 ]
 
 [[package]]

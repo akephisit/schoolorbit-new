@@ -164,3 +164,123 @@ impl TenantPool {
         self.lease = None;
     }
 }
+
+/// A checked-out connection retaining the originating logical operation lease.
+/// Only its PostgreSQL connection can be borrowed; pool detachment is unavailable.
+pub struct ObservedConnection {
+    connection: sqlx::pool::PoolConnection<sqlx::Postgres>,
+    retention: Option<TenantPoolRetention>,
+    observation: ConnectionHold,
+}
+impl std::ops::Deref for ObservedConnection {
+    type Target = sqlx::PgConnection;
+    fn deref(&self) -> &Self::Target {
+        &self.connection
+    }
+}
+impl std::ops::DerefMut for ObservedConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
+    }
+}
+impl ObservedConnection {
+    pub fn close_on_drop(&mut self) {
+        self.connection.close_on_drop();
+    }
+    /// SQLx moves its live connection into a cancellation-safe floating guard
+    /// before awaiting. Retain the logical lease through that handoff.
+    pub async fn return_to_pool(self) {
+        let Self {
+            mut connection,
+            retention,
+            observation,
+        } = self;
+        connection.return_to_pool().await;
+        drop(retention);
+        drop(observation);
+    }
+    pub async fn close(self) -> Result<(), sqlx::Error> {
+        let Self {
+            connection,
+            retention,
+            observation,
+        } = self;
+        let result = connection.close().await;
+        drop(retention);
+        drop(observation);
+        result
+    }
+}
+struct ConnectionHold {
+    operation: &'static str,
+    started: Instant,
+}
+impl Drop for ConnectionHold {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = self.operation,
+            hold_us = self.started.elapsed().as_micros() as u64,
+            "Tenant database connection hold ended"
+        );
+    }
+}
+struct ConnectionCheckout {
+    operation: &'static str,
+    started: Instant,
+    status: &'static str,
+}
+impl Drop for ConnectionCheckout {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = self.operation,
+            checkout_us = self.started.elapsed().as_micros() as u64,
+            status = self.status,
+            "Tenant database connection checkout ended"
+        );
+    }
+}
+impl TenantPool {
+    pub async fn checkout(
+        &self,
+        operation: &'static str,
+    ) -> Result<ObservedConnection, sqlx::Error> {
+        Self::observed_checkout_pool(&self.pool, operation).await
+    }
+    /// Thin work-boundary adapter for a provider that receives an already-leased pool.
+    /// The originating managed operation must still be alive when this is called.
+    pub async fn observed_checkout_pool(
+        pool: &PgPool,
+        operation: &'static str,
+    ) -> Result<ObservedConnection, sqlx::Error> {
+        let mut observation = ConnectionCheckout {
+            operation,
+            started: Instant::now(),
+            status: "cancelled",
+        };
+        let retention = match Self::retain_for_pool(pool) {
+            Ok(retention) => retention,
+            Err(_) => {
+                observation.status = "error";
+                return Err(sqlx::Error::Protocol(
+                    "tenant_operation_lease_unavailable".into(),
+                ));
+            }
+        };
+        let connection = match pool.acquire().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                observation.status = "error";
+                return Err(error);
+            }
+        };
+        observation.status = "ok";
+        Ok(ObservedConnection {
+            connection,
+            retention,
+            observation: ConnectionHold {
+                operation,
+                started: Instant::now(),
+            },
+        })
+    }
+}

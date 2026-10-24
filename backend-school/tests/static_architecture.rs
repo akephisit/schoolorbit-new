@@ -9486,3 +9486,53 @@ fn exam_schedule_handler_uses_staff_level_invigilator_services() {
     assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
     assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
 }
+
+#[test]
+fn database_query_provider_is_connection_bound_and_below_tenancy_and_domains() {
+    let manifest = read_source(manifest_dir().join("crates/school-database/Cargo.toml"));
+    let dependencies = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .unwrap()
+        .split("[lints]")
+        .next()
+        .unwrap();
+    let dependency_names: Vec<_> = dependencies
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(name, _)| name.trim()))
+        .collect();
+    assert_eq!(dependency_names, ["sqlx", "tracing"]);
+    let source = read_source(manifest_dir().join("crates/school-database/src/lib.rs"));
+    let session = extract_braced_block(&source, "pub struct DbSession", false);
+    assert!(session.contains("&'c mut PgConnection"));
+    for forbidden in ["PgPool", "TenantPool", "PoolConnection", "Executor"] {
+        assert!(!session.contains(forbidden));
+    }
+    let methods = extract_braced_block(&source, "impl<'c> DbSession", false);
+    for forbidden in [".acquire(", ".begin(", "into_inner", "pool:", "executor:"] {
+        assert!(!methods.contains(forbidden));
+    }
+    assert!(methods.contains("impl SqlSafeStr"));
+    for wrapper in [
+        "pub struct DbQuery<",
+        "pub struct DbQueryAs<",
+        "pub struct DbScalar<",
+    ] {
+        assert!(extract_braced_block(&source, wrapper, false).contains("&'s mut PgConnection"));
+    }
+    let tenancy = read_source(manifest_dir().join("crates/school-tenancy/src/tenant_pool.rs"));
+    let guard = extract_braced_block(&tenancy, "pub struct ObservedConnection", false);
+    assert!(guard.contains("TenantPoolRetention"));
+    let borrow = extract_braced_block(
+        &tenancy,
+        "impl std::ops::Deref for ObservedConnection",
+        false,
+    );
+    assert!(borrow.contains("type Target = sqlx::PgConnection"));
+    let observed_methods = extract_braced_block(&tenancy, "impl ObservedConnection", false);
+    for forbidden in ["pub fn detach", "pub fn into_inner", "pub fn leak"] {
+        assert!(!observed_methods.contains(forbidden));
+    }
+    assert!(observed_methods.contains("pub async fn return_to_pool"));
+    assert!(observed_methods.contains("pub async fn close"));
+}
