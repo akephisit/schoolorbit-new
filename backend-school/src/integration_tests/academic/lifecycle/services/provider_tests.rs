@@ -207,10 +207,22 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
     let offering:Uuid = sqlx::query_scalar("SELECT id FROM learning_offerings WHERE academic_term_id=$1 AND status='published' LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
     let exam:Uuid = sqlx::query_scalar("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name,status) VALUES($1,$2,'E2E-LIFECYCLE-exam','draft') RETURNING id")
         .bind(year).bind(term).fetch_one(&pool).await.unwrap();
-    let timetable:Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_year_id,academic_term_id,bell_schedule_id,effective_from,status) VALUES($1,$2,$3,$4,'draft') RETURNING id")
-        .bind(year).bind(term).bind(bell).bind(start.succ_opt().unwrap()).fetch_one(&pool).await.unwrap();
-    let change:Uuid = sqlx::query_scalar("INSERT INTO academic_term_change_sets(academic_year_id,academic_term_id,effective_from,reason,idempotency_key,creation_request_hash,created_by) VALUES($1,$2,$3,'E2E-LIFECYCLE-change','lifecycle-provider',repeat('a',64),$4) RETURNING id")
-        .bind(year).bind(term).bind(start).bind(actor).fetch_one(&pool).await.unwrap();
+    let delivery: Uuid = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(year).bind(term).fetch_one(&pool).await.unwrap();
+    let timetable:Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_year_id,academic_term_id,bell_schedule_id,effective_from,status,delivery_version_id) VALUES($1,$2,$3,$4,'draft',$5) RETURNING id")
+        .bind(year).bind(term).bind(bell).bind(start.succ_opt().unwrap()).bind(delivery).fetch_one(&pool).await.unwrap();
+    let change = school_academic_delivery::services::change_sets::create_change_set(
+        &pool,
+        actor,
+        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: term,
+            reason: "E2E-LIFECYCLE-change".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    .id;
     let mut tx = pool.begin().await.unwrap();
     let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
         .await

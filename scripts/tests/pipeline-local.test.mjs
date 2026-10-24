@@ -125,9 +125,15 @@ fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.s
  for(const filter of ['integration_tests::database','integration_tests::notification_dispatch','services::cleaner::phase_tests','integration_tests::policies','integration_tests::academic::services','integration_tests::academic::gradebook','integration_tests::academic::learner_evaluation','integration_tests::academic::results','integration_tests::certificates','integration_tests::attendance','integration_tests::supply_catalog','integration_tests::auth::session_http_tests','integration_tests::auth::profile_integration_tests','integration_tests::auth::staff_integration_tests']) {
   assert.ok(commands.some(({args})=>args.includes(filter)),`${filter} executes under PostgreSQL`);
  }
- assert.deepEqual(commands.filter(({args})=>args[0]==='integration_tests::academic::lifecycle').map(({args})=>args),
-  [['integration_tests::academic::lifecycle','--','--test-threads=4']],
-  'the complete Lifecycle namespace executes exactly once with the owning wrapper');
+ for(const [filter,threads] of [
+  ['integration_tests::academic::core::services',4],
+  ['integration_tests::academic::delivery',1],
+  ['integration_tests::academic::lifecycle',4],
+ ]) {
+  assert.deepEqual(commands.filter(({args})=>args[0]===filter).map(({args})=>args),
+   [[filter,'--',`--test-threads=${threads}`]],
+   `${filter} executes exactly once with the owning wrapper and required concurrency`);
+ }
  assert.ok(commands.every(({args})=>!args.includes('--no-run')),'no suite becomes compile-only');
  const suite=readFileSync(path.join(f.root,'scripts/test_school_database_suite.sh'),'utf8');
  assert.match(suite,/postgres:18\.6-alpine@sha256:/);

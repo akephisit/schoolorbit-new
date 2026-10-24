@@ -405,6 +405,7 @@ async fn build_workspace(
                             format!("เตรียม {} รายการจากหลักสูตรเป้าหมาย", drafts),
                         )
                     }
+                    Err(error @ AppError::DbError(_)) => return Err(error),
                     Err(error) => {
                         findings.push(blocking("delivery.target_curriculum", error.to_string()));
                         (source, target, 0, "ยังเตรียมจากหลักสูตรเป้าหมายไม่ได้".into())
@@ -561,9 +562,12 @@ async fn build_workspace(
             .iter()
             .any(|module| *module != TermPreparationModule::Delivery)
     {
-        delivery_preview = offerings::preview_term_preparation(tx, context.target_term_id)
-            .await
-            .ok();
+        delivery_preview =
+            match offerings::preview_term_preparation(tx, context.target_term_id).await {
+                Ok(preview) => Some(preview),
+                Err(error @ AppError::DbError(_)) => return Err(error),
+                Err(_) => None,
+            };
     }
     let prospective =
         prospective_delivery_options(context.target_term_id, delivery_preview.as_ref());

@@ -24,13 +24,10 @@ done
 ./scripts/test_backend_school.sh curriculum_revision_schema_tests -- --test-threads=1
 ./scripts/test_backend_school.sh --package school-navigation -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::school::public_tests -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::core::services_tests -- --test-threads=4
-./scripts/test_backend_school.sh activation_context_tests -- --test-threads=4
-./scripts/test_backend_school.sh promotion_targets::tests -- --test-threads=4
-./scripts/test_backend_school.sh opening_readiness_tests -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::core::services -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::academic::lifecycle -- --test-threads=4
-./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
-./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
+# Delivery lock-wait probes observe the whole database, so keep cases serial.
+./scripts/test_backend_school.sh integration_tests::academic::delivery -- --test-threads=1
 ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-certificates purge_rejects_admission_logo_and_question_bank_file_consumers -- --test-threads=1
 BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_seed_is_idempotent_across_student_year_and_placement -- --test-threads=1

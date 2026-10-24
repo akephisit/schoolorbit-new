@@ -1866,10 +1866,12 @@ async fn build_curriculum_preview_for_term(
     // Lock stable owners before resolving their pointers. Joining publication rows
     // in the locking statement could otherwise retain an older statement snapshot
     // while waiting for a concurrent whole-edition publication.
-    DbSession::new(&mut **transaction).query("academic_delivery.services.offerings.build_curriculum_preview_for_term", "SELECT e.id FROM curriculum_editions e WHERE e.id IN(
+    if lock_rows {
+        DbSession::new(&mut **transaction).query("academic_delivery.services.offerings.build_curriculum_preview_for_term", "SELECT e.id FROM curriculum_editions e WHERE e.id IN(
         SELECT l.edition_id FROM study_programs program JOIN curriculum_levels l ON l.id=program.curriculum_level_id
         WHERE program.id=ANY($1)) ORDER BY e.id FOR SHARE OF e")
         .bind(program_ids).fetch_all().await?;
+    }
     let curriculum_sources: Vec<crate::models::CurriculumPublicationSource> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.offerings.build_curriculum_preview_for_term",
         "SELECT e.id AS edition_id,p.id AS publication_id,p.publication_no,p.revision_year,p.name AS edition_name
          FROM curriculum_editions e JOIN curriculum_publications p ON p.id=e.current_publication_id
