@@ -397,7 +397,8 @@ pub async fn load_session_validity(
 ) -> Result<Option<SessionValidity>, AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.load_session_validity")
-            .await?;
+            .await
+            .map_err(session_store_error)?;
     load_session_validity_on_connection(&mut connection, session_id, user_id, now).await
 }
 
@@ -440,7 +441,8 @@ pub async fn load_password_change_snapshot(
         pool,
         "auth.load_password_change_snapshot",
     )
-    .await?;
+    .await
+    .map_err(session_store_error)?;
     load_password_change_snapshot_on_connection(&mut connection, user_id, session_id, now).await
 }
 
@@ -605,7 +607,9 @@ pub async fn list_user_sessions(
     now: DateTime<Utc>,
 ) -> Result<Vec<SessionRow>, AppError> {
     let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.list_user_sessions").await?;
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.list_user_sessions")
+            .await
+            .map_err(session_store_error)?;
     list_user_sessions_on_connection(&mut connection, user_id, now).await
 }
 
@@ -646,7 +650,9 @@ pub async fn revoke_sessions(
     now: DateTime<Utc>,
 ) -> Result<Vec<Uuid>, AppError> {
     let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.revoke_sessions").await?;
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.revoke_sessions")
+            .await
+            .map_err(session_store_error)?;
     revoke_sessions_on_connection(&mut connection, user_id, target, reason, now).await
 }
 
@@ -805,7 +811,8 @@ async fn load_authentication_row(
 ) -> Result<Option<AuthenticationRow>, AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.load_authentication_row")
-            .await?;
+            .await
+            .map_err(session_store_error)?;
     load_authentication_row_on_connection(&mut connection, presented_hash).await
 }
 
@@ -922,7 +929,8 @@ async fn clear_expired_previous_token(
         pool,
         "auth.clear_expired_previous_token",
     )
-    .await?;
+    .await
+    .map_err(session_store_error)?;
     clear_expired_previous_token_on_connection(&mut connection, session_id, now).await
 }
 

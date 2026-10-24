@@ -44,7 +44,8 @@ pub async fn check_login_throttles(
 ) -> Result<ThrottleState, AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.check_login_throttles")
-            .await?;
+            .await
+            .map_err(session_store_error)?;
     check_login_throttles_on_connection(&mut connection, identifier_hash, source_hash, now).await
 }
 
