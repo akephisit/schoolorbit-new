@@ -121,6 +121,12 @@ fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.s
  assert.ok(commands.every(command=>command.owned),'every invocation reuses the explicitly owned disposable server');
  const authHttp=commands.find(({args})=>args[0]==='integration_tests::auth::session_http_tests');
  assert.equal(authHttp?.validEncryptionKey,true,'session HTTP receives a fresh 64-hex synthetic key rather than the ambient key');
+ const careCalls=commands.filter(({args})=>args[0]==='--package'&&args[1]==='school-student-care');
+ assert.deepEqual(careCalls.map(({args,validEncryptionKey})=>({args,validEncryptionKey})),
+  [{args:['--package','school-student-care','--','--test-threads=4'],validEncryptionKey:true}],
+  'Student Care executes once with a fresh 64-hex synthetic key');
+ assert.ok(commands.filter(({args})=>args[0]==='--package'&&args[1]!=='school-student-care').every(({validEncryptionKey})=>!validEncryptionKey),
+  'Student Care key does not leak into other package invocations');
  for(const owner of ['school-behavior','school-academic-delivery','school-academic-assessment','school-academic-results','school-academic-lifecycle','school-budget','school-student-care','school-academic-timetable','school-certificates']) {
   assert.ok(commands.some(({args})=>args[0]==='--package'&&args[1]===owner&&args[2]==='--'),`${owner} executes its whole fixture-backed package`);
  }
