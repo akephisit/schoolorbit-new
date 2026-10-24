@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Deserialize;
 use sqlx::{types::Json, PgPool};
@@ -49,21 +50,34 @@ fn checksum_is_valid(value: &str) -> bool {
 pub async fn read_academic_core_cleanup_audit(
     pool: &PgPool,
 ) -> Result<AcademicCoreCleanupAuditStatus, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.reconciliation.read_academic_core_cleanup_audit",
+    )
+    .await?;
+    read_academic_core_cleanup_audit_on_connection(&mut connection).await
+}
+
+pub async fn read_academic_core_cleanup_audit_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<AcademicCoreCleanupAuditStatus, AppError> {
     let audit: Option<(
         String,
         Json<CleanupAuditCounts>,
         Json<CleanupAuditCounts>,
         String,
         String,
-    )> = sqlx::query_as(
-        r#"SELECT mapping_algorithm_version, source_counts, target_counts,
+    )> = DbSession::new(connection)
+        .query_as(
+            "academic_core.reconciliation.read_academic_core_cleanup_audit_on_connection",
+            r#"SELECT mapping_algorithm_version, source_counts, target_counts,
                   source_checksum::text, target_checksum::text
            FROM academic_core_cutover_audits
            WHERE migration_version = $1"#,
-    )
-    .bind(PHASE_B_MIGRATION_VERSION)
-    .fetch_optional(pool)
-    .await?;
+        )
+        .bind(PHASE_B_MIGRATION_VERSION)
+        .fetch_optional()
+        .await?;
 
     let Some((mapping_version, source_counts, target_counts, source_checksum, target_checksum)) =
         audit

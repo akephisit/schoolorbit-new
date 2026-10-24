@@ -89,7 +89,16 @@ fn statistics_from_rows(rows: Vec<StatisticsRow>) -> Result<PublicSchoolStatisti
 /// One statement gives all aggregates the same database snapshot. Account suspension
 /// does not change educational enrollment; only student-year status owns this count.
 pub async fn get_statistics(pool: &PgPool) -> Result<PublicSchoolStatistics, AppError> {
-    let rows = sqlx::query_as::<_, StatisticsRow>(r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.get_statistics")
+            .await?;
+    get_statistics_on_connection(&mut connection).await
+}
+
+pub async fn get_statistics_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<PublicSchoolStatistics, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection).query_as::<StatisticsRow>("administration.services.public.get_statistics_on_connection", r#"
 WITH active_year AS (
     SELECT id, year, name FROM academic_years WHERE status = 'active'
 ), active_rooms AS (
@@ -137,7 +146,7 @@ LEFT JOIN counts c ON TRUE LEFT JOIN grade_levels g ON g.id = c.grade_level_id
 ORDER BY CASE g.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2
     WHEN 'secondary' THEN 3 ELSE 4 END, g.level_type, g.year,
     char_length(c.room_number), c.room_number, c.homeroom_name, c.homeroom_id
-"#).fetch_all(pool).await.map_err(database_error)?;
+"#).fetch_all().await.map_err(database_error)?;
     statistics_from_rows(rows)
 }
 
@@ -188,7 +197,16 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 }
 
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
-    let rows = sqlx::query_as::<_, OrganizationRow>(r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.get_organization")
+            .await?;
+    get_organization_on_connection(&mut connection).await
+}
+
+pub async fn get_organization_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<PublicSchoolOrganization, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection).query_as::<OrganizationRow>("administration.services.public.get_organization_on_connection", r#"
 SELECT o.id, learning_area.id AS learning_area_id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
     CASE WHEN u.id IS NOT NULL THEN md5('school-public-directory:' || u.id::text) END AS person_key,
     CASE WHEN u.id IS NOT NULL THEN u.display_name END AS member_name,
@@ -206,7 +224,7 @@ WHERE o.is_active IS TRUE
 ORDER BY o.display_order, o.name, o.id,
     CASE m.position_code WHEN 'director' THEN 1 WHEN 'deputy_director' THEN 2 WHEN 'head' THEN 3 WHEN 'deputy_head' THEN 4 WHEN 'coordinator' THEN 5 ELSE 6 END,
     u.first_name, u.last_name, m.id
-"#).fetch_all(pool).await.map_err(database_error)?;
+"#).fetch_all().await.map_err(database_error)?;
     Ok(organization_from_rows(rows))
 }
 
@@ -218,7 +236,19 @@ fn database_error(error: sqlx::Error) -> AppError {
 /// Only the profile image of a currently published staff membership is a public directory photo.
 /// General private-file URLs and student/parent profiles remain inaccessible anonymously.
 pub async fn organization_avatar_file(pool: &PgPool, member_id: Uuid) -> Result<Uuid, AppError> {
-    sqlx::query_scalar(r#"SELECT profile.id FROM organization_members member
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.organization_avatar_file",
+    )
+    .await?;
+    organization_avatar_file_on_connection(&mut connection, member_id).await
+}
+
+pub async fn organization_avatar_file_on_connection(
+    connection: &mut sqlx::PgConnection,
+    member_id: Uuid,
+) -> Result<Uuid, AppError> {
+    school_database::DbSession::new(&mut *connection).scalar("administration.services.public.organization_avatar_file_on_connection", r#"SELECT profile.id FROM organization_members member
         JOIN organization_units unit ON unit.id=member.organization_unit_id AND unit.is_active
         JOIN users staff ON staff.id=member.user_id AND staff.user_type='staff' AND staff.status='active'
         JOIN files profile ON profile.id=staff.profile_image_file_id AND profile.owner_user_id=staff.id
@@ -226,7 +256,7 @@ pub async fn organization_avatar_file(pool: &PgPool, member_id: Uuid) -> Result<
             AND profile.lifecycle_status='ready' AND profile.deleted_at IS NULL
         WHERE member.id=$1 AND member.started_at<=CURRENT_DATE
             AND (member.ended_at IS NULL OR member.ended_at>CURRENT_DATE)"#)
-        .bind(member_id).fetch_optional(pool).await.map_err(database_error)?
+        .bind(member_id).fetch_optional().await.map_err(database_error)?
         .ok_or_else(|| AppError::NotFound("ไม่พบรูปบุคลากรที่เผยแพร่".into()))
 }
 

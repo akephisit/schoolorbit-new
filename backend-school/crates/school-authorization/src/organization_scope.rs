@@ -1,7 +1,7 @@
 //! Exact and tree organization-unit resolution for generated permissions.
 
 use school_errors::AppError;
-use sqlx::{Executor, PgConnection, PgPool, Postgres};
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 /// Resolves exact active organization units for one generated permission code.
@@ -13,7 +13,23 @@ pub async fn accessible_exact_units_for_permission(
     actor_user_id: Uuid,
     permission_code: &str,
 ) -> Result<Vec<Uuid>, AppError> {
-    query_exact_units_for_permission(pool, actor_user_id, permission_code, None).await
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
+    accessible_exact_units_for_permission_on_connection(
+        &mut connection,
+        actor_user_id,
+        permission_code,
+    )
+    .await
+}
+
+pub async fn accessible_exact_units_for_permission_on_connection(
+    connection: &mut PgConnection,
+    actor_user_id: Uuid,
+    permission_code: &str,
+) -> Result<Vec<Uuid>, AppError> {
+    query_exact_units_for_permission(connection, actor_user_id, permission_code, None).await
 }
 
 pub async fn has_exact_unit_permission(
@@ -22,8 +38,11 @@ pub async fn has_exact_unit_permission(
     organization_unit_id: Uuid,
     permission_code: &str,
 ) -> Result<bool, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
     Ok(query_exact_units_for_permission(
-        pool,
+        &mut connection,
         actor_user_id,
         permission_code,
         Some(organization_unit_id),
@@ -55,14 +74,36 @@ pub async fn accessible_tree_units_for_permission(
     actor_user_id: Uuid,
     permission_code: &str,
 ) -> Result<Vec<Uuid>, AppError> {
-    let root_ids =
-        accessible_exact_units_for_permission(pool, actor_user_id, permission_code).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
+            .await?;
+    accessible_tree_units_for_permission_on_connection(
+        &mut connection,
+        actor_user_id,
+        permission_code,
+    )
+    .await
+}
+
+pub async fn accessible_tree_units_for_permission_on_connection(
+    connection: &mut PgConnection,
+    actor_user_id: Uuid,
+    permission_code: &str,
+) -> Result<Vec<Uuid>, AppError> {
+    let root_ids = accessible_exact_units_for_permission_on_connection(
+        &mut *connection,
+        actor_user_id,
+        permission_code,
+    )
+    .await?;
     if root_ids.is_empty() {
         return Ok(Vec::new());
     }
 
-    sqlx::query_scalar(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.tree_units",
+            r#"
         WITH RECURSIVE organization_tree AS (
             SELECT unit.id
             FROM organization_units unit
@@ -78,35 +119,36 @@ pub async fn accessible_tree_units_for_permission(
         FROM organization_tree
         ORDER BY id
         "#,
-    )
-    .bind(&root_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            reason = "organization_tree_permission_query_failed",
-            database_error = %error
-        );
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
-    })
+        )
+        .bind(&root_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                reason = "organization_tree_permission_query_failed",
+                error_class = school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
+        })
 }
 
-async fn query_exact_units_for_permission<'e>(
-    executor: impl Executor<'e, Database = Postgres>,
+async fn query_exact_units_for_permission(
+    connection: &mut PgConnection,
     actor_user_id: Uuid,
     permission_code: &str,
     target_organization_unit_id: Option<Uuid>,
 ) -> Result<Vec<Uuid>, AppError> {
-    sqlx::query_scalar(EXACT_UNITS_SQL)
+    school_database::DbSession::new(connection)
+        .scalar("authorization.exact_units", EXACT_UNITS_SQL)
         .bind(actor_user_id)
         .bind(permission_code)
         .bind(target_organization_unit_id)
-        .fetch_all(executor)
+        .fetch_all()
         .await
         .map_err(|error| {
             tracing::error!(
                 reason = "exact_organization_unit_permission_query_failed",
-                database_error = %error
+                error_class = school_database::error_class(&error)
             );
             AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
         })
@@ -185,11 +227,15 @@ pub(crate) async fn exact_units_for_users_on_connection(
     } else {
         format!("{roots} ORDER BY actor.user_id,permitted.id")
     };
-    sqlx::query_as(sqlx::AssertSqlSafe(query))
+    school_database::DbSession::new(connection)
+        .query_as(
+            "authorization.batch_exact_units",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(users)
         .bind(code)
         .bind(Option::<Uuid>::None)
-        .fetch_all(connection)
+        .fetch_all()
         .await
         .map_err(AppError::from)
 }

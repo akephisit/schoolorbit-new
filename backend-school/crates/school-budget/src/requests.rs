@@ -10,6 +10,7 @@ use crate::{
 };
 use chrono::Utc;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
@@ -56,9 +57,13 @@ async fn replace_lines(
         let amount = money::positive_money(&l.amount_satang)?;
         rows.push((p, l, amount));
     }
-    sqlx::query("DELETE FROM budget_request_lines WHERE request_id=$1")
+    DbSession::new(&mut **tx)
+        .query(
+            "budget.src.requests.replace_lines",
+            "DELETE FROM budget_request_lines WHERE request_id=$1",
+        )
         .bind(r.id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     let ids = rows.iter().map(|(p, _, _)| p.id).collect::<Vec<_>>();
     let funds = rows.iter().map(|(p, _, _)| p.fund_id).collect::<Vec<_>>();
@@ -75,7 +80,7 @@ async fn replace_lines(
         .iter()
         .map(|(p, _, _)| p.unit.clone())
         .collect::<Vec<_>>();
-    sqlx::query("INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute(&mut **tx).await?;
+    DbSession::new(&mut **tx).query("budget.src.requests.replace_lines", "INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute().await?;
     Ok(())
 }
 pub async fn create(
@@ -86,7 +91,8 @@ pub async fn create(
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
     a.require_permission(codes::BUDGET_CREATE_OWN)?;
     let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.create").await?;
     let p = repository::lock_project(&mut tx, project_id).await?;
     policy::require_read_in_transaction(&mut tx, a, &p, &read_scope).await?;
     if !policy::direct(
@@ -133,7 +139,7 @@ pub async fn create(
         instance_id: None,
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO budget_requests(id,project_id,activity_id,owner_id,revision,status,document) VALUES($1,$2,$3,$4,1,'draft',$5)").bind(id).bind(project_id).bind(r.activity_id).bind(a.user_id).bind(&r.document).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("budget.src.requests.create", "INSERT INTO budget_requests(id,project_id,activity_id,owner_id,revision,status,document) VALUES($1,$2,$3,$4,1,'draft',$5)").bind(id).bind(project_id).bind(r.activity_id).bind(a.user_id).bind(&r.document).execute().await?;
     replace_lines(&mut tx, &r, &plan).await?;
     repository::store_request(&mut tx, &r).await?;
     repository::history(
@@ -155,11 +161,15 @@ pub async fn save(
     id: Uuid,
     input: SaveBudgetSpendingRequestRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let update_scope = policy::update_scope(pool, a).await?;
-    let mut tx = pool.begin().await?;
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.requests.save.preflight")
+            .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    let update_scope = policy::update_scope_on_connection(&mut preflight, a).await?;
+    drop(preflight);
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.save").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -212,11 +222,18 @@ pub async fn submit(
     id: Uuid,
     input: BudgetMutationRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let update_scope = policy::update_scope(pool, a).await?;
-    let mut tx = pool.begin().await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.requests.submit.preflight",
+    )
+    .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    let update_scope = policy::update_scope_on_connection(&mut preflight, a).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.submit").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -318,7 +335,7 @@ async fn reserve(
             r.id,
         )
         .await?;
-        sqlx::query("UPDATE budget_request_lines SET reserved=amount WHERE request_id=$1 AND plan_line_id=$2").bind(r.id).bind(l.plan_line_id).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("budget.src.requests.reserve", "UPDATE budget_request_lines SET reserved=amount WHERE request_id=$1 AND plan_line_id=$2").bind(r.id).bind(l.plan_line_id).execute().await?;
     }
     Ok(())
 }
@@ -328,10 +345,14 @@ pub async fn act(
     id: Uuid,
     input: BudgetActionRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.requests.act.preflight")
+            .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.act").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -406,15 +427,19 @@ pub async fn pay(
     input: CreateBudgetPaymentRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
     a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.requests.pay.preflight")
+            .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
     let total = allocations(&input.allocations)?;
     let voucher = text(&input.voucher_number, 150)?;
     if let Some(n) = &input.note {
         text(n, 4000)?;
     }
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.pay").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -467,7 +492,7 @@ pub async fn pay(
             payment_id,
         )
         .await?;
-        sqlx::query("UPDATE budget_request_lines SET reserved=reserved-$3,paid=paid+$3 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(n).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("budget.src.requests.pay", "UPDATE budget_request_lines SET reserved=reserved-$3,paid=paid+$3 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(n).execute().await?;
     }
     let payment = BudgetPayment {
         id: payment_id,
@@ -482,11 +507,15 @@ pub async fn pay(
         created_at: Utc::now(),
         refunds: vec![],
     };
-    sqlx::query("INSERT INTO budget_payments(id,request_id,document) VALUES($1,$2,$3)")
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.requests.pay",
+            "INSERT INTO budget_payments(id,request_id,document) VALUES($1,$2,$3)",
+        )
         .bind(payment_id)
         .bind(id)
         .bind(Json(payment))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     let ids = input
         .allocations
@@ -498,7 +527,7 @@ pub async fn pay(
         .iter()
         .map(|x| money::positive_money(&x.amount_satang))
         .collect::<Result<Vec<_>, _>>()?;
-    sqlx::query("INSERT INTO budget_payment_lines(payment_id,request_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(payment_id).bind(id).bind(ids).bind(amounts).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("budget.src.requests.pay", "INSERT INTO budget_payment_lines(payment_id,request_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(payment_id).bind(id).bind(ids).bind(amounts).execute().await?;
     r.revision += 1;
     repository::store_request(&mut tx, &r).await?;
     files::retain(&mut tx, id, r.revision, &evidence).await?;
@@ -523,12 +552,19 @@ pub async fn refund(
     input: RefundBudgetPaymentRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
     a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.requests.refund.preflight",
+    )
+    .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
     let total = allocations(&input.allocations)?;
     let reason = text(&input.reason, 4000)?;
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.refund").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -551,19 +587,25 @@ pub async fn refund(
     if !matches!(r.status.as_str(), "approved" | "closed") {
         return Err(repository::stale());
     }
-    let payment: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM budget_payments WHERE id=$1 AND request_id=$2 FOR UPDATE",
-    )
-    .bind(payment_id)
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let payment: Option<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.src.requests.refund",
+            "SELECT id FROM budget_payments WHERE id=$1 AND request_id=$2 FOR UPDATE",
+        )
+        .bind(payment_id)
+        .bind(id)
+        .fetch_optional()
+        .await?;
     if payment.is_none() {
         return Err(invalid("ไม่พบการจ่ายเงินของคำขอนี้"));
     }
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM budget_refunds WHERE payment_id=$1")
+    let count: i64 = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.src.requests.refund",
+            "SELECT count(*) FROM budget_refunds WHERE payment_id=$1",
+        )
         .bind(payment_id)
-        .fetch_one(&mut *tx)
+        .fetch_one()
         .await?;
     if count >= 100 {
         return Err(invalid("การจ่ายหนึ่งรายการคืนเงินได้ไม่เกิน 100 ครั้ง"));
@@ -577,7 +619,7 @@ pub async fn refund(
             .find(|l| l.plan_line_id == x.plan_line_id)
             .ok_or_else(|| invalid("รายการคืนเงินไม่ได้อยู่ในคำขอ"))?;
         let n = money::positive_money(&x.amount_satang)?;
-        let remaining:Option<i64>=sqlx::query_scalar("SELECT p.amount-coalesce((SELECT sum(f.amount) FROM budget_refund_lines f WHERE f.payment_id=p.payment_id AND f.plan_line_id=p.plan_line_id),0)::bigint FROM budget_payment_lines p WHERE p.payment_id=$1 AND p.plan_line_id=$2").bind(payment_id).bind(l.plan_line_id).fetch_optional(&mut *tx).await?;
+        let remaining:Option<i64>=DbSession::new(&mut *tx).scalar("budget.src.requests.refund", "SELECT p.amount-coalesce((SELECT sum(f.amount) FROM budget_refund_lines f WHERE f.payment_id=p.payment_id AND f.plan_line_id=p.plan_line_id),0)::bigint FROM budget_payment_lines p WHERE p.payment_id=$1 AND p.plan_line_id=$2").bind(payment_id).bind(l.plan_line_id).fetch_optional().await?;
         if remaining.is_none_or(|left| n > left) || n > l.paid {
             return Err(invalid("ยอดคืนเงินเกินยอดจ่ายเดิมที่ยังไม่ได้คืน"));
         }
@@ -600,7 +642,7 @@ pub async fn refund(
             refund_id,
         )
         .await?;
-        sqlx::query("UPDATE budget_request_lines SET reserved=reserved+$3,paid=paid-$4 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(restored).bind(n).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("budget.src.requests.refund", "UPDATE budget_request_lines SET reserved=reserved+$3,paid=paid-$4 WHERE request_id=$1 AND plan_line_id=$2").bind(id).bind(l.plan_line_id).bind(restored).bind(n).execute().await?;
     }
     let refund = BudgetRefund {
         id: refund_id,
@@ -613,15 +655,17 @@ pub async fn refund(
         created_by: a.user_id,
         created_at: Utc::now(),
     };
-    sqlx::query(
-        "INSERT INTO budget_refunds(id,payment_id,request_id,document) VALUES($1,$2,$3,$4)",
-    )
-    .bind(refund_id)
-    .bind(payment_id)
-    .bind(id)
-    .bind(Json(refund))
-    .execute(&mut *tx)
-    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.requests.refund",
+            "INSERT INTO budget_refunds(id,payment_id,request_id,document) VALUES($1,$2,$3,$4)",
+        )
+        .bind(refund_id)
+        .bind(payment_id)
+        .bind(id)
+        .bind(Json(refund))
+        .execute()
+        .await?;
     let ids = input
         .allocations
         .iter()
@@ -632,7 +676,7 @@ pub async fn refund(
         .iter()
         .map(|x| money::positive_money(&x.amount_satang))
         .collect::<Result<Vec<_>, _>>()?;
-    sqlx::query("INSERT INTO budget_refund_lines(refund_id,payment_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(refund_id).bind(payment_id).bind(ids).bind(amounts).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("budget.src.requests.refund", "INSERT INTO budget_refund_lines(refund_id,payment_id,plan_line_id,amount) SELECT $1,$2,* FROM unnest($3::uuid[],$4::bigint[])").bind(refund_id).bind(payment_id).bind(ids).bind(amounts).execute().await?;
     r.revision += 1;
     repository::store_request(&mut tx, &r).await?;
     files::retain(&mut tx, id, r.revision, &evidence).await?;
@@ -656,11 +700,15 @@ pub async fn close(
     input: CloseBudgetRequestRequest,
 ) -> Result<BudgetSpendingRequestDetail, AppError> {
     a.require_permission(codes::BUDGET_PAYMENT_EXECUTE_SCHOOL)?;
-    let old = repository::request(pool, id).await?;
-    queries::require_request_read(pool, a, &old).await?;
+    let mut preflight =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.requests.close.preflight")
+            .await?;
+    let old = repository::request_on_connection(&mut preflight, id).await?;
+    queries::require_request_read(&mut preflight, a, &old).await?;
     let reason = text(&input.reason, 4000)?;
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "budget.requests.close").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
     let mut r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
@@ -701,9 +749,13 @@ pub async fn close(
         )
         .await?;
     }
-    sqlx::query("UPDATE budget_request_lines SET reserved=0 WHERE request_id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.requests.close",
+            "UPDATE budget_request_lines SET reserved=0 WHERE request_id=$1",
+        )
         .bind(id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     r.status = "closed".into();
     r.revision += 1;

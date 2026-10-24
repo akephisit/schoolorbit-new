@@ -1,5 +1,6 @@
 //! Transactional audit logging for mutations that must commit with their audit record.
 
+use school_database::DbSession;
 use serde_json::Value as JsonValue;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -83,7 +84,7 @@ impl AuditLogBuilder {
         self,
         tx: &mut Transaction<'_, Postgres>,
     ) -> Result<Uuid, sqlx::Error> {
-        let id: Uuid = sqlx::query_scalar(
+        let id: Uuid = DbSession::new(&mut **tx).scalar("staff.audit.save_in_transaction",
             "INSERT INTO audit_logs (
                 user_id, user_email, user_name, action, entity_type, entity_id, entity_name,
                 old_values, new_values, changes, ip_address, user_agent, request_path, request_method,
@@ -107,7 +108,7 @@ impl AuditLogBuilder {
         .bind(&self.request_method)
         .bind(&self.description)
         .bind(&self.metadata)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
 
         Ok(id)

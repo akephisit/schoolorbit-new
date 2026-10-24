@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use sha2::{Digest, Sha256};
 
 pub async fn get_group_phase_workspace(
@@ -20,12 +21,16 @@ pub(super) async fn load_workspace(
     actor: &ActorContext,
     scope: &Scope,
 ) -> Result<GroupPhaseWorkspace, AppError> {
-    let items:Vec<ScoreItem>=sqlx::query_as("SELECT id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2 ORDER BY display_order,id LIMIT 1001").bind(scope.group_id).bind(scope.phase_id).fetch_all(&mut **tx).await?;
-    let students: Vec<GradebookStudent> = sqlx::query_as(crate::student_roster::STUDENT_ROSTER_SQL)
+    let items:Vec<ScoreItem>=DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.workspace.load_workspace", "SELECT id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2 ORDER BY display_order,id LIMIT 1001").bind(scope.group_id).bind(scope.phase_id).fetch_all().await?;
+    let students: Vec<GradebookStudent> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_assessment.gradebook.services.workspace.load_workspace",
+            crate::student_roster::STUDENT_ROSTER_SQL,
+        )
         .bind(scope.group_id)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?;
-    let scores:Vec<ScoreCell>=sqlx::query_as("SELECT s.score_item_id,s.student_academic_year_id,s.score::text AS value,s.row_version FROM learning_group_student_scores s JOIN learning_group_score_items i ON i.id=s.score_item_id WHERE s.learning_group_id=$1 AND i.assessment_phase_id=$2 ORDER BY s.score_item_id,s.student_academic_year_id LIMIT 200001").bind(scope.group_id).bind(scope.phase_id).fetch_all(&mut **tx).await?;
+    let scores:Vec<ScoreCell>=DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.workspace.load_workspace", "SELECT s.score_item_id,s.student_academic_year_id,s.score::text AS value,s.row_version FROM learning_group_student_scores s JOIN learning_group_score_items i ON i.id=s.score_item_id WHERE s.learning_group_id=$1 AND i.assessment_phase_id=$2 ORDER BY s.score_item_id,s.student_academic_year_id LIMIT 200001").bind(scope.group_id).bind(scope.phase_id).fetch_all().await?;
     if items.len() > 1000 || students.len() > 2000 || scores.len() > 200000 {
         return Err(AppError::ValidationError(
             "Gradebook workspace is too large".into(),
@@ -40,7 +45,7 @@ pub(super) async fn load_workspace(
         &students,
         &scores,
     )?;
-    let confirmation:Option<PhaseConfirmation>=sqlx::query_as("SELECT id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional(&mut **tx).await?;
+    let confirmation:Option<PhaseConfirmation>=DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.workspace.load_workspace", "SELECT id,blank_score_count,source_checksum,roster_checksum,row_version,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM learning_group_phase_confirmations WHERE learning_group_id=$1 AND assessment_phase_id=$2").bind(scope.group_id).bind(scope.phase_id).fetch_optional().await?;
     let confirmation_is_current = confirmation.as_ref().is_some_and(|c| {
         !c.invalidated
             && c.source_checksum == source_checksum

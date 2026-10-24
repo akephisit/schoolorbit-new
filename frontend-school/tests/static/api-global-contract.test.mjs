@@ -652,7 +652,9 @@ test('permission contract developer workflow is complete and non-deploying', asy
 	assert.match(runner, /scripts\/tests\/generate-permissions\.test\.mjs/);
 	assert.match(runner, /'fmt', '--all', '--', '--check'/);
 	assert.match(runner, /'check', '--workspace', '--all-targets'/);
-	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	for (const target of ['database_execution_architecture', 'static_architecture']) {
+		assert.match(runner, new RegExp(`run\\('cargo',\\s*\\['test',[^\\]]*'--test',\\s*'${target}'`));
+	}
 	assert.match(runner, /test:static/);
 	assert.match(policy, /'contracts', 'backend-school', 'frontend-school'/);
 	assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
@@ -1938,7 +1940,7 @@ test('web push notifications favor fresh visible Android notifications', async (
 
 	assert.match(
 		backendNotificationService,
-		/serde_json::to_vec\(&PushPayload\s*\{\s*id:\s*notification_id,/
+		/serde_json::to_vec\(&PushPayload\s*\{\s*id:\s*notification\.id,/
 	);
 	assert.match(
 		backendNotificationService,

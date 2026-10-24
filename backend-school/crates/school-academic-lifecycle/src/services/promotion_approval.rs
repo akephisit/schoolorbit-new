@@ -6,6 +6,7 @@ use super::{
 use school_academic_core::services::{lifecycle_guard, promotion_students, promotion_targets};
 use school_academic_results as results;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::types::Json;
@@ -41,7 +42,11 @@ pub async fn approve_run(
         ));
     }
     let request_checksum = super::checksum(&(actor.user_id, run_id, "approve", &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_approval.approve_run",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(outcome) = super::promotion_runs::replay_command(
         &mut tx,
@@ -54,25 +59,33 @@ pub async fn approve_run(
         tx.commit().await?;
         return Ok(outcome);
     }
-    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    )))
-    .bind(run_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
+    let run: PromotionRun = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_approval.approve_run",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
+            )),
+        )
+        .bind(run_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     if run.row_version != input.row_version || run.status != PromotionRunStatus::Reviewed {
         return Err(AppError::Conflict(
             "รอบนี้ยังตรวจไม่ครบหรือมีการเปลี่ยนแปลง กรุณาตรวจข้อมูลล่าสุดก่อนอนุมัติ".into(),
         ));
     }
     promotion_students::validate_run_years(&mut tx, run.source_year_id, run.target_year_id).await?;
-    sqlx::query("SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_approval.approve_run",
+            "SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE",
+        )
         .bind(run_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    let items:Vec<PromotionRunItem>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001 FOR UPDATE")))
-        .bind(run_id).fetch_all(&mut *tx).await?;
+    let items:Vec<PromotionRunItem>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_approval.approve_run", sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001 FOR UPDATE")))
+        .bind(run_id).fetch_all().await?;
     if items.is_empty()
         || items.len() > 10000
         || items.iter().any(|item| {
@@ -159,19 +172,19 @@ pub async fn approve_run(
         .checked_add(1)
         .ok_or_else(|| AppError::Conflict("รุ่นข้อมูลเกินขอบเขต".into()))?;
     let intent = PromotionRunCalculation { run, items };
-    sqlx::query("INSERT INTO academic_promotion_run_approvals(id,run_id,approved_run_version,source_checksum,intent,approved_by) VALUES($1,$2,$3,$4,$5,$6)")
-        .bind(input.request_id).bind(run_id).bind(next_version).bind(&input.source_checksum).bind(Json(&intent)).bind(actor.user_id).execute(&mut *tx).await?;
-    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='approved',row_version=$1,approved_by=$2,approved_at=now(),approval_id=$3,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
-        .bind(next_version).bind(actor.user_id).bind(input.request_id).bind(run_id).fetch_one(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_approval.approve_run", "INSERT INTO academic_promotion_run_approvals(id,run_id,approved_run_version,source_checksum,intent,approved_by) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(input.request_id).bind(run_id).bind(next_version).bind(&input.source_checksum).bind(Json(&intent)).bind(actor.user_id).execute().await?;
+    let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_approval.approve_run", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='approved',row_version=$1,approved_by=$2,approved_at=now(),approval_id=$3,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
+        .bind(next_version).bind(actor.user_id).bind(input.request_id).bind(run_id).fetch_one().await?;
     let audit = ApprovalAudit {
         approval_id: input.request_id,
         row_version: next_version,
         item_count: intent.items.len(),
     };
-    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES('promotion_run.approved','promotion_run',$1,$2,$3)")
-        .bind(run_id).bind(actor.user_id).bind(Json(audit)).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO academic_promotion_run_commands(request_id,run_id,actor_user_id,action,request_checksum,outcome) VALUES($1,$2,$3,'approve',$4,$5)")
-        .bind(input.request_id).bind(run_id).bind(actor.user_id).bind(request_checksum).bind(Json(&run)).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_approval.approve_run", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES('promotion_run.approved','promotion_run',$1,$2,$3)")
+        .bind(run_id).bind(actor.user_id).bind(Json(audit)).execute().await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_approval.approve_run", "INSERT INTO academic_promotion_run_commands(request_id,run_id,actor_user_id,action,request_checksum,outcome) VALUES($1,$2,$3,'approve',$4,$5)")
+        .bind(input.request_id).bind(run_id).bind(actor.user_id).bind(request_checksum).bind(Json(&run)).execute().await?;
     tx.commit().await?;
     Ok(run)
 }

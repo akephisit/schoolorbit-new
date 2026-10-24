@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	let pendingImage: PendingUpload | undefined;
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { browser } from '$app/env';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -80,6 +82,8 @@
 		untrack(() => {
 			if (context !== activeDraftContext) {
 				activeDraftContext = context;
+				pendingImage?.dispose();
+				pendingImage = undefined;
 				draftEpoch++;
 				fileEpoch++;
 			}
@@ -87,6 +91,7 @@
 	});
 	onDestroy(() => {
 		disposed = true;
+		pendingImage?.dispose();
 		draftEpoch++;
 		fileEpoch++;
 		staffRequest.abort();
@@ -240,6 +245,8 @@
 		fileEpoch++;
 		if (imagePreview) URL.revokeObjectURL(imagePreview);
 		imageFile = null;
+		pendingImage?.dispose();
+		pendingImage = undefined;
 		imagePreview = null;
 		currentImageFileId = null;
 	}
@@ -301,8 +308,22 @@
 
 			// Upload image if selected
 			if (selectedImage) {
-				const uploadData = await uploadFile(selectedImage, 'achievement_image', payload.user_id);
-				imageFileId = uploadData.id;
+				if (
+					pendingImage?.file !== selectedImage ||
+					pendingImage.scope.resourceId !== payload.user_id
+				) {
+					pendingImage?.dispose();
+					pendingImage = new PendingUpload(
+						selectedImage,
+						{
+							purpose: 'achievement_image',
+							resourceId: payload.user_id,
+							owner: payload.user_id ?? userId
+						},
+						uploadFile
+					);
+				}
+				imageFileId = await pendingImage.commit();
 			}
 
 			if (!current()) return;

@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -165,9 +166,17 @@ pub async fn preview(
         &input.modules,
         &input.mappings,
     )?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.term_preparation.preview",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_preparation.preview",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
     let state = build_workspace(&mut tx, &normalized).await?;
@@ -180,8 +189,10 @@ async fn load_context(
     source_term_id: Uuid,
     target_term_id: Uuid,
 ) -> Result<ContextRow, AppError> {
-    let context: ContextRow = sqlx::query_as(
-        r#"SELECT source.id AS source_term_id,
+    let context: ContextRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.term_preparation.load_context",
+            r#"SELECT source.id AS source_term_id,
                   source.academic_year_id AS source_year_id,
                   source_year.name || ' · ' || source.name AS source_label,
                   source.status::text AS source_status,
@@ -200,12 +211,12 @@ async fn load_context(
            CROSS JOIN academic_terms target
            JOIN academic_years target_year ON target_year.id=target.academic_year_id
            WHERE source.id=$1 AND target.id=$2"#,
-    )
-    .bind(source_term_id)
-    .bind(target_term_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนต้นทางหรือภาคเรียนเป้าหมาย".into()))?;
+        )
+        .bind(source_term_id)
+        .bind(target_term_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนต้นทางหรือภาคเรียนเป้าหมาย".into()))?;
     if context.source_status != "closed" {
         return Err(AppError::Conflict(
             "เตรียมภาคเรียนถัดไปได้เมื่อภาคเรียนต้นทางปิดแล้ว".into(),
@@ -234,9 +245,10 @@ async fn count(
     sql: &'static str,
     term_id: Uuid,
 ) -> Result<usize, AppError> {
-    let value: i64 = sqlx::query_scalar(sql)
+    let value: i64 = DbSession::new(&mut **tx)
+        .scalar("academic_lifecycle.services.term_preparation.count", sql)
         .bind(term_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
     Ok(value as usize)
 }
@@ -246,9 +258,13 @@ async fn json_rows(
     sql: &'static str,
     term_id: Uuid,
 ) -> Result<Vec<String>, AppError> {
-    let rows: Vec<String> = sqlx::query_scalar(sql)
+    let rows: Vec<String> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.term_preparation.json_rows",
+            sql,
+        )
         .bind(term_id)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?;
     Ok(rows)
 }
@@ -291,8 +307,8 @@ async fn module_source_fingerprint(
                 )
                 .await?,
             ));
-            let source_id: Option<Uuid>=sqlx::query_scalar("SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
-                .bind(term_id).fetch_optional(&mut **tx).await?;
+            let source_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.module_source_fingerprint", "SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+                .bind(term_id).fetch_optional().await?;
             let target_source=school_academic_delivery::services::versions::latest_published_source(tx,term_id).await?;
             let mut source_checks=Vec::new();
             if let Some(id)=source_id {source_checks.push(school_academic_delivery::services::versions::published_source_evidence(tx,id,term_id).await?);}
@@ -389,6 +405,7 @@ async fn build_workspace(
                             format!("เตรียม {} รายการจากหลักสูตรเป้าหมาย", drafts),
                         )
                     }
+                    Err(error @ AppError::DbError(_)) => return Err(error),
                     Err(error) => {
                         findings.push(blocking("delivery.target_curriculum", error.to_string()));
                         (source, target, 0, "ยังเตรียมจากหลักสูตรเป้าหมายไม่ได้".into())
@@ -545,9 +562,12 @@ async fn build_workspace(
             .iter()
             .any(|module| *module != TermPreparationModule::Delivery)
     {
-        delivery_preview = offerings::preview_term_preparation(tx, context.target_term_id)
-            .await
-            .ok();
+        delivery_preview =
+            match offerings::preview_term_preparation(tx, context.target_term_id).await {
+                Ok(preview) => Some(preview),
+                Err(error @ AppError::DbError(_)) => return Err(error),
+                Err(_) => None,
+            };
     }
     let prospective =
         prospective_delivery_options(context.target_term_id, delivery_preview.as_ref());
@@ -831,11 +851,14 @@ async fn mapping_dependency_findings(
         let Some(target_group_id) = requirement.selected_target_id else {
             continue;
         };
-        let source_offering_id: Uuid =
-            sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id=$1")
-                .bind(requirement.source_id)
-                .fetch_one(&mut **tx)
-                .await?;
+        let source_offering_id: Uuid = DbSession::new(&mut **tx)
+            .scalar(
+                "academic_lifecycle.services.term_preparation.mapping_dependency_findings",
+                "SELECT learning_offering_id FROM learning_groups WHERE id=$1",
+            )
+            .bind(requirement.source_id)
+            .fetch_one()
+            .await?;
         let Some(target_offering_id) = selected
             .get(&(
                 TermPreparationMappingKind::LearningOffering,
@@ -850,12 +873,12 @@ async fn mapping_dependency_findings(
         {
             Some(*offering_id)
         } else {
-            sqlx::query_scalar(
+            DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.mapping_dependency_findings",
                 "SELECT learning_offering_id FROM learning_groups WHERE id=$1 AND academic_term_id=$2",
             )
             .bind(target_group_id)
             .bind(context.target_term_id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional()
             .await?
         };
         if target_group_offering_id != Some(target_offering_id) {
@@ -874,16 +897,18 @@ async fn mapping_dependency_findings(
             .modules
             .contains(&TermPreparationModule::Assessments)
     {
-        let source_phases: Vec<(Uuid, String)> = sqlx::query_as(
-            r#"SELECT DISTINCT item.learning_offering_id,phase.phase_code
+        let source_phases: Vec<(Uuid, String)> = DbSession::new(&mut **tx)
+            .query_as(
+                "academic_lifecycle.services.term_preparation.mapping_dependency_findings",
+                r#"SELECT DISTINCT item.learning_offering_id,phase.phase_code
                FROM academic_exam_schedule_items item
                JOIN course_assessment_phases phase ON phase.id=item.assessment_phase_id
                WHERE item.academic_term_id=$1
                ORDER BY item.learning_offering_id,phase.phase_code"#,
-        )
-        .bind(context.source_term_id)
-        .fetch_all(&mut **tx)
-        .await?;
+            )
+            .bind(context.source_term_id)
+            .fetch_all()
+            .await?;
         for (source_offering_id, phase_code) in source_phases {
             let Some(target_offering_id) = selected
                 .get(&(
@@ -894,8 +919,10 @@ async fn mapping_dependency_findings(
             else {
                 continue;
             };
-            let exists: bool = sqlx::query_scalar(
-                r#"SELECT EXISTS(
+            let exists: bool = DbSession::new(&mut **tx)
+                .scalar(
+                    "academic_lifecycle.services.term_preparation.mapping_dependency_findings",
+                    r#"SELECT EXISTS(
                        SELECT 1
                        FROM course_assessment_plans plan
                        JOIN course_assessment_phases phase ON phase.plan_id=plan.id
@@ -903,12 +930,12 @@ async fn mapping_dependency_findings(
                          AND plan.learning_offering_id=$2
                          AND phase.phase_code=$3
                    )"#,
-            )
-            .bind(context.target_term_id)
-            .bind(target_offering_id)
-            .bind(&phase_code)
-            .fetch_one(&mut **tx)
-            .await?;
+                )
+                .bind(context.target_term_id)
+                .bind(target_offering_id)
+                .bind(&phase_code)
+                .fetch_one()
+                .await?;
             if !exists {
                 findings.push(blocking(
                     format!("exams.assessment_phase.{source_offering_id}.{phase_code}"),
@@ -930,7 +957,7 @@ async fn module_mapping_seeds(
     match module {
         TermPreparationModule::Delivery => {}
         TermPreparationModule::Assessments => {
-            result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(
+            result.push((TermPreparationMappingKind::LearningOffering, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.module_mapping_seeds",
                 r#"SELECT source.id AS source_id,
                           source.code_snapshot || ' · ' || source.name_snapshot AS source_label,
                           (SELECT target.id FROM learning_offerings target
@@ -941,15 +968,15 @@ async fn module_mapping_seeds(
                    JOIN learning_offerings source ON source.id=plan.learning_offering_id
                    JOIN course_offering_details source_detail ON source_detail.learning_offering_id=source.id
                    WHERE plan.academic_term_id=$1 ORDER BY source.id"#,
-            ).bind(context.source_term_id).bind(context.target_term_id).fetch_all(&mut **tx).await?));
-            result.push((TermPreparationMappingKind::Teacher, sqlx::query_as(
+            ).bind(context.source_term_id).bind(context.target_term_id).fetch_all().await?));
+            result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.module_mapping_seeds",
                 r#"SELECT DISTINCT coordinator.id AS source_id,
                           coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(coordinator.title,''),coordinator.first_name),''), nullif(coordinator.last_name,'')),''), coordinator.username) AS source_label,
                           CASE WHEN coordinator.status='active' THEN coordinator.id END AS suggested_target_id
                    FROM course_assessment_plans plan
                    JOIN users coordinator ON coordinator.id=plan.assessment_coordinator_id
                    WHERE plan.academic_term_id=$1 ORDER BY source_id"#,
-            ).bind(context.source_term_id).fetch_all(&mut **tx).await?));
+            ).bind(context.source_term_id).fetch_all().await?));
         }
         TermPreparationModule::Timetable => {
             add_timetable_mapping_seeds(tx, context, &mut result).await?;
@@ -958,7 +985,7 @@ async fn module_mapping_seeds(
             add_exam_mapping_seeds(tx, context, &mut result).await?;
         }
         TermPreparationModule::Supervision => {
-            result.push((TermPreparationMappingKind::Teacher, sqlx::query_as(
+            result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.module_mapping_seeds",
                 r#"SELECT DISTINCT staff.id AS source_id,
                           coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(staff.title,''),staff.first_name),''), nullif(staff.last_name,'')),''), staff.username) AS source_label,
                           CASE WHEN staff.status='active' THEN staff.id END AS suggested_target_id
@@ -966,7 +993,7 @@ async fn module_mapping_seeds(
                    JOIN supervision_cycle_targets target ON target.cycle_id=cycle.id AND target.target_type='staff'
                    JOIN users staff ON staff.id=target.target_id
                    WHERE cycle.academic_term_id=$1 ORDER BY source_id"#,
-            ).bind(context.source_term_id).fetch_all(&mut **tx).await?));
+            ).bind(context.source_term_id).fetch_all().await?));
         }
     }
     Ok(result)
@@ -977,8 +1004,8 @@ async fn add_timetable_mapping_seeds(
     context: &ContextRow,
     result: &mut Vec<(TermPreparationMappingKind, Vec<MappingSeed>)>,
 ) -> Result<(), AppError> {
-    let source_delivery_id: Option<Uuid>=sqlx::query_scalar("SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
-        .bind(context.source_term_id).fetch_optional(&mut **tx).await?;
+    let source_delivery_id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", "SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(context.source_term_id).fetch_optional().await?;
     let offering_ids = match source_delivery_id {
         Some(id) => school_academic_delivery::services::versions::published_source(
             tx,
@@ -994,7 +1021,7 @@ async fn add_timetable_mapping_seeds(
         None => Vec::new(),
     };
     let source_cte = "WITH source_version AS (SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) ";
-    result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::LearningOffering, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
                   (SELECT target.id FROM learning_offerings target
                    LEFT JOIN course_offering_details td ON td.learning_offering_id=target.id
@@ -1005,15 +1032,15 @@ async fn add_timetable_mapping_seeds(
                    ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM source_version JOIN learning_offerings offering ON offering.id=ANY($3)
            ORDER BY source_id"#))
-        .bind(context.source_term_id).bind(context.target_term_id).bind(&offering_ids).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::LearningGroup, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+        .bind(context.source_term_id).bind(context.target_term_id).bind(&offering_ids).fetch_all().await?));
+    result.push((TermPreparationMappingKind::LearningGroup, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT learning_group.id AS source_id, learning_group.name AS source_label, NULL::uuid AS suggested_target_id
            FROM source_version JOIN academic_timetable_block_groups block_group ON true
            JOIN academic_timetable_blocks block ON block.id=block_group.block_id AND block.timetable_version_id=source_version.id
            JOIN learning_groups learning_group ON learning_group.id=block_group.learning_group_id
            WHERE block_group.is_active ORDER BY source_id"#))
-        .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Teacher, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+        .bind(context.source_term_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT teacher.id AS source_id,
                   coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(teacher.title,''),teacher.first_name),''), nullif(teacher.last_name,'')),''), teacher.username) AS source_label,
                   CASE WHEN teacher.status='active' THEN teacher.id END AS suggested_target_id
@@ -1026,16 +1053,16 @@ async fn add_timetable_mapping_seeds(
                JOIN academic_timetable_block_teachers target ON target.block_id=block.id WHERE target.is_active
            ) used ON used.timetable_version_id=source_version.id
            JOIN users teacher ON teacher.id=used.teacher_id ORDER BY source_id"#))
-        .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Room, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+        .bind(context.source_term_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::Room, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT room.id AS source_id, room.name_th AS source_label,
                   CASE WHEN room.status='ACTIVE' THEN room.id END AS suggested_target_id
            FROM source_version JOIN (
                SELECT block.timetable_version_id,bg.room_id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups bg ON bg.block_id=block.id WHERE bg.room_id IS NOT NULL AND bg.is_active
                UNION ALL SELECT block.timetable_version_id,bh.room_id FROM academic_timetable_blocks block JOIN academic_timetable_block_homerooms bh ON bh.block_id=block.id WHERE bh.room_id IS NOT NULL AND bh.is_active
            ) used ON used.timetable_version_id=source_version.id JOIN rooms room ON room.id=used.room_id ORDER BY source_id"#))
-        .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Homeroom, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+        .bind(context.source_term_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::Homeroom, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT homeroom.id AS source_id, homeroom.name AS source_label,
                   (SELECT target.id FROM homerooms target WHERE target.academic_year_id=$2 AND target.is_active AND target.name=homeroom.name AND target.grade_level_id=homeroom.grade_level_id ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM source_version JOIN academic_timetable_blocks block ON block.timetable_version_id=source_version.id
@@ -1044,15 +1071,15 @@ async fn add_timetable_mapping_seeds(
                UNION SELECT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=block.id AND is_active
            ) coverage ON true
            JOIN homerooms homeroom ON homeroom.id=coverage.homeroom_id ORDER BY source_id"#))
-        .bind(context.source_term_id).bind(context.target_year_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::BellPeriod, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
+        .bind(context.source_term_id).bind(context.target_year_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::BellPeriod, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT period.id AS source_id,
                   period.order_index::text || ' · ' || coalesce(period.name, to_char(period.start_time,'HH24:MI')) AS source_label,
                   (SELECT target_period.id FROM academic_terms target_term JOIN bell_schedule_periods target_period ON target_period.bell_schedule_id=target_term.bell_schedule_id
                    WHERE target_term.id=$2 AND target_period.is_active AND target_period.order_index=period.order_index ORDER BY target_period.id LIMIT 1) AS suggested_target_id
            FROM source_version JOIN academic_timetable_blocks block ON block.timetable_version_id=source_version.id
            JOIN bell_schedule_periods period ON period.id=block.bell_schedule_period_id WHERE block.is_active ORDER BY source_id"#))
-        .bind(context.source_term_id).bind(context.target_term_id).fetch_all(&mut **tx).await?));
+        .bind(context.source_term_id).bind(context.target_term_id).fetch_all().await?));
     Ok(())
 }
 
@@ -1061,7 +1088,7 @@ async fn add_exam_mapping_seeds(
     context: &ContextRow,
     result: &mut Vec<(TermPreparationMappingKind, Vec<MappingSeed>)>,
 ) -> Result<(), AppError> {
-    result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(
+    result.push((TermPreparationMappingKind::LearningOffering, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_exam_mapping_seeds",
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
                   (SELECT target.id FROM learning_offerings target
                    JOIN course_offering_details td ON td.learning_offering_id=target.id
@@ -1069,13 +1096,13 @@ async fn add_exam_mapping_seeds(
                    WHERE target.academic_term_id=$2 AND td.subject_id=sd.subject_id ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM academic_exam_schedule_items item JOIN learning_offerings offering ON offering.id=item.learning_offering_id
            WHERE item.academic_term_id=$1 ORDER BY source_id"#,
-    ).bind(context.source_term_id).bind(context.target_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::LearningGroup, sqlx::query_as(
+    ).bind(context.source_term_id).bind(context.target_term_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::LearningGroup, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_exam_mapping_seeds",
         r#"SELECT DISTINCT learning_group.id AS source_id, learning_group.name AS source_label, NULL::uuid AS suggested_target_id
            FROM academic_exam_schedule_items item JOIN learning_groups learning_group ON learning_group.id=item.learning_group_id
            WHERE item.academic_term_id=$1 ORDER BY source_id"#,
-    ).bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Homeroom, sqlx::query_as(
+    ).bind(context.source_term_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::Homeroom, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_exam_mapping_seeds",
         r#"SELECT DISTINCT homeroom.id AS source_id, homeroom.name AS source_label,
                   (SELECT target.id FROM homerooms target WHERE target.academic_year_id=$2 AND target.is_active AND target.name=homeroom.name AND target.grade_level_id=homeroom.grade_level_id ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM (
@@ -1089,14 +1116,14 @@ async fn add_exam_mapping_seeds(
            ) used
            JOIN homerooms homeroom ON homeroom.id=used.homeroom_id
            ORDER BY source_id"#,
-    ).bind(context.source_term_id).bind(context.target_year_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Room, sqlx::query_as(
+    ).bind(context.source_term_id).bind(context.target_year_id).fetch_all().await?));
+    result.push((TermPreparationMappingKind::Room, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_exam_mapping_seeds",
         r#"SELECT DISTINCT room.id AS source_id, room.name_th AS source_label,
                   CASE WHEN room.status='ACTIVE' THEN room.id END AS suggested_target_id
            FROM academic_exam_day_room_assignments assignment
            JOIN academic_exam_days day ON day.id=assignment.exam_day_id JOIN rooms room ON room.id=assignment.room_id
            WHERE day.academic_term_id=$1 ORDER BY source_id"#,
-    ).bind(context.source_term_id).fetch_all(&mut **tx).await?));
+    ).bind(context.source_term_id).fetch_all().await?));
     Ok(())
 }
 
@@ -1106,27 +1133,27 @@ async fn load_target_options(
     kind: TermPreparationMappingKind,
 ) -> Result<Vec<TermPreparationMappingOption>, AppError> {
     let rows: Vec<(Uuid, String)> = match kind {
-        TermPreparationMappingKind::LearningOffering => sqlx::query_as(
+        TermPreparationMappingKind::LearningOffering => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             "SELECT id,code_snapshot || ' · ' || name_snapshot FROM learning_offerings WHERE academic_term_id=$1 AND status <> 'closed' ORDER BY 2,id LIMIT 500",
-        ).bind(context.target_term_id).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::LearningGroup => sqlx::query_as(
+        ).bind(context.target_term_id).fetch_all().await?,
+        TermPreparationMappingKind::LearningGroup => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             "SELECT id,name FROM learning_groups WHERE academic_term_id=$1 AND status <> 'closed' ORDER BY name,id LIMIT 2000",
-        ).bind(context.target_term_id).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::Teacher => sqlx::query_as(
+        ).bind(context.target_term_id).fetch_all().await?,
+        TermPreparationMappingKind::Teacher => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             r#"SELECT id,coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(title,''),first_name),''), nullif(last_name,'')),''),username) FROM users WHERE status='active' ORDER BY 2,id LIMIT 2000"#,
-        ).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::Homeroom => sqlx::query_as(
+        ).fetch_all().await?,
+        TermPreparationMappingKind::Homeroom => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             "SELECT id,name FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY name,id LIMIT 500",
-        ).bind(context.target_year_id).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::Room => sqlx::query_as(
+        ).bind(context.target_year_id).fetch_all().await?,
+        TermPreparationMappingKind::Room => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             "SELECT id,name_th FROM rooms WHERE status='ACTIVE' ORDER BY 2,id LIMIT 2000",
-        ).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::BellPeriod => sqlx::query_as(
+        ).fetch_all().await?,
+        TermPreparationMappingKind::BellPeriod => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             r#"SELECT period.id,period.order_index::text || ' · ' || coalesce(period.name,to_char(period.start_time,'HH24:MI')) FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id WHERE term.id=$1 AND period.is_active ORDER BY period.order_index,period.id"#,
-        ).bind(context.target_term_id).fetch_all(&mut **tx).await?,
-        TermPreparationMappingKind::AssessmentPlan => sqlx::query_as(
+        ).bind(context.target_term_id).fetch_all().await?,
+        TermPreparationMappingKind::AssessmentPlan => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             r#"SELECT plan.id,offering.code_snapshot || ' · ' || offering.name_snapshot FROM course_assessment_plans plan JOIN learning_offerings offering ON offering.id=plan.learning_offering_id WHERE plan.academic_term_id=$1 ORDER BY 2,plan.id"#,
-        ).bind(context.target_term_id).fetch_all(&mut **tx).await?,
+        ).bind(context.target_term_id).fetch_all().await?,
     };
     Ok(rows
         .into_iter()
@@ -1141,9 +1168,9 @@ async fn date_requirements(
 ) -> Result<(Vec<TermPreparationDateRequirement>, Vec<LifecycleFinding>), AppError> {
     let mut seeds: BTreeMap<NaiveDate, (String, BTreeSet<TermPreparationModule>)> = BTreeMap::new();
     if normalized.modules.contains(&TermPreparationModule::Exams) {
-        let rows: Vec<DateSeed> = sqlx::query_as(
+        let rows: Vec<DateSeed> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.date_requirements",
             "SELECT DISTINCT exam_date AS source_date, 'วันสอบ ' || to_char(exam_date,'DD/MM/YYYY') AS source_label FROM academic_exam_days WHERE academic_term_id=$1 ORDER BY source_date",
-        ).bind(context.source_term_id).fetch_all(&mut **tx).await?;
+        ).bind(context.source_term_id).fetch_all().await?;
         for row in rows {
             seeds
                 .entry(row.source_date)
@@ -1156,14 +1183,14 @@ async fn date_requirements(
         .modules
         .contains(&TermPreparationModule::Supervision)
     {
-        let rows: Vec<DateSeed> = sqlx::query_as(
+        let rows: Vec<DateSeed> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.date_requirements",
             r#"SELECT DISTINCT source_date,'รอบนิเทศ ' || to_char(source_date,'DD/MM/YYYY') AS source_label FROM (
                    SELECT starts_at::date AS source_date FROM supervision_cycles WHERE academic_term_id=$1
                    UNION SELECT ends_at::date FROM supervision_cycles WHERE academic_term_id=$1
                    UNION SELECT booking_opens_at::date FROM supervision_cycles WHERE academic_term_id=$1 AND booking_opens_at IS NOT NULL
                    UNION SELECT booking_closes_at::date FROM supervision_cycles WHERE academic_term_id=$1 AND booking_closes_at IS NOT NULL
                ) dates ORDER BY source_date"#,
-        ).bind(context.source_term_id).fetch_all(&mut **tx).await?;
+        ).bind(context.source_term_id).fetch_all().await?;
         for row in rows {
             seeds
                 .entry(row.source_date)
@@ -1235,9 +1262,17 @@ pub async fn apply(
         &normalized,
         &input.source_checksum,
     ))?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.term_preparation.apply",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_preparation.apply",
+            "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+        )
+        .execute()
         .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(replay) =
@@ -1313,33 +1348,35 @@ pub async fn apply(
         outcomes.push(outcome);
     }
     let run_id = Uuid::now_v7();
-    let created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
-        r#"INSERT INTO academic_term_preparation_runs(
+    let created_at: chrono::DateTime<chrono::Utc> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_lifecycle.services.term_preparation.apply",
+            r#"INSERT INTO academic_term_preparation_runs(
                id,request_id,source_academic_term_id,source_academic_year_id,
                target_academic_term_id,target_academic_year_id,selected_modules,mappings,
                source_checksum,request_checksum,outcome,actor_user_id
            ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING created_at"#,
-    )
-    .bind(run_id)
-    .bind(input.request_id)
-    .bind(state.workspace.context.source_term_id)
-    .bind(state.workspace.context.source_year_id)
-    .bind(state.workspace.context.target_term_id)
-    .bind(state.workspace.context.target_year_id)
-    .bind(
-        normalized
-            .modules
-            .iter()
-            .map(|module| module.as_str())
-            .collect::<Vec<_>>(),
-    )
-    .bind(sqlx::types::Json(&normalized.mappings))
-    .bind(&input.source_checksum)
-    .bind(&request_checksum)
-    .bind(sqlx::types::Json(&outcomes))
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(run_id)
+        .bind(input.request_id)
+        .bind(state.workspace.context.source_term_id)
+        .bind(state.workspace.context.source_year_id)
+        .bind(state.workspace.context.target_term_id)
+        .bind(state.workspace.context.target_year_id)
+        .bind(
+            normalized
+                .modules
+                .iter()
+                .map(|module| module.as_str())
+                .collect::<Vec<_>>(),
+        )
+        .bind(sqlx::types::Json(&normalized.mappings))
+        .bind(&input.source_checksum)
+        .bind(&request_checksum)
+        .bind(sqlx::types::Json(&outcomes))
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     let result = TermPreparationOutcome {
         run_id,
         request_id: input.request_id,
@@ -1369,9 +1406,9 @@ async fn replay(
     actor_id: Uuid,
     request_checksum: &str,
 ) -> Result<Option<TermPreparationOutcome>, AppError> {
-    let row: Option<(Uuid, Uuid, Uuid, Uuid, Uuid, String, sqlx::types::Json<Vec<TermPreparationModuleOutcome>>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+    let row: Option<(Uuid, Uuid, Uuid, Uuid, Uuid, String, sqlx::types::Json<Vec<TermPreparationModuleOutcome>>, chrono::DateTime<chrono::Utc>)> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.replay",
         "SELECT id,request_id,source_academic_term_id,target_academic_term_id,actor_user_id,request_checksum,outcome,created_at FROM academic_term_preparation_runs WHERE request_id=$1",
-    ).bind(request_id).fetch_optional(&mut **tx).await?;
+    ).bind(request_id).fetch_optional().await?;
     let Some((
         run_id,
         request_id,

@@ -24,21 +24,17 @@ done
 ./scripts/test_backend_school.sh curriculum_revision_schema_tests -- --test-threads=1
 ./scripts/test_backend_school.sh --package school-navigation -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::school::public_tests -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::core::services_tests -- --test-threads=4
-./scripts/test_backend_school.sh activation_context_tests -- --test-threads=4
-./scripts/test_backend_school.sh promotion_targets::tests -- --test-threads=4
-./scripts/test_backend_school.sh opening_readiness_tests -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::lifecycle::services::transition_tests -- --test-threads=4
-./scripts/test_backend_school.sh promotion_execution_tests -- --test-threads=4
-./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
-./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::core::services -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::lifecycle -- --test-threads=4
+# Delivery lock-wait probes observe the whole database, so keep cases serial.
+./scripts/test_backend_school.sh integration_tests::academic::delivery -- --test-threads=1
 ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-certificates purge_rejects_admission_logo_and_question_bank_file_consumers -- --test-threads=1
 BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_seed_is_idempotent_across_student_year_and_placement -- --test-threads=1
 
 # Security boundaries remain in the same compiled target and owned server.
 ./scripts/test_backend_school.sh --package school-auth --lib -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --test-threads=4
 # WebSocket security tests now run in the school-academic-http unit owner.
@@ -61,10 +57,30 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 ./scripts/test_backend_school.sh --package school-authorization --lib -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-tenancy --lib -- --test-threads=4
 
+# Actual bound-session, managed admission and policy regressions require the owned server.
+./scripts/test_backend_school.sh integration_tests::database -- --test-threads=4
+./scripts/test_backend_school.sh --integration file_storage_namespace -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::notification_dispatch -- --test-threads=4
+./scripts/test_backend_school.sh services::cleaner::phase_tests -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::policies -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::services -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::gradebook -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::learner_evaluation -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::results -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::certificates -- --test-threads=4
+
 # Domain transport moves retain every affected provider and cross-domain boundary fixture.
-for package in school-test-db school-academic-core school-file-platform school-students school-staff school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-administration school-files-http; do
-    ./scripts/test_backend_school.sh --package "$package" -- --test-threads=4
+for package in school-test-db school-academic-core school-academic-delivery school-academic-timetable school-academic-assessment school-academic-results school-academic-lifecycle school-budget school-student-care school-certificates school-file-platform school-students school-staff school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-administration school-files-http; do
+    if [[ "$package" == school-student-care ]]; then
+        ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh --package "$package" -- --test-threads=4
+    else
+        ./scripts/test_backend_school.sh --package "$package" -- --test-threads=4
+    fi
 done
 for domain in students staff calendar supervision admission question_bank; do
-    ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    if [[ "$domain" == admission ]]; then
+        ENCRYPTION_KEY=$(openssl rand -hex 32) BLIND_INDEX_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    else
+        ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    fi
 done

@@ -4659,8 +4659,9 @@ async fn migration_060_subject_group_projections_support_timetable_load() {
     assert_eq!(courses[0].subject_group_id, group);
     assert_eq!(courses[0].name, "Fixture Math");
     assert_eq!(courses[0].display_order, Some(3));
+    let mut directory_connection = pool.acquire().await.unwrap();
     let teachers = STAFF_DIRECTORY
-        .subject_groups_for_users(&pool, &[teacher])
+        .subject_groups_for_users(&mut directory_connection, &[teacher])
         .await
         .unwrap();
     assert_eq!(teachers.len(), 1);
@@ -4669,15 +4670,16 @@ async fn migration_060_subject_group_projections_support_timetable_load() {
     assert_eq!(teachers[0].name, "Fixture Math");
     assert_eq!(teachers[0].display_order, Some(3));
     assert!(STAFF_DIRECTORY
-        .subject_groups_for_users(&pool, &[Uuid::new_v4()])
+        .subject_groups_for_users(&mut directory_connection, &[Uuid::new_v4()])
         .await
         .unwrap()
         .is_empty());
     assert!(STAFF_DIRECTORY
-        .subject_groups_for_users(&pool, &[])
+        .subject_groups_for_users(&mut directory_connection, &[])
         .await
         .unwrap()
         .is_empty());
+    drop(directory_connection);
     assert!(
         school_academic_core::services::catalog::subject_groups_for_versions(&pool, &[])
             .await

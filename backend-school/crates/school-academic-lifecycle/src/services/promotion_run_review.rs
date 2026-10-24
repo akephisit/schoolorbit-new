@@ -6,6 +6,7 @@ use super::{
 use school_academic_core::services::{lifecycle_guard, promotion_students, promotion_targets};
 use school_academic_results as results;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
@@ -27,15 +28,23 @@ pub async fn review_item(
             "รอบ รายการ หรือรุ่นข้อมูลไม่ถูกต้อง".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_run_review.review_item",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    )))
-    .bind(run_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
+    let run: PromotionRun = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_run_review.review_item",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
+            )),
+        )
+        .bind(run_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     if matches!(
         run.status,
         PromotionRunStatus::Draft | PromotionRunStatus::Executing | PromotionRunStatus::Completed
@@ -45,12 +54,16 @@ pub async fn review_item(
         ));
     }
     promotion_students::validate_run_years(&mut tx, run.source_year_id, run.target_year_id).await?;
-    sqlx::query("SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_run_review.review_item",
+            "SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE",
+        )
         .bind(run_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    let item:PromotionRunItem=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE")))
-        .bind(item_id).bind(run_id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการในรอบเลื่อนชั้นนี้".into()))?;
+    let item:PromotionRunItem=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE")))
+        .bind(item_id).bind(run_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบรายการในรอบเลื่อนชั้นนี้".into()))?;
     if item.row_version != input.row_version || item.status == PromotionItemStatus::Executed {
         return Err(AppError::Conflict(
             "รายการเปลี่ยนแปลงหรือดำเนินการแล้ว กรุณาโหลดข้อมูลล่าสุด".into(),
@@ -91,19 +104,19 @@ pub async fn review_item(
     let core_decision = input.decision.core_command();
     promotion_targets::validate_destination(&mut tx, &source, run.target_year_id, &core_decision)
         .await?;
-    let item:PromotionRunItem=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}")))
-        .bind(sqlx::types::Json(&input.decision)).bind(actor.user_id).bind(item_id).fetch_one(&mut *tx).await?;
-    let all_reviewed:bool=sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM academic_promotion_run_items WHERE run_id=$1 AND status NOT IN ('reviewed','executed'))")
-        .bind(run_id).fetch_one(&mut *tx).await?;
-    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,reviewed_by=CASE WHEN $2 THEN $3 ELSE NULL END,reviewed_at=CASE WHEN $2 THEN now() ELSE NULL END,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
-        .bind(if all_reviewed {PromotionRunStatus::Reviewed}else{PromotionRunStatus::Calculated}).bind(all_reviewed).bind(actor.user_id).bind(run_id).fetch_one(&mut *tx).await?;
+    let item:PromotionRunItem=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}")))
+        .bind(sqlx::types::Json(&input.decision)).bind(actor.user_id).bind(item_id).fetch_one().await?;
+    let all_reviewed:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.promotion_run_review.review_item", "SELECT NOT EXISTS(SELECT 1 FROM academic_promotion_run_items WHERE run_id=$1 AND status NOT IN ('reviewed','executed'))")
+        .bind(run_id).fetch_one().await?;
+    let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_run_review.review_item", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,reviewed_by=CASE WHEN $2 THEN $3 ELSE NULL END,reviewed_at=CASE WHEN $2 THEN now() ELSE NULL END,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
+        .bind(if all_reviewed {PromotionRunStatus::Reviewed}else{PromotionRunStatus::Calculated}).bind(all_reviewed).bind(actor.user_id).bind(run_id).fetch_one().await?;
     let audit = ReviewAudit {
         run_id,
         row_version: item.row_version,
         decision: &input.decision,
     };
-    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES('promotion_item.reviewed','promotion_item',$1,$2,$3)")
-        .bind(item_id).bind(actor.user_id).bind(sqlx::types::Json(audit)).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_run_review.review_item", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES('promotion_item.reviewed','promotion_item',$1,$2,$3)")
+        .bind(item_id).bind(actor.user_id).bind(sqlx::types::Json(audit)).execute().await?;
     tx.commit().await?;
     Ok(PromotionItemReview { run, item })
 }

@@ -368,3 +368,42 @@ fn calendar_search_pattern_escapes_like_wildcards() {
         "%100\\%\\_activity\\\\plan%"
     );
 }
+
+#[tokio::test]
+async fn invalid_tag_and_calendar_search_remain_database_free() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://synthetic.invalid/unavailable")
+        .unwrap();
+    pool.close().await;
+    assert!(matches!(
+        super::create_tag(
+            &pool,
+            crate::models::UpsertCalendarTagRequest { name: " ".into() }
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+    assert!(matches!(
+        super::update_tag(
+            &pool,
+            Uuid::new_v4(),
+            crate::models::UpsertCalendarTagRequest { name: " ".into() }
+        )
+        .await,
+        Err(AppError::BadRequest(_))
+    ));
+    let invalid_search =
+        || serde_json::from_value(serde_json::json!({"search":true,"q":" "})).unwrap();
+    assert!(matches!(
+        super::list_management_events(&pool, invalid_search()).await,
+        Err(AppError::BadRequest(_))
+    ));
+    assert!(matches!(
+        super::list_child_events(&pool, Uuid::new_v4(), Uuid::new_v4(), invalid_search()).await,
+        Err(AppError::BadRequest(_))
+    ));
+    assert!(matches!(
+        super::list_public_events(&pool, invalid_search()).await,
+        Err(AppError::BadRequest(_))
+    ));
+}

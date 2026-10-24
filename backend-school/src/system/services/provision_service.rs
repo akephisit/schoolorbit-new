@@ -10,19 +10,29 @@ fn teacher_username_from_sequence(sequence: i64) -> String {
     format!("T{sequence:04}")
 }
 
-async fn next_admin_username(pool: &sqlx::PgPool) -> Result<String, AppError> {
-    let next_num: Option<i64> = sqlx::query_scalar(
-        r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
+async fn next_admin_username_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<String, AppError> {
+    let next_num: Option<i64> = school_database::DbSession::new(connection)
+        .scalar(
+            "school.services.provision_service.next_admin_username_on_connection",
+            r#"SELECT MIN(n)::bigint FROM generate_series(1, 9999) AS n
            WHERE NOT EXISTS (
                SELECT 1 FROM users WHERE username = 'T' || LPAD(n::text, 4, '0')
            )"#,
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to allocate admin username".into()))?;
+        )
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to allocate admin username".into()))?;
     let next_num =
         next_num.ok_or_else(|| AppError::Conflict("No available admin username".into()))?;
     Ok(teacher_username_from_sequence(next_num))
+}
+
+#[cfg(test)]
+async fn next_admin_username(pool: &sqlx::PgPool) -> Result<String, AppError> {
+    let mut connection = pool.acquire().await?;
+    next_admin_username_on_connection(&mut connection).await
 }
 
 pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutcome, AppError> {
@@ -46,20 +56,32 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
             AppError::InternalServerError(format!("Migration failed: {}", error))
         })?;
 
-    let admin_role_id = sqlx::query_scalar::<_, uuid::Uuid>(
-        r#"
+    let admin_role_id = {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool.as_ref(),
+            "school.provision.admin_role",
+        )
+        .await?;
+        school_database::DbSession::new(&mut connection)
+            .scalar::<uuid::Uuid>(
+                "school.provision.admin_role",
+                r#"
         SELECT id FROM roles WHERE code = 'ADMIN'
         "#,
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to find admin role: {}", error);
-        AppError::InternalServerError(format!(
-            "Failed to find admin role (migrations may not have run): {}",
-            error
-        ))
-    })?;
+            )
+            .fetch_one()
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to find admin role: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError(format!(
+                    "Failed to find admin role (migrations may not have run): {}",
+                    school_database::error_class(&error)
+                ))
+            })?
+    };
 
     let password_hash =
         school_crypto::password_work::hash(&payload.admin_password, bcrypt::DEFAULT_COST)
@@ -72,14 +94,20 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
                 AppError::InternalServerError("Password hashing failed".to_string())
             })?;
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to start provisioning transaction: {}", error);
-        AppError::InternalServerError("Failed to start transaction".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool.as_ref(), "school.provision.transaction")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to start provisioning transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("Failed to start transaction".to_string())
+            })?;
 
-    let username = next_admin_username(pool.as_ref()).await?;
+    let username = next_admin_username_on_connection(&mut tx).await?;
 
-    let user_id = sqlx::query_scalar::<_, uuid::Uuid>(
+    let user_id = school_database::DbSession::new(&mut *tx).scalar::<uuid::Uuid>("school.services.provision_service.provision_tenant",
         r#"
         INSERT INTO users (username, national_id, national_id_hash, password_hash, title, first_name, last_name, user_type, status)
         VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7)
@@ -95,41 +123,49 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
     .bind(&payload.admin_last_name)
     .bind("staff")
     .bind("active")
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to create admin user: {}", error);
-        AppError::InternalServerError(format!("Failed to create admin user: {}", error))
+        tracing::error!("Failed to create admin user: {}", school_database::error_class(&error));
+        AppError::InternalServerError(format!("Failed to create admin user: {}", school_database::error_class(&error)))
     })?;
 
-    if let Err(error) = sqlx::query(
-        r#"
+    if let Err(error) = school_database::DbSession::new(&mut *tx)
+        .query(
+            "school.services.provision_service.provision_tenant",
+            r#"
         INSERT INTO user_roles (user_id, role_id, is_primary, started_at)
         VALUES ($1, $2, $3, CURRENT_DATE)
         ON CONFLICT (user_id, role_id, organization_unit_id, started_at) DO NOTHING
         "#,
-    )
-    .bind(user_id)
-    .bind(admin_role_id)
-    .bind(true)
-    .execute(&mut *tx)
-    .await
+        )
+        .bind(user_id)
+        .bind(admin_role_id)
+        .bind(true)
+        .execute()
+        .await
     {
-        tracing::warn!("Failed to assign admin role: {}", error);
+        tracing::warn!(
+            "Failed to assign admin role: {}",
+            school_database::error_class(&error)
+        );
         if let Err(rollback_error) = tx.rollback().await {
             tracing::warn!(
                 "Provisioning transaction rollback failed: {}",
-                rollback_error
+                school_database::error_class(&rollback_error)
             );
         }
         return Err(AppError::InternalServerError(format!(
             "Failed to assign admin role: {}",
-            error
+            school_database::error_class(&error)
         )));
     }
 
     tx.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit provisioning transaction: {}", error);
+        tracing::error!(
+            "Failed to commit provisioning transaction: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("Failed to commit transaction".to_string())
     })?;
 

@@ -34,7 +34,7 @@ test('question bank uses its own subject options and exact subject contract', as
 	assert.match(page, /function newDraft[\s\S]*status: 'ready'/);
 });
 
-test('question bank defers image uploads until save and cleans failed temporary files', async () => {
+test('question bank defers uploads until save and reuses known file IDs after failed saves', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
 	const editor = await readProjectFile(
 		'src/lib/components/question-bank/QuestionContentEditor.svelte'
@@ -50,11 +50,22 @@ test('question bank defers image uploads until save and cleans failed temporary 
 
 	assert.match(selection, /URL\.createObjectURL\(file\)/);
 	assert.doesNotMatch(selection, /uploadFile\(/);
-	assert.match(save, /uploadFile\(image\.file, 'question_bank_image', draft\.subjectId\)/);
-	assert.match(save, /uploadedFileIds\.set\(image\.pendingId, response\.id\)/);
-	assert.match(save, /if \(!saveRequestStarted\)/);
-	assert.match(save, /Promise\.allSettled\(uploadedIds\.map\(\(id\) => deleteFile\(id\)\)\)/);
-	assert.match(save, /เก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง/);
+	assert.match(save, /pendingUploads\.get\(image\.file\)/);
+	assert.match(save, /pendingUpload\.scope\.resourceId !== draft\.subjectId/);
+	assert.match(
+		save,
+		/new PendingUpload\([\s\S]*purpose: 'question_bank_image',[\s\S]*resourceId: draft\.subjectId/
+	);
+	assert.match(save, /await pendingUpload\.commit\(\)/);
+	assert.match(save, /uploadedFileIds\.set\(image\.pendingId, fileId\)/);
+	assert.doesNotMatch(selection, /\.commit\(/);
+	assert.doesNotMatch(page, /deleteFile/);
+	const cleanup = page.slice(
+		page.indexOf('function cleanupDraftObjectUrls'),
+		page.indexOf('function validateDraft')
+	);
+	assert.match(cleanup, /URL\.revokeObjectURL\(image\.previewUrl\)/);
+	assert.match(cleanup, /upload\.dispose\(\)/);
 	assert.match(editor, /รูปจะอัปโหลดเมื่อกดบันทึกเท่านั้น/);
 });
 

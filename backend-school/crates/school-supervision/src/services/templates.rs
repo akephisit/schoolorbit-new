@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
@@ -103,8 +104,21 @@ struct TemplateSummaryRow {
 pub async fn list_template_summaries(
     pool: &PgPool,
 ) -> Result<Vec<SupervisionTemplateSummary>, AppError> {
-    let rows = sqlx::query_as::<_, TemplateSummaryRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.list_template_summaries",
+    )
+    .await?;
+    list_template_summaries_on_connection(&mut connection).await
+}
+
+pub async fn list_template_summaries_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<SupervisionTemplateSummary>, AppError> {
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<TemplateSummaryRow>(
+            "supervision.services.templates.list_template_summaries_on_connection",
+            r#"
         WITH section_counts AS (
             SELECT template_id, COUNT(*) AS section_count
             FROM supervision_template_sections GROUP BY template_id
@@ -122,9 +136,9 @@ pub async fn list_template_summaries(
         LEFT JOIN item_counts i ON i.template_id = t.id
         ORDER BY t.created_at DESC, t.id
     "#,
-    )
-    .fetch_all(pool)
-    .await?;
+        )
+        .fetch_all()
+        .await?;
     rows.into_iter()
         .map(|row| {
             Ok(SupervisionTemplateSummary {
@@ -145,8 +159,22 @@ pub async fn get_template_summary(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<SupervisionTemplateSummary, AppError> {
-    let row = sqlx::query_as::<_, TemplateSummaryRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.get_template_summary",
+    )
+    .await?;
+    get_template_summary_on_connection(&mut connection, id).await
+}
+
+pub async fn get_template_summary_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<SupervisionTemplateSummary, AppError> {
+    let row = DbSession::new(&mut *connection)
+        .query_as::<TemplateSummaryRow>(
+            "supervision.services.templates.get_template_summary_on_connection",
+            r#"
         WITH section_counts AS (
             SELECT template_id, COUNT(*) AS section_count
             FROM supervision_template_sections WHERE template_id = $1 GROUP BY template_id
@@ -164,11 +192,11 @@ pub async fn get_template_summary(
         LEFT JOIN item_counts i ON i.template_id = t.id
         WHERE t.id = $1
         "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".into()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".into()))?;
     Ok(SupervisionTemplateSummary {
         id: row.id,
         title: row.title,
@@ -181,50 +209,78 @@ pub async fn get_template_summary(
 }
 
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<SupervisionTemplate>, AppError> {
-    let rows = sqlx::query_as::<_, SupervisionTemplateRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.templates.list_templates",
+    )
+    .await?;
+
+    let rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionTemplateRow>(
+            "supervision.services.templates.list_templates",
+            r#"
         SELECT id, title, description, status, rating_min, rating_max,
                created_by, created_at, updated_at
         FROM supervision_templates
         ORDER BY created_at DESC
         "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to list supervision templates: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to list supervision templates: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงแบบประเมินนิเทศได้".to_string())
+        })?;
 
-    hydrate_templates(pool, rows).await
+    hydrate_templates(&mut connection, rows).await
 }
 
 pub async fn get_template(pool: &PgPool, id: Uuid) -> Result<SupervisionTemplate, AppError> {
-    let template_row = sqlx::query_as::<_, SupervisionTemplateRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.templates.get_template",
+    )
+    .await?;
+    get_template_on_connection(&mut connection, id).await
+}
+
+pub(super) async fn get_template_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<SupervisionTemplate, AppError> {
+    let template_row = DbSession::new(&mut *connection)
+        .query_as::<SupervisionTemplateRow>(
+            "supervision.services.templates.get_template",
+            r#"
         SELECT id, title, description, status, rating_min, rating_max,
                created_by, created_at, updated_at
         FROM supervision_templates
         WHERE id = $1
         "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get supervision template: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงแบบประเมินนิเทศได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get supervision template: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงแบบประเมินนิเทศได้".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".to_string()))?;
 
-    hydrate_templates(pool, vec![template_row])
+    hydrate_templates(connection, vec![template_row])
         .await?
         .pop()
         .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".to_string()))
 }
 
 async fn hydrate_templates(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     rows: Vec<SupervisionTemplateRow>,
 ) -> Result<Vec<SupervisionTemplate>, AppError> {
     if rows.is_empty() {
@@ -232,24 +288,32 @@ async fn hydrate_templates(
     }
 
     let template_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let section_rows = sqlx::query_as::<_, SupervisionTemplateSectionRow>(
-        r#"
+
+    let section_rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionTemplateSectionRow>(
+            "supervision.services.templates.hydrate_templates",
+            r#"
         SELECT id, template_id, title, description, sort_order, created_at, updated_at
         FROM supervision_template_sections
         WHERE template_id = ANY($1)
         ORDER BY template_id, sort_order, created_at
         "#,
-    )
-    .bind(&template_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get supervision template sections: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงหมวดแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(&template_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get supervision template sections: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงหมวดแบบประเมินนิเทศได้".to_string())
+        })?;
 
-    let item_rows = sqlx::query_as::<_, SupervisionTemplateItemRow>(
-        r#"
+    let item_rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionTemplateItemRow>(
+            "supervision.services.templates.hydrate_templates",
+            r#"
         SELECT i.id, i.section_id, i.label, i.description, i.item_type,
                i.required, i.sort_order, i.created_at, i.updated_at
         FROM supervision_template_items i
@@ -257,17 +321,22 @@ async fn hydrate_templates(
         WHERE s.template_id = ANY($1)
         ORDER BY s.template_id, s.sort_order, i.sort_order, i.created_at
         "#,
-    )
-    .bind(&template_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get supervision template items: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงหัวข้อแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(&template_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get supervision template items: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงหัวข้อแบบประเมินนิเทศได้".to_string())
+        })?;
 
-    let step_rows = sqlx::query_as::<_, SupervisionTemplateStepRow>(
-        r#"
+    let step_rows = DbSession::new(&mut *connection)
+        .query_as::<SupervisionTemplateStepRow>(
+            "supervision.services.templates.hydrate_templates",
+            r#"
         SELECT id, template_id, step_order, step_code, label, actor_kind,
                actor_permission, organization_position_code, action_kind,
                required, created_at, updated_at
@@ -275,14 +344,17 @@ async fn hydrate_templates(
         WHERE template_id = ANY($1)
         ORDER BY template_id, step_order, created_at
         "#,
-    )
-    .bind(&template_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to get supervision template steps: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงขั้นตอนแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(&template_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to get supervision template steps: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงขั้นตอนแบบประเมินนิเทศได้".to_string())
+        })?;
 
     let mut sections_by_template = HashMap::<Uuid, Vec<SupervisionTemplateSectionRow>>::new();
     for section_row in section_rows {
@@ -343,36 +415,44 @@ pub async fn create_template(
         &input.steps,
     )?;
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(
-            "Failed to begin create supervision template transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มสร้างแบบประเมินนิเทศได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "supervision.templates.create_template")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to begin create supervision template transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มสร้างแบบประเมินนิเทศได้".to_string())
+            })?;
 
     let status = input.status.unwrap_or(SupervisionTemplateStatus::Draft);
-    let template_id: Uuid = sqlx::query_scalar(
-        r#"
+    let template_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "supervision.services.templates.create_template",
+            r#"
         INSERT INTO supervision_templates (
             title, description, status, rating_min, rating_max, created_by
         )
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
-    )
-    .bind(&input.title)
-    .bind(&input.description)
-    .bind(status.as_str())
-    .bind(input.rating_min)
-    .bind(input.rating_max)
-    .bind(created_by)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to create supervision template: {}", error);
-        AppError::InternalServerError("ไม่สามารถสร้างแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(&input.title)
+        .bind(&input.description)
+        .bind(status.as_str())
+        .bind(input.rating_min)
+        .bind(input.rating_max)
+        .bind(created_by)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to create supervision template: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างแบบประเมินนิเทศได้".to_string())
+        })?;
 
     insert_template_sections(&mut tx, template_id, &input.sections).await?;
     insert_template_steps(&mut tx, template_id, &input.steps).await?;
@@ -380,7 +460,7 @@ pub async fn create_template(
     tx.commit().await.map_err(|error| {
         tracing::error!(
             "Failed to commit create supervision template transaction: {}",
-            error
+            school_database::error_class(&error)
         );
         AppError::InternalServerError("ไม่สามารถบันทึกแบบประเมินนิเทศได้".to_string())
     })?;
@@ -413,54 +493,76 @@ pub async fn update_template(
         ));
     }
 
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(
-            "Failed to begin update supervision template transaction: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขแบบประเมินนิเทศได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "supervision.templates.update_template")
+            .await
+            .map_err(|error| {
+                tracing::error!(
+                    "Failed to begin update supervision template transaction: {}",
+                    school_database::error_class(&error)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มแก้ไขแบบประเมินนิเทศได้".to_string())
+            })?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.templates.update_template",
+            r#"
         UPDATE supervision_templates
         SET title = $2, description = $3, status = $4,
             rating_min = $5, rating_max = $6
         WHERE id = $1
         "#,
-    )
-    .bind(id)
-    .bind(&title)
-    .bind(&description)
-    .bind(status.as_str())
-    .bind(rating_min)
-    .bind(rating_max)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to update supervision template: {}", error);
-        AppError::InternalServerError("ไม่สามารถแก้ไขแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(id)
+        .bind(&title)
+        .bind(&description)
+        .bind(status.as_str())
+        .bind(rating_min)
+        .bind(rating_max)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to update supervision template: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถแก้ไขแบบประเมินนิเทศได้".to_string())
+        })?;
 
     if let Some(sections) = input.sections {
-        sqlx::query("DELETE FROM supervision_template_sections WHERE template_id = $1")
+        DbSession::new(&mut *tx)
+            .query(
+                "supervision.services.templates.update_template",
+                "DELETE FROM supervision_template_sections WHERE template_id = $1",
+            )
             .bind(id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(|error| {
-                tracing::error!("Failed to clear supervision template sections: {}", error);
+                tracing::error!(
+                    "Failed to clear supervision template sections: {}",
+                    school_database::error_class(&error)
+                );
                 AppError::InternalServerError("ไม่สามารถแก้ไขหมวดแบบประเมินนิเทศได้".to_string())
             })?;
         insert_template_sections(&mut tx, id, &sections).await?;
     }
 
     if let Some(steps) = input.steps {
-        sqlx::query("DELETE FROM supervision_template_steps WHERE template_id = $1")
+        DbSession::new(&mut *tx)
+            .query(
+                "supervision.services.templates.update_template",
+                "DELETE FROM supervision_template_steps WHERE template_id = $1",
+            )
             .bind(id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(|error| {
-                tracing::error!("Failed to clear supervision template steps: {}", error);
+                tracing::error!(
+                    "Failed to clear supervision template steps: {}",
+                    school_database::error_class(&error)
+                );
                 AppError::InternalServerError("ไม่สามารถแก้ไขขั้นตอนแบบประเมินนิเทศได้".to_string())
             })?;
         insert_template_steps(&mut tx, id, &steps).await?;
@@ -469,7 +571,7 @@ pub async fn update_template(
     tx.commit().await.map_err(|error| {
         tracing::error!(
             "Failed to commit update supervision template transaction: {}",
-            error
+            school_database::error_class(&error)
         );
         AppError::InternalServerError("ไม่สามารถบันทึกแบบประเมินนิเทศได้".to_string())
     })?;
@@ -587,13 +689,20 @@ async fn bulk_insert_template_sections(
             .push_bind(row.sort_order);
     });
 
-    builder.build().execute(&mut **tx).await.map_err(|error| {
-        tracing::error!(
-            "Failed to bulk insert supervision template sections: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถบันทึกหมวดแบบประเมินนิเทศได้".to_string())
-    })?;
+    DbSession::new(&mut **tx)
+        .prepared_query(
+            "supervision.services.templates.bulk_insert_template_sections",
+            builder.build(),
+        )
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to bulk insert supervision template sections: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกหมวดแบบประเมินนิเทศได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -623,13 +732,20 @@ async fn bulk_insert_template_items(
             .push_bind(row.sort_order);
     });
 
-    builder.build().execute(&mut **tx).await.map_err(|error| {
-        tracing::error!(
-            "Failed to bulk insert supervision template items: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถบันทึกหัวข้อแบบประเมินนิเทศได้".to_string())
-    })?;
+    DbSession::new(&mut **tx)
+        .prepared_query(
+            "supervision.services.templates.bulk_insert_template_items",
+            builder.build(),
+        )
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to bulk insert supervision template items: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกหัวข้อแบบประเมินนิเทศได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -664,8 +780,10 @@ async fn insert_template_steps(
         .collect();
     let required_flags: Vec<bool> = steps.iter().map(|step| step.required).collect();
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "supervision.services.templates.insert_template_steps",
+            r#"
         INSERT INTO supervision_template_steps (
             template_id, step_order, step_code, label, actor_kind, actor_permission,
             organization_position_code, action_kind, required
@@ -680,22 +798,25 @@ async fn insert_template_steps(
             organization_position_code, action_kind, required
         )
         "#,
-    )
-    .bind(template_id)
-    .bind(&step_orders)
-    .bind(&step_codes)
-    .bind(&labels)
-    .bind(&actor_kinds)
-    .bind(&actor_permissions)
-    .bind(&organization_position_codes)
-    .bind(&action_kinds)
-    .bind(&required_flags)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to insert supervision template steps: {}", error);
-        AppError::InternalServerError("ไม่สามารถบันทึกขั้นตอนแบบประเมินนิเทศได้".to_string())
-    })?;
+        )
+        .bind(template_id)
+        .bind(&step_orders)
+        .bind(&step_codes)
+        .bind(&labels)
+        .bind(&actor_kinds)
+        .bind(&actor_permissions)
+        .bind(&organization_position_codes)
+        .bind(&action_kinds)
+        .bind(&required_flags)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to insert supervision template steps: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกขั้นตอนแบบประเมินนิเทศได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -789,6 +910,39 @@ fn template_step_from_row(
 mod tests {
     use super::*;
     use crate::models::CreateSupervisionTemplateItemRequest;
+    #[tokio::test]
+    async fn template_hydration_reuses_the_callers_only_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "supervision_template_connection",
+            1,
+        )
+        .await;
+        school_test_db::run_test_migrations(&pool).await;
+        let template = Uuid::new_v4();
+        let section = Uuid::new_v4();
+        sqlx::query("INSERT INTO supervision_templates (id,title) VALUES ($1,'Synthetic connection fixture')").bind(template).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO supervision_template_sections (id,template_id,title) VALUES ($1,$2,'Synthetic section')").bind(section).bind(template).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO supervision_template_items (section_id,label,item_type) VALUES ($1,'Synthetic rating','rating')").bind(section).execute(&pool).await.unwrap();
+        let loaded = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            get_template(&pool, template),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.id, template);
+        assert_eq!(loaded.sections.len(), 1);
+        assert_eq!(loaded.sections[0].items.len(), 1);
+        let mut connection = pool.acquire().await.unwrap();
+        let borrowed = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            get_template_on_connection(&mut connection, template),
+        )
+        .await
+        .expect("hydration must not reacquire its caller's pool")
+        .unwrap();
+        assert_eq!(borrowed.sections[0].items[0].label, "Synthetic rating");
+    }
     #[test]
     fn template_bulk_rows_preserve_section_item_relationships() {
         let (section_rows, item_rows) =

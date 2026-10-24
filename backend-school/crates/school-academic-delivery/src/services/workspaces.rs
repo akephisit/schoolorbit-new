@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::time::{Duration, Instant};
@@ -196,8 +197,30 @@ pub async fn homeroom_delivery_workspace_for_version(
     requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
-    Ok(homeroom_delivery_workspace_with_timing(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.workspaces.homeroom_delivery_workspace_for_version",
+    )
+    .await?;
+    homeroom_delivery_workspace_for_version_on_connection(
+        &mut connection,
+        academic_year_id,
+        academic_term_id,
+        requested_delivery_version_id,
+        filter,
+    )
+    .await
+}
+
+pub async fn homeroom_delivery_workspace_for_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_delivery_version_id: Option<Uuid>,
+    filter: &AcademicResourceListFilter,
+) -> Result<HomeroomDeliveryWorkspace, AppError> {
+    Ok(homeroom_delivery_workspace_with_timing_on_connection(
+        connection,
         academic_year_id,
         academic_term_id,
         requested_delivery_version_id,
@@ -214,8 +237,88 @@ pub async fn homeroom_delivery_workspace_with_timing(
     requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
-    let context_and_homerooms_started_at = Instant::now();
-    let context = sqlx::query_as(
+    let started = Instant::now();
+    // Each independent branch releases its checkout before the join completes, including with a one-connection pool.
+    let (context, homerooms) = join_context_and_homeroom_reads(
+        async {
+            let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "academic_delivery.workspaces.context",
+            )
+            .await?;
+            load_workspace_context(
+                &mut connection,
+                academic_year_id,
+                academic_term_id,
+                requested_delivery_version_id,
+            )
+            .await
+        },
+        async {
+            let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "academic_delivery.workspaces.homerooms",
+            )
+            .await?;
+            load_workspace_homeroom_rows(&mut connection, academic_year_id).await
+        },
+    )
+    .await?;
+    let elapsed = started.elapsed();
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.workspaces.finish",
+    )
+    .await?;
+    finish_homeroom_delivery_workspace(
+        &mut connection,
+        academic_year_id,
+        academic_term_id,
+        requested_delivery_version_id,
+        filter,
+        context,
+        homerooms,
+        elapsed,
+    )
+    .await
+}
+
+pub async fn homeroom_delivery_workspace_with_timing_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_delivery_version_id: Option<Uuid>,
+    filter: &AcademicResourceListFilter,
+) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
+    let started = Instant::now();
+    let context = load_workspace_context(
+        connection,
+        academic_year_id,
+        academic_term_id,
+        requested_delivery_version_id,
+    )
+    .await?;
+    let homerooms = load_workspace_homeroom_rows(connection, academic_year_id).await?;
+    finish_homeroom_delivery_workspace(
+        connection,
+        academic_year_id,
+        academic_term_id,
+        requested_delivery_version_id,
+        filter,
+        context,
+        homerooms,
+        started.elapsed(),
+    )
+    .await
+}
+
+async fn load_workspace_context(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_delivery_version_id: Option<Uuid>,
+) -> Result<Option<WorkspaceContextRow>, sqlx::Error> {
+    DbSession::new(connection).query_as("academic_delivery.services.workspaces.homeroom_delivery_workspace_with_timing_on_connection",
         r#"WITH selected_term AS (
                SELECT selected.id,
                       selected.academic_year_id,
@@ -255,9 +358,14 @@ pub async fn homeroom_delivery_workspace_with_timing(
     .bind(academic_term_id)
     .bind(academic_year_id)
     .bind(requested_delivery_version_id)
-    .fetch_optional(pool);
+    .fetch_optional().await
+}
 
-    let homeroom_rows = sqlx::query_as(
+async fn load_workspace_homeroom_rows(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<Vec<HomeroomDeliveryBaseRow>, sqlx::Error> {
+    DbSession::new(connection).query_as("academic_delivery.services.workspaces.homeroom_delivery_workspace_with_timing_on_connection",
         r#"SELECT homeroom.id AS homeroom_id,
                   homeroom.name AS homeroom_name,
                   grade.id AS grade_level_id,
@@ -295,49 +403,16 @@ pub async fn homeroom_delivery_workspace_with_timing(
     )
     .bind(academic_year_id)
     .bind((MAX_WORKSPACE_HOMEROOMS + 1) as i64)
-    .fetch_all(pool);
+    .fetch_all().await
+}
 
-    let (context, homeroom_rows) = join_context_and_homeroom_reads(context, homeroom_rows).await?;
-    let context_and_homerooms = context_and_homerooms_started_at.elapsed();
-    let context =
-        context.ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
-    if requested_delivery_version_id.is_some() && context.delivery_version_id.is_none() {
-        return Err(AppError::ValidationError(
-            "รุ่นเปิดสอนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
-        ));
-    }
-    let delivery_version = match context.delivery_version_id {
-        Some(id) => Some(WorkspaceDeliveryVersionRow {
-            id,
-            status: context
-                .delivery_version_status
-                .ok_or_else(|| AppError::InternalServerError("สถานะรุ่นเปิดสอนไม่สมบูรณ์".to_string()))?,
-            effective_from: context.delivery_version_effective_from.ok_or_else(|| {
-                AppError::InternalServerError("วันที่มีผลของรุ่นเปิดสอนไม่สมบูรณ์".to_string())
-            })?,
-        }),
-        None => None,
-    };
-    let term_type = context.term_type;
-    let type_occurrence = context.type_occurrence;
-    let delivery_version_id = delivery_version.as_ref().map(|version| version.id);
-    let delivery_version_effective_from = delivery_version.as_ref().and_then(|version| {
-        (version.status == crate::models::versions::DeliveryVersionStatus::Published)
-            .then_some(version.effective_from)
-    });
-
-    ensure_option_size(
-        homeroom_rows.len(),
-        MAX_WORKSPACE_HOMEROOMS,
-        "ห้องประจำชั้นในพื้นที่ทำงาน",
-    )?;
-    let homeroom_ids = homeroom_rows
-        .iter()
-        .map(|homeroom| homeroom.homeroom_id)
-        .collect::<Vec<_>>();
-
-    let resources_started_at = Instant::now();
-    let expected_rows = sqlx::query_as(
+async fn load_workspace_expected_rows(
+    connection: &mut sqlx::PgConnection,
+    homeroom_ids: &[Uuid],
+    term_type: &str,
+    type_occurrence: i64,
+) -> Result<Vec<ExpectedDeliveryRow>, sqlx::Error> {
+    DbSession::new(connection).query_as("academic_delivery.services.workspaces.homeroom_delivery_workspace_with_timing_on_connection",
         r#"SELECT homeroom.id AS homeroom_id,
                   requirement.id AS requirement_id,
                   'course'::text AS resource_kind,
@@ -392,10 +467,62 @@ pub async fn homeroom_delivery_workspace_with_timing(
     .bind(&term_type)
     .bind(type_occurrence as i32)
     .bind((MAX_WORKSPACE_ITEMS + 1) as i64)
-    .fetch_all(pool);
+    .fetch_all().await
+}
+
+async fn finish_homeroom_delivery_workspace(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_delivery_version_id: Option<Uuid>,
+    filter: &AcademicResourceListFilter,
+    context: Option<WorkspaceContextRow>,
+    homeroom_rows: Vec<HomeroomDeliveryBaseRow>,
+    context_and_homerooms: Duration,
+) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
+    let context =
+        context.ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
+    if requested_delivery_version_id.is_some() && context.delivery_version_id.is_none() {
+        return Err(AppError::ValidationError(
+            "รุ่นเปิดสอนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
+        ));
+    }
+    let delivery_version = match context.delivery_version_id {
+        Some(id) => Some(WorkspaceDeliveryVersionRow {
+            id,
+            status: context
+                .delivery_version_status
+                .ok_or_else(|| AppError::InternalServerError("สถานะรุ่นเปิดสอนไม่สมบูรณ์".to_string()))?,
+            effective_from: context.delivery_version_effective_from.ok_or_else(|| {
+                AppError::InternalServerError("วันที่มีผลของรุ่นเปิดสอนไม่สมบูรณ์".to_string())
+            })?,
+        }),
+        None => None,
+    };
+    let term_type = context.term_type;
+    let type_occurrence = context.type_occurrence;
+    let delivery_version_id = delivery_version.as_ref().map(|version| version.id);
+    let delivery_version_effective_from = delivery_version.as_ref().and_then(|version| {
+        (version.status == crate::models::versions::DeliveryVersionStatus::Published)
+            .then_some(version.effective_from)
+    });
+
+    ensure_option_size(
+        homeroom_rows.len(),
+        MAX_WORKSPACE_HOMEROOMS,
+        "ห้องประจำชั้นในพื้นที่ทำงาน",
+    )?;
+    let homeroom_ids = homeroom_rows
+        .iter()
+        .map(|homeroom| homeroom.homeroom_id)
+        .collect::<Vec<_>>();
+
+    let resources_started_at = Instant::now();
 
     let source = match delivery_version_id {
-        Some(id) => Some(super::versions::visible_version(pool, id, filter).await?),
+        Some(id) => {
+            Some(super::versions::visible_version_on_connection(connection, id, filter).await?)
+        }
         None => None,
     };
     let source_group_ids = source
@@ -409,7 +536,8 @@ pub async fn homeroom_delivery_workspace_with_timing(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let roster_statuses = super::versions::roster_statuses(pool, &source_group_ids).await?;
+    let roster_statuses =
+        super::versions::roster_statuses_on_connection(connection, &source_group_ids).await?;
     let source_status = source.as_ref().map(|source| match source.status {
         super::super::models::versions::DeliveryVersionStatus::Draft => {
             LearningOfferingStatus::Draft
@@ -490,8 +618,12 @@ pub async fn homeroom_delivery_workspace_with_timing(
     let offering_rows = async { Ok::<_, sqlx::Error>(source_offerings) };
     let group_rows = async { Ok::<_, sqlx::Error>(source_groups) };
 
-    let (expected_rows, offering_rows, group_rows) =
-        join_workspace_resource_reads(expected_rows, offering_rows, group_rows).await?;
+    let (expected_rows, offering_rows, group_rows) = join_workspace_resource_reads(
+        load_workspace_expected_rows(connection, &homeroom_ids, &term_type, type_occurrence),
+        offering_rows,
+        group_rows,
+    )
+    .await?;
     let resources = resources_started_at.elapsed();
     ensure_option_size(
         expected_rows.len(),
@@ -915,8 +1047,25 @@ pub async fn delivery_overview(
     academic_term_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<LearningDeliveryOverview, AppError> {
-    let offerings =
-        offerings::list(pool, LearningOfferingQuery { academic_term_id }, filter).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.workspaces.delivery_overview",
+    )
+    .await?;
+    delivery_overview_on_connection(&mut connection, academic_term_id, filter).await
+}
+
+pub async fn delivery_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+) -> Result<LearningDeliveryOverview, AppError> {
+    let offerings = offerings::list_on_connection(
+        connection,
+        LearningOfferingQuery { academic_term_id },
+        filter,
+    )
+    .await?;
     if offerings.is_empty() {
         return Ok(LearningDeliveryOverview {
             academic_term_id,
@@ -943,8 +1092,10 @@ pub async fn delivery_overview(
         .into_iter()
         .collect();
 
-    let grade_rows: Vec<GradeLevelRow> = sqlx::query_as(
-        r#"
+    let grade_rows: Vec<GradeLevelRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_overview_on_connection",
+            r#"
         SELECT id, level_type, year
         FROM grade_levels
         WHERE id = ANY($1)
@@ -955,17 +1106,17 @@ pub async fn delivery_overview(
             ELSE 4
         END, year, id
         "#,
-    )
-    .bind(&grade_level_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&grade_level_ids)
+        .fetch_all()
+        .await?;
     let grades_by_id: HashMap<Uuid, GradeLevelLookupItem> = grade_rows
         .into_iter()
         .map(grade_level_lookup_item)
         .map(|item| (item.id, item))
         .collect();
 
-    let program_rows: Vec<StudyProgramOption> = sqlx::query_as(
+    let program_rows: Vec<StudyProgramOption> = DbSession::new(connection).query_as("academic_delivery.services.workspaces.delivery_overview_on_connection",
         r#"
         SELECT program.id, program.code, program.display_order, program.name_th AS name,
                curriculum.id AS edition_id, version.name_th AS level_name,
@@ -982,7 +1133,7 @@ pub async fn delivery_overview(
         "#,
     )
     .bind(&study_program_ids)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
     let programs_by_id: HashMap<Uuid, StudyProgramOption> = program_rows
         .into_iter()
@@ -997,8 +1148,10 @@ pub async fn delivery_overview(
         ));
     }
 
-    let aggregates: Vec<OfferingAggregateRow> = sqlx::query_as(
-        r#"
+    let aggregates: Vec<OfferingAggregateRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_overview_on_connection",
+            r#"
         WITH selected_offerings AS (
             SELECT unnest($1::uuid[]) AS learning_offering_id
         ),
@@ -1046,10 +1199,10 @@ pub async fn delivery_overview(
           ON teachers.learning_offering_id = selected.learning_offering_id
         ORDER BY selected.learning_offering_id
         "#,
-    )
-    .bind(&offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&offering_ids)
+        .fetch_all()
+        .await?;
     let total_groups: i64 = aggregates.iter().map(|item| item.group_count).sum();
     if total_groups > MAX_WORKSPACE_GROUPS {
         return Err(AppError::ValidationError(
@@ -1122,14 +1275,37 @@ pub async fn delivery_management_options(
     filter: &AcademicResourceListFilter,
     curriculum_filter: &AcademicResourceListFilter,
 ) -> Result<DeliveryManagementOptions, AppError> {
-    let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) =
-        sqlx::query_as("SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1")
-            .bind(academic_term_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนที่เลือก".to_string()))?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.workspaces.delivery_management_options",
+    )
+    .await?;
+    delivery_management_options_on_connection(
+        &mut connection,
+        academic_term_id,
+        filter,
+        curriculum_filter,
+    )
+    .await
+}
+
+pub async fn delivery_management_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+    curriculum_filter: &AcademicResourceListFilter,
+) -> Result<DeliveryManagementOptions, AppError> {
+    let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_management_options_on_connection",
+            "SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1",
+        )
+        .bind(academic_term_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนที่เลือก".to_string()))?;
     let owner_ids = filter.allowed_organization_unit_ids();
-    let catalog_rows: Vec<CatalogVersionRow> = sqlx::query_as(
+    let catalog_rows: Vec<CatalogVersionRow> = DbSession::new(connection).query_as("academic_delivery.services.workspaces.delivery_management_options_on_connection",
         r#"
         SELECT option.id, option.kind, option.code, option.name, option.version_no,
                option.standard_periods_per_week, option.scheduling_mode
@@ -1162,7 +1338,7 @@ pub async fn delivery_management_options(
     .bind(filter.includes_school_owned)
     .bind(&owner_ids)
     .bind((MAX_CATALOG_OPTIONS + 1) as i64)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
     ensure_option_size(
         catalog_rows.len(),
@@ -1183,8 +1359,10 @@ pub async fn delivery_management_options(
         })
         .collect();
 
-    let grade_rows: Vec<GradeLevelRow> = sqlx::query_as(
-        r#"
+    let grade_rows: Vec<GradeLevelRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_management_options_on_connection",
+            r#"
         SELECT id, level_type, year
         FROM grade_levels
         WHERE is_active
@@ -1196,34 +1374,40 @@ pub async fn delivery_management_options(
         END, year, id
         LIMIT $1
         "#,
-    )
-    .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
+        .fetch_all()
+        .await?;
     ensure_option_size(grade_rows.len(), MAX_LOOKUP_OPTIONS, "ระดับชั้น")?;
     let grade_levels = grade_rows
         .into_iter()
         .map(grade_level_lookup_item)
         .collect();
     let study_programs = if curriculum_filter.includes_school_owned {
-        curriculum::list_study_program_options_for_year(pool, academic_year_id, curriculum_filter)
-            .await?
+        curriculum::list_study_program_options_for_year_on_connection(
+            connection,
+            academic_year_id,
+            curriculum_filter,
+        )
+        .await?
     } else {
         Vec::new()
     };
-    let homeroom_rows: Vec<HomeroomOptionRow> = sqlx::query_as(
-        r#"SELECT homeroom.id, homeroom.name, grade.level_type, grade.year,
+    let homeroom_rows: Vec<HomeroomOptionRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_management_options_on_connection",
+            r#"SELECT homeroom.id, homeroom.name, grade.level_type, grade.year,
                   homeroom.grade_level_id
            FROM homerooms homeroom
            LEFT JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            WHERE homeroom.academic_year_id = $1 AND homeroom.is_active
            ORDER BY grade.year, homeroom.name
            LIMIT $2"#,
-    )
-    .bind(academic_year_id)
-    .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
+        .fetch_all()
+        .await?;
     ensure_option_size(homeroom_rows.len(), MAX_LOOKUP_OPTIONS, "ห้องประจำชั้น")?;
     let homerooms = homeroom_rows
         .into_iter()
@@ -1234,17 +1418,20 @@ pub async fn delivery_management_options(
             grade_level_id: row.grade_level_id,
         })
         .collect();
-    let learning_groups = groups::list_for_term(pool, academic_term_id, filter).await?;
-    let staff_rows: Vec<StaffOptionRow> = sqlx::query_as(
-        r#"SELECT id, title, display_name
+    let learning_groups =
+        groups::list_for_term_on_connection(connection, academic_term_id, filter).await?;
+    let staff_rows: Vec<StaffOptionRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_management_options_on_connection",
+            r#"SELECT id, title, display_name
            FROM user_display_names
            WHERE user_type = 'staff' AND status = 'active'
            ORDER BY first_name, last_name
            LIMIT $1"#,
-    )
-    .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
+        .fetch_all()
+        .await?;
     ensure_option_size(staff_rows.len(), MAX_LOOKUP_OPTIONS, "ครู")?;
     let teachers = staff_rows
         .into_iter()
@@ -1254,8 +1441,10 @@ pub async fn delivery_management_options(
             title: row.title,
         })
         .collect();
-    let rooms: Vec<Room> = sqlx::query_as(
-        r#"SELECT room.id, room.building_id, room.name_th, room.name_en, room.code,
+    let rooms: Vec<Room> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.workspaces.delivery_management_options_on_connection",
+            r#"SELECT room.id, room.building_id, room.name_th, room.name_en, room.code,
                   room.room_type, room.capacity, room.floor, room.status, room.description,
                   room.created_at, room.updated_at, building.name_th AS building_name
            FROM rooms room
@@ -1263,14 +1452,17 @@ pub async fn delivery_management_options(
            WHERE room.status = 'ACTIVE'
            ORDER BY building.name_th NULLS LAST, room.floor NULLS FIRST, room.name_th, room.id
            LIMIT $1"#,
-    )
-    .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(error = %error, "delivery room option query failed");
-        AppError::InternalServerError("Failed to fetch rooms".to_string())
-    })?;
+        )
+        .bind((MAX_LOOKUP_OPTIONS + 1) as i64)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                error_class = school_database::error_class(&error),
+                "delivery room option query failed"
+            );
+            AppError::InternalServerError("Failed to fetch rooms".to_string())
+        })?;
     ensure_option_size(rooms.len(), MAX_LOOKUP_OPTIONS, "ห้องเรียน")?;
 
     Ok(DeliveryManagementOptions {
@@ -1383,6 +1575,57 @@ mod tests {
             classify_opening_teacher_state(true, mode, &[0]),
             HomeroomTeacherState::MissingPrimary
         );
+    }
+
+    #[tokio::test]
+    async fn public_workspace_parallel_reads_release_the_only_connection_before_finishing() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "delivery_workspace_single_connection",
+            1,
+        )
+        .await;
+        school_test_db::run_test_migrations(&pool).await;
+        let year = Uuid::new_v4();
+        let term = Uuid::new_v4();
+        let schedule = Uuid::new_v4();
+        sqlx::query("INSERT INTO academic_years (id,year,name,start_date,end_date,status) VALUES ($1,2569,'Synthetic workspace year','2026-05-01','2027-04-30','planning')")
+            .bind(year).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO bell_schedules (id,academic_year_id,code,name) VALUES ($1,$2,'SYNTHETIC','Synthetic workspace schedule')")
+            .bind(schedule).bind(year).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO academic_terms (id,academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,included_in_year_result,blocks_year_closure,bell_schedule_id,status) VALUES ($1,$2,1,'SYNTHETIC','Synthetic workspace term','regular','2026-05-01','2026-10-01',true,true,$3,'planning')")
+            .bind(term).bind(year).bind(schedule).execute(&pool).await.unwrap();
+        let filter = AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        };
+        let (workspace, _) = timeout(
+            Duration::from_secs(5),
+            homeroom_delivery_workspace_with_timing(&pool, year, term, None, &filter),
+        )
+        .await
+        .expect("parallel branches must release their checkout before the dependent phase")
+        .unwrap();
+        assert_eq!(workspace.academic_year_id, year);
+        assert_eq!(workspace.academic_term_id, term);
+        assert!(workspace.homerooms.is_empty());
+        assert!(workspace.unlinked.is_empty());
+        // The same SQL helpers also run entirely on a connection owned by a caller.
+        let mut connection = pool.acquire().await.unwrap();
+        let (borrowed, _) = timeout(
+            Duration::from_secs(5),
+            homeroom_delivery_workspace_with_timing_on_connection(
+                &mut connection,
+                year,
+                term,
+                None,
+                &filter,
+            ),
+        )
+        .await
+        .expect("connection helpers must not acquire the pool again")
+        .unwrap();
+        assert_eq!(borrowed.academic_term_id, term);
+        assert!(borrowed.homerooms.is_empty());
     }
 
     #[tokio::test]

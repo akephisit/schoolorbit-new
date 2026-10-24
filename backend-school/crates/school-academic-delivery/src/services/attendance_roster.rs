@@ -1,5 +1,6 @@
 //! Historical group membership projection; current status alone is insufficient.
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{FromRow, PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -58,8 +59,13 @@ async fn membership_spans_scoped(
         query.push(" AND student_id=").push_bind(student);
     }
     query.push(" ORDER BY learning_group_id,student_id LIMIT 100001");
-    let rows: Vec<AttendanceMembershipSpan> =
-        query.build_query_as().fetch_all(&mut *connection).await?;
+    let rows: Vec<AttendanceMembershipSpan> = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "academic_delivery.services.attendance_roster.membership_spans_scoped",
+            query.build_query_as(),
+        )
+        .fetch_all()
+        .await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError(
             "ประวัติกลุ่มเรียนเกินขนาดที่รองรับ".into(),
@@ -72,7 +78,16 @@ pub async fn students(
     groups: &[Uuid],
     date: NaiveDate,
 ) -> Result<Vec<AttendanceGroupStudent>, AppError> {
-    students_on_connection(&mut *pool.acquire().await?, groups, date).await
+    students_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "academic_delivery.services.attendance_roster.students",
+        )
+        .await?,
+        groups,
+        date,
+    )
+    .await
 }
 pub async fn students_on_connection(
     connection: &mut PgConnection,
@@ -82,7 +97,7 @@ pub async fn students_on_connection(
     if groups.len() > 2000 {
         return Err(AppError::ValidationError("กลุ่มเรียนเกินขนาดที่รองรับ".into()));
     }
-    let rows:Vec<AttendanceGroupStudent>=sqlx::query_as("SELECT learning_group_id,student_id,student_academic_year_id FROM learning_group_students WHERE learning_group_id=ANY($1) AND membership_status<>'removed' AND joined_at<=$2 AND (left_at IS NULL OR left_at>=$2) ORDER BY learning_group_id,student_id LIMIT 100001").bind(groups).bind(date).fetch_all(&mut *connection).await?;
+    let rows:Vec<AttendanceGroupStudent>=DbSession::new(&mut *connection).query_as("academic_delivery.services.attendance_roster.students_on_connection", "SELECT learning_group_id,student_id,student_academic_year_id FROM learning_group_students WHERE learning_group_id=ANY($1) AND membership_status<>'removed' AND joined_at<=$2 AND (left_at IS NULL OR left_at>=$2) ORDER BY learning_group_id,student_id LIMIT 100001").bind(groups).bind(date).fetch_all().await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError("สมาชิกกลุ่มเกินขนาดที่รองรับ".into()));
     }

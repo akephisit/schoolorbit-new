@@ -42,19 +42,34 @@ pub async fn check_login_throttles(
     source_hash: ThrottleBucketHash,
     now: DateTime<Utc>,
 ) -> Result<ThrottleState, AppError> {
-    let rows = sqlx::query_as::<_, BucketRow>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.check_login_throttles")
+            .await
+            .map_err(session_store_error)?;
+    check_login_throttles_on_connection(&mut connection, identifier_hash, source_hash, now).await
+}
+
+pub async fn check_login_throttles_on_connection(
+    connection: &mut sqlx::PgConnection,
+    identifier_hash: ThrottleBucketHash,
+    source_hash: ThrottleBucketHash,
+    now: DateTime<Utc>,
+) -> Result<ThrottleState, AppError> {
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<BucketRow>(
+            "auth.src.throttle_repository.check_login_throttles_on_connection",
+            r#"
         SELECT bucket_kind, failure_count, window_started_at, blocked_until
         FROM auth_login_throttles
         WHERE (bucket_kind = 'identifier' AND bucket_hash = $1)
            OR (bucket_kind = 'source' AND bucket_hash = $2)
         "#,
-    )
-    .bind(identifier_hash.as_bytes().as_slice())
-    .bind(source_hash.as_bytes().as_slice())
-    .fetch_all(pool)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(identifier_hash.as_bytes().as_slice())
+        .bind(source_hash.as_bytes().as_slice())
+        .fetch_all()
+        .await
+        .map_err(session_store_error)?;
 
     Ok(state_from_rows(rows, now))
 }
@@ -65,7 +80,12 @@ pub async fn record_login_failure(
     source_hash: ThrottleBucketHash,
     now: DateTime<Utc>,
 ) -> Result<ThrottleState, AppError> {
-    let mut transaction = pool.begin().await.map_err(session_store_error)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "auth.throttle_repository.record_login_failure",
+    )
+    .await
+    .map_err(session_store_error)?;
     lock_failure_buckets(&mut transaction, identifier_hash, source_hash).await?;
 
     let identifier = update_bucket(
@@ -93,19 +113,21 @@ async fn update_bucket(
     now: DateTime<Utc>,
 ) -> Result<BucketRow, AppError> {
     let kind_name = bucket_kind_name(kind);
-    let existing = sqlx::query_as::<_, BucketRow>(
-        r#"
+    let existing = school_database::DbSession::new(&mut **transaction)
+        .query_as::<BucketRow>(
+            "auth.src.throttle_repository.update_bucket",
+            r#"
         SELECT bucket_kind, failure_count, window_started_at, blocked_until
         FROM auth_login_throttles
         WHERE bucket_kind = $1 AND bucket_hash = $2
         FOR UPDATE
         "#,
-    )
-    .bind(kind_name)
-    .bind(hash.as_bytes().as_slice())
-    .fetch_optional(&mut **transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(kind_name)
+        .bind(hash.as_bytes().as_slice())
+        .fetch_optional()
+        .await
+        .map_err(session_store_error)?;
 
     let (failure_count, window_started_at) = match existing {
         Some(row) if row.window_started_at > now - THROTTLE_WINDOW => {
@@ -117,8 +139,10 @@ async fn update_bucket(
         .delay(kind, failure_count.max(0) as u32)
         .map(|delay| now + delay);
 
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "auth.src.throttle_repository.update_bucket",
+            r#"
         INSERT INTO auth_login_throttles (
             bucket_kind, bucket_hash, failure_count, window_started_at, blocked_until, updated_at
         )
@@ -129,16 +153,16 @@ async fn update_bucket(
             blocked_until = EXCLUDED.blocked_until,
             updated_at = EXCLUDED.updated_at
         "#,
-    )
-    .bind(kind_name)
-    .bind(hash.as_bytes().as_slice())
-    .bind(failure_count)
-    .bind(window_started_at)
-    .bind(blocked_until)
-    .bind(now)
-    .execute(&mut **transaction)
-    .await
-    .map_err(session_store_error)?;
+        )
+        .bind(kind_name)
+        .bind(hash.as_bytes().as_slice())
+        .bind(failure_count)
+        .bind(window_started_at)
+        .bind(blocked_until)
+        .bind(now)
+        .execute()
+        .await
+        .map_err(session_store_error)?;
 
     Ok(BucketRow {
         bucket_kind: kind_name.to_string(),
@@ -162,9 +186,13 @@ async fn lock_failure_buckets(
         if index == 1 && lock_key == lock_keys[0] {
             continue;
         }
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "auth.src.throttle_repository.lock_failure_buckets",
+                "SELECT pg_advisory_xact_lock($1)",
+            )
             .bind(lock_key)
-            .execute(&mut **transaction)
+            .execute()
             .await
             .map_err(session_store_error)?;
     }

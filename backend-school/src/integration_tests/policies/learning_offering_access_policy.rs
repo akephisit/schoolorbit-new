@@ -16,8 +16,9 @@ mod tests {
     use uuid::Uuid;
 
     const ACTOR_ID: &str = "50000000-0000-0000-0000-000000000002";
-    const ROOT_UNIT_ID: &str = "c5e06a47-ebf6-40f6-bbf9-59c509e842f2";
-    const CHILD_UNIT_ID: &str = "2b8c8ef9-c752-4939-9615-9ffd2c7c93f1";
+    // Learning areas are SCHOOL children after 116; ACT remains under Academic Affairs.
+    const ROOT_UNIT_ID: &str = "f2497fd8-94f0-41f7-9600-38dcdd5b6811";
+    const CHILD_UNIT_ID: &str = "c5e06a47-ebf6-40f6-bbf9-59c509e842f2";
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
@@ -43,16 +44,12 @@ mod tests {
 
         sqlx::raw_sql(
             r#"
-            UPDATE organization_units
-            SET parent_unit_id = 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2'
-            WHERE code = 'SUBJ-MA';
-
             INSERT INTO organization_members (
                 id, user_id, organization_unit_id, position_code, started_at
             ) VALUES (
                 'c3000000-0000-0000-0000-000000000003',
                 '50000000-0000-0000-0000-000000000002',
-                'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', 'head', '2020-01-01'
+                'f2497fd8-94f0-41f7-9600-38dcdd5b6811', 'head', '2020-01-01'
             );
 
             "#,
@@ -70,7 +67,7 @@ mod tests {
             INSERT INTO organization_permission_grants (
                 organization_unit_id, permission_id, created_by, position_code
             )
-            SELECT 'c5e06a47-ebf6-40f6-bbf9-59c509e842f2', permission.id,
+            SELECT 'f2497fd8-94f0-41f7-9600-38dcdd5b6811', permission.id,
                    '50000000-0000-0000-0000-000000000002', 'head'
             FROM permissions permission
             WHERE permission.code IN (
@@ -86,6 +83,19 @@ mod tests {
         .await
         .unwrap();
 
+        let tree_edge: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_units child WHERE child.id=$1 AND child.parent_unit_id=$2 AND child.unit_type='division')")
+            .bind(Uuid::parse_str(CHILD_UNIT_ID).unwrap()).bind(Uuid::parse_str(ROOT_UNIT_ID).unwrap()).fetch_one(&pool).await.unwrap();
+        assert!(tree_edge);
+        let learning_area_parents: Vec<(String, String)> = sqlx::query_as("SELECT unit.code,parent.code FROM organization_units unit JOIN organization_units parent ON parent.id=unit.parent_unit_id WHERE unit.code IN('SUBJ-MA','SUBJ-SC') ORDER BY unit.code")
+            .fetch_all(&pool).await.unwrap();
+        assert_eq!(
+            learning_area_parents,
+            vec![
+                ("SUBJ-MA".into(), "SCHOOL".into()),
+                ("SUBJ-SC".into(), "SCHOOL".into())
+            ]
+        );
+
         let assigned_offering_id: Uuid = sqlx::query_scalar(
             r#"SELECT offering.id
                FROM learning_offerings offering
@@ -94,23 +104,23 @@ mod tests {
                JOIN learning_group_teachers teacher
                  ON teacher.learning_group_id = learning_group.id
                WHERE teacher.teacher_id = $1
-				 AND offering.owning_organization_unit_id =
-				     'c5e06a47-ebf6-40f6-bbf9-59c509e842f2'
+                 AND offering.owning_organization_unit_id = $2
                ORDER BY offering.id
                LIMIT 1"#,
         )
         .bind(Uuid::parse_str(ACTOR_ID).unwrap())
+        .bind(Uuid::parse_str(CHILD_UNIT_ID).unwrap())
         .fetch_one(&pool)
         .await
         .unwrap();
         let child_offering_id: Uuid = sqlx::query_scalar(
             r#"SELECT id
 			   FROM learning_offerings
-			   WHERE owning_organization_unit_id =
-			         '2b8c8ef9-c752-4939-9615-9ffd2c7c93f1'
+               WHERE owning_organization_unit_id = $1
 			   ORDER BY id
 			   LIMIT 1"#,
         )
+        .bind(Uuid::parse_str(CHILD_UNIT_ID).unwrap())
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -122,6 +132,10 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
+
+        let math_offering_id: Uuid = sqlx::query_scalar(
+            "SELECT offering.id FROM learning_offerings offering JOIN organization_units owner ON owner.id=offering.owning_organization_unit_id WHERE owner.code='SUBJ-MA' ORDER BY offering.id LIMIT 1",
+        ).fetch_one(&pool).await.unwrap();
 
         let assigned_reader = actor(&[codes::LEARNING_OFFERING_READ_ASSIGNED]);
         assert_eq!(
@@ -160,6 +174,14 @@ mod tests {
             AcademicResourceAccess::Assigned
         );
 
+        let unit_reader = actor(&[codes::LEARNING_OFFERING_READ_ORGANIZATION_UNIT]);
+        assert_eq!(
+            learning_offering_access(&pool, &unit_reader, child_offering_id, OfferingAction::Read)
+                .await
+                .unwrap(),
+            AcademicResourceAccess::None
+        );
+
         let tree_reader = actor(&[codes::LEARNING_OFFERING_READ_ORGANIZATION_TREE]);
         assert_eq!(
             learning_offering_access(&pool, &tree_reader, child_offering_id, OfferingAction::Read,)
@@ -176,6 +198,13 @@ mod tests {
             )
             .await
             .unwrap(),
+            AcademicResourceAccess::None
+        );
+
+        assert_eq!(
+            learning_offering_access(&pool, &tree_reader, math_offering_id, OfferingAction::Read)
+                .await
+                .unwrap(),
             AcademicResourceAccess::None
         );
 

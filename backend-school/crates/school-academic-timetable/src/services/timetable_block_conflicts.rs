@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use uuid::Uuid;
 
 use crate::models::timetable_block::{
@@ -7,7 +8,6 @@ use crate::models::timetable_block::{
     TimetableBlockPlacementState, TimetableTargetKind,
 };
 use school_errors::AppError;
-use sqlx::PgPool;
 
 const VALID_DAYS: &[&str] = &["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -49,7 +49,7 @@ pub(crate) fn map_write_error(error: sqlx::Error) -> AppError {
 }
 
 pub(crate) async fn preview_placement(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     request: TimetableBlockPlacementPreviewRequest,
 ) -> Result<TimetableBlockPlacementPreview, AppError> {
     let target_day = normalize_day(&request.target_day_of_week)?;
@@ -67,20 +67,22 @@ pub(crate) async fn preview_placement(
     }
     excluded_block_ids = canonical_ids(&excluded_block_ids);
 
-    let version_valid: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let version_valid: bool = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.services.timetable_block_conflicts.preview_placement",
+            r#"SELECT EXISTS (
                SELECT 1 FROM academic_timetable_versions version
                JOIN bell_schedule_periods period
                  ON period.bell_schedule_id = version.bell_schedule_id
                WHERE version.id = $1 AND version.academic_term_id = $2
                  AND version.status = 'draft' AND period.id = $3 AND period.is_active
            )"#,
-    )
-    .bind(request.timetable_version_id)
-    .bind(request.academic_term_id)
-    .bind(request.target_bell_schedule_period_id)
-    .fetch_one(pool)
-    .await?;
+        )
+        .bind(request.timetable_version_id)
+        .bind(request.academic_term_id)
+        .bind(request.target_bell_schedule_period_id)
+        .fetch_one()
+        .await?;
     if !version_valid {
         return Ok(blocked_preview(
             source_block_id,
@@ -104,17 +106,21 @@ pub(crate) async fn preview_placement(
         candidate.homeroom_ids.clone()
     } else {
         let mut ids = if let Some(block_id) = source_block_id {
-            sqlx::query_scalar::<_,Uuid>("SELECT DISTINCT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=$1 AND is_active AND learning_group_id=ANY($2)")
-                .bind(block_id).bind(&group_ids).fetch_all(pool).await?
+            DbSession::new(connection).scalar::<Uuid>("academic_timetable.services.timetable_block_conflicts.preview_placement", "SELECT DISTINCT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=$1 AND is_active AND learning_group_id=ANY($2)")
+                .bind(block_id).bind(&group_ids).fetch_all().await?
         } else {
-            let source_id: Uuid = sqlx::query_scalar(
-                "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+            let source_id: Uuid = DbSession::new(connection)
+                .scalar(
+                    "academic_timetable.services.timetable_block_conflicts.preview_placement",
+                    "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+                )
+                .bind(request.timetable_version_id)
+                .fetch_one()
+                .await?;
+            let source = school_academic_delivery::services::versions::get_version_on_connection(
+                connection, source_id,
             )
-            .bind(request.timetable_version_id)
-            .fetch_one(pool)
             .await?;
-            let source =
-                school_academic_delivery::services::versions::get_version(pool, source_id).await?;
             source
                 .snapshot
                 .offerings
@@ -132,8 +138,10 @@ pub(crate) async fn preview_placement(
     teacher_ids = canonical_ids(&teacher_ids);
     let room_ids = candidate.room_id.into_iter().collect::<Vec<_>>();
 
-    let conflicts: Vec<(String, Uuid, Uuid)> = sqlx::query_as(
-        r#"WITH occupied AS (
+    let conflicts: Vec<(String, Uuid, Uuid)> = DbSession::new(connection)
+        .query_as(
+            "academic_timetable.services.timetable_block_conflicts.preview_placement",
+            r#"WITH occupied AS (
                SELECT 'learning_group'::text AS kind, block.id AS block_id,
                       target.learning_group_id AS target_id
                FROM academic_timetable_blocks block
@@ -198,17 +206,17 @@ pub(crate) async fn preview_placement(
            FROM occupied
            WHERE NOT (block_id = ANY($8))
            ORDER BY kind, block_id, target_id"#,
-    )
-    .bind(request.timetable_version_id)
-    .bind(&target_day)
-    .bind(request.target_bell_schedule_period_id)
-    .bind(&group_ids)
-    .bind(&covered_homeroom_ids)
-    .bind(&teacher_ids)
-    .bind(&room_ids)
-    .bind(&excluded_block_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(request.timetable_version_id)
+        .bind(&target_day)
+        .bind(request.target_bell_schedule_period_id)
+        .bind(&group_ids)
+        .bind(&covered_homeroom_ids)
+        .bind(&teacher_ids)
+        .bind(&room_ids)
+        .bind(&excluded_block_ids)
+        .fetch_all()
+        .await?;
     let conflicts = conflicts
         .into_iter()
         .map(|(kind, block_id, target_id)| conflict_from_row(&kind, block_id, target_id))

@@ -144,6 +144,7 @@
 		} catch (error) {
 			if (sourceEpoch === profileEpoch && profileActive)
 				toast.error(error instanceof Error ? error.message : 'บันทึกรูปไม่สำเร็จ');
+			throw error;
 		}
 	}
 
@@ -263,8 +264,7 @@
 								<ProfileImageUpload
 									currentFileId={formData.profile_image_file_id}
 									resourceId={profile?.id}
-									onsuccess={({ fileId }: { fileId: string | null }) =>
-										void saveProfileImage(fileId)}
+									onsuccess={({ fileId }: { fileId: string | null }) => saveProfileImage(fileId)}
 									onerror={(err: string) => toast.error(err)}
 								/>
 							</div>

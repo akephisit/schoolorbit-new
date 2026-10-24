@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use std::collections::BTreeSet;
@@ -22,13 +23,15 @@ pub async fn validate_student_year_batch(
     if students.is_empty() {
         return Ok(());
     }
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM student_academic_years WHERE academic_year_id=$1 AND id=ANY($2)",
-    )
-    .bind(year)
-    .bind(students)
-    .fetch_one(&mut **tx)
-    .await?;
+    let count: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.student_year_batch.validate_student_year_batch",
+            "SELECT count(*) FROM student_academic_years WHERE academic_year_id=$1 AND id=ANY($2)",
+        )
+        .bind(year)
+        .bind(students)
+        .fetch_one()
+        .await?;
     if count != students.len() as i64 {
         return Err(AppError::NotFound(
             "Student academic year not found in selected context".into(),

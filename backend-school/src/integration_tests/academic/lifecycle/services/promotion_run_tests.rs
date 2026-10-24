@@ -1,7 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::{
     core,
-    cutover_test_support::apply_migrations_through,
     lifecycle::models::{PromotionRuleInput, PromotionRunStatus, PromotionSuccessOutcome},
 };
 use school_permissions::registry::codes;
@@ -9,7 +8,6 @@ use uuid::Uuid;
 
 pub(crate) async fn fixture(name: &str) -> (PgPool, ActorContext, CreatePromotionRunInput) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 76).await.unwrap();
     let actor = ActorContext {
         user_id: sqlx::query_scalar(
             "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",

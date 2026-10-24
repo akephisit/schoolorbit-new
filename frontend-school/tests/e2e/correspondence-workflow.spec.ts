@@ -48,9 +48,9 @@ test('create and send starts the actual document workflow without a manual work 
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	expect(api.count('/api/correspondence/options')).toBe(1);
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -145,7 +145,7 @@ test('saved private image signature works with keyboard selection and explicit c
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 	await page.getByRole('button', { name: 'เลือกลายมือชื่อที่บันทึก' }).click();
-	const picker = page.getByRole('button', { name: 'ลายมือชื่อของฉัน', exact: true });
+	const picker = page.getByRole('combobox', { name: 'ลายมือชื่อของฉัน', exact: true });
 	await picker.focus();
 	await page.keyboard.press('Enter');
 	await page.keyboard.press('ArrowDown');
@@ -198,7 +198,7 @@ test('template edits create a new version with organization position recipients 
 	expect(api.count('/api/correspondence/options')).toBe(0);
 	await page.getByRole('button', { name: 'แก้ไขแม่แบบ', exact: true }).click();
 	await page.getByLabel('ชื่อแม่แบบ *', { exact: true }).fill('แม่แบบอนุมัติใหม่');
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'ตำแหน่งในหน่วยงาน', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'งานบริหารทั่วไป · หัวหน้างาน' }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -300,9 +300,9 @@ test('server-authorized manager recovery selects pending source and reason witho
 	});
 	await page.goto(detailPath);
 	await chooseAction(page, 'ส่งต่อผู้รับผิดชอบ');
-	await page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true }).click();
 	await page.getByRole('option', { name: 'ครูผู้รับคนที่สอง', exact: true }).click();
-	await page.getByRole('button', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
 	await page.getByRole('option', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).click();
 	await page.getByRole('button', { name: 'ยืนยันส่งต่อผู้รับผิดชอบ', exact: true }).click();
 	await expect(page.getByTestId('correspondence-action')).toContainText('กรอกความคิดเห็น / เหตุผล');
@@ -345,9 +345,9 @@ test('reassignment A to B to A preserves completed snapshots and offers only pen
 		await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
 	await chooseAction(page, 'ส่งต่อผู้รับผิดชอบ');
 	await expect(
-		page.getByRole('button', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
+		page.getByRole('combobox', { name: 'ผู้รับเดิมที่ต้องเปลี่ยน', exact: true })
 	).toHaveCount(0);
-	await page.getByRole('button', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ผู้รับผิดชอบใหม่', exact: true }).click();
 	await expect(page.getByRole('option', { name: 'ครูผู้รับคนที่สอง', exact: true })).toBeVisible();
 	await expect(page.getByRole('option', { name: 'ครูเจ้าของ ทดสอบ', exact: true })).toHaveCount(0);
 	expect(errors).toEqual([]);
@@ -517,19 +517,19 @@ test('delayed accepted action preserves a newer rendered document and clears its
 		await workStore.refreshSilently();
 	});
 	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
-	await expect(page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' })).toContainText(
+	await expect(page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง' })).toContainText(
 		'ฉบับปัจจุบัน (2)'
 	);
 	api.release();
 	await expect(page.getByTestId('correspondence-action')).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' })).toContainText(
+	await expect(page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง' })).toContainText(
 		'ฉบับปัจจุบัน (2)'
 	);
 	await openSource(page);
 	await expect(
 		page.locator('svg text').filter({ hasText: 'หมายเหตุที่รับทราบฉบับเดิม' })
 	).toHaveCount(0);
-	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' }).click();
+	await page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง' }).click();
 	await page.getByRole('option', { name: /ฉบับ 1 ·/ }).click();
 	await openSource(page);
 	await expect(
@@ -672,7 +672,7 @@ test('historical revision selection keeps current drafts and filters immutable a
 		'เก็บข้อความในฟอร์ม'
 	);
 	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
-	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' }).click();
+	await page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง' }).click();
 	await page.getByRole('option', { name: /ฉบับ 1 ·/ }).click();
 	await openSource(page);
 	await expect(
@@ -681,7 +681,7 @@ test('historical revision selection keeps current drafts and filters immutable a
 	await expect(page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true })).toBeDisabled();
 	await expect(page.locator('svg text').filter({ hasText: 'หมายเหตุฉบับเก่า' })).toBeVisible();
 	await expect(page.locator('svg text').filter({ hasText: 'ร่างจากฉบับเดิม' })).toHaveCount(0);
-	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง' }).click();
+	await page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง' }).click();
 	await page.getByRole('option', { name: 'ฉบับปัจจุบัน (2)', exact: true }).click();
 	await openSource(page);
 	await expect(page.locator('svg text').filter({ hasText: 'ร่างจากฉบับเดิม' })).toBeVisible();

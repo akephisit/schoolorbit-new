@@ -69,13 +69,17 @@ async fn receipt<T: DeserializeOwned, P: Serialize>(
     operation: &str,
     payload: &P,
 ) -> Result<Option<T>, AppError> {
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "student-care.src.services.receipt",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
         .bind(format!("care:{}:{}", a.actor_id, id))
-        .execute(&mut **tx)
+        .execute()
         .await?;
     let input = serde_json::to_vec(payload).map_err(|_| internal())?;
     let digest = hex::encode(Sha256::digest(&input));
-    let old:Option<(String,String,String)>=sqlx::query_as("SELECT operation,digest,outcome_ciphertext FROM care_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(a.actor_id).bind(id).fetch_optional(&mut **tx).await?;
+    let old:Option<(String,String,String)>=school_database::DbSession::new(&mut **tx).query_as("student-care.src.services.receipt", "SELECT operation,digest,outcome_ciphertext FROM care_mutation_receipts WHERE actor_id=$1 AND request_id=$2").bind(a.actor_id).bind(id).fetch_optional().await?;
     match old {
         Some((op, hash, result)) if op == operation && hash == digest => {
             Ok(Some(decrypt(&result)?))
@@ -85,7 +89,7 @@ async fn receipt<T: DeserializeOwned, P: Serialize>(
     }
 }
 async fn finish<T: Serialize, P: Serialize>(
-    tx: Tx<'_>,
+    tx: school_tenancy::ObservedTransaction,
     a: CareAccess,
     id: Uuid,
     operation: &str,
@@ -104,7 +108,7 @@ struct CareCommandAuditDetail {
     reason: String,
 }
 async fn finish_with_detail<T: Serialize, P: Serialize>(
-    mut tx: Tx<'_>,
+    mut tx: school_tenancy::ObservedTransaction,
     a: CareAccess,
     id: Uuid,
     operation: &str,
@@ -117,14 +121,14 @@ async fn finish_with_detail<T: Serialize, P: Serialize>(
     let digest = hex::encode(Sha256::digest(
         serde_json::to_vec(payload).map_err(|_| internal())?,
     ));
-    sqlx::query("INSERT INTO care_mutation_receipts(actor_id,request_id,operation,digest,outcome_ciphertext) VALUES($1,$2,$3,$4,$5)").bind(a.actor_id).bind(id).bind(operation).bind(digest).bind(encrypt(result)?).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO care_audit(actor_id,resource_id,action,revision,private_detail_ciphertext) VALUES($1,$2,$3,$4,$5)")
+    school_database::DbSession::new(&mut *tx).query("student-care.src.services.finish_with_detail", "INSERT INTO care_mutation_receipts(actor_id,request_id,operation,digest,outcome_ciphertext) VALUES($1,$2,$3,$4,$5)").bind(a.actor_id).bind(id).bind(operation).bind(digest).bind(encrypt(result)?).execute().await?;
+    school_database::DbSession::new(&mut *tx).query("student-care.src.services.finish_with_detail", "INSERT INTO care_audit(actor_id,resource_id,action,revision,private_detail_ciphertext) VALUES($1,$2,$3,$4,$5)")
         .bind(a.actor_id)
         .bind(resource)
         .bind(operation)
         .bind(revision)
         .bind(detail.map(encrypt).transpose()?)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     tx.commit().await?;
     Ok(())
@@ -134,11 +138,11 @@ async fn audit_read(
     a: CareAccess,
     resource: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO care_audit(actor_id,resource_id,action,revision) VALUES($1,$2,'private_read',0)").bind(a.actor_id).bind(resource).execute(connection).await?;
+    school_database::DbSession::new(connection).query("student-care.src.services.audit_read", "INSERT INTO care_audit(actor_id,resource_id,action,revision) VALUES($1,$2,'private_read',0)").bind(a.actor_id).bind(resource).execute().await?;
     Ok(())
 }
 async fn active_staff(connection: &mut PgConnection, selected: &[Uuid]) -> Result<(), AppError> {
-    let found:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active' ORDER BY id FOR SHARE").bind(selected).fetch_all(connection).await?;
+    let found:Vec<Uuid>=school_database::DbSession::new(connection).scalar("student-care.src.services.active_staff", "SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active' ORDER BY id FOR SHARE").bind(selected).fetch_all().await?;
     if found.len() != selected.len() {
         Err(invalid("ผู้รับมอบหมายต้องเป็นบุคลากรที่ใช้งานอยู่"))
     } else {
@@ -254,7 +258,12 @@ pub async fn instruments(
 ) -> Result<Vec<CareInstrumentVersion>, AppError> {
     a.require_read()?;
     let limit = page(&q)?;
-    Ok(sqlx::query_scalar::<_,Json<CareInstrumentVersion>>("SELECT document FROM care_instrument_versions WHERE ($1::uuid IS NULL OR id>$1) ORDER BY id LIMIT $2").bind(q.after_id).bind(limit).fetch_all(pool).await?.into_iter().map(|v|v.0).collect())
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "student-care.services.instruments",
+    )
+    .await?;
+    Ok(school_database::DbSession::new(&mut *database_stage_0).scalar::<Json<CareInstrumentVersion>>("student-care.src.services.instruments", "SELECT document FROM care_instrument_versions WHERE ($1::uuid IS NULL OR id>$1) ORDER BY id LIMIT $2").bind(q.after_id).bind(limit).fetch_all().await?.into_iter().map(|v|v.0).collect())
 }
 pub async fn instrument(
     pool: &PgPool,
@@ -262,21 +271,27 @@ pub async fn instrument(
     id: Uuid,
 ) -> Result<CareInstrumentVersion, AppError> {
     a.require_read()?;
-    let mut c = pool.acquire().await?;
+    let mut c = school_tenancy::TenantPool::observed_checkout_pool(
+        &pool,
+        "student-care.services.instrument",
+    )
+    .await?;
     load_instrument(&mut c, id).await
 }
 async fn load_instrument(
     c: &mut PgConnection,
     id: Uuid,
 ) -> Result<CareInstrumentVersion, AppError> {
-    sqlx::query_scalar::<_, Json<CareInstrumentVersion>>(
-        "SELECT document FROM care_instrument_versions WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_optional(c)
-    .await?
-    .map(|v| v.0)
-    .ok_or_else(missing)
+    school_database::DbSession::new(c)
+        .scalar::<Json<CareInstrumentVersion>>(
+            "student-care.src.services.load_instrument",
+            "SELECT document FROM care_instrument_versions WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .map(|v| v.0)
+        .ok_or_else(missing)
 }
 pub async fn create_instrument(
     pool: &PgPool,
@@ -285,21 +300,31 @@ pub async fn create_instrument(
 ) -> Result<CareInstrumentVersion, AppError> {
     a.require_configure()?;
     scoring::validate_definition(&p.definition)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "student-care.services.create_instrument",
+    )
+    .await?;
     if let Some(result) = receipt(&mut tx, a, p.request_id, "instrument_create", &p).await? {
         return Ok(result);
     }
     let instrument_id = p.instrument_id.unwrap_or_else(Uuid::now_v7);
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.create_instrument",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
         .bind(format!("care-instrument:{instrument_id}"))
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    let latest: Option<i32> = sqlx::query_scalar(
-        "SELECT max(version) FROM care_instrument_versions WHERE instrument_id=$1",
-    )
-    .bind(instrument_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let latest: Option<i32> = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "student-care.src.services.create_instrument",
+            "SELECT max(version) FROM care_instrument_versions WHERE instrument_id=$1",
+        )
+        .bind(instrument_id)
+        .fetch_one()
+        .await?;
     if latest != p.expected_version || (latest.is_none() && p.instrument_id.is_some()) {
         return Err(conflict());
     }
@@ -310,7 +335,7 @@ pub async fn create_instrument(
         definition: p.definition.clone(),
         created_at: Utc::now(),
     };
-    sqlx::query("INSERT INTO care_instrument_versions(id,instrument_id,version,document,created_by) VALUES($1,$2,$3,$4,$5)").bind(result.id).bind(result.instrument_id).bind(result.version).bind(Json(&result)).bind(a.actor_id).execute(&mut *tx).await?;
+    school_database::DbSession::new(&mut *tx).query("student-care.src.services.create_instrument", "INSERT INTO care_instrument_versions(id,instrument_id,version,document,created_by) VALUES($1,$2,$3,$4,$5)").bind(result.id).bind(result.instrument_id).bind(result.version).bind(Json(&result)).bind(a.actor_id).execute().await?;
     finish(
         tx,
         a,
@@ -340,21 +365,26 @@ pub async fn rounds(
     let limit = page(&q)?;
     let own = own_assignment_predicate(4, 5);
     let query = format!("SELECT r.document FROM care_rounds r WHERE ($1::uuid IS NULL OR r.id>$1) AND ($2::text IS NULL OR r.document->>'status'=$2) AND ($3 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND ({own} OR ($6 AND $5=ANY(ca.reviewer_ids))))) ORDER BY r.id LIMIT $7");
-    Ok(
-        sqlx::query_scalar::<_, Json<CareRound>>(sqlx::AssertSqlSafe(query))
-            .bind(q.after_id)
-            .bind(q.status)
-            .bind(a.routine_school() || a.routine_assigned() || a.configure || a.sensitive_school())
-            .bind(a.own)
-            .bind(a.actor_id)
-            .bind(a.sensitive_assigned())
-            .bind(limit)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|v| v.0)
-            .collect(),
-    )
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.services.rounds")
+            .await?;
+    Ok(school_database::DbSession::new(&mut *database_stage_0)
+        .scalar::<Json<CareRound>>(
+            "student-care.src.services.rounds",
+            sqlx::AssertSqlSafe(query),
+        )
+        .bind(q.after_id)
+        .bind(q.status)
+        .bind(a.routine_school() || a.routine_assigned() || a.configure || a.sensitive_school())
+        .bind(a.own)
+        .bind(a.actor_id)
+        .bind(a.sensitive_assigned())
+        .bind(limit)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .map(|v| v.0)
+        .collect())
 }
 async fn load_round(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<CareRound, AppError> {
     let sql = if lock {
@@ -362,9 +392,10 @@ async fn load_round(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<CareRo
     } else {
         "SELECT document FROM care_rounds WHERE id=$1"
     };
-    sqlx::query_scalar::<_, Json<CareRound>>(sql)
+    school_database::DbSession::new(c)
+        .scalar::<Json<CareRound>>("student-care.src.services.load_round", sql)
         .bind(id)
-        .fetch_optional(c)
+        .fetch_optional()
         .await?
         .map(|v| v.0)
         .ok_or_else(missing)
@@ -384,14 +415,20 @@ pub async fn create_round(
     if p.due_date < p.roster_date || (p.due_date - p.roster_date).num_days() > 366 {
         return Err(invalid("ช่วงรอบประเมินไม่ถูกต้อง"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.create_round")
+            .await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     if let Some(v) = receipt(&mut tx, a, p.request_id, "round_create", &p).await? {
         return Ok(v);
     }
-    let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1)")
+    let valid: bool = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "student-care.src.services.create_round",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1)",
+        )
         .bind(p.academic_term_id)
-        .fetch_one(&mut *tx)
+        .fetch_one()
         .await?;
     if !valid {
         return Err(invalid("ไม่พบภาคเรียน"));
@@ -411,22 +448,26 @@ pub async fn create_round(
         row_version: 1,
         created_at: Utc::now(),
     };
-    sqlx::query(
-        "INSERT INTO care_rounds(id,academic_term_id,document,created_by) VALUES($1,$2,$3,$4)",
-    )
-    .bind(result.id)
-    .bind(result.academic_term_id)
-    .bind(Json(&result))
-    .bind(a.actor_id)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "INSERT INTO care_round_versions(round_id,version_id) SELECT $1,unnest($2::uuid[])",
-    )
-    .bind(result.id)
-    .bind(versions)
-    .execute(&mut *tx)
-    .await?;
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.create_round",
+            "INSERT INTO care_rounds(id,academic_term_id,document,created_by) VALUES($1,$2,$3,$4)",
+        )
+        .bind(result.id)
+        .bind(result.academic_term_id)
+        .bind(Json(&result))
+        .bind(a.actor_id)
+        .execute()
+        .await?;
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.create_round",
+            "INSERT INTO care_round_versions(round_id,version_id) SELECT $1,unnest($2::uuid[])",
+        )
+        .bind(result.id)
+        .bind(versions)
+        .execute()
+        .await?;
     finish(
         tx,
         a,
@@ -449,7 +490,9 @@ pub async fn update_round(
     if !a.manage_school {
         return Err(policy::denied());
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.update_round")
+            .await?;
     if let Some(v) = receipt(&mut tx, a, p.request_id, "round_update", &(id, &p)).await? {
         return Ok(v);
     }
@@ -463,12 +506,16 @@ pub async fn update_round(
     r.status = p.status;
     r.row_version += 1;
     if p.status == CareRoundStatus::Cancelled {
-        sqlx::query("UPDATE care_assignments SET document=jsonb_set(jsonb_set(document,'{status}','\"cancelled\"'),'{rowVersion}',to_jsonb((document->>'rowVersion')::bigint+1)) WHERE round_id=$1 AND document->>'status' IN('assigned','in_progress')").bind(id).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("student-care.src.services.update_round", "UPDATE care_assignments SET document=jsonb_set(jsonb_set(document,'{status}','\"cancelled\"'),'{rowVersion}',to_jsonb((document->>'rowVersion')::bigint+1)) WHERE round_id=$1 AND document->>'status' IN('assigned','in_progress')").bind(id).execute().await?;
     }
-    sqlx::query("UPDATE care_rounds SET document=$2 WHERE id=$1")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.update_round",
+            "UPDATE care_rounds SET document=$2 WHERE id=$1",
+        )
         .bind(id)
         .bind(Json(&r))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     finish(
         tx,
@@ -498,7 +545,9 @@ pub async fn students(
     if let Some(s) = &q.search {
         scoring::text(s, 120, false)?;
     }
-    let mut c = pool.acquire().await?;
+    let mut c =
+        school_tenancy::TenantPool::observed_checkout_pool(&pool, "student-care.services.students")
+            .await?;
     let rows = school_academic_core::services::dated_student_directory::students_on_connection(
         &mut c,
         q.academic_term_id,
@@ -533,7 +582,10 @@ pub async fn students(
 pub async fn staff(pool: &PgPool, a: CareAccess) -> Result<Vec<CareStaffOption>, AppError> {
     a.require_manage()
         .or_else(|_| a.require_sensitive_manage())?;
-    let rows:Vec<(Uuid,String)>=sqlx::query_as("SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY display_name,id LIMIT 1001").fetch_all(pool).await?;
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.services.staff")
+            .await?;
+    let rows:Vec<(Uuid,String)>=school_database::DbSession::new(&mut *database_stage_0).query_as("student-care.src.services.staff", "SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' ORDER BY display_name,id LIMIT 1001").fetch_all().await?;
     if rows.len() > 1000 {
         return Err(invalid("รายชื่อบุคลากรเกินขนาดที่รองรับ"));
     }
@@ -569,9 +621,10 @@ async fn load_assignment(
     } else {
         "SELECT created_by,document,reviewer_ids,response_ciphertext,purpose_acknowledged_at FROM care_assignments WHERE id=$1"
     };
-    sqlx::query_as(query)
+    school_database::DbSession::new(c)
+        .query_as("student-care.src.services.load_assignment", query)
         .bind(id)
-        .fetch_optional(c)
+        .fetch_optional()
         .await?
         .ok_or_else(missing)
 }
@@ -635,7 +688,16 @@ pub async fn assignments(
     let limit = page(&q)?;
     let own = own_assignment_predicate(5, 6);
     let query=format!("SELECT ca.document,ca.reviewer_ids,{own} AS own_access FROM care_assignments ca WHERE ($1::uuid IS NULL OR ca.id>$1) AND ($2::uuid IS NULL OR ca.round_id=$2) AND ($3::uuid IS NULL OR ca.student_id=$3) AND ($4::text IS NULL OR ca.document->>'status'=$4) AND ({own} OR $7 OR ($8 AND $6=ANY(ca.reviewer_ids)) OR $10 OR ($11 AND ca.created_by=$6)) AND ($12::uuid IS NULL OR ca.respondent_id=$12) ORDER BY ca.id LIMIT $9");
-    let rows: Vec<AssignmentSummaryRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "student-care.services.assignments",
+    )
+    .await?;
+    let rows: Vec<AssignmentSummaryRow> = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as(
+            "student-care.src.services.assignments",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(q.after_id)
         .bind(q.round_id)
         .bind(q.student_id)
@@ -648,7 +710,7 @@ pub async fn assignments(
         .bind(a.routine_school())
         .bind(a.routine_assigned())
         .bind(q.respondent_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     Ok(rows
         .into_iter()
@@ -663,7 +725,9 @@ pub async fn get_assignment(
     a: CareAccess,
     id: Uuid,
 ) -> Result<CareAssignmentDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.get_assignment")
+            .await?;
     let row = load_assignment(&mut tx, id, false).await?;
     let result = assignment_detail(&mut tx, a, row).await?;
     audit_read(&mut tx, a, id).await?;
@@ -687,7 +751,11 @@ pub async fn create_assignments(
     {
         return Err(invalid("รายชื่อผู้ตอบซ้ำ"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "student-care.services.create_assignments",
+    )
+    .await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     if let Some(v) = receipt(&mut tx, a, p.request_id, "assignments_create", &p).await? {
         return Ok(v);
@@ -712,7 +780,7 @@ pub async fn create_assignments(
             &selected,
         )
         .await?;
-    let births:Vec<(Uuid,Option<NaiveDate>)>=sqlx::query_as("SELECT id,date_of_birth FROM users WHERE id=ANY($1) AND user_type='student' AND status='active' ORDER BY id FOR SHARE").bind(&selected).fetch_all(&mut *tx).await?;
+    let births:Vec<(Uuid,Option<NaiveDate>)>=school_database::DbSession::new(&mut *tx).query_as("student-care.src.services.create_assignments", "SELECT id,date_of_birth FROM users WHERE id=ANY($1) AND user_type='student' AND status='active' ORDER BY id FOR SHARE").bind(&selected).fetch_all().await?;
     let births: BTreeMap<_, _> = births.into_iter().collect();
     if instrument.definition.respondent == CareRespondent::Teacher {
         let teachers: Vec<_> = p
@@ -799,15 +867,22 @@ pub async fn create_assignments(
                 .push_bind(a.actor_id);
         },
     );
-    insert.build().execute(&mut *tx).await.map_err(|e| {
-        if e.as_database_error()
-            .is_some_and(|e| e.code().as_deref() == Some("23505"))
-        {
-            AppError::Conflict("ผู้ตอบมีงานแบบประเมินนี้ในรอบแล้ว".into())
-        } else {
-            AppError::from(e)
-        }
-    })?;
+    school_database::DbSession::new(&mut *tx)
+        .prepared_query(
+            "student-care.src.services.create_assignments",
+            insert.build(),
+        )
+        .execute()
+        .await
+        .map_err(|e| {
+            if e.as_database_error()
+                .is_some_and(|e| e.code().as_deref() == Some("23505"))
+            {
+                AppError::Conflict("ผู้ตอบมีงานแบบประเมินนี้ในรอบแล้ว".into())
+            } else {
+                AppError::from(e)
+            }
+        })?;
     drop(insert);
     finish(
         tx,
@@ -834,11 +909,17 @@ pub async fn save_response(
     } else {
         "response_draft"
     };
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.save_response")
+            .await?;
     // Lock the round before assignment everywhere to serialize close/cancel with submission.
-    let round_id: Uuid = sqlx::query_scalar("SELECT round_id FROM care_assignments WHERE id=$1")
+    let round_id: Uuid = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "student-care.src.services.save_response",
+            "SELECT round_id FROM care_assignments WHERE id=$1",
+        )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(missing)?;
     let round = load_round(&mut tx, round_id, true).await?;
@@ -918,7 +999,7 @@ pub async fn save_response(
     if submit {
         row.document.submitted_at = Some(Utc::now());
     }
-    sqlx::query("UPDATE care_assignments SET document=$2,response_ciphertext=$3,purpose_acknowledged_at=$4 WHERE id=$1").bind(id).bind(&row.document).bind(&row.response_ciphertext).bind(row.purpose_acknowledged_at).execute(&mut *tx).await?;
+    school_database::DbSession::new(&mut *tx).query("student-care.src.services.save_response", "UPDATE care_assignments SET document=$2,response_ciphertext=$3,purpose_acknowledged_at=$4 WHERE id=$1").bind(id).bind(&row.document).bind(&row.response_ciphertext).bind(row.purpose_acknowledged_at).execute().await?;
     if submit && urgent {
         let recipients = urgent_recipients(&mut tx, &row.reviewer_ids).await?;
         for reviewer in recipients {
@@ -959,10 +1040,18 @@ pub async fn assignment_command(
         "assignment_cancel"
     };
     scoring::text(&p.reason, 1000, true)?;
-    let mut tx = pool.begin().await?;
-    let round_id: Uuid = sqlx::query_scalar("SELECT round_id FROM care_assignments WHERE id=$1")
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "student-care.services.assignment_command",
+    )
+    .await?;
+    let round_id: Uuid = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "student-care.src.services.assignment_command",
+            "SELECT round_id FROM care_assignments WHERE id=$1",
+        )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(missing)?;
     load_round(&mut tx, round_id, true).await?;
@@ -996,10 +1085,14 @@ pub async fn assignment_command(
         r.status = CareAssignmentStatus::Cancelled;
     }
     r.row_version += 1;
-    sqlx::query("UPDATE care_assignments SET document=$2 WHERE id=$1")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.assignment_command",
+            "UPDATE care_assignments SET document=$2 WHERE id=$1",
+        )
         .bind(id)
         .bind(Json(&r))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     finish_with_detail(
         tx,
@@ -1040,9 +1133,10 @@ async fn load_visit(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<VisitR
     } else {
         "SELECT document,visitor_ids,record_ciphertext FROM care_visits WHERE id=$1"
     };
-    sqlx::query_as(sql)
+    school_database::DbSession::new(c)
+        .query_as("student-care.src.services.load_visit", sql)
         .bind(id)
-        .fetch_optional(c)
+        .fetch_optional()
         .await?
         .ok_or_else(missing)
 }
@@ -1069,14 +1163,19 @@ pub async fn visits(
 ) -> Result<Vec<CareVisit>, AppError> {
     a.require_read()?;
     let limit = page(&q)?;
-    Ok(sqlx::query_scalar::<_,Json<CareVisit>>("SELECT document FROM care_visits WHERE ($1::uuid IS NULL OR id>$1) AND ($2::uuid IS NULL OR student_id=$2) AND ($3::text IS NULL OR document->>'status'=$3) AND ($4 OR ($5 AND $6=ANY(visitor_ids))) ORDER BY id LIMIT $7").bind(q.after_id).bind(q.student_id).bind(q.status).bind(a.routine_school()).bind(a.routine_assigned()).bind(a.actor_id).bind(limit).fetch_all(pool).await?.into_iter().map(|v|v.0).collect())
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.services.visits")
+            .await?;
+    Ok(school_database::DbSession::new(&mut *database_stage_0).scalar::<Json<CareVisit>>("student-care.src.services.visits", "SELECT document FROM care_visits WHERE ($1::uuid IS NULL OR id>$1) AND ($2::uuid IS NULL OR student_id=$2) AND ($3::text IS NULL OR document->>'status'=$3) AND ($4 OR ($5 AND $6=ANY(visitor_ids))) ORDER BY id LIMIT $7").bind(q.after_id).bind(q.student_id).bind(q.status).bind(a.routine_school()).bind(a.routine_assigned()).bind(a.actor_id).bind(limit).fetch_all().await?.into_iter().map(|v|v.0).collect())
 }
 pub async fn get_visit(
     pool: &PgPool,
     a: CareAccess,
     id: Uuid,
 ) -> Result<CareVisitRecord, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.get_visit")
+            .await?;
     let row = load_visit(&mut tx, id, false).await?;
     if !visit_read(a, &row.visitor_ids) {
         return Err(missing());
@@ -1123,7 +1222,9 @@ pub async fn save_visit(
     } else {
         "visit_create"
     };
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.save_visit")
+            .await?;
     school_academic_core::services::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     if let Some(v) =
         receipt::<CareVisitRecord, _>(&mut tx, a, p.request_id, operation, &(id, &p)).await?
@@ -1219,16 +1320,16 @@ pub async fn save_visit(
     };
     let cipher = encrypt(&private)?;
     if revision == 1 {
-        sqlx::query("INSERT INTO care_visits(id,student_id,visitor_ids,document,record_ciphertext) VALUES($1,$2,$3,$4,$5)").bind(id).bind(p.student_id).bind(&visitors).bind(Json(&visit)).bind(&cipher).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("student-care.src.services.save_visit", "INSERT INTO care_visits(id,student_id,visitor_ids,document,record_ciphertext) VALUES($1,$2,$3,$4,$5)").bind(id).bind(p.student_id).bind(&visitors).bind(Json(&visit)).bind(&cipher).execute().await?;
     } else {
-        sqlx::query(
+        school_database::DbSession::new(&mut *tx).query("student-care.src.services.save_visit",
             "UPDATE care_visits SET visitor_ids=$2,document=$3,record_ciphertext=$4 WHERE id=$1",
         )
         .bind(id)
         .bind(&visitors)
         .bind(Json(&visit))
         .bind(&cipher)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     let result = visit_record(VisitRow {
@@ -1262,9 +1363,10 @@ async fn load_case(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<CaseRow
     } else {
         "SELECT student_id,assigned_user_ids,record_ciphertext FROM care_cases WHERE id=$1"
     };
-    sqlx::query_as(sql)
+    school_database::DbSession::new(c)
+        .query_as("student-care.src.services.load_case", sql)
         .bind(id)
-        .fetch_optional(c)
+        .fetch_optional()
         .await?
         .ok_or_else(missing)
 }
@@ -1273,15 +1375,39 @@ pub async fn cases(
     a: CareAccess,
     q: CareListQuery,
 ) -> Result<Vec<CareCase>, AppError> {
-    let limit = page(&q)?;
+    let limit = case_list_preflight(a, &q)?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.cases").await?;
+    cases_with_limit(&mut connection, a, q, limit).await
+}
+
+pub async fn cases_on_connection(
+    connection: &mut sqlx::PgConnection,
+    a: CareAccess,
+    q: CareListQuery,
+) -> Result<Vec<CareCase>, AppError> {
+    let limit = case_list_preflight(a, &q)?;
+    cases_with_limit(connection, a, q, limit).await
+}
+fn case_list_preflight(a: CareAccess, q: &CareListQuery) -> Result<i64, AppError> {
+    let limit = page(q)?;
     if !a.sensitive_school() && !a.sensitive_assigned() {
         return Err(policy::denied());
     }
-    let rows:Vec<String>=sqlx::query_scalar("SELECT record_ciphertext FROM care_cases WHERE ($1::uuid IS NULL OR id>$1) AND ($2::uuid IS NULL OR student_id=$2) AND ($3::text IS NULL OR status=$3) AND ($4 OR ($5 AND $6=ANY(assigned_user_ids))) AND ($8::date IS NULL OR (status<>'closed' AND next_follow_up<=$8)) ORDER BY id LIMIT $7").bind(q.after_id).bind(q.student_id).bind(q.status).bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).bind(limit).bind(q.follow_up_before).fetch_all(pool).await?;
+    Ok(limit)
+}
+async fn cases_with_limit(
+    connection: &mut sqlx::PgConnection,
+    a: CareAccess,
+    q: CareListQuery,
+    limit: i64,
+) -> Result<Vec<CareCase>, AppError> {
+    let rows:Vec<String>=school_database::DbSession::new(&mut *connection).scalar("student-care.src.services.cases_on_connection", "SELECT record_ciphertext FROM care_cases WHERE ($1::uuid IS NULL OR id>$1) AND ($2::uuid IS NULL OR student_id=$2) AND ($3::text IS NULL OR status=$3) AND ($4 OR ($5 AND $6=ANY(assigned_user_ids))) AND ($8::date IS NULL OR (status<>'closed' AND next_follow_up<=$8)) ORDER BY id LIMIT $7").bind(q.after_id).bind(q.student_id).bind(q.status).bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).bind(limit).bind(q.follow_up_before).fetch_all().await?;
     rows.into_iter().map(|r| decrypt::<CareCase>(&r)).collect()
 }
 pub async fn get_case(pool: &PgPool, a: CareAccess, id: Uuid) -> Result<CareCaseDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.get_case").await?;
     let row = load_case(&mut tx, id, false).await?;
     if !a.can_review(&row.assigned_user_ids) {
         return Err(missing());
@@ -1306,7 +1432,9 @@ pub async fn save_case(
     } else {
         "case_create"
     };
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.save_case")
+            .await?;
     if let Some(v) =
         receipt::<CareCaseDetail, _>(&mut tx, a, p.request_id, operation, &(id, &p)).await?
     {
@@ -1366,7 +1494,7 @@ pub async fn save_case(
         if !a.sensitive_manage_school && (!authorized_source || !assigned.contains(&a.actor_id)) {
             return Err(policy::denied());
         }
-        let name:String=sqlx::query_scalar("SELECT concat_ws(' ',title,first_name,last_name) FROM users WHERE id=$1 AND user_type='student' AND status='active' FOR SHARE").bind(p.student_id).fetch_optional(&mut *tx).await?.ok_or_else(missing)?;
+        let name:String=school_database::DbSession::new(&mut *tx).scalar("student-care.src.services.save_case", "SELECT concat_ws(' ',title,first_name,last_name) FROM users WHERE id=$1 AND user_type='student' AND status='active' FOR SHARE").bind(p.student_id).fetch_optional().await?.ok_or_else(missing)?;
         CareCaseDetail {
             case: CareCase {
                 id: Uuid::now_v7(),
@@ -1396,9 +1524,9 @@ pub async fn save_case(
     let r = &result.case;
     let cipher = encrypt(&result.case)?;
     if r.row_version == 1 {
-        sqlx::query("INSERT INTO care_cases(id,student_id,assigned_user_ids,status,row_version,source_assignment_id,source_visit_id,record_ciphertext,next_follow_up) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)").bind(r.id).bind(r.student_id).bind(&assigned).bind(enum_text(r.status)?).bind(r.row_version).bind(r.source_assignment_id).bind(r.source_visit_id).bind(cipher).bind(r.next_follow_up).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("student-care.src.services.save_case", "INSERT INTO care_cases(id,student_id,assigned_user_ids,status,row_version,source_assignment_id,source_visit_id,record_ciphertext,next_follow_up) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)").bind(r.id).bind(r.student_id).bind(&assigned).bind(enum_text(r.status)?).bind(r.row_version).bind(r.source_assignment_id).bind(r.source_visit_id).bind(cipher).bind(r.next_follow_up).execute().await?;
     } else {
-        sqlx::query("UPDATE care_cases SET assigned_user_ids=$2,row_version=$3,record_ciphertext=$4,next_follow_up=$5 WHERE id=$1").bind(r.id).bind(&assigned).bind(r.row_version).bind(cipher).bind(r.next_follow_up).execute(&mut *tx).await?;
+        school_database::DbSession::new(&mut *tx).query("student-care.src.services.save_case", "UPDATE care_cases SET assigned_user_ids=$2,row_version=$3,record_ciphertext=$4,next_follow_up=$5 WHERE id=$1").bind(r.id).bind(&assigned).bind(r.row_version).bind(cipher).bind(r.next_follow_up).execute().await?;
     }
     store_case_event(&mut tx, result.case.id, &new_event).await?;
     result.events = read_case_events(&mut tx, result.case.id, None, 100).await?;
@@ -1432,7 +1560,9 @@ pub async fn add_case_event(
 ) -> Result<CareCaseDetail, AppError> {
     a.require_sensitive_manage()?;
     scoring::text(&p.note, 5000, true)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.add_case_event")
+            .await?;
     let old = load_case(&mut tx, id, true).await?;
     if !a.can_manage_case(&old.assigned_user_ids) {
         return Err(policy::denied());
@@ -1469,13 +1599,13 @@ pub async fn add_case_event(
     };
     store_case_event(&mut tx, id, &new_event).await?;
     result.events = read_case_events(&mut tx, id, None, 100).await?;
-    sqlx::query("UPDATE care_cases SET status=$2,row_version=$3,record_ciphertext=$4,next_follow_up=$5 WHERE id=$1")
+    school_database::DbSession::new(&mut *tx).query("student-care.src.services.add_case_event", "UPDATE care_cases SET status=$2,row_version=$3,record_ciphertext=$4,next_follow_up=$5 WHERE id=$1")
         .bind(id)
         .bind(enum_text(p.status)?)
         .bind(result.case.row_version)
         .bind(encrypt(&result.case)?)
         .bind(result.case.next_follow_up)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     finish(
         tx,
@@ -1495,21 +1625,28 @@ pub async fn overview(pool: &PgPool, a: CareAccess) -> Result<CareOverview, AppE
     // Each aggregate applies the same explicit-resource authority as its list.
     let own = own_assignment_predicate(2, 1);
     let query = format!("SELECT count(*) FILTER(WHERE ca.document->>'status' IN('assigned','in_progress')),count(*) FILTER(WHERE ca.document->>'status'='submitted'),count(*) FILTER(WHERE ca.document->>'urgent'='true' AND ca.document->>'acknowledgedAt' IS NULL AND ($3 OR ($4 AND $1=ANY(ca.reviewer_ids)))) FROM care_assignments ca WHERE {own} OR $3 OR ($4 AND $1=ANY(ca.reviewer_ids)) OR $5 OR ($6 AND ca.created_by=$1)");
-    let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.services.overview")
+            .await?;
+    let counts: (i64, i64, i64) = school_database::DbSession::new(&mut *database_stage_0)
+        .query_as(
+            "student-care.src.services.overview",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(a.actor_id)
         .bind(a.own)
         .bind(a.sensitive_school())
         .bind(a.sensitive_assigned())
         .bind(a.routine_school())
         .bind(a.routine_assigned())
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
-    let visits:i64=sqlx::query_scalar("SELECT count(*) FROM care_visits WHERE document->>'status'='planned' AND ($1 OR ($2 AND $3=ANY(visitor_ids)))").bind(a.routine_school()).bind(a.routine_assigned()).bind(a.actor_id).fetch_one(pool).await?;
-    let cases:i64=sqlx::query_scalar("SELECT count(*) FROM care_cases WHERE status<>'closed' AND ($1 OR ($2 AND $3=ANY(assigned_user_ids)))").bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).fetch_one(pool).await?;
+    let visits:i64=school_database::DbSession::new(&mut *database_stage_0).scalar("student-care.src.services.overview", "SELECT count(*) FROM care_visits WHERE document->>'status'='planned' AND ($1 OR ($2 AND $3=ANY(visitor_ids)))").bind(a.routine_school()).bind(a.routine_assigned()).bind(a.actor_id).fetch_one().await?;
+    let cases:i64=school_database::DbSession::new(&mut *database_stage_0).scalar("student-care.src.services.overview", "SELECT count(*) FROM care_cases WHERE status<>'closed' AND ($1 OR ($2 AND $3=ANY(assigned_user_ids)))").bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).fetch_one().await?;
     let today = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    let due:i64=sqlx::query_scalar("SELECT count(*) FROM care_cases WHERE status<>'closed' AND next_follow_up<=$4 AND ($1 OR ($2 AND $3=ANY(assigned_user_ids)))").bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).bind(today).fetch_one(pool).await?;
+    let due:i64=school_database::DbSession::new(&mut *database_stage_0).scalar("student-care.src.services.overview", "SELECT count(*) FROM care_cases WHERE status<>'closed' AND next_follow_up<=$4 AND ($1 OR ($2 AND $3=ANY(assigned_user_ids)))").bind(a.sensitive_school()).bind(a.sensitive_assigned()).bind(a.actor_id).bind(today).fetch_one().await?;
     Ok(CareOverview {
         follow_up_due_count: due,
         assigned_count: counts.0,
@@ -1546,18 +1683,30 @@ pub async fn get_round(pool: &PgPool, a: CareAccess, id: Uuid) -> Result<CareRou
     a.require_read()?;
     let own = own_assignment_predicate(3, 4);
     let query = format!("SELECT EXISTS(SELECT 1 FROM care_rounds r WHERE r.id=$1 AND ($2 OR EXISTS(SELECT 1 FROM care_assignments ca WHERE ca.round_id=r.id AND ({own} OR ($5 AND $4=ANY(ca.reviewer_ids))))))");
-    let visible: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+    let mut database_stage_0 =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "student-care.services.get_round")
+            .await?;
+    let visible: bool = school_database::DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "student-care.src.services.get_round",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
         .bind(a.routine_school() || a.routine_assigned() || a.configure || a.sensitive_school())
         .bind(a.own)
         .bind(a.actor_id)
         .bind(a.sensitive_assigned())
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
     if !visible {
         return Err(missing());
     }
-    let mut c = pool.acquire().await?;
+    drop(database_stage_0);
+    let mut c = school_tenancy::TenantPool::observed_checkout_pool(
+        &pool,
+        "student-care.services.get_round",
+    )
+    .await?;
     load_round(&mut c, id, false).await
 }
 
@@ -1567,7 +1716,7 @@ async fn read_case_events(
     after: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<CareCaseEvent>, AppError> {
-    let rows:Vec<String>=sqlx::query_scalar("SELECT event_ciphertext FROM care_case_events WHERE case_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3").bind(id).bind(after).bind(limit).fetch_all(c).await?;
+    let rows:Vec<String>=school_database::DbSession::new(c).scalar("student-care.src.services.read_case_events", "SELECT event_ciphertext FROM care_case_events WHERE case_id=$1 AND ($2::uuid IS NULL OR id<$2) ORDER BY id DESC LIMIT $3").bind(id).bind(after).bind(limit).fetch_all().await?;
     rows.into_iter().map(|s| decrypt(&s)).collect()
 }
 async fn store_case_event(
@@ -1575,11 +1724,15 @@ async fn store_case_event(
     id: Uuid,
     event: &CareCaseEvent,
 ) -> Result<(), AppError> {
-    sqlx::query("INSERT INTO care_case_events(id,case_id,event_ciphertext) VALUES($1,$2,$3)")
+    school_database::DbSession::new(c)
+        .query(
+            "student-care.src.services.store_case_event",
+            "INSERT INTO care_case_events(id,case_id,event_ciphertext) VALUES($1,$2,$3)",
+        )
         .bind(event.id)
         .bind(id)
         .bind(encrypt(event)?)
-        .execute(c)
+        .execute()
         .await?;
     Ok(())
 }
@@ -1595,7 +1748,9 @@ pub async fn list_case_events(
     q: CareListQuery,
 ) -> Result<Vec<CareCaseEvent>, AppError> {
     let limit = page(&q)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "student-care.services.list_case_events")
+            .await?;
     let row = load_case(&mut tx, id, false).await?;
     if !a.can_review(&row.assigned_user_ids) {
         return Err(missing());
@@ -1617,7 +1772,11 @@ pub async fn update_assignment_reviewers(
     }
     let reviewers = ids(&p.reviewer_user_ids, 30)?;
     scoring::text(&p.reason, 1000, true)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "student-care.services.update_assignment_reviewers",
+    )
+    .await?;
     let mut row = load_assignment(&mut tx, id, true).await?;
     if let Some(previous) =
         receipt::<CareAssignment, _>(&mut tx, a, p.request_id, "assignment_reviewers", &(id, &p))
@@ -1640,11 +1799,15 @@ pub async fn update_assignment_reviewers(
         .collect();
     row.document.row_version += 1;
     row.document.reviewer_user_ids = reviewers.clone();
-    sqlx::query("UPDATE care_assignments SET reviewer_ids=$2,document=$3 WHERE id=$1")
+    school_database::DbSession::new(&mut *tx)
+        .query(
+            "student-care.src.services.update_assignment_reviewers",
+            "UPDATE care_assignments SET reviewer_ids=$2,document=$3 WHERE id=$1",
+        )
         .bind(id)
         .bind(&reviewers)
         .bind(&row.document)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     if row.document.status == CareAssignmentStatus::Submitted
         && row.document.urgent

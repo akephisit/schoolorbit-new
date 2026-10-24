@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
@@ -11,9 +12,17 @@ pub async fn get_promotion_policy_options(
     actor: &ActorContext,
 ) -> Result<PromotionPolicyOptions, AppError> {
     actor.require_permission(codes::ACADEMIC_PROMOTION_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_policy.get_promotion_policy_options",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_policy.get_promotion_policy_options",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let options = super::promotion_context::policy_options(&mut tx).await?;
     tx.commit().await?;
@@ -49,15 +58,34 @@ pub async fn list_promotion_policies(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<Vec<PromotionPolicyVersion>, AppError> {
-    actor.require_permission(codes::ACADEMIC_PROMOTION_READ_SCHOOL)?;
-    let rows: Vec<StoredPolicy> = sqlx::query_as("SELECT id,name,rules,progression_row_version,reviewed_by,reviewed_at FROM academic_promotion_policy_versions ORDER BY reviewed_at DESC,id LIMIT 101")
-        .fetch_all(pool).await?;
+    require_promotion_policy_read(actor)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_lifecycle.services.promotion_policy.list_promotion_policies",
+    )
+    .await?;
+    list_promotion_policies_on_connection(&mut connection, actor).await
+}
+
+pub async fn list_promotion_policies_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+) -> Result<Vec<PromotionPolicyVersion>, AppError> {
+    require_promotion_policy_read(actor)?;
+    let rows: Vec<StoredPolicy> = DbSession::new(connection).query_as("academic_lifecycle.services.promotion_policy.list_promotion_policies_on_connection", "SELECT id,name,rules,progression_row_version,reviewed_by,reviewed_at FROM academic_promotion_policy_versions ORDER BY reviewed_at DESC,id LIMIT 101")
+        .fetch_all().await?;
     if rows.len() > 100 {
         return Err(AppError::ValidationError(
             "ประวัติเกณฑ์เกิน 100 รุ่น กรุณาใช้การแบ่งหน้าก่อนเรียกประวัติทั้งหมด".into(),
         ));
     }
     Ok(rows.into_iter().map(Into::into).collect())
+}
+
+fn require_promotion_policy_read(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::ACADEMIC_PROMOTION_READ_SCHOOL)?;
+    Ok(())
 }
 
 pub async fn create_promotion_policy(
@@ -71,15 +99,44 @@ pub async fn create_promotion_policy(
         codes::ACADEMIC_PROMOTION_APPROVE_SCHOOL,
     ])?;
     super::promotion_recommendation::validate_policy(&input)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_policy.create_promotion_policy",
+    )
+    .await?;
     let revision = validate_promotion_rules(&mut tx, &input.rules).await?;
-    let stored: StoredPolicy = sqlx::query_as("INSERT INTO academic_promotion_policy_versions (id,name,rules,progression_row_version,reviewed_by) VALUES ($1,$2,$3,$4,$5) RETURNING id,name,rules,progression_row_version,reviewed_by,reviewed_at")
+    let stored: StoredPolicy = DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_policy.create_promotion_policy", "INSERT INTO academic_promotion_policy_versions (id,name,rules,progression_row_version,reviewed_by) VALUES ($1,$2,$3,$4,$5) RETURNING id,name,rules,progression_row_version,reviewed_by,reviewed_at")
         .bind(Uuid::now_v7()).bind(input.name.trim()).bind(Json(&input.rules))
-        .bind(revision).bind(actor.user_id).fetch_one(&mut *tx).await?;
-    sqlx::query("INSERT INTO academic_audit_events (event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_policy.approved','promotion_policy',$1,$2,$3)")
+        .bind(revision).bind(actor.user_id).fetch_one().await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_policy.create_promotion_policy", "INSERT INTO academic_audit_events (event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_policy.approved','promotion_policy',$1,$2,$3)")
         .bind(stored.id).bind(actor.user_id)
         .bind(Json(serde_json::json!({"progressionRowVersion":revision,"ruleCount":input.rules.len()})))
-        .execute(&mut *tx).await?;
+        .execute().await?;
     tx.commit().await?;
     Ok(stored.into())
+}
+
+#[cfg(test)]
+mod pool_facade_preflight_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_promotion_policy_denial_precedes_checkout() {
+        let pool = closed_pool().await;
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            list_promotion_policies(&pool, &actor).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
 }

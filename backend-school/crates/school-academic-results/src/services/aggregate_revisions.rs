@@ -2,6 +2,7 @@ use super::{aggregate_preview::aggregate_in_transaction, *};
 use crate::policy::aggregate::{require_aggregate_lock, require_aggregate_read};
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 
@@ -72,14 +73,22 @@ pub async fn lock_term_aggregate(
         ));
     }
     let request_checksum = hash(&(actor.user_id, context, student, &input))?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_revisions.lock_term_aggregate",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.aggregate_revisions.lock_term_aggregate",
+            "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+        )
+        .execute()
         .await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
     // Concurrent revision writers conflict rather than accepting two snapshots of the
     // same expected revision. Source corrections remain append-only and detectable.
-    let previous: Option<RevisionRow> = sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_term_aggregate_revisions WHERE request_id=$1").bind(input.request_id).fetch_optional(&mut *tx).await?;
+    let previous: Option<RevisionRow> = DbSession::new(&mut *tx).query_as("academic_results.services.aggregate_revisions.lock_term_aggregate", "SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_term_aggregate_revisions WHERE request_id=$1").bind(input.request_id).fetch_optional().await?;
     if let Some(previous) = previous {
         if previous.request_checksum != request_checksum {
             return Err(conflict());
@@ -94,13 +103,13 @@ pub async fn lock_term_aggregate(
             },
         )
         .await?;
-        let latest: i64 = sqlx::query_scalar("SELECT max(revision) FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2").bind(student).bind(context.academic_term_id).fetch_one(&mut *tx).await?;
+        let latest: i64 = DbSession::new(&mut *tx).scalar("academic_results.services.aggregate_revisions.lock_term_aggregate", "SELECT max(revision) FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2").bind(student).bind(context.academic_term_id).fetch_one().await?;
         let is_current = previous.revision == latest
             && previous.snapshot.source_checksum == current.source_checksum;
         tx.commit().await.map_err(write_error)?;
         return Ok(previous.wire(is_current));
     }
-    let latest: Option<i64> = sqlx::query_scalar("SELECT max(revision) FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2").bind(student).bind(context.academic_term_id).fetch_one(&mut *tx).await?;
+    let latest: Option<i64> = DbSession::new(&mut *tx).scalar("academic_results.services.aggregate_revisions.lock_term_aggregate", "SELECT max(revision) FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2").bind(student).bind(context.academic_term_id).fetch_one().await?;
     check_version(input.expected_revision, latest)?;
     let preview = aggregate_in_transaction(
         &mut tx,
@@ -131,8 +140,8 @@ pub async fn lock_term_aggregate(
         .unwrap_or(0)
         .checked_add(1)
         .ok_or_else(|| AppError::ValidationError("Aggregate revision limit exceeded".into()))?;
-    let row: RevisionRow = sqlx::query_as("INSERT INTO academic_term_aggregate_revisions (student_academic_year_id,academic_year_id,academic_term_id,revision,policy_id,source_checksum,request_id,request_checksum,snapshot,official_gpa,hold_reason,locked_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum")
-        .bind(student).bind(context.academic_year_id).bind(context.academic_term_id).bind(revision).bind(input.policy_id).bind(&preview.source_checksum).bind(input.request_id).bind(request_checksum).bind(Json(&preview)).bind(official_gpa).bind(hold).bind(actor.user_id).fetch_one(&mut *tx).await.map_err(write_error)?;
+    let row: RevisionRow = DbSession::new(&mut *tx).query_as("academic_results.services.aggregate_revisions.lock_term_aggregate", "INSERT INTO academic_term_aggregate_revisions (student_academic_year_id,academic_year_id,academic_term_id,revision,policy_id,source_checksum,request_id,request_checksum,snapshot,official_gpa,hold_reason,locked_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum")
+        .bind(student).bind(context.academic_year_id).bind(context.academic_term_id).bind(revision).bind(input.policy_id).bind(&preview.source_checksum).bind(input.request_id).bind(request_checksum).bind(Json(&preview)).bind(official_gpa).bind(hold).bind(actor.user_id).fetch_one().await.map_err(write_error)?;
     tx.commit().await.map_err(write_error)?;
     Ok(row.wire(true))
 }
@@ -144,24 +153,32 @@ pub async fn list_term_aggregate_revisions(
     student: Uuid,
 ) -> Result<Vec<TermAggregateRevision>, AppError> {
     require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_revisions.list_term_aggregate_revisions",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.aggregate_revisions.list_term_aggregate_revisions",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     validate_context(&mut tx, context).await?;
-    let exists: bool = sqlx::query_scalar(
+    let exists: bool = DbSession::new(&mut *tx).scalar("academic_results.services.aggregate_revisions.list_term_aggregate_revisions",
         "SELECT EXISTS(SELECT 1 FROM student_academic_years WHERE id=$1 AND academic_year_id=$2)",
     )
     .bind(student)
     .bind(context.academic_year_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
     if !exists {
         return Err(AppError::NotFound(
             "Student academic year not found in selected context".into(),
         ));
     }
-    let rows: Vec<RevisionRow> = sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY revision DESC LIMIT 101").bind(student).bind(context.academic_term_id).bind(context.academic_year_id).fetch_all(&mut *tx).await?;
+    let rows: Vec<RevisionRow> = DbSession::new(&mut *tx).query_as("academic_results.services.aggregate_revisions.list_term_aggregate_revisions", "SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_term_aggregate_revisions WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY revision DESC LIMIT 101").bind(student).bind(context.academic_term_id).bind(context.academic_year_id).fetch_all().await?;
     if rows.len() > 100 {
         return Err(AppError::ValidationError(
             "Aggregate history exceeds 100 revisions".into(),

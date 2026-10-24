@@ -1133,6 +1133,11 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         models::{timetable_block::*, timetable_publication::*},
         services::timetable_block_service as blocks,
     };
+    // The historical zero-period/identity assertions above run at migration 096.
+    // Current timetable workspace reads require the staff-name projection from 113.
+    apply_migrations_through(&pool, 113)
+        .await
+        .expect("current timetable workspace requires the staff-name projection");
     let workspace = blocks::get_workspace(
         &pool,
         TimetableBlockWorkspaceQuery {

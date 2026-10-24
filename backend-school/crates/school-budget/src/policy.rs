@@ -4,10 +4,14 @@ use crate::{
     repository::{self, ProjectRecord},
 };
 use school_authorization::{
-    accessible_exact_units_for_permission, accessible_tree_units_for_permission,
-    resource_access_policy::{accessible_organization_unit_ids, UserResourceListAccess},
+    accessible_exact_units_for_permission_on_connection,
+    accessible_tree_units_for_permission_on_connection,
+    resource_access_policy::{
+        accessible_organization_unit_ids_on_connection, UserResourceListAccess,
+    },
     ActorContext,
 };
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
@@ -29,6 +33,16 @@ pub(crate) async fn read_scope(
     a: &ActorContext,
     export: bool,
 ) -> Result<Scope, AppError> {
+    let (s, unit, tree) = read_scope_seed(a, export);
+    if !s.school && (a.has_permission(unit) || a.has_permission(tree)) {
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.policy.read_scope")
+                .await?;
+        return read_scope_on_connection(&mut connection, a, export).await;
+    }
+    require_scope(s)
+}
+fn read_scope_seed(a: &ActorContext, export: bool) -> (Scope, &'static str, &'static str) {
     let (school, own, assigned, unit, tree) = if export {
         (
             codes::BUDGET_DOWNLOAD_SCHOOL,
@@ -46,20 +60,38 @@ pub(crate) async fn read_scope(
             codes::BUDGET_READ_ORGANIZATION_TREE,
         )
     };
-    let mut s = Scope {
+    let s = Scope {
         school: a.has_permission(school),
         own: a.has_permission(own),
         assigned: assigned.is_some_and(|p| a.has_permission(p)),
         units: vec![],
     };
+    (s, unit, tree)
+}
+fn require_scope(s: Scope) -> Result<Scope, AppError> {
+    if !s.any() {
+        return Err(repository::denied());
+    }
+    Ok(s)
+}
+pub(crate) async fn read_scope_on_connection(
+    connection: &mut sqlx::PgConnection,
+    a: &ActorContext,
+    export: bool,
+) -> Result<Scope, AppError> {
+    let (mut s, unit, tree) = read_scope_seed(a, export);
     if !s.school {
         if a.has_permission(unit) {
-            s.units
-                .extend(accessible_exact_units_for_permission(pool, a.user_id, unit).await?);
+            s.units.extend(
+                accessible_exact_units_for_permission_on_connection(connection, a.user_id, unit)
+                    .await?,
+            );
         }
         if a.has_permission(tree) {
-            s.units
-                .extend(accessible_tree_units_for_permission(pool, a.user_id, tree).await?);
+            s.units.extend(
+                accessible_tree_units_for_permission_on_connection(connection, a.user_id, tree)
+                    .await?,
+            );
         }
         s.units.sort();
         s.units.dedup();
@@ -69,18 +101,41 @@ pub(crate) async fn read_scope(
     }
     Ok(s)
 }
+
 pub(crate) async fn update_scope(pool: &PgPool, a: &ActorContext) -> Result<Scope, AppError> {
-    let mut s = Scope {
+    let s = update_scope_seed(a);
+    if !s.school
+        && a.has_any_permission(&[
+            codes::BUDGET_UPDATE_ORGANIZATION_UNIT,
+            codes::BUDGET_UPDATE_ORGANIZATION_TREE,
+        ])
+    {
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.policy.update_scope")
+                .await?;
+        return update_scope_on_connection(&mut connection, a).await;
+    }
+    Ok(s)
+}
+fn update_scope_seed(a: &ActorContext) -> Scope {
+    let s = Scope {
         school: a.has_permission(codes::BUDGET_UPDATE_SCHOOL),
         own: a.has_permission(codes::BUDGET_UPDATE_OWN),
         assigned: false,
         units: vec![],
     };
+    s
+}
+pub(crate) async fn update_scope_on_connection(
+    connection: &mut sqlx::PgConnection,
+    a: &ActorContext,
+) -> Result<Scope, AppError> {
+    let mut s = update_scope_seed(a);
     if !s.school {
         if a.has_permission(codes::BUDGET_UPDATE_ORGANIZATION_UNIT) {
             s.units.extend(
-                accessible_exact_units_for_permission(
-                    pool,
+                accessible_exact_units_for_permission_on_connection(
+                    connection,
                     a.user_id,
                     codes::BUDGET_UPDATE_ORGANIZATION_UNIT,
                 )
@@ -89,8 +144,8 @@ pub(crate) async fn update_scope(pool: &PgPool, a: &ActorContext) -> Result<Scop
         }
         if a.has_permission(codes::BUDGET_UPDATE_ORGANIZATION_TREE) {
             s.units.extend(
-                accessible_tree_units_for_permission(
-                    pool,
+                accessible_tree_units_for_permission_on_connection(
+                    connection,
                     a.user_id,
                     codes::BUDGET_UPDATE_ORGANIZATION_TREE,
                 )
@@ -102,32 +157,38 @@ pub(crate) async fn update_scope(pool: &PgPool, a: &ActorContext) -> Result<Scop
     }
     Ok(s)
 }
+
 pub(crate) fn direct(s: &Scope, actor: Uuid, owner: Uuid, unit: Uuid) -> bool {
     s.school || (s.own && actor == owner) || s.units.contains(&unit)
 }
-pub(crate) async fn assigned_project(
-    pool: &PgPool,
+
+pub(crate) async fn assigned_project_on_connection(
+    connection: &mut sqlx::PgConnection,
     actor: Uuid,
     id: Uuid,
 ) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar(ASSIGNED_PROJECT_SQL)
+    Ok(DbSession::new(&mut *connection)
+        .scalar(
+            "budget.src.policy.assigned_project_on_connection",
+            ASSIGNED_PROJECT_SQL,
+        )
         .bind(actor)
         .bind(id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?)
 }
 pub(crate) async fn require_read(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     r: &ProjectRecord,
 ) -> Result<(), AppError> {
-    let s = read_scope(pool, a, false).await?;
+    let s = read_scope_on_connection(connection, a, false).await?;
     if direct(
         &s,
         a.user_id,
         r.owner_id,
         r.document.project.organization_unit_id,
-    ) || (s.assigned && assigned_project(pool, a.user_id, r.id).await?)
+    ) || (s.assigned && assigned_project_on_connection(connection, a.user_id, r.id).await?)
     {
         Ok(())
     } else {
@@ -135,11 +196,11 @@ pub(crate) async fn require_read(
     }
 }
 pub(crate) async fn require_update(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     r: &ProjectRecord,
 ) -> Result<(), AppError> {
-    let s = update_scope(pool, a).await?;
+    let s = update_scope_on_connection(connection, a).await?;
     if direct(
         &s,
         a.user_id,
@@ -151,17 +212,22 @@ pub(crate) async fn require_update(
         Err(repository::denied())
     }
 }
+pub(crate) fn require_create_permission(a: &ActorContext) -> Result<(), AppError> {
+    a.require_permission(codes::BUDGET_CREATE_OWN)
+}
 pub(crate) async fn require_create_unit(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     unit: Uuid,
 ) -> Result<(), AppError> {
-    a.require_permission(codes::BUDGET_CREATE_OWN)?;
-    let s = update_scope(pool, a).await?;
-    let member =
-        accessible_organization_unit_ids(pool, UserResourceListAccess::OrganizationUnit(a.user_id))
-            .await?
-            .unwrap_or_default();
+    require_create_permission(a)?;
+    let s = update_scope_on_connection(connection, a).await?;
+    let member = accessible_organization_unit_ids_on_connection(
+        connection,
+        UserResourceListAccess::OrganizationUnit(a.user_id),
+    )
+    .await?
+    .unwrap_or_default();
     if s.school || s.units.contains(&unit) || member.contains(&unit) {
         Ok(())
     } else {
@@ -212,6 +278,42 @@ pub(crate) fn capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn scope_preflight_keeps_direct_grants_and_denials_database_free() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        for permission in [
+            codes::BUDGET_READ_SCHOOL,
+            codes::BUDGET_READ_OWN,
+            codes::BUDGET_READ_ASSIGNED,
+        ] {
+            let actor = ActorContext {
+                user_id: Uuid::new_v4(),
+                permissions: vec![permission.into()],
+            };
+            assert!(read_scope(&pool, &actor, false).await.unwrap().any());
+        }
+        let denied = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            read_scope(&pool, &denied, false).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            read_scope(&pool, &denied, true).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(!update_scope(&pool, &denied).await.unwrap().any());
+        let own = ActorContext {
+            permissions: vec![codes::BUDGET_UPDATE_OWN.into()],
+            ..denied
+        };
+        assert!(update_scope(&pool, &own).await.unwrap().own);
+    }
     #[test]
     fn independent_scopes_form_a_union() {
         let actor = Uuid::now_v7();
@@ -244,10 +346,14 @@ pub(crate) async fn require_read_in_transaction(
         return Ok(());
     }
     if s.assigned
-        && sqlx::query_scalar::<_, bool>(ASSIGNED_PROJECT_SQL)
+        && DbSession::new(&mut **tx)
+            .scalar::<bool>(
+                "budget.src.policy.require_read_in_transaction",
+                ASSIGNED_PROJECT_SQL,
+            )
             .bind(a.user_id)
             .bind(r.id)
-            .fetch_one(&mut **tx)
+            .fetch_one()
             .await?
     {
         return Ok(());

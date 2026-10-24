@@ -2,6 +2,7 @@ use super::aggregate_revisions::write_error;
 use super::*;
 use crate::policy::aggregate::{require_aggregate_lock, require_aggregate_read};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -18,15 +19,18 @@ pub async fn annual_closure_coverage(
     tx: &mut Transaction<'_, Postgres>,
     year: Uuid,
 ) -> Result<AnnualClosureCoverage, AppError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_years WHERE id=$1)")
-            .bind(year)
-            .fetch_one(&mut **tx)
-            .await?;
+    let exists: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_results.services.annual_revisions.annual_closure_coverage",
+            "SELECT EXISTS(SELECT 1 FROM academic_years WHERE id=$1)",
+        )
+        .bind(year)
+        .fetch_one()
+        .await?;
     if !exists {
         return Err(AppError::NotFound("Academic year not found".into()));
     }
-    let expected:Vec<Uuid>=sqlx::query_scalar(
+    let expected:Vec<Uuid>=DbSession::new(&mut **tx).scalar("academic_results.services.annual_revisions.annual_closure_coverage",
         "SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status IN ('active','completed')
          UNION SELECT student_academic_year_id FROM learning_group_students WHERE academic_year_id=$1 AND membership_status='active'
          UNION SELECT student_academic_year_id FROM academic_course_results WHERE academic_year_id=$1
@@ -34,13 +38,13 @@ pub async fn annual_closure_coverage(
          UNION SELECT student_academic_year_id FROM academic_term_aggregate_revisions WHERE academic_year_id=$1
          UNION SELECT student_academic_year_id FROM academic_annual_result_revisions WHERE academic_year_id=$1
          ORDER BY 1 LIMIT 10001"
-    ).bind(year).fetch_all(&mut **tx).await?;
+    ).bind(year).fetch_all().await?;
     if expected.len() > 10000 {
         return Err(AppError::ValidationError(
             "Annual coverage exceeds 10000 students".into(),
         ));
     }
-    let rows:Vec<LatestAnnualRevision>=sqlx::query_as("SELECT DISTINCT ON(student_academic_year_id) student_academic_year_id,id,revision,source_checksum,hold_reason FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=ANY($2) ORDER BY student_academic_year_id,revision DESC").bind(year).bind(&expected).fetch_all(&mut **tx).await?;
+    let rows:Vec<LatestAnnualRevision>=DbSession::new(&mut **tx).query_as("academic_results.services.annual_revisions.annual_closure_coverage", "SELECT DISTINCT ON(student_academic_year_id) student_academic_year_id,id,revision,source_checksum,hold_reason FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=ANY($2) ORDER BY student_academic_year_id,revision DESC").bind(year).bind(&expected).fetch_all().await?;
     let ids: Vec<Uuid> = rows
         .iter()
         .map(|row| row.student_academic_year_id)
@@ -97,7 +101,7 @@ pub async fn require_term_without_annual_results(
     year: Uuid,
     term: Uuid,
 ) -> Result<(), AppError> {
-    let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_annual_result_term_sources WHERE academic_year_id=$1 AND academic_term_id=$2)").bind(year).bind(term).fetch_one(&mut **tx).await?;
+    let exists:bool=DbSession::new(&mut **tx).scalar("academic_results.services.annual_revisions.require_term_without_annual_results", "SELECT EXISTS(SELECT 1 FROM academic_annual_result_term_sources WHERE academic_year_id=$1 AND academic_term_id=$2)").bind(year).bind(term).fetch_one().await?;
     if exists {
         return Err(AppError::Conflict(
             "เปิดภาคเรียนกลับไม่ได้ เพราะมีผลรายปีอ้างอิงอยู่ ให้ใช้การแก้ผลการเรียนและสรุปรุ่นใหม่".into(),
@@ -154,19 +158,27 @@ pub async fn lock_annual(
         ));
     }
     let request_checksum = hash(&(actor.user_id, year, student, &input))?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.lock_annual",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.annual_revisions.lock_annual",
+            "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+        )
+        .execute()
         .await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
-    let previous:Option<AnnualRevisionRow>=sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_annual_result_revisions WHERE request_id=$1").bind(input.request_id).fetch_optional(&mut *tx).await?;
+    let previous:Option<AnnualRevisionRow>=DbSession::new(&mut *tx).query_as("academic_results.services.annual_revisions.lock_annual", "SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_annual_result_revisions WHERE request_id=$1").bind(input.request_id).fetch_optional().await?;
     if previous
         .as_ref()
         .is_some_and(|row| row.request_checksum != request_checksum)
     {
         return Err(conflict());
     }
-    let latest:Option<i64>=sqlx::query_scalar("SELECT max(revision) FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=$2").bind(year).bind(student).fetch_one(&mut *tx).await?;
+    let latest:Option<i64>=DbSession::new(&mut *tx).scalar("academic_results.services.annual_revisions.lock_annual", "SELECT max(revision) FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=$2").bind(year).bind(student).fetch_one().await?;
     let preview = annual_in_transaction(&mut tx, year, student).await?;
     if let Some(previous) = previous {
         let current = Some(previous.revision) == latest
@@ -205,8 +217,8 @@ pub async fn lock_annual(
         .unwrap_or(0)
         .checked_add(1)
         .ok_or_else(|| AppError::ValidationError("Annual revision limit exceeded".into()))?;
-    let row:AnnualRevisionRow=sqlx::query_as("INSERT INTO academic_annual_result_revisions(student_academic_year_id,academic_year_id,revision,source_checksum,request_id,request_checksum,snapshot,official_gpa,hold_reason,locked_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum")
-        .bind(student).bind(year).bind(revision).bind(&preview.source_checksum).bind(input.request_id).bind(request_checksum).bind(sqlx::types::Json(&preview)).bind(official_gpa).bind(reason).bind(actor.user_id).fetch_one(&mut *tx).await.map_err(write_error)?;
+    let row:AnnualRevisionRow=DbSession::new(&mut *tx).query_as("academic_results.services.annual_revisions.lock_annual", "INSERT INTO academic_annual_result_revisions(student_academic_year_id,academic_year_id,revision,source_checksum,request_id,request_checksum,snapshot,official_gpa,hold_reason,locked_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum")
+        .bind(student).bind(year).bind(revision).bind(&preview.source_checksum).bind(input.request_id).bind(request_checksum).bind(sqlx::types::Json(&preview)).bind(official_gpa).bind(reason).bind(actor.user_id).fetch_one().await.map_err(write_error)?;
     let mut term_ids = Vec::with_capacity(preview.terms.len());
     let mut revision_ids = Vec::with_capacity(preview.terms.len());
     for term in &preview.terms {
@@ -214,8 +226,8 @@ pub async fn lock_annual(
         term_ids.push(term.academic_term_id);
         revision_ids.push(source.id);
     }
-    sqlx::query("INSERT INTO academic_annual_result_term_sources(annual_revision_id,academic_year_id,academic_term_id,student_academic_year_id,term_aggregate_revision_id) SELECT $1,$2,source.term_id,$3,source.revision_id FROM unnest($4::uuid[],$5::uuid[]) AS source(term_id,revision_id)")
-        .bind(row.id).bind(year).bind(student).bind(term_ids).bind(revision_ids).execute(&mut *tx).await.map_err(write_error)?;
+    DbSession::new(&mut *tx).query("academic_results.services.annual_revisions.lock_annual", "INSERT INTO academic_annual_result_term_sources(annual_revision_id,academic_year_id,academic_term_id,student_academic_year_id,term_aggregate_revision_id) SELECT $1,$2,source.term_id,$3,source.revision_id FROM unnest($4::uuid[],$5::uuid[]) AS source(term_id,revision_id)")
+        .bind(row.id).bind(year).bind(student).bind(term_ids).bind(revision_ids).execute().await.map_err(write_error)?;
     tx.commit().await.map_err(write_error)?;
     Ok(row.wire(true))
 }
@@ -227,12 +239,20 @@ pub async fn list_annual_revisions(
     student: Uuid,
 ) -> Result<Vec<AnnualResultRevision>, AppError> {
     require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.list_annual_revisions",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.annual_revisions.list_annual_revisions",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let preview = annual_in_transaction(&mut tx, year, student).await?;
-    let rows:Vec<AnnualRevisionRow>=sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=$2 ORDER BY revision DESC LIMIT 101").bind(year).bind(student).fetch_all(&mut *tx).await?;
+    let rows:Vec<AnnualRevisionRow>=DbSession::new(&mut *tx).query_as("academic_results.services.annual_revisions.list_annual_revisions", "SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at,request_checksum FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=$2 ORDER BY revision DESC LIMIT 101").bind(year).bind(student).fetch_all().await?;
     if rows.len() > 100 {
         return Err(AppError::ValidationError(
             "Annual history exceeds 100 revisions".into(),
@@ -277,9 +297,17 @@ pub async fn preview_annual(
     student: Uuid,
 ) -> Result<AnnualResultPreview, AppError> {
     crate::policy::aggregate::require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.preview_annual",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.annual_revisions.preview_annual",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let preview = annual_in_transaction(&mut tx, year, student).await?;
     tx.commit().await?;
@@ -310,20 +338,22 @@ pub(super) async fn annual_students_in_transaction(
             "Select 1–500 distinct students for annual results".into(),
         ));
     }
-    let found: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM student_academic_years WHERE id=ANY($1) AND academic_year_id=$2",
-    )
-    .bind(students)
-    .bind(year)
-    .fetch_all(&mut **tx)
-    .await?;
+    let found: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_results.services.annual_revisions.annual_students_in_transaction",
+            "SELECT id FROM student_academic_years WHERE id=ANY($1) AND academic_year_id=$2",
+        )
+        .bind(students)
+        .bind(year)
+        .fetch_all()
+        .await?;
     if found.len() != students.len() {
         return Err(AppError::NotFound(
             "Student academic year not found in selected context".into(),
         ));
     }
-    let included: Vec<IncludedTerm> = sqlx::query_as("SELECT id,name,sequence_no AS sequence FROM academic_terms WHERE academic_year_id=$1 AND included_in_year_result AND status<>'cancelled' ORDER BY sequence_no,id LIMIT 101")
-        .bind(year).fetch_all(&mut **tx).await?;
+    let included: Vec<IncludedTerm> = DbSession::new(&mut **tx).query_as("academic_results.services.annual_revisions.annual_students_in_transaction", "SELECT id,name,sequence_no AS sequence FROM academic_terms WHERE academic_year_id=$1 AND included_in_year_result AND status<>'cancelled' ORDER BY sequence_no,id LIMIT 101")
+        .bind(year).fetch_all().await?;
     if included.len() > 100 {
         return Err(AppError::ValidationError(
             "Annual result exceeds 100 terms".into(),
@@ -357,8 +387,8 @@ pub(super) async fn annual_students_in_transaction(
         .flatten()
         .filter_map(|(_, row)| row.revision_id)
         .collect();
-    let rows: Vec<TermRevisionRow> = sqlx::query_as("SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at FROM academic_term_aggregate_revisions WHERE id=ANY($1) AND academic_year_id=$2 AND student_academic_year_id=ANY($3)")
-        .bind(&ids).bind(year).bind(students).fetch_all(&mut **tx).await?;
+    let rows: Vec<TermRevisionRow> = DbSession::new(&mut **tx).query_as("academic_results.services.annual_revisions.annual_students_in_transaction", "SELECT id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at FROM academic_term_aggregate_revisions WHERE id=ANY($1) AND academic_year_id=$2 AND student_academic_year_id=ANY($3)")
+        .bind(&ids).bind(year).bind(students).fetch_all().await?;
     let mut revisions: std::collections::BTreeMap<Uuid, TermRevisionRow> =
         rows.into_iter().map(|row| (row.id, row)).collect();
     let mut previews = std::collections::BTreeMap::new();

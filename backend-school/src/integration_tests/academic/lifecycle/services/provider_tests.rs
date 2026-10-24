@@ -82,9 +82,6 @@ impl ExternalLifecyclePort for StubExternalLifecyclePort {
 #[tokio::test]
 async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_checksum() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_external_port_contract").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -143,9 +140,6 @@ async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_che
 #[tokio::test]
 async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_exam_fingerprint").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
     let (year, term, date): (Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as(
         "SELECT academic_year_id,id,start_date FROM academic_terms WHERE status='active'",
     )
@@ -203,9 +197,6 @@ async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
 #[tokio::test]
 async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_delivery_items() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_operational_providers").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let (year,term,bell,start):(Uuid,Uuid,Uuid,chrono::NaiveDate) = sqlx::query_as(
         "SELECT academic_year_id,id,bell_schedule_id,start_date FROM academic_terms WHERE status='active'"
     ).fetch_one(&pool).await.unwrap();
@@ -216,10 +207,22 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
     let offering:Uuid = sqlx::query_scalar("SELECT id FROM learning_offerings WHERE academic_term_id=$1 AND status='published' LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
     let exam:Uuid = sqlx::query_scalar("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name,status) VALUES($1,$2,'E2E-LIFECYCLE-exam','draft') RETURNING id")
         .bind(year).bind(term).fetch_one(&pool).await.unwrap();
-    let timetable:Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_year_id,academic_term_id,bell_schedule_id,effective_from,status) VALUES($1,$2,$3,$4,'draft') RETURNING id")
-        .bind(year).bind(term).bind(bell).bind(start.succ_opt().unwrap()).fetch_one(&pool).await.unwrap();
-    let change:Uuid = sqlx::query_scalar("INSERT INTO academic_term_change_sets(academic_year_id,academic_term_id,effective_from,reason,idempotency_key,creation_request_hash,created_by) VALUES($1,$2,$3,'E2E-LIFECYCLE-change','lifecycle-provider',repeat('a',64),$4) RETURNING id")
-        .bind(year).bind(term).bind(start).bind(actor).fetch_one(&pool).await.unwrap();
+    let delivery: Uuid = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(year).bind(term).fetch_one(&pool).await.unwrap();
+    let timetable:Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_year_id,academic_term_id,bell_schedule_id,effective_from,status,delivery_version_id) VALUES($1,$2,$3,$4,'draft',$5) RETURNING id")
+        .bind(year).bind(term).bind(bell).bind(start.succ_opt().unwrap()).bind(delivery).fetch_one(&pool).await.unwrap();
+    let change = school_academic_delivery::services::change_sets::create_change_set(
+        &pool,
+        actor,
+        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: term,
+            reason: "E2E-LIFECYCLE-change".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap()
+    .id;
     let mut tx = pool.begin().await.unwrap();
     let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
         .await
@@ -324,9 +327,6 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
 async fn lifecycle_permission_defaults_only_grant_verified_system_administrators() {
     use school_permissions::registry::codes;
     let pool = core::services_tests::prepare_core_fixture("lifecycle_permission_defaults").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let expected = vec![
         codes::ACADEMIC_LIFECYCLE_READ_SCHOOL,
         codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,

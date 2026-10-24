@@ -39,14 +39,24 @@ impl UpdateSchoolAppearanceRequest {
 
 /// One bounded projection, shared by authenticated settings and public first paint.
 pub async fn get(pool: &PgPool) -> Result<SchoolAppearanceResponse, AppError> {
-    sqlx::query_as::<_, AppearanceRow>(
-        "SELECT appearance, appearance_revision FROM school_settings LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(database_error)?
-    .map(Into::into)
-    .ok_or_else(missing_settings)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.get").await?;
+    get_on_connection(&mut connection).await
+}
+
+pub async fn get_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<SchoolAppearanceResponse, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<AppearanceRow>(
+            "administration.services.appearance.get_on_connection",
+            "SELECT appearance, appearance_revision FROM school_settings LIMIT 1",
+        )
+        .fetch_optional()
+        .await
+        .map_err(database_error)?
+        .map(Into::into)
+        .ok_or_else(missing_settings)
 }
 
 /// Compare-and-swap changes only appearance fields; a concurrent logo save is independent.
@@ -55,20 +65,27 @@ pub async fn update(
     request: UpdateSchoolAppearanceRequest,
 ) -> Result<SchoolAppearanceResponse, AppError> {
     let request = request.validate_and_normalize()?;
-    let mut transaction = pool.begin().await.map_err(database_error)?;
-    let updated = sqlx::query_as::<_, AppearanceRow>(
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(pool, "administration.appearance.transaction")
+            .await
+            .map_err(database_error)?;
+    let updated = school_database::DbSession::new(&mut *transaction).query_as::<AppearanceRow>("administration.services.appearance.update",
         "UPDATE school_settings SET appearance = $1, appearance_revision = appearance_revision + 1 \
          WHERE id = (SELECT id FROM school_settings LIMIT 1) AND appearance_revision = $2 \
          RETURNING appearance, appearance_revision",
     )
     .bind(Json(request.appearance))
     .bind(request.expected_revision)
-    .fetch_optional(&mut *transaction)
+    .fetch_optional()
     .await
     .map_err(database_error)?;
     let Some(updated) = updated else {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM school_settings)")
-            .fetch_one(&mut *transaction)
+        let exists: bool = school_database::DbSession::new(&mut *transaction)
+            .scalar(
+                "administration.services.appearance.update",
+                "SELECT EXISTS(SELECT 1 FROM school_settings)",
+            )
+            .fetch_one()
             .await
             .map_err(database_error)?;
         return Err(if exists {

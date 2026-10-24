@@ -1,5 +1,6 @@
 use super::*;
 use bigdecimal::BigDecimal;
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -35,19 +36,19 @@ async fn load_policy(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<AggregationPolicyVersion, AppError> {
-    let header: Option<(Uuid, i32, String, String, i64)> = sqlx::query_as(
+    let header: Option<(Uuid, i32, String, String, i64)> = DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.policies.load_policy",
         "SELECT id,version_no,name,lifecycle,row_version FROM academic_learner_evaluation_policy_versions WHERE id=$1",
     )
     .bind(id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?;
     let (id, version_no, name, lifecycle, row_version) =
         header.ok_or_else(|| AppError::NotFound("Learner aggregation policy not found".into()))?;
-    let bands = sqlx::query_as::<_, (i16, String)>(
+    let bands = DbSession::new(&mut **tx).query_as::<(i16, String)>("academic_assessment.learner_evaluation.services.policies.load_policy",
         "SELECT quality_level,lower_bound::text FROM academic_learner_evaluation_policy_bands WHERE policy_version_id=$1 ORDER BY quality_level",
     )
     .bind(id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?
     .into_iter()
     .map(|(quality_level, lower_bound)| AggregationPolicyBand {
@@ -71,12 +72,16 @@ pub async fn list_policies(
     context: &EvaluationContext,
 ) -> Result<Vec<AggregationPolicyVersion>, AppError> {
     policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.list_policies",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
-    let ids: Vec<Uuid> = sqlx::query_scalar(
+    let ids: Vec<Uuid> = DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.policies.list_policies",
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no DESC LIMIT 101",
     )
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     if ids.len() > 100 {
         return Err(AppError::ValidationError(
@@ -109,25 +114,31 @@ pub async fn create_policy(
         ));
     }
     validate_aggregation_policy(&input.bands)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.create_policy",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.create_policy",
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no FOR UPDATE",
     )
-    .execute(&mut *tx)
+    .execute()
     .await?;
-    let version_no: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(max(version_no),0)+1 FROM academic_learner_evaluation_policy_versions",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    let id: Uuid = sqlx::query_scalar(
+    let version_no: i32 = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.learner_evaluation.services.policies.create_policy",
+            "SELECT COALESCE(max(version_no),0)+1 FROM academic_learner_evaluation_policy_versions",
+        )
+        .fetch_one()
+        .await?;
+    let id: Uuid = DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.policies.create_policy",
         "INSERT INTO academic_learner_evaluation_policy_versions (version_no,name,created_by) VALUES ($1,$2,$3) RETURNING id",
     )
     .bind(version_no)
     .bind(name)
     .bind(actor.user_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
     let levels = input
         .bands
@@ -141,13 +152,13 @@ pub async fn create_policy(
             school_academic_core::services::validate_canonical_decimal(&band.lower_bound, 2)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.create_policy",
         "INSERT INTO academic_learner_evaluation_policy_bands (policy_version_id,quality_level,lower_bound) SELECT $1,b.quality_level,b.lower_bound FROM unnest($2::smallint[],$3::numeric[]) b(quality_level,lower_bound)",
     )
     .bind(id)
     .bind(levels)
     .bind(bounds)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     let result = load_policy(&mut tx, id).await?;
     tx.commit().await?;
@@ -166,19 +177,23 @@ pub async fn activate_policy(
             "School learner-evaluation management permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.activate_policy",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
     validate_context(&mut tx, context).await?;
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.activate_policy",
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no FOR UPDATE",
     )
-    .execute(&mut *tx)
+    .execute()
     .await?;
-    let target: Option<(String, i64)> = sqlx::query_as(
+    let target: Option<(String, i64)> = DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.policies.activate_policy",
         "SELECT lifecycle,row_version FROM academic_learner_evaluation_policy_versions WHERE id=$1",
     )
     .bind(id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional()
     .await?;
     let (lifecycle, actual_version) =
         target.ok_or_else(|| AppError::NotFound("Learner aggregation policy not found".into()))?;
@@ -190,17 +205,17 @@ pub async fn activate_policy(
             "An activated learner aggregation policy is immutable".into(),
         ));
     }
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.activate_policy",
         "UPDATE academic_learner_evaluation_policy_versions SET lifecycle='retired',row_version=row_version+1,updated_at=now() WHERE lifecycle='active'",
     )
-    .execute(&mut *tx)
+    .execute()
     .await?;
-    let changed = sqlx::query(
+    let changed = DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.activate_policy",
         "UPDATE academic_learner_evaluation_policy_versions SET lifecycle='active',activated_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1 AND lifecycle='draft' AND row_version=$2",
     )
     .bind(id)
     .bind(row_version)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     if changed.rows_affected() != 1 {
         return Err(conflict());

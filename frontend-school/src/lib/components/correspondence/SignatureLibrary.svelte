@@ -3,9 +3,12 @@
 	import {
 		listSignatureAssets,
 		createSignatureAsset,
-		type SignatureAsset
+		type SignatureAsset,
+		type CreateSignatureAssetRequest
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
@@ -28,7 +31,28 @@
 		pending = $state(false),
 		error = $state(''),
 		adding = $state(false);
+	let assetIntent = new MutationIntent<CreateSignatureAssetRequest>();
+	let assetUncertain = $state(false);
+	let prepared:
+		{ source: File | null; paths: string; owner: string; upload: PendingUpload } | undefined;
 	let disposed = false;
+	let libraryOwner = untrack(() => $authStore.user?.id);
+	$effect(() => {
+		const owner = $authStore.user?.id;
+		untrack(() => {
+			if (libraryOwner === owner) return;
+			libraryOwner = owner;
+			prepared?.upload.dispose();
+			prepared = undefined;
+			assetIntent = new MutationIntent<CreateSignatureAssetRequest>();
+			assetUncertain = false;
+			image = null;
+			paths = [];
+			label = '';
+			adding = false;
+			error = '';
+		});
+	});
 	$effect.pre(() => {
 		const operation = source;
 		untrack(() => region.consume(operation));
@@ -44,6 +68,7 @@
 	});
 	onDestroy(() => {
 		disposed = true;
+		prepared?.upload.dispose();
 		region.dispose();
 	});
 	async function drawnImage(): Promise<File> {
@@ -76,28 +101,71 @@
 		event.preventDefault();
 		if (pending || !$authStore.user) return;
 		error = '';
-		if (!label.trim()) {
+		if (!assetIntent.unresolved && !label.trim()) {
 			error = 'ระบุชื่อลายมือชื่อ';
 			return;
 		}
-		if (!image && !hasInk(paths)) {
+		if (!assetIntent.unresolved && !image && !hasInk(paths)) {
 			error = 'วาดลายมือชื่อหรือเลือกภาพ';
 			return;
 		}
 		pending = true;
+		const creationIntent = assetIntent;
 		try {
-			const file = image ?? (await drawnImage());
-			const uploaded = await uploadFile(file, 'correspondence_signature', $authStore.user.id);
-			if (disposed) return;
-			const asset = await createSignatureAsset(label.trim(), uploaded.id);
-			if (disposed) return;
-			region.patch([asset, ...(region.value ?? [])]);
+			const owner = $authStore.user.id;
+			const basis = JSON.stringify(paths);
+			if (
+				!prepared ||
+				prepared.source !== image ||
+				prepared.paths !== basis ||
+				prepared.owner !== owner
+			) {
+				prepared?.upload.dispose();
+				const file = image ?? (await drawnImage());
+				if (disposed || owner !== $authStore.user?.id) return;
+				prepared = {
+					source: image,
+					paths: basis,
+					owner,
+					upload: new PendingUpload(
+						file,
+						{
+							purpose: 'correspondence_signature',
+							resourceId: owner,
+							owner
+						},
+						uploadFile
+					)
+				};
+			}
+			const upload = prepared.upload;
+			const fileId = await upload.commit();
+			if (disposed || owner !== $authStore.user?.id || upload !== prepared?.upload) return;
+			const asset = await createSignatureAsset(
+				creationIntent.begin({ label: label.trim(), fileId })
+			);
+			creationIntent.accepted();
+			if (
+				disposed ||
+				owner !== $authStore.user?.id ||
+				upload !== prepared?.upload ||
+				creationIntent !== assetIntent
+			)
+				return;
+			assetUncertain = false;
+			prepared.upload.dispose();
+			prepared = undefined;
+			region.patch([asset, ...(region.value ?? []).filter((existing) => existing.id !== asset.id)]);
 			adding = false;
 			label = '';
 			paths = [];
 			image = null;
 		} catch (cause) {
-			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกลายมือชื่อไม่สำเร็จ';
+			creationIntent.rejected(cause);
+			if (!disposed && creationIntent === assetIntent) {
+				assetUncertain = creationIntent.unresolved;
+				error = cause instanceof Error ? cause.message : 'บันทึกลายมือชื่อไม่สำเร็จ';
+			}
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -122,17 +190,20 @@
 			><Card.Content
 				><form class="space-y-4" onsubmit={save}>
 					{#if error}<PageState variant="error" title={error} />{/if}
+					{#if assetUncertain}<p role="status" class="text-sm text-warning">
+							ยังไม่ได้รับผลการบันทึก กรุณาตรวจสอบคำสั่งเดิมอีกครั้งก่อนแก้ไขลายมือชื่อ
+						</p>{/if}
 					<div class="space-y-2">
 						<Label for="signature-label">ชื่อลายมือชื่อ *</Label><Input
 							id="signature-label"
 							bind:value={label}
-							disabled={pending}
+							disabled={pending || assetUncertain}
 							required
 						/>
 					</div>
 					<SignaturePad
 						bind:paths
-						disabled={pending}
+						disabled={pending || assetUncertain}
 						onimage={(file) => {
 							image = file;
 						}}
@@ -144,7 +215,7 @@
 							/><Button
 								type="button"
 								variant="outline"
-								disabled={pending}
+								disabled={pending || assetUncertain}
 								onclick={() => {
 									image = null;
 								}}>ใช้ลายมือชื่อที่วาดแทน</Button
@@ -154,11 +225,15 @@
 						<Button
 							type="button"
 							variant="outline"
-							disabled={pending}
+							disabled={pending || assetUncertain}
 							onclick={() => {
 								adding = false;
 							}}>ยกเลิก</Button
-						><LoadingButton type="submit" loading={pending}>บันทึกลายมือชื่อ</LoadingButton>
+						><LoadingButton type="submit" loading={pending}
+							>{assetUncertain
+								? 'ตรวจสอบการบันทึกลายมือชื่อเดิม'
+								: 'บันทึกลายมือชื่อ'}</LoadingButton
+						>
 					</div>
 				</form></Card.Content
 			></Card.Root

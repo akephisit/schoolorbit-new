@@ -4,6 +4,7 @@ use crate::ports::ResultLockPort;
 use bigdecimal::BigDecimal;
 use school_academic_core::services::lifecycle_guard::{self, AcademicWriteState};
 use school_authorization::{AcademicResourceListFilter, ActorContext};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -29,10 +30,16 @@ pub async fn resolve_phase_id(
 ) -> Result<Uuid, AppError> {
     let phase_code = crate::assessment::models::AssessmentPhaseCode::try_from(phase_code)
         .map_err(|_| AppError::ValidationError("Unknown Gradebook phase code".into()))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.resolve_phase_id",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
-    let phase_id = sqlx::query_scalar(
-        r#"SELECT phase.id
+    let phase_id = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.gradebook.services.resolve_phase_id",
+            r#"SELECT phase.id
            FROM learning_groups learning_group
            JOIN learning_offerings offering
              ON offering.id = learning_group.learning_offering_id
@@ -48,14 +55,16 @@ pub async fn resolve_phase_id(
              AND learning_group.academic_term_id = $2
              AND learning_group.academic_year_id = $3
              AND phase.phase_code = $4"#,
-    )
-    .bind(group_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(phase_code.as_str())
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Group phase not found in this academic context".into()))?;
+        )
+        .bind(group_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(phase_code.as_str())
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound("Group phase not found in this academic context".into())
+        })?;
     tx.commit().await?;
     Ok(phase_id)
 }
@@ -101,13 +110,15 @@ pub(super) async fn validate_context(
     tx: &mut Transaction<'_, Postgres>,
     context: &GradebookContext,
 ) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
-    )
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let exists: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_assessment.gradebook.services.validate_context",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
+        )
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_one()
+        .await?;
     if !exists {
         return Err(AppError::ValidationError(
             "Academic term does not belong to the selected year".into(),
@@ -130,13 +141,21 @@ pub(super) async fn begin_scope<'a>(
     group: Uuid,
     phase: Uuid,
     context: &GradebookContext,
-) -> Result<(Transaction<'a, Postgres>, Scope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, Scope), AppError> {
     let write = !matches!(operation, ScopeAccess::Read);
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.begin_scope",
+    )
+    .await?;
     if !write {
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            .execute(&mut *tx)
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_assessment.gradebook.services.begin_scope",
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            )
+            .execute()
             .await?;
     }
     validate_context(&mut tx, context).await?;
@@ -148,23 +167,31 @@ pub(super) async fn begin_scope<'a>(
         )
         .await?;
         // Shared with Assessment and official result locking: offering, then group, then phase.
-        let offering:Option<Uuid>=sqlx::query_scalar("SELECT o.id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 FOR UPDATE OF o").bind(group).bind(context.academic_term_id).bind(context.academic_year_id).fetch_optional(&mut *tx).await?;
+        let offering:Option<Uuid>=DbSession::new(&mut *tx).scalar("academic_assessment.gradebook.services.begin_scope", "SELECT o.id FROM learning_offerings o JOIN learning_groups g ON g.learning_offering_id=o.id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 FOR UPDATE OF o").bind(group).bind(context.academic_term_id).bind(context.academic_year_id).fetch_optional().await?;
         if offering.is_none() {
             return Err(AppError::NotFound(
                 "Learning group not found in this context".into(),
             ));
         }
-        sqlx::query("SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_assessment.gradebook.services.begin_scope",
+                "SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE",
+            )
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM course_assessment_phases WHERE id=$1 FOR SHARE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_assessment.gradebook.services.begin_scope",
+                "SELECT id FROM course_assessment_phases WHERE id=$1 FOR SHARE",
+            )
             .bind(phase)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM academic_gradebook_phase_controls WHERE academic_term_id=$1 ORDER BY id FOR SHARE").bind(context.academic_term_id).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_assessment.gradebook.services.begin_scope", "SELECT id FROM academic_gradebook_phase_controls WHERE academic_term_id=$1 ORDER BY id FOR SHARE").bind(context.academic_term_id).execute().await?;
     }
-    let scope:Option<Scope>=sqlx::query_as(r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,p.id AS plan_id,phase.id AS phase_id,
+    let scope:Option<Scope>=DbSession::new(&mut *tx).query_as("academic_assessment.gradebook.services.begin_scope", r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,p.id AS plan_id,phase.id AS phase_id,
         phase.phase_code,phase.max_score::text AS phase_max_score,phase.row_version AS phase_row_version,
         o.owning_organization_unit_id,c.score_entry_enabled,
         EXISTS(SELECT 1 FROM academic_course_result_locks l WHERE l.subject_id=d.subject_id AND l.academic_term_id=g.academic_term_id) AS locked,
@@ -182,7 +209,7 @@ pub(super) async fn begin_scope<'a>(
         JOIN course_assessment_phases phase ON phase.plan_id=p.id AND phase.id=$5
         JOIN academic_gradebook_phase_controls c ON c.academic_term_id=g.academic_term_id AND c.academic_year_id=g.academic_year_id AND c.phase_code=phase.phase_code
         WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3"#)
-        .bind(group).bind(context.academic_term_id).bind(context.academic_year_id).bind(actor.user_id).bind(phase).fetch_optional(&mut *tx).await?;
+        .bind(group).bind(context.academic_term_id).bind(context.academic_year_id).bind(actor.user_id).bind(phase).fetch_optional().await?;
     let scope = scope.ok_or_else(|| {
         AppError::NotFound("Group phase not found in this academic context".into())
     })?;
@@ -221,16 +248,18 @@ pub(super) async fn invalidate(
     tx: &mut Transaction<'_, Postgres>,
     scope: &Scope,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"UPDATE learning_group_phase_confirmations
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_assessment.gradebook.services.invalidate",
+            r#"UPDATE learning_group_phase_confirmations
            SET row_version = row_version + 1,
                source_snapshot = jsonb_set(source_snapshot, '{invalidated}', 'true'::jsonb)
            WHERE learning_group_id = $1 AND assessment_phase_id = $2"#,
-    )
-    .bind(scope.group_id)
-    .bind(scope.phase_id)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(scope.group_id)
+        .bind(scope.phase_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -240,7 +269,11 @@ pub async fn list_subjects(
     context: &GradebookContext,
 ) -> Result<Vec<GradebookSubject>, AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.list_subjects",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let rows = list_subjects_in_tx(&mut tx, context, &access, actor.user_id).await?;
     if rows.len() > 1000 {
@@ -257,7 +290,7 @@ async fn list_subjects_in_tx(
     access: &AcademicResourceListFilter,
     user_id: Uuid,
 ) -> Result<Vec<GradebookSubject>, AppError> {
-    Ok(sqlx::query_as(r#"WITH groups AS (
+    Ok(DbSession::new(&mut **tx).query_as("academic_assessment.gradebook.services.list_subjects_in_tx", r#"WITH groups AS (
       SELECT o.id AS learning_offering_id,d.subject_id,o.code_snapshot AS code,o.name_snapshot AS name,g.id AS learning_group_id,g.name AS group_name,o.owning_organization_unit_id,
       EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id AND teacher.academic_year_id=g.academic_year_id AND teacher.teacher_id=$3
         AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date)
@@ -271,5 +304,5 @@ async fn list_subjects_in_tx(
       FROM groups
       WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND assigned)
       ORDER BY assigned DESC,code,learning_offering_id,learning_group_id LIMIT 1001"#)
-      .bind(context.academic_term_id).bind(context.academic_year_id).bind(user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all(&mut **tx).await?)
+      .bind(context.academic_term_id).bind(context.academic_year_id).bind(user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).fetch_all().await?)
 }

@@ -2,6 +2,8 @@ import type { Page, Route } from '@playwright/test';
 import { PDFDocument, degrees } from 'pdf-lib';
 import { mockStaffHome, actor, firstStaff, id } from './staff-home-route-data';
 import type {
+	CreateSignatureAssetRequest,
+	SignatureAsset,
 	CorrespondenceDetail,
 	CorrespondenceReadRequest,
 	CorrespondenceReadReceipt,
@@ -50,6 +52,7 @@ export async function mockCorrespondence(
 		stampContext?: CorrespondenceStampContext;
 		permissions?: string[];
 		failAction?: number;
+		loseSignatureAssetAck?: boolean;
 		holdDetail?: boolean;
 		holdAction?: boolean;
 		holdSend?: boolean;
@@ -324,7 +327,9 @@ export async function mockCorrespondence(
 		'base64'
 	);
 	const uploads: string[] = [],
-		assetWrites: { label: string; fileId: string }[] = [];
+		assetWrites: CreateSignatureAssetRequest[] = [];
+	const assetRecords: SignatureAsset[] = [];
+	const assetReceipts = new Map<string, { payload: string; asset: SignatureAsset }>();
 	const templateWrites: SaveProcessTemplateRequest[] = [];
 	let createAttempts = 0;
 	const reads = new Map<string, number>(),
@@ -410,16 +415,32 @@ export async function mockCorrespondence(
 			if (path === '/api/correspondence/signatures') {
 				if (method === 'GET')
 					return reply(route, [
-						{ id: signatureId, label: 'ลายมือชื่อส่วนตัว', fileId, createdAt: now }
+						{ id: signatureId, label: 'ลายมือชื่อส่วนตัว', fileId, createdAt: now },
+						...assetRecords
 					]);
-				const payload = request.postDataJSON();
+				const payload = request.postDataJSON() as CreateSignatureAssetRequest;
 				assetWrites.push(payload);
-				return reply(route, {
-					id: id(845),
+				const prior = assetReceipts.get(payload.requestId);
+				if (prior) {
+					if (prior.payload !== JSON.stringify(payload))
+						return reply(route, 'signature receipt payload mismatch', 409);
+					return reply(route, prior.asset);
+				}
+				// An accepted asset retains its file; a fresh command cannot reuse
+				// that file as a temporary upload. Only its exact receipt may replay.
+				if (assetRecords.some((asset) => asset.fileId === payload.fileId))
+					return reply(route, 'signature file already retained', 422);
+				const asset: SignatureAsset = {
+					id: id(845 + assetRecords.length),
 					label: payload.label,
 					fileId: payload.fileId,
 					createdAt: now
-				});
+				};
+				assetRecords.push(asset);
+				assetReceipts.set(payload.requestId, { payload: JSON.stringify(payload), asset });
+				if (settings.loseSignatureAssetAck && assetRecords.length === 1)
+					return route.abort('failed');
+				return reply(route, asset);
 			}
 			if (path === '/api/correspondence/options')
 				return reply(route, {
@@ -735,6 +756,7 @@ export async function mockCorrespondence(
 		recordRead,
 		uploads,
 		assetWrites,
+		assetRecords,
 		templateWrites,
 		writes,
 		release,

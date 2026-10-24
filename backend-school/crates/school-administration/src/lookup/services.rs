@@ -84,16 +84,33 @@ struct SubjectRow {
 }
 
 pub async fn verify_active_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.verify_active_user",
     )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    .await?;
+    verify_active_user_on_connection(&mut connection, user_id).await
+}
+
+pub async fn verify_active_user_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let exists: bool = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "administration.lookup.services.verify_active_user_on_connection",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND status = 'active')",
+        )
+        .bind(user_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     if !exists {
         return Err(AppError::AuthError("ไม่พบผู้ใช้หรือบัญชีถูกระงับ".to_string()));
@@ -104,6 +121,16 @@ pub async fn verify_active_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppE
 
 pub async fn lookup_staff(
     pool: &PgPool,
+    query: LookupQuery,
+) -> Result<Vec<StaffLookupItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_staff")
+            .await?;
+    lookup_staff_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_staff_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: LookupQuery,
 ) -> Result<Vec<StaffLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -134,10 +161,17 @@ pub async fn lookup_staff(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -151,6 +185,16 @@ pub async fn lookup_staff(
 
 pub async fn lookup_roles(
     pool: &PgPool,
+    query: LookupQuery,
+) -> Result<Vec<RoleLookupItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_roles")
+            .await?;
+    lookup_roles_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_roles_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: LookupQuery,
 ) -> Result<Vec<RoleLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -174,10 +218,17 @@ pub async fn lookup_roles(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -192,6 +243,19 @@ pub async fn lookup_roles(
 
 pub async fn lookup_organization_units(
     pool: &PgPool,
+    user_id: Uuid,
+    query: LookupQuery,
+) -> Result<Vec<OrganizationUnitLookupItem>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.lookup_organization_units",
+    )
+    .await?;
+    lookup_organization_units_on_connection(&mut connection, user_id, query).await
+}
+
+pub async fn lookup_organization_units_on_connection(
+    connection: &mut sqlx::PgConnection,
     user_id: Uuid,
     query: LookupQuery,
 ) -> Result<Vec<OrganizationUnitLookupItem>, AppError> {
@@ -240,10 +304,17 @@ pub async fn lookup_organization_units(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -255,25 +326,54 @@ pub async fn lookup_organization_unit_by_id(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<OrganizationUnitLookupItem, AppError> {
-    sqlx::query_as::<_, OrganizationUnitRow>(
-        "SELECT id, code, name, name_en, description, category, display_order,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.lookup_organization_unit_by_id",
+    )
+    .await?;
+    lookup_organization_unit_by_id_on_connection(&mut connection, id).await
+}
+
+pub async fn lookup_organization_unit_by_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<OrganizationUnitLookupItem, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<OrganizationUnitRow>(
+            "administration.lookup.services.lookup_organization_unit_by_id_on_connection",
+            "SELECT id, code, name, name_en, description, category, display_order,
                 is_active, parent_unit_id, unit_type, subject_group_id
          FROM organization_units
          WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?
-    .map(organization_unit_lookup_item)
-    .ok_or(AppError::NotFound("ไม่พบหน่วยงานนี้".to_string()))
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?
+        .map(organization_unit_lookup_item)
+        .ok_or(AppError::NotFound("ไม่พบหน่วยงานนี้".to_string()))
 }
 
 pub async fn lookup_grade_levels(
     pool: &PgPool,
+    query: AcademicLookupQuery,
+) -> Result<Vec<GradeLevelLookupItem>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.lookup_grade_levels",
+    )
+    .await?;
+    lookup_grade_levels_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_grade_levels_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: AcademicLookupQuery,
 ) -> Result<Vec<GradeLevelLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -311,10 +411,17 @@ pub async fn lookup_grade_levels(
         query_builder = query_builder.bind(level_type);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     let data: Vec<GradeLevelLookupItem> = rows.into_iter().map(grade_level_lookup_item).collect();
 
@@ -331,6 +438,16 @@ pub async fn lookup_grade_levels(
 
 pub async fn lookup_homerooms(
     pool: &PgPool,
+    query: AcademicLookupQuery,
+) -> Result<Vec<HomeroomLookupItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_homerooms")
+            .await?;
+    lookup_homerooms_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_homerooms_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: AcademicLookupQuery,
 ) -> Result<Vec<HomeroomLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -359,10 +476,17 @@ pub async fn lookup_homerooms(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -377,6 +501,18 @@ pub async fn lookup_homerooms(
 
 pub async fn lookup_academic_years(
     pool: &PgPool,
+    query: LookupQuery,
+) -> Result<Vec<AcademicYearLookupItem>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.lookup_academic_years",
+    )
+    .await?;
+    lookup_academic_years_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_academic_years_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: LookupQuery,
 ) -> Result<Vec<AcademicYearLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -403,10 +539,17 @@ pub async fn lookup_academic_years(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -421,6 +564,16 @@ pub async fn lookup_academic_years(
 
 pub async fn lookup_students(
     pool: &PgPool,
+    query: AcademicLookupQuery,
+) -> Result<Vec<StudentLookupItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_students")
+            .await?;
+    lookup_students_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_students_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: AcademicLookupQuery,
 ) -> Result<Vec<StudentLookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -470,10 +623,17 @@ pub async fn lookup_students(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -488,8 +648,19 @@ pub async fn lookup_students(
 }
 
 pub async fn lookup_rooms(pool: &PgPool) -> Result<Vec<Room>, AppError> {
-    sqlx::query_as::<_, Room>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_rooms")
+            .await?;
+    lookup_rooms_on_connection(&mut connection).await
+}
+
+pub async fn lookup_rooms_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<Room>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Room>(
+            "administration.lookup.services.lookup_rooms_on_connection",
+            r#"
         SELECT r.id, r.building_id, r.name_th, r.name_en, r.code,
                r.room_type, r.capacity, r.floor, r.status, r.description,
                r.created_at, r.updated_at, b.name_th as building_name
@@ -498,17 +669,30 @@ pub async fn lookup_rooms(pool: &PgPool) -> Result<Vec<Room>, AppError> {
         WHERE r.status = 'ACTIVE'
         ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC
         "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Lookup Rooms Error: {}", e);
-        AppError::InternalServerError("Failed to fetch rooms".to_string())
-    })
+        )
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Lookup Rooms Error"
+            );
+            AppError::InternalServerError("Failed to fetch rooms".to_string())
+        })
 }
 
 pub async fn lookup_subjects(
     pool: &PgPool,
+    query: AcademicLookupQuery,
+) -> Result<Vec<LookupItem>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.lookup_subjects")
+            .await?;
+    lookup_subjects_on_connection(&mut connection, query).await
+}
+
+pub async fn lookup_subjects_on_connection(
+    connection: &mut sqlx::PgConnection,
     query: AcademicLookupQuery,
 ) -> Result<Vec<LookupItem>, AppError> {
     let limit = lookup_limit(query.limit);
@@ -568,10 +752,17 @@ pub async fn lookup_subjects(
         query_builder = query_builder.bind(pattern);
     }
 
-    let rows = query_builder.fetch_all(pool).await.map_err(|e| {
-        tracing::error!("Database error: {}", e);
-        AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
-    })?;
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.lookup.search", query_builder)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Database error"
+            );
+            AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
+        })?;
 
     Ok(rows
         .into_iter()

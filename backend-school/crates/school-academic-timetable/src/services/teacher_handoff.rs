@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::NaiveDate;
@@ -110,7 +111,11 @@ pub async fn preview(
     change_set_id: Uuid,
     request: PreviewTeacherHandoffRequest,
 ) -> Result<TeacherHandoffPreview, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.teacher_handoff.preview",
+    )
+    .await?;
     let preview = preview_in_tx(&mut transaction, change_set_id, &request, false).await?;
     transaction.commit().await?;
     Ok(preview)
@@ -151,24 +156,34 @@ pub async fn apply(
         preview_hash: request.preview_hash.clone(),
     })?;
 
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_timetable.services.teacher_handoff.apply",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.teacher_handoff.apply",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        )
         .bind(format!(
             "academic-teacher-handoff:{}",
             request.idempotency_key
         ))
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     if let Some((stored_hash, sqlx::types::Json(mut response), academic_term_id)) =
-        sqlx::query_as::<_, (String, sqlx::types::Json<ApplyTeacherHandoffResponse>, Uuid)>(
-            r#"SELECT request_hash::text, response_snapshot, academic_term_id
+        DbSession::new(&mut *transaction)
+            .query_as::<(String, sqlx::types::Json<ApplyTeacherHandoffResponse>, Uuid)>(
+                "academic_timetable.services.teacher_handoff.apply",
+                r#"SELECT request_hash::text, response_snapshot, academic_term_id
            FROM academic_teacher_handoff_runs
            WHERE idempotency_key = $1"#,
-        )
-        .bind(request.idempotency_key)
-        .fetch_optional(&mut *transaction)
-        .await?
+            )
+            .bind(request.idempotency_key)
+            .fetch_optional()
+            .await?
     {
         if stored_hash != request_hash {
             return Err(AppError::Conflict(
@@ -216,15 +231,17 @@ pub async fn apply(
             "โหมดจัดเองไม่ส่งคำขอ apply ให้แก้ในหน้าตารางสอน".to_string(),
         ));
     }
-    let context: (Uuid, Uuid, Uuid, NaiveDate) = sqlx::query_as(
-        r#"SELECT academic_term_id, academic_year_id,
+    let context: (Uuid, Uuid, Uuid, NaiveDate) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_timetable.services.teacher_handoff.apply",
+            r#"SELECT academic_term_id, academic_year_id,
                   $2::uuid, effective_from
            FROM academic_term_change_sets WHERE id = $1"#,
-    )
-    .bind(change_set_id)
-    .bind(request.timetable_version_id)
-    .fetch_one(&mut *transaction)
-    .await?;
+        )
+        .bind(change_set_id)
+        .bind(request.timetable_version_id)
+        .fetch_one()
+        .await?;
     let expected_versions = entries.into_iter().collect::<BTreeMap<_, _>>();
     for entry in &preview.proposed_entries {
         if expected_versions.get(&entry.entry_id) != Some(&entry.row_version) {
@@ -234,41 +251,45 @@ pub async fn apply(
         }
     }
 
-    sqlx::query(
-        "DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = ANY($1)",
-    )
-    .bind(&entry_ids)
-    .execute(&mut *transaction)
-    .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.teacher_handoff.apply",
+            "DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = ANY($1)",
+        )
+        .bind(&entry_ids)
+        .execute()
+        .await?;
     for entry in &preview.proposed_entries {
         for (index, instructor) in entry.after_instructors.iter().enumerate() {
-            sqlx::query(
-                r#"INSERT INTO academic_timetable_block_group_instructors (
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_timetable.services.teacher_handoff.apply",
+                    r#"INSERT INTO academic_timetable_block_group_instructors (
                        id, block_group_id, instructor_id, role, display_order
                    ) VALUES ($1, $2, $3, $4, $5)"#,
-            )
-            .bind(Uuid::now_v7())
-            .bind(entry.entry_id)
-            .bind(instructor.instructor_id)
-            .bind(&instructor.role)
-            .bind(
-                i32::try_from(index + 1).map_err(|_| {
+                )
+                .bind(Uuid::now_v7())
+                .bind(entry.entry_id)
+                .bind(instructor.instructor_id)
+                .bind(&instructor.role)
+                .bind(i32::try_from(index + 1).map_err(|_| {
                     AppError::ValidationError("จำนวนครูผู้สอนมากเกินกว่าที่รองรับ".to_string())
-                })?,
-            )
-            .execute(&mut *transaction)
-            .await?;
+                })?)
+                .execute()
+                .await?;
         }
-        let updated = sqlx::query(
-            r#"UPDATE academic_timetable_block_groups
+        let updated = DbSession::new(&mut *transaction)
+            .query(
+                "academic_timetable.services.teacher_handoff.apply",
+                r#"UPDATE academic_timetable_block_groups
                SET row_version = row_version + 1, updated_by = $1, updated_at = now()
                WHERE id = $2 AND row_version = $3"#,
-        )
-        .bind(actor_user_id)
-        .bind(entry.entry_id)
-        .bind(entry.row_version)
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(actor_user_id)
+            .bind(entry.entry_id)
+            .bind(entry.row_version)
+            .execute()
+            .await?;
         if updated.rows_affected() != 1 {
             return Err(AppError::Conflict(
                 "คาบเรียนถูกแก้ไขระหว่างส่งมอบ กรุณาลองใหม่".to_string(),
@@ -284,22 +305,24 @@ pub async fn apply(
             before_row_version: entry.row_version,
             after_row_version: entry.row_version + 1,
         };
-        sqlx::query(
-            r#"INSERT INTO academic_audit_events (
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_timetable.services.teacher_handoff.apply",
+                r#"INSERT INTO academic_audit_events (
                    event_code, entity_type, entity_id, academic_year_id,
                    academic_term_id, actor_user_id, payload
                ) VALUES (
                    'academic_teacher_handoff.applied',
                    'academic_timetable_block_group', $1, $2, $3, $4, $5
                )"#,
-        )
-        .bind(entry.entry_id)
-        .bind(context.1)
-        .bind(context.0)
-        .bind(actor_user_id)
-        .bind(sqlx::types::Json(&audit_payload))
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(entry.entry_id)
+            .bind(context.1)
+            .bind(context.0)
+            .bind(actor_user_id)
+            .bind(sqlx::types::Json(&audit_payload))
+            .execute()
+            .await?;
     }
     let updated_entries = preview
         .proposed_entries
@@ -314,25 +337,27 @@ pub async fn apply(
         updated_entries,
         replayed: false,
     };
-    sqlx::query(
-        r#"INSERT INTO academic_teacher_handoff_runs (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_timetable.services.teacher_handoff.apply",
+            r#"INSERT INTO academic_teacher_handoff_runs (
                idempotency_key, change_set_id, teacher_change_item_id,
                timetable_version_id, academic_term_id, academic_year_id,
                request_hash, selected_entry_ids, response_snapshot, applied_by
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
-    )
-    .bind(request.idempotency_key)
-    .bind(change_set_id)
-    .bind(request.teacher_change_item_id)
-    .bind(context.2)
-    .bind(context.0)
-    .bind(context.1)
-    .bind(&request_hash)
-    .bind(&entry_ids)
-    .bind(sqlx::types::Json(&response))
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.idempotency_key)
+        .bind(change_set_id)
+        .bind(request.teacher_change_item_id)
+        .bind(context.2)
+        .bind(context.0)
+        .bind(context.1)
+        .bind(&request_hash)
+        .bind(&entry_ids)
+        .bind(sqlx::types::Json(&response))
+        .bind(actor_user_id)
+        .execute()
+        .await?;
     transaction.commit().await?;
     Ok(TeacherHandoffApplyOutcome {
         response,
@@ -353,7 +378,7 @@ async fn preview_in_tx(
     } else {
         "FOR SHARE OF change_set, version"
     };
-    let context: HandoffContextRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+    let context: HandoffContextRow = DbSession::new(&mut **transaction).query_as("academic_timetable.services.teacher_handoff.preview_in_tx", sqlx::AssertSqlSafe(format!(
         r#"SELECT change_set.row_version AS change_set_row_version,
                   change_set.effective_from, change_set.academic_term_id,
                   change_set.academic_year_id,
@@ -370,7 +395,7 @@ async fn preview_in_tx(
     )))
     .bind(change_set_id)
     .bind(request.timetable_version_id)
-    .fetch_optional(&mut **transaction)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::Conflict("ชุดการเปลี่ยนแปลงหรือรุ่นตารางไม่ใช่แบบร่างแล้ว".to_string()))?;
     if context.change_set_row_version != request.change_set_row_version
@@ -386,8 +411,11 @@ async fn preview_in_tx(
     } else {
         "FOR SHARE"
     };
-    let item: TeacherChangeItemRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        r#"SELECT id, action_kind, learning_group_id,
+    let item: TeacherChangeItemRow = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.teacher_handoff.preview_in_tx",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT id, action_kind, learning_group_id,
                   learning_group_teacher_id, teacher_id
            FROM academic_term_change_items
            WHERE id = $1 AND change_set_id = $2
@@ -397,12 +425,13 @@ async fn preview_in_tx(
                  'stop_group_teacher'
              )
            {item_lock}"#,
-    )))
-    .bind(request.teacher_change_item_id)
-    .bind(change_set_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปลี่ยนครู".to_string()))?;
+            )),
+        )
+        .bind(request.teacher_change_item_id)
+        .bind(change_set_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปลี่ยนครู".to_string()))?;
     if request.mode != TeacherHandoffMode::Manual
         && item.action_kind != AcademicTermChangeActionKind::StopGroupTeacher
     {
@@ -589,8 +618,11 @@ async fn load_affected_entries(
     } else {
         "FOR SHARE OF block_group"
     };
-    sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        r#"SELECT block_group.id, block_group.row_version, block_group.learning_group_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.teacher_handoff.load_affected_entries",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT block_group.id, block_group.row_version, block_group.learning_group_id,
                   concat_ws(' · ', nullif(learning_group.code, ''), learning_group.name)
                     AS learning_group_label,
                   concat_ws(' · ', nullif(offering.code_snapshot, ''), offering.name_snapshot)
@@ -615,13 +647,14 @@ async fn load_affected_entries(
              )
            ORDER BY block.day_of_week, period.order_index, block_group.id
            {lock}"#,
-    )))
-    .bind(version_id)
-    .bind(group_id)
-    .bind(teacher_id)
-    .fetch_all(&mut **transaction)
-    .await
-    .map_err(AppError::from)
+            )),
+        )
+        .bind(version_id)
+        .bind(group_id)
+        .bind(teacher_id)
+        .fetch_all()
+        .await
+        .map_err(AppError::from)
 }
 
 async fn load_instructors(
@@ -637,8 +670,11 @@ async fn load_instructors(
     } else {
         "FOR SHARE OF instructor"
     };
-    let rows: Vec<EntryInstructorRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        r#"SELECT instructor.block_group_id AS entry_id, instructor.instructor_id,
+    let rows: Vec<EntryInstructorRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.teacher_handoff.load_instructors",
+            sqlx::AssertSqlSafe(format!(
+                r#"SELECT instructor.block_group_id AS entry_id, instructor.instructor_id,
                   coalesce(
                       nullif(user_account.display_name, ''),
                       user_account.username,
@@ -653,10 +689,11 @@ async fn load_instructors(
                     instructor.display_order,
                     instructor.instructor_id
            {lock}"#,
-    )))
-    .bind(entry_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+            )),
+        )
+        .bind(entry_ids)
+        .fetch_all()
+        .await?;
     let mut grouped = HashMap::<Uuid, Vec<TeacherHandoffInstructorPreview>>::new();
     for row in rows {
         grouped
@@ -678,20 +715,22 @@ async fn load_staff_names(
     if teacher_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    Ok(sqlx::query_as::<_, (Uuid, String)>(
-        r#"SELECT id,
+    Ok(DbSession::new(&mut **transaction)
+        .query_as::<(Uuid, String)>(
+            "academic_timetable.services.teacher_handoff.load_staff_names",
+            r#"SELECT id,
                   coalesce(
                       nullif(display_name, ''),
                       username,
                       email
                   )
            FROM user_display_names WHERE id = ANY($1)"#,
-    )
-    .bind(teacher_ids)
-    .fetch_all(&mut **transaction)
-    .await?
-    .into_iter()
-    .collect())
+        )
+        .bind(teacher_ids)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect())
 }
 
 fn proposed_instructors(
@@ -759,8 +798,10 @@ async fn append_instructor_collisions(
     if proposed_ids.is_empty() {
         return Ok(());
     }
-    let occupied: Vec<OccupiedInstructorRow> = sqlx::query_as(
-        r#"SELECT block_group.id AS entry_id, instructor.instructor_id,
+    let occupied: Vec<OccupiedInstructorRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.teacher_handoff.append_instructor_collisions",
+            r#"SELECT block_group.id AS entry_id, instructor.instructor_id,
                   block.day_of_week, block.bell_schedule_period_id
            FROM academic_timetable_block_groups block_group
            JOIN academic_timetable_blocks block ON block.id = block_group.block_id
@@ -771,11 +812,11 @@ async fn append_instructor_collisions(
              AND block_group.is_active
              AND instructor.instructor_id = ANY($2)
            ORDER BY block_group.id, instructor.instructor_id"#,
-    )
-    .bind(version_id)
-    .bind(&proposed_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(version_id)
+        .bind(&proposed_ids)
+        .fetch_all()
+        .await?;
     for proposed in proposed_entries {
         for instructor in &proposed.after_instructors {
             let mut collided_entry_ids = occupied

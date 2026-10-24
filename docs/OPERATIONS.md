@@ -132,14 +132,67 @@ is claimed and removed in the same transaction as the school mutation; School
 finish invalidates before reopening. Pending barriers fail the internal all-tenant
 list as a whole, preventing incomplete migration acceptance.
 
-Calendar and Auth retention share `TENANT_BACKGROUND_MAX_TURNS` admission (default
+Notification and Cleaner database phases resolve control-plane metadata before shared
+DB admission. `AdminClient::resolve_database_work` issues an opaque work snapshot from
+one current cache value, revision and expiry under the cache lock. Every successful
+fill changes its value revision, including same-UUID credential rotation; mutation,
+eviction or expiry invalidates older proofs. Inside admission,
+`pool_for_resolved_work` validates the proof and expected tenant UUID locally before
+and after the nonmigrating PoolManager acquisition. It never refetches HTTP or retries
+a failed proof inside admission. Work defers through the existing durable retry path.
+Claim/status retain their single five-second deadline; each Notification item retains
+its whole five-second deadline, and Cleaner phases retain `min(5 seconds, lease / 4)`.
+These deadlines include resolution, admission, pool waiting and database work. The
+logical same-key guard spans network phases; database permits, pools and checked-out
+connections end before external delivery/storage I/O.
+
+The second local validation covers a mapping/credential change during a physical
+pool wait. It does not make directory mutation and subsequent SQL atomic; the existing
+domain transaction, source, claim-token and lease fences remain authoritative. A
+fixed `tenant_physical_budget`/`waiting` event identifies contested physical admission;
+its completion/cancellation event retains the separate admission duration. No event
+contains credentials or a database URL.
+
+PostgreSQL query execution uses the connection-bound `school-database::DbSession`
+provider. Domains retain SQL, transactions, snapshots, locks and typed error mapping;
+the provider neither acquires pools nor retries writes. Its fixed operation labels,
+duration, status and safe error class identify query work and cancellation without
+logging statements or values. Tenant observed checkout guards separately measure
+connection wait/hold and retain logical eviction protection. A query duration excludes
+pool admission; a connection hold includes gaps between that work boundary's queries.
+Query duration is the client await, including driver/network work and decoding; a
+cancelled client future does not prove PostgreSQL has already stopped the query.
+Owned transactions use tenancy's `ObservedTransaction`: `begin_wait_us` includes
+checkout plus `BEGIN`, and the owned hold/lease ends after consuming commit, rollback,
+or drop. No borrowed checkout survives a successful consuming commit. Request-side
+physical-budget admission is measured separately from background-turn admission,
+checkout, transaction begin and query duration.
+Use these observations together with PostgreSQL aggregate statistics, and never enable
+raw SQL/parameter logging to diagnose saturation.
+
+Native execution is limited to schema identity/history and privilege setup:
+`school-migrations::{run_tenant_migrations,verify_tenant_schema,grant_runtime_privileges}`
+and the migration handler's `get_current_version`, plus SQLx execution inside the
+connection-bound provider itself. Permission reconciliation is application SQL: both
+its deactivation and typed bulk upsert execute through `DbSession`; only its native
+pool transaction entry remains bootstrap-owned to avoid a tenancy/migrations cycle.
+Disposable fixture/fault setup is separate from this production inventory. Native
+QueryBuilder construction is allowed; executing its result uses a prepared adapter.
+
+Calendar, Auth retention, Notification dispatch, Attendance maintenance and File Platform
+reconciliation share `TENANT_BACKGROUND_MAX_TURNS` database admission (default
 2, range 1–64), clamped to `max(1, floor(runtime connections / per-tenant maximum) - 1)`.
 This leaves a feasible resident tenant slot with ordinary allocations; when the
 physical budget fits only one tenant, the minimum one background turn shares that
 slot with foreground work. It does not reserve exclusive foreground sockets.
-Each owner polls at most that many tenant futures and excludes overlapping turns for the same tenant/job kind. Notification,
-Attendance and File Platform workers keep their existing independent limits; this
-is not a universal background connection budget. No idle scheduler pins a pool.
+The single `PoolManager` owns the executor. Each owner bounds its tenant futures and
+excludes overlapping turns for the same tenant/job kind. A logical turn may span
+external I/O, but releases its shared database permit and logical pool lease before
+network delivery. Only owned payloads cross that boundary; completion resolves the
+same tenant UUID and validates its durable claim again. Independent item database
+phases each consume a permit. No idle scheduler pins a pool. Fixed work/operation
+labels report admission, phase hold, checkout and logical lease durations without
+SQL parameters, database URLs, endpoint credentials or personal data.
 
 Calendar's daily 07:00 Bangkok invocation has a process-local sweep guard; a cron
 tick skips while the prior invocation is still running, preventing accumulated
@@ -152,7 +205,81 @@ past failed or contended rows for this invocation, then resets on the next cron
 invocation. Healthy due backlogs continue in the same invocation. New rows behind
 the cursor are picked up next invocation. An interrupted lock attempt or failed
 unlock closes the advisory-lock session instead of returning it to the pool.
-Calendar's existing partial-success completion and all-failed retry policy remains.
+Calendar's existing partial-success completion and all-failed retry policy remains. Event
+hydration, recipient resolution and each recipient's acceptance transaction reuse the
+advisory-lock connection, including when the tenant pool has only one connection.
+
+File reconciliation has a process-local sweep guard and gives unfinished tenants a
+bounded batch before requeuing behind other tenants. The existing 120-second budget
+starts at the tenant's first admitted phase and is checked after each completed
+external operation and between batches; an in-flight operation finishes before yielding.
+Each DB phase, including admission, times out at the smaller of five seconds and one
+quarter of the existing lease. Cancellation defers durable work without replaying it. Expiry requests durably queue deletion before the worker
+leases one operation immediately before external I/O; database completion checks the
+same tenant UUID and the exact unexpired owner/attempt claim. A stale worker cannot
+change metadata, acknowledge a newer claim or clean up its objects. If the exact
+cancelled attempt completed a derivative PUT, or its timeout/error left that PUT
+uncertain while the file was being deleted, fenced finish may queue a new durable
+delete for that cancelled generation. It does not revive metadata or alter a newer,
+expired or reclaimed claim.
+
+File storage cleanup watches (migrations 136 and 137) preserve physical locators independently
+of files, versions, operations and Certificate campaign purge. Every new PUT has a committed
+namespace-bound write permission first. Deletion revokes that physical identity permanently;
+cleanup records observations only for its exact unexpired claim. A stale/expired writer cannot
+revive metadata or authorize deletion of a still-accepted physical key. The worker shares its
+existing total batch and tenant budget between ordinary operations and watches; a persisted
+starting preference survives new sweeps, and claim-time due advancement prevents a crashed
+prefix from monopolizing later keys. No database lease or admission permit spans storage I/O.
+
+Storage PUTs remain external to PostgreSQL. R2 supplies no settlement receipt proving all earlier
+PUTs finished: cancellation, DELETE success and HEAD 404 are observations, not permanent absence.
+Revoked watches therefore remain and are reprobed indefinitely, including after a restart or
+actual Certificate hard purge; late bytes are deleted on a later successful probe. Recovery assumes
+the tenant database/watch survives, the configured namespace remains the same physical namespace,
+and the provider eventually answers probes/deletes. It does not promise instantaneous absence,
+finite watch retention, versioned-bucket cleanup, or reconstruction of already-purged historical
+locators. Same-name bucket recreation cannot be detected by the current provider; operators must
+maintain namespace continuity. Account/endpoint/bucket routing changes fail closed. Credential-only
+rotation does not change namespace identity.
+
+Roll out only during maintenance after draining all old writers. Apply the canonical migrations
+through 137 before enabling matching writers. Legacy watch namespaces are NULL and remain blocked;
+never infer their historical bucket from current configuration or a single HEAD response. Obtain the
+standalone tool through the [locked build and provenance recipe](./TESTING.md#standalone-namespace-operator-tool).
+The ordinary runtime image does not include it. Verify the checkout revision, Cargo lockfile digest
+and transferred artifact SHA-256 against the same approved release/migration revision. Set
+`namespace_tool` to that verified absolute executable path; do not assume a PATH installation or
+published artifact. Use `"$namespace_tool"` for every invocation below.
+
+An operator must independently verify historical routing, produce an evidence digest and explicitly
+bind exact watch IDs. `"$namespace_tool" plan` reads one explicitly configured database through
+`FILE_STORAGE_BINDING_DATABASE_URL`, using only `R2_ACCOUNT_ID`, `R2_PUBLIC_BUCKET_NAME` and
+`R2_PRIVATE_BUCKET_NAME`; it needs no storage credentials, CDN URL or provider access. Plan output
+contains IDs, immutable locator digests, expected row revisions and namespace fingerprints, with
+0600 create-new file semantics. `"$namespace_tool" dry-run --manifest <path>` is read-only.
+`"$namespace_tool" apply --manifest <path> --attest-historical-namespace` requires actual
+watch-table-owner authority, validates all rows before any update and refuses changed revisions
+or active claims. The evidence GUC is not a security boundary.
+No command migrates or synchronizes permissions.
+
+Before enabling writers, run `"$namespace_tool" check --inventory <path>
+--expected-inventory-sha256 <trusted-digest>`. Obtain that digest independently from the complete
+Admin/deployment tenant inventory; hashing a self-selected subset cannot establish completeness.
+The JSON has a nonempty `tenants` array; each entry contains `tenant_id`, `database_url_env`,
+`r2_account_id`, `public_bucket_name` and `private_bucket_name`. URL environment names must start
+`FILE_STORAGE_BINDING_URL_`; URL values and storage credentials never belong in this file or logs.
+There is no tenant filter. The gate visits every listed database, verifies its canonical
+`so_<tenant-simple>_owner` role and `schoolorbit:<tenant-uuid>:migration` marker, and checks all
+retained watches, including locators whose business records were purged. Any missing target,
+connection/identity/schema failure, unknown namespace or unsupported/mismatched provider blocks
+readiness. Only aggregate codes/counts are printed. Historical routing that cannot be attested
+blocks the rollout until separately resolved; the command never guesses or bypasses it.
+
+Expiry discovery alone never authorizes deletion: File Platform locks and rechecks current retention,
+expiry and lifecycle in the deletion transaction. Domain Save locks/revalidates files before promotion
+to standard retention. Thus an abandoned temporary ready upload can expire, while an accepted,
+referenced or historical file is not deleted simply because an earlier candidate list included it.
 
 Auth retains its hourly schedule, 120-second sweep budget and 100-row `SKIP LOCKED`
 cleanup transactions. Each tenant gets a ten-second timeout including pool admission;
@@ -451,7 +578,7 @@ Migration [101](../backend-school/migrations/101_attendance.sql) introduces the 
 
 History and reports use one `REPEATABLE READ READ ONLY` snapshot with shared module, lifecycle and term guards, allowing parallel readers and ordinary saves while retaining exclusion against reset, purge and lifecycle transitions. The [Attendance runtime](../backend-school/crates/school-attendance/src/runtime.rs) owns scheduled teacher digests, finalization and domain work; it does not backfill result placeholders or dispatch transport. Attendance resolves active students/recipients and guardian relationships once in the business save transaction, freezing recipients with the queued message and retaining its thin term/student notification ledger. Later account deactivation or guardian unlink does not change an accepted recipient snapshot. Result and digest transactions use the central provider's typed enqueue operation so ledger and dispatch work commit together; inbox materialization and transport follow later. Dated academic providers supply unchecked coverage when reports or digests are read. Arrival notices deduplicate per recipient/day; corrections have revision keys, and student notifications include the active linked guardians resolved at that save. The operational kinds remain arrival, lesson and special; times use Asia/Bangkok.
 
-The sole [central notification worker](../backend-school/crates/school-notifications/src/runtime.rs), registered at application startup, owns transport through the [dispatch provider](../backend-school/crates/school-notifications/src/dispatch.rs). It claims at most 32 due items per tenant pass, runs four items concurrently with a five-second whole-item deadline, and fences materialization, suppression and acknowledgment with a token on each 120-second lease. It visits other tenants before revisiting backlog; future retry leases wait for the regular timer. Startup, periodic discovery and post-commit hints recover durable work, including failed admissions, without retaining idle tenant pools or copying credentials into the tenant-name registry. During materialization, source/job validity and the module guard precede the central queue lock; exact source-ledger identity and owned cancellation remain enforced. Workers and retries do not query current recipient activity or guardian relationships. Physical account/job deletion still cancels through its foreign keys or owned cancellation; reset and purge use typed provider operations under their domain guards. Reset cancels only resolved owned queue/inbox identities before removing source rows, preventing prefetched work from recreating an inbox. Purge blocks unmaterialized nonsuppressed work but permits stored, unpublished work to finish. Stable IDs preserve one inbox row and its read state; a missing previously stored inbox is suppressed rather than recreated. Delivery remains at least once, so SSE or WebPush may repeat. Retryable push/configuration/database failures retain work for retry, invalid endpoints are removed, and transport diagnostics use safe aggregate codes/counts without endpoints or credentials. Server acknowledgment does not prove browser or device receipt; already emitted transport cannot be retracted by reset.
+The sole [central notification worker](../backend-school/crates/school-notifications/src/runtime.rs), registered at application startup, owns transport through the [dispatch provider](../backend-school/crates/school-notifications/src/dispatch.rs). It claims at most 32 due items per tenant pass, runs four items concurrently with a five-second whole-item deadline including admission, preparation, external transport and completion, and fences materialization, suppression and acknowledgment with a token on each 120-second lease. Preparation loads subscriptions once. Push attempts use at most four endpoint futures per item with a two-second endpoint deadline (at most 16 push requests across four items); endpoint order rotates by four positions using the durable dispatch attempt count, so repeated slow prefixes cannot permanently starve the tail across retries. The same batch/item algorithm serves disposable fixtures and the managed runtime. Database preparation and token-fenced cleanup/acknowledgment use separate admitted phases, releasing logical pools before SSE/WebPush. Completion verifies immutable tenant identity before endpoint cleanup and acknowledgment. It visits other tenants before revisiting backlog; future retry leases wait for the regular timer. Startup, periodic discovery and post-commit hints recover durable work, including failed admissions, without retaining idle tenant pools or copying credentials into the tenant-name registry. During materialization, source/job validity and the module guard precede the central queue lock; exact source-ledger identity and owned cancellation remain enforced. Workers and retries do not query current recipient activity or guardian relationships. Physical account/job deletion still cancels through its foreign keys or owned cancellation; reset and purge use typed provider operations under their domain guards. Reset cancels only resolved owned queue/inbox identities before removing source rows, preventing prefetched work from recreating an inbox. Purge blocks unmaterialized nonsuppressed work but permits stored, unpublished work to finish. Stable IDs preserve one inbox row and its read state; a missing previously stored inbox is suppressed rather than recreated. Delivery remains at least once, so SSE or WebPush may repeat. Retryable push/configuration/database failures retain work for retry, invalid endpoints are removed, and transport diagnostics use safe aggregate codes/counts without endpoints or credentials. Server acknowledgment does not prove browser or device receipt; already emitted transport cannot be retracted by reset.
 
 Deploy [migration 119](../backend-school/migrations/119_notification_dispatch.sql), [migration 120](../backend-school/migrations/120_notification_dispatch_cutover.sql) and the matching central-dispatch backend through the protected maintenance and all-tenant migration gates. Stop the previous backend/Attendance dispatcher before cutover; never run both dispatchers. Migration 119 is structurally additive, but strict compiled-history verification prevents an 118 binary from starting or reacquiring a tenant after it applies. Migration 120 atomically copies and reconciles stable identities, payloads, timestamps, attempts and inbox preservation before removing Attendance transport columns. Existing terminal/suppressed rows remain terminal; the recipient snapshot policy does not reopen them. A bounded preservation finding must leave maintenance active for diagnosis and a matching-timeline forward repair; do not normalize source data, replace IDs, delete queue/audit rows or edit applied migrations to force acceptance. After history advances, do not restore the 118 binary. Verify every active tenant's schema, matching release, one central worker, queue progress and authenticated acceptance before reopening traffic. Existing retention behavior is unchanged.
 

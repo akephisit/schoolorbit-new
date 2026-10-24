@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::{FromRow, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -48,18 +49,20 @@ pub(crate) async fn restore_group_in_tx(
     actor_id: Uuid,
     learning_group_id: Uuid,
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
-    sqlx::query(
-        r#"UPDATE academic_timetable_block_group_sync
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_sync.restore_group_in_tx",
+            r#"UPDATE academic_timetable_block_group_sync
            SET status = 'WAITING_FOR_DATA', linked_block_group_id = NULL,
                conflict_code = NULL, conflict_message = NULL,
                row_version = row_version + 1, updated_by = $3, updated_at = now()
            WHERE block_id = $1 AND learning_group_id = $2 AND status = 'EXCLUDED'"#,
-    )
-    .bind(block_id)
-    .bind(learning_group_id)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(learning_group_id)
+        .bind(actor_id)
+        .execute()
+        .await?;
     sync_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id], true).await
 }
 
@@ -70,8 +73,10 @@ async fn sync_groups_in_tx(
     selected_group_ids: &[Uuid],
     include_excluded: bool,
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
-    let context: SyncBlockContext = sqlx::query_as(
-        r#"SELECT block.learning_offering_id, block.academic_term_id,
+    let context: SyncBlockContext = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+            r#"SELECT block.learning_offering_id, block.academic_term_id,
                   block.academic_year_id, version.delivery_version_id
            FROM academic_timetable_blocks block
            JOIN academic_timetable_versions version ON version.id = block.timetable_version_id
@@ -81,11 +86,11 @@ async fn sync_groups_in_tx(
              AND block.scheduling_mode = 'synchronized'
              AND version.status = 'draft'
            FOR UPDATE OF block, version"#,
-    )
-    .bind(block_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::Conflict("ซิงค์ได้เฉพาะช่วงกิจกรรมพร้อมกันในรุ่นแบบร่าง".to_string()))?;
+        )
+        .bind(block_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Conflict("ซิงค์ได้เฉพาะช่วงกิจกรรมพร้อมกันในรุ่นแบบร่าง".to_string()))?;
 
     let selected = canonical_ids(selected_group_ids);
     let source = school_academic_delivery::services::versions::published_source(
@@ -117,35 +122,39 @@ async fn sync_groups_in_tx(
         .iter()
         .flat_map(|group| group.teachers.iter().map(|teacher| teacher.teacher_id))
         .collect();
-    let active_teachers: Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active' ORDER BY id FOR SHARE")
-        .bind(&teacher_ids).fetch_all(&mut **transaction).await?;
+    let active_teachers: Vec<Uuid>=DbSession::new(&mut **transaction).scalar("academic_timetable.services.timetable_block_sync.sync_groups_in_tx", "SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active' ORDER BY id FOR SHARE")
+        .bind(&teacher_ids).fetch_all().await?;
     for group in groups {
-        let existing_status: Option<String> = sqlx::query_scalar(
-            r#"SELECT status FROM academic_timetable_block_group_sync
+        let existing_status: Option<String> = DbSession::new(&mut **transaction)
+            .scalar(
+                "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                r#"SELECT status FROM academic_timetable_block_group_sync
                WHERE block_id = $1 AND learning_group_id = $2"#,
-        )
-        .bind(block_id)
-        .bind(group.id)
-        .fetch_optional(&mut **transaction)
-        .await?;
+            )
+            .bind(block_id)
+            .bind(group.id)
+            .fetch_optional()
+            .await?;
         if existing_status.as_deref() == Some("EXCLUDED") && !include_excluded {
             continue;
         }
 
         let homeroom_ids = &group.homeroom_ids;
         let inside_scope: bool = !homeroom_ids.is_empty()
-            && sqlx::query_scalar(
-                r#"SELECT count(*) = cardinality($3::uuid[])
+            && DbSession::new(&mut **transaction)
+                .scalar(
+                    "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                    r#"SELECT count(*) = cardinality($3::uuid[])
                    FROM academic_timetable_block_homerooms target
                    WHERE target.block_id = $1 AND target.is_active
                      AND target.homeroom_id = ANY($3)
                      AND target.academic_year_id = $2"#,
-            )
-            .bind(block_id)
-            .bind(context.academic_year_id)
-            .bind(&homeroom_ids)
-            .fetch_one(&mut **transaction)
-            .await?;
+                )
+                .bind(block_id)
+                .bind(context.academic_year_id)
+                .bind(&homeroom_ids)
+                .fetch_one()
+                .await?;
         if !inside_scope {
             remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
             upsert_sync_state(
@@ -193,16 +202,24 @@ async fn sync_groups_in_tx(
             continue;
         }
 
-        sqlx::query("SAVEPOINT timetable_sync_group")
-            .execute(&mut **transaction)
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                "SAVEPOINT timetable_sync_group",
+            )
+            .execute()
             .await?;
         let allocation =
             write_group_allocation(transaction, block_id, &context, group, &teachers, actor_id)
                 .await;
         match allocation {
             Ok(block_group_id) => {
-                sqlx::query("RELEASE SAVEPOINT timetable_sync_group")
-                    .execute(&mut **transaction)
+                DbSession::new(&mut **transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                        "RELEASE SAVEPOINT timetable_sync_group",
+                    )
+                    .execute()
                     .await?;
                 upsert_sync_state(
                     transaction,
@@ -220,11 +237,19 @@ async fn sync_groups_in_tx(
             }
             Err(error) => {
                 let conflict = sync_conflict(&error);
-                sqlx::query("ROLLBACK TO SAVEPOINT timetable_sync_group")
-                    .execute(&mut **transaction)
+                DbSession::new(&mut **transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                        "ROLLBACK TO SAVEPOINT timetable_sync_group",
+                    )
+                    .execute()
                     .await?;
-                sqlx::query("RELEASE SAVEPOINT timetable_sync_group")
-                    .execute(&mut **transaction)
+                DbSession::new(&mut **transaction)
+                    .query(
+                        "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
+                        "RELEASE SAVEPOINT timetable_sync_group",
+                    )
+                    .execute()
                     .await?;
                 let Some((code, message)) = conflict else {
                     return Err(AppError::DbError(error));
@@ -259,8 +284,10 @@ async fn write_group_allocation(
     actor_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
     let room_id = group.preferred_room_ids.first().copied();
-    let block_group_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO academic_timetable_block_groups (
+    let block_group_id: Uuid = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_timetable.services.timetable_block_sync.write_group_allocation",
+            r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
                academic_term_id, academic_year_id, room_id,
                created_by, updated_by, homeroom_ids
@@ -270,33 +297,39 @@ async fn write_group_allocation(
                row_version = academic_timetable_block_groups.row_version + 1,
                updated_by = EXCLUDED.updated_by, updated_at = now()
            RETURNING id"#,
-    )
-    .bind(block_id)
-    .bind(group.id)
-    .bind(context.learning_offering_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(room_id)
-    .bind(actor_id)
-    .bind(&group.homeroom_ids)
-    .fetch_one(&mut **transaction)
-    .await?;
-    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
-        .bind(block_group_id)
-        .execute(&mut **transaction)
+        )
+        .bind(block_id)
+        .bind(group.id)
+        .bind(context.learning_offering_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(room_id)
+        .bind(actor_id)
+        .bind(&group.homeroom_ids)
+        .fetch_one()
         .await?;
-    for (index, (teacher_id, role)) in teachers.iter().enumerate() {
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_block_group_instructors (
-                   id, block_group_id, instructor_id, role, display_order
-               ) VALUES (gen_random_uuid(), $1, $2, $3, $4)"#,
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_sync.write_group_allocation",
+            "DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1",
         )
         .bind(block_group_id)
-        .bind(teacher_id)
-        .bind(role)
-        .bind((index + 1) as i32)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
+    for (index, (teacher_id, role)) in teachers.iter().enumerate() {
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_timetable.services.timetable_block_sync.write_group_allocation",
+                r#"INSERT INTO academic_timetable_block_group_instructors (
+                   id, block_group_id, instructor_id, role, display_order
+               ) VALUES (gen_random_uuid(), $1, $2, $3, $4)"#,
+            )
+            .bind(block_group_id)
+            .bind(teacher_id)
+            .bind(role)
+            .bind((index + 1) as i32)
+            .execute()
+            .await?;
     }
     Ok(block_group_id)
 }
@@ -307,17 +340,19 @@ async fn remove_group_allocation(
     learning_group_id: Uuid,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"UPDATE academic_timetable_block_groups
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_sync.remove_group_allocation",
+            r#"UPDATE academic_timetable_block_groups
            SET is_active = false, row_version = row_version + 1,
                updated_by = $3, updated_at = now()
            WHERE block_id = $1 AND learning_group_id = $2 AND is_active"#,
-    )
-    .bind(block_id)
-    .bind(learning_group_id)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(learning_group_id)
+        .bind(actor_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -334,8 +369,10 @@ async fn upsert_sync_state(
     conflict_message: Option<&str>,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_group_sync (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_timetable.services.timetable_block_sync.upsert_sync_state",
+            r#"INSERT INTO academic_timetable_block_group_sync (
                id, block_id, learning_group_id, learning_offering_id,
                academic_term_id, academic_year_id, status, linked_block_group_id,
                conflict_code, conflict_message, attempted_group_row_version,
@@ -349,20 +386,20 @@ async fn upsert_sync_state(
                attempted_group_row_version = EXCLUDED.attempted_group_row_version,
                row_version = academic_timetable_block_group_sync.row_version + 1,
                updated_by = EXCLUDED.updated_by, updated_at = now()"#,
-    )
-    .bind(block_id)
-    .bind(learning_group_id)
-    .bind(context.learning_offering_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(status)
-    .bind(linked_block_group_id)
-    .bind(conflict_code)
-    .bind(conflict_message)
-    .bind(group_row_version)
-    .bind(actor_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .bind(learning_group_id)
+        .bind(context.learning_offering_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(status)
+        .bind(linked_block_group_id)
+        .bind(conflict_code)
+        .bind(conflict_message)
+        .bind(group_row_version)
+        .bind(actor_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -370,16 +407,18 @@ async fn load_states(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
-    let rows: Vec<SyncStateRow> = sqlx::query_as(
-        r#"SELECT id, learning_group_id, learning_offering_id, status,
+    let rows: Vec<SyncStateRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_timetable.services.timetable_block_sync.load_states",
+            r#"SELECT id, learning_group_id, learning_offering_id, status,
                   linked_block_group_id, conflict_code, conflict_message,
                   attempted_group_row_version, row_version
            FROM academic_timetable_block_group_sync
            WHERE block_id = $1 ORDER BY learning_group_id"#,
-    )
-    .bind(block_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(block_id)
+        .fetch_all()
+        .await?;
     rows.into_iter()
         .map(|row| {
             Ok(TimetableBlockSyncState {

@@ -40,12 +40,14 @@ pub async fn list_target_options(
     pool: &PgPool,
     date: NaiveDate,
 ) -> Result<CalendarTargetOptions, AppError> {
-    let grade_levels=sqlx::query_as("SELECT id, CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' WHEN 'secondary' THEN 'ม.' ELSE level_type END || year::text AS name FROM grade_levels
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.target_options").await?;
+    let grade_levels=school_database::DbSession::new(&mut *connection).query_as("calendar.src.target_options.list_target_options", "SELECT id, CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' WHEN 'secondary' THEN 'ม.' ELSE level_type END || year::text AS name FROM grade_levels
         WHERE is_active ORDER BY level_type,year,id")
-        .fetch_all(pool).await?;
-    let homerooms=sqlx::query_as("SELECT room.id,room.name || ' (' || year.name || ')' AS name,room.grade_level_id FROM homerooms room JOIN academic_years year ON year.id=room.academic_year_id
+        .fetch_all().await?;
+    let homerooms=school_database::DbSession::new(&mut *connection).query_as("calendar.src.target_options.list_target_options", "SELECT room.id,room.name || ' (' || year.name || ')' AS name,room.grade_level_id FROM homerooms room JOIN academic_years year ON year.id=room.academic_year_id
         WHERE room.is_active AND year.start_date<=$1 AND year.end_date>=$1 ORDER BY year.start_date,room.name,room.id")
-        .bind(date).fetch_all(pool).await?;
+        .bind(date).fetch_all().await?;
     Ok(CalendarTargetOptions {
         grade_levels,
         homerooms,

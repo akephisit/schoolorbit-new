@@ -1,6 +1,7 @@
 use super::{models::*, policy::*, repository::*};
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use school_workflow::process;
@@ -11,6 +12,33 @@ pub async fn list_types(
     actor: &ActorContext,
     q: LeaveListQuery,
 ) -> Result<Vec<LeaveType>, AppError> {
+    require_type_list_access(actor, &q)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.leave.configuration.list_types",
+    )
+    .await?;
+    list_types_on_connection(&mut connection, actor, q).await
+}
+
+pub async fn list_types_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    q: LeaveListQuery,
+) -> Result<Vec<LeaveType>, AppError> {
+    require_type_list_access(actor, &q)?;
+    let kind = q.kind.map(|k| {
+        if k == LeaveKind::Leave {
+            "leave"
+        } else {
+            "exit"
+        }
+    });
+    Ok(DbSession::new(connection).scalar::<Json<LeaveType>>("staff.leave.configuration.list_types_on_connection", "SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all().await?.into_iter().map(|r|r.0).collect())
+}
+
+fn require_type_list_access(actor: &ActorContext, q: &LeaveListQuery) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::STAFF_LEAVE_READ_OWN,
         codes::STAFF_LEAVE_READ_ASSIGNED,
@@ -21,15 +49,9 @@ pub async fn list_types(
     if q.include_archived == Some(true) {
         actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
     }
-    let kind = q.kind.map(|k| {
-        if k == LeaveKind::Leave {
-            "leave"
-        } else {
-            "exit"
-        }
-    });
-    Ok(sqlx::query_scalar::<_,Json<LeaveType>>("SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all(pool).await?.into_iter().map(|r|r.0).collect())
+    Ok(())
 }
+
 pub async fn save_type(
     pool: &PgPool,
     actor: &ActorContext,
@@ -49,7 +71,9 @@ pub async fn save_type(
     if input.name.trim().is_empty() || input.name.chars().count() > 200 {
         return Err(invalid("กรุณาระบุชื่อประเภทคำขอไม่เกิน 200 ตัวอักษร"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.save_type")
+            .await?;
     let rid = id.unwrap_or_else(Uuid::now_v7);
     if let Some(replay) = claim(
         &mut tx,
@@ -65,21 +89,27 @@ pub async fn save_type(
     )
     .await?
     {
-        let old: Json<LeaveType> =
-            sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1")
-                .bind(replay)
-                .fetch_one(&mut *tx)
-                .await?;
+        let old: Json<LeaveType> = DbSession::new(&mut *tx)
+            .scalar(
+                "staff.leave.configuration.save_type",
+                "SELECT document FROM staff_leave_types WHERE id=$1",
+            )
+            .bind(replay)
+            .fetch_one()
+            .await?;
         tx.commit().await?;
         return Ok(old.0);
     }
     let (revision, code) = if id.is_some() {
-        let old: Json<LeaveType> =
-            sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1 FOR UPDATE")
-                .bind(rid)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
+        let old: Json<LeaveType> = DbSession::new(&mut *tx)
+            .scalar(
+                "staff.leave.configuration.save_type",
+                "SELECT document FROM staff_leave_types WHERE id=$1 FOR UPDATE",
+            )
+            .bind(rid)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
         if input.expected_revision != Some(old.revision) {
             return Err(stale());
         }
@@ -103,7 +133,7 @@ pub async fn save_type(
         archived: input.archived,
         revision,
     };
-    sqlx::query("INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(if item.kind==LeaveKind::Leave{"leave"}else{"exit"}).bind(revision).bind(Json(&item)).execute(&mut *tx).await.map_err(|error|{
+    DbSession::new(&mut *tx).query("staff.leave.configuration.save_type", "INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(if item.kind==LeaveKind::Leave{"leave"}else{"exit"}).bind(revision).bind(Json(&item)).execute().await.map_err(|error|{
         if error.as_database_error().is_some_and(|database|database.constraint()==Some("staff_leave_types_code_key")){
             AppError::Conflict("รหัสประเภทคำขอนี้มีอยู่แล้ว กรุณาใช้รหัสอื่น".into())
         }else{error.into()}
@@ -118,7 +148,9 @@ pub async fn delete_type(
     input: LeaveMutationRequest,
 ) -> Result<(), AppError> {
     actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.delete_type")
+            .await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -133,21 +165,28 @@ pub async fn delete_type(
         tx.commit().await?;
         return Ok(());
     }
-    let rev: Option<i64> =
-        sqlx::query_scalar("SELECT revision FROM staff_leave_types WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+    let rev: Option<i64> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.configuration.delete_type",
+            "SELECT revision FROM staff_leave_types WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     if rev != Some(input.expected_revision) {
         return Err(stale());
     }
-    let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1) OR EXISTS(SELECT 1 FROM staff_leave_requests WHERE type_id=$1)").bind(id).fetch_one(&mut *tx).await?;
+    let used:bool=DbSession::new(&mut *tx).scalar("staff.leave.configuration.delete_type", "SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1) OR EXISTS(SELECT 1 FROM staff_leave_requests WHERE type_id=$1)").bind(id).fetch_one().await?;
     if used {
         return Err(invalid("ประเภทนี้มีการใช้งานแล้ว กรุณาจัดเก็บแทนการลบ"));
     }
-    sqlx::query("DELETE FROM staff_leave_types WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.leave.configuration.delete_type",
+            "DELETE FROM staff_leave_types WHERE id=$1",
+        )
         .bind(id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     tx.commit().await?;
     Ok(())
@@ -157,8 +196,23 @@ pub async fn policies(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<Vec<LeavePolicyVersion>, AppError> {
-    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    Ok(sqlx::query_scalar::<_,Json<LeavePolicyVersion>>("SELECT document FROM staff_leave_policies WHERE type_id=$1 ORDER BY version DESC LIMIT 200").bind(id).fetch_all(pool).await?.into_iter().map(|r|r.0).collect())
+    require_configuration_manage(actor)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.leave.configuration.policies",
+    )
+    .await?;
+    policies_on_connection(&mut connection, actor, id).await
+}
+
+pub async fn policies_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    id: Uuid,
+) -> Result<Vec<LeavePolicyVersion>, AppError> {
+    require_configuration_manage(actor)?;
+    Ok(DbSession::new(connection).scalar::<Json<LeavePolicyVersion>>("staff.leave.configuration.policies_on_connection", "SELECT document FROM staff_leave_policies WHERE type_id=$1 ORDER BY version DESC LIMIT 200").bind(id).fetch_all().await?.into_iter().map(|r|r.0).collect())
 }
 pub async fn effective_policy(
     pool: &PgPool,
@@ -167,7 +221,11 @@ pub async fn effective_policy(
     date: NaiveDate,
 ) -> Result<LeavePolicyVersion, AppError> {
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_CREATE_OWN])?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.leave.configuration.effective_policy",
+    )
+    .await?;
     let (_, p) = resolve_policy(&mut tx, actor.user_id, id, date).await?;
     tx.commit().await?;
     Ok(p)
@@ -180,7 +238,9 @@ pub async fn save_policy(
 ) -> Result<LeavePolicyVersion, AppError> {
     actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
     validate_policy(&input)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.save_policy")
+            .await?;
     let pid = Uuid::now_v7();
     if let Some(replay) = claim(
         &mut tx,
@@ -198,27 +258,32 @@ pub async fn save_policy(
         tx.commit().await?;
         return Ok(p);
     }
-    let old: Json<LeaveType> =
-        sqlx::query_scalar("SELECT document FROM staff_leave_types WHERE id=$1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
+    let old: Json<LeaveType> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.configuration.save_policy",
+            "SELECT document FROM staff_leave_types WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
     if old.revision != input.expected_revision {
         return Err(stale());
     }
-    let incompatible:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1 AND (document->>'unit'<>$2 OR (document->>'quotaYearStartMonth')::int<>$3))").bind(id).bind(serde_json::to_value(input.unit).map_err(|_|invalid("หน่วยไม่ถูกต้อง"))?.as_str()).bind(input.quota_year_start_month as i32).fetch_one(&mut *tx).await?;
+    let incompatible:bool=DbSession::new(&mut *tx).scalar("staff.leave.configuration.save_policy", "SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1 AND (document->>'unit'<>$2 OR (document->>'quotaYearStartMonth')::int<>$3))").bind(id).bind(serde_json::to_value(input.unit).map_err(|_|invalid("หน่วยไม่ถูกต้อง"))?.as_str()).bind(input.quota_year_start_month as i32).fetch_one().await?;
     if incompatible {
         return Err(invalid(
             "ไม่สามารถเปลี่ยนหน่วยหรือเดือนเริ่มปีของประเภทที่มีเกณฑ์แล้ว กรุณาสร้างประเภทใหม่",
         ));
     }
-    let version: i64 = sqlx::query_scalar(
-        "SELECT coalesce(max(version),0)+1 FROM staff_leave_policies WHERE type_id=$1",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let version: i64 = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.configuration.save_policy",
+            "SELECT coalesce(max(version),0)+1 FROM staff_leave_policies WHERE type_id=$1",
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     let p = LeavePolicyVersion {
         id: pid,
         type_id: id,
@@ -251,15 +316,19 @@ pub async fn save_policy(
         p.steps.clone(),
     )
     .await?;
-    sqlx::query("INSERT INTO staff_leave_policies(id,type_id,version,effective_from,document,created_by) VALUES($1,$2,$3,$4,$5,$6)").bind(pid).bind(id).bind(version).bind(p.effective_from).bind(Json(&p)).bind(actor.user_id).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO staff_leave_policy_categories(policy_id,type_id,personnel_type,effective_from) SELECT $1,$2,unnest($3::text[]),$4").bind(pid).bind(id).bind(p.personnel_types.iter().map(|t|t.as_str()).collect::<Vec<_>>()).bind(p.effective_from).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("staff.leave.configuration.save_policy", "INSERT INTO staff_leave_policies(id,type_id,version,effective_from,document,created_by) VALUES($1,$2,$3,$4,$5,$6)").bind(pid).bind(id).bind(version).bind(p.effective_from).bind(Json(&p)).bind(actor.user_id).execute().await?;
+    DbSession::new(&mut *tx).query("staff.leave.configuration.save_policy", "INSERT INTO staff_leave_policy_categories(policy_id,type_id,personnel_type,effective_from) SELECT $1,$2,unnest($3::text[]),$4").bind(pid).bind(id).bind(p.personnel_types.iter().map(|t|t.as_str()).collect::<Vec<_>>()).bind(p.effective_from).execute().await?;
     let mut typ = old.0;
     typ.revision += 1;
-    sqlx::query("UPDATE staff_leave_types SET revision=$2,document=$3 WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.leave.configuration.save_policy",
+            "UPDATE staff_leave_types SET revision=$2,document=$3 WHERE id=$1",
+        )
         .bind(id)
         .bind(typ.revision)
         .bind(Json(typ))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     tx.commit().await?;
     Ok(p)

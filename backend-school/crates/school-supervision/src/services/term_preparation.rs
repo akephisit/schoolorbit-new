@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::HashMap;
 
@@ -51,22 +52,22 @@ pub async fn apply(
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
     dates: &HashMap<NaiveDate, NaiveDate>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
-    let cycles: Vec<SourceCycle> = sqlx::query_as(
+    let cycles: Vec<SourceCycle> = DbSession::new(&mut **tx).query_as("supervision.services.term_preparation.apply",
         r#"SELECT id,title,description,template_id,booking_opens_at,booking_closes_at,starts_at,ends_at
            FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY starts_at,id"#,
     )
     .bind(context.source_term_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     let source_ids = cycles.iter().map(|cycle| cycle.id).collect::<Vec<_>>();
     let targets: Vec<SourceTarget> = if source_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("supervision.services.term_preparation.apply",
             "SELECT cycle_id,target_type,target_id,required_observations,priority FROM supervision_cycle_targets WHERE cycle_id=ANY($1) ORDER BY cycle_id,priority,id",
         )
         .bind(&source_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
     let mut cycle_map = HashMap::new();
@@ -90,25 +91,27 @@ pub async fn apply(
             ));
         }
         let id = Uuid::now_v7();
-        sqlx::query(
-            r#"INSERT INTO supervision_cycles(
+        DbSession::new(&mut **tx)
+            .query(
+                "supervision.services.term_preparation.apply",
+                r#"INSERT INTO supervision_cycles(
                    id,title,description,template_id,booking_opens_at,booking_closes_at,
                    starts_at,ends_at,status,created_by,academic_year_id,academic_term_id
                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10,$11)"#,
-        )
-        .bind(id)
-        .bind(cycle.title)
-        .bind(cycle.description)
-        .bind(cycle.template_id)
-        .bind(booking_opens_at)
-        .bind(booking_closes_at)
-        .bind(starts_at)
-        .bind(ends_at)
-        .bind(actor)
-        .bind(context.target_year_id)
-        .bind(context.target_term_id)
-        .execute(&mut **tx)
-        .await?;
+            )
+            .bind(id)
+            .bind(cycle.title)
+            .bind(cycle.description)
+            .bind(cycle.template_id)
+            .bind(booking_opens_at)
+            .bind(booking_closes_at)
+            .bind(starts_at)
+            .bind(ends_at)
+            .bind(actor)
+            .bind(context.target_year_id)
+            .bind(context.target_term_id)
+            .execute()
+            .await?;
         cycle_map.insert(cycle.id, id);
         target_ids.push(id);
     }
@@ -122,18 +125,20 @@ pub async fn apply(
             ),
             (_, value) => value,
         };
-        sqlx::query(
-            r#"INSERT INTO supervision_cycle_targets(
+        DbSession::new(&mut **tx)
+            .query(
+                "supervision.services.term_preparation.apply",
+                r#"INSERT INTO supervision_cycle_targets(
                    id,cycle_id,target_type,target_id,required_observations,priority
                ) VALUES(gen_random_uuid(),$1,$2,$3,$4,$5)"#,
-        )
-        .bind(cycle_map[&target.cycle_id])
-        .bind(target.target_type)
-        .bind(target_id)
-        .bind(target.required_observations)
-        .bind(target.priority)
-        .execute(&mut **tx)
-        .await?;
+            )
+            .bind(cycle_map[&target.cycle_id])
+            .bind(target.target_type)
+            .bind(target_id)
+            .bind(target.required_observations)
+            .bind(target.priority)
+            .execute()
+            .await?;
     }
     Ok(TermPreparationModuleOutcome {
         module: TermPreparationModule::Supervision,

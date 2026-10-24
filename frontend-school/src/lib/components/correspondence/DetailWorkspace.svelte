@@ -46,6 +46,7 @@
 	import { MutationIntent } from '#lib/correspondence/mutation-intent.js';
 	import { validateDocumentMetadata } from '#lib/correspondence/metadata.js';
 	import DocumentViewer from './DocumentViewer.svelte';
+	import LocalDocumentPreview from '#lib/components/files/LocalDocumentPreview.svelte';
 	import ActionForm from './ActionForm.svelte';
 	import SendForm from './SendForm.svelte';
 	import Choice from './Choice.svelte';
@@ -78,7 +79,8 @@
 	let actionDirty = $state(false),
 		sendPending = $state(false);
 	let placementPaths = $state<import('#lib/correspondence/geometry.js').InkPath[]>([]),
-		placementFileId = $state<string | undefined>();
+		placementFileId = $state<string | undefined>(),
+		placementImage = $state<Blob | undefined>();
 	const uploadedFiles = new SvelteMap<File, string>();
 	const revisionIntent = new MutationIntent<ReviseCorrespondenceRequest>();
 	let readError = $state(''),
@@ -492,6 +494,7 @@
 							placement={documentReady ? signature : undefined}
 							{placementPaths}
 							{placementFileId}
+							{placementImage}
 							onplacementchange={(value) => {
 								signature = value;
 							}}
@@ -596,6 +599,7 @@
 										}}
 									/>
 								</div>
+								{#if original}<LocalDocumentPreview file={original} />{/if}
 								<div class="space-y-2">
 									<Label for="revision-attachments">เพิ่มไฟล์แนบ</Label><Input
 										id="revision-attachments"
@@ -607,6 +611,7 @@
 										}}
 									/>
 								</div>
+								{#each attachments as file (file)}<LocalDocumentPreview {file} />{/each}
 								{#if editBaseRevision !== detail.record.revision}<p class="text-sm text-warning">
 										รายการเปลี่ยนแปลงแล้ว กรุณาตรวจข้อมูลล่าสุดก่อนบันทึก
 									</p>
@@ -825,9 +830,10 @@
 										ondirtychange={(value) => {
 											actionDirty = value;
 										}}
-										onpreviewchange={(paths, fileId) => {
+										onpreviewchange={(paths, fileId, localImage) => {
 											placementPaths = paths;
 											placementFileId = fileId;
+											placementImage = localImage;
 										}}
 										onpendingchange={(value) => {
 											actionPending = value;

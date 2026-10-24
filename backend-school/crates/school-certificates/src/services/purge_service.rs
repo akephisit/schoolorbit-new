@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     platform_service::FilePlatform,
@@ -9,7 +10,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    access_policy::{require_owner_action, CertificateAction},
+    access_policy::CertificateAction,
     models::{
         CertificateCampaignPurgeCounts, CertificateCampaignPurgeImpact,
         CertificateCampaignPurgePhase, CertificateCampaignPurgeStatus,
@@ -105,10 +106,12 @@ pub async fn start(
     .await?;
 
     let repository = SqlFileRepository::new(pool.clone());
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "certificates.purge_service.start")
+            .await?;
     let campaign = lock_campaign(&mut transaction, campaign_id).await?;
-    require_purge_owner_action(
-        pool,
+    require_purge_owner_action_on_connection(
+        &mut transaction,
         actor,
         campaign.owner_organization_unit_id,
         campaign_not_found,
@@ -141,8 +144,10 @@ pub async fn start(
         return Err(AppError::Conflict(IMPACT_CHANGED.to_string()));
     }
 
-    sqlx::query(
-        "INSERT INTO certificate_campaign_purge_jobs (
+    DbSession::new(&mut *transaction)
+        .query(
+            "certificates.services.purge_service.start",
+            "INSERT INTO certificate_campaign_purge_jobs (
             campaign_id, status, requested_by, template_count,
             candidate_count, request_count, open_request_count,
             issued_certificate_count, revoked_certificate_count,
@@ -150,46 +155,50 @@ pub async fn start(
          ) VALUES (
             $1, 'deleting_files', $2, $3, $4, $5, $6, $7, $8, $9, $10
          )",
-    )
-    .bind(campaign_id)
-    .bind(actor.user_id)
-    .bind(current_counts.template_count)
-    .bind(current_counts.candidate_count)
-    .bind(current_counts.request_count)
-    .bind(current_counts.open_request_count)
-    .bind(current_counts.issued_certificate_count)
-    .bind(current_counts.revoked_certificate_count)
-    .bind(current_counts.file_count)
-    .bind(current_counts.total_file_bytes)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(campaign_id)
+        .bind(actor.user_id)
+        .bind(current_counts.template_count)
+        .bind(current_counts.candidate_count)
+        .bind(current_counts.request_count)
+        .bind(current_counts.open_request_count)
+        .bind(current_counts.issued_certificate_count)
+        .bind(current_counts.revoked_certificate_count)
+        .bind(current_counts.file_count)
+        .bind(current_counts.total_file_bytes)
+        .execute()
+        .await?;
 
     for file in &inventory {
         let object_count = i32::try_from(file.object_count).map_err(|_| {
             AppError::Conflict("certificate_purge_file_inventory_too_large".to_string())
         })?;
-        sqlx::query(
-            "INSERT INTO certificate_campaign_purge_files (
+        DbSession::new(&mut *transaction)
+            .query(
+                "certificates.services.purge_service.start",
+                "INSERT INTO certificate_campaign_purge_files (
                 campaign_id, file_id, object_count, byte_size
              ) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(campaign_id)
-        .bind(file.file_id)
-        .bind(object_count)
-        .bind(file.byte_size)
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(campaign_id)
+            .bind(file.file_id)
+            .bind(object_count)
+            .bind(file.byte_size)
+            .execute()
+            .await?;
     }
 
-    sqlx::query(
-        "UPDATE certificate_campaigns
+    DbSession::new(&mut *transaction)
+        .query(
+            "certificates.services.purge_service.start",
+            "UPDATE certificate_campaigns
          SET status = 'purging', updated_by = $2, updated_at = clock_timestamp()
          WHERE id = $1",
-    )
-    .bind(campaign_id)
-    .bind(actor.user_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(campaign_id)
+        .bind(actor.user_id)
+        .execute()
+        .await?;
 
     let mut prepared = Vec::<DeleteWork>::new();
     for file in &inventory {
@@ -243,10 +252,12 @@ pub async fn retry(
     require_purge_owner_action(pool, actor, campaign_owner.0, purge_not_found).await?;
 
     let repository = SqlFileRepository::new(pool.clone());
-    let mut transaction = pool.begin().await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "certificates.purge_service.retry")
+            .await?;
     let campaign = lock_campaign(&mut transaction, campaign_id).await?;
-    require_purge_owner_action(
-        pool,
+    require_purge_owner_action_on_connection(
+        &mut transaction,
         actor,
         campaign.owner_organization_unit_id,
         purge_not_found,
@@ -262,31 +273,35 @@ pub async fn retry(
         return Err(AppError::Conflict(RETRY_NOT_FAILED.to_string()));
     }
 
-    let transitioned = sqlx::query_scalar::<_, Uuid>(
-        "UPDATE certificate_campaign_purge_jobs
+    let transitioned = DbSession::new(&mut *transaction)
+        .scalar::<Uuid>(
+            "certificates.services.purge_service.retry",
+            "UPDATE certificate_campaign_purge_jobs
          SET status = 'deleting_files', last_error_code = NULL,
              updated_at = clock_timestamp()
          WHERE campaign_id = $1 AND status = 'failed'
          RETURNING campaign_id",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?;
     if transitioned.is_none() {
         return Err(AppError::Conflict(RETRY_NOT_FAILED.to_string()));
     }
 
-    let file_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT file.id
+    let file_ids = DbSession::new(&mut *transaction)
+        .scalar::<Uuid>(
+            "certificates.services.purge_service.retry",
+            "SELECT file.id
          FROM certificate_campaign_purge_files AS inventory
          JOIN files AS file ON file.id = inventory.file_id
          WHERE inventory.campaign_id = $1
          ORDER BY file.id
          FOR UPDATE OF file",
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut *transaction)
-    .await?;
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await?;
     let mut prepared = Vec::<DeleteWork>::new();
     for file_id in file_ids {
         let mut work = repository
@@ -313,16 +328,24 @@ pub async fn retry(
 }
 
 pub async fn reconcile_pending_purges(pool: &PgPool) -> Result<usize, AppError> {
-    let campaign_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT campaign_id
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.purge_service.reconcile_pending_purges",
+    )
+    .await?;
+    let campaign_ids = DbSession::new(&mut *database_stage_0)
+        .scalar::<Uuid>(
+            "certificates.services.purge_service.reconcile_pending_purges",
+            "SELECT campaign_id
          FROM certificate_campaign_purge_jobs
          WHERE status IN ('deleting_files', 'finalizing')
          ORDER BY updated_at, campaign_id
          LIMIT 50",
-    )
-    .fetch_all(pool)
-    .await?;
+        )
+        .fetch_all()
+        .await?;
     let mut advanced = 0_usize;
+    drop(database_stage_0);
     for campaign_id in campaign_ids {
         advance_one(pool, campaign_id).await?;
         advanced += 1;
@@ -334,13 +357,17 @@ async fn advance_one(
     pool: &PgPool,
     campaign_id: Uuid,
 ) -> Result<CertificateCampaignPurgeStatus, AppError> {
-    let mut transaction = pool.begin().await?;
-    let campaign = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM certificate_campaigns WHERE id = $1 FOR UPDATE",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(&pool, "certificates.purge_service.advance_one")
+            .await?;
+    let campaign = DbSession::new(&mut *transaction)
+        .scalar::<String>(
+            "certificates.services.purge_service.advance_one",
+            "SELECT status FROM certificate_campaigns WHERE id = $1 FOR UPDATE",
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?;
     let Some(campaign_status) = campaign else {
         transaction.rollback().await?;
         return Ok(completed_status(campaign_id, 0));
@@ -363,22 +390,36 @@ async fn advance_one(
 
     let all_files_deleted = job.deleted_file_count == job.file_count;
     if all_files_deleted || job.status == "finalizing" {
-        sqlx::query(
-            "UPDATE certificate_campaign_purge_jobs
+        DbSession::new(&mut *transaction)
+            .query(
+                "certificates.services.purge_service.advance_one",
+                "UPDATE certificate_campaign_purge_jobs
              SET status = 'finalizing', last_error_code = NULL,
                  updated_at = clock_timestamp()
              WHERE campaign_id = $1",
-        )
-        .bind(campaign_id)
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(campaign_id)
+            .execute()
+            .await?;
         transaction.commit().await?;
 
-        match sqlx::query_scalar::<_, bool>("SELECT finalize_certificate_campaign_purge($1)")
-            .bind(campaign_id)
-            .fetch_one(pool)
-            .await
-        {
+        let result = async {
+            let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "certificates.purge.finalize",
+            )
+            .await?;
+            DbSession::new(&mut connection)
+                .scalar::<bool>(
+                    "certificates.purge.finalize",
+                    "SELECT finalize_certificate_campaign_purge($1)",
+                )
+                .bind(campaign_id)
+                .fetch_one()
+                .await
+        }
+        .await;
+        match result {
             Ok(true) => return Ok(completed_status(campaign_id, job.file_count)),
             Ok(false) => {
                 mark_failed(pool, campaign_id, "certificate_purge_finalize_missing").await?;
@@ -393,8 +434,10 @@ async fn advance_one(
             .ok_or_else(purge_not_found);
     }
 
-    let terminal_error = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT operation.last_error_code
+    let terminal_error = DbSession::new(&mut *transaction)
+        .scalar::<Option<String>>(
+            "certificates.services.purge_service.advance_one",
+            "SELECT operation.last_error_code
          FROM file_operations AS operation
          JOIN certificate_campaign_purge_files AS inventory
            ON inventory.file_id = operation.file_id
@@ -416,23 +459,25 @@ async fn advance_one(
                   operation.created_at DESC,
                   operation.id DESC
          LIMIT 1",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .flatten();
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?
+        .flatten();
     if let Some(error_code) = terminal_error {
         let safe_error_code = bounded_error_code(&error_code);
-        sqlx::query(
-            "UPDATE certificate_campaign_purge_jobs
+        DbSession::new(&mut *transaction)
+            .query(
+                "certificates.services.purge_service.advance_one",
+                "UPDATE certificate_campaign_purge_jobs
              SET status = 'failed', last_error_code = $2,
                  updated_at = clock_timestamp()
              WHERE campaign_id = $1",
-        )
-        .bind(campaign_id)
-        .bind(safe_error_code)
-        .execute(&mut *transaction)
-        .await?;
+            )
+            .bind(campaign_id)
+            .bind(safe_error_code)
+            .execute()
+            .await?;
         job.status = "failed".to_string();
         job.last_error_code = Some(safe_error_code.to_string());
     }
@@ -441,9 +486,23 @@ async fn advance_one(
 }
 
 async fn load_impact(pool: &PgPool, campaign_id: Uuid) -> Result<PurgeImpactRow, AppError> {
-    sqlx::query_as::<_, PurgeImpactRow>(impact_sql())
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.load_impact")
+            .await?;
+    load_impact_on_connection(&mut connection, campaign_id).await
+}
+
+async fn load_impact_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<PurgeImpactRow, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<PurgeImpactRow>(
+            "certificates.services.purge_service.load_impact_on_connection",
+            impact_sql(),
+        )
         .bind(campaign_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(campaign_not_found)
 }
@@ -527,9 +586,13 @@ async fn load_counts_in_transaction(
          FROM ({}) AS impact",
         impact_sql()
     );
-    let row = sqlx::query_as::<_, CountRow>(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut **transaction)
+        .query_as::<CountRow>(
+            "certificates.services.purge_service.load_counts_in_transaction",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(campaign_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(campaign_not_found)?;
     Ok(CertificateCampaignPurgeCounts {
@@ -548,24 +611,28 @@ async fn lock_campaign(
     transaction: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<LockedCampaign, AppError> {
-    sqlx::query_as::<_, LockedCampaign>(
-        "SELECT name, owner_organization_unit_id, status, updated_at
+    DbSession::new(&mut **transaction)
+        .query_as::<LockedCampaign>(
+            "certificates.services.purge_service.lock_campaign",
+            "SELECT name, owner_organization_unit_id, status, updated_at
          FROM certificate_campaigns
          WHERE id = $1
          FOR UPDATE",
-    )
-    .bind(campaign_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(campaign_not_found)
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(campaign_not_found)
 }
 
 async fn lock_inventory_files(
     transaction: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Vec<InventoryFile>, AppError> {
-    sqlx::query_as::<_, InventoryFile>(
-        r#"
+    DbSession::new(&mut **transaction)
+        .query_as::<InventoryFile>(
+            "certificates.services.purge_service.lock_inventory_files",
+            r#"
 WITH campaign_files AS (
     SELECT template.background_file_id AS file_id
     FROM certificate_templates AS template
@@ -608,11 +675,11 @@ JOIN campaign_files AS campaign_file ON campaign_file.file_id = file.id
 ORDER BY file.id
 FOR UPDATE OF file
 "#,
-    )
-    .bind(campaign_id)
-    .fetch_all(&mut **transaction)
-    .await
-    .map_err(Into::into)
+        )
+        .bind(campaign_id)
+        .fetch_all()
+        .await
+        .map_err(Into::into)
 }
 
 async fn validate_inventory(
@@ -645,8 +712,10 @@ async fn validate_inventory(
         }
     }
 
-    let has_mismatched_relation: bool = sqlx::query_scalar(
-        r#"
+    let has_mismatched_relation: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "certificates.services.purge_service.validate_inventory",
+            r#"
 SELECT EXISTS (
     SELECT 1
     FROM certificate_templates AS template
@@ -665,10 +734,10 @@ SELECT EXISTS (
       END
 )
 "#,
-    )
-    .bind(campaign_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(campaign_id)
+        .fetch_one()
+        .await?;
     if has_mismatched_relation {
         return Err(AppError::Conflict(
             "certificate_purge_file_relationship_invalid".to_string(),
@@ -679,13 +748,15 @@ SELECT EXISTS (
         .iter()
         .map(|file| file.file_id)
         .collect::<Vec<_>>();
-    let has_shared_file: bool = sqlx::query_scalar(
-        "SELECT certificate_campaign_purge_has_external_file_consumer($1, $2::UUID[])",
-    )
-    .bind(campaign_id)
-    .bind(file_ids)
-    .fetch_one(&mut **transaction)
-    .await?;
+    let has_shared_file: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "certificates.services.purge_service.validate_inventory",
+            "SELECT certificate_campaign_purge_has_external_file_consumer($1, $2::UUID[])",
+        )
+        .bind(campaign_id)
+        .bind(file_ids)
+        .fetch_one()
+        .await?;
     if has_shared_file {
         return Err(AppError::Conflict(FILE_SHARED.to_string()));
     }
@@ -696,21 +767,48 @@ async fn load_campaign_owner(
     pool: &PgPool,
     campaign_id: Uuid,
 ) -> Result<(Option<Uuid>, String), AppError> {
-    sqlx::query_as(
-        "SELECT owner_organization_unit_id, status
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.load_campaign_owner",
+    )
+    .await?;
+    load_campaign_owner_on_connection(&mut connection, campaign_id).await
+}
+
+async fn load_campaign_owner_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<(Option<Uuid>, String), AppError> {
+    DbSession::new(&mut *connection)
+        .query_as(
+            "certificates.services.purge_service.load_campaign_owner_on_connection",
+            "SELECT owner_organization_unit_id, status
          FROM certificate_campaigns
          WHERE id = $1",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(campaign_not_found)
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(campaign_not_found)
 }
 
 async fn load_job(pool: &PgPool, campaign_id: Uuid) -> Result<Option<PurgeJobRow>, AppError> {
-    sqlx::query_as::<_, PurgeJobRow>(job_sql(false))
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.load_job").await?;
+    load_job_on_connection(&mut connection, campaign_id).await
+}
+
+async fn load_job_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+) -> Result<Option<PurgeJobRow>, AppError> {
+    DbSession::new(&mut *connection)
+        .query_as::<PurgeJobRow>(
+            "certificates.services.purge_service.load_job_on_connection",
+            job_sql(false),
+        )
         .bind(campaign_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(Into::into)
 }
@@ -719,9 +817,13 @@ async fn load_job_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     campaign_id: Uuid,
 ) -> Result<Option<PurgeJobRow>, AppError> {
-    sqlx::query_as::<_, PurgeJobRow>(job_sql(true))
+    DbSession::new(&mut **transaction)
+        .query_as::<PurgeJobRow>(
+            "certificates.services.purge_service.load_job_in_transaction",
+            job_sql(true),
+        )
         .bind(campaign_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await
         .map_err(Into::into)
 }
@@ -758,17 +860,30 @@ WHERE job.campaign_id = $1
 }
 
 async fn mark_failed(pool: &PgPool, campaign_id: Uuid, error_code: &str) -> Result<(), AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "certificates.mark_failed")
+            .await?;
+    mark_failed_on_connection(&mut connection, campaign_id, error_code).await
+}
+
+async fn mark_failed_on_connection(
+    connection: &mut sqlx::PgConnection,
+    campaign_id: Uuid,
+    error_code: &str,
+) -> Result<(), AppError> {
     let error_code = bounded_error_code(error_code);
-    sqlx::query(
-        "UPDATE certificate_campaign_purge_jobs
+    DbSession::new(&mut *connection)
+        .query(
+            "certificates.services.purge_service.mark_failed_on_connection",
+            "UPDATE certificate_campaign_purge_jobs
          SET status = 'failed', last_error_code = $2,
              updated_at = clock_timestamp()
          WHERE campaign_id = $1",
-    )
-    .bind(campaign_id)
-    .bind(error_code)
-    .execute(pool)
-    .await?;
+        )
+        .bind(campaign_id)
+        .bind(error_code)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -835,8 +950,28 @@ async fn require_purge_owner_action(
     owner_organization_unit_id: Option<Uuid>,
     masked_not_found: fn() -> AppError,
 ) -> Result<(), AppError> {
-    match require_owner_action(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "certificates.purge_authorization",
+    )
+    .await?;
+    require_purge_owner_action_on_connection(
+        &mut connection,
+        actor,
+        owner_organization_unit_id,
+        masked_not_found,
+    )
+    .await
+}
+
+async fn require_purge_owner_action_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    owner_organization_unit_id: Option<Uuid>,
+    masked_not_found: fn() -> AppError,
+) -> Result<(), AppError> {
+    match crate::access_policy::require_owner_action_on_connection(
+        connection,
         actor,
         owner_organization_unit_id,
         CertificateAction::Delete,

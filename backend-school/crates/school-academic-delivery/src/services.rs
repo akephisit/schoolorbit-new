@@ -1,3 +1,4 @@
+use school_database::DbSession;
 pub mod attendance_roster;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -24,7 +25,7 @@ pub async fn pending_term_work(
     year: Uuid,
     term: Uuid,
 ) -> Result<Vec<school_academic_core::ports::PendingTermWork>, AppError> {
-    Ok(sqlx::query_as(
+    Ok(DbSession::new(&mut **tx).query_as("academic_delivery.services.pending_term_work",
         "SELECT change.id,
          md5(to_jsonb(change)::text || COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item.id)::text
              FROM academic_term_change_items item WHERE item.change_set_id=change.id),'[]')) AS revision,
@@ -32,7 +33,7 @@ pub async fn pending_term_work(
              AND item.action_kind IN ('add_offering','stop_offering')) AS blocks_closure
          FROM academic_term_change_sets change WHERE change.academic_year_id=$1
          AND change.academic_term_id=$2 AND change.status='draft' ORDER BY change.id",
-    ).bind(year).bind(term).fetch_all(&mut **tx).await?)
+    ).bind(year).bind(term).fetch_all().await?)
 }
 
 /// Validate that a delivery write may mutate the selected term.
@@ -69,12 +70,15 @@ pub(super) async fn require_writable_term(
     academic_term_id: Uuid,
     lock_for_update: bool,
 ) -> Result<TermContext, AppError> {
-    let year_id: Uuid =
-        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
-            .bind(academic_term_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::ValidationError("ไม่พบภาคเรียนที่เลือก".to_string()))?;
+    let year_id: Uuid = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.require_writable_term",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+        )
+        .bind(academic_term_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ไม่พบภาคเรียนที่เลือก".to_string()))?;
     if lock_for_update {
         lifecycle_guard::require_term_write_exclusive(transaction, year_id, academic_term_id)
             .await?;
@@ -101,9 +105,10 @@ pub(super) async fn load_term_context(
          FROM academic_terms term \
          JOIN academic_years year ON year.id = term.academic_year_id \
          WHERE term.id = $1";
-    let term = sqlx::query_as(query)
+    let term = DbSession::new(&mut **transaction)
+        .query_as("academic_delivery.services.load_term_context", query)
         .bind(academic_term_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::ValidationError("ไม่พบภาคเรียนที่เลือก".to_string()))?;
     Ok(term)
@@ -113,12 +118,14 @@ pub(super) async fn require_active_owner(
     transaction: &mut Transaction<'_, Postgres>,
     owner_id: Uuid,
 ) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM organization_units WHERE id = $1 AND is_active)",
-    )
-    .bind(owner_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+    let exists: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.require_active_owner",
+            "SELECT EXISTS (SELECT 1 FROM organization_units WHERE id = $1 AND is_active)",
+        )
+        .bind(owner_id)
+        .fetch_one()
+        .await?;
     if exists {
         Ok(())
     } else {
@@ -134,9 +141,13 @@ pub(super) async fn require_writable_offering_term(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<TermContext, AppError> {
-    let term_id = sqlx::query_scalar("SELECT academic_term_id FROM learning_offerings WHERE id=$1")
+    let term_id = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.require_writable_offering_term",
+            "SELECT academic_term_id FROM learning_offerings WHERE id=$1",
+        )
         .bind(offering_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".to_string()))?;
     require_writable_term(transaction, term_id, false).await
@@ -170,16 +181,20 @@ pub(super) async fn invalidate_group_academic_confirmations(
              WHERE learning_group_id = ANY($1) \
                AND NOT COALESCE((source_snapshot->>'invalidated')::boolean, false)"
         );
-        sqlx::query(sqlx::AssertSqlSafe(query))
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.invalidate_group_academic_confirmations",
+                sqlx::AssertSqlSafe(query),
+            )
             .bind(&group_ids)
-            .execute(&mut **transaction)
+            .execute()
             .await?;
     }
     Ok(())
 }
 
-pub(super) async fn append_audit<'e, T: Serialize>(
-    executor: impl sqlx::Executor<'e, Database = Postgres>,
+pub(super) async fn append_audit<T: Serialize>(
+    connection: &mut sqlx::PgConnection,
     event_code: &str,
     entity_type: &str,
     entity_id: Uuid,
@@ -188,21 +203,23 @@ pub(super) async fn append_audit<'e, T: Serialize>(
     actor_user_id: Uuid,
     payload: T,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"INSERT INTO academic_audit_events (
+    DbSession::new(connection)
+        .query(
+            "academic_delivery.services.append_audit",
+            r#"INSERT INTO academic_audit_events (
                event_code, entity_type, entity_id, academic_year_id,
                academic_term_id, actor_user_id, payload
            ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-    )
-    .bind(event_code)
-    .bind(entity_type)
-    .bind(entity_id)
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .bind(actor_user_id)
-    .bind(sqlx::types::Json(payload))
-    .execute(executor)
-    .await?;
+        )
+        .bind(event_code)
+        .bind(entity_type)
+        .bind(entity_id)
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(actor_user_id)
+        .bind(sqlx::types::Json(payload))
+        .execute()
+        .await?;
     Ok(())
 }
 

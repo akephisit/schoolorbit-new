@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::BTreeSet;
 
@@ -21,9 +22,17 @@ pub async fn get_activation_workspace(
     academic_term_id: Uuid,
 ) -> Result<TermActivationWorkspace, AppError> {
     actor.require_permission(codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.opening_readiness.get_activation_workspace",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.opening_readiness.get_activation_workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let workspace =
         activation_workspace_in_transaction(&mut tx, actor, academic_year_id, academic_term_id)

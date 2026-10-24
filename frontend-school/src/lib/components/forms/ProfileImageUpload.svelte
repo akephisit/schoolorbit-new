@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { type Snippet } from 'svelte';
-	import { uploadProfileImage } from '#lib/api/files.js';
+	import { onDestroy, untrack, type Snippet } from 'svelte';
+	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import PendingFileGuard from '#lib/components/files/PendingFileGuard.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from '@lucide/svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -14,7 +17,7 @@
 		resourceId?: string;
 		disabled?: boolean;
 		maxSizeMB?: number;
-		onsuccess?: (data: { fileId: string | null }) => void;
+		onsuccess?: (data: { fileId: string | null }) => Promise<void> | void;
 		onerror?: (error: string) => void;
 		helper?: Snippet;
 		className?: string;
@@ -40,9 +43,15 @@
 	let ImageCropper = $state<typeof import('./ImageCropper.svelte').default>();
 	let tempImageSrc = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement>();
+	let selectionEpoch = 0;
 
 	// 1. Handle File Selection
 	async function handleFileSelect(event: Event) {
+		if (uploading || disabled || disposed) return;
+		const owner = resourceId,
+			revision = ++selectionEpoch;
+		const current = () =>
+			!disposed && owner === resourceId && revision === selectionEpoch && !disabled;
 		const target = event.target as HTMLInputElement;
 		let file = target.files?.[0];
 
@@ -86,6 +95,7 @@
 					import('compressorjs'),
 					import('./ImageCropper.svelte')
 				]);
+				if (!current()) return;
 				ImageCropper = Cropper;
 				// Optimize orientation only after selection.
 				new Compressor(file, {
@@ -94,8 +104,10 @@
 					maxHeight: 1920,
 					mimeType: 'image/jpeg',
 					success(result: Blob | File) {
+						if (!current()) return;
 						const reader = new FileReader();
 						reader.onload = (e) => {
+							if (!current()) return;
 							tempImageSrc = e.target?.result as string;
 							showCropper = true;
 							target.value = '';
@@ -103,11 +115,13 @@
 						reader.readAsDataURL(result);
 					},
 					error(err: Error) {
+						if (!current()) return;
 						console.error('Compressor error:', err);
 						// Fallback to original
 						if (file) {
 							const reader = new FileReader();
 							reader.onload = (e) => {
+								if (!current()) return;
 								tempImageSrc = e.target?.result as string;
 								showCropper = true;
 								target.value = '';
@@ -124,30 +138,85 @@
 		}
 	}
 
-	// 2. Handle Cropped Image -> Upload
-	async function handleCropComplete(croppedBlob: Blob) {
+	let pendingImage = $state<PendingUpload>();
+	let pendingFileId = $state<string | null | undefined>(undefined),
+		commitError = $state('');
+	let disposed = false,
+		generation = 0,
+		activeOwner = untrack(() => resourceId);
+	$effect(() => {
+		const owner = resourceId;
+		untrack(() => {
+			if (activeOwner !== owner) {
+				generation++;
+				pendingImage?.dispose();
+				pendingImage = undefined;
+				activeOwner = owner;
+				selectionEpoch++;
+				uploading = false;
+				pendingFileId = undefined;
+				commitError = '';
+				localFileId = undefined;
+				showCropper = false;
+				tempImageSrc = null;
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		selectionEpoch++;
+		generation++;
+		pendingImage?.dispose();
+	});
+	async function persistPhoto() {
+		if (uploading || disabled) return;
+		const owner = resourceId,
+			revision = generation;
+		const current = () => !disposed && owner === resourceId && revision === generation;
 		uploading = true;
-
-		// Convert Blob to File
-		const file = new File([croppedBlob], 'profile_avatar.jpg', { type: 'image/jpeg' });
-
+		commitError = '';
 		try {
-			const response = await uploadProfileImage(file, resourceId);
-			localFileId = response.id;
-			onsuccess?.({ fileId: response.id });
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(`ไม่สามารถอัปโหลดรูปภาพได้: ${errorMessage}`);
-			onerror?.(errorMessage);
+			let id = pendingFileId;
+			if (id === undefined && pendingImage) id = await pendingImage.commit();
+			if (!current() || id === undefined) return;
+			pendingFileId = id;
+			await onsuccess?.({ fileId: id });
+			if (!current()) return;
+			localFileId = id;
+			pendingFileId = undefined;
+			pendingImage?.dispose();
+			pendingImage = undefined;
+		} catch (cause) {
+			if (!current()) return;
+			commitError = cause instanceof Error ? cause.message : 'บันทึกรูปภาพไม่สำเร็จ';
+			onerror?.(commitError);
 		} finally {
-			uploading = false;
+			if (current()) uploading = false;
 		}
 	}
-
-	// Handle Remove
-	function handleRemove() {
-		localFileId = null;
-		onsuccess?.({ fileId: null });
+	async function handleCropComplete(blob: Blob) {
+		if (uploading || disabled) return;
+		pendingImage?.dispose();
+		generation++;
+		pendingImage = new PendingUpload(
+			new File([blob], 'profile_avatar.jpg', { type: 'image/jpeg' }),
+			{
+				purpose: 'profile_image',
+				resourceId,
+				owner: resourceId ?? 'self'
+			},
+			uploadFile
+		);
+		pendingFileId = undefined;
+		await persistPhoto();
+	}
+	async function handleRemove() {
+		if (uploading || disabled) return;
+		generation++;
+		pendingImage?.dispose();
+		pendingImage = undefined;
+		pendingFileId = null;
+		await persistPhoto();
 	}
 
 	function triggerFileInput() {
@@ -162,6 +231,7 @@
 	}
 </script>
 
+<PendingFileGuard dirty={!!pendingImage || pendingFileId !== undefined} pending={uploading} />
 <div class={cn('flex flex-col gap-4', className)}>
 	<div class="relative group w-fit mx-auto">
 		<!-- Profile Avatar Circle -->
@@ -176,7 +246,7 @@
 					class="absolute inset-0 bg-black/50 z-10 flex flex-col items-center justify-center text-white"
 				>
 					<LoaderCircle class="w-8 h-8 animate-spin mb-2" />
-					<span class="text-xs font-medium">กำลังอัปโหลด</span>
+					<span class="text-xs font-medium">กำลังบันทึกรูปภาพ</span>
 				</div>
 			{/if}
 
@@ -244,6 +314,10 @@
 		</p>
 	{/if}
 
+	{#if commitError}<p role="alert" class="text-sm text-destructive">{commitError}</p>
+		<Button type="button" variant="outline" disabled={uploading || disabled} onclick={persistPhoto}
+			>ลองบันทึกรูปอีกครั้ง</Button
+		>{/if}
 	<!-- Image Cropper Modal -->
 	{#if ImageCropper}<ImageCropper
 			bind:open={showCropper}

@@ -386,6 +386,45 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   configuration, broadly consumed contracts or uncertain dependency impact require workspace coverage;
   a bounded domain edit does not automatically require every workspace package or database suite.
 
+### Connection-bound PostgreSQL execution
+
+- `school-database` owns the shared PostgreSQL query execution/observation boundary.
+  Its `DbSession` receives only `&mut PgConnection`; query, typed-row and scalar
+  builders retain that exclusive borrow and accept no replacement executor. Preserve
+  SQLx 0.9 safe strings, binds, result types and `sqlx::Error`; native QueryBuilder
+  results use the prepared adapters. Do not rebuild SQL or cast away safety checks.
+- SQL, authorization, transactions, snapshots, advisory/row locks and domain error
+  mapping remain with their existing owners. Acquire once at a declared work boundary,
+  then pass the connection/session to helpers. No query helper may acquire another
+  pool connection, accept a pool escape hatch, silently start a transaction or retry
+  an ambiguous write. Explicit bootstrap/schema verification, SQLx migrator internals
+  and disposable fixture setup retain narrow native-SQLx exceptions.
+- Keep `school-database` below tenancy, migrations and all domains: production
+  dependencies are SQLx and tracing only. `school-tenancy` owns observed checkout and
+  logical lease retention; its connection guard lends only `PgConnection` and exposes
+  explicit cancellation-safe return/close methods without detach/inner-pool access.
+- Query observations use static source-owned operation labels and fixed duration,
+  completion/cancellation status and safe error categories. Never record SQL, binds,
+  raw database errors, URLs, credentials or personal data. Domain context logs may
+  use the provider's `error_class`; preserve original errors for normal typed mapping.
+- Resolve control-plane metadata before shared background database admission. Use
+  tenancy's opaque validated work snapshots; validate the current cache value revision,
+  expiry, fence and expected UUID before and after physical pool acquisition. Do not
+  refetch HTTP under a database permit or silently retry a stale proof. Preserve the
+  original whole-phase/item deadline across resolution, admission, pool wait and SQL;
+  this local proof does not replace domain transaction/source/lease fences.
+- Resource work entries choose observed checkout or owned `ObservedTransaction`
+  explicitly. Connection/transaction helpers accept that existing connection and
+  never acquire another pool connection. A pool-carrying repository factory may be
+  constructed under a transaction only when construction performs no checkout and
+  the called operation uses the borrowed transaction. Pure authorization/cache hits,
+  empty inputs and validation failures must retain their original database-free path.
+- Query duration measures the client await (driver/network/decoding included), not
+  server execution time. Cancellation observations describe client future lifetime;
+  they do not assert that PostgreSQL has already cancelled a statement. Transaction
+  `begin_wait_us` includes acquisition and `BEGIN`; physical-budget admission,
+  background admission, checkout and hold are distinct resource observations.
+
 ### Request context and architecture
 
 - Share pools and configuration through the application state and cloneable narrow HTTP state.
@@ -574,16 +613,47 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   stale completion cannot release a newer operation. Internal all-tenant lists fail
   closed while a relevant barrier is pending.
 - Bound connection pools, cache entries/revision maps, background batches and log retention.
-  Calendar and Auth retention share bounded tenant-turn admission in `school-tenancy`;
-  their callers bound queued futures and exclude the same tenant/job kind without
-  occupying a shared slot while waiting for that exclusion. Keep turn progress and
-  durable work with each domain, and retain the logical pool lease for the full turn.
-  Calendar cron invocations do not overlap or accumulate waiting queues. Calendar
-  yields between bounded reminder attempts, never hard-cancels a partial
-  recipient fan-out, and advances a stable keyset past failed/contended reminders
-  before revisiting a tenant. Auth advances its tenant rotation before admission so
-  sweep cancellation cannot repeatedly starve the suffix. Existing Notification,
-  Attendance and File Platform worker bounds remain independent.
+  Calendar, Auth retention, Notification dispatch, Attendance maintenance and File
+  Platform reconciliation share bounded database-phase admission owned by `PoolManager`
+  in `school-tenancy`. Consumers use that manager's executor, bound pending futures and
+  exclude the same tenant/job kind without occupying a shared slot for exclusion.
+  A same-key turn may span external I/O, but database permits and logical pool leases
+  cover only its database phases: owned DTOs cross the network boundary, then tenant
+  UUID and durable lease fences are checked again before completion effects. Each
+  concurrent claimed item's database phase consumes its own shared permit. Domains
+  retain business transactions, durable work, schedules and progress. Calendar and
+  File reconciliation cron sweeps exclude overlaps. Calendar keeps its advisory-lock
+  session through event/recipient reads and per-recipient acceptance on that same
+  connection; never hard-cancel partial fan-out. Confirm unlock before session reuse.
+  Calendar advances a stable keyset past failed/contended reminders. Auth advances its
+  tenant rotation before admission so cancellation cannot repeatedly starve the suffix.
+  Notification retains its 32-item batch, four item futures and five-second whole-item
+  deadline, with bounded endpoint attempts, attempt-based subscription rotation and
+  token-fenced endpoint cleanup/ack.
+  File worker metadata effects require the exact unexpired owner/attempt claim;
+  external work cannot retain a database permit or write through a stale lease.
+  Claim/finish DB phases are bounded within the existing lease, and the per-tenant
+  soft budget starts at first admission and is checked after completed operations.
+  A narrowly owned exception permits queuing a new durable delete after a successful
+  or uncertain derivative PUT only for the same cancelled attempt whose file is being
+  deleted; never revive its metadata or change a newer/expired/reclaimed claim.
+  External storage writes remain nontransactional with PostgreSQL. Persist an independent,
+  immutable physical-locator watch and verified provider namespace before every permitted PUT,
+  including synchronous originals/derivatives and leased worker writes. Watch identities survive
+  business hard purge without file/domain foreign keys; revocation is irreversible. Only revoked
+  verified locators may be cleaned, with exact owner/generation/expiry completion fences and no DB
+  resources during provider I/O. With no provider settlement proof, reschedule after DELETE or HEAD
+  absence indefinitely; a later success never erases an older uncertain write. Mixed ordinary/watch
+  work shares the existing batch/budget and persists starting opportunities and claim-time due progress.
+  Legacy NULL namespaces fail closed; bind only with independently attested historical routing,
+  immutable locator digest, expected mutable revision, all-row validation and actual table-owner
+  authority. A writable custom GUC alone is never authorization. The read-only rollout gate checks
+  every target in an independently trusted complete tenant inventory, including database identity,
+  latest schema and all retained watches; it never migrates or silently adopts current routing.
+  File attachment validates under the caller transaction's file lock before promotion. Expiry deletion
+  revalidates temporary/expiry/lifecycle after that same lock, so a stale candidate cannot revoke a
+  promoted accepted file. Never age-clean standard, referenced or historical files.
+  Keep synchronous upload/delete semantics with the File Platform provider.
   Revision pruning must reject stale async fills. Session/file retention uses existing domain
   owners; never delete business history merely to free disk. Autovacuum reuses dead row space
   and is not business retention, RAM cleanup or a guarantee that files shrink.

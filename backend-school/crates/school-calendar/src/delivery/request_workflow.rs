@@ -92,11 +92,16 @@ impl<'a> CalendarRequestWorkflow<'a> {
                 .await?
             }
             CalendarRequestStatus::Approved | CalendarRequestStatus::Rejected => {
-                sqlx::query_scalar::<_, Uuid>(
+                let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                    self.pool,
+                    "calendar.decision_recipients",
+                )
+                .await?;
+                school_database::DbSession::new(&mut *connection).scalar::<Uuid>("calendar.delivery.request_workflow.send_notifications",
                     "SELECT id FROM users WHERE id=$1 AND status='active' AND user_type='staff'",
                 )
                 .bind(request.requested_by)
-                .fetch_all(self.pool)
+                .fetch_all()
                 .await?
             }
         };

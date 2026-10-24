@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
@@ -15,7 +16,20 @@ pub async fn list_members(
     organization_unit_id: Uuid,
     include_children: bool,
 ) -> Result<Vec<OrganizationMemberItem>, AppError> {
-    let rows = sqlx::query(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.organization_member_service.list_members",
+    )
+    .await?;
+    list_members_on_connection(&mut connection, organization_unit_id, include_children).await
+}
+
+pub async fn list_members_on_connection(
+    connection: &mut sqlx::PgConnection,
+    organization_unit_id: Uuid,
+    include_children: bool,
+) -> Result<Vec<OrganizationMemberItem>, AppError> {
+    let rows = DbSession::new(connection).query("staff.services.organization_member_service.list_members_on_connection",
         r#"WITH RECURSIVE descendants AS (
             SELECT id FROM organization_units WHERE id = $1 AND is_active
             UNION
@@ -38,7 +52,7 @@ pub async fn list_members(
     )
     .bind(organization_unit_id)
     .bind(include_children)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(rows
@@ -63,7 +77,20 @@ pub async fn already_member(
     user_id: Uuid,
     organization_unit_id: Uuid,
 ) -> Result<bool, AppError> {
-    let r: bool = sqlx::query_scalar(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.organization_member_service.already_member",
+    )
+    .await?;
+    already_member_on_connection(&mut connection, user_id, organization_unit_id).await
+}
+
+pub async fn already_member_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    organization_unit_id: Uuid,
+) -> Result<bool, AppError> {
+    let r: bool = DbSession::new(connection).scalar("staff.services.organization_member_service.already_member_on_connection",
         "SELECT EXISTS(
              SELECT 1 FROM organization_members
              WHERE user_id = $1 AND organization_unit_id = $2
@@ -72,7 +99,7 @@ pub async fn already_member(
     )
     .bind(user_id)
     .bind(organization_unit_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await?;
     Ok(r)
 }
@@ -86,7 +113,11 @@ pub async fn add_member(
     is_primary: bool,
     responsibilities: Option<String>,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.add_member",
+    )
+    .await?;
     lock_member_user(&mut tx, user_id).await?;
     organization_unit_service::ensure_organization_unit_active(&mut tx, organization_unit_id)
         .await?;
@@ -97,7 +128,7 @@ pub async fn add_member(
     if is_primary {
         clear_primary_in_domain(&mut tx, user_id, organization_unit_id, None, None).await?;
     }
-    sqlx::query(
+    DbSession::new(&mut *tx).query("staff.services.organization_member_service.add_member",
         "INSERT INTO organization_members
             (
                 user_id, organization_unit_id, position_code, position_title,
@@ -114,7 +145,7 @@ pub async fn add_member(
     .bind(position_title)
     .bind(is_primary)
     .bind(responsibilities)
-    .execute(&mut *tx)
+    .execute()
     .await?;
 
     tx.commit().await?;
@@ -132,7 +163,11 @@ pub struct UpdateMemberInput {
 }
 
 pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u64, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.update_member",
+    )
+    .await?;
     lock_member_user(&mut tx, input.user_id).await?;
     if input.new_organization_unit_id != input.organization_unit_id {
         organization_unit_service::ensure_organization_unit_active(
@@ -150,17 +185,19 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
             "บุคลากรนี้เป็นสมาชิกของหน่วยงานปลายทางอยู่แล้ว".into(),
         ));
     }
-    let sources: Vec<(Uuid, NaiveDate, Option<NaiveDate>)> = sqlx::query_as(
-        "SELECT id, started_at, ended_at FROM organization_members
+    let sources: Vec<(Uuid, NaiveDate, Option<NaiveDate>)> = DbSession::new(&mut *tx)
+        .query_as(
+            "staff.services.organization_member_service.update_member",
+            "SELECT id, started_at, ended_at FROM organization_members
          WHERE user_id = $1 AND organization_unit_id = $2
            AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
            AND started_at < coalesce(ended_at, 'infinity'::date)
          FOR UPDATE",
-    )
-    .bind(input.user_id)
-    .bind(input.organization_unit_id)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(input.user_id)
+        .bind(input.organization_unit_id)
+        .fetch_all()
+        .await?;
     let Some((source_id, source_start, source_end)) = sources.first().copied() else {
         return Ok(0);
     };
@@ -171,14 +208,22 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
     }
     if input.new_organization_unit_id != input.organization_unit_id {
         // Moving changes the source from today onward, retaining any planned start/end.
-        let target_start: NaiveDate = sqlx::query_scalar("SELECT greatest($1::date, CURRENT_DATE)")
+        let target_start: NaiveDate = DbSession::new(&mut *tx)
+            .scalar(
+                "staff.services.organization_member_service.update_member",
+                "SELECT greatest($1::date, CURRENT_DATE)",
+            )
             .bind(source_start)
-            .fetch_one(&mut *tx)
+            .fetch_one()
             .await?;
-        sqlx::query("UPDATE organization_members SET ended_at = $2 WHERE id = $1")
+        DbSession::new(&mut *tx)
+            .query(
+                "staff.services.organization_member_service.update_member",
+                "UPDATE organization_members SET ended_at = $2 WHERE id = $1",
+            )
             .bind(source_id)
             .bind(target_start)
-            .execute(&mut *tx)
+            .execute()
             .await?;
         if input.is_primary {
             clear_primary_in_domain(
@@ -190,8 +235,10 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
             )
             .await?;
         }
-        sqlx::query(
-            "INSERT INTO organization_members (
+        DbSession::new(&mut *tx)
+            .query(
+                "staff.services.organization_member_service.update_member",
+                "INSERT INTO organization_members (
                 user_id, organization_unit_id, position_code, position_title,
                 is_primary, responsibilities, started_at, ended_at
              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -199,17 +246,17 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
                 position_code = EXCLUDED.position_code, position_title = EXCLUDED.position_title,
                 is_primary = EXCLUDED.is_primary, responsibilities = EXCLUDED.responsibilities,
                 ended_at = EXCLUDED.ended_at",
-        )
-        .bind(input.user_id)
-        .bind(input.new_organization_unit_id)
-        .bind(input.position_code)
-        .bind(input.position_title)
-        .bind(input.is_primary)
-        .bind(input.responsibilities)
-        .bind(target_start)
-        .bind(source_end)
-        .execute(&mut *tx)
-        .await?;
+            )
+            .bind(input.user_id)
+            .bind(input.new_organization_unit_id)
+            .bind(input.position_code)
+            .bind(input.position_title)
+            .bind(input.is_primary)
+            .bind(input.responsibilities)
+            .bind(target_start)
+            .bind(source_end)
+            .execute()
+            .await?;
         tx.commit().await?;
         return Ok(1);
     }
@@ -223,7 +270,7 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
         )
         .await?;
     }
-    let result = sqlx::query(
+    let result = DbSession::new(&mut *tx).query("staff.services.organization_member_service.update_member",
         r#"UPDATE organization_members
            SET position_code = $1,
                position_title = $2,
@@ -240,7 +287,7 @@ pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u6
     .bind(input.new_organization_unit_id)
     .bind(input.user_id)
     .bind(input.organization_unit_id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     let rows_affected = result.rows_affected();
     tx.commit().await?;
@@ -252,18 +299,22 @@ pub async fn remove_member(
     organization_unit_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.remove_member",
+    )
+    .await?;
     if !try_lock_member_user(&mut tx, user_id).await? {
         return Ok(());
     }
-    sqlx::query(
+    DbSession::new(&mut *tx).query("staff.services.organization_member_service.remove_member",
         "UPDATE organization_members SET ended_at = greatest(started_at, CURRENT_DATE)
          WHERE user_id = $1 AND organization_unit_id = $2
            AND (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < coalesce(ended_at, 'infinity'::date)",
     )
     .bind(user_id)
     .bind(organization_unit_id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     tx.commit().await?;
     Ok(())
@@ -273,9 +324,13 @@ async fn try_lock_member_user(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
 ) -> Result<bool, AppError> {
-    let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+    let found: Option<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.organization_member_service.try_lock_member_user",
+            "SELECT id FROM users WHERE id=$1 FOR UPDATE",
+        )
         .bind(user_id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?;
     Ok(found.is_some())
 }
@@ -295,17 +350,19 @@ async fn already_member_in_transaction(
     user_id: Uuid,
     unit_id: Uuid,
 ) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    Ok(DbSession::new(&mut **tx)
+        .scalar(
+            "staff.services.organization_member_service.already_member_in_transaction",
+            r#"SELECT EXISTS (
         SELECT 1 FROM organization_members WHERE user_id = $1 AND organization_unit_id = $2
           AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
           AND started_at < coalesce(ended_at, 'infinity'::date)
     )"#,
-    )
-    .bind(user_id)
-    .bind(unit_id)
-    .fetch_one(&mut **tx)
-    .await?)
+        )
+        .bind(user_id)
+        .bind(unit_id)
+        .fetch_one()
+        .await?)
 }
 
 async fn clear_primary_in_domain(
@@ -315,7 +372,7 @@ async fn clear_primary_in_domain(
     started_at: Option<NaiveDate>,
     ended_at: Option<NaiveDate>,
 ) -> Result<(), AppError> {
-    sqlx::query(r#"UPDATE organization_members m SET is_primary = false
+    DbSession::new(&mut **tx).query("staff.services.organization_member_service.clear_primary_in_domain", r#"UPDATE organization_members m SET is_primary = false
         FROM organization_units existing_unit, organization_units selected_unit
         WHERE m.organization_unit_id = existing_unit.id AND selected_unit.id = $2
           AND m.user_id = $1 AND m.is_primary IS TRUE
@@ -324,7 +381,7 @@ async fn clear_primary_in_domain(
           AND m.started_at < coalesce($4::date, 'infinity'::date)
           AND coalesce($3::date, CURRENT_DATE) < coalesce(m.ended_at, 'infinity'::date)
           AND (existing_unit.unit_type = 'subject_group') = (selected_unit.unit_type = 'subject_group')"#)
-        .bind(user_id).bind(unit_id).bind(started_at).bind(ended_at).execute(&mut **tx).await?;
+        .bind(user_id).bind(unit_id).bind(started_at).bind(ended_at).execute().await?;
     Ok(())
 }
 

@@ -1,7 +1,8 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::models::{
@@ -61,7 +62,11 @@ pub async fn replace_observation_evaluators(
     observation_id: Uuid,
     input: ReplaceObservationEvaluatorsRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.evaluations.replace_observation_evaluators",
+    )
+    .await?;
     require_observation_write(&mut tx, observation_id).await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if !manager_can_edit_observation(current.status) {
@@ -110,23 +115,25 @@ pub async fn replace_observation_evaluators(
         .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
         .collect::<Vec<_>>();
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.evaluations.replace_observation_evaluators",
+            r#"
         DELETE FROM supervision_evaluators
         WHERE observation_id = $1
           AND status <> 'submitted'
         "#,
-    )
-    .bind(observation_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!(
-            "Failed to clear non-submitted supervision evaluators: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถแก้ไขผู้ประเมินได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to clear non-submitted supervision evaluators: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถแก้ไขผู้ประเมินได้".to_string())
+        })?;
 
     insert_supervision_evaluators(&mut tx, observation_id, &insert_rows).await?;
 
@@ -167,8 +174,10 @@ pub(super) async fn insert_supervision_evaluators(
         .map(|evaluator| evaluator.is_required.unwrap_or(true))
         .collect();
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "supervision.services.evaluations.insert_supervision_evaluators",
+            r#"
         INSERT INTO supervision_evaluators (
             observation_id, evaluator_user_id, role_label, is_required
         )
@@ -176,17 +185,20 @@ pub(super) async fn insert_supervision_evaluators(
         FROM UNNEST($2::uuid[], $3::text[], $4::bool[])
              AS rows(evaluator_user_id, role_label, is_required)
         "#,
-    )
-    .bind(observation_id)
-    .bind(&evaluator_user_ids)
-    .bind(&role_labels)
-    .bind(&required_flags)
-    .execute(&mut **tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to assign supervision evaluators: {}", error);
-        AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(&evaluator_user_ids)
+        .bind(&role_labels)
+        .bind(&required_flags)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to assign supervision evaluators: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถกำหนดผู้ประเมินได้".to_string())
+        })?;
 
     Ok(())
 }
@@ -197,7 +209,11 @@ pub async fn submit_my_evaluation(
     observation_id: Uuid,
     input: SaveEvaluationRequest,
 ) -> Result<SupervisionObservation, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "supervision.evaluations.submit_my_evaluation",
+    )
+    .await?;
     load_evaluator_for_user(&mut *tx, observation_id, evaluator_user_id).await?;
     require_observation_write(&mut tx, observation_id).await?;
     let evaluator = load_evaluator_for_user(&mut *tx, observation_id, evaluator_user_id).await?;
@@ -219,20 +235,25 @@ pub async fn submit_my_evaluation(
             .await?;
     }
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "supervision.services.evaluations.submit_my_evaluation",
+            r#"
         UPDATE supervision_evaluators
         SET status = 'submitted', submitted_at = now()
         WHERE id = $1
         "#,
-    )
-    .bind(evaluator.id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to submit supervision evaluation: {}", error);
-        AppError::InternalServerError("ไม่สามารถส่งผลประเมินได้".to_string())
-    })?;
+        )
+        .bind(evaluator.id)
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to submit supervision evaluation: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถส่งผลประเมินได้".to_string())
+        })?;
 
     let states = load_evaluator_submission_states(&mut *tx, observation_id).await?;
     if all_required_evaluators_submitted(&states) {
@@ -241,14 +262,14 @@ pub async fn submit_my_evaluation(
             current.status,
             SupervisionObservationStatus::EvaluatorsSubmitted,
         ) {
-            sqlx::query(
+            DbSession::new(&mut *tx).query("supervision.services.evaluations.submit_my_evaluation",
                 "UPDATE supervision_observations SET status = 'evaluators_submitted' WHERE id = $1",
             )
             .bind(observation_id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(|error| {
-                tracing::error!("Failed to mark supervision evaluators submitted: {}", error);
+                tracing::error!("Failed to mark supervision evaluators submitted: {}", school_database::error_class(&error));
                 AppError::InternalServerError("ไม่สามารถอัปเดตสถานะนิเทศได้".to_string())
             })?;
         }
@@ -275,27 +296,32 @@ struct EvaluatorForUserRow {
     status: String,
 }
 
-async fn load_evaluator_for_user<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_evaluator_for_user(
+    connection: &mut PgConnection,
     observation_id: Uuid,
     evaluator_user_id: Uuid,
 ) -> Result<EvaluatorForUserRow, AppError> {
-    sqlx::query_as::<_, EvaluatorForUserRow>(
-        r#"
+    DbSession::new(&mut *connection)
+        .query_as::<EvaluatorForUserRow>(
+            "supervision.services.evaluations.load_evaluator_for_user",
+            r#"
         SELECT id, status
         FROM supervision_evaluators
         WHERE observation_id = $1 AND evaluator_user_id = $2
         "#,
-    )
-    .bind(observation_id)
-    .bind(evaluator_user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision evaluator: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินได้".to_string())
-    })?
-    .ok_or_else(|| AppError::Forbidden("ไม่ได้รับมอบหมายให้ประเมินรายการนี้".to_string()))
+        )
+        .bind(observation_id)
+        .bind(evaluator_user_id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision evaluator: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินได้".to_string())
+        })?
+        .ok_or_else(|| AppError::Forbidden("ไม่ได้รับมอบหมายให้ประเมินรายการนี้".to_string()))
 }
 
 pub(super) fn dedupe_evaluation_responses(
@@ -316,8 +342,8 @@ pub(super) fn dedupe_evaluation_responses(
     ordered
 }
 
-async fn load_evaluation_item_specs<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+async fn load_evaluation_item_specs(
+    connection: &mut PgConnection,
     observation_id: Uuid,
     template_item_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, EvaluationItemSpec>, AppError> {
@@ -325,8 +351,10 @@ async fn load_evaluation_item_specs<'e>(
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query(
-        r#"
+    let rows = DbSession::new(&mut *connection)
+        .query(
+            "supervision.services.evaluations.load_evaluation_item_specs",
+            r#"
         SELECT i.id, i.item_type, t.rating_min, t.rating_max
         FROM supervision_template_items i
         JOIN supervision_template_sections s ON i.section_id = s.id
@@ -334,15 +362,18 @@ async fn load_evaluation_item_specs<'e>(
         JOIN supervision_observations o ON o.template_id = t.id
         WHERE o.id = $1 AND i.id = ANY($2)
         "#,
-    )
-    .bind(observation_id)
-    .bind(template_item_ids)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision response item specs: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .bind(template_item_ids)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision response item specs: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
+        })?;
 
     let mut specs = HashMap::with_capacity(rows.len());
     for row in rows {
@@ -461,35 +492,47 @@ async fn bulk_upsert_evaluation_responses(
         "#,
     );
 
-    builder.build().execute(&mut **tx).await.map_err(|error| {
-        tracing::error!(
-            "Failed to bulk upsert supervision evaluation responses: {}",
-            error
-        );
-        AppError::InternalServerError("ไม่สามารถบันทึกผลประเมินได้".to_string())
-    })?;
+    DbSession::new(&mut **tx)
+        .prepared_query(
+            "supervision.services.evaluations.bulk_upsert_evaluation_responses",
+            builder.build(),
+        )
+        .execute()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to bulk upsert supervision evaluation responses: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกผลประเมินได้".to_string())
+        })?;
 
     Ok(())
 }
 
-pub(super) async fn load_evaluator_submission_states<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+pub(super) async fn load_evaluator_submission_states(
+    connection: &mut PgConnection,
     observation_id: Uuid,
 ) -> Result<Vec<EvaluatorSubmissionState>, AppError> {
-    let rows: Vec<(bool, String)> = sqlx::query_as(
-        r#"
+    let rows: Vec<(bool, String)> = DbSession::new(&mut *connection)
+        .query_as(
+            "supervision.services.evaluations.load_evaluator_submission_states",
+            r#"
         SELECT is_required, status
         FROM supervision_evaluators
         WHERE observation_id = $1
         "#,
-    )
-    .bind(observation_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision evaluator states: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะผู้ประเมินได้".to_string())
-    })?;
+        )
+        .bind(observation_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision evaluator states: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะผู้ประเมินได้".to_string())
+        })?;
 
     Ok(rows
         .into_iter()
@@ -549,8 +592,8 @@ fn conflict_lesson_title(subject_name: Option<&str>, period_label: Option<&str>)
     }
 }
 
-pub(super) async fn validate_evaluator_availability_for_observation<'e>(
-    pool: impl sqlx::Executor<'e, Database = Postgres>,
+pub(super) async fn validate_evaluator_availability_for_observation(
+    connection: &mut PgConnection,
     observation_id: Uuid,
     observed_at: DateTime<Utc>,
     evaluator_user_ids: &[Uuid],
@@ -563,7 +606,8 @@ pub(super) async fn validate_evaluator_availability_for_observation<'e>(
         .iter()
         .map(|status| (*status).to_string())
         .collect::<Vec<_>>();
-    let conflict = sqlx::query_as::<_, EvaluatorConflictRow>(
+
+    let conflict = DbSession::new(&mut *connection).query_as::<EvaluatorConflictRow>("supervision.services.evaluations.validate_evaluator_availability_for_observation",
         r#"
         SELECT NULLIF(evaluator.display_name, '')
                    AS evaluator_display_name,
@@ -589,10 +633,10 @@ pub(super) async fn validate_evaluator_availability_for_observation<'e>(
     .bind(observation_id)
     .bind(observed_at)
     .bind(&conflict_statuses)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to validate supervision evaluator availability: {}", error);
+        tracing::error!("Failed to validate supervision evaluator availability: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
     })?;
 

@@ -4,6 +4,7 @@ use super::super::models::{
 use school_academic_core::models::{AcademicYearStatus, StudentAcademicYearStatus};
 use school_academic_core::services::{activation_context, lifecycle_guard, years_terms};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool};
@@ -28,16 +29,23 @@ pub(crate) async fn activate_term(
     }
     validate_activation_shape(term_id, &request)?;
     let request_checksum = super::checksum(&(actor.user_id, term_id, &request))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.term_activation.activate_term",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
 
-    let receipt: Option<(Uuid, String, String, Json<TermTransitionOutcome>)> = sqlx::query_as(
-        "SELECT actor_user_id,action,request_checksum,outcome
+    let receipt: Option<(Uuid, String, String, Json<TermTransitionOutcome>)> =
+        DbSession::new(&mut *tx)
+            .query_as(
+                "academic_lifecycle.services.term_activation.activate_term",
+                "SELECT actor_user_id,action,request_checksum,outcome
          FROM academic_term_transition_receipts WHERE request_id=$1",
-    )
-    .bind(request.request_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+            )
+            .bind(request.request_id)
+            .fetch_optional()
+            .await?;
     if let Some((owner, action, checksum, outcome)) = receipt {
         if owner != actor.user_id || action != ACTION || checksum != request_checksum {
             return Err(AppError::Conflict(
@@ -59,23 +67,28 @@ pub(crate) async fn activate_term(
     }
     year_ids.sort_unstable();
     year_ids.dedup();
-    let locked_years: Vec<Uuid> =
-        sqlx::query_scalar("SELECT id FROM academic_years WHERE id=ANY($1) ORDER BY id FOR UPDATE")
-            .bind(&year_ids)
-            .fetch_all(&mut *tx)
-            .await?;
+    let locked_years: Vec<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_lifecycle.services.term_activation.activate_term",
+            "SELECT id FROM academic_years WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(&year_ids)
+        .fetch_all()
+        .await?;
     if locked_years != year_ids {
         return Err(AppError::Conflict(
             "บริบทปีการศึกษาเปลี่ยนแล้ว กรุณาตรวจสอบใหม่".into(),
         ));
     }
-    sqlx::query(
-        "SELECT id FROM academic_terms WHERE academic_year_id=ANY($1)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_activation.activate_term",
+            "SELECT id FROM academic_terms WHERE academic_year_id=ANY($1)
          ORDER BY academic_year_id,sequence_no,id FOR UPDATE",
-    )
-    .bind(&year_ids)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(&year_ids)
+        .fetch_all()
+        .await?;
 
     let (workspace, state) = super::activation_evidence_in_transaction(
         &mut tx,
@@ -122,22 +135,22 @@ pub(crate) async fn activate_term(
             .filter(|placement| placement.eligible && placement.reference_valid)
             .map(|placement| placement.id)
             .collect();
-        activated_students = sqlx::query(
+        activated_students = DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
             "UPDATE student_academic_years SET status='active',row_version=row_version+1,updated_at=now()
              WHERE academic_year_id=$1 AND id=ANY($2) AND status='planned'",
         )
         .bind(request.academic_year_id)
         .bind(&student_ids)
-        .execute(&mut *tx)
+        .execute()
         .await?
         .rows_affected();
-        activated_placements = sqlx::query(
+        activated_placements = DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
             "UPDATE homeroom_placements SET status='current',row_version=row_version+1,updated_at=now()
              WHERE academic_year_id=$1 AND id=ANY($2) AND status='planned'",
         )
         .bind(request.academic_year_id)
         .bind(&placement_ids)
-        .execute(&mut *tx)
+        .execute()
         .await?
         .rows_affected();
         if activated_students != student_ids.len() as u64
@@ -149,7 +162,7 @@ pub(crate) async fn activate_term(
         }
     }
 
-    let roster_students: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id").bind(request.academic_year_id).fetch_all(&mut *tx).await?;
+    let roster_students: Vec<Uuid> = DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_activation.activate_term", "SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id").bind(request.academic_year_id).fetch_all().await?;
     school_academic_delivery::services::roster_tracking::sync_students(
         &mut tx,
         actor.user_id,
@@ -162,28 +175,30 @@ pub(crate) async fn activate_term(
     } else {
         &[AcademicYearStatus::Active]
     };
-    let year_update = sqlx::query(
-        "UPDATE academic_years SET status='active',row_version=row_version+1,updated_at=now()
+    let year_update = DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_activation.activate_term",
+            "UPDATE academic_years SET status='active',row_version=row_version+1,updated_at=now()
          WHERE id=$1 AND row_version=$2 AND status=ANY($3)",
-    )
-    .bind(request.academic_year_id)
-    .bind(request.expected_year_version)
-    .bind(expected_year_statuses)
-    .execute(&mut *tx)
-    .await?;
+        )
+        .bind(request.academic_year_id)
+        .bind(request.expected_year_version)
+        .bind(expected_year_statuses)
+        .execute()
+        .await?;
     if year_update.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "สถานะปีการศึกษาเปลี่ยนแล้ว กรุณาตรวจสอบใหม่".into(),
         ));
     }
-    let term_update = sqlx::query(
+    let term_update = DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
         "UPDATE academic_terms SET status='active',closed_on=NULL,row_version=row_version+1,updated_at=now()
          WHERE id=$1 AND academic_year_id=$2 AND row_version=$3 AND status='ready'",
     )
     .bind(term_id)
     .bind(request.academic_year_id)
     .bind(request.expected_term_version)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     if term_update.rows_affected() != 1 {
         return Err(AppError::Conflict(
@@ -198,7 +213,7 @@ pub(crate) async fn activate_term(
             .await?,
         completed_at: chrono::Utc::now(),
     };
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
         "INSERT INTO academic_term_transition_receipts
          (request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome)
          VALUES($1,$2,$3,$4,'activate',$5,$6,$7)",
@@ -210,10 +225,10 @@ pub(crate) async fn activate_term(
     .bind(&request_checksum)
     .bind(Json(&workspace))
     .bind(Json(&outcome))
-    .execute(&mut *tx)
+    .execute()
     .await?;
     if workspace.opens_year {
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_lifecycle.services.term_activation.activate_term",
             "INSERT INTO academic_year_transition_receipts
              (request_id,academic_year_id,actor_user_id,action,request_checksum,accepted_readiness,outcome)
              VALUES($1,$2,$3,'activate',$4,$5,$6)",
@@ -224,7 +239,7 @@ pub(crate) async fn activate_term(
         .bind(&request_checksum)
         .bind(Json(&workspace))
         .bind(Json(&outcome))
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     years_terms::append_audit(

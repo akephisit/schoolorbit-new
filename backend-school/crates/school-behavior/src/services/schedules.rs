@@ -8,6 +8,7 @@ use crate::{
     rules::{invalid, reset_boundary, validate_reason},
 };
 use chrono::{NaiveDate, Utc};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -18,7 +19,9 @@ pub async fn preview_reset(
     p: PreviewBehaviorReset,
 ) -> Result<BehaviorCleanupPreview, AppError> {
     let scope = reset_scope(p.sides, p.through)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "behavior.schedules.preview_reset")
+            .await?;
     lock(&mut tx).await?;
     for side in &scope.sides {
         if current_cycle(&mut tx, *side).await?.starts_on > p.through {
@@ -56,19 +59,19 @@ pub(super) async fn rotate(
         if old.starts_on > through {
             return Err(AppError::Conflict("รอบนี้ถูกรีเซ็ตแล้ว".into()));
         }
-        sqlx::query(
+        DbSession::new(&mut *connection).query("behavior.services.schedules.rotate",
             "UPDATE behavior_cycles SET state='history',ends_on=$2,ends_at=$3,label=$4 WHERE id=$1",
         )
         .bind(old.id)
         .bind(through)
         .bind(at)
         .bind("ประวัติรอบคะแนน")
-        .execute(&mut *connection)
+        .execute()
         .await?;
-        let new:Uuid=sqlx::query_scalar("INSERT INTO behavior_cycles(side,starts_on,starts_at,state,label)VALUES($1,$2,$3,'current','รอบปัจจุบัน')RETURNING id").bind(side).bind(starts).bind(at).fetch_one(&mut *connection).await?;
+        let new:Uuid=DbSession::new(&mut *connection).scalar("behavior.services.schedules.rotate", "INSERT INTO behavior_cycles(side,starts_on,starts_at,state,label)VALUES($1,$2,$3,'current','รอบปัจจุบัน')RETURNING id").bind(side).bind(starts).bind(at).fetch_one().await?;
         // A delayed month-end job may run after new-month facts arrived. Their
         // existing contributions move to the new cycle without copying effects.
-        sqlx::query("UPDATE behavior_daily_totals SET cycle_id=$2,row_version=row_version+1 WHERE cycle_id=$1 AND date>$3").bind(old.id).bind(new).bind(through).execute(&mut *connection).await?;
+        DbSession::new(&mut *connection).query("behavior.services.schedules.rotate", "UPDATE behavior_daily_totals SET cycle_id=$2,row_version=row_version+1 WHERE cycle_id=$1 AND date>$3").bind(old.id).bind(new).bind(through).execute().await?;
     }
     Ok(())
 }
@@ -94,7 +97,8 @@ pub async fn reset(
     if readiness.delivered_through < p.through {
         return Err(AppError::Conflict("มีผลเช็กชื่อที่ยังส่งคะแนนไม่ครบ".into()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "behavior.schedules.reset").await?;
     let result = reset_on_connection(&mut tx, actor, p, readiness).await?;
     tx.commit().await?;
     Ok(result)
@@ -140,9 +144,13 @@ pub async fn reset_on_connection(
         rotate(connection, &p.sides, p.through, &p.reason).await?;
     }
     save_receipt(connection, actor, p.request_id, "reset", &p, &result).await?;
-    sqlx::query("DELETE FROM behavior_cleanup_previews WHERE token=$1")
+    DbSession::new(connection)
+        .query(
+            "behavior.services.schedules.reset_on_connection",
+            "DELETE FROM behavior_cleanup_previews WHERE token=$1",
+        )
         .bind(p.token)
-        .execute(connection)
+        .execute()
         .await?;
     Ok(result)
 }
@@ -156,7 +164,9 @@ pub async fn run_due_resets(
     readiness: BehaviorResetReadiness,
     limit: u32,
 ) -> Result<u32, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "behavior.schedules.run_due_resets")
+            .await?;
     let result = run_due_resets_on_connection(&mut tx, now, readiness, limit).await?;
     tx.commit().await?;
     Ok(result)

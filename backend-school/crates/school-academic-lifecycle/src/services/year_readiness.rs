@@ -5,6 +5,7 @@ use crate::models::{
 use school_academic_core::models::AcademicTermStatus as Term;
 use school_academic_results::{self as results, policy::aggregate};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -16,9 +17,17 @@ pub async fn get_year_workspace(
     year: Uuid,
 ) -> Result<YearLifecycleWorkspace, AppError> {
     actor.require_permission(codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.year_readiness.get_year_workspace",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.year_readiness.get_year_workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let workspace = year_workspace_in_transaction(&mut tx, actor, year).await?;
     tx.commit().await?;

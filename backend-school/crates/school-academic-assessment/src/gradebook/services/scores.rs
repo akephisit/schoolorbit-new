@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use std::collections::BTreeMap;
 
 pub async fn save_scores_batch(
@@ -59,7 +60,7 @@ pub async fn save_scores_batch(
         check_version(*version, actual)?;
     }
     // A group revision survives a cell being cleared and prevents version reuse on reinsertion.
-    let revision:i64=sqlx::query_scalar("UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version").bind(group).fetch_one(&mut *tx).await?;
+    let revision:i64=DbSession::new(&mut *tx).scalar("academic_assessment.gradebook.services.scores.save_scores_batch", "UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version").bind(group).fetch_one().await?;
     let mut set_items = Vec::new();
     let mut set_students = Vec::new();
     let mut values = Vec::new();
@@ -89,10 +90,10 @@ pub async fn save_scores_batch(
         }
     }
     if !set_items.is_empty() {
-        sqlx::query("INSERT INTO learning_group_student_scores (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score,row_version,updated_by) SELECT $1,$2,$3,$4,c.item,c.student,c.score,$8,$9 FROM unnest($5::uuid[],$6::uuid[],$7::numeric[]) AS c(item,student,score) ON CONFLICT (score_item_id,student_academic_year_id) DO UPDATE SET score=EXCLUDED.score,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()").bind(group).bind(scope.offering_id).bind(context.academic_term_id).bind(context.academic_year_id).bind(&set_items).bind(&set_students).bind(&values).bind(revision).bind(actor.user_id).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_assessment.gradebook.services.scores.save_scores_batch", "INSERT INTO learning_group_student_scores (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,score_item_id,student_academic_year_id,score,row_version,updated_by) SELECT $1,$2,$3,$4,c.item,c.student,c.score,$8,$9 FROM unnest($5::uuid[],$6::uuid[],$7::numeric[]) AS c(item,student,score) ON CONFLICT (score_item_id,student_academic_year_id) DO UPDATE SET score=EXCLUDED.score,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()").bind(group).bind(scope.offering_id).bind(context.academic_term_id).bind(context.academic_year_id).bind(&set_items).bind(&set_students).bind(&values).bind(revision).bind(actor.user_id).execute().await?;
     }
     if !clear_items.is_empty() {
-        sqlx::query("DELETE FROM learning_group_student_scores s USING unnest($1::uuid[],$2::uuid[]) AS c(item,student) WHERE s.score_item_id=c.item AND s.student_academic_year_id=c.student").bind(clear_items).bind(clear_students).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_assessment.gradebook.services.scores.save_scores_batch", "DELETE FROM learning_group_student_scores s USING unnest($1::uuid[],$2::uuid[]) AS c(item,student) WHERE s.score_item_id=c.item AND s.student_academic_year_id=c.student").bind(clear_items).bind(clear_students).execute().await?;
     }
     invalidate(&mut tx, &scope).await?;
     let updated = workspace::load_workspace(&mut tx, actor, &scope).await?;

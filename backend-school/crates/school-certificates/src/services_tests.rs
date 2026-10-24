@@ -158,6 +158,23 @@ struct PreviewStorage;
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for PreviewStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
@@ -224,10 +241,30 @@ impl school_file_platform::storage_provider::StorageProvider for PreviewStorage 
     }
 }
 
-struct DeleteFailStorage;
+#[derive(Default)]
+struct DeleteFailStorage {
+    delete_calls: std::sync::atomic::AtomicUsize,
+}
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for DeleteFailStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
@@ -264,6 +301,8 @@ impl school_file_platform::storage_provider::StorageProvider for DeleteFailStora
         &self,
         _object: &school_file_platform::storage_provider::StoredObject,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
+        self.delete_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Err(school_file_platform::storage_provider::StorageError::OperationFailed)
     }
 
@@ -294,6 +333,23 @@ struct BlockingGrantStorage {
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for BlockingGrantStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
@@ -485,6 +541,37 @@ fn text_layout(font_source: CertificateFontSource) -> CertificateLayoutV1 {
     }
 }
 
+/// Known fake-provider data uses the real reservation boundary, so its namespace
+/// permission commits before the metadata INSERT trigger. This is not legacy adoption.
+async fn reserve_ready_fixture_upload(
+    pool: &PgPool,
+    upload: school_file_platform::repository::NewUpload,
+) {
+    use school_file_platform::repository::{FileRepository, SqlFileRepository};
+    let repository = SqlFileRepository::new(pool.clone());
+    repository.reserve_upload(&upload).await.unwrap();
+    repository
+        .mark_original_stored(upload.file_id, upload.version_id)
+        .await
+        .unwrap();
+    repository
+        .finalize_ready(upload.file_id, upload.version_id, &[])
+        .await
+        .unwrap();
+    // Retain the pre-existing fixture's explicit one-hour staging window.
+    sqlx::query("UPDATE files SET expires_at=now()+interval '1 hour' WHERE id=$1")
+        .bind(upload.file_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let bound: bool = sqlx::query_scalar("SELECT namespace_fingerprint IS NOT NULL AND revoked_at IS NULL FROM file_storage_cleanup_watches WHERE target_kind='version' AND target_id=$1")
+        .bind(upload.version_id).fetch_one(pool).await.unwrap();
+    assert!(
+        bound,
+        "synthetic stored objects must have their real namespace permission"
+    );
+}
+
 async fn insert_ready_template_file(
     pool: &PgPool,
     actor: &ActorContext,
@@ -497,48 +584,56 @@ async fn insert_ready_template_file(
         "certificate_template_image" => ("template-image", "image/jpeg", "jpg"),
         _ => panic!("unsupported certificate test purpose"),
     };
-    let file_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO files (
-            owner_user_id, display_filename, created_by, purpose_code, visibility,
-            lifecycle_status, retention_class, expires_at, inspection_metadata
-         ) VALUES ($1, 'certificate-test.bin', $1, $2, 'private', 'processing',
-                   'temporary', now() + interval '1 hour', $3)
-         RETURNING id",
+    use school_file_platform::{
+        platform_types::{DetectedContent, FileVisibility, RetentionClass},
+        repository::NewUpload,
+        storage_provider::{StorageProvider, StoredObject},
+    };
+    let file_id = Uuid::new_v4();
+    let object = StoredObject::new(
+        school_file_platform::purpose_registry::original_object_key(
+            Uuid::nil(),
+            school_file_platform::purpose_registry::purpose_from_code(purpose).unwrap(),
+            file_id,
+            1,
+            if extension == "pdf" {
+                DetectedContent::Pdf
+            } else {
+                DetectedContent::Jpeg
+            },
+        )
+        .unwrap(),
+        detected_mime_type,
+    );
+    assert_eq!(
+        object.object_key.as_str(),
+        format!(
+            "tenants/{}/certificate/{purpose_segment}/{file_id}/v1/original.{extension}",
+            Uuid::nil()
+        )
+    );
+    reserve_ready_fixture_upload(
+        pool,
+        NewUpload {
+            namespace: PreviewStorage.namespace(object.storage_class()).unwrap(),
+            file_id,
+            version_id: Uuid::new_v4(),
+            reconcile_operation_id: Uuid::new_v4(),
+            scan_operation_id: Uuid::new_v4(),
+            owner_user_id: Some(actor.user_id),
+            created_by: Some(actor.user_id),
+            purpose: school_file_platform::purpose_registry::purpose_from_code(purpose).unwrap(),
+            visibility: FileVisibility::Private,
+            retention_class: RetentionClass::Temporary,
+            display_filename: "certificate-test.bin".to_string(),
+            original: object,
+            byte_size: 10,
+            checksum: "a".repeat(64),
+            inspection_metadata: serde_json::from_value(inspection_metadata).unwrap(),
+            derivatives: Vec::new(),
+        },
     )
-    .bind(actor.user_id)
-    .bind(purpose)
-    .bind(inspection_metadata)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let version_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO file_versions (
-            file_id, version_number, provider_code, storage_class, storage_status,
-            object_key, detected_mime_type, canonical_extension, byte_size, checksum,
-            scan_status, scanned_at, created_by
-         ) VALUES ($1, 1, 'test', 'private', 'stored', $2, $3,
-                   $4, 10, repeat('a', 64), 'clean', now(), $5)
-         RETURNING id",
-    )
-    .bind(file_id)
-    .bind(format!(
-        "tenants/{}/certificate/{purpose_segment}/{file_id}/v1/original.{extension}",
-        Uuid::nil()
-    ))
-    .bind(detected_mime_type)
-    .bind(extension)
-    .bind(actor.user_id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE files SET current_version_id = $2, lifecycle_status = 'ready' WHERE id = $1",
-    )
-    .bind(file_id)
-    .bind(version_id)
-    .execute(pool)
-    .await
-    .unwrap();
+    .await;
     sqlx::query(
         "INSERT INTO certificate_template_file_uploads
             (file_id, template_id, purpose_code, uploaded_by)
@@ -564,46 +659,58 @@ async fn insert_ready_school_font_upload(
     style: &str,
     is_variable: bool,
 ) -> Uuid {
-    let file_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO files (
-            owner_user_id, display_filename, created_by, purpose_code, visibility,
-            lifecycle_status, retention_class, expires_at, inspection_metadata
-         ) VALUES ($1, $2, $1, 'school_font', 'private', 'processing',
-                   'temporary', now() + interval '1 hour', $3)
-         RETURNING id",
+    use school_file_platform::{
+        platform_types::{DetectedContent, FilePurpose, FileVisibility, RetentionClass},
+        repository::NewUpload,
+        storage_provider::{StorageProvider, StoredObject},
+    };
+    let file_id = Uuid::new_v4();
+    let object = StoredObject::new(
+        school_file_platform::purpose_registry::original_object_key(
+            Uuid::nil(),
+            FilePurpose::SchoolFont,
+            file_id,
+            1,
+            DetectedContent::Ttf,
+        )
+        .unwrap(),
+        "font/ttf",
+    );
+    assert_eq!(
+        object.object_key.as_str(),
+        format!(
+            "tenants/{}/school/font/{file_id}/v1/original.ttf",
+            Uuid::nil()
+        )
+    );
+    reserve_ready_fixture_upload(
+        pool,
+        NewUpload {
+            namespace: PreviewStorage.namespace(object.storage_class()).unwrap(),
+            file_id,
+            version_id: Uuid::new_v4(),
+            reconcile_operation_id: Uuid::new_v4(),
+            scan_operation_id: Uuid::new_v4(),
+            owner_user_id: Some(actor.user_id),
+            created_by: Some(actor.user_id),
+            purpose: FilePurpose::SchoolFont,
+            visibility: FileVisibility::Private,
+            retention_class: RetentionClass::Temporary,
+            display_filename: filename.to_string(),
+            original: object,
+            byte_size: 1024,
+            checksum: "a".repeat(64),
+            inspection_metadata: serde_json::from_value(font_inspection(
+                family,
+                weight,
+                style,
+                is_variable,
+            ))
+            .unwrap(),
+            derivatives: Vec::new(),
+        },
     )
-    .bind(actor.user_id)
-    .bind(filename)
-    .bind(font_inspection(family, weight, style, is_variable))
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let version_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO file_versions (
-            file_id, version_number, provider_code, storage_class, storage_status,
-            object_key, detected_mime_type, canonical_extension, byte_size, checksum,
-            scan_status, scanned_at, created_by
-         ) VALUES ($1, 1, 'test', 'private', 'stored', $2, 'font/ttf', 'ttf',
-                   1024, repeat('a', 64), 'clean', now(), $3)
-         RETURNING id",
-    )
-    .bind(file_id)
-    .bind(format!(
-        "tenants/{}/school/font/{file_id}/v1/original.ttf",
-        Uuid::nil()
-    ))
-    .bind(actor.user_id)
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE files SET current_version_id = $2, lifecycle_status = 'ready' WHERE id = $1",
-    )
-    .bind(file_id)
-    .bind(version_id)
-    .execute(pool)
-    .await
-    .unwrap();
+    .await;
     sqlx::query(
         "INSERT INTO certificate_school_font_file_uploads (file_id, template_id, uploaded_by)
          VALUES ($1, $2, $3)",
@@ -4201,6 +4308,184 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
 }
 
 #[tokio::test]
+async fn purge_finalize_checkout_timeout_is_durable_and_retryable() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_purge_finalize_checkout", 3160).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมรอลบหลังเชื่อมต่อใหม่"),
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบที่ต้องเก็บเมื่อปิดงานไม่ได้".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let impact = purge_service::impact(&pool, &actor, campaign.id)
+        .await
+        .unwrap();
+    assert_eq!(impact.counts.file_count, 0);
+    let request = StartCertificateCampaignPurgeRequest {
+        confirmation_name: impact.campaign_name,
+        expected_updated_at: impact.updated_at,
+        expected_impact: impact.counts,
+    };
+
+    let injected = Arc::new(AtomicUsize::new(0));
+    let preserved = Arc::new(Mutex::new(None));
+    let campaign_id = campaign.id;
+    let template_id = template.id;
+    let fault_options = pool
+        .options()
+        .clone()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(1))
+        .idle_timeout(None)
+        .max_lifetime(None)
+        .before_acquire({
+            let injected = Arc::clone(&injected);
+            let preserved = Arc::clone(&preserved);
+            move |connection, _| {
+                let injected = Arc::clone(&injected);
+                let preserved = Arc::clone(&preserved);
+                Box::pin(async move {
+                    if injected.load(Ordering::SeqCst) != 0 {
+                        return Ok(true);
+                    }
+                    let state: Option<(String, serde_json::Value, serde_json::Value)> =
+                        sqlx::query_as(
+                            "SELECT job.status, to_jsonb(campaign), to_jsonb(template)
+                             FROM certificate_campaign_purge_jobs job
+                             JOIN certificate_campaigns campaign ON campaign.id = job.campaign_id
+                             JOIN certificate_templates template ON template.campaign_id = campaign.id
+                             WHERE job.campaign_id = $1 AND template.id = $2",
+                        )
+                        .bind(campaign_id)
+                        .bind(template_id)
+                        .fetch_optional(connection)
+                        .await?;
+                    if let Some((phase, campaign, template)) = state {
+                        if phase == "finalizing"
+                            && injected
+                                .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+                                .is_ok()
+                        {
+                            *preserved.lock().expect("purge snapshot lock") =
+                                Some((campaign, template));
+                            // The real acquire deadline cancels this one checkout. The
+                            // following mark_failed checkout must recover normally.
+                            return std::future::pending::<Result<bool, sqlx::Error>>().await;
+                        }
+                    }
+                    Ok(true)
+                })
+            }
+        });
+    let connect_options = pool.connect_options();
+    pool.close().await;
+    // Cloned options retain the fixture's schema-selecting after_connect hook.
+    let pool = fault_options
+        .connect_with((*connect_options).clone())
+        .await
+        .unwrap();
+    let platform = school_file_platform::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let failed = purge_service::start(&pool, &actor, &platform, campaign.id, request.clone())
+        .await
+        .expect("finalizer checkout timeout must be captured as a durable failed job");
+    assert_eq!(injected.load(Ordering::SeqCst), 1);
+    assert_eq!(failed.phase, CertificateCampaignPurgePhase::Failed);
+    assert_eq!((failed.file_count, failed.deleted_file_count), (0, 0));
+    assert_eq!(
+        failed.last_error_code.as_deref(),
+        Some("certificate_purge_finalize_failed")
+    );
+    let preserved_after: (serde_json::Value, serde_json::Value) = sqlx::query_as(
+        "SELECT to_jsonb(campaign), to_jsonb(template)
+         FROM certificate_campaigns campaign
+         JOIN certificate_templates template ON template.campaign_id = campaign.id
+         WHERE campaign.id = $1 AND template.id = $2",
+    )
+    .bind(campaign.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(preserved_after.0["status"], "purging");
+    assert_eq!(
+        Some(preserved_after),
+        *preserved.lock().expect("purge snapshot lock")
+    );
+    let durable: (i64, String, Option<String>, i64) = sqlx::query_as(
+        "SELECT COUNT(*), MIN(status), MIN(last_error_code), MIN(file_count)
+         FROM certificate_campaign_purge_jobs WHERE campaign_id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        durable,
+        (1, "failed".to_string(), failed.last_error_code.clone(), 0)
+    );
+    assert_eq!(
+        purge_service::status(&pool, &actor, campaign.id)
+            .await
+            .unwrap(),
+        failed
+    );
+    assert_eq!(
+        purge_service::start(&pool, &actor, &platform, campaign.id, request)
+            .await
+            .unwrap(),
+        failed
+    );
+
+    let completed = purge_service::retry(&pool, &actor, &platform, campaign.id)
+        .await
+        .expect("healthy checkout must allow retry to finalize the same durable purge");
+    assert_eq!(completed.phase, CertificateCampaignPurgePhase::Completed);
+    assert_eq!((completed.file_count, completed.deleted_file_count), (0, 0));
+    assert_eq!(completed.last_error_code, None);
+    assert_eq!(injected.load(Ordering::SeqCst), 1);
+    let remaining: (i64, i64, i64) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM certificate_campaigns WHERE id = $1),
+            (SELECT COUNT(*) FROM certificate_templates WHERE id = $2),
+            (SELECT COUNT(*) FROM certificate_campaign_purge_jobs WHERE campaign_id = $1)",
+    )
+    .bind(campaign.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, (0, 0, 0));
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_purge_retry", 3150).await;
@@ -4250,8 +4535,9 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
         expected_updated_at: impact.updated_at,
         expected_impact: impact.counts,
     };
+    let failing_storage = Arc::new(DeleteFailStorage::default());
     let failing_platform = school_file_platform::platform_service::FilePlatform::new(
-        Arc::new(DeleteFailStorage),
+        failing_storage.clone(),
         Arc::new(PreviewScanner),
     );
     let pending = purge_service::start(
@@ -4265,6 +4551,16 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
     .expect("provider failure should remain durable rather than undoing the purge");
     assert_eq!(pending.phase, CertificateCampaignPurgePhase::DeletingFiles);
     assert_eq!((pending.file_count, pending.deleted_file_count), (1, 0));
+    assert_eq!(
+        failing_storage
+            .delete_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the intended storage DELETE failure must actually be reached"
+    );
+    let error: Option<String> = sqlx::query_scalar("SELECT last_error_code FROM file_operations WHERE file_id=$1 AND operation_type='delete_object'")
+        .bind(file_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(error.as_deref(), Some("storage_operation_failed"));
 
     let visible_status = purge_service::status(&pool, &actor, campaign.id)
         .await
@@ -4443,7 +4739,7 @@ async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_re
         .await
         .unwrap();
     let failing_platform = school_file_platform::platform_service::FilePlatform::new(
-        Arc::new(DeleteFailStorage),
+        Arc::new(DeleteFailStorage::default()),
         Arc::new(PreviewScanner),
     );
     let pending = purge_service::start(
@@ -4661,7 +4957,7 @@ async fn purging_campaign_hides_issued_surfaces_and_blocks_issue_and_revoke() {
         .await
         .unwrap();
     let failing_platform = school_file_platform::platform_service::FilePlatform::new(
-        Arc::new(DeleteFailStorage),
+        Arc::new(DeleteFailStorage::default()),
         Arc::new(PreviewScanner),
     );
     let pending = purge_service::start(

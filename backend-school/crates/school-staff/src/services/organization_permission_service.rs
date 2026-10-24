@@ -1,4 +1,5 @@
 use crate::models::OrganizationPermissionGrantInput;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -41,7 +42,7 @@ async fn bulk_insert_organization_permission_grants(
         .map(|grant| grant.position_code.clone())
         .collect();
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("staff.services.organization_permission_service.bulk_insert_organization_permission_grants",
         "INSERT INTO organization_permission_grants
             (organization_unit_id, permission_id, position_code)
          SELECT $1, permission_id, position_code
@@ -50,10 +51,10 @@ async fn bulk_insert_organization_permission_grants(
     .bind(organization_unit_id)
     .bind(&permission_ids)
     .bind(&position_codes)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("Failed to insert organization permission grants: {}", e);
+        tracing::error!("Failed to insert organization permission grants: {}", school_database::error_class(&e));
         AppError::InternalServerError("ไม่สามารถกำหนดสิทธิ์ของหน่วยงานได้".to_string())
     })?;
 
@@ -64,7 +65,19 @@ pub async fn list_organization_permission_grants(
     pool: &PgPool,
     organization_unit_id: Uuid,
 ) -> Result<Vec<OrganizationPermissionGrant>, AppError> {
-    let rows = sqlx::query(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.organization_permission_service.list_organization_permission_grants",
+    )
+    .await?;
+    list_organization_permission_grants_on_connection(&mut connection, organization_unit_id).await
+}
+
+pub async fn list_organization_permission_grants_on_connection(
+    connection: &mut sqlx::PgConnection,
+    organization_unit_id: Uuid,
+) -> Result<Vec<OrganizationPermissionGrant>, AppError> {
+    let rows = DbSession::new(connection).query("staff.services.organization_permission_service.list_organization_permission_grants_on_connection",
         r#"
         SELECT permission_id, position_code
         FROM organization_permission_grants
@@ -73,10 +86,10 @@ pub async fn list_organization_permission_grants(
         "#,
     )
     .bind(organization_unit_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|e| {
-        tracing::error!("Failed to list organization permission grants: {}", e);
+        tracing::error!("Failed to list organization permission grants: {}", school_database::error_class(&e));
         AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงสิทธิ์ของหน่วยงาน".to_string())
     })?;
 
@@ -94,17 +107,32 @@ pub async fn replace_organization_permission_grants(
     organization_unit_id: Uuid,
     grants: Vec<OrganizationPermissionGrantInput>,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to start organization permission transaction: {}", e);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_permission_service.replace_organization_permission_grants",
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(
+            "Failed to start organization permission transaction: {}",
+            school_database::error_class(&e)
+        );
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
 
-    sqlx::query("DELETE FROM organization_permission_grants WHERE organization_unit_id = $1")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_permission_service.replace_organization_permission_grants",
+            "DELETE FROM organization_permission_grants WHERE organization_unit_id = $1",
+        )
         .bind(organization_unit_id)
-        .execute(&mut *tx)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to clear organization permission grants: {}", e);
+            tracing::error!(
+                "Failed to clear organization permission grants: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถลบสิทธิ์เดิมของหน่วยงานได้".to_string())
         })?;
 
@@ -114,7 +142,7 @@ pub async fn replace_organization_permission_grants(
     tx.commit().await.map_err(|e| {
         tracing::error!(
             "Failed to commit organization permission transaction: {}",
-            e
+            school_database::error_class(&e)
         );
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })

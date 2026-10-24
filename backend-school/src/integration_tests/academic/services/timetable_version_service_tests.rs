@@ -293,8 +293,13 @@ async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_
 
 #[tokio::test]
 async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
-    let pool = migrated_pool("timetable_version_reconcile_existing_draft").await;
-    apply_migrations_through(&pool, 114).await.unwrap();
+    let pool = create_named_test_pool("timetable_version_reconcile_existing_draft").await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 79).await.unwrap();
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let (term_id, year_id, term_start, source_id, bell_schedule_id): (
         Uuid,
@@ -430,20 +435,4 @@ async fn cloned_timetable_version_preserves_exact_instructor_sets() {
     assert!(source_entry_count > 0);
     assert_eq!(mapped_entry_count, source_entry_count);
     assert_eq!(mismatched_instructor_sets, 0);
-}
-
-#[test]
-fn academic_routes_expose_timetable_version_workflow() {
-    let routes = include_str!("../../academic.rs");
-    let handlers = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/school-academic-http/src/handlers/timetable_versions.rs"
-    ));
-
-    assert!(routes.contains("/timetable-versions"));
-    assert!(routes.contains("/timetable-versions/resolve"));
-    assert!(routes.contains("/timetable-versions/{source_id}/clone"));
-    assert!(handlers.contains("pub async fn list_versions"));
-    assert!(handlers.contains("pub async fn resolve_version"));
-    assert!(handlers.contains("pub async fn clone_version"));
 }

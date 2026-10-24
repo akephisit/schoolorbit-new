@@ -1,6 +1,7 @@
 use super::models::*;
 use bigdecimal::BigDecimal;
 use school_academic_core::services::lifecycle_guard::{self, AcademicWriteState};
+use school_database::DbSession;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
@@ -31,7 +32,10 @@ mod policies;
 mod readiness;
 mod term_preview;
 pub use aggregate_policy::validate_aggregate_policy;
-pub use aggregate_policy::{create_aggregate_policy, list_aggregate_policies};
+pub use aggregate_policy::{
+    create_aggregate_policy, create_aggregate_policy_on_connection, list_aggregate_policies,
+    list_aggregate_policies_on_connection,
+};
 pub use aggregate_preview::aggregate_students_in_transaction;
 pub use aggregate_preview::preview_aggregate;
 pub use aggregate_revisions::{list_term_aggregate_revisions, lock_term_aggregate};
@@ -47,7 +51,10 @@ pub use closure_coverage::term_closure_coverage;
 pub use closure_coverage::term_closure_coverage_for_students;
 pub use corrections::correct_result;
 pub use course_preparation::{confirm_group_results, get_course_workspace, save_selection};
-pub use cutover::{read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION};
+pub use cutover::{
+    read_gradebook_results_cutover_audit, read_gradebook_results_cutover_audit_on_connection,
+    GRADEBOOK_RESULTS_MIGRATION_VERSION,
+};
 pub use effective_results::search_effective_results;
 pub(crate) use locking::require_activity_group_unlocked;
 pub use locking::require_course_offering_unlocked;
@@ -93,13 +100,15 @@ pub(super) async fn validate_context(
     tx: &mut Transaction<'_, Postgres>,
     context: &ResultContext,
 ) -> Result<(), AppError> {
-    let valid: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
-    )
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let valid: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_results.services.validate_context",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id=$1 AND academic_year_id=$2)",
+        )
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_one()
+        .await?;
     if !valid {
         return Err(AppError::ValidationError(
             "Academic term does not belong to selected year".into(),

@@ -37,25 +37,51 @@ pub async fn find_session_login_user_by_username(
     pool: &PgPool,
     username: &str,
 ) -> Result<Option<SessionLoginUser>, AppError> {
-    sqlx::query_as::<_, SessionLoginUser>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "auth.find_session_login_user_by_username",
+    )
+    .await?;
+    find_session_login_user_by_username_on_connection(&mut connection, username).await
+}
+
+pub async fn find_session_login_user_by_username_on_connection(
+    connection: &mut sqlx::PgConnection,
+    username: &str,
+) -> Result<Option<SessionLoginUser>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<SessionLoginUser>(
+            "auth.src.services.find_session_login_user_by_username_on_connection",
+            r#"
         SELECT id, username, password_hash, status, user_type, first_name, last_name, display_name,
                profile_image_file_id
         FROM user_display_names
         WHERE username = $1
         "#,
-    )
-    .bind(username)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(username)
+        .fetch_optional()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn find_active_user_shell_by_id(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Option<ActiveUserShell>, AppError> {
-    sqlx::query_as::<_, ActiveUserShell>(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "auth.find_active_user_shell_by_id",
+    )
+    .await?;
+    find_active_user_shell_by_id_on_connection(&mut connection, user_id).await
+}
+
+pub async fn find_active_user_shell_by_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<Option<ActiveUserShell>, AppError> {
+    school_database::DbSession::new(&mut *connection).query_as::<ActiveUserShell>("auth.src.services.find_active_user_shell_by_id_on_connection",
         r#"
         SELECT id, username, status, user_type, first_name, last_name, display_name, profile_image_file_id
         FROM user_display_names
@@ -63,14 +89,25 @@ pub async fn find_active_user_shell_by_id(
         "#,
     )
     .bind(user_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await
     .map_err(AppError::from)
 }
 
 pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppError> {
-    let mut user = sqlx::query_as::<_, User>(
-        "SELECT 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.find_user_by_id").await?;
+    find_user_by_id_on_connection(&mut connection, user_id).await
+}
+
+pub async fn find_user_by_id_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<User, AppError> {
+    let mut user = school_database::DbSession::new(&mut *connection)
+        .query_as::<User>(
+            "auth.src.services.find_user_by_id_on_connection",
+            "SELECT
             id,
             username,
             national_id,
@@ -97,11 +134,11 @@ pub async fn find_user_by_id(pool: &PgPool, user_id: Uuid) -> Result<User, AppEr
             resigned_date
          FROM user_display_names
          WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
+        )
+        .bind(user_id)
+        .fetch_optional()
+        .await?
+        .ok_or(AppError::NotFound("ไม่พบผู้ใช้".to_string()))?;
 
     decrypt_national_id(&mut user);
     Ok(user)
@@ -111,8 +148,20 @@ pub async fn get_primary_role_name(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Option<String>, AppError> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT r.name 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "auth.get_primary_role_name")
+            .await?;
+    get_primary_role_name_on_connection(&mut connection, user_id).await
+}
+
+pub async fn get_primary_role_name_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .scalar::<String>(
+            "auth.src.services.get_primary_role_name_on_connection",
+            "SELECT r.name
          FROM user_roles ur
          JOIN roles r ON ur.role_id = r.id
          WHERE ur.user_id = $1 
@@ -120,11 +169,11 @@ pub async fn get_primary_role_name(
            AND ur.ended_at IS NULL
            AND r.is_active = true
          LIMIT 1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(user_id)
+        .fetch_optional()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn update_profile(
@@ -134,9 +183,9 @@ pub async fn update_profile(
 ) -> Result<ProfileUpdateResult, AppError> {
     let date_of_birth = parse_profile_date(payload.date_of_birth.as_deref());
 
-    let (old_file_id, user_type, title, given, family, title_en, given_en, family_en): (Option<Uuid>,String,Option<String>,String,String,Option<String>,Option<String>,Option<String>) = sqlx::query_as(
+    let (old_file_id, user_type, title, given, family, title_en, given_en, family_en): (Option<Uuid>,String,Option<String>,String,String,Option<String>,Option<String>,Option<String>) = school_database::DbSession::new(&mut *connection).query_as("auth.src.services.update_profile",
         "SELECT profile_image_file_id,user_type,title,first_name,last_name,title_en,first_name_en,last_name_en FROM users WHERE id=$1 FOR UPDATE")
-        .bind(user_id).fetch_optional(&mut *connection).await?
+        .bind(user_id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบผู้ใช้".into()))?;
     let english = user_type == "staff"
         && !crate::person_names::has_complete_name([
@@ -188,8 +237,10 @@ pub async fn update_profile(
     let profile_image_update_requested = payload.profile_image_file_id.is_some();
     let new_file_id = payload.profile_image_file_id.unwrap_or(old_file_id);
 
-    sqlx::query(
-        "UPDATE users 
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "auth.src.services.update_profile",
+            "UPDATE users
          SET title = CASE WHEN $13 THEN title ELSE COALESCE($1, title) END,
              title_en = CASE WHEN $13 THEN COALESCE($1,title_en) ELSE title_en END,
              nickname = COALESCE($2, nickname),
@@ -203,22 +254,22 @@ pub async fn update_profile(
              profile_image_file_id = CASE WHEN $10 THEN $11 ELSE profile_image_file_id END,
              updated_at = NOW()
          WHERE id = $12",
-    )
-    .bind(&payload.title)
-    .bind(&payload.nickname)
-    .bind(&payload.email)
-    .bind(&payload.phone)
-    .bind(&payload.emergency_contact)
-    .bind(&payload.line_id)
-    .bind(date_of_birth)
-    .bind(&payload.gender)
-    .bind(&payload.address)
-    .bind(profile_image_update_requested)
-    .bind(new_file_id)
-    .bind(user_id)
-    .bind(english)
-    .execute(&mut *connection)
-    .await?;
+        )
+        .bind(&payload.title)
+        .bind(&payload.nickname)
+        .bind(&payload.email)
+        .bind(&payload.phone)
+        .bind(&payload.emergency_contact)
+        .bind(&payload.line_id)
+        .bind(date_of_birth)
+        .bind(&payload.gender)
+        .bind(&payload.address)
+        .bind(profile_image_update_requested)
+        .bind(new_file_id)
+        .bind(user_id)
+        .bind(english)
+        .execute()
+        .await?;
 
     Ok(ProfileUpdateResult {
         replaced_file_id: (profile_image_update_requested && old_file_id != new_file_id)

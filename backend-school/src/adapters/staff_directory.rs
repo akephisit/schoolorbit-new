@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use school_academic_timetable::ports::{StaffDirectoryPort, StaffSubjectGroupAssignment};
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 pub(crate) struct ApplicationStaffDirectory;
@@ -12,11 +12,11 @@ pub(crate) static STAFF_DIRECTORY: ApplicationStaffDirectory = ApplicationStaffD
 impl StaffDirectoryPort for ApplicationStaffDirectory {
     async fn subject_groups_for_users(
         &self,
-        pool: &PgPool,
+        connection: &mut PgConnection,
         user_ids: &[Uuid],
     ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
         Ok(
-            school_staff::services::subject_groups_for_users(pool, user_ids)
+            school_staff::services::subject_groups_for_users_on_connection(connection, user_ids)
                 .await?
                 .into_iter()
                 .map(|assignment| StaffSubjectGroupAssignment {

@@ -3,6 +3,7 @@ use chrono::NaiveDate;
 use school_academic_core::models::{AcademicTermStatus, AcademicYearStatus, TermLifecycleContext};
 use school_academic_core::services::{lifecycle_context, lifecycle_guard, years_terms};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, Postgres, Transaction};
@@ -39,13 +40,17 @@ pub async fn transition_term(
     actor.require_permission(codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
     actor.require_permission(action_permission(request.action))?;
     let request_checksum = services::checksum(&(actor.user_id, term, &request))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.term_transitions.transition_term",
+    )
+    .await?;
     // Acquire before any entity lock or readiness read. Ordinary writers use
     // the shared side of this same lock, including audited corrections.
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let receipt:Option<(Uuid,String,Json<TermTransitionOutcome>)>=sqlx::query_as(
+    let receipt:Option<(Uuid,String,Json<TermTransitionOutcome>)>=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.term_transitions.transition_term",
         "SELECT actor_user_id,request_checksum,outcome FROM academic_term_transition_receipts WHERE request_id=$1",
-    ).bind(request.request_id).fetch_optional(&mut *tx).await?;
+    ).bind(request.request_id).fetch_optional().await?;
     if let Some((owner, checksum, outcome)) = receipt {
         if owner != actor.user_id || checksum != request_checksum {
             return Err(AppError::Conflict(
@@ -55,15 +60,23 @@ pub async fn transition_term(
         tx.commit().await?;
         return Ok(outcome.0);
     }
-    sqlx::query("SELECT id FROM academic_years WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_transitions.transition_term",
+            "SELECT id FROM academic_years WHERE id=$1 FOR UPDATE",
+        )
         .bind(request.academic_year_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
-    sqlx::query("SELECT id FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_transitions.transition_term",
+            "SELECT id FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE",
+        )
         .bind(term)
         .bind(request.academic_year_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".into()))?;
     let workspace = services::workspace_in_transaction(
@@ -131,24 +144,28 @@ pub async fn transition_term(
             term,
         )
         .await?;
-        let successor:bool=sqlx::query_scalar(
+        let successor:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term",
             "SELECT EXISTS(SELECT 1 FROM academic_terms successor JOIN academic_years owner ON owner.id=successor.academic_year_id
              WHERE successor.status IN ('active','closing','closed') AND
              ((successor.academic_year_id=$1 AND successor.sequence_no>$2) OR owner.start_date>$3))",
-        ).bind(request.academic_year_id).bind(before.sequence).bind(before.year_start_date).fetch_one(&mut *tx).await?;
-        let running:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id<>$1 AND status IN ('active','closing'))")
-            .bind(term).fetch_one(&mut *tx).await?;
+        ).bind(request.academic_year_id).bind(before.sequence).bind(before.year_start_date).fetch_one().await?;
+        let running:bool=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.term_transitions.transition_term", "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id<>$1 AND status IN ('active','closing'))")
+            .bind(term).fetch_one().await?;
         if successor || running {
             return Err(AppError::Conflict(
                 "เปิดกลับไม่ได้ เพราะมีภาคเรียนถัดไปเริ่มใช้แล้วหรือมีภาคเรียนอื่นกำลังใช้งาน".into(),
             ));
         }
     }
-    sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN $3 WHEN $2='closing' THEN NULL ELSE closed_on END,row_version=row_version+1,updated_at=now() WHERE id=$1")
-        .bind(term).bind(target).bind(request.closed_on).execute(&mut *tx).await?;
-    sqlx::query("UPDATE academic_years SET row_version=row_version+1,updated_at=now() WHERE id=$1")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN $3 WHEN $2='closing' THEN NULL ELSE closed_on END,row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(term).bind(target).bind(request.closed_on).execute().await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.term_transitions.transition_term",
+            "UPDATE academic_years SET row_version=row_version+1,updated_at=now() WHERE id=$1",
+        )
         .bind(request.academic_year_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     let outcome = TermTransitionOutcome {
         request_id: request.request_id,
@@ -165,9 +182,9 @@ pub async fn transition_term(
         TermTransitionAction::Cancel => "cancel",
         TermTransitionAction::Activate => "activate",
     };
-    sqlx::query("INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.term_transitions.transition_term", "INSERT INTO academic_term_transition_receipts(request_id,academic_year_id,academic_term_id,actor_user_id,action,request_checksum,accepted_readiness,outcome) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(request.request_id).bind(request.academic_year_id).bind(term).bind(actor.user_id).bind(action)
-        .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute(&mut *tx).await?;
+        .bind(request_checksum).bind(Json(&workspace)).bind(Json(&outcome)).execute().await?;
     years_terms::append_audit(
         &mut tx,
         &format!("academic.term.{action}"),

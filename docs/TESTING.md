@@ -271,6 +271,60 @@ implementation paths; cross-domain/database fixtures retain application-level ow
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+For the connection-bound query provider, run its public API/type/observation checks
+from `backend-school`:
+
+```bash
+cargo check -p school-database --all-targets
+cargo test -p school-database
+```
+
+The compile-pass probe includes borrowed binds, raw/typed/scalar results and native
+QueryBuilder adapters. Compile-fail examples reference their functions so dead-code
+lints cannot supply a false success; they reject overlapping mutable queries, alternate
+executors and unchecked dynamic SQL. Unit traces verify completion, safe error classes
+and cancellation without payloads. Run actual PostgreSQL result, caller-owned rollback,
+query cancellation and error-trace fixtures from the repository root:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::database -- --test-threads=1
+```
+
+Run the tracked production module-graph guards (default and api-docs reachability,
+async join expressions, aliases, private connection helpers and explicit resource entries):
+
+```bash
+cargo test --test database_execution_architecture
+cargo test --test static_architecture
+```
+
+The guard is a syntax/lifetime-boundary check with explicit infrastructure and domain
+work-entry scopes, not a formal interprocedural proof. Its negative cases include an
+unsuffixed private `hydrate_templates(pool)` that performs its own checkout/query.
+Actual managed regressions use the real AdminClient, DirectoryCache, PoolManager and
+production Notification/Cleaner phase orchestration with only loopback Admin HTTP and
+external delivery/storage fakes. They cover slow Admin HTTP plus another kind's actual
+SQL under the sole permit, cancellation without a claim/file mutation, queued fence,
+same-UUID credentials, expiry/eviction, endpoint cleanup/ack refusal, and invalidation
+while waiting for actual physical PoolManager capacity. The physical-wait case asserts
+no business claim SQL occurred after stale admission; pool bootstrap verification may
+still have run before the second local validation.
+
+```bash
+./scripts/test_backend_school.sh integration_tests::notification_dispatch::notification_managed -- --test-threads=1
+./scripts/test_backend_school.sh services::cleaner::phase_tests::managed_ -- --test-threads=1
+```
+
+All timeouts remain the production phase/item budgets. Fixed-label trace observations
+provide deterministic queue handshakes; no test swaps in a separate resolver or database
+completion algorithm. DirectoryCache unit tests separately cover refill revisions,
+real TTL expiry, eviction, mutation and cancellation without a stale fallback.
+
+These fixtures create only disposable synthetic tables and preserve the native SQLx
+error. They do not test production throughput. Compare workspace compile evidence on
+the same pinned toolchain, target cache and concurrency; distinguish warm-cache effects
+from ownership/invalidation changes.
+
 For single-process tenant fairness, run the focused pure/concurrency checks from
 `backend-school`:
 
@@ -279,14 +333,27 @@ cargo test -p school-tenancy directory_cache::tests -- --test-threads=1
 cargo test -p school-tenancy background::tests -- --test-threads=1
 cargo test -p school-auth retention::tests -- --test-threads=1
 cargo test -p school-notifications http::handlers::tests -- --test-threads=1
+cargo test -p school-notifications runtime::tests -- --test-threads=1
+cargo test -p school-notifications publisher::tests -- --test-threads=1
 ```
 
 These exercise shared success/failure cohorts without negative caching, independent
 retry, leader/waiter cancellation, bounded distinct-key admission including evicted
-fills, completed-result mutation fencing, shared Calendar/Auth admission, same-key
+fills, completed-result mutation fencing, shared all-kind database admission, same-key
 exclusion, release after cancellation, Auth rotation after a sweep waits behind
 occupied slots, and payload-free SSE reconciliation with retained tenant filtering
-and identity fail-close. They do not measure production capacity.
+and identity fail-close. Notification fake transport cases hold two slow item futures
+while every other kind obtains shared database admission, and confirm cancellation
+joins delivery work. Slow-first-endpoint coverage verifies later device progress and
+no surviving endpoint future after the enclosing deadline. A twelve-endpoint case
+with two stalled waves verifies attempt-based rotation reaches the tail on retries.
+Managed-batch database fixtures use the actual AdminClient and PoolManager with only
+external transport controlled: while blocked, another kind receives the sole permit
+and resident-pool pressure evicts the original pool. A mock directory UUID change plus
+cache fencing then proves both endpoint deletion and acknowledgment are refused.
+Cleaner database fixtures hold a real table lock until its phase deadline releases
+admission, and verify a healthy tenant completes while a sibling's provider is blocked.
+They do not measure production capacity.
 
 From the repository root, run the database-dependent owners with the disposable
 PostgreSQL wrapper:
@@ -296,9 +363,18 @@ PostgreSQL wrapper:
 ./scripts/test_backend_school.sh --package school-auth cleanup_ -- --test-threads=1
 ```
 
+Run the new managed Notification and Cleaner regressions from the repository root:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::notification_dispatch::notification_managed_batch_ -- --test-threads=1
+./scripts/test_backend_school.sh services::cleaner::phase_tests -- --test-threads=1
+```
+
 The Calendar cases use 401 durable reminders, lock the first 200, verify suffix
 progress and next-invocation retry, observe a real advisory lock before cancelling
-a blocked event load, and verify that its session releases the lock before retry.
+a blocked event load, and verify that its session releases the lock before retry. A one-connection pool
+also verifies complete event hydration, two recipient acceptance transactions, durable
+queue/inbox rows and confirmed advisory unlock without nested pool acquisition.
 A controlled slow tenant and a healthy multi-turn backlog verify completion-driven
 fair revisits without a round barrier. Auth cases preserve 100-row batches and
 `SKIP LOCKED`, and cancel after an earlier cleanup statement to verify transaction
@@ -1949,3 +2025,53 @@ in current and historical requirements/options, even after a later known revisio
 Run affected publication/order/current-subject/options/copy consumers, HTTP permissions,
 API schema/generate/check/test and documentation policy with the existing focused recipes.
 All mutation fixtures are synthetic; no production criteria or curricula are written.
+
+The deferred-upload cleanup protocol is exercised by File Platform's `cleanup_watch_tests` family
+and `profile_relationships::tests`, using the owning disposable PostgreSQL 18.6 fixture. Run those
+with the same `TEST_DATABASE_URL` ownership protocol as the existing Files suite; do not point them
+at production. Cases include independent late PUT completion after client cancellation, HEAD 404,
+real migration-039 Certificate hard purge and reconstructed-worker recovery; stale cleanup claims,
+namespace refusal, owner-only legacy binding (including a runtime role with the writable evidence
+GUC), manifest-wide revision validation, and expiry/promotion row-lock races. Migration 137 is
+required in addition to 136. Root `services::cleaner::phase_tests` includes persisted cross-sweep
+queue fairness and a managed watch path through actual AdminClient/Directory/PoolManager with a
+single physical connection and DB admission slot during blocked storage HEAD. Library-only tests
+do not substitute for that application composition regression.
+
+The `file_storage_namespace` binary has a pure inventory-validation unit test. Its rollout check
+must also be verified on disposable canonical owner-role databases with an independently trusted
+complete inventory digest: correct mappings pass, changed bytes/omitted inventory bytes, wrong-school
+or duplicate URL mappings, missing schema 137, unknown legacy namespaces and mismatched providers
+fail closed. Check/dry-run must leave all rows and permissions unchanged. Apply tests use exact
+watch IDs plus immutable identity digests and expected row revisions, with the actual table owner;
+no test-only production bypass is supported. Do not log URL/key values in fixture evidence.
+
+## Standalone namespace operator tool
+
+The ordinary School runtime image contains only the main `backend-school` executable, not
+`file_storage_namespace`. Obtain this operator tool separately from the clean, exact approved release
+checkout and its unchanged Cargo lockfile. On a trusted build host with the supported Rust 1.98.1
+toolchain, native build prerequisites, `jq` and `sha256sum`, run from the repository root:
+
+```bash
+cargo +1.98.1 build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
+namespace_target_dir="$(cargo +1.98.1 metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
+namespace_tool="$namespace_target_dir/release/file_storage_namespace"
+git rev-parse HEAD
+sha256sum backend-school/Cargo.lock "$namespace_tool"
+```
+
+Use the existing selected Cargo target directory; do not create a separate target/cache for the
+operator tool. The metadata command respects that selection (the default is
+`backend-school/target`). This recipe assumes a native build without a target-triple override;
+the resulting executable's OS, architecture, libc and linked-library requirements must fit the
+operator host. Record the checkout revision, lockfile digest and artifact SHA-256 with the handoff,
+then verify the artifact digest after transfer. The tool must match the approved release and
+canonical migration revision being rolled out, because its readiness check embeds that history;
+it need not match the old binary drained during maintenance.
+
+This is a build/acquisition recipe, not a claim that a standalone release artifact has been built,
+published or tested here. Debug/test checks do not establish compatibility of a separately built
+release artifact. Use the verified absolute binary path and the maintenance, private configuration
+and attestation procedure in [Operations](./OPERATIONS.md); no runtime image or deployment recipe
+change is required.

@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -33,7 +33,16 @@ pub async fn resolve_event_recipient_user_ids(
     pool: &PgPool,
     event_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    let ids = sqlx::query_scalar::<_, Uuid>(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.notification").await?;
+    resolve_event_recipient_user_ids_on_connection(&mut connection, event_id).await
+}
+
+async fn resolve_event_recipient_user_ids_on_connection(
+    connection: &mut PgConnection,
+    event_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let ids = school_database::DbSession::new(&mut *connection).scalar::<Uuid>("calendar.delivery.notifications.resolve_event_recipient_user_ids_on_connection",
         r#"
         WITH targets AS (
             SELECT target.audience_type, target.grade_level_id, target.homeroom_id, target.academic_year_id, event.start_date
@@ -115,7 +124,7 @@ pub async fn resolve_event_recipient_user_ids(
         "#,
     )
     .bind(event_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(dedupe_user_ids(ids))
@@ -128,7 +137,27 @@ pub async fn send_event_notification(
     event: &CalendarEvent,
     notification_kind: CalendarNotificationKind,
 ) -> Result<CalendarNotificationSendOutcome, AppError> {
-    let recipient_ids = resolve_event_recipient_user_ids(pool, event.id).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.notification").await?;
+    send_event_notification_on_connection(
+        &mut connection,
+        notification_channel,
+        tenant,
+        event,
+        notification_kind,
+    )
+    .await
+}
+
+pub(super) async fn send_event_notification_on_connection(
+    connection: &mut PgConnection,
+    notification_channel: &broadcast::Sender<TenantNotificationEvent>,
+    tenant: &str,
+    event: &CalendarEvent,
+    notification_kind: CalendarNotificationKind,
+) -> Result<CalendarNotificationSendOutcome, AppError> {
+    let recipient_ids =
+        resolve_event_recipient_user_ids_on_connection(&mut *connection, event.id).await?;
     if recipient_ids.is_empty() {
         return Ok(CalendarNotificationSendOutcome {
             recipient_count: 0,
@@ -137,24 +166,26 @@ pub async fn send_event_notification(
         });
     }
 
-    let recipients = sqlx::query_as::<_, NotificationRecipientRow>(
-        r#"
+    let recipients = school_database::DbSession::new(&mut *connection)
+        .query_as::<NotificationRecipientRow>(
+            "calendar.delivery.notifications.send_event_notification_on_connection",
+            r#"
         SELECT id, user_type
         FROM users
         WHERE id = ANY($1)
         "#,
-    )
-    .bind(&recipient_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&recipient_ids)
+        .fetch_all()
+        .await?;
 
     let (title, message) = calendar_notification_text(event, &notification_kind);
     let publisher = TenantNotificationPublisher::new(tenant, notification_channel);
     let mut successful_count = 0;
     let mut failed_count = 0;
     for recipient in recipients {
-        if let Err(error) = NotificationService::send(
-            pool,
+        if let Err(error) = NotificationService::send_on_connection(
+            &mut *connection,
             &publisher,
             recipient.id,
             &title,

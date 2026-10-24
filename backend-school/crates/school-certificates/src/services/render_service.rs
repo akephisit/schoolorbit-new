@@ -1,5 +1,6 @@
 use school_authorization::ActorContext;
 use school_crypto as field_encryption;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     platform_service::{FilePlatform, FilePlatformError},
@@ -239,9 +240,15 @@ pub async fn preview_manifest(
         recipient_values.insert(display_key, normalize_display_text(&value));
     }
 
-    let mut campaign_guard = pool.begin().await?;
-    let campaign = sqlx::query_as::<_, CampaignRenderRow>(
-        "SELECT academic_year.name AS academic_year_name,
+    let mut campaign_guard = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.render_service.preview_manifest",
+    )
+    .await?;
+    let campaign = DbSession::new(&mut *campaign_guard)
+        .query_as::<CampaignRenderRow>(
+            "certificates.services.render_service.preview_manifest",
+            "SELECT academic_year.name AS academic_year_name,
                 campaign.name AS campaign_name,
                 campaign.event_date,
                 owner.name AS owner_organization_unit_name
@@ -250,11 +257,11 @@ pub async fn preview_manifest(
          LEFT JOIN organization_units owner ON owner.id = campaign.owner_organization_unit_id
          WHERE campaign.id = $1 AND campaign.status <> 'purging'
          FOR SHARE OF campaign",
-    )
-    .bind(template.campaign_id)
-    .fetch_optional(&mut *campaign_guard)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+        )
+        .bind(template.campaign_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
 
     let issue_date = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
     let owner_name = campaign
@@ -467,53 +474,63 @@ async fn issued_manifest_inner(
     base_domain: &str,
     certificate_id: Uuid,
 ) -> Result<CertificateRenderManifest, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "certificates.render_service.issued_manifest_inner",
+    )
+    .await?;
     let own_user_id = match &access {
         IssuedManifestAccess::Own(user_id) => Some(*user_id),
         IssuedManifestAccess::Administrative(_) | IssuedManifestAccess::Public => None,
     };
-    let access_row = sqlx::query_as::<_, IssuedRenderAccessRow>(
-        "SELECT campaign.owner_organization_unit_id
+    let access_row = DbSession::new(&mut *tx)
+        .query_as::<IssuedRenderAccessRow>(
+            "certificates.services.render_service.issued_manifest_inner",
+            "SELECT campaign.owner_organization_unit_id
          FROM certificates certificate
          JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
          WHERE certificate.id = $1
            AND ($2::uuid IS NULL OR certificate.user_id = $2)
            AND campaign.status <> 'purging'
          FOR SHARE OF campaign",
-    )
-    .bind(certificate_id)
-    .bind(own_user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+        )
+        .bind(certificate_id)
+        .bind(own_user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     if let IssuedManifestAccess::Administrative(actor) = &access {
-        require_owner_action(
-            pool,
+        crate::access_policy::require_owner_action_on_connection(
+            &mut tx,
             actor,
             access_row.owner_organization_unit_id,
             CertificateAction::Download,
         )
         .await?;
     }
-    let status = sqlx::query_scalar::<_, String>(
-        "SELECT status
+    let status = DbSession::new(&mut *tx)
+        .scalar::<String>(
+            "certificates.services.render_service.issued_manifest_inner",
+            "SELECT status
          FROM certificates
          WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)
          FOR SHARE",
-    )
-    .bind(certificate_id)
-    .bind(own_user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
+        )
+        .bind(certificate_id)
+        .bind(own_user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเกียรติบัตร".to_string()))?;
     if status != "issued" {
         return Err(AppError::Conflict(
             "เกียรติบัตรที่ถูกเพิกถอนไม่สามารถสร้างไฟล์ได้".to_string(),
         ));
     }
     let canonical_origin = canonical_tenant_origin(tenant_subdomain, base_domain)?;
-    let row = sqlx::query_as::<_, IssuedRenderRow>(
-        "SELECT certificate.template_id, certificate.template_name_snapshot,
+    let row = DbSession::new(&mut *tx)
+        .query_as::<IssuedRenderRow>(
+            "certificates.services.render_service.issued_manifest_inner",
+            "SELECT certificate.template_id, certificate.template_name_snapshot,
                 certificate.academic_year_value, campaign.name AS campaign_name,
                 campaign.event_date, certificate.title_snapshot,
                 certificate.first_name_snapshot, certificate.last_name_snapshot,
@@ -537,12 +554,12 @@ async fn issued_manifest_inner(
            AND ($2::uuid IS NULL OR certificate.user_id = $2)
            AND campaign.status <> 'purging'
          FOR SHARE OF template, background",
-    )
-    .bind(certificate_id)
-    .bind(own_user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::Conflict("แม่แบบปัจจุบันไม่พร้อมสร้างเกียรติบัตร".to_string()))?;
+        )
+        .bind(certificate_id)
+        .bind(own_user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Conflict("แม่แบบปัจจุบันไม่พร้อมสร้างเกียรติบัตร".to_string()))?;
     if row.background_lifecycle_status != "ready" {
         return Err(AppError::Conflict("พื้นหลังแม่แบบยังไม่พร้อมใช้งาน".to_string()));
     }
@@ -569,8 +586,10 @@ async fn issued_manifest_inner(
         displayed_height_points,
         paper_label: row.paper_label,
     };
-    let custom_headers = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT custom_key
+    let custom_headers = DbSession::new(&mut *tx)
+        .scalar::<String>(
+            "certificates.services.render_service.issued_manifest_inner",
+            "SELECT DISTINCT custom_key
          FROM (
              SELECT jsonb_object_keys(custom_values) AS custom_key
              FROM certificate_candidates candidate
@@ -583,10 +602,10 @@ async fn issued_manifest_inner(
              WHERE certificate.id = $1
          ) custom_keys
          ORDER BY custom_key",
-    )
-    .bind(certificate_id)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(certificate_id)
+        .fetch_all()
+        .await?;
     let catalog = super::import_validation::variable_catalog(&custom_headers).map_err(|_| {
         AppError::InternalServerError("certificate_variable_catalog_invalid".to_string())
     })?;
@@ -598,17 +617,19 @@ async fn issued_manifest_inner(
         None
     };
 
-    let assets = sqlx::query_as::<_, IssuedRenderAssetRow>(
-        "SELECT asset.id, asset.file_id, asset.kind, file.lifecycle_status
+    let assets = DbSession::new(&mut *tx)
+        .query_as::<IssuedRenderAssetRow>(
+            "certificates.services.render_service.issued_manifest_inner",
+            "SELECT asset.id, asset.file_id, asset.kind, file.lifecycle_status
          FROM certificate_template_assets asset
          JOIN files file ON file.id = asset.file_id
          WHERE asset.template_id = $1
          ORDER BY asset.id
          FOR SHARE OF asset, file",
-    )
-    .bind(row.template_id)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(row.template_id)
+        .fetch_all()
+        .await?;
     let referenced_assets = referenced_asset_ids(&row.layout.0);
     validate_issued_assets(&row.layout.0, &assets, &referenced_assets)?;
     let school_fonts = load_referenced_school_fonts(&mut tx, &row.layout.0).await?;
@@ -757,15 +778,23 @@ pub async fn issued_manifests(
             "รายการเกียรติบัตรสำหรับดาวน์โหลดต้องไม่ซ้ำกัน".to_string(),
         ));
     }
-    let owner_organization_unit_id = sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT owner_organization_unit_id
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.render_service.issued_manifests",
+    )
+    .await?;
+    let owner_organization_unit_id = DbSession::new(&mut *database_stage_0)
+        .scalar::<Option<Uuid>>(
+            "certificates.services.render_service.issued_manifests",
+            "SELECT owner_organization_unit_id
          FROM certificate_campaigns
          WHERE id = $1 AND status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+        )
+        .bind(campaign_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรมเกียรติบัตร".to_string()))?;
+    drop(database_stage_0);
     require_owner_action(
         pool,
         actor,
@@ -773,23 +802,31 @@ pub async fn issued_manifests(
         CertificateAction::Download,
     )
     .await?;
-    let matching_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*)
+    let mut database_stage_1 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "certificates.render_service.issued_manifests",
+    )
+    .await?;
+    let matching_count = DbSession::new(&mut *database_stage_1)
+        .scalar::<i64>(
+            "certificates.services.render_service.issued_manifests",
+            "SELECT COUNT(*)
          FROM certificates certificate
          JOIN certificate_campaigns campaign ON campaign.id = certificate.campaign_id
          WHERE certificate.campaign_id = $1
            AND certificate.id = ANY($2::uuid[])
            AND campaign.status <> 'purging'",
-    )
-    .bind(campaign_id)
-    .bind(&request.certificate_ids)
-    .fetch_one(pool)
-    .await?;
+        )
+        .bind(campaign_id)
+        .bind(&request.certificate_ids)
+        .fetch_one()
+        .await?;
     if matching_count != request.certificate_ids.len() as i64 {
         return Err(AppError::NotFound("ไม่พบเกียรติบัตรที่เลือกในกิจกรรมนี้".to_string()));
     }
 
     let mut manifests = Vec::with_capacity(request.certificate_ids.len());
+    drop(database_stage_1);
     for certificate_id in request.certificate_ids {
         manifests.push(
             issued_manifest(
@@ -916,8 +953,10 @@ async fn load_referenced_school_fonts(
     }
 
     let font_ids = expected.keys().copied().collect::<Vec<_>>();
-    let rows = sqlx::query_as::<_, RenderSchoolFontRow>(
-        "SELECT font.id, font.file_id, font.font_family, font.font_weight, font.font_style,
+    let rows = DbSession::new(&mut **tx)
+        .query_as::<RenderSchoolFontRow>(
+            "certificates.services.render_service.load_referenced_school_fonts",
+            "SELECT font.id, font.file_id, font.font_family, font.font_weight, font.font_style,
                 file.purpose_code, file.visibility, file.lifecycle_status,
                 file.retention_class, version.storage_status, version.scan_status
          FROM school_fonts AS font
@@ -927,10 +966,10 @@ async fn load_referenced_school_fonts(
          WHERE font.id = ANY($1::uuid[])
          ORDER BY font.id
          FOR SHARE OF font, file, version",
-    )
-    .bind(&font_ids)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(&font_ids)
+        .fetch_all()
+        .await?;
     if rows.len() != expected.len()
         || rows.iter().any(|font| {
             let Some((family, weight, style)) = expected.get(&font.id) else {

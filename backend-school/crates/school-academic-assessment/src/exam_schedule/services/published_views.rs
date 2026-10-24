@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
@@ -96,8 +97,17 @@ pub async fn list_my_published_exam_schedule(
     user_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    ensure_active_student_user(pool, user_id).await?;
-    list_published_exam_schedule_for_student(pool, user_id, academic_term_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_my_published_exam_schedule").await?;
+    list_my_published_exam_schedule_on_connection(&mut connection, user_id, academic_term_id).await
+}
+
+pub async fn list_my_published_exam_schedule_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    ensure_active_student_user(connection, user_id).await?;
+    list_published_exam_schedule_for_student(connection, user_id, academic_term_id).await
 }
 
 pub async fn list_staff_published_exam_schedule(
@@ -105,8 +115,18 @@ pub async fn list_staff_published_exam_schedule(
     user_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
-    ensure_active_staff_user_for_exam_schedule(pool, user_id).await?;
-    list_published_exam_schedule_for_staff(pool, academic_term_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_staff_published_exam_schedule").await?;
+    list_staff_published_exam_schedule_on_connection(&mut connection, user_id, academic_term_id)
+        .await
+}
+
+pub async fn list_staff_published_exam_schedule_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
+    ensure_active_staff_user_for_exam_schedule(connection, user_id).await?;
+    list_published_exam_schedule_for_staff(connection, academic_term_id).await
 }
 
 pub async fn list_child_published_exam_schedule(
@@ -115,17 +135,39 @@ pub async fn list_child_published_exam_schedule(
     student_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    ensure_parent_user_for_exam_schedule(pool, parent_user_id).await?;
-    ensure_parent_student_link_for_exam_schedule(pool, parent_user_id, student_id).await?;
-    list_published_exam_schedule_for_student(pool, student_id, academic_term_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_child_published_exam_schedule").await?;
+    list_child_published_exam_schedule_on_connection(
+        &mut connection,
+        parent_user_id,
+        student_id,
+        academic_term_id,
+    )
+    .await
 }
 
-async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    let user_row: Option<(String, String)> =
-        sqlx::query_as("SELECT user_type, status FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
+pub async fn list_child_published_exam_schedule_on_connection(
+    connection: &mut sqlx::PgConnection,
+    parent_user_id: Uuid,
+    student_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
+    ensure_parent_user_for_exam_schedule(connection, parent_user_id).await?;
+    ensure_parent_student_link_for_exam_schedule(connection, parent_user_id, student_id).await?;
+    list_published_exam_schedule_for_student(connection, student_id, academic_term_id).await
+}
+
+async fn ensure_active_student_user(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let user_row: Option<(String, String)> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.exam_schedule.services.published_views.ensure_active_student_user",
+            "SELECT user_type, status FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional()
+        .await?;
 
     match user_row
         .as_ref()
@@ -140,13 +182,13 @@ async fn ensure_active_student_user(pool: &PgPool, user_id: Uuid) -> Result<(), 
 }
 
 async fn ensure_active_staff_user_for_exam_schedule(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     user_id: Uuid,
 ) -> Result<(), AppError> {
     let user_row: Option<(String, String)> =
-        sqlx::query_as("SELECT user_type, status FROM users WHERE id = $1")
+        DbSession::new(connection).query_as("academic_assessment.exam_schedule.services.published_views.ensure_active_staff_user_for_exam_schedule", "SELECT user_type, status FROM users WHERE id = $1")
             .bind(user_id)
-            .fetch_optional(pool)
+            .fetch_optional()
             .await?;
 
     match user_row
@@ -162,12 +204,12 @@ async fn ensure_active_staff_user_for_exam_schedule(
 }
 
 async fn ensure_parent_user_for_exam_schedule(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     parent_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let user_type: Option<String> = sqlx::query_scalar("SELECT user_type FROM users WHERE id = $1")
+    let user_type: Option<String> = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.published_views.ensure_parent_user_for_exam_schedule", "SELECT user_type FROM users WHERE id = $1")
         .bind(parent_user_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?;
 
     match user_type.as_deref() {
@@ -178,11 +220,11 @@ async fn ensure_parent_user_for_exam_schedule(
 }
 
 async fn ensure_parent_student_link_for_exam_schedule(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     parent_user_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), AppError> {
-    let is_linked: bool = sqlx::query_scalar(
+    let is_linked: bool = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.published_views.ensure_parent_student_link_for_exam_schedule",
         r#"
         SELECT EXISTS(
             SELECT 1
@@ -197,7 +239,7 @@ async fn ensure_parent_student_link_for_exam_schedule(
     )
     .bind(parent_user_id)
     .bind(student_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await?;
 
     if !is_linked {
@@ -210,11 +252,11 @@ async fn ensure_parent_student_link_for_exam_schedule(
 }
 
 async fn list_published_exam_schedule_for_student(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     student_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    let rows = sqlx::query_as::<_, PersonalExamSessionRow>(
+    let rows = DbSession::new(connection).query_as::<PersonalExamSessionRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_student",
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
@@ -285,17 +327,17 @@ async fn list_published_exam_schedule_for_student(
     )
     .bind(student_id)
     .bind(academic_term_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(group_personal_exam_schedule_rows(rows))
 }
 
 async fn list_published_exam_schedule_for_staff(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     academic_term_id: Uuid,
 ) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
-    let assignment_rows = sqlx::query_as::<_, StaffPublishedExamAssignmentRow>(
+    let assignment_rows = DbSession::new(connection).query_as::<StaffPublishedExamAssignmentRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_staff",
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
@@ -339,10 +381,10 @@ async fn list_published_exam_schedule_for_staff(
         "#,
     )
     .bind(academic_term_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
-    let session_rows = sqlx::query_as::<_, StaffPublishedExamSessionRow>(
+    let session_rows = DbSession::new(connection).query_as::<StaffPublishedExamSessionRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_staff",
         r#"
         SELECT round.id AS round_id,
                day.id AS exam_day_id,
@@ -424,7 +466,7 @@ async fn list_published_exam_schedule_for_staff(
         "#,
     )
     .bind(academic_term_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
     Ok(group_staff_published_exam_rows(

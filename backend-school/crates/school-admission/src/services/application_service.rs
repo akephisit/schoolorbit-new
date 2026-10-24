@@ -2,6 +2,7 @@ use crate::models::applications::*;
 use crate::services::pii;
 use chrono::{Datelike, FixedOffset, Utc};
 use school_academic_core::services::lifecycle_guard;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::{
     platform_types::{FileLifecycleStatus, FilePurpose},
@@ -76,16 +77,18 @@ async fn allocate_application_number(
     }
     // The row lock is scoped to the actual rendered prefix, across all years and
     // rounds that render it. Rollback returns the number with the application.
-    let sequence: Option<i32> = sqlx::query_scalar(
-        "INSERT INTO admission_application_number_counters(prefix,last_sequence) VALUES($1,1)
+    let sequence: Option<i32> = DbSession::new(&mut **tx)
+        .scalar(
+            "admission.services.application_service.allocate_application_number",
+            "INSERT INTO admission_application_number_counters(prefix,last_sequence) VALUES($1,1)
          ON CONFLICT(prefix) DO UPDATE
          SET last_sequence=admission_application_number_counters.last_sequence+1
          WHERE admission_application_number_counters.last_sequence<99999
          RETURNING last_sequence",
-    )
-    .bind(prefix)
-    .fetch_optional(&mut **tx)
-    .await?;
+        )
+        .bind(prefix)
+        .fetch_optional()
+        .await?;
     let sequence =
         sequence.ok_or_else(|| AppError::Conflict("เลขที่ใบสมัครสำหรับวันที่และรอบนี้เต็มแล้ว".into()))?;
     Ok(format!("{prefix}{sequence:05}"))
@@ -152,17 +155,19 @@ async fn bulk_update_assigned_student_ids(
         .map(|row| row.assigned_student_id.clone())
         .collect();
 
-    let result = sqlx::query(
-        "UPDATE admission_applications AS application
+    let result = DbSession::new(&mut **tx)
+        .query(
+            "admission.services.application_service.bulk_update_assigned_student_ids",
+            "UPDATE admission_applications AS application
          SET assigned_student_id = updates.assigned_student_id, updated_at = NOW()
          FROM UNNEST($1::uuid[], $2::text[]) AS updates(application_id, assigned_student_id)
          WHERE application.id = updates.application_id",
-    )
-    .bind(&application_ids)
-    .bind(&assigned_student_ids)
-    .execute(&mut **tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+        )
+        .bind(&application_ids)
+        .bind(&assigned_student_ids)
+        .execute()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
     Ok(result.rows_affected())
 }
@@ -176,12 +181,20 @@ pub async fn submit_application(
     round_id: Uuid,
     payload: SubmitApplicationRequest,
 ) -> Result<(String, AdmissionApplication), AppError> {
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM admission_rounds WHERE id = $1")
-            .bind(round_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.application_service.submit_application",
+    )
+    .await?;
+    let status: Option<String> = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.application_service.submit_application",
+            "SELECT status FROM admission_rounds WHERE id = $1",
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
 
     match status.as_deref() {
         None => return Err(AppError::NotFound("ไม่พบรอบรับสมัคร".to_string())),
@@ -194,12 +207,12 @@ pub async fn submit_application(
         }
     }
 
-    let track_exists: bool = sqlx::query_scalar(
+    let track_exists: bool = DbSession::new(&mut *database_stage_0).scalar("admission.services.application_service.submit_application",
         "SELECT EXISTS(SELECT 1 FROM admission_tracks WHERE id = $1 AND admission_round_id = $2)",
     )
     .bind(payload.admission_track_id)
     .bind(round_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await
     .unwrap_or(false);
 
@@ -207,6 +220,7 @@ pub async fn submit_application(
         return Err(AppError::BadRequest("สายการเรียนไม่ถูกต้อง".to_string()));
     }
 
+    drop(database_stage_0);
     let encrypted_pii = pii::encrypt_application_pii(
         &payload.national_id,
         payload.father_national_id.as_deref(),
@@ -215,29 +229,33 @@ pub async fn submit_application(
     )
     .map_err(|error| pii_error("encrypt submit application", error))?;
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.submit_application",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    let (_year, round_number): (i32, i64) = sqlx::query_as(
-        r#"SELECT ay.year,
+    let (_year, round_number): (i32, i64) = DbSession::new(&mut *tx)
+        .query_as(
+            "admission.services.application_service.submit_application",
+            r#"SELECT ay.year,
                   ROW_NUMBER() OVER (PARTITION BY ar.academic_year_id ORDER BY ar.created_at ASC)
            FROM admission_rounds ar
            JOIN academic_years ay ON ar.academic_year_id = ay.id
            WHERE ar.id = $1"#,
-    )
-    .bind(round_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Failed to get academic year".to_string()))?;
 
-    let already_applied: bool = sqlx::query_scalar(
+    let already_applied: bool = DbSession::new(&mut *tx).scalar("admission.services.application_service.submit_application",
         "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id_hash = $1 AND admission_round_id = $2)",
     )
     .bind(&encrypted_pii.national_id_hash)
     .bind(round_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .unwrap_or(false);
 
@@ -254,7 +272,7 @@ pub async fn submit_application(
     let app_prefix = application_number_prefix(now, round_number);
     let application_number = allocate_application_number(&mut tx, &app_prefix).await?;
 
-    let application = sqlx::query_as::<_, AdmissionApplication>(
+    let application = DbSession::new(&mut *tx).query_as::<AdmissionApplication>("admission.services.application_service.submit_application",
         r#"
         INSERT INTO admission_applications (
             admission_round_id, admission_track_id, application_number,
@@ -359,7 +377,7 @@ pub async fn submit_application(
     .bind(&encrypted_pii.father_national_id_hash)
     .bind(&encrypted_pii.mother_national_id_hash)
     .bind(&encrypted_pii.guardian_national_id_hash)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .map_err(|error| {
         if error.as_database_error().is_some_and(|database| {
@@ -405,7 +423,14 @@ pub async fn list_applications(
     round_id: Uuid,
     filter: ApplicationFilter,
 ) -> Result<Vec<AppListRow>, AppError> {
-    list_applications_inner(pool, round_id, filter, None).await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "admission.application_service.list_applications.list_applications_inner",
+        )
+        .await?;
+        list_applications_inner(&mut read_stage, round_id, filter, None).await
+    }
 }
 
 pub async fn search_applications_by_identifier(
@@ -420,17 +445,20 @@ pub async fn search_applications_by_identifier(
     }
     let national_id_hash = pii::hash_required(identifier)
         .map_err(|error| pii_error("hash application identifier search", error))?;
-    list_applications_inner(
-        pool,
-        round_id,
-        ApplicationFilter::default(),
-        Some((national_id_hash, identifier.to_string())),
-    )
-    .await
+    {
+        let mut read_stage = school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.application_service.search_applications_by_identifier.list_applications_inner").await?;
+        list_applications_inner(
+            &mut read_stage,
+            round_id,
+            ApplicationFilter::default(),
+            Some((national_id_hash, identifier.to_string())),
+        )
+        .await
+    }
 }
 
 async fn list_applications_inner(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
     filter: ApplicationFilter,
     exact_identifier: Option<(String, String)>,
@@ -483,12 +511,18 @@ async fn list_applications_inner(
     }
     query.push(" ORDER BY aa.created_at ASC");
 
-    let rows = query
-        .build_query_as::<AppListRow>()
-        .fetch_all(pool)
+    let rows = DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "admission.services.application_service.list_applications_inner",
+            query.build_query_as::<AppListRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to list applications: {}", e);
+            tracing::error!(
+                "Failed to list applications: {}",
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("Failed to fetch applications".to_string())
         })?;
 
@@ -499,8 +533,22 @@ pub async fn get_application_with_documents(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<(AdmissionApplication, Vec<ApplicationDocument>), AppError> {
-    let application = sqlx::query_as::<_, AdmissionApplication>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.get_application_with_documents",
+    )
+    .await?;
+    get_application_with_documents_on_connection(&mut connection, id).await
+}
+
+pub async fn get_application_with_documents_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(AdmissionApplication, Vec<ApplicationDocument>), AppError> {
+    let application = DbSession::new(&mut *connection)
+        .query_as::<AdmissionApplication>(
+            "admission.services.application_service.get_application_with_documents_on_connection",
+            r#"
         SELECT aa.*,
                at2.name     AS track_name,
                NULL::text   AS assigned_track_name,
@@ -510,19 +558,25 @@ pub async fn get_application_with_documents(
         LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
         WHERE aa.id = $1
         "#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to fetch application {}: {}", id, e);
-        AppError::InternalServerError("Failed to fetch application".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to fetch application {}: {}",
+                id,
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("Failed to fetch application".to_string())
+        })?
+        .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
     let application = decrypt_application(application)?;
 
-    let documents = sqlx::query_as::<_, ApplicationDocument>(
-        r#"
+    let documents = DbSession::new(&mut *connection)
+        .query_as::<ApplicationDocument>(
+            "admission.services.application_service.get_application_with_documents_on_connection",
+            r#"
         SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
                f.display_filename AS original_filename,
                v.byte_size AS file_size,
@@ -534,11 +588,11 @@ pub async fn get_application_with_documents(
         WHERE d.application_id = $1 AND d.deleted_at IS NULL
         ORDER BY d.created_at ASC
         "#,
-    )
-    .bind(id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+        )
+        .bind(id)
+        .fetch_all()
+        .await
+        .unwrap_or_default();
 
     Ok((application, documents))
 }
@@ -552,22 +606,38 @@ pub async fn verify_application(
     id: Uuid,
     verifier_id: Uuid,
 ) -> Result<(), AppError> {
-    let result = sqlx::query(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.verify_application")
+            .await?;
+    verify_application_on_connection(&mut connection, id, verifier_id).await
+}
+
+pub async fn verify_application_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    verifier_id: Uuid,
+) -> Result<(), AppError> {
+    let result = DbSession::new(&mut *connection)
+        .query(
+            "admission.services.application_service.verify_application_on_connection",
+            r#"
         UPDATE admission_applications
         SET status = 'verified', verified_by = $1, verified_at = NOW(),
             rejection_reason = NULL, updated_at = NOW()
         WHERE id = $2 AND status = 'submitted'
         "#,
-    )
-    .bind(verifier_id)
-    .bind(id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to verify application: {}", e);
-        AppError::InternalServerError("ไม่สามารถยืนยันใบสมัครได้".to_string())
-    })?;
+        )
+        .bind(verifier_id)
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to verify application: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถยืนยันใบสมัครได้".to_string())
+        })?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::BadRequest(
@@ -578,39 +648,65 @@ pub async fn verify_application(
 }
 
 pub async fn reject_application(pool: &PgPool, id: Uuid, reason: &str) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.reject_application")
+            .await?;
+    reject_application_on_connection(&mut connection, id, reason).await
+}
+
+pub async fn reject_application_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    reason: &str,
+) -> Result<(), AppError> {
+    DbSession::new(&mut *connection)
+        .query(
+            "admission.services.application_service.reject_application_on_connection",
+            r#"
         UPDATE admission_applications
         SET status = 'rejected', rejection_reason = $1, updated_at = NOW()
         WHERE id = $2 AND status NOT IN ('enrolled', 'withdrawn')
         "#,
-    )
-    .bind(reason)
-    .bind(id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to reject application: {}", e);
-        AppError::InternalServerError("ไม่สามารถปฏิเสธใบสมัครได้".to_string())
-    })?;
+        )
+        .bind(reason)
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to reject application: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถปฏิเสธใบสมัครได้".to_string())
+        })?;
     Ok(())
 }
 
 pub async fn mark_absent(pool: &PgPool, id: Uuid, absent: bool) -> Result<(), AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.mark_absent").await?;
+    mark_absent_on_connection(&mut connection, id, absent).await
+}
+
+pub async fn mark_absent_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    absent: bool,
+) -> Result<(), AppError> {
     if absent {
-        sqlx::query(
+        DbSession::new(&mut *connection).query("admission.services.application_service.mark_absent_on_connection",
             "UPDATE admission_applications SET status = 'absent', updated_at = NOW() WHERE id = $1 AND status IN ('verified', 'scored')"
         )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถทำเครื่องหมายขาดสอบได้".to_string()))?;
     } else {
-        sqlx::query(
+        DbSession::new(&mut *connection).query("admission.services.application_service.mark_absent_on_connection",
             "UPDATE admission_applications SET status = 'verified', updated_at = NOW() WHERE id = $1 AND status = 'absent'"
         )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await
         .map_err(|_| AppError::InternalServerError("ไม่สามารถยกเลิกขาดสอบได้".to_string()))?;
     }
@@ -635,7 +731,10 @@ pub async fn update_application(
     let guardian_national_id_hash = pii::hash_optional(payload.guardian_national_id.as_deref())
         .map_err(|error| pii_error("hash guardian national_id", error))?;
 
-    let result = sqlx::query(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.update_application")
+            .await?;
+    let result = DbSession::new(&mut *connection).query("admission.services.application_service.update_application_on_connection",
         r#"
         UPDATE admission_applications
         SET title = $1, first_name = $2, last_name = $3, gender = $4, date_of_birth = $5,
@@ -678,10 +777,10 @@ pub async fn update_application(
     .bind(&payload.guardian_is).bind(payload.parent_status.clone().map(Json)).bind(&payload.parent_status_other)
     .bind(&father_national_id_hash).bind(&mother_national_id_hash).bind(&guardian_national_id_hash)
     .bind(id)
-    .execute(pool)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("Failed to update application {}: {}", id, e);
+        tracing::error!("Failed to update application {}: {}", id, school_database::error_class(&e));
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
 
@@ -694,20 +793,36 @@ pub async fn update_application(
 }
 
 pub async fn unverify_application(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.unverify_application")
+            .await?;
+    unverify_application_on_connection(&mut connection, id).await
+}
+
+pub async fn unverify_application_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(), AppError> {
+    let result = DbSession::new(&mut *connection)
+        .query(
+            "admission.services.application_service.unverify_application_on_connection",
+            r#"
         UPDATE admission_applications
         SET status = 'submitted', verified_by = NULL, verified_at = NULL, updated_at = NOW()
         WHERE id = $1 AND status = 'verified'
         "#,
-    )
-    .bind(id)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to unverify application {}: {}", id, e);
-        AppError::InternalServerError("ไม่สามารถยกเลิกการอนุมัติได้".to_string())
-    })?;
+        )
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to unverify application {}: {}",
+                id,
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถยกเลิกการอนุมัติได้".to_string())
+        })?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::BadRequest(
@@ -721,45 +836,72 @@ pub async fn fetch_application_files_then_delete(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    let mut transaction = pool.begin().await.map_err(|error| {
-        tracing::error!("Failed to start application deletion: {}", error);
-        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
-    })?;
-    let app_number: Option<String> = sqlx::query_scalar(
-        "SELECT application_number FROM admission_applications WHERE id = $1 FOR UPDATE",
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.fetch_application_files_then_delete",
     )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
     .await
     .map_err(|error| {
-        tracing::error!("Failed to fetch application {}: {}", id, error);
+        tracing::error!(
+            "Failed to start application deletion: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
     })?;
+    let app_number: Option<String> = DbSession::new(&mut *transaction)
+        .scalar(
+            "admission.services.application_service.fetch_application_files_then_delete",
+            "SELECT application_number FROM admission_applications WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to fetch application {}: {}",
+                id,
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+        })?;
 
     if app_number.is_none() {
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
-    let file_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT f.id
+    let file_ids: Vec<Uuid> = DbSession::new(&mut *transaction)
+        .scalar(
+            "admission.services.application_service.fetch_application_files_then_delete",
+            r#"SELECT f.id
            FROM admission_application_documents aad
            JOIN files f ON f.id = aad.file_id
            WHERE aad.application_id = $1 AND aad.deleted_at IS NULL"#,
-    )
-    .bind(id)
-    .fetch_all(&mut *transaction)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to list application document files: {}", error);
-        AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
-    })?;
-
-    let result = sqlx::query("DELETE FROM admission_applications WHERE id = $1")
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to list application document files: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
+        })?;
+
+    let result = DbSession::new(&mut *transaction)
+        .query(
+            "admission.services.application_service.fetch_application_files_then_delete",
+            "DELETE FROM admission_applications WHERE id = $1",
+        )
+        .bind(id)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to delete application {}: {}", id, e);
+            tracing::error!(
+                "Failed to delete application {}: {}",
+                id,
+                school_database::error_class(&e)
+            );
             AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
         })?;
 
@@ -768,7 +910,10 @@ pub async fn fetch_application_files_then_delete(
     }
 
     transaction.commit().await.map_err(|error| {
-        tracing::error!("Failed to commit application deletion: {}", error);
+        tracing::error!(
+            "Failed to commit application deletion: {}",
+            school_database::error_class(&error)
+        );
         AppError::InternalServerError("ไม่สามารถลบใบสมัครได้".to_string())
     })?;
     Ok(file_ids)
@@ -798,8 +943,22 @@ pub async fn list_enrollment_pending(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<EnrollmentPendingRow>, AppError> {
-    let mut list = sqlx::query_as::<_, EnrollmentPendingRow>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.list_enrollment_pending",
+    )
+    .await?;
+    list_enrollment_pending_on_connection(&mut connection, round_id).await
+}
+
+pub async fn list_enrollment_pending_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<EnrollmentPendingRow>, AppError> {
+    let mut list = DbSession::new(&mut *connection)
+        .query_as::<EnrollmentPendingRow>(
+            "admission.services.application_service.list_enrollment_pending_on_connection",
+            r#"
         SELECT
             aa.id, aa.application_number, aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
@@ -819,14 +978,17 @@ pub async fn list_enrollment_pending(
           AND aa.status IN ('accepted', 'enrolled')
         ORDER BY at2.name ASC, ara.rank_in_room ASC
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("list_enrollment_pending query failed: {}", error);
-        AppError::InternalServerError("ไม่สามารถโหลดรายชื่อมอบตัวได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "list_enrollment_pending query failed: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถโหลดรายชื่อมอบตัวได้".to_string())
+        })?;
 
     for row in &mut list {
         decrypt_national_id(&mut row.national_id)?;
@@ -860,12 +1022,20 @@ async fn prepare_enrollment_password(
     id: Uuid,
     requested: Option<&str>,
 ) -> Result<Option<(String, String)>, AppError> {
-    let (status, assigned): (String, Option<String>) =
-        sqlx::query_as("SELECT status,assigned_student_id FROM admission_applications WHERE id=$1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.application_service.prepare_enrollment_password",
+    )
+    .await?;
+    let (status, assigned): (String, Option<String>) = DbSession::new(&mut *database_stage_0)
+        .query_as(
+            "admission.services.application_service.prepare_enrollment_password",
+            "SELECT status,assigned_student_id FROM admission_applications WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
     if status != "accepted" {
         return Ok(None);
     }
@@ -873,6 +1043,7 @@ async fn prepare_enrollment_password(
         .filter(|code| !code.is_empty())
         .map(str::to_owned)
         .or_else(|| assigned.filter(|code| !code.is_empty()));
+    drop(database_stage_0);
     match code {
         Some(code) => {
             let hash = hash_enrollment_password(&code).await?;
@@ -891,57 +1062,65 @@ pub async fn complete_enrollment(
 ) -> Result<EnrollmentResult, AppError> {
     let prepared_password =
         prepare_enrollment_password(pool, id, payload.student_code.as_deref()).await?;
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.complete_enrollment",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
-    let (before_status, before_round, before_year): (String, Uuid, Uuid) = sqlx::query_as(
-        "SELECT application.status,application.admission_round_id,round.academic_year_id
+    let (before_status, before_round, before_year): (String, Uuid, Uuid) = DbSession::new(&mut *tx)
+        .query_as(
+            "admission.services.application_service.complete_enrollment",
+            "SELECT application.status,application.admission_round_id,round.academic_year_id
          FROM admission_applications application
          JOIN admission_rounds round ON round.id=application.admission_round_id
          WHERE application.id=$1",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".into()))?;
     let receipt_only = before_status == "enrolled";
     if !receipt_only {
         lifecycle_guard::require_year_write_shared(&mut tx, before_year).await?;
     }
 
-    let application = sqlx::query_as::<_, AdmissionApplication>(
-        "SELECT aa.*, at2.name AS track_name, NULL::text AS assigned_track_name,
+    let application = DbSession::new(&mut *tx)
+        .query_as::<AdmissionApplication>(
+            "admission.services.application_service.complete_enrollment",
+            "SELECT aa.*, at2.name AS track_name, NULL::text AS assigned_track_name,
                 ar.name AS round_name
          FROM admission_applications aa
          LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
          LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
          WHERE aa.id = $1
          FOR UPDATE OF aa",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-    .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+        .ok_or_else(|| AppError::NotFound("ไม่พบใบสมัคร".to_string()))?;
 
     if application.status == "enrolled" {
         let user_id = application
             .created_user_id
             .ok_or_else(|| AppError::InternalServerError("ข้อมูลการมอบตัวไม่สมบูรณ์".to_string()))?;
-        let replay = sqlx::query_as::<_, (String, String)>(
-            "SELECT users.username, student_info.student_id
+        let replay = DbSession::new(&mut *tx)
+            .query_as::<(String, String)>(
+                "admission.services.application_service.complete_enrollment",
+                "SELECT users.username, student_info.student_id
              FROM users
              JOIN student_info ON student_info.user_id = users.id
              WHERE users.id = $1",
-        )
-        .bind(user_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-        .ok_or_else(|| AppError::InternalServerError("ข้อมูลนักเรียนไม่สมบูรณ์".to_string()))?;
+            )
+            .bind(user_id)
+            .fetch_optional()
+            .await
+            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+            .ok_or_else(|| AppError::InternalServerError("ข้อมูลนักเรียนไม่สมบูรณ์".to_string()))?;
 
         tx.commit()
             .await
@@ -966,8 +1145,10 @@ pub async fn complete_enrollment(
         )));
     }
 
-    let placement_context = sqlx::query_as::<_, EnrollmentPlacementContext>(
-        r#"SELECT assignment.id AS assignment_id,
+    let placement_context = DbSession::new(&mut *tx)
+        .query_as::<EnrollmentPlacementContext>(
+            "admission.services.application_service.complete_enrollment",
+            r#"SELECT assignment.id AS assignment_id,
                   homeroom.id AS homeroom_id,
                   homeroom.academic_year_id,
                   homeroom.grade_level_id,
@@ -993,12 +1174,12 @@ pub async fn complete_enrollment(
            JOIN academic_years year ON year.id = homeroom.academic_year_id
            WHERE assignment.application_id = $1
            FOR UPDATE OF assignment"#,
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
-    .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
+        .ok_or_else(|| AppError::BadRequest("ไม่พบข้อมูลห้องเรียน กรุณาตรวจสอบการจัดห้อง".to_string()))?;
 
     if placement_context.academic_year_id != before_year {
         return Err(AppError::Conflict(
@@ -1028,15 +1209,19 @@ pub async fn complete_enrollment(
     } else {
         // Auto-numbering must serialize through commit to preserve MAX+1 and
         // rollback/no-gap behavior. Explicit and assigned codes bypass this lock.
-        sqlx::query("SELECT pg_advisory_xact_lock($1,$2)")
+        DbSession::new(&mut *tx)
+            .query(
+                "admission.services.application_service.complete_enrollment",
+                "SELECT pg_advisory_xact_lock($1,$2)",
+            )
             .bind(STUDENT_NUMBER_NAMESPACE)
             .bind(1_i32)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        let max_id: i64 = sqlx::query_scalar(
+        let max_id: i64 = DbSession::new(&mut *tx).scalar("admission.services.application_service.complete_enrollment",
             r"SELECT COALESCE(MAX(student_id::bigint), 0) FROM student_info WHERE student_id ~ '^[0-9]+$'",
         )
-        .fetch_one(&mut *tx)
+        .fetch_one()
         .await?;
         max_id
             .checked_add(1)
@@ -1059,8 +1244,10 @@ pub async fn complete_enrollment(
         .to_string()
     });
 
-    let new_user_id: Uuid = sqlx::query_scalar(
-        r#"
+    let new_user_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "admission.services.application_service.complete_enrollment",
+            r#"
         INSERT INTO users (
             username, national_id, national_id_hash, password_hash,
             first_name, last_name, user_type, status,
@@ -1069,46 +1256,56 @@ pub async fn complete_enrollment(
         VALUES ($1, $2, $3, $4, $5, $6, 'student', 'active', $7, $8, $9, $10)
         RETURNING id
         "#,
-    )
-    .bind(&username)
-    .bind(&application.national_id)
-    .bind(&application.national_id_hash)
-    .bind(&password_hash)
-    .bind(&application.first_name)
-    .bind(&application.last_name)
-    .bind(&application.phone)
-    .bind(application.date_of_birth)
-    .bind(&gender_normalized)
-    .bind(&application.address_line)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create user: {}", e);
-        if e.to_string().contains("unique") {
-            AppError::BadRequest("มี account นี้อยู่แล้วในระบบ".to_string())
-        } else {
-            AppError::InternalServerError("ไม่สามารถสร้าง account ได้".to_string())
-        }
-    })?;
+        )
+        .bind(&username)
+        .bind(&application.national_id)
+        .bind(&application.national_id_hash)
+        .bind(&password_hash)
+        .bind(&application.first_name)
+        .bind(&application.last_name)
+        .bind(&application.phone)
+        .bind(application.date_of_birth)
+        .bind(&gender_normalized)
+        .bind(&application.address_line)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to create user: {}",
+                school_database::error_class(&e)
+            );
+            if e.to_string().contains("unique") {
+                AppError::BadRequest("มี account นี้อยู่แล้วในระบบ".to_string())
+            } else {
+                AppError::InternalServerError("ไม่สามารถสร้าง account ได้".to_string())
+            }
+        })?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.application_service.complete_enrollment",
+            r#"
         INSERT INTO student_info (user_id, student_id, enrollment_date)
         VALUES ($1, $2, CURRENT_DATE)
         ON CONFLICT (user_id) DO NOTHING
         "#,
-    )
-    .bind(new_user_id)
-    .bind(&student_code)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create student_info: {}", e);
-        AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
-    })?;
+        )
+        .bind(new_user_id)
+        .bind(&student_code)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to create student_info: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างข้อมูลนักเรียนได้".to_string())
+        })?;
 
-    let student_academic_year_id: Uuid = sqlx::query_scalar(
-        r#"
+    let student_academic_year_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "admission.services.application_service.complete_enrollment",
+            r#"
         INSERT INTO student_academic_years (
             id, student_id, academic_year_id, grade_level_id, study_program_id,
             status, migration_provenance
@@ -1124,23 +1321,28 @@ pub async fn complete_enrollment(
             updated_at = NOW()
         RETURNING id
         "#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(new_user_id)
-    .bind(placement_context.academic_year_id)
-    .bind(placement_context.grade_level_id)
-    .bind(placement_context.study_program_id)
-    .bind(student_year_status)
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create student academic year: {}", e);
-        AppError::InternalServerError("ไม่สามารถสร้างข้อมูลปีการศึกษาของนักเรียนได้".to_string())
-    })?;
+        )
+        .bind(Uuid::now_v7())
+        .bind(new_user_id)
+        .bind(placement_context.academic_year_id)
+        .bind(placement_context.grade_level_id)
+        .bind(placement_context.study_program_id)
+        .bind(student_year_status)
+        .bind(id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to create student academic year: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถสร้างข้อมูลปีการศึกษาของนักเรียนได้".to_string())
+        })?;
 
-    let homeroom_placement_id: Uuid = sqlx::query_scalar(
-        r#"INSERT INTO homeroom_placements (
+    let homeroom_placement_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "admission.services.application_service.complete_enrollment",
+            r#"INSERT INTO homeroom_placements (
                id, student_academic_year_id, academic_year_id, homeroom_id,
                start_date, status, enrollment_type, metadata, migration_provenance
            )
@@ -1148,76 +1350,87 @@ pub async fn complete_enrollment(
                    jsonb_build_object('admissionApplicationId', $7::uuid),
                    jsonb_build_object('source', 'admission'))
            RETURNING id"#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(student_academic_year_id)
-    .bind(placement_context.academic_year_id)
-    .bind(placement_context.homeroom_id)
-    .bind(placement_context.placement_start_date)
-    .bind(placement_status)
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create admission homeroom placement: {}", e);
-        AppError::InternalServerError("ไม่สามารถจัดห้องประจำชั้นได้".to_string())
-    })?;
+        )
+        .bind(Uuid::now_v7())
+        .bind(student_academic_year_id)
+        .bind(placement_context.academic_year_id)
+        .bind(placement_context.homeroom_id)
+        .bind(placement_context.placement_start_date)
+        .bind(placement_status)
+        .bind(id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to create admission homeroom placement: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถจัดห้องประจำชั้นได้".to_string())
+        })?;
 
-    sqlx::query(
-        "UPDATE admission_applications
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.application_service.complete_enrollment",
+            "UPDATE admission_applications
          SET created_user_id = $1, updated_at = NOW()
          WHERE id = $2",
-    )
-    .bind(new_user_id)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมบัญชีนักเรียนได้".to_string()))?;
+        )
+        .bind(new_user_id)
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมบัญชีนักเรียนได้".to_string()))?;
 
-    sqlx::query(
-        "UPDATE admission_room_assignments
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.application_service.complete_enrollment",
+            "UPDATE admission_room_assignments
          SET student_id = $1,
              student_academic_year_id = $2,
              homeroom_placement_id = $3
          WHERE id = $4",
-    )
-    .bind(new_user_id)
-    .bind(student_academic_year_id)
-    .bind(homeroom_placement_id)
-    .bind(placement_context.assignment_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมผลการจัดห้องได้".to_string()))?;
+        )
+        .bind(new_user_id)
+        .bind(student_academic_year_id)
+        .bind(homeroom_placement_id)
+        .bind(placement_context.assignment_id)
+        .execute()
+        .await
+        .map_err(|_| AppError::InternalServerError("ไม่สามารถเชื่อมผลการจัดห้องได้".to_string()))?;
 
     if let Some(fd) = payload.form_data {
-        sqlx::query(
-            r#"
+        DbSession::new(&mut *tx)
+            .query(
+                "admission.services.application_service.complete_enrollment",
+                r#"
             INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
             VALUES ($1, $2, NOW())
             ON CONFLICT (application_id) DO UPDATE SET form_data = $2, pre_submitted_at = NOW()
             "#,
-        )
-        .bind(id)
-        .bind(fd)
-        .execute(&mut *tx)
-        .await?;
+            )
+            .bind(id)
+            .bind(fd)
+            .execute()
+            .await?;
     }
-    sqlx::query(
+    DbSession::new(&mut *tx).query("admission.services.application_service.complete_enrollment",
         "UPDATE admission_enrollment_forms SET completed_at = NOW(), completed_by = $1 WHERE application_id = $2",
     )
     .bind(enroller_id)
     .bind(id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
 
     // สร้าง parent accounts (ครอบคลุม father / mother / guardians)
     {
-        let form_data: Option<serde_json::Value> = sqlx::query_scalar(
-            "SELECT form_data FROM admission_enrollment_forms WHERE application_id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?;
+        let form_data: Option<serde_json::Value> = DbSession::new(&mut *tx)
+            .scalar(
+                "admission.services.application_service.complete_enrollment",
+                "SELECT form_data FROM admission_enrollment_forms WHERE application_id = $1",
+            )
+            .bind(id)
+            .fetch_optional()
+            .await?;
 
         if let Some(fd) = form_data {
             let mut parent_entries: Vec<(String, String, String, String, String)> = Vec::new();
@@ -1322,18 +1535,21 @@ pub async fn complete_enrollment(
             parent_entries.sort_by(|left, right| left.3.cmp(&right.3));
 
             for (title, first_name, last_name, phone, relationship) in parent_entries {
-                let existing_parent_id: Option<Uuid> =
-                    sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
-                        .bind(&phone)
-                        .fetch_optional(&mut *tx)
-                        .await?;
+                let existing_parent_id: Option<Uuid> = DbSession::new(&mut *tx)
+                    .scalar(
+                        "admission.services.application_service.complete_enrollment",
+                        "SELECT id FROM users WHERE username = $1",
+                    )
+                    .bind(&phone)
+                    .fetch_optional()
+                    .await?;
 
                 let parent_id = if let Some(pid) = existing_parent_id {
                     pid
                 } else {
                     let parent_password_hash = hash_enrollment_password(&phone).await?;
 
-                    let inserted_id: Option<Uuid> = sqlx::query_scalar(
+                    let inserted_id: Option<Uuid> = DbSession::new(&mut *tx).scalar("admission.services.application_service.complete_enrollment",
                         r#"
                         INSERT INTO users (
                             username, password_hash, title, first_name, last_name, phone, user_type, status
@@ -1348,42 +1564,48 @@ pub async fn complete_enrollment(
                     .bind(&first_name)
                     .bind(&last_name)
                     .bind(&phone)
-                    .fetch_optional(&mut *tx)
+                    .fetch_optional()
                     .await
                     .map_err(|e| {
-                        tracing::error!("Failed to create parent user: {}", e);
+                        tracing::error!("Failed to create parent user: {}", school_database::error_class(&e));
                         AppError::InternalServerError("ไม่สามารถสร้าง account ผู้ปกครองได้".to_string())
                     })?;
 
                     let pid = if let Some(pid) = inserted_id {
                         pid
                     } else {
-                        sqlx::query_scalar("SELECT id FROM users WHERE username=$1")
+                        DbSession::new(&mut *tx)
+                            .scalar(
+                                "admission.services.application_service.complete_enrollment",
+                                "SELECT id FROM users WHERE username=$1",
+                            )
                             .bind(&phone)
-                            .fetch_one(&mut *tx)
+                            .fetch_one()
                             .await?
                     };
 
-                    let parent_role_id: Option<Uuid> = sqlx::query_scalar(
-                        "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
-                    )
-                    .fetch_optional(&mut *tx)
-                    .await?;
+                    let parent_role_id: Option<Uuid> = DbSession::new(&mut *tx)
+                        .scalar(
+                            "admission.services.application_service.complete_enrollment",
+                            "SELECT id FROM roles WHERE code = 'PARENT' AND is_active = true",
+                        )
+                        .fetch_optional()
+                        .await?;
 
                     if let Some(rid) = parent_role_id.filter(|_| inserted_id.is_some()) {
-                        sqlx::query(
+                        DbSession::new(&mut *tx).query("admission.services.application_service.complete_enrollment",
                             "INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)",
                         )
                         .bind(pid)
                         .bind(rid)
-                        .execute(&mut *tx)
+                        .execute()
                         .await?;
                     }
 
                     pid
                 };
 
-                sqlx::query(
+                DbSession::new(&mut *tx).query("admission.services.application_service.complete_enrollment",
                     r#"
                     INSERT INTO student_parents (student_user_id, parent_user_id, relationship, is_primary)
                     VALUES ($1, $2, $3, false)
@@ -1394,36 +1616,41 @@ pub async fn complete_enrollment(
                 .bind(new_user_id)
                 .bind(parent_id)
                 .bind(&relationship)
-                .execute(&mut *tx)
+                .execute()
                 .await
                 .map_err(|e| {
-                    tracing::error!("Failed to link parent to student: {}", e);
+                    tracing::error!("Failed to link parent to student: {}", school_database::error_class(&e));
                     AppError::InternalServerError("ไม่สามารถเชื่อมโยงผู้ปกครองได้".to_string())
                 })?;
             }
         }
     }
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.application_service.complete_enrollment",
+            r#"
         UPDATE admission_applications
         SET status = 'enrolled', enrolled_by = $1, enrolled_at = NOW(),
             created_user_id = $2, student_academic_year_id = $3,
             homeroom_placement_id = $4, updated_at = NOW()
         WHERE id = $5
         "#,
-    )
-    .bind(enroller_id)
-    .bind(new_user_id)
-    .bind(student_academic_year_id)
-    .bind(homeroom_placement_id)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to update application status: {}", e);
-        AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
-    })?;
+        )
+        .bind(enroller_id)
+        .bind(new_user_id)
+        .bind(student_academic_year_id)
+        .bind(homeroom_placement_id)
+        .bind(id)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to update application status: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
+        })?;
 
     placement_rosters
         .reconcile(&mut tx, enroller_id, &[student_academic_year_id])
@@ -1444,18 +1671,35 @@ pub async fn change_application_track(
     application_id: Uuid,
     track_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.change_application_track",
+    )
+    .await?;
+    change_application_track_on_connection(&mut connection, application_id, track_id).await
+}
+
+pub async fn change_application_track_on_connection(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+    track_id: Option<Uuid>,
+) -> Result<(), AppError> {
+    DbSession::new(&mut *connection).query("admission.services.application_service.change_application_track_on_connection",
         "UPDATE admission_applications SET room_assignment_track_id = $1, updated_at = NOW() WHERE id = $2",
     )
     .bind(track_id)
     .bind(application_id)
-    .execute(pool)
+    .execute()
     .await
     .map_err(|_| AppError::InternalServerError("ย้ายสายไม่สำเร็จ".to_string()))?;
 
-    sqlx::query("DELETE FROM admission_room_assignments WHERE application_id = $1")
+    DbSession::new(&mut *connection)
+        .query(
+            "admission.services.application_service.change_application_track_on_connection",
+            "DELETE FROM admission_room_assignments WHERE application_id = $1",
+        )
         .bind(application_id)
-        .execute(pool)
+        .execute()
         .await
         .ok();
 
@@ -1467,12 +1711,25 @@ pub async fn update_admission_track(
     application_id: Uuid,
     track_id: Uuid,
 ) -> Result<(), AppError> {
-    let result = sqlx::query(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.update_admission_track",
+    )
+    .await?;
+    update_admission_track_on_connection(&mut connection, application_id, track_id).await
+}
+
+pub async fn update_admission_track_on_connection(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+    track_id: Uuid,
+) -> Result<(), AppError> {
+    let result = DbSession::new(&mut *connection).query("admission.services.application_service.update_admission_track_on_connection",
         "UPDATE admission_applications SET admission_track_id = $1, room_assignment_track_id = NULL, updated_at = NOW() WHERE id = $2",
     )
     .bind(track_id)
     .bind(application_id)
-    .execute(pool)
+    .execute()
     .await
     .map_err(|_| AppError::InternalServerError("แก้ไขสายการเรียนไม่สำเร็จ".to_string()))?;
 
@@ -1480,9 +1737,13 @@ pub async fn update_admission_track(
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
-    sqlx::query("DELETE FROM admission_room_assignments WHERE application_id = $1")
+    DbSession::new(&mut *connection)
+        .query(
+            "admission.services.application_service.update_admission_track_on_connection",
+            "DELETE FROM admission_room_assignments WHERE application_id = $1",
+        )
         .bind(application_id)
-        .execute(pool)
+        .execute()
         .await
         .ok();
 
@@ -1531,61 +1792,80 @@ pub async fn attach_document(
         ));
     }
 
-    let mut transaction = pool.begin().await.map_err(document_relationship_error)?;
-    let application_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)",
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.attach_document",
     )
-    .bind(application_id)
-    .fetch_one(&mut *transaction)
     .await
     .map_err(document_relationship_error)?;
+    let application_exists = DbSession::new(&mut *transaction)
+        .scalar::<bool>(
+            "admission.services.application_service.attach_document",
+            "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE id = $1)",
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(document_relationship_error)?;
     if !application_exists {
         return Err(AppError::NotFound("ไม่พบใบสมัคร".to_string()));
     }
 
-    let replaced_file_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let ready = DbSession::new(&mut *transaction).scalar::<bool>("admission.services.application_service.attach_document", "SELECT true FROM files WHERE id=$1 AND purpose_code='admission_application_document' AND lifecycle_status='ready' AND deleted_at IS NULL FOR UPDATE")
+        .bind(file.id).fetch_optional().await.map_err(document_relationship_error)?;
+    if ready != Some(true) {
+        return Err(AppError::ValidationError(
+            "ไฟล์เอกสารยังไม่พร้อมใช้งาน".to_string(),
+        ));
+    }
+
+    let replaced_file_id = DbSession::new(&mut *transaction)
+        .scalar::<Uuid>(
+            "admission.services.application_service.attach_document",
+            r#"
 SELECT file_id
 FROM admission_application_documents
 WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL
 LIMIT 1
 FOR UPDATE
 "#,
-    )
-    .bind(application_id)
-    .bind(doc_type)
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(document_relationship_error)?;
+        )
+        .bind(application_id)
+        .bind(doc_type)
+        .fetch_optional()
+        .await
+        .map_err(document_relationship_error)?;
 
-    sqlx::query(
+    DbSession::new(&mut *transaction).query("admission.services.application_service.attach_document",
         "UPDATE admission_application_documents SET deleted_at = NOW() WHERE application_id = $1 AND doc_type = $2 AND deleted_at IS NULL",
     )
     .bind(application_id)
     .bind(doc_type)
-    .execute(&mut *transaction)
+    .execute()
     .await
     .map_err(document_relationship_error)?;
 
     let doc_id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "admission.services.application_service.attach_document",
+            r#"
         INSERT INTO admission_application_documents (id, application_id, file_id, doc_type)
         VALUES ($1, $2, $3, $4)
         "#,
-    )
-    .bind(doc_id)
-    .bind(application_id)
-    .bind(file.id)
-    .bind(doc_type)
-    .execute(&mut *transaction)
-    .await
-    .map_err(document_relationship_error)?;
-    sqlx::query(
+        )
+        .bind(doc_id)
+        .bind(application_id)
+        .bind(file.id)
+        .bind(doc_type)
+        .execute()
+        .await
+        .map_err(document_relationship_error)?;
+    DbSession::new(&mut *transaction).query("admission.services.application_service.attach_document",
         "UPDATE files SET retention_class = 'standard', expires_at = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(file.id)
-    .execute(&mut *transaction)
+    .execute()
     .await
     .map_err(document_relationship_error)?;
 
@@ -1609,8 +1889,23 @@ pub async fn delete_document_record(
     application_id: Uuid,
     doc_type: &str,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar::<_, Uuid>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.delete_document_record",
+    )
+    .await?;
+    delete_document_record_on_connection(&mut connection, application_id, doc_type).await
+}
+
+pub async fn delete_document_record_on_connection(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+    doc_type: &str,
+) -> Result<Uuid, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar::<Uuid>(
+            "admission.services.application_service.delete_document_record_on_connection",
+            r#"
 UPDATE admission_application_documents
 SET deleted_at = NOW()
 WHERE id = (
@@ -1621,19 +1916,19 @@ WHERE id = (
 )
 RETURNING file_id
 "#,
-    )
-    .bind(application_id)
-    .bind(doc_type)
-    .fetch_optional(pool)
-    .await
-    .map_err(document_relationship_error)?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))
+        )
+        .bind(application_id)
+        .bind(doc_type)
+        .fetch_optional()
+        .await
+        .map_err(document_relationship_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเอกสารที่ต้องการลบ".to_string()))
 }
 
 fn document_relationship_error(error: sqlx::Error) -> AppError {
     tracing::error!(
         "Failed to update admission document relationship: {}",
-        error
+        school_database::error_class(&error)
     );
     AppError::InternalServerError("ไม่สามารถบันทึกความสัมพันธ์เอกสารได้".to_string())
 }
@@ -1643,8 +1938,20 @@ fn document_relationship_error(error: sqlx::Error) -> AppError {
 // ==========================================
 
 pub async fn sort_room_students(pool: &PgPool, round_id: Uuid) -> Result<i64, AppError> {
-    let updated = sqlx::query_scalar::<_, i64>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.sort_room_students")
+            .await?;
+    sort_room_students_on_connection(&mut connection, round_id).await
+}
+
+pub async fn sort_room_students_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<i64, AppError> {
+    let updated = DbSession::new(&mut *connection)
+        .scalar::<i64>(
+            "admission.services.application_service.sort_room_students_on_connection",
+            r#"
         WITH ranked AS (
             SELECT ara.application_id,
                    ROW_NUMBER() OVER (
@@ -1673,14 +1980,17 @@ pub async fn sort_room_students(pool: &PgPool, round_id: Uuid) -> Result<i64, Ap
         )
         SELECT COUNT(*) FROM updated_rows
         "#,
-    )
-    .bind(round_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("sort_room_students query failed: {}", error);
-        AppError::InternalServerError("ไม่สามารถจัดเรียงรายชื่อในห้องได้".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "sort_room_students query failed: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถจัดเรียงรายชื่อในห้องได้".to_string())
+        })?;
     Ok(updated)
 }
 
@@ -1689,18 +1999,25 @@ pub async fn auto_assign_student_ids(
     round_id: Uuid,
     start_number: i64,
 ) -> Result<i64, AppError> {
-    let existing: Vec<String> = sqlx::query_scalar(
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.application_service.auto_assign_student_ids",
+    )
+    .await?;
+    let existing: Vec<String> = DbSession::new(&mut *database_stage_0).scalar("admission.services.application_service.auto_assign_student_ids",
         "SELECT assigned_student_id FROM admission_applications WHERE admission_round_id = $1 AND assigned_student_id IS NOT NULL AND assigned_student_id != ''"
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .unwrap_or_default();
 
     let mut occupied = occupied_student_numbers(&existing);
 
-    let students = sqlx::query_as::<_, AppIdRow>(
-        r#"
+    let students = DbSession::new(&mut *database_stage_0)
+        .query_as::<AppIdRow>(
+            "admission.services.application_service.auto_assign_student_ids",
+            r#"
         SELECT ara.application_id
         FROM admission_room_assignments ara
         JOIN admission_applications aa ON aa.id = ara.application_id
@@ -1710,19 +2027,25 @@ pub async fn auto_assign_student_ids(
           AND aa.status IN ('accepted', 'enrolled', 'scored')
         ORDER BY cr.name, ara.rank_in_room
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("auto_assign_student_ids fetch error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?;
-
-    let mut tx = pool
-        .begin()
+        )
+        .bind(round_id)
+        .fetch_all()
         .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+        .map_err(|e| {
+            tracing::error!(
+                "auto_assign_student_ids fetch error: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("Database error".to_string())
+        })?;
+
+    drop(database_stage_0);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.auto_assign_student_ids",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
     let assignment_rows = student_id_assignment_rows(&students, &mut occupied, start_number);
     let assigned = bulk_update_assigned_student_ids(&mut tx, &assignment_rows).await? as i64;
@@ -1738,8 +2061,20 @@ pub async fn list_student_ids(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<StudentIdRow>, AppError> {
-    let mut rows = sqlx::query_as::<_, StudentIdRow>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.list_student_ids")
+            .await?;
+    list_student_ids_on_connection(&mut connection, round_id).await
+}
+
+pub async fn list_student_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<Vec<StudentIdRow>, AppError> {
+    let mut rows = DbSession::new(&mut *connection)
+        .query_as::<StudentIdRow>(
+            "admission.services.application_service.list_student_ids_on_connection",
+            r#"
         SELECT
             a.id AS application_id, a.application_number, a.assigned_student_id,
             CONCAT(COALESCE(a.title, ''), a.first_name, ' ', a.last_name) AS full_name,
@@ -1762,14 +2097,17 @@ pub async fn list_student_ids(
           AND a.status IN ('accepted', 'enrolled')
         ORDER BY cr.name, ra.rank_in_room
         "#,
-    )
-    .bind(round_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("list_student_ids error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "list_student_ids error: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("Database error".to_string())
+        })?;
 
     for row in &mut rows {
         decrypt_optional_national_id(&mut row.national_id)?;
@@ -1779,13 +2117,19 @@ pub async fn list_student_ids(
 }
 
 pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Result<(), AppError> {
-    let old_room_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT homeroom_id FROM admission_room_assignments WHERE application_id = $1",
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.application_service.move_application_room",
     )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    .await?;
+    let old_room_id: Option<Uuid> = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.application_service.move_application_room",
+            "SELECT homeroom_id FROM admission_room_assignments WHERE application_id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
 
     if old_room_id.is_none() {
         return Err(AppError::BadRequest(
@@ -1793,25 +2137,30 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         ));
     }
 
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
+    drop(database_stage_0);
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "admission.application_service.move_application_room",
+    )
+    .await
+    .map_err(|_| AppError::InternalServerError("Transaction failed".to_string()))?;
 
-    sqlx::query(
+    DbSession::new(&mut *tx).query("admission.services.application_service.move_application_room",
         "UPDATE admission_room_assignments SET homeroom_id = $1, assigned_at = NOW() WHERE application_id = $2",
     )
     .bind(room_id)
     .bind(id)
-    .execute(&mut *tx)
+    .execute()
     .await
     .map_err(|e| {
-        tracing::error!("move_application_room error: {}", e);
+        tracing::error!("move_application_room error: {}", school_database::error_class(&e));
         AppError::InternalServerError("Database error".to_string())
     })?;
 
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *tx)
+        .query(
+            "admission.services.application_service.move_application_room",
+            r#"
         UPDATE admission_room_assignments ara
         SET rank_in_room = ranked.new_rank
         FROM (
@@ -1823,15 +2172,14 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         WHERE ara.application_id = ranked.application_id
           AND ara.homeroom_id = $1
         "#,
-    )
-    .bind(room_id)
-    .execute(&mut *tx)
-    .await
-    .ok();
+        )
+        .bind(room_id)
+        .execute()
+        .await?;
 
     if let Some(old_id) = old_room_id {
         if old_id != room_id {
-            sqlx::query(
+            DbSession::new(&mut *tx).query("admission.services.application_service.move_application_room",
                 r#"
                 UPDATE admission_room_assignments ara
                 SET rank_in_room = ranked.new_rank
@@ -1846,8 +2194,8 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
                 "#,
             )
             .bind(old_id)
-            .execute(&mut *tx)
-            .await.ok();
+            .execute()
+            .await?;
         }
     }
 
@@ -1855,8 +2203,15 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;
 
-    sqlx::query(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.application_service.move_application_room_finish",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "admission.services.application_service.move_application_room",
+            r#"
         UPDATE admission_applications aa
         SET room_assignment_track_id = (
             SELECT CASE WHEN t.id = aa.admission_track_id THEN NULL ELSE t.id END
@@ -1869,12 +2224,12 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         updated_at = NOW()
         WHERE aa.id = $1
         "#,
-    )
-    .bind(id)
-    .bind(room_id)
-    .execute(pool)
-    .await
-    .ok();
+        )
+        .bind(id)
+        .bind(room_id)
+        .execute()
+        .await
+        .ok();
 
     Ok(())
 }
@@ -1884,11 +2239,26 @@ pub async fn batch_update_student_ids(
     round_id: Uuid,
     payload: Vec<UpdateStudentIdItem>,
 ) -> Result<i64, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.batch_update_student_ids",
+    )
+    .await?;
+    batch_update_student_ids_on_connection(&mut connection, round_id, payload).await
+}
+
+pub async fn batch_update_student_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+    payload: Vec<UpdateStudentIdItem>,
+) -> Result<i64, AppError> {
     let app_ids: Vec<Uuid> = payload.iter().map(|i| i.application_id).collect();
     let student_ids: Vec<Option<String>> = payload.iter().map(|i| i.student_id.clone()).collect();
 
-    sqlx::query_scalar::<_, i64>(
-        r#"
+    DbSession::new(&mut *connection)
+        .scalar::<i64>(
+            "admission.services.application_service.batch_update_student_ids_on_connection",
+            r#"
         WITH updates AS (
             UPDATE admission_applications aa
             SET assigned_student_id = u.student_id, updated_at = NOW()
@@ -1899,16 +2269,19 @@ pub async fn batch_update_student_ids(
         )
         SELECT COUNT(*) FROM updates
         "#,
-    )
-    .bind(&app_ids)
-    .bind(&student_ids)
-    .bind(round_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("batch_update_student_ids error: {}", e);
-        AppError::InternalServerError("Database error".to_string())
-    })
+        )
+        .bind(&app_ids)
+        .bind(&student_ids)
+        .bind(round_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "batch_update_student_ids error: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("Database error".to_string())
+        })
 }
 
 #[cfg(test)]
@@ -2009,6 +2382,17 @@ mod tests {
                 },
             ]
         );
+    }
+    #[tokio::test]
+    async fn admission_database_error_policy_move_checkout_failure_is_not_missing_assignment() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        assert!(matches!(
+            move_application_room(&pool, Uuid::new_v4(), Uuid::new_v4()).await,
+            Err(AppError::DbError(_))
+        ));
     }
 }
 

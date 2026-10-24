@@ -16,7 +16,7 @@ use super::{
     },
     repository::{
         derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative,
-        NewUpload, ObjectTarget, PlatformFile, RepositoryError,
+        NewUpload, PlatformFile, RepositoryError,
     },
     runtime_config::FilePlatformRuntimeConfig,
     storage_provider::{StorageError, StorageProvider, StoredObject},
@@ -189,6 +189,7 @@ impl FilePlatform {
             sanitized_display_filename(&command.display_filename)
         };
         let upload = NewUpload {
+            namespace: self.provider.namespace(original.storage_class())?,
             file_id,
             version_id,
             reconcile_operation_id: Uuid::now_v7(),
@@ -209,9 +210,12 @@ impl FilePlatform {
                 .collect(),
         };
 
-        repository.reserve_upload(&upload).await?;
+        let permits = repository.reserve_upload(&upload).await?;
 
-        if let Err(error) = self.provider.put(&original, upload_bytes.clone()).await {
+        if let Err(error) = self
+            .put_permitted(&permits.original, upload_bytes.clone())
+            .await
+        {
             let _ = repository
                 .mark_upload_failed(file_id, version_id, error.log_safe_code())
                 .await;
@@ -234,11 +238,13 @@ impl FilePlatform {
 
         let mut required_derivative_failed = false;
         for derivative in derivatives {
-            match self
-                .provider
-                .put(&derivative.metadata.object, derivative.body)
-                .await
-            {
+            let permit = permits
+                .derivatives
+                .iter()
+                .find(|(id, _)| *id == derivative.metadata.id)
+                .map(|(_, permit)| permit)
+                .ok_or(FilePlatformError::MetadataUnavailable)?;
+            match self.put_permitted(permit, derivative.body).await {
                 Ok(()) => {
                     if repository
                         .mark_derivative_stored(
@@ -309,6 +315,35 @@ impl FilePlatform {
             detected_mime_type: original.content_type,
             byte_size,
         })
+    }
+
+    pub fn storage_namespaces(
+        &self,
+    ) -> Result<Vec<super::storage_namespace::StorageNamespace>, FilePlatformError> {
+        Ok(vec![
+            self.provider
+                .namespace(super::platform_types::StorageClass::Public)?,
+            self.provider
+                .namespace(super::platform_types::StorageClass::Private)?,
+        ])
+    }
+
+    async fn put_permitted(
+        &self,
+        permit: &super::cleanup_watch::WritePermit,
+        body: Bytes,
+    ) -> Result<(), StorageError> {
+        super::cleanup_watch::verify_namespace(
+            self.provider.as_ref(),
+            &permit.object,
+            Some(&permit.namespace),
+        )?;
+        tracing::debug!(
+            operation = "file_provider_write",
+            status = "started",
+            "Durably permitted provider write"
+        );
+        self.provider.put(&permit.object, body).await
     }
 
     pub async fn public_delivery(
@@ -487,7 +522,16 @@ impl FilePlatform {
     ) -> Result<DeleteOutcome, FilePlatformError> {
         let mut pending_retry = false;
         for object in work {
-            if let Err(error) = self.provider.delete(&object.object).await {
+            let result = async {
+                super::cleanup_watch::verify_namespace(
+                    self.provider.as_ref(),
+                    &object.object,
+                    object.namespace.as_ref(),
+                )?;
+                self.provider.delete(&object.object).await
+            }
+            .await;
+            if let Err(error) = result {
                 pending_retry = true;
                 let _ = repository
                     .retry_operation(
@@ -519,38 +563,8 @@ impl FilePlatform {
         &self.provider
     }
 
-    pub(crate) const fn runtime_config(&self) -> FilePlatformRuntimeConfig {
+    pub const fn runtime_config(&self) -> FilePlatformRuntimeConfig {
         self.runtime_config
-    }
-
-    pub(crate) async fn commit_reconciled_derivative(
-        &self,
-        repository: &dyn FileRepository,
-        file_id: Uuid,
-        derivative_id: Uuid,
-        operation_id: Uuid,
-        target: &StoredObject,
-    ) -> Result<bool, RepositoryError> {
-        match repository
-            .mark_derivative_stored(file_id, derivative_id, operation_id)
-            .await
-        {
-            Ok(()) => Ok(true),
-            Err(RepositoryError::MaterializationRevoked) => {
-                if let Err(error) = self.provider.delete(target).await {
-                    repository
-                        .queue_delete_retry(
-                            file_id,
-                            ObjectTarget::Derivative(derivative_id),
-                            error.log_safe_code(),
-                            self.runtime_config.retry_delay(1),
-                        )
-                        .await?;
-                }
-                Ok(false)
-            }
-            Err(error) => Err(error),
-        }
     }
 }
 
@@ -691,6 +705,7 @@ mod tests {
         readiness_error: Mutex<Option<StorageError>>,
         put_results: Mutex<VecDeque<Result<(), StorageError>>>,
         delete_results: Mutex<VecDeque<Result<(), StorageError>>>,
+        block_delete: Mutex<bool>,
         puts: Mutex<Vec<StorageClass>>,
         bodies: Mutex<Vec<Bytes>>,
         deletes: Mutex<usize>,
@@ -700,6 +715,21 @@ mod tests {
 
     #[async_trait]
     impl StorageProvider for FakeProvider {
+        fn namespace(
+            &self,
+            storage_class: crate::platform_types::StorageClass,
+        ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
+        {
+            crate::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    crate::platform_types::StorageClass::Public => "public",
+                    crate::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), StorageError> {
             match *self.readiness_error.lock().unwrap() {
                 Some(error) => Err(error),
@@ -735,6 +765,10 @@ mod tests {
 
         async fn delete(&self, _object: &StoredObject) -> Result<(), StorageError> {
             *self.deletes.lock().unwrap() += 1;
+            let blocked = *self.block_delete.lock().unwrap();
+            if blocked {
+                std::future::pending::<()>().await;
+            }
             self.delete_results
                 .lock()
                 .unwrap()
@@ -766,7 +800,6 @@ mod tests {
         upload_identity: Mutex<Option<(Option<Uuid>, Option<Uuid>)>>,
         upload_inspection: Mutex<Option<FileInspectionMetadata>>,
         finalize_fails: Mutex<bool>,
-        derivative_store_error: Mutex<Option<RepositoryError>>,
         delivery: Mutex<Option<DeliveryRecord>>,
         delete_work: Mutex<Vec<DeleteWork>>,
         leased_operations: Mutex<Vec<LeasedOperation>>,
@@ -776,11 +809,14 @@ mod tests {
 
     #[async_trait]
     impl FileRepository for FakeRepository {
-        async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
+        async fn reserve_upload(
+            &self,
+            upload: &NewUpload,
+        ) -> Result<super::super::cleanup_watch::UploadWritePermits, RepositoryError> {
             *self.upload_identity.lock().unwrap() = Some((upload.owner_user_id, upload.created_by));
             *self.upload_inspection.lock().unwrap() = Some(upload.inspection_metadata.clone());
             self.events.lock().unwrap().push("processing");
-            Ok(())
+            Ok(super::super::cleanup_watch::UploadWritePermits::for_fixture(upload))
         }
 
         async fn mark_original_stored(
@@ -808,9 +844,6 @@ mod tests {
             _derivative_id: Uuid,
             _operation_id: Uuid,
         ) -> Result<(), RepositoryError> {
-            if let Some(error) = self.derivative_store_error.lock().unwrap().take() {
-                return Err(error);
-            }
             self.events.lock().unwrap().push("derivative_stored");
             Ok(())
         }
@@ -874,10 +907,86 @@ mod tests {
             &self,
             _worker: &str,
             lease_duration: Duration,
-            _limit: i64,
+            limit: i64,
         ) -> Result<Vec<LeasedOperation>, RepositoryError> {
+            assert_eq!(
+                limit, 1,
+                "workers claim each item immediately before provider work"
+            );
             self.lease_durations.lock().unwrap().push(lease_duration);
-            Ok(std::mem::take(&mut *self.leased_operations.lock().unwrap()))
+            let mut operations = self.leased_operations.lock().unwrap();
+            let count = usize::try_from(limit).unwrap().min(operations.len());
+            Ok(operations.drain(..count).collect())
+        }
+
+        async fn finish_leased_operation(
+            &self,
+            operation: &LeasedOperation,
+            result: super::super::repository::LeasedOperationResult,
+        ) -> Result<(), RepositoryError> {
+            use super::super::repository::LeasedOperationResult;
+            match (&operation.work, result) {
+                (
+                    OperationWork::ReconcileUpload {
+                        version_id,
+                        required_derivative_ids,
+                        ..
+                    },
+                    LeasedOperationResult::Succeeded,
+                ) => {
+                    self.finalize_ready(operation.file_id, *version_id, required_derivative_ids)
+                        .await
+                }
+                (
+                    OperationWork::ReconcileUpload { version_id, .. },
+                    LeasedOperationResult::OriginalMissing,
+                ) => {
+                    self.mark_upload_failed(operation.file_id, *version_id, "file_original_missing")
+                        .await
+                }
+                (OperationWork::GenerateDerivative(work), LeasedOperationResult::Succeeded) => {
+                    self.mark_derivative_stored(operation.file_id, work.derivative_id, operation.id)
+                        .await
+                }
+                (OperationWork::DeleteObject(work), LeasedOperationResult::Succeeded) => {
+                    self.mark_delete_succeeded(work).await
+                }
+                (
+                    OperationWork::GenerateDerivative(work),
+                    LeasedOperationResult::Failed {
+                        error_code,
+                        retry_delay,
+                        terminal,
+                    }
+                    | LeasedOperationResult::DerivativeWriteUncertain {
+                        error_code,
+                        retry_delay,
+                        terminal,
+                    },
+                ) => {
+                    self.mark_derivative_failed(
+                        operation.file_id,
+                        work.derivative_id,
+                        operation.id,
+                        error_code,
+                        retry_delay,
+                        terminal,
+                    )
+                    .await
+                }
+                (
+                    _,
+                    LeasedOperationResult::Failed {
+                        error_code,
+                        retry_delay,
+                        terminal,
+                    },
+                ) => {
+                    self.retry_operation(operation.id, error_code, retry_delay, terminal)
+                        .await
+                }
+                _ => Err(RepositoryError::InvalidPersistedState),
+            }
         }
 
         async fn retry_operation(
@@ -1129,10 +1238,15 @@ mod tests {
             .lock()
             .unwrap()
             .push(LeasedOperation {
+                claim: super::super::repository::OperationClaim {
+                    owner: "worker-one".into(),
+                    attempt_count: 1,
+                },
                 id: Uuid::new_v4(),
                 file_id,
                 attempt_count: 1,
                 work: OperationWork::DeleteObject(DeleteWork {
+                    namespace: Some(provider.namespace(object.storage_class()).unwrap()),
                     operation_id: Uuid::new_v4(),
                     file_id,
                     target: ObjectTarget::Version(Uuid::new_v4()),
@@ -1149,7 +1263,7 @@ mod tests {
         assert_eq!(summary.retried, 1);
         assert_eq!(
             *repository.lease_durations.lock().unwrap(),
-            vec![FilePlatformRuntimeConfig::default().reconciliation_lease]
+            vec![FilePlatformRuntimeConfig::default().reconciliation_lease; 2]
         );
         assert_eq!(
             *repository.retry_delays.lock().unwrap(),
@@ -1450,6 +1564,7 @@ mod tests {
             "image/png",
         );
         *repository.delete_work.lock().unwrap() = vec![DeleteWork {
+            namespace: Some(provider.namespace(object.storage_class()).unwrap()),
             operation_id: Uuid::new_v4(),
             file_id,
             target: ObjectTarget::Version(Uuid::new_v4()),
@@ -1483,46 +1598,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn late_derivative_write_is_compensated_and_cleanup_failure_is_durable() {
+    async fn leased_provider_work_has_a_deadline_before_the_claim_expires() {
+        use crate::{
+            reconciler::perform_leased_operation,
+            repository::{LeasedOperationResult, OperationClaim},
+        };
         let provider = Arc::new(FakeProvider::default());
-        provider
-            .delete_results
-            .lock()
-            .unwrap()
-            .push_back(Err(StorageError::OperationFailed));
-        let repository = FakeRepository::default();
-        *repository.derivative_store_error.lock().unwrap() =
-            Some(RepositoryError::MaterializationRevoked);
+        *provider.block_delete.lock().unwrap() = true;
         let file_id = Uuid::new_v4();
-        let derivative_id = Uuid::new_v4();
-        let target = StoredObject::new(
-            crate::purpose_registry::derivative_object_key(
-                Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
-                FilePurpose::ProfileImage,
+        let id = Uuid::new_v4();
+        let operation = LeasedOperation {
+            claim: OperationClaim {
+                owner: "deadline".into(),
+                attempt_count: 1,
+            },
+            id,
+            file_id,
+            attempt_count: 1,
+            work: OperationWork::DeleteObject(DeleteWork {
+                namespace: Some(
+                    super::super::storage_namespace::StorageNamespace::from_provider_locator(
+                        "fixture",
+                        "https://fixture.invalid",
+                        "private",
+                    )
+                    .unwrap(),
+                ),
+                operation_id: id,
                 file_id,
-                1,
-                DerivativeRecipe::Thumbnail256Webp,
-            )
-            .unwrap(),
-            "image/webp",
+                target: ObjectTarget::Version(Uuid::new_v4()),
+                object: StoredObject::new(
+                    original_object_key(
+                        Uuid::new_v4(),
+                        FilePurpose::ProfileImage,
+                        file_id,
+                        1,
+                        crate::platform_types::DetectedContent::Png,
+                    )
+                    .unwrap(),
+                    "image/png",
+                ),
+            }),
+        };
+        let config = FilePlatformRuntimeConfig {
+            reconciliation_lease: Duration::from_millis(80),
+            ..FilePlatformRuntimeConfig::default()
+        };
+        let platform = FilePlatform::with_config(
+            provider.clone(),
+            Arc::new(FakeScanner(ScanOutcome::Clean)),
+            config,
         );
-        let platform = platform(ScanOutcome::Clean, Arc::clone(&provider));
-
-        assert!(!platform
-            .commit_reconciled_derivative(
-                &repository,
-                file_id,
-                derivative_id,
-                Uuid::new_v4(),
-                &target,
-            )
-            .await
-            .unwrap());
-        assert_eq!(*provider.deletes.lock().unwrap(), 1);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            perform_leased_operation(&platform, &operation),
+        )
+        .await
+        .unwrap();
         assert_eq!(
-            *repository.events.lock().unwrap(),
-            vec!["delete_retry_queued"]
+            result,
+            LeasedOperationResult::Failed {
+                error_code: "file_operation_deadline",
+                retry_delay: config.retry_delay(1),
+                terminal: false,
+            }
         );
+        assert_eq!(*provider.deletes.lock().unwrap(), 1);
     }
     #[tokio::test]
     async fn private_original_consumer_checks_ready_visibility_and_purpose_byte_bound() {

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
@@ -14,7 +15,6 @@ use school_errors::AppError;
 
 use super::observations::{get_observation, set_observation_status};
 use super::shared::{parse_optional_observation_status, SupervisionObservationListAccess};
-use super::templates::get_template;
 
 #[derive(Debug, sqlx::FromRow)]
 struct TeacherStatusOverviewRow {
@@ -41,9 +41,18 @@ pub async fn get_observation_review(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<SupervisionObservationReview, AppError> {
-    let observation = get_observation(pool, id).await?;
-    let template = get_template(pool, observation.template_id).await?;
-    let response_rows = load_observation_review_responses(pool, id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.reviews_and_reports.get_observation_review",
+    )
+    .await?;
+    let observation =
+        super::observations::get_observation_with_connection(&mut connection, id).await?;
+    let template =
+        super::templates::get_template_on_connection(&mut connection, observation.template_id)
+            .await?;
+    let response_rows =
+        load_observation_review_responses_on_connection(&mut connection, id).await?;
     let average_rating = observation.average_rating;
     let evaluator_results = build_review_evaluator_results(&observation.evaluators, response_rows);
     let item_summaries = build_review_item_summaries(&evaluator_results);
@@ -128,7 +137,17 @@ pub async fn cycle_progress(
     pool: &PgPool,
     cycle_id: Uuid,
 ) -> Result<SupervisionCycleProgress, AppError> {
-    let row = sqlx::query(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "supervision.cycle_progress")
+            .await?;
+    cycle_progress_on_connection(&mut connection, cycle_id).await
+}
+
+pub async fn cycle_progress_on_connection(
+    connection: &mut sqlx::PgConnection,
+    cycle_id: Uuid,
+) -> Result<SupervisionCycleProgress, AppError> {
+    let row = DbSession::new(&mut *connection).query("supervision.services.reviews_and_reports.cycle_progress_on_connection",
         r#"
         SELECT
             COUNT(*) AS total_observations,
@@ -144,15 +163,17 @@ pub async fn cycle_progress(
         "#,
     )
     .bind(cycle_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle progress: {}", error);
+        tracing::error!("Failed to load supervision cycle progress: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถดึงรายงานรอบนิเทศได้".to_string())
     })?;
 
-    let average_rating = sqlx::query_scalar::<_, Option<f64>>(
-        r#"
+    let average_rating = DbSession::new(&mut *connection)
+        .scalar::<Option<f64>>(
+            "supervision.services.reviews_and_reports.cycle_progress_on_connection",
+            r#"
         SELECT AVG(evaluator_average)::double precision
         FROM (
             SELECT AVG(r.rating_score)::double precision AS evaluator_average
@@ -167,14 +188,17 @@ pub async fn cycle_progress(
             GROUP BY e.id
         ) evaluator_averages
         "#,
-    )
-    .bind(cycle_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle rating average: {}", error);
-        AppError::InternalServerError("ไม่สามารถดึงคะแนนเฉลี่ยรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision cycle rating average: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงคะแนนเฉลี่ยรอบนิเทศได้".to_string())
+        })?;
 
     Ok(SupervisionCycleProgress {
         cycle_id,
@@ -295,14 +319,22 @@ pub async fn cycle_teacher_status(
 
     builder.push(" ORDER BY u.first_name, u.last_name, u.username");
 
-    let rows = builder
-        .build_query_as::<TeacherStatusOverviewRow>()
-        .fetch_all(pool)
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.reviews_and_reports.cycle_teacher_status",
+    )
+    .await?;
+    let rows = DbSession::new(&mut *database_stage_0)
+        .prepared_query_as(
+            "supervision.services.reviews_and_reports.cycle_teacher_status",
+            builder.build_query_as::<TeacherStatusOverviewRow>(),
+        )
+        .fetch_all()
         .await
         .map_err(|error| {
             tracing::error!(
                 "Failed to load supervision teacher status overview: {}",
-                error
+                school_database::error_class(&error)
             );
             AppError::InternalServerError("ไม่สามารถโหลดภาพรวมสถานะครูได้".to_string())
         })?;
@@ -312,11 +344,11 @@ pub async fn cycle_teacher_status(
         .collect::<Result<Vec<_>, _>>()
 }
 
-async fn load_observation_review_responses(
-    pool: &PgPool,
+async fn load_observation_review_responses_on_connection(
+    connection: &mut sqlx::PgConnection,
     observation_id: Uuid,
 ) -> Result<Vec<SupervisionReviewResponseRow>, AppError> {
-    sqlx::query_as::<_, SupervisionReviewResponseRow>(
+    DbSession::new(&mut *connection).query_as::<SupervisionReviewResponseRow>("supervision.services.reviews_and_reports.load_observation_review_responses_on_connection",
         r#"
         SELECT evaluator_id,
                template_item_id,
@@ -328,10 +360,10 @@ async fn load_observation_review_responses(
         "#,
     )
     .bind(observation_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await
     .map_err(|error| {
-        tracing::error!("Failed to load supervision review responses: {}", error);
+        tracing::error!("Failed to load supervision review responses: {}", school_database::error_class(&error));
         AppError::InternalServerError("ไม่สามารถดึงคำตอบแบบประเมินนิเทศได้".to_string())
     })
 }

@@ -1,4 +1,5 @@
 use super::super::models::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,22 +25,25 @@ pub async fn read_activation_state(
         return Err(AppError::ValidationError("ระบุปีและภาคเรียนให้ถูกต้อง".into()));
     }
     let context = super::lifecycle_context::read_term_context(tx, year, term).await?;
-    let years: Vec<YearLifecycleContext> = sqlx::query_as(
+    let years: Vec<YearLifecycleContext> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state",
         "SELECT id AS academic_year_id,year,name,start_date,end_date,status,row_version FROM academic_years ORDER BY start_date,id LIMIT 501"
-    ).fetch_all(&mut **tx).await?;
-    let terms: Vec<TermReference> = sqlx::query_as(
+    ).fetch_all().await?;
+    let terms: Vec<TermReference> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state",
         "SELECT id,academic_year_id,sequence_no AS sequence,status,row_version FROM academic_terms WHERE academic_year_id=$1 OR status IN ('active','closing') ORDER BY academic_year_id,sequence_no,id LIMIT 501"
-    ).bind(year).fetch_all(&mut **tx).await?;
+    ).bind(year).fetch_all().await?;
     if years.len() > 500 || terms.len() > 500 {
         return Err(AppError::ValidationError(
             "จำนวนปีหรือภาคเรียนเกินขอบเขตที่ตรวจพร้อมกันได้".into(),
         ));
     }
-    let school_days: String =
-        sqlx::query_scalar("SELECT school_days FROM academic_years WHERE id=$1")
-            .bind(year)
-            .fetch_one(&mut **tx)
-            .await?;
+    let school_days: String = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.activation_context.read_activation_state",
+            "SELECT school_days FROM academic_years WHERE id=$1",
+        )
+        .bind(year)
+        .fetch_one()
+        .await?;
     let opens_year = matches!(
         context.year_status,
         AcademicYearStatus::Planning | AcademicYearStatus::Ready
@@ -160,10 +164,10 @@ pub async fn read_activation_state(
         Code::TermConfiguration,
         usize::from(dates_invalid),
     );
-    let bell: Option<BellSchedule> = sqlx::query_as("SELECT id,academic_year_id,code,name,is_default,status,owning_organization_unit_id,row_version,created_at,updated_at FROM bell_schedules WHERE id=$1 AND academic_year_id=$2")
-        .bind(context.bell_schedule_id).bind(year).fetch_optional(&mut **tx).await?;
-    let periods: Vec<BellSchedulePeriod> = sqlx::query_as("SELECT id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$1 ORDER BY order_index,id LIMIT 1001")
-        .bind(context.bell_schedule_id).fetch_all(&mut **tx).await?;
+    let bell: Option<BellSchedule> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,academic_year_id,code,name,is_default,status,owning_organization_unit_id,row_version,created_at,updated_at FROM bell_schedules WHERE id=$1 AND academic_year_id=$2")
+        .bind(context.bell_schedule_id).bind(year).fetch_optional().await?;
+    let periods: Vec<BellSchedulePeriod> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$1 ORDER BY order_index,id LIMIT 1001")
+        .bind(context.bell_schedule_id).fetch_all().await?;
     if periods.len() > 1000 {
         return Err(AppError::ValidationError(
             "ตารางเวลามีคาบเกิน 1,000 รายการ".into(),
@@ -293,7 +297,7 @@ async fn read_enrollment(
     tx: &mut Transaction<'_, Postgres>,
     context: &TermLifecycleContext,
 ) -> Result<(Vec<ActivationStudent>, Vec<ActivationPlacement>), AppError> {
-    let students: Vec<ActivationStudent> = sqlx::query_as(
+    let students: Vec<ActivationStudent> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_enrollment",
         "SELECT student.id,student.student_id,student.grade_level_id,student.study_program_id,student.status,student.row_version,
          COALESCE(person.user_type='student' AND person.status='active' AND grade.is_active IS TRUE
           AND program.status='published' AND curriculum.status='published' AND (curriculum.is_active IS TRUE AND version.is_active)
@@ -305,8 +309,8 @@ async fn read_enrollment(
          LEFT JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id
          LEFT JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
          WHERE student.academic_year_id=$1 ORDER BY student.id LIMIT 10001"
-    ).bind(context.academic_year_id).fetch_all(&mut **tx).await?;
-    let placements: Vec<ActivationPlacement> = sqlx::query_as(
+    ).bind(context.academic_year_id).fetch_all().await?;
+    let placements: Vec<ActivationPlacement> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_enrollment",
         "SELECT p.id,p.student_academic_year_id,p.homeroom_id,p.start_date,p.end_date,p.status,p.row_version,
          room.row_version AS room_row_version,room.capacity,
          COALESCE(room.academic_year_id=p.academic_year_id AND room.grade_level_id=student.grade_level_id
@@ -317,7 +321,7 @@ async fn read_enrollment(
          FROM homeroom_placements p JOIN student_academic_years student ON student.id=p.student_academic_year_id AND student.academic_year_id=p.academic_year_id
          LEFT JOIN homerooms room ON room.id=p.homeroom_id
          WHERE p.academic_year_id=$1 AND p.status IN ('planned','current') ORDER BY p.id LIMIT 20001"
-    ).bind(context.academic_year_id).bind(context.term_start_date).bind(context.year_start_date).bind(context.year_end_date).fetch_all(&mut **tx).await?;
+    ).bind(context.academic_year_id).bind(context.term_start_date).bind(context.year_start_date).bind(context.year_end_date).fetch_all().await?;
     if students.len() > 10_000 || placements.len() > 20_000 {
         return Err(AppError::ValidationError(
             "ข้อมูลเปิดปีเกิน 10,000 คนหรือ 20,000 รายการจัดห้อง กรุณาติดต่อผู้ดูแลระบบ".into(),

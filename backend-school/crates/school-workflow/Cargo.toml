@@ -8,6 +8,8 @@ default = []
 api-docs = ["dep:utoipa", "school-file-platform/api-docs", "school-http/api-docs"]
 
 [dependencies]
+school-tenancy = { workspace = true }
+school-database = { workspace = true }
 rustybuzz = { workspace = true }
 url = { workspace = true }
 utoipa = { workspace = true, optional = true }

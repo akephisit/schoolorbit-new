@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::de::DeserializeOwned;
 use sqlx::{types::Json, Postgres, Transaction};
@@ -12,9 +13,9 @@ pub async fn replay_year_command<T: DeserializeOwned + Send + Unpin + 'static>(
     action: &str,
     checksum: &str,
 ) -> Result<Option<T>, AppError> {
-    let receipt: Option<(Uuid, String, String)> = sqlx::query_as(
+    let receipt: Option<(Uuid, String, String)> = DbSession::new(&mut **tx).query_as("academic_core.services.year_commands.replay_year_command",
         "SELECT actor_user_id,action,request_checksum FROM academic_year_transition_receipts WHERE request_id=$1",
-    ).bind(request).fetch_optional(&mut **tx).await?;
+    ).bind(request).fetch_optional().await?;
     let Some((owner, original_action, original_checksum)) = receipt else {
         return Ok(None);
     };
@@ -26,12 +27,14 @@ pub async fn replay_year_command<T: DeserializeOwned + Send + Unpin + 'static>(
         action,
         checksum,
     )?;
-    let outcome: Json<T> = sqlx::query_scalar(
-        "SELECT outcome FROM academic_year_transition_receipts WHERE request_id=$1",
-    )
-    .bind(request)
-    .fetch_one(&mut **tx)
-    .await?;
+    let outcome: Json<T> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.year_commands.replay_year_command",
+            "SELECT outcome FROM academic_year_transition_receipts WHERE request_id=$1",
+        )
+        .bind(request)
+        .fetch_one()
+        .await?;
     Ok(Some(outcome.0))
 }
 

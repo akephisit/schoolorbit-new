@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -66,26 +67,30 @@ pub async fn read_in_transaction(
             "ระบุปีต้นทางและปีปลายทางให้ถูกต้อง".into(),
         ));
     }
-    let source_students: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM student_academic_years
+    let source_students: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_opening.read_in_transaction",
+            "SELECT id FROM student_academic_years
          WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 10001",
-    )
-    .bind(source_year_id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(source_year_id)
+        .fetch_all()
+        .await?;
     if source_students.len() > 10_000 {
         return Err(AppError::ValidationError(
             "นักเรียนต้นทางเกิน 10,000 คน กรุณาติดต่อผู้ดูแลระบบ".into(),
         ));
     }
-    let runs: Vec<RunReference> = sqlx::query_as(
-        "SELECT id,status,row_version FROM academic_promotion_runs
+    let runs: Vec<RunReference> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_opening.read_in_transaction",
+            "SELECT id,status,row_version FROM academic_promotion_runs
          WHERE source_year_id=$1 AND target_year_id=$2 ORDER BY id LIMIT 501",
-    )
-    .bind(source_year_id)
-    .bind(target_year_id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(source_year_id)
+        .bind(target_year_id)
+        .fetch_all()
+        .await?;
     if runs.len() > 500 {
         return Err(AppError::ValidationError(
             "รอบเลื่อนชั้นระหว่างปีที่เลือกเกิน 500 รอบ กรุณาติดต่อผู้ดูแลระบบ".into(),
@@ -95,7 +100,7 @@ pub async fn read_in_transaction(
     let receipts: Vec<ReceiptReference> = if run_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_opening.read_in_transaction",
             "WITH effective AS (
                  SELECT receipt.run_id,receipt.item_id,
                         item.student_academic_year_id AS source_student_year_id,
@@ -136,7 +141,7 @@ pub async fn read_in_transaction(
              ORDER BY effective.run_id,effective.item_id LIMIT 10001",
         )
         .bind(&run_ids)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
     };
     if receipts.len() > 10_000 {
@@ -181,15 +186,17 @@ pub async fn read_in_transaction(
     let resolved: BTreeSet<(Uuid, Uuid)> = if run_ids.is_empty() {
         BTreeSet::new()
     } else {
-        sqlx::query_as(
-            "SELECT item_id,correction_id FROM academic_promotion_impact_resolutions
+        DbSession::new(&mut **tx)
+            .query_as(
+                "academic_lifecycle.services.promotion_opening.read_in_transaction",
+                "SELECT item_id,correction_id FROM academic_promotion_impact_resolutions
              WHERE run_id=ANY($1) ORDER BY item_id,correction_id",
-        )
-        .bind(&run_ids)
-        .fetch_all(&mut **tx)
-        .await?
-        .into_iter()
-        .collect()
+            )
+            .bind(&run_ids)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect()
     };
     let mut unresolved_impacts = 0_usize;
     for evidence in &correction_evidence {

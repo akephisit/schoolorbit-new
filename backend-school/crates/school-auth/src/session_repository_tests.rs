@@ -28,6 +28,79 @@ use super::{
     throttle_repository::{check_login_throttles, record_login_failure},
 };
 
+#[tokio::test]
+async fn closed_login_throttle_store_preserves_service_unavailable() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+        .unwrap();
+    pool.close().await;
+    let key = SessionHmacKey::for_tests([72; 32]);
+    let tenant = Uuid::new_v4();
+    let error = check_login_throttles(
+        &pool,
+        identifier_bucket(&key, tenant, "synthetic-user"),
+        source_bucket(&key, tenant, std::net::Ipv4Addr::LOCALHOST.into()),
+        Utc::now(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.status_code(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert!(
+        matches!(error, school_errors::AppError::ServiceUnavailable(ref reason) if reason == "session_store")
+    );
+}
+
+#[tokio::test]
+async fn closed_session_store_entrypoints_preserve_service_unavailable() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+        .unwrap();
+    pool.close().await;
+    let user = Uuid::new_v4();
+    let session = Uuid::new_v4();
+    let now = Utc::now();
+    let results = [
+        super::session_repository::load_session_validity(&pool, session, user, now)
+            .await
+            .map(|_| ()),
+        super::session_repository::load_password_change_snapshot(&pool, user, session, now)
+            .await
+            .map(|_| ()),
+        list_user_sessions(&pool, user, now).await.map(|_| ()),
+        revoke_sessions(
+            &pool,
+            user,
+            SessionRevocationTarget::Session(session),
+            SessionRevocationReason::UserSelected,
+            now,
+        )
+        .await
+        .map(|_| ()),
+        authenticate_and_maintain(
+            &pool,
+            RawSessionToken::from_bytes([71; 32]).token_hash(),
+            now,
+            SessionMaintenanceMode::RotateAndTouch,
+            || panic!("an unavailable store must not generate a replacement credential"),
+        )
+        .await
+        .map(|_| ()),
+    ];
+    for result in results {
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.status_code(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(
+            matches!(error, school_errors::AppError::ServiceUnavailable(ref reason) if reason == "session_store")
+        );
+    }
+}
+
 // Fixture setup still uses the production guarded insertion contract.
 async fn create_login_session(
     pool: &PgPool,

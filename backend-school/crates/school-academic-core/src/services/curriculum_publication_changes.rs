@@ -1,6 +1,6 @@
 use crate::models::CurriculumPublicationChange;
+use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::PgPool;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -15,11 +15,11 @@ struct Entry {
 }
 
 pub(super) async fn compare(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     before: Option<Uuid>,
     after: Uuid,
 ) -> Result<Vec<CurriculumPublicationChange>, AppError> {
-    let rows: Vec<Entry> = sqlx::query_as(r#"
+    let rows: Vec<Entry> = DbSession::new(connection).query_as("academic_core.services.curriculum_publication_changes.compare", r#"
 SELECT 'level:'||r.id::text AS key,'level'::text AS resource_kind,r.name_th AS name,concat(r.name_th,' • ชั้น ',(SELECT string_agg(g.level_type||' '||g.year::text,', ' ORDER BY g.year,g.id) FROM grade_levels g WHERE r.grade_level_ids ? g.id::text),' • ',COALESCE(r.description,''),' • เกณฑ์หน่วยกิตพื้นฐาน: ',COALESCE((SELECT string_agg(concat(CASE rule->>'scope' WHEN 'annual' THEN 'รายชั้นต่อปี' ELSE 'ตลอดระดับ' END,' ',CASE rule->>'comparison' WHEN 'equal' THEN 'เท่ากับ' ELSE 'อย่างน้อย' END,' ',rule->>'targetCredits',' หน่วยกิต ',CASE WHEN (rule->>'enabled')::boolean THEN 'เปิด' ELSE 'ปิด' END,' • ชั้น ',(SELECT string_agg(g.level_type||' '||g.year::text,', ' ORDER BY g.year,g.id) FROM grade_levels g WHERE rule->'gradeLevelIds' ? g.id::text)),'; ' ORDER BY rule->>'scope') FROM jsonb_array_elements(r.credit_criteria) rule),'ไม่กำหนด')) AS description,(to_jsonb(r)-ARRAY['id','publication_id','row_version','created_at','updated_at','migration_provenance','credit_criteria_row_version'])::text AS fingerprint,r.publication_id FROM curriculum_publication_levels r WHERE r.publication_id=ANY($1)
 UNION ALL
 SELECT 'program:'||r.id::text AS key,'program'::text AS resource_kind,r.name_th AS name,concat(r.name_th,' • แผนการเรียน • ลำดับ ',row_number() OVER(PARTITION BY r.publication_id,r.curriculum_level_id ORDER BY r.display_order,r.code,r.id),' • ',r.status) AS description,((to_jsonb(r)-ARRAY['id','publication_id','row_version','created_at','updated_at','migration_provenance','display_order'])||jsonb_build_object('display_order',row_number() OVER(PARTITION BY r.publication_id,r.curriculum_level_id ORDER BY r.display_order,r.code,r.id)))::text AS fingerprint,r.publication_id FROM curriculum_publication_programs r WHERE r.publication_id=ANY($1)
@@ -43,7 +43,7 @@ SELECT concat('activity:',r.study_program_id,':',r.grade_level_id,':',r.term_slo
  JOIN curriculum_publication_programs p ON p.publication_id=r.publication_id AND p.id=r.study_program_id
  JOIN curriculum_publication_slots s ON s.publication_id=r.publication_id AND s.id=r.term_slot_id
  JOIN grade_levels g ON g.id=r.grade_level_id WHERE r.publication_id=ANY($1)
- LIMIT 100001"#).bind(before.into_iter().chain(std::iter::once(after)).collect::<Vec<_>>()).fetch_all(pool).await?;
+ LIMIT 100001"#).bind(before.into_iter().chain(std::iter::once(after)).collect::<Vec<_>>()).fetch_all().await?;
     if rows.len() > 100_000 {
         return Err(AppError::ValidationError(
             "ข้อมูลประวัติหลักสูตรเกินขอบเขตที่รองรับ".into(),

@@ -137,12 +137,8 @@ async fn run() -> Result<(), StartupError> {
 
     let pool_manager_config = PoolManagerConfig::from_env()
         .map_err(|error| StartupError::tenancy_configuration("tenant_connection_budget", &error))?;
-    let background_turns = Arc::new(
-        school_tenancy::background::TenantTurnExecutor::from_env(&pool_manager_config).map_err(
-            |error| StartupError::tenancy_configuration("tenant_background_admission", &error),
-        )?,
-    );
     let pool_manager = Arc::new(PoolManager::with_config(pool_manager_config));
+    let background_turns = pool_manager.background_turns();
     let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();
 
@@ -239,58 +235,21 @@ async fn run() -> Result<(), StartupError> {
     let pool_manager_for_job = Arc::clone(&state.pool_manager);
     let file_platform_for_job = Arc::clone(&state.file_platform);
 
+    let cleaner_running = Arc::new(tokio::sync::Mutex::new(()));
     let cleaner_job = scheduling::new_school_cron_job(
         scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
         move |_uuid, _l| {
             let admin_client = Arc::clone(&admin_client_for_job);
             let pool_manager = pool_manager_for_job.clone();
             let file_platform = Arc::clone(&file_platform_for_job);
+            let running = cleaner_running.clone();
 
             Box::pin(async move {
-                tracing::info!("Starting scheduled File Platform reconciliation");
-                let schools = match admin_client.list_active_schools().await {
-                    Ok(schools) => schools,
-                    Err(error) => {
-                        tracing::error!("Failed to fetch schools list for cleanup: {}", error);
-                        return;
-                    }
+                let Ok(_running) = running.try_lock() else {
+                    return;
                 };
-
-                tracing::info!("Found {} active schools to reconcile.", schools.len());
-                for school in schools {
-                    let db_url = match school.db_connection_string {
-                        Some(ref url) if !url.is_empty() => url.clone(),
-                        _ => {
-                            tracing::warn!(
-                                "Skipping school '{}': no database URL",
-                                school.subdomain
-                            );
-                            continue;
-                        }
-                    };
-
-                    tracing::info!("Reconciling File Platform operations for tenant");
-                    match pool_manager
-                        .get_pool_without_migrations(&db_url, &school.subdomain)
-                        .await
-                    {
-                        Ok(pool) => {
-                            let cleaner = services::cleaner::FileCleaner::new(
-                                pool.as_ref().clone(),
-                                Arc::clone(&file_platform),
-                            );
-                            cleaner.reconcile_file_operations().await;
-                        }
-                        Err(error) => {
-                            tracing::error!(
-                                "Failed to get database connection for {}: {}",
-                                school.subdomain,
-                                error
-                            );
-                        }
-                    }
-                }
-                tracing::info!("Scheduled File Platform reconciliation completed");
+                services::cleaner::reconcile_all_tenants(admin_client, pool_manager, file_platform)
+                    .await;
             })
         },
     )

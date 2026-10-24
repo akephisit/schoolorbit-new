@@ -17,7 +17,11 @@ pub async fn update_profile(
     user_id: Uuid,
     payload: UpdateProfileRequest,
 ) -> Result<User, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        &pool,
+        "auth-http.profile_orchestrator.update_profile",
+    )
+    .await?;
     if let Some(Some(file_id)) = payload.profile_image_file_id {
         promote_ready_owned_image(&mut transaction, file_id, user_id)
             .await

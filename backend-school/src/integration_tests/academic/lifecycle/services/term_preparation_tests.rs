@@ -6,7 +6,6 @@ use uuid::Uuid;
 use super::term_preparation::{apply, normalize_input, preview, validate_checksum};
 use crate::integration_tests::academic::{
     core,
-    cutover_test_support::apply_migrations_through,
     delivery::services::offerings,
     lifecycle::models::{
         ApplyTermPreparationInput, PreviewTermPreparationInput, TermPreparationEntityMapping,
@@ -124,7 +123,6 @@ fn preparation_normalization_is_deterministic() {
 
 async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext, Uuid, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 89).await.unwrap();
     let actor = ActorContext {
         user_id: sqlx::query_scalar(
             "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",
@@ -775,4 +773,154 @@ async fn publication_preview(
         Some(revision.reference_date),
     )
     .await
+}
+
+#[tokio::test]
+async fn delivery_preparation_preview_preserves_managed_one_connection_read_only_snapshot() {
+    use school_database::DbSession;
+    use school_tenancy::{PoolManager, PoolManagerConfig, TenantPool};
+    use std::time::Duration;
+
+    let (fixture, _, _, target_term_id) =
+        delivery_preparation_fixture("term_preparation_managed_read_only").await;
+    let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+        .fetch_one(&fixture)
+        .await
+        .unwrap();
+    let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+    url.query_pairs_mut()
+        .append_pair("options", &format!("-csearch_path={schema},public"));
+    fixture.close().await;
+    let manager = PoolManager::with_config(PoolManagerConfig::for_tests(1, 1, 1));
+    let pool = manager
+        .get_pool(url.as_str(), "preparation-read-only")
+        .await
+        .unwrap();
+    assert!(TenantPool::retain_for_pool(&pool).unwrap().is_some());
+
+    let mut tx = TenantPool::begin_observed(&pool, "test.preparation_read_only")
+        .await
+        .unwrap();
+    DbSession::new(&mut tx)
+        .query(
+            "test.preparation_snapshot",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
+        .await
+        .unwrap();
+    let preview = tokio::time::timeout(
+        Duration::from_secs(5),
+        offerings::preview_term_preparation(&mut tx, target_term_id),
+    )
+    .await
+    .expect("preview must reuse the transaction's only connection")
+    .unwrap();
+    assert_eq!(preview.academic_term_id, target_term_id);
+    assert!(!preview.proposals.is_empty());
+    let state: (String, String, i32) = DbSession::new(&mut tx)
+        .query_as("test.preparation_snapshot_usable", "SELECT current_setting('transaction_read_only'),current_setting('transaction_isolation'),1::integer")
+        .fetch_one().await.unwrap();
+    assert_eq!(state, ("on".into(), "repeatable read".into(), 1));
+    tx.rollback().await.unwrap();
+
+    let mut connection = tokio::time::timeout(
+        Duration::from_secs(2),
+        TenantPool::observed_checkout_pool(&pool, "test.preparation_after_rollback"),
+    )
+    .await
+    .expect("rollback must release the only connection")
+    .unwrap();
+    let available: i32 = DbSession::new(&mut connection)
+        .scalar("test.preparation_resource_available", "SELECT 1::integer")
+        .fetch_one()
+        .await
+        .unwrap();
+    assert_eq!(available, 1);
+    drop(connection);
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn preparation_database_failures_preserve_cause_and_release_managed_connection() {
+    use school_database::DbSession;
+    use school_tenancy::{PoolManager, PoolManagerConfig, TenantPool};
+    use std::time::Duration;
+
+    let (fixture, actor, source_term_id, target_term_id) =
+        delivery_preparation_fixture("term_preparation_database_failure").await;
+    let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+        .fetch_one(&fixture)
+        .await
+        .unwrap();
+    let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+    url.query_pairs_mut()
+        .append_pair("options", &format!("-csearch_path={schema},public"));
+    fixture.close().await;
+    let manager = PoolManager::with_config(PoolManagerConfig::for_tests(1, 1, 1));
+    let pool = manager
+        .get_pool(url.as_str(), "preparation-database-failure")
+        .await
+        .unwrap();
+    assert!(TenantPool::retain_for_pool(&pool).unwrap().is_some());
+
+    // Verify the managed pool first, then fault only this disposable schema.
+    let mut fault = TenantPool::observed_checkout_pool(&pool, "test.preparation_inject_fault")
+        .await
+        .unwrap();
+    DbSession::new(&mut fault)
+        .query(
+            "test.preparation_missing_view",
+            "ALTER VIEW published_study_programs RENAME TO preparation_fault_study_programs",
+        )
+        .execute()
+        .await
+        .unwrap();
+    drop(fault);
+
+    // Delivery uses the finding catch; Assessments uses the optional Delivery fallback.
+    for module in [
+        TermPreparationModule::Delivery,
+        TermPreparationModule::Assessments,
+    ] {
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            preview(
+                &pool,
+                &actor,
+                PreviewTermPreparationInput {
+                    source_term_id,
+                    target_term_id,
+                    modules: vec![module],
+                    mappings: TermPreparationMappings::default(),
+                },
+            ),
+        )
+        .await
+        .expect("database failure must release its transaction")
+        .unwrap_err();
+        let school_errors::AppError::DbError(sqlx::Error::Database(error)) = error else {
+            panic!("preview must preserve the original typed database error");
+        };
+        assert_eq!(error.code().as_deref(), Some("42P01"));
+
+        let mut connection = tokio::time::timeout(
+            Duration::from_secs(2),
+            TenantPool::observed_checkout_pool(&pool, "test.preparation_after_error"),
+        )
+        .await
+        .expect("failed preview must release the only connection")
+        .unwrap();
+        let available: i32 = DbSession::new(&mut connection)
+            .scalar(
+                "test.preparation_failure_resource_available",
+                "SELECT 1::integer",
+            )
+            .fetch_one()
+            .await
+            .unwrap();
+        assert_eq!(available, 1);
+        drop(connection);
+    }
+    pool.close().await;
 }

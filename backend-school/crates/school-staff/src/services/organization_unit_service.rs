@@ -2,6 +2,7 @@ use crate::audit::AuditLogBuilder;
 use crate::models::{
     CreateOrganizationUnitRequest, OrganizationUnit, UpdateOrganizationUnitRequest,
 };
+use school_database::DbSession;
 use school_errors::AppError;
 use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -13,6 +14,18 @@ pub async fn list_organization_units(
     pool: &PgPool,
     include_inactive: bool,
 ) -> Result<Vec<OrganizationUnit>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.organization_unit_service.list_organization_units",
+    )
+    .await?;
+    list_organization_units_on_connection(&mut connection, include_inactive).await
+}
+
+pub async fn list_organization_units_on_connection(
+    connection: &mut sqlx::PgConnection,
+    include_inactive: bool,
+) -> Result<Vec<OrganizationUnit>, AppError> {
     let active_filter = if include_inactive {
         ""
     } else {
@@ -22,11 +35,15 @@ pub async fn list_organization_units(
         "SELECT * FROM organization_units {} ORDER BY display_order, name",
         active_filter
     );
-    sqlx::query_as::<_, OrganizationUnit>(sqlx::AssertSqlSafe(sql))
-        .fetch_all(pool)
+    DbSession::new(connection)
+        .query_as::<OrganizationUnit>(
+            "staff.services.organization_unit_service.list_organization_units_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
             AppError::InternalServerError("เกิดข้อผิดพลาดในการดึงข้อมูล".to_string())
         })
 }
@@ -35,12 +52,28 @@ pub async fn get_organization_unit(
     pool: &PgPool,
     unit_id: Uuid,
 ) -> Result<OrganizationUnit, AppError> {
-    sqlx::query_as::<_, OrganizationUnit>("SELECT * FROM organization_units WHERE id = $1")
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.services.organization_unit_service.get_organization_unit",
+    )
+    .await?;
+    get_organization_unit_on_connection(&mut connection, unit_id).await
+}
+
+pub async fn get_organization_unit_on_connection(
+    connection: &mut sqlx::PgConnection,
+    unit_id: Uuid,
+) -> Result<OrganizationUnit, AppError> {
+    DbSession::new(connection)
+        .query_as::<OrganizationUnit>(
+            "staff.services.organization_unit_service.get_organization_unit_on_connection",
+            "SELECT * FROM organization_units WHERE id = $1",
+        )
         .bind(unit_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(|e| {
-            tracing::error!("❌ Database error: {}", e);
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
             AppError::InternalServerError("เกิดข้อผิดพลาด".to_string())
         })?
         .ok_or_else(|| AppError::NotFound("ไม่พบหน่วยงาน".to_string()))
@@ -51,19 +84,35 @@ pub async fn create_organization_unit(
     payload: CreateOrganizationUnitRequest,
 ) -> Result<Uuid, AppError> {
     validate_unit_fields(payload.name.as_str(), payload.unit_type.as_deref(), None)?;
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(%error, "failed to start organization unit create transaction");
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_unit_service.create_organization_unit",
+    )
+    .await
+    .map_err(|error| {
+        tracing::error!(
+            error_class = school_database::error_class(&error),
+            "failed to start organization unit create transaction"
+        );
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
 
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_unit_service.create_organization_unit",
+            "SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))",
+        )
+        .execute()
         .await?;
     let parent_id = match payload.parent_unit_id {
         Some(id) => id,
         None => {
-            sqlx::query_scalar("SELECT id FROM organization_units WHERE code = 'SCHOOL'")
-                .fetch_one(&mut *tx)
+            DbSession::new(&mut *tx)
+                .scalar(
+                    "staff.services.organization_unit_service.create_organization_unit",
+                    "SELECT id FROM organization_units WHERE code = 'SCHOOL'",
+                )
+                .fetch_one()
                 .await?
         }
     };
@@ -74,12 +123,16 @@ pub async fn create_organization_unit(
         "division" => "DV",
         _ => "OU",
     };
-    let code: String = sqlx::query_scalar("SELECT next_organization_code($1)")
+    let code: String = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.services.organization_unit_service.create_organization_unit",
+            "SELECT next_organization_code($1)",
+        )
         .bind(prefix)
-        .fetch_one(&mut *tx)
+        .fetch_one()
         .await?;
 
-    let unit_id = sqlx::query_scalar(
+    let unit_id = DbSession::new(&mut *tx).scalar("staff.services.organization_unit_service.create_organization_unit",
         "INSERT INTO organization_units (
             code, name, name_en, description, parent_unit_id,
             phone, email, location, category, unit_type, display_order
@@ -97,10 +150,10 @@ pub async fn create_organization_unit(
     .bind(&payload.location)
     .bind(organization_category_or_default(payload.category))
     .bind(organization_unit_type_or_default(payload.unit_type))
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .map_err(|e| {
-        tracing::error!("❌ Failed to create organization unit: {}", e);
+        tracing::error!("❌ Failed to create organization unit: {}", school_database::error_class(&e));
         let err_msg = e.to_string();
         if err_msg.contains("duplicate key value") && err_msg.contains("code") {
             AppError::BadRequest("รหัสหน่วยงานนี้มีอยู่ในระบบแล้ว".to_string())
@@ -110,7 +163,7 @@ pub async fn create_organization_unit(
     })?;
 
     tx.commit().await.map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to commit organization unit create transaction");
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to commit organization unit create transaction");
         AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
     })?;
 
@@ -123,13 +176,17 @@ pub async fn update_organization_unit(
     payload: UpdateOrganizationUnitRequest,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to start organization unit update transaction");
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "staff.services.organization_unit_service.update_organization_unit").await.map_err(|error| {
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to start organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
     lock_audit_actor(&mut tx, actor_user_id).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_unit_service.update_organization_unit",
+            "SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))",
+        )
+        .execute()
         .await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
     if unit.unit_type == "subject_group" {
@@ -163,12 +220,12 @@ pub async fn update_organization_unit(
         if unit.is_system {
             return Err(AppError::Conflict("ไม่สามารถย้ายหน่วยงานระบบได้".to_string()));
         }
-        let cycle: bool = sqlx::query_scalar(
+        let cycle: bool = DbSession::new(&mut *tx).scalar("staff.services.organization_unit_service.update_organization_unit",
             "WITH RECURSIVE ancestors AS (
                 SELECT id, parent_unit_id FROM organization_units WHERE id = $1
                 UNION SELECT u.id, u.parent_unit_id FROM organization_units u JOIN ancestors a ON u.id = a.parent_unit_id
              ) SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = $2)")
-            .bind(parent_id).bind(unit_id).fetch_one(&mut *tx).await?;
+            .bind(parent_id).bind(unit_id).fetch_one().await?;
         if cycle {
             return Err(AppError::ValidationError(
                 "ไม่สามารถย้ายหน่วยงานไปอยู่ใต้ตัวเองหรือหน่วยงานย่อยได้".to_string(),
@@ -198,8 +255,10 @@ pub async fn update_organization_unit(
         StatusTransitionOutcome::Unchanged
     };
 
-    let result = sqlx::query(
-        "UPDATE organization_units
+    let result = DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_unit_service.update_organization_unit",
+            "UPDATE organization_units
          SET
             name = COALESCE($2, name),
             name_en = COALESCE($3, name_en),
@@ -212,35 +271,35 @@ pub async fn update_organization_unit(
             unit_type = COALESCE($10, unit_type),
             updated_at = NOW()
          WHERE id = $1",
-    )
-    .bind(unit_id)
-    .bind(&payload.name)
-    .bind(&payload.name_en)
-    .bind(&payload.description)
-    .bind(payload.parent_unit_id)
-    .bind(&payload.phone)
-    .bind(&payload.email)
-    .bind(&payload.location)
-    .bind(&payload.category)
-    .bind(&payload.unit_type)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("❌ Database error: {}", e);
-        let err_msg = e.to_string();
-        if err_msg.contains("duplicate key value") && err_msg.contains("code") {
-            AppError::BadRequest("รหัสหน่วยงานนี้มีอยู่ในระบบแล้ว".to_string())
-        } else {
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตหน่วยงาน".to_string())
-        }
-    })?;
+        )
+        .bind(unit_id)
+        .bind(&payload.name)
+        .bind(&payload.name_en)
+        .bind(&payload.description)
+        .bind(payload.parent_unit_id)
+        .bind(&payload.phone)
+        .bind(&payload.email)
+        .bind(&payload.location)
+        .bind(&payload.category)
+        .bind(&payload.unit_type)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!("❌ Database error: {}", school_database::error_class(&e));
+            let err_msg = e.to_string();
+            if err_msg.contains("duplicate key value") && err_msg.contains("code") {
+                AppError::BadRequest("รหัสหน่วยงานนี้มีอยู่ในระบบแล้ว".to_string())
+            } else {
+                AppError::InternalServerError("เกิดข้อผิดพลาดในการอัปเดตหน่วยงาน".to_string())
+            }
+        })?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("ไม่พบหน่วยงาน".to_string()));
     }
 
     tx.commit().await.map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to commit organization unit update transaction");
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to commit organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถบันทึกหน่วยงานได้".to_string())
     })?;
 
@@ -261,17 +320,17 @@ async fn lock_organization_unit(
     tx: &mut Transaction<'_, Postgres>,
     unit_id: Uuid,
 ) -> Result<OrganizationUnitStatusRow, AppError> {
-    sqlx::query_as::<_, OrganizationUnitStatusRow>(
+    DbSession::new(&mut **tx).query_as::<OrganizationUnitStatusRow>("staff.services.organization_unit_service.lock_organization_unit",
         "SELECT name, parent_unit_id, is_active, is_system, unit_type, subject_group_id
          FROM organization_units
          WHERE id = $1
          FOR UPDATE",
     )
     .bind(unit_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to lock organization unit");
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to lock organization unit");
         AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะหน่วยงานได้".to_string())
     })?
     .ok_or_else(|| AppError::NotFound("ไม่พบหน่วยงาน".to_string()))
@@ -281,17 +340,17 @@ async fn require_active_parent(
     tx: &mut Transaction<'_, Postgres>,
     parent_unit_id: Uuid,
 ) -> Result<(), AppError> {
-    let parent_is_active = sqlx::query_scalar::<_, bool>(
+    let parent_is_active = DbSession::new(&mut **tx).scalar::<bool>("staff.services.organization_unit_service.require_active_parent",
         "SELECT is_active AND unit_type <> 'subject_group'
          FROM organization_units
          WHERE id = $1
          FOR SHARE",
     )
     .bind(parent_unit_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!(%parent_unit_id, %error, "failed to validate organization unit parent");
+        tracing::error!(%parent_unit_id, error_class = school_database::error_class(&error), "failed to validate organization unit parent");
         AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานต้นสังกัดได้".to_string())
     })?;
 
@@ -306,17 +365,17 @@ pub(super) async fn ensure_organization_unit_active(
     tx: &mut Transaction<'_, Postgres>,
     organization_unit_id: Uuid,
 ) -> Result<(), AppError> {
-    let is_active = sqlx::query_scalar::<_, bool>(
+    let is_active = DbSession::new(&mut **tx).scalar::<bool>("staff.services.organization_unit_service.ensure_organization_unit_active",
         "SELECT is_active
          FROM organization_units
          WHERE id = $1
          FOR SHARE",
     )
     .bind(organization_unit_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await
     .map_err(|error| {
-        tracing::error!(%organization_unit_id, %error, "failed to validate organization unit status");
+        tracing::error!(%organization_unit_id, error_class = school_database::error_class(&error), "failed to validate organization unit status");
         AppError::InternalServerError("ไม่สามารถตรวจสอบสถานะหน่วยงานได้".to_string())
     })?;
 
@@ -357,7 +416,7 @@ async fn transition_locked_organization_unit_status(
     }
 
     if !is_active {
-        let has_active_child: bool = sqlx::query_scalar(
+        let has_active_child: bool = DbSession::new(&mut **tx).scalar("staff.services.organization_unit_service.transition_locked_organization_unit_status",
             "SELECT EXISTS (
                 SELECT 1
                 FROM organization_units
@@ -365,10 +424,10 @@ async fn transition_locked_organization_unit_status(
             )",
         )
         .bind(unit_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await
         .map_err(|error| {
-            tracing::error!(%unit_id, %error, "failed to check active organization unit children");
+            tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to check active organization unit children");
             AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานย่อยได้".to_string())
         })?;
         if has_active_child {
@@ -376,17 +435,17 @@ async fn transition_locked_organization_unit_status(
         }
     }
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("staff.services.organization_unit_service.transition_locked_organization_unit_status",
         "UPDATE organization_units
          SET is_active = $2, updated_at = NOW()
          WHERE id = $1",
     )
     .bind(unit_id)
     .bind(is_active)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to update organization unit status");
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to update organization unit status");
         AppError::InternalServerError("ไม่สามารถเปลี่ยนสถานะหน่วยงานได้".to_string())
     })?;
 
@@ -413,8 +472,8 @@ async fn transition_locked_organization_unit_status(
         })
         .save_in_transaction(tx)
         .await
-        .map_err(|error| {
-            tracing::error!(%unit_id, %error, "failed to save organization unit status audit");
+        .map_err(|_error| {
+            tracing::error!(%unit_id, reason = "staff_organization_status_audit_failed", "failed to save organization unit status audit");
             AppError::InternalServerError("ไม่สามารถบันทึกประวัติการเปลี่ยนสถานะได้".to_string())
         })?;
 
@@ -427,8 +486,8 @@ pub async fn set_organization_unit_active(
     is_active: bool,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to start organization unit status transaction");
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "staff.services.organization_unit_service.set_organization_unit_active").await.map_err(|error| {
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to start organization unit status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
     lock_audit_actor(&mut tx, actor_user_id).await?;
@@ -445,7 +504,7 @@ pub async fn set_organization_unit_active(
     .await?;
 
     tx.commit().await.map_err(|error| {
-        tracing::error!(%unit_id, %error, "failed to commit organization unit status transaction");
+        tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to commit organization unit status transaction");
         AppError::InternalServerError("ไม่สามารถบันทึกสถานะหน่วยงานได้".to_string())
     })?;
 
@@ -525,10 +584,18 @@ pub async fn delete_organization_unit_permanently(
     unit_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_unit_service.delete_organization_unit_permanently",
+    )
+    .await?;
     lock_audit_actor(&mut tx, actor_user_id).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_unit_service.delete_organization_unit_permanently",
+            "SELECT pg_advisory_xact_lock(hashtextextended('organization_hierarchy', 0))",
+        )
+        .execute()
         .await?;
     let unit = lock_organization_unit(&mut tx, unit_id).await?;
     if unit.is_system
@@ -540,11 +607,14 @@ pub async fn delete_organization_unit_permanently(
             "ไม่สามารถลบหน่วยงานระบบหรือหน่วยงานที่เชื่อมทะเบียนกลุ่มสาระได้".into(),
         ));
     }
-    let category: Option<String> =
-        sqlx::query_scalar("SELECT organization_unit_reference_category($1)")
-            .bind(unit_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let category: Option<String> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.services.organization_unit_service.delete_organization_unit_permanently",
+            "SELECT organization_unit_reference_category($1)",
+        )
+        .bind(unit_id)
+        .fetch_one()
+        .await?;
     if let Some(category) = category {
         let description = match category.as_str() {
             "children" => "หน่วยงานย่อย",
@@ -559,9 +629,13 @@ pub async fn delete_organization_unit_permanently(
             "ไม่สามารถลบหน่วยงานได้ เนื่องจากยังมี{description}"
         )));
     }
-    sqlx::query("DELETE FROM organization_units WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "staff.services.organization_unit_service.delete_organization_unit_permanently",
+            "DELETE FROM organization_units WHERE id=$1",
+        )
         .bind(unit_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     AuditLogBuilder::new("delete", "organization_unit")
         .user(actor_user_id, None, None)

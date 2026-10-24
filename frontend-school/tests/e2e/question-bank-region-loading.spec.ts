@@ -82,98 +82,108 @@ async function mockApis(
 	let optionsReads = 0;
 	let listReads = 0;
 	let deleted = false;
-	await page.route('**/api/**', async (route) => {
-		const url = new URL(route.request().url());
-		if (url.pathname === '/api/auth/me') {
-			await fulfill(route, {
-				id: userId,
-				username: 'question-bank-admin',
-				firstName: 'ทดสอบ',
-				displayName: 'ทดสอบ ระบบ',
-				lastName: 'ระบบ',
-				userType: 'staff',
-				status: 'ACTIVE',
-				permissions: ['*']
-			});
-			return;
-		}
-		if (url.pathname === '/api/academic/question-bank/options') {
-			optionsReads += 1;
-			options.onOptionsRead?.();
-			await options.optionsWait;
-			if (options.failOptionsOnce && optionsReads === 1) {
-				await route.fulfill({
-					status: 500,
-					contentType: 'application/json',
-					body: '{"success":false,"error":"options failed"}'
+	await page.route(
+		(url) => url.pathname.startsWith('/api/'),
+		async (route) => {
+			const url = new URL(route.request().url());
+			if (url.pathname === '/api/auth/me') {
+				await fulfill(route, {
+					id: userId,
+					username: 'question-bank-admin',
+					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ระบบ',
+					lastName: 'ระบบ',
+					userType: 'staff',
+					status: 'ACTIVE',
+					permissions: ['*']
 				});
 				return;
 			}
-			await fulfill(route, {
-				subjects: [{ id: subjectId, code: 'ค21101', nameTh: 'คณิตศาสตร์', canCreate: true }]
-			});
-			return;
-		}
-		if (url.pathname === '/api/academic/question-bank/questions') {
-			listReads += 1;
-			const search = url.searchParams.get('search') ?? '';
-			options.onListRead?.(search);
-			await (options.searchWait?.[search] ?? options.listWait);
-			if (options.failListOnce && listReads === 1) {
-				await route.fulfill({
-					status: 500,
-					contentType: 'application/json',
-					body: '{"success":false,"error":"list failed"}'
+			if (url.pathname === '/api/academic/question-bank/options') {
+				optionsReads += 1;
+				options.onOptionsRead?.();
+				await options.optionsWait;
+				if (options.failOptionsOnce && optionsReads === 1) {
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"options failed"}'
+					});
+					return;
+				}
+				await fulfill(route, {
+					subjects: [{ id: subjectId, code: 'ค21101', nameTh: 'คณิตศาสตร์', canCreate: true }]
 				});
 				return;
 			}
-			try {
-				await fulfill(
-					route,
-					deleted
-						? {
-								items: [],
-								page: 1,
-								pageSize: 20,
-								total: 0,
-								totalPages: 1,
-								summary: { total: 0, choice: 0, written: 0, ready: 0 }
-							}
-						: questionPage(search ? `โจทย์ ${search}` : undefined)
-				);
-			} catch {
-				/* Superseded request may already be aborted. */
-			}
-			return;
-		}
-		if (url.pathname === `/api/academic/question-bank/questions/${questionId}`) {
-			if (route.request().method() === 'DELETE') {
-				deleted = true;
-				await fulfill(route, {});
+			if (url.pathname === '/api/academic/question-bank/questions') {
+				listReads += 1;
+				const search = url.searchParams.get('search') ?? '';
+				options.onListRead?.(search);
+				await (options.searchWait?.[search] ?? options.listWait);
+				if (options.failListOnce && listReads === 1) {
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"list failed"}'
+					});
+					return;
+				}
+				try {
+					await fulfill(
+						route,
+						deleted
+							? {
+									items: [],
+									page: 1,
+									pageSize: 20,
+									total: 0,
+									totalPages: 1,
+									summary: { total: 0, choice: 0, written: 0, ready: 0 }
+								}
+							: questionPage(search ? `โจทย์ ${search}` : undefined)
+					);
+				} catch {
+					/* Superseded request may already be aborted. */
+				}
 				return;
 			}
-			options.onDetailRead?.();
-			await fulfill(route, { ...question(), choices: [], files: [] });
-			return;
+			if (url.pathname === `/api/academic/question-bank/questions/${questionId}`) {
+				if (route.request().method() === 'DELETE') {
+					deleted = true;
+					await fulfill(route, {});
+					return;
+				}
+				options.onDetailRead?.();
+				await fulfill(route, { ...question(), choices: [], files: [] });
+				return;
+			}
+			if (url.pathname === '/api/menu/user') {
+				await fulfill(route, { groups: [] });
+				return;
+			}
+			if (url.pathname === '/api/me/work-items/counts') {
+				await fulfill(route, {
+					open: 0,
+					dueSoon: 0,
+					overdue: 0,
+					submitted: 0,
+					closed: 0,
+					total: 0
+				});
+				return;
+			}
+			if (url.pathname === '/api/notifications') {
+				await fulfill(route, { items: [], unread_count: 0 });
+				return;
+			}
+			if (url.pathname === '/api/notifications/stream') {
+				await route.fulfill({ contentType: 'text/event-stream', body: '' });
+				return;
+			}
+			await fulfill(route, {});
 		}
-		if (url.pathname === '/api/menu/user') {
-			await fulfill(route, { groups: [] });
-			return;
-		}
-		if (url.pathname === '/api/me/work-items/counts') {
-			await fulfill(route, { open: 0, dueSoon: 0, overdue: 0, submitted: 0, closed: 0, total: 0 });
-			return;
-		}
-		if (url.pathname === '/api/notifications') {
-			await fulfill(route, { items: [], unread_count: 0 });
-			return;
-		}
-		if (url.pathname === '/api/notifications/stream') {
-			await route.fulfill({ contentType: 'text/event-stream', body: '' });
-			return;
-		}
-		await fulfill(route, {});
-	});
+	);
 }
 
 test('list renders while subject options are pending; detail remains action-only', async ({
@@ -290,6 +300,58 @@ test('rich editor JavaScript is loaded only when create is opened', async ({ pag
 	await expect.poll(() => scriptRequests.some((url) => !scriptsBeforeCreate.has(url))).toBe(true);
 });
 
+test('question image remains local until save and a failed update reuses its uploaded ID', async ({
+	page
+}) => {
+	await mockApis(page);
+	let uploads = 0,
+		saves = 0;
+	const fileId = '10000000-0000-4000-8000-000000000911';
+	const payloads: unknown[] = [];
+	await page.route('**/api/files', (route) => {
+		uploads++;
+		expect(route.request().postData()).toContain('question_bank_image');
+		expect(route.request().postData()).toContain(subjectId);
+		return fulfill(route, { id: fileId });
+	});
+	await page.route(`**/api/academic/question-bank/questions/${questionId}`, async (route) => {
+		if (route.request().method() !== 'PUT') return route.fallback();
+		saves++;
+		const payload = route.request().postDataJSON();
+		payloads.push(payload);
+		expect(JSON.stringify(payload.stemContent)).toContain(fileId);
+		if (saves === 1)
+			return route.fulfill({
+				status: 503,
+				json: { success: false, error: 'question save unavailable' }
+			});
+		return fulfill(route, { ...question(), ...payload, choices: [], files: [] });
+	});
+	await page.goto(questionBankUrl);
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	const editor = dialog.getByRole('region', { name: /^โจทย์/ });
+	await expect(editor.locator('[contenteditable="true"]')).toBeVisible();
+	await editor.locator('input[type="file"]').setInputFiles({
+		name: 'question.png',
+		mimeType: 'image/png',
+		buffer: Buffer.from(
+			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ9sAAAAASUVORK5CYII=',
+			'base64'
+		)
+	});
+	await expect(editor.locator('img[src^="blob:"]')).toBeVisible();
+	expect(uploads).toBe(0);
+	await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+	await expect(page.getByText('question save unavailable', { exact: true })).toBeVisible();
+	expect(uploads).toBe(1);
+	await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(saves).toBe(2);
+	expect(uploads).toBe(1);
+	expect(payloads[1]).toEqual(payloads[0]);
+});
+
 test('deleting rereads only the affected paginated list', async ({ page }) => {
 	let optionsReads = 0;
 	let listReads = 0;
@@ -310,3 +372,83 @@ test('deleting rereads only the affected paginated list', async ({ page }) => {
 	await expect.poll(() => listReads).toBe(2);
 	expect(optionsReads).toBe(1);
 });
+
+for (const status of [200, 503])
+	test(`accepted question update with late ${status} after leaving cannot update the destroyed route`, async ({
+		page
+	}) => {
+		let listReads = 0;
+		await mockApis(page, {
+			onListRead: () => {
+				listReads++;
+			}
+		});
+		const entered = deferred(),
+			release = deferred();
+		let accepted: Record<string, unknown> | undefined;
+		let payload: Record<string, unknown> | undefined;
+		let saves = 0,
+			deletes = 0;
+		page.on('request', (request) => {
+			if (request.method() === 'DELETE') deletes++;
+		});
+		await page.route(`**/api/academic/question-bank/questions/${questionId}`, async (route) => {
+			if (route.request().method() !== 'PUT') return route.fallback();
+			saves++;
+			payload = route.request().postDataJSON();
+			entered.resolve();
+			await release.promise;
+			// The server accepts this mutation even if the former UI owner has gone.
+			accepted = { ...question(), ...payload, choices: [], files: [] };
+			if (status === 503)
+				await route.fulfill({ status, json: { success: false, error: 'late question failure' } });
+			else await fulfill(route, accepted);
+		});
+		await page.goto('/staff/tools/qr-code');
+		await expect(page.getByRole('heading', { name: 'สร้าง QR Code', exact: true })).toBeVisible();
+		await page.evaluate((href) => {
+			const link = document.createElement('a');
+			link.href = href;
+			document.body.append(link);
+			link.click();
+			link.remove();
+		}, questionBankUrl);
+		await expect(page.getByText('โจทย์เริ่มต้น')).toBeVisible();
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(
+			dialog.getByRole('region', { name: /^โจทย์/ }).locator('[contenteditable="true"]')
+		).toBeVisible();
+		await dialog
+			.getByRole('region', { name: /^โจทย์/ })
+			.locator('[contenteditable="true"]')
+			.fill('คำสั่งที่เซิร์ฟเวอร์รับไว้');
+		await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+		await entered.promise;
+		await page.evaluate(() => history.back());
+		await expect(page).toHaveURL(/\/staff\/tools\/qr-code$/);
+		await expect(page.getByRole('heading', { name: 'สร้าง QR Code', exact: true })).toBeVisible();
+		const readsAfterLeaving = listReads;
+		const response = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'PUT' &&
+				new URL(response.url()).pathname.endsWith(questionId)
+		);
+		release.resolve();
+		await (await response).finished();
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		expect(accepted?.stemContent).toEqual(payload?.stemContent);
+		expect(JSON.stringify(accepted?.stemContent)).toContain('คำสั่งที่เซิร์ฟเวอร์รับไว้');
+		expect(accepted).toBeDefined();
+		expect(listReads).toBe(readsAfterLeaving);
+		expect(saves).toBe(1);
+		expect(deletes).toBe(0);
+		await expect(page.getByText('บันทึกข้อสอบแล้ว', { exact: true })).toHaveCount(0);
+		await expect(page.getByText('late question failure', { exact: true })).toHaveCount(0);
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+	});

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashSet;
 
 use chrono::{Duration, NaiveTime, Timelike};
@@ -41,9 +42,13 @@ pub(super) async fn require_exam_write(
              FROM academic_exam_sessions session \
              JOIN academic_exam_rounds round ON round.id=session.exam_round_id WHERE session.id=$1"),
     };
-    let (year_id, term_id) = sqlx::query_as(query)
+    let (year_id, term_id) = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_assessment.exam_schedule.services.shared.require_exam_write",
+            query,
+        )
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบข้อมูลจัดสอบหรือภาคเรียน".into()))?;
     lifecycle_guard::require_term_write_exclusive(tx, year_id, term_id).await?;

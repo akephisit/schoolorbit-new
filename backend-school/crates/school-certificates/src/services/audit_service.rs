@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -71,7 +72,7 @@ pub async fn record_campaign_audit(
         AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string())
     })?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("certificates.services.audit_service.record_campaign_audit",
         "INSERT INTO audit_logs
             (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, $2, 'certificate_campaign', $3, $4)",
@@ -80,10 +81,10 @@ pub async fn record_campaign_audit(
     .bind(action)
     .bind(campaign_id)
     .bind(metadata)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!(%campaign_id, %error, "failed to persist certificate campaign audit");
+        tracing::error!(%campaign_id, error_class = school_database::error_class(&error), "failed to persist certificate campaign audit");
         AppError::DbError(error)
     })?;
 
@@ -102,7 +103,7 @@ pub async fn record_template_audit(
         AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string())
     })?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("certificates.services.audit_service.record_template_audit",
         "INSERT INTO audit_logs
             (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, $2, 'certificate_template', $3, $4)",
@@ -111,10 +112,10 @@ pub async fn record_template_audit(
     .bind(action)
     .bind(template_id)
     .bind(metadata)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!(%template_id, %error, "failed to persist certificate template audit");
+        tracing::error!(%template_id, error_class = school_database::error_class(&error), "failed to persist certificate template audit");
         AppError::DbError(error)
     })?;
 
@@ -133,7 +134,7 @@ pub async fn record_issue_request_audit(
         AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string())
     })?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("certificates.services.audit_service.record_issue_request_audit",
         "INSERT INTO audit_logs
             (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, $2, 'certificate_issue_request', $3, $4)",
@@ -142,10 +143,10 @@ pub async fn record_issue_request_audit(
     .bind(action)
     .bind(request_id)
     .bind(metadata)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!(%request_id, %error, "failed to persist certificate request audit");
+        tracing::error!(%request_id, error_class = school_database::error_class(&error), "failed to persist certificate request audit");
         AppError::DbError(error)
     })?;
 
@@ -163,7 +164,7 @@ pub async fn record_certificate_revocation_audit(
         AppError::InternalServerError("ไม่สามารถบันทึกประวัติรายการได้".to_string())
     })?;
 
-    sqlx::query(
+    DbSession::new(&mut **tx).query("certificates.services.audit_service.record_certificate_revocation_audit",
         "INSERT INTO audit_logs
             (user_id, action, entity_type, entity_id, metadata)
          VALUES ($1, 'revoke', 'certificate', $2, $3)",
@@ -171,10 +172,10 @@ pub async fn record_certificate_revocation_audit(
     .bind(actor_user_id)
     .bind(certificate_id)
     .bind(metadata)
-    .execute(&mut **tx)
+    .execute()
     .await
     .map_err(|error| {
-        tracing::error!(%certificate_id, %error, "failed to persist certificate revocation audit");
+        tracing::error!(%certificate_id, error_class = school_database::error_class(&error), "failed to persist certificate revocation audit");
         AppError::DbError(error)
     })?;
 

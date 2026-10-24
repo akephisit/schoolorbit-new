@@ -1,6 +1,7 @@
 use crate::models::{LifecycleFinding, LifecycleSeverity, YearReopeningWorkspace};
 use school_academic_core::{models::AcademicYearStatus, services::lifecycle_context};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -12,9 +13,17 @@ pub async fn get_year_reopening_workspace(
     year: Uuid,
 ) -> Result<YearReopeningWorkspace, AppError> {
     actor.require_permission(codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.year_reopening.get_year_reopening_workspace",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.year_reopening.get_year_reopening_workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let workspace = reopening_workspace_in_transaction(&mut tx, actor, year).await?;
     tx.commit().await?;
@@ -27,11 +36,11 @@ pub(crate) async fn reopening_workspace_in_transaction(
     year: Uuid,
 ) -> Result<YearReopeningWorkspace, AppError> {
     let state = lifecycle_context::read_year_recovery_state(tx, year).await?;
-    let (executed, executing): (i64, i64) = sqlx::query_as(
+    let (executed, executing): (i64, i64) = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.year_reopening.reopening_workspace_in_transaction",
         "SELECT
          (SELECT count(*) FROM academic_promotion_execution_receipts WHERE source_year_id=$1),
          (SELECT count(*) FROM academic_promotion_runs WHERE source_year_id=$1 AND status='executing')",
-    ).bind(year).fetch_one(&mut **tx).await?;
+    ).bind(year).fetch_one().await?;
     let source_checksum = super::checksum(&(&state, executed, executing))?;
     let mut findings = Vec::new();
     let promotion_url = actor

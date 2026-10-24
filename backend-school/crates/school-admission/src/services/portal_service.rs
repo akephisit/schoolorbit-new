@@ -1,6 +1,7 @@
 use crate::models::applications::*;
 use crate::models::rounds::SelectionSettings;
 use crate::services::pii;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde_json::json;
 use sqlx::{types::Json, PgPool};
@@ -43,25 +44,40 @@ pub async fn verify_credentials(
     let dob = parse_portal_birth_date(date_of_birth)?;
     let national_id_hash =
         pii::hash_required(national_id).map_err(|error| pii_error("hash credential", error))?;
-    sqlx::query_scalar(
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.verify_credentials")
+            .await?;
+    DbSession::new(&mut *connection).scalar("admission.services.portal_service.verify_credentials_on_connection",
         "SELECT id FROM admission_applications WHERE national_id_hash = $1 AND date_of_birth = $2 ORDER BY created_at DESC LIMIT 1"
     )
     .bind(national_id_hash).bind(dob)
-    .fetch_optional(pool).await
+    .fetch_optional().await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?
     .ok_or_else(|| AppError::AuthError("ไม่พบข้อมูลผู้สมัคร กรุณาตรวจสอบเลขบัตรประชาชนและวันเกิด".to_string()))
 }
 
 pub async fn get_round_status(pool: &PgPool, application_id: Uuid) -> Result<String, AppError> {
-    sqlx::query_scalar(
-        r#"SELECT ar.status FROM admission_applications aa
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "admission.get_round_status")
+            .await?;
+    get_round_status_on_connection(&mut connection, application_id).await
+}
+
+pub async fn get_round_status_on_connection(
+    connection: &mut sqlx::PgConnection,
+    application_id: Uuid,
+) -> Result<String, AppError> {
+    DbSession::new(&mut *connection)
+        .scalar(
+            "admission.services.portal_service.get_round_status_on_connection",
+            r#"SELECT ar.status FROM admission_applications aa
            JOIN admission_rounds ar ON ar.id = aa.admission_round_id
            WHERE aa.id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))
 }
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -109,18 +125,25 @@ pub async fn check_application(
     if round_status == "draft" {
         return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
     }
-    sqlx::query_as::<_, CheckStatusRow>(
-        r#"SELECT aa.id, aa.application_number, aa.first_name, aa.last_name, aa.status,
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.check_application",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<CheckStatusRow>(
+            "admission.services.portal_service.check_application",
+            r#"SELECT aa.id, aa.application_number, aa.first_name, aa.last_name, aa.status,
                   at2.name AS track_name, ar.name AS round_name, ar.status AS round_status
            FROM admission_applications aa
            LEFT JOIN admission_tracks at2 ON aa.admission_track_id = at2.id
            LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
            WHERE aa.id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))
 }
 
 pub async fn get_status(
@@ -134,9 +157,14 @@ pub async fn get_status(
         return Err(AppError::BadRequest("รอบการสมัครยังไม่เปิดเผยข้อมูล".to_string()));
     }
 
-    let selection_settings: Option<Json<SelectionSettings>> = sqlx::query_scalar(
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.get_status",
+    )
+    .await?;
+    let selection_settings: Option<Json<SelectionSettings>> = DbSession::new(&mut *database_stage_0).scalar("admission.services.portal_service.get_status",
         "SELECT selection_settings FROM admission_rounds WHERE id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
-    ).bind(application_id).fetch_optional(pool).await.unwrap_or(None).flatten();
+    ).bind(application_id).fetch_optional().await.unwrap_or(None).flatten();
 
     let show_scores = selection_settings
         .as_ref()
@@ -149,7 +177,7 @@ pub async fn get_status(
     let show_assignment = ["announced", "enrolling", "closed"].contains(&round_status.as_str());
     let show_form = ["enrolling", "closed"].contains(&round_status.as_str());
 
-    let application = sqlx::query_as::<_, AdmissionApplication>(
+    let application = DbSession::new(&mut *database_stage_0).query_as::<AdmissionApplication>("admission.services.portal_service.get_status",
         r#"SELECT aa.*, at2.name AS track_name, at_asgn.name AS assigned_track_name, ar.name AS round_name
            FROM admission_applications aa
            LEFT JOIN admission_tracks at2 ON at2.id = aa.admission_track_id
@@ -157,24 +185,26 @@ pub async fn get_status(
            LEFT JOIN admission_rounds ar ON aa.admission_round_id = ar.id
            WHERE aa.id = $1"#,
     )
-    .bind(application_id).fetch_one(pool).await
+    .bind(application_id).fetch_one().await
     .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
     let application = decrypt_application(application)?;
 
-    let assignment = sqlx::query_as::<_, PortalAssignment>(
-        r#"SELECT ara.rank_in_track, ara.rank_in_room, ara.total_score,
+    let assignment = DbSession::new(&mut *database_stage_0)
+        .query_as::<PortalAssignment>(
+            "admission.services.portal_service.get_status",
+            r#"SELECT ara.rank_in_track, ara.rank_in_room, ara.total_score,
                   cr.name AS room_name, ara.student_confirmed
            FROM admission_room_assignments ara
            LEFT JOIN homerooms cr ON ara.homeroom_id = cr.id
            WHERE ara.application_id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+        )
+        .bind(application_id)
+        .fetch_optional()
+        .await
+        .unwrap_or(None);
 
     let scores: Vec<ExamScore> = if show_scores {
-        sqlx::query_as::<_, ExamScore>(
+        DbSession::new(&mut *database_stage_0).query_as::<ExamScore>("admission.services.portal_service.get_status",
             r#"SELECT esc.id, esc.application_id, esc.exam_subject_id, esc.score,
                       esc.entered_by, esc.entered_at, esc.updated_at,
                       aes.name AS subject_name, aes.code AS subject_code,
@@ -185,21 +215,25 @@ pub async fn get_status(
                ORDER BY aes.display_order ASC"#,
         )
         .bind(application_id).bind(application.admission_round_id)
-        .fetch_all(pool).await.unwrap_or_default()
+        .fetch_all().await.unwrap_or_default()
     } else {
         vec![]
     };
 
-    let form = sqlx::query_as::<_, EnrollmentForm>(
-        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
-    )
-    .bind(application_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
+    let form = DbSession::new(&mut *database_stage_0)
+        .query_as::<EnrollmentForm>(
+            "admission.services.portal_service.get_status",
+            "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
+        )
+        .bind(application_id)
+        .fetch_optional()
+        .await
+        .unwrap_or(None);
 
-    let documents = sqlx::query_as::<_, ApplicationDocument>(
-        r#"SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
+    let documents = DbSession::new(&mut *database_stage_0)
+        .query_as::<ApplicationDocument>(
+            "admission.services.portal_service.get_status",
+            r#"SELECT d.id, d.application_id, d.file_id, d.doc_type, d.created_at, d.deleted_at,
                   f.display_filename AS original_filename,
                   v.byte_size AS file_size,
                   v.detected_mime_type AS mime_type
@@ -209,11 +243,11 @@ pub async fn get_status(
              ON v.id = f.current_version_id AND v.file_id = f.id
            WHERE d.application_id = $1 AND d.deleted_at IS NULL
            ORDER BY d.created_at ASC"#,
-    )
-    .bind(application_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+        )
+        .bind(application_id)
+        .fetch_all()
+        .await
+        .unwrap_or_default();
 
     Ok(PortalStatusResult {
         application,
@@ -236,20 +270,28 @@ pub async fn confirm_enrollment(
     if round_status != "enrolling" {
         return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
     }
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
-            .bind(application_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.confirm_enrollment",
+    )
+    .await?;
+    let status: String = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.portal_service.confirm_enrollment",
+            "SELECT status FROM admission_applications WHERE id = $1",
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
     if status != "accepted" {
         return Err(AppError::BadRequest(format!(
             "ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})",
             status
         )));
     }
-    sqlx::query("UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
-        .bind(application_id).execute(pool).await
+    DbSession::new(&mut *database_stage_0).query("admission.services.portal_service.confirm_enrollment", "UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
+        .bind(application_id).execute().await
         .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
     Ok(())
 }
@@ -264,13 +306,20 @@ pub async fn get_enrollment_form(
     if !["enrolling", "closed"].contains(&round_status.as_str()) {
         return Err(AppError::BadRequest("ยังไม่ถึงช่วงเวลารายงานตัว".to_string()));
     }
-    sqlx::query_as::<_, EnrollmentForm>(
-        "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.get_enrollment_form",
     )
-    .bind(application_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<EnrollmentForm>(
+            "admission.services.portal_service.get_enrollment_form",
+            "SELECT * FROM admission_enrollment_forms WHERE application_id = $1",
+        )
+        .bind(application_id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))
 }
 
 pub async fn submit_enrollment_form(
@@ -285,36 +334,49 @@ pub async fn submit_enrollment_form(
             "ยังไม่ถึงช่วงเวลารายงานตัว หรือหมดเขตแล้ว".to_string(),
         ));
     }
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
-            .bind(application_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.submit_enrollment_form",
+    )
+    .await?;
+    let status: String = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.portal_service.submit_enrollment_form",
+            "SELECT status FROM admission_applications WHERE id = $1",
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
     if status != "accepted" {
         return Err(AppError::BadRequest(format!(
             "ไม่สามารถยืนยันได้ (สถานะปัจจุบัน: {})",
             status
         )));
     }
-    sqlx::query("UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
-        .bind(application_id).execute(pool).await
+    DbSession::new(&mut *database_stage_0).query("admission.services.portal_service.submit_enrollment_form", "UPDATE admission_room_assignments SET student_confirmed = true, student_confirmed_at = NOW() WHERE application_id = $1")
+        .bind(application_id).execute().await
         .map_err(|_| AppError::InternalServerError("Failed to confirm".to_string()))?;
 
     let form_data = payload.form_data.unwrap_or(json!({}));
-    sqlx::query(
-        r#"INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
+    DbSession::new(&mut *database_stage_0)
+        .query(
+            "admission.services.portal_service.submit_enrollment_form",
+            r#"INSERT INTO admission_enrollment_forms (application_id, form_data, pre_submitted_at)
            VALUES ($1, $2, NOW())
            ON CONFLICT (application_id) DO UPDATE SET form_data = $2, pre_submitted_at = NOW()"#,
-    )
-    .bind(application_id)
-    .bind(form_data)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to submit enrollment form: {}", e);
-        AppError::InternalServerError("ไม่สามารถบันทึกแบบฟอร์มได้".to_string())
-    })?;
+        )
+        .bind(application_id)
+        .bind(form_data)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to submit enrollment form: {}",
+                school_database::error_class(&e)
+            );
+            AppError::InternalServerError("ไม่สามารถบันทึกแบบฟอร์มได้".to_string())
+        })?;
     Ok(())
 }
 
@@ -330,12 +392,20 @@ pub async fn update_application(
             "ไม่สามารถแก้ไขใบสมัครได้ในช่วงเวลานี้".to_string(),
         ));
     }
-    let status: String =
-        sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
-            .bind(application_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.update_application",
+    )
+    .await?;
+    let status: String = DbSession::new(&mut *database_stage_0)
+        .scalar(
+            "admission.services.portal_service.update_application",
+            "SELECT status FROM admission_applications WHERE id = $1",
+        )
+        .bind(application_id)
+        .fetch_one()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))?;
     if status == "enrolled" || status == "withdrawn" {
         return Err(AppError::BadRequest(format!(
             "ไม่สามารถแก้ไขใบสมัครได้เนื่องจากอยู่ในสถานะ '{}'",
@@ -343,6 +413,7 @@ pub async fn update_application(
         )));
     }
 
+    drop(database_stage_0);
     let encrypted_pii = pii::encrypt_application_pii(
         &payload.data.national_id,
         payload.data.father_national_id.as_deref(),
@@ -351,18 +422,25 @@ pub async fn update_application(
     )
     .map_err(|error| pii_error("encrypt update application", error))?;
 
+    let mut database_stage_1 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.update_application",
+    )
+    .await?;
     if payload.data.national_id != payload.auth_national_id {
-        let round_id: Uuid = sqlx::query_scalar(
-            "SELECT admission_round_id FROM admission_applications WHERE id = $1",
-        )
-        .bind(application_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or_default();
-        let already: bool = sqlx::query_scalar(
+        let round_id: Uuid = DbSession::new(&mut *database_stage_1)
+            .scalar(
+                "admission.services.portal_service.update_application",
+                "SELECT admission_round_id FROM admission_applications WHERE id = $1",
+            )
+            .bind(application_id)
+            .fetch_one()
+            .await
+            .unwrap_or_default();
+        let already: bool = DbSession::new(&mut *database_stage_1).scalar("admission.services.portal_service.update_application",
             "SELECT EXISTS(SELECT 1 FROM admission_applications WHERE national_id_hash = $1 AND admission_round_id = $2 AND id != $3)"
         ).bind(&encrypted_pii.national_id_hash).bind(round_id).bind(application_id)
-        .fetch_one(pool).await.unwrap_or(false);
+        .fetch_one().await.unwrap_or(false);
         if already {
             return Err(AppError::BadRequest(
                 "เลขบัตรประชาชนใหม่ที่กรอกได้สมัครรอบนี้ไปแล้ว (ซ้ำ)".to_string(),
@@ -370,7 +448,7 @@ pub async fn update_application(
         }
     }
 
-    sqlx::query(
+    DbSession::new(&mut *database_stage_1).query("admission.services.portal_service.update_application",
         r#"UPDATE admission_applications SET
             admission_track_id = $1, title = $2, first_name = $3, last_name = $4,
             gender = $5, phone = $6, email = $7,
@@ -417,9 +495,9 @@ pub async fn update_application(
     .bind(&encrypted_pii.mother_national_id_hash)
     .bind(&encrypted_pii.guardian_national_id_hash)
     .bind(application_id)
-    .execute(pool).await
+    .execute().await
     .map_err(|e| {
-        tracing::error!("Failed to update application: {}", e);
+        tracing::error!("Failed to update application: {}", school_database::error_class(&e));
         AppError::InternalServerError("ไม่สามารถแก้ไขใบสมัครได้".to_string())
     })?;
     Ok(())
@@ -447,23 +525,33 @@ pub async fn authorize_document_download(
     file_id: Uuid,
 ) -> Result<Uuid, AppError> {
     let application_id = verify_credentials(pool, national_id, date_of_birth).await?;
-    let related = sqlx::query_scalar::<_, bool>(
-        r#"
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.authorize_document_download",
+    )
+    .await?;
+    let related = DbSession::new(&mut *database_stage_0)
+        .scalar::<bool>(
+            "admission.services.portal_service.authorize_document_download",
+            r#"
 SELECT EXISTS(
     SELECT 1
     FROM admission_application_documents
     WHERE application_id = $1 AND file_id = $2 AND deleted_at IS NULL
 )
 "#,
-    )
-    .bind(application_id)
-    .bind(file_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to verify portal document relationship: {}", error);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบเอกสารได้".to_string())
-    })?;
+        )
+        .bind(application_id)
+        .bind(file_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to verify portal document relationship: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถตรวจสอบเอกสารได้".to_string())
+        })?;
     if related {
         Ok(application_id)
     } else {
@@ -499,8 +587,15 @@ pub async fn get_exam_seat(
     if !allowed.contains(&round_status.as_str()) {
         return Err(AppError::BadRequest("ยังไม่ถึงเวลาดูข้อมูลห้องสอบ".to_string()));
     }
-    sqlx::query_as::<_, ExamSeatInfo>(
-        r#"SELECT sa.seat_number, sa.exam_id,
+    let mut database_stage_0 = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.portal_service.get_exam_seat",
+    )
+    .await?;
+    DbSession::new(&mut *database_stage_0)
+        .query_as::<ExamSeatInfo>(
+            "admission.services.portal_service.get_exam_seat",
+            r#"SELECT sa.seat_number, sa.exam_id,
                   COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
                   b.name_th AS building_name, ar.exam_date
            FROM admission_exam_seat_assignments sa
@@ -509,11 +604,11 @@ pub async fn get_exam_seat(
            LEFT JOIN rooms r ON r.id = er.room_id
            LEFT JOIN buildings b ON b.id = r.building_id
            WHERE sa.application_id = $1"#,
-    )
-    .bind(application_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|_| AppError::InternalServerError("Database error".to_string()))
+        )
+        .bind(application_id)
+        .fetch_optional()
+        .await
+        .map_err(|_| AppError::InternalServerError("Database error".to_string()))
 }
 
 fn parse_portal_birth_date(date_of_birth: &str) -> Result<chrono::NaiveDate, AppError> {

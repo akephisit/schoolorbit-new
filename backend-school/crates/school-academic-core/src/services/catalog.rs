@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use school_database::DbSession;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -67,16 +68,24 @@ pub struct CurrentSubjectRevision {
 
 /// Current published metadata only: no upcoming/expired fallback. Callers making a
 /// write decision hold stable-subject locks until their transaction commits.
-pub async fn current_subject_revisions<'e, E>(
-    executor: E,
+pub async fn current_subject_revisions(
+    pool: &PgPool,
     subject_ids: &[Uuid],
-) -> Result<HashMap<Uuid, CurrentSubjectRevision>, AppError>
-where
-    E: sqlx::Executor<'e, Database = Postgres>,
-{
-    let versions = sqlx::query_as::<_, SubjectRevisionSelection>(
+) -> Result<HashMap<Uuid, CurrentSubjectRevision>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.current_subject_revisions",
+    )
+    .await?;
+    current_subject_revisions_on_connection(&mut connection, subject_ids).await
+}
+pub async fn current_subject_revisions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_ids: &[Uuid],
+) -> Result<HashMap<Uuid, CurrentSubjectRevision>, AppError> {
+    let versions = DbSession::new(connection).query_as::<SubjectRevisionSelection>("academic_core.services.catalog.current_subject_revisions_on_connection",
         "SELECT id,subject_id,version_no,effective_from,effective_until FROM subject_versions WHERE subject_id=ANY($1) AND status='published'",
-    ).bind(subject_ids).fetch_all(executor).await?;
+    ).bind(subject_ids).fetch_all().await?;
     let mut grouped = HashMap::<Uuid, Vec<SubjectRevisionSelection>>::new();
     for version in versions {
         grouped.entry(version.subject_id).or_default().push(version);
@@ -106,18 +115,28 @@ where
 }
 
 /// ID-only adapter for current revision admission decisions.
-pub async fn current_subject_version_ids<'e, E>(
-    executor: E,
+pub async fn current_subject_version_ids(
+    pool: &PgPool,
     subject_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Uuid>, AppError>
-where
-    E: sqlx::Executor<'e, Database = Postgres>,
-{
-    Ok(current_subject_revisions(executor, subject_ids)
-        .await?
-        .into_iter()
-        .map(|(subject_id, revision)| (subject_id, revision.id))
-        .collect())
+) -> Result<HashMap<Uuid, Uuid>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.current_subject_version_ids",
+    )
+    .await?;
+    current_subject_version_ids_on_connection(&mut connection, subject_ids).await
+}
+pub async fn current_subject_version_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Uuid>, AppError> {
+    Ok(
+        current_subject_revisions_on_connection(connection, subject_ids)
+            .await?
+            .into_iter()
+            .map(|(subject_id, revision)| (subject_id, revision.id))
+            .collect(),
+    )
 }
 
 /// Match the lock used by subject revision commands, in a deterministic multi-subject order.
@@ -125,12 +144,14 @@ pub async fn lock_subjects_for_revision_selection(
     transaction: &mut Transaction<'_, Postgres>,
     subject_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM subjects WHERE id=ANY($1) ORDER BY id FOR UPDATE",
-    )
-    .bind(subject_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+    DbSession::new(&mut **transaction)
+        .scalar::<Uuid>(
+            "academic_core.services.catalog.lock_subjects_for_revision_selection",
+            "SELECT id FROM subjects WHERE id=ANY($1) ORDER BY id FOR UPDATE",
+        )
+        .bind(subject_ids)
+        .fetch_all()
+        .await?;
     Ok(())
 }
 
@@ -143,15 +164,31 @@ pub async fn list_subjects(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CatalogSubject>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_subjects",
+    )
+    .await?;
+    list_subjects_on_connection(&mut connection, filter).await
+}
+
+pub async fn list_subjects_on_connection(
+    connection: &mut sqlx::PgConnection,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<CatalogSubject>, AppError> {
     let owner_ids = filter.allowed_organization_unit_ids();
     let sql = format!(
         "SELECT {SUBJECT_COLUMNS} FROM subjects \
          WHERE $1 OR owning_organization_unit_id = ANY($2) ORDER BY code, id LIMIT 500"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_subjects_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
@@ -161,7 +198,21 @@ pub async fn list_subject_overview(
     manage_filter: &AcademicResourceListFilter,
     today: NaiveDate,
 ) -> Result<CatalogSubjectOverview, AppError> {
-    let subjects = list_subjects(pool, read_filter).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_subject_overview",
+    )
+    .await?;
+    list_subject_overview_on_connection(&mut connection, read_filter, manage_filter, today).await
+}
+
+pub async fn list_subject_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
+    read_filter: &AcademicResourceListFilter,
+    manage_filter: &AcademicResourceListFilter,
+    today: NaiveDate,
+) -> Result<CatalogSubjectOverview, AppError> {
+    let subjects = list_subjects_on_connection(connection, read_filter).await?;
     let subject_ids = subjects
         .iter()
         .map(|subject| subject.id)
@@ -169,18 +220,22 @@ pub async fn list_subject_overview(
     let versions: Vec<SubjectVersion> = if subject_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
-            "version.subject_id = ANY($1)",
-            "version.subject_id, version.version_no DESC",
-        )))
-        .bind(&subject_ids)
-        .fetch_all(pool)
-        .await?
+        DbSession::new(connection)
+            .query_as(
+                "academic_core.services.catalog.list_subject_overview_on_connection",
+                sqlx::AssertSqlSafe(subject_version_select(
+                    "version.subject_id = ANY($1)",
+                    "version.subject_id, version.version_no DESC",
+                )),
+            )
+            .bind(&subject_ids)
+            .fetch_all()
+            .await?
     };
-    let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
+    let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
     let subject_group_options =
-        list_catalog_subject_group_options(pool, read_filter, manage_filter).await?;
+        list_catalog_subject_group_options(connection, read_filter, manage_filter).await?;
     let mut versions_by_subject = HashMap::<Uuid, Vec<SubjectVersion>>::new();
     for version in versions {
         versions_by_subject
@@ -222,10 +277,26 @@ pub async fn list_subject_overview(
 }
 
 pub async fn get_subject(pool: &PgPool, id: Uuid) -> Result<CatalogSubject, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.get_subject",
+    )
+    .await?;
+    get_subject_on_connection(&mut connection, id).await
+}
+
+pub async fn get_subject_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<CatalogSubject, AppError> {
     let sql = format!("SELECT {SUBJECT_COLUMNS} FROM subjects WHERE id = $1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.get_subject_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชา".to_string()))
 }
@@ -234,20 +305,39 @@ pub async fn create_subject(
     pool: &PgPool,
     request: CreateCatalogSubjectRequest,
 ) -> Result<CatalogSubject, AppError> {
+    let _preflight_code = normalize_code(&request.code)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.create_subject",
+    )
+    .await?;
+    create_subject_on_connection(&mut connection, request).await
+}
+
+pub async fn create_subject_on_connection(
+    connection: &mut sqlx::PgConnection,
+    request: CreateCatalogSubjectRequest,
+) -> Result<CatalogSubject, AppError> {
     let code = normalize_code(&request.code)?;
-    let owner_id = resolve_subject_group_owner(pool, request.subject_group_id).await?;
+    let owner_id =
+        resolve_subject_group_owner_on_connection(connection, request.subject_group_id).await?;
     let id = Uuid::now_v7();
     let sql = format!(
         "INSERT INTO subjects (id, code, identity_key, subject_group_id, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {SUBJECT_COLUMNS}"
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.create_subject_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(&code)
         .bind(code.to_lowercase())
         .bind(request.subject_group_id)
         .bind(owner_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await
         .map_err(map_catalog_write_error)
 }
@@ -258,8 +348,25 @@ pub async fn update_subject(
     request: UpdateCatalogSubjectRequest,
 ) -> Result<CatalogSubject, AppError> {
     parse_row_version(request.row_version)?;
+    let _preflight_code = normalize_code(&request.code)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.update_subject",
+    )
+    .await?;
+    update_subject_on_connection(&mut connection, id, request).await
+}
+
+pub async fn update_subject_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    request: UpdateCatalogSubjectRequest,
+) -> Result<CatalogSubject, AppError> {
+    parse_row_version(request.row_version)?;
     let code = normalize_code(&request.code)?;
-    let owner_id = resolve_subject_group_owner(pool, request.subject_group_id).await?;
+    let owner_id =
+        resolve_subject_group_owner_on_connection(connection, request.subject_group_id).await?;
     let sql = format!(
         "UPDATE subjects SET code = $1, identity_key = $2, subject_group_id = $3, \
          owning_organization_unit_id = $4, \
@@ -267,7 +374,11 @@ pub async fn update_subject(
          row_version = row_version + 1, updated_at = now() WHERE id = $6 AND row_version = $7 \
          RETURNING {SUBJECT_COLUMNS}"
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.update_subject_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(&code)
         .bind(code.to_lowercase())
         .bind(request.subject_group_id)
@@ -275,7 +386,7 @@ pub async fn update_subject(
         .bind(request.archived)
         .bind(id)
         .bind(request.row_version)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(map_catalog_write_error)?
         .ok_or_else(|| AppError::Conflict("รายวิชาถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()))
@@ -285,25 +396,54 @@ pub async fn list_subject_versions(
     pool: &PgPool,
     subject_id: Uuid,
 ) -> Result<Vec<SubjectVersion>, AppError> {
-    ensure_subject_exists(pool, subject_id).await?;
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
-        "version.subject_id = $1",
-        "version.version_no DESC",
-    )))
-    .bind(subject_id)
-    .fetch_all(pool)
-    .await?)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_subject_versions",
+    )
+    .await?;
+    list_subject_versions_on_connection(&mut connection, subject_id).await
+}
+
+pub async fn list_subject_versions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_id: Uuid,
+) -> Result<Vec<SubjectVersion>, AppError> {
+    ensure_subject_exists(connection, subject_id).await?;
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_subject_versions_on_connection",
+            sqlx::AssertSqlSafe(subject_version_select(
+                "version.subject_id = $1",
+                "version.version_no DESC",
+            )),
+        )
+        .bind(subject_id)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn get_subject_version(pool: &PgPool, id: Uuid) -> Result<SubjectVersion, AppError> {
-    sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
-        "version.id = $1",
-        "version.id",
-    )))
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.get_subject_version",
+    )
+    .await?;
+    get_subject_version_on_connection(&mut connection, id).await
+}
+
+pub async fn get_subject_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<SubjectVersion, AppError> {
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.get_subject_version_on_connection",
+            sqlx::AssertSqlSafe(subject_version_select("version.id = $1", "version.id")),
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
 }
 
 pub async fn create_subject_version(
@@ -313,24 +453,35 @@ pub async fn create_subject_version(
 ) -> Result<SubjectVersion, AppError> {
     validate_subject_version(&request)?;
     let credit = validate_canonical_decimal(&request.credit, 2)?;
-    let mut transaction = pool.begin().await?;
-    let (subject_code,): (String,) =
-        sqlx::query_as("SELECT code FROM subjects WHERE id = $1 FOR UPDATE")
-            .bind(subject_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชา".to_string()))?;
-    ensure_subject_revision_differs(&mut transaction, subject_id, None, &request).await?;
-    let version_no: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(max(version_no), 0) + 1 FROM subject_versions WHERE subject_id = $1",
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_subject_version",
     )
-    .bind(subject_id)
-    .fetch_one(&mut *transaction)
     .await?;
+    let (subject_code,): (String,) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.catalog.create_subject_version",
+            "SELECT code FROM subjects WHERE id = $1 FOR UPDATE",
+        )
+        .bind(subject_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชา".to_string()))?;
+    ensure_subject_revision_differs(&mut transaction, subject_id, None, &request).await?;
+    let version_no: i32 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.create_subject_version",
+            "SELECT COALESCE(max(version_no), 0) + 1 FROM subject_versions WHERE subject_id = $1",
+        )
+        .bind(subject_id)
+        .fetch_one()
+        .await?;
     let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
     let id = Uuid::now_v7();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.catalog.create_subject_version",
+            r#"
         INSERT INTO subject_versions (
             id, subject_id, version_no, code, name_th, name_en, credit,
             hours_per_semester, type, description, effective_from,
@@ -341,25 +492,25 @@ pub async fn create_subject_version(
             $13, $14, true, $15, 'draft'
         )
         "#,
-    )
-    .bind(id)
-    .bind(subject_id)
-    .bind(version_no)
-    .bind(subject_code)
-    .bind(request.name_th.trim())
-    .bind(request.name_en)
-    .bind(credit)
-    .bind(request.hours_per_semester)
-    .bind(request.subject_type.trim())
-    .bind(request.description)
-    .bind(request.effective_from)
-    .bind(request.effective_until)
-    .bind(start_year_id)
-    .bind(request.term_code)
-    .bind(request.periods_per_week)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_version_write_error)?;
+        )
+        .bind(id)
+        .bind(subject_id)
+        .bind(version_no)
+        .bind(subject_code)
+        .bind(request.name_th.trim())
+        .bind(request.name_en)
+        .bind(credit)
+        .bind(request.hours_per_semester)
+        .bind(request.subject_type.trim())
+        .bind(request.description)
+        .bind(request.effective_from)
+        .bind(request.effective_until)
+        .bind(start_year_id)
+        .bind(request.term_code)
+        .bind(request.periods_per_week)
+        .execute()
+        .await
+        .map_err(map_version_write_error)?;
     replace_subject_grade_levels(&mut transaction, id, request.grade_level_ids).await?;
     transaction.commit().await?;
     get_subject_version(pool, id).await
@@ -387,19 +538,28 @@ pub async fn update_subject_version(
     parse_row_version(row_version)?;
     validate_subject_version(&values)?;
     let credit = validate_canonical_decimal(&values.credit, 2)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.update_subject_version",
+    )
+    .await?;
     let subject_id = lock_subject_for_version(&mut transaction, id).await?;
-    let status: super::super::models::VersionStatus =
-        sqlx::query_scalar("SELECT status FROM subject_versions WHERE id = $1 FOR UPDATE")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
+    let status: super::super::models::VersionStatus = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.update_subject_version",
+            "SELECT status FROM subject_versions WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))?;
     ensure_draft_version(status)?;
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
     let start_year_id = resolve_start_year(&mut transaction, values.effective_from).await?;
-    let result = sqlx::query(
-        r#"
+    let result = DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.catalog.update_subject_version",
+            r#"
         UPDATE subject_versions SET name_th = $1, name_en = $2, credit = $3,
             hours_per_semester = $4, type = $5, description = $6,
             effective_from = $7, effective_until = $8, term = $9,
@@ -407,23 +567,23 @@ pub async fn update_subject_version(
             row_version = row_version + 1, updated_at = now()
         WHERE id = $11 AND row_version = $12 AND status = 'draft'
         "#,
-    )
-    .bind(values.name_th.trim())
-    .bind(values.name_en)
-    .bind(credit)
-    .bind(values.hours_per_semester)
-    .bind(values.subject_type.trim())
-    .bind(values.description)
-    .bind(values.effective_from)
-    .bind(values.effective_until)
-    .bind(values.term_code)
-    .bind(values.periods_per_week)
-    .bind(id)
-    .bind(row_version)
-    .bind(start_year_id)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_version_write_error)?;
+        )
+        .bind(values.name_th.trim())
+        .bind(values.name_en)
+        .bind(credit)
+        .bind(values.hours_per_semester)
+        .bind(values.subject_type.trim())
+        .bind(values.description)
+        .bind(values.effective_from)
+        .bind(values.effective_until)
+        .bind(values.term_code)
+        .bind(values.periods_per_week)
+        .bind(id)
+        .bind(row_version)
+        .bind(start_year_id)
+        .execute()
+        .await
+        .map_err(map_version_write_error)?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "เวอร์ชันรายวิชาถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
@@ -440,15 +600,20 @@ pub async fn publish_subject_version(
     request: PublishVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
-    let subject_id = lock_subject_for_version(&mut transaction, id).await?;
-    let version: SubjectVersion = sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
-        "version.id = $1",
-        "version.id",
-    )))
-    .bind(id)
-    .fetch_one(&mut *transaction)
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.publish_subject_version",
+    )
     .await?;
+    let subject_id = lock_subject_for_version(&mut transaction, id).await?;
+    let version: SubjectVersion = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.catalog.publish_subject_version",
+            sqlx::AssertSqlSafe(subject_version_select("version.id = $1", "version.id")),
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     ensure_draft_version(version.status)?;
     if version.row_version != request.row_version {
         return Err(AppError::Conflict(
@@ -472,8 +637,8 @@ pub async fn publish_subject_version(
         ));
     }
     ensure_subject_revision_differs(&mut transaction, subject_id, Some(id), &values).await?;
-    sqlx::query("UPDATE subject_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1")
-        .bind(id).execute(&mut *transaction).await?;
+    DbSession::new(&mut *transaction).query("academic_core.services.catalog.publish_subject_version", "UPDATE subject_versions SET status = 'published', published_at = now(), row_version = row_version + 1, updated_at = now() WHERE id = $1")
+        .bind(id).execute().await?;
     transaction.commit().await?;
     get_subject_version(pool, id).await
 }
@@ -482,15 +647,31 @@ pub async fn list_activities(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CatalogActivity>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_activities",
+    )
+    .await?;
+    list_activities_on_connection(&mut connection, filter).await
+}
+
+pub async fn list_activities_on_connection(
+    connection: &mut sqlx::PgConnection,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<CatalogActivity>, AppError> {
     let owner_ids = filter.allowed_organization_unit_ids();
     let sql = format!(
         "SELECT {ACTIVITY_COLUMNS} FROM activities \
          WHERE $1 OR owning_organization_unit_id = ANY($2) ORDER BY code, id LIMIT 500"
     );
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_activities_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
@@ -500,7 +681,21 @@ pub async fn list_activity_overview(
     manage_filter: &AcademicResourceListFilter,
     today: NaiveDate,
 ) -> Result<CatalogActivityOverview, AppError> {
-    let activities = list_activities(pool, read_filter).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_activity_overview",
+    )
+    .await?;
+    list_activity_overview_on_connection(&mut connection, read_filter, manage_filter, today).await
+}
+
+pub async fn list_activity_overview_on_connection(
+    connection: &mut sqlx::PgConnection,
+    read_filter: &AcademicResourceListFilter,
+    manage_filter: &AcademicResourceListFilter,
+    today: NaiveDate,
+) -> Result<CatalogActivityOverview, AppError> {
+    let activities = list_activities_on_connection(connection, read_filter).await?;
     let activity_ids = activities
         .iter()
         .map(|activity| activity.id)
@@ -508,17 +703,24 @@ pub async fn list_activity_overview(
     let versions: Vec<ActivityVersion> = if activity_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
-            "version.activity_id = ANY($1)",
-            "version.activity_id, version.version_no DESC",
-        )))
-        .bind(&activity_ids)
-        .fetch_all(pool)
-        .await?
+        DbSession::new(connection)
+            .query_as(
+                "academic_core.services.catalog.list_activity_overview_on_connection",
+                sqlx::AssertSqlSafe(activity_version_select(
+                    "version.activity_id = ANY($1)",
+                    "version.activity_id, version.version_no DESC",
+                )),
+            )
+            .bind(&activity_ids)
+            .fetch_all()
+            .await?
     };
-    let catalog_grade_levels = list_catalog_grade_levels(pool).await?;
+    let catalog_grade_levels = list_catalog_grade_levels(connection).await?;
     let grade_level_options = active_catalog_grade_levels(&catalog_grade_levels);
-    let can_create = owner_allowed(manage_filter, Some(resolve_activity_owner(pool).await?));
+    let can_create = owner_allowed(
+        manage_filter,
+        Some(resolve_activity_owner_on_connection(connection).await?),
+    );
     let mut versions_by_activity = HashMap::<Uuid, Vec<ActivityVersion>>::new();
     for version in versions {
         versions_by_activity
@@ -562,10 +764,26 @@ pub async fn list_activity_overview(
 }
 
 pub async fn get_activity(pool: &PgPool, id: Uuid) -> Result<CatalogActivity, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.get_activity",
+    )
+    .await?;
+    get_activity_on_connection(&mut connection, id).await
+}
+
+pub async fn get_activity_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<CatalogActivity, AppError> {
     let sql = format!("SELECT {ACTIVITY_COLUMNS} FROM activities WHERE id = $1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.get_activity_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรม".to_string()))
 }
@@ -574,8 +792,22 @@ pub async fn create_activity(
     pool: &PgPool,
     request: CreateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
+    let _preflight_activity_type = normalize_activity_type(&request.activity_type)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.create_activity",
+    )
+    .await?;
+    create_activity_on_connection(&mut connection, request).await
+}
+
+pub async fn create_activity_on_connection(
+    connection: &mut sqlx::PgConnection,
+    request: CreateCatalogActivityRequest,
+) -> Result<CatalogActivity, AppError> {
     let activity_type = normalize_activity_type(&request.activity_type)?;
-    let owner_id = resolve_activity_owner(pool).await?;
+    let owner_id = resolve_activity_owner_on_connection(connection).await?;
     let id = Uuid::now_v7();
     let code = activity_code(id);
     let identity_key = format!("activity:{id}");
@@ -583,19 +815,39 @@ pub async fn create_activity(
         "INSERT INTO activities (id, code, identity_key, activity_type, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {ACTIVITY_COLUMNS}"
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.create_activity_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(code)
         .bind(identity_key)
         .bind(activity_type)
         .bind(owner_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await
         .map_err(map_catalog_write_error)
 }
 
 pub async fn update_activity(
     pool: &PgPool,
+    id: Uuid,
+    request: UpdateCatalogActivityRequest,
+) -> Result<CatalogActivity, AppError> {
+    parse_row_version(request.row_version)?;
+    let _preflight_activity_type = normalize_activity_type(&request.activity_type)?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.update_activity",
+    )
+    .await?;
+    update_activity_on_connection(&mut connection, id, request).await
+}
+
+pub async fn update_activity_on_connection(
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
     request: UpdateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
@@ -607,12 +859,16 @@ pub async fn update_activity(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $3 AND row_version = $4 RETURNING {ACTIVITY_COLUMNS}"
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.update_activity_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(activity_type)
         .bind(request.archived)
         .bind(id)
         .bind(request.row_version)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await
         .map_err(map_catalog_write_error)?
         .ok_or_else(|| AppError::Conflict("กิจกรรมถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()))
@@ -675,25 +931,54 @@ pub async fn list_activity_versions(
     pool: &PgPool,
     activity_id: Uuid,
 ) -> Result<Vec<ActivityVersion>, AppError> {
-    get_activity(pool, activity_id).await?;
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
-        "version.activity_id = $1",
-        "version.version_no DESC",
-    )))
-    .bind(activity_id)
-    .fetch_all(pool)
-    .await?)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_activity_versions",
+    )
+    .await?;
+    list_activity_versions_on_connection(&mut connection, activity_id).await
+}
+
+pub async fn list_activity_versions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    activity_id: Uuid,
+) -> Result<Vec<ActivityVersion>, AppError> {
+    get_activity_on_connection(connection, activity_id).await?;
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_activity_versions_on_connection",
+            sqlx::AssertSqlSafe(activity_version_select(
+                "version.activity_id = $1",
+                "version.version_no DESC",
+            )),
+        )
+        .bind(activity_id)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn get_activity_version(pool: &PgPool, id: Uuid) -> Result<ActivityVersion, AppError> {
-    sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
-        "version.id = $1",
-        "version.id",
-    )))
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.get_activity_version",
+    )
+    .await?;
+    get_activity_version_on_connection(&mut connection, id).await
+}
+
+pub async fn get_activity_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<ActivityVersion, AppError> {
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.get_activity_version_on_connection",
+            sqlx::AssertSqlSafe(activity_version_select("version.id = $1", "version.id")),
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))
 }
 
 pub async fn create_activity_version(
@@ -709,19 +994,28 @@ pub async fn create_activity_version(
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
     let grade_level_ids = sqlx::types::Json(request.grade_level_ids.clone());
-    let mut transaction = pool.begin().await?;
-    let version_no: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(max(version_no), 0) + 1 FROM activity_versions WHERE activity_id = $1",
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_activity_version",
     )
-    .bind(activity_id)
-    .fetch_one(&mut *transaction)
     .await?;
-    let activity_type: String =
-        sqlx::query_scalar("SELECT activity_type FROM activities WHERE id = $1 FOR UPDATE")
-            .bind(activity_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรม".to_string()))?;
+    let version_no: i32 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.create_activity_version",
+            "SELECT COALESCE(max(version_no), 0) + 1 FROM activity_versions WHERE activity_id = $1",
+        )
+        .bind(activity_id)
+        .fetch_one()
+        .await?;
+    let activity_type: String = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.create_activity_version",
+            "SELECT activity_type FROM activities WHERE id = $1 FOR UPDATE",
+        )
+        .bind(activity_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกิจกรรม".to_string()))?;
     let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
     let legacy_periods = request
         .hours_per_week
@@ -731,8 +1025,10 @@ pub async fn create_activity_version(
         .unwrap_or(1)
         .max(1);
     let id = Uuid::new_v4();
-    sqlx::query(
-        r#"
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.catalog.create_activity_version",
+            r#"
         INSERT INTO activity_versions (
             id, activity_id, version_no, name, activity_type, description,
             periods_per_week, hours_per_week, hours_per_term, scheduling_mode, is_active,
@@ -740,31 +1036,54 @@ pub async fn create_activity_version(
             effective_until, status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, $12, $13, $14, $15, 'draft')
         "#,
-    )
-    .bind(id)
-    .bind(activity_id)
-    .bind(version_no)
-    .bind(request.name.trim())
-    .bind(activity_type)
-    .bind(request.description)
-    .bind(legacy_periods)
-    .bind(hours)
-    .bind(hours_per_term)
-    .bind(request.scheduling_mode.trim())
-    .bind(request.term_code)
-    .bind(grade_level_ids)
-    .bind(start_year_id)
-    .bind(request.effective_from)
-    .bind(request.effective_until)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_version_write_error)?;
+        )
+        .bind(id)
+        .bind(activity_id)
+        .bind(version_no)
+        .bind(request.name.trim())
+        .bind(activity_type)
+        .bind(request.description)
+        .bind(legacy_periods)
+        .bind(hours)
+        .bind(hours_per_term)
+        .bind(request.scheduling_mode.trim())
+        .bind(request.term_code)
+        .bind(grade_level_ids)
+        .bind(start_year_id)
+        .bind(request.effective_from)
+        .bind(request.effective_until)
+        .execute()
+        .await
+        .map_err(map_version_write_error)?;
     transaction.commit().await?;
     get_activity_version(pool, id).await
 }
 
 pub async fn update_activity_version(
     pool: &PgPool,
+    id: Uuid,
+    request: UpdateActivityVersionRequest,
+) -> Result<ActivityVersion, AppError> {
+    parse_row_version(request.row_version)?;
+    validate_activity_version_fields(
+        &request.name,
+        &request.scheduling_mode,
+        &request.hours_per_week,
+        request.hours_per_term.as_deref(),
+        request.effective_from,
+        request.effective_until,
+    )?;
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.update_activity_version",
+    )
+    .await?;
+    update_activity_version_on_connection(&mut connection, id, request).await
+}
+
+pub async fn update_activity_version_on_connection(
+    connection: &mut sqlx::PgConnection,
     id: Uuid,
     request: UpdateActivityVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
@@ -789,35 +1108,37 @@ pub async fn update_activity_version(
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
     let grade_level_ids = sqlx::types::Json(values.grade_level_ids.clone());
-    let result = sqlx::query(
-        r#"
+    let result = DbSession::new(connection)
+        .query(
+            "academic_core.services.catalog.update_activity_version_on_connection",
+            r#"
         UPDATE activity_versions SET name = $1, description = $2, hours_per_week = $3,
             hours_per_term = $4, scheduling_mode = $5, effective_from = $6, effective_until = $7,
             term = $8, grade_level_ids = $9, row_version = row_version + 1,
             updated_at = now()
         WHERE id = $10 AND row_version = $11 AND status = 'draft'
         "#,
-    )
-    .bind(values.name.trim())
-    .bind(values.description)
-    .bind(hours)
-    .bind(hours_per_term)
-    .bind(values.scheduling_mode.trim())
-    .bind(values.effective_from)
-    .bind(values.effective_until)
-    .bind(values.term_code)
-    .bind(grade_level_ids)
-    .bind(id)
-    .bind(row_version)
-    .execute(pool)
-    .await
-    .map_err(map_version_write_error)?;
+        )
+        .bind(values.name.trim())
+        .bind(values.description)
+        .bind(hours)
+        .bind(hours_per_term)
+        .bind(values.scheduling_mode.trim())
+        .bind(values.effective_from)
+        .bind(values.effective_until)
+        .bind(values.term_code)
+        .bind(grade_level_ids)
+        .bind(id)
+        .bind(row_version)
+        .execute()
+        .await
+        .map_err(map_version_write_error)?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "เวอร์ชันกิจกรรมเผยแพร่แล้วหรือถูกแก้ไขโดยผู้ใช้อื่น".to_string(),
         ));
     }
-    get_activity_version(pool, id).await
+    get_activity_version_on_connection(connection, id).await
 }
 
 pub async fn publish_activity_version(
@@ -825,13 +1146,28 @@ pub async fn publish_activity_version(
     id: Uuid,
     request: PublishVersionRequest,
 ) -> Result<ActivityVersion, AppError> {
-    let (weekly_positive, total_positive): (bool, Option<bool>) = sqlx::query_as(
-        "SELECT hours_per_week > 0, hours_per_term > 0 FROM activity_versions WHERE id = $1",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.publish_activity_version",
     )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))?;
+    .await?;
+    publish_activity_version_on_connection(&mut connection, id, request).await
+}
+
+pub async fn publish_activity_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    request: PublishVersionRequest,
+) -> Result<ActivityVersion, AppError> {
+    let (weekly_positive, total_positive): (bool, Option<bool>) = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.publish_activity_version_on_connection",
+            "SELECT hours_per_week > 0, hours_per_term > 0 FROM activity_versions WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))?;
     if !weekly_positive {
         return Err(AppError::ValidationError(
             "ชั่วโมงต่อสัปดาห์ต้องมากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
@@ -842,21 +1178,35 @@ pub async fn publish_activity_version(
             "ระบุชั่วโมงรวมต่อภาคเรียนให้มากกว่า 0 ก่อนเผยแพร่เวอร์ชันกิจกรรม".to_string(),
         ));
     }
-    publish_version(pool, "activity_versions", id, request.row_version).await?;
-    get_activity_version(pool, id).await
+    publish_version(connection, "activity_versions", id, request.row_version).await?;
+    get_activity_version_on_connection(connection, id).await
 }
 
 pub async fn list_subject_default_teachers(
     pool: &PgPool,
     subject_id: Uuid,
 ) -> Result<Vec<DefaultTeacher>, AppError> {
-    Ok(sqlx::query_as(
-        "SELECT instructor_id AS user_id, role FROM subject_default_instructors \
-         WHERE subject_id = $1 ORDER BY role, instructor_id",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_subject_default_teachers",
     )
-    .bind(subject_id)
-    .fetch_all(pool)
-    .await?)
+    .await?;
+    list_subject_default_teachers_on_connection(&mut connection, subject_id).await
+}
+
+pub async fn list_subject_default_teachers_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_id: Uuid,
+) -> Result<Vec<DefaultTeacher>, AppError> {
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_subject_default_teachers_on_connection",
+            "SELECT instructor_id AS user_id, role FROM subject_default_instructors \
+         WHERE subject_id = $1 ORDER BY role, instructor_id",
+        )
+        .bind(subject_id)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn replace_subject_default_teachers(
@@ -880,13 +1230,27 @@ pub async fn list_activity_default_teachers(
     pool: &PgPool,
     activity_id: Uuid,
 ) -> Result<Vec<DefaultTeacher>, AppError> {
-    Ok(sqlx::query_as(
-        "SELECT instructor_id AS user_id, role FROM activity_default_instructors \
-         WHERE activity_id = $1 ORDER BY role, instructor_id",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_activity_default_teachers",
     )
-    .bind(activity_id)
-    .fetch_all(pool)
-    .await?)
+    .await?;
+    list_activity_default_teachers_on_connection(&mut connection, activity_id).await
+}
+
+pub async fn list_activity_default_teachers_on_connection(
+    connection: &mut sqlx::PgConnection,
+    activity_id: Uuid,
+) -> Result<Vec<DefaultTeacher>, AppError> {
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_activity_default_teachers_on_connection",
+            "SELECT instructor_id AS user_id, role FROM activity_default_instructors \
+         WHERE activity_id = $1 ORDER BY role, instructor_id",
+        )
+        .bind(activity_id)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn replace_activity_default_teachers(
@@ -912,11 +1276,26 @@ const SUBJECT_GROUP_SELECT: &str =
      FROM subject_groups g JOIN organization_units u ON u.subject_group_id = g.id";
 
 pub async fn list_subject_groups(pool: &PgPool) -> Result<Vec<SubjectGroup>, AppError> {
-    Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "{SUBJECT_GROUP_SELECT} ORDER BY g.display_order, g.code, g.id"
-    )))
-    .fetch_all(pool)
-    .await?)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.list_subject_groups",
+    )
+    .await?;
+    list_subject_groups_on_connection(&mut connection).await
+}
+
+pub async fn list_subject_groups_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<SubjectGroup>, AppError> {
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.list_subject_groups_on_connection",
+            sqlx::AssertSqlSafe(format!(
+                "{SUBJECT_GROUP_SELECT} ORDER BY g.display_order, g.code, g.id"
+            )),
+        )
+        .fetch_all()
+        .await?)
 }
 
 pub async fn create_subject_group(
@@ -927,24 +1306,34 @@ pub async fn create_subject_group(
     if request.display_order.is_some_and(|order| order < 0) {
         return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
     }
-    let mut tx = pool.begin().await?;
-    let code: String = sqlx::query_scalar("SELECT next_organization_code('SG')")
-        .fetch_one(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_subject_group",
+    )
+    .await?;
+    let code: String = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_core.services.catalog.create_subject_group",
+            "SELECT next_organization_code('SG')",
+        )
+        .fetch_one()
         .await?;
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = DbSession::new(&mut *tx).scalar("academic_core.services.catalog.create_subject_group",
         "INSERT INTO subject_groups (code, name_th, name_en, display_order, is_active)
          VALUES ($1, $2, $3, COALESCE($4, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM subject_groups)), true)
          RETURNING id",
     )
     .bind(code).bind(request.name_th.trim()).bind(request.name_en.trim())
-    .bind(request.display_order).fetch_one(&mut *tx).await.map_err(map_catalog_write_error)?;
+    .bind(request.display_order).fetch_one().await.map_err(map_catalog_write_error)?;
     // The database trigger creates the membership/permission owner in this same transaction.
-    let group = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "{SUBJECT_GROUP_SELECT} WHERE g.id = $1"
-    )))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let group = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_core.services.catalog.create_subject_group",
+            sqlx::AssertSqlSafe(format!("{SUBJECT_GROUP_SELECT} WHERE g.id = $1")),
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     tx.commit().await?;
     Ok(group)
 }
@@ -959,30 +1348,38 @@ pub async fn update_subject_group(
     if request.display_order < 0 {
         return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
     }
-    let mut tx = pool.begin().await?;
-    let updated = sqlx::query(
-        "UPDATE subject_groups SET name_th = $1, name_en = $2, display_order = $3,
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.update_subject_group",
+    )
+    .await?;
+    let updated = DbSession::new(&mut *tx)
+        .query(
+            "academic_core.services.catalog.update_subject_group",
+            "UPDATE subject_groups SET name_th = $1, name_en = $2, display_order = $3,
             is_active = COALESCE($4, is_active), row_version = row_version + 1, updated_at = now()
          WHERE id = $5 AND row_version = $6",
-    )
-    .bind(request.name_th.trim())
-    .bind(request.name_en.trim())
-    .bind(request.display_order)
-    .bind(request.is_active)
-    .bind(id)
-    .bind(request.row_version)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_catalog_write_error)?;
+        )
+        .bind(request.name_th.trim())
+        .bind(request.name_en.trim())
+        .bind(request.display_order)
+        .bind(request.is_active)
+        .bind(id)
+        .bind(request.row_version)
+        .execute()
+        .await
+        .map_err(map_catalog_write_error)?;
     if updated.rows_affected() == 0 {
         return Err(AppError::Conflict("กลุ่มสาระถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
-    let group = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "{SUBJECT_GROUP_SELECT} WHERE g.id = $1"
-    )))
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let group = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_core.services.catalog.update_subject_group",
+            sqlx::AssertSqlSafe(format!("{SUBJECT_GROUP_SELECT} WHERE g.id = $1")),
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     tx.commit().await?;
     Ok(group)
 }
@@ -1008,9 +1405,13 @@ struct CatalogSubjectGroupRow {
     name: String,
 }
 
-async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLevel>, AppError> {
-    let rows = sqlx::query_as::<_, CatalogGradeLevelRow>(
-        r#"
+async fn list_catalog_grade_levels(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<CatalogGradeLevel>, AppError> {
+    let rows = DbSession::new(connection)
+        .query_as::<CatalogGradeLevelRow>(
+            "academic_core.services.catalog.list_catalog_grade_levels",
+            r#"
         SELECT id, level_type, year, is_active
         FROM grade_levels
         ORDER BY CASE level_type
@@ -1022,9 +1423,9 @@ async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLeve
                  year,
                  id
         "#,
-    )
-    .fetch_all(pool)
-    .await?;
+        )
+        .fetch_all()
+        .await?;
     Ok(rows
         .into_iter()
         .map(|row| CatalogGradeLevel {
@@ -1035,7 +1436,7 @@ async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLeve
 }
 
 pub(super) async fn list_catalog_subject_group_options(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     read_filter: &AcademicResourceListFilter,
     manage_filter: &AcademicResourceListFilter,
 ) -> Result<Vec<CatalogSubjectGroupOption>, AppError> {
@@ -1043,8 +1444,10 @@ pub(super) async fn list_catalog_subject_group_options(
     if !read_filter.includes_school_owned && read_owner_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let rows = sqlx::query_as::<_, CatalogSubjectGroupRow>(
-        r#"
+    let rows = DbSession::new(connection)
+        .query_as::<CatalogSubjectGroupRow>(
+            "academic_core.services.catalog.list_catalog_subject_group_options",
+            r#"
         SELECT subject_group.id AS subject_group_id,
                owner.id AS organization_unit_id,
                subject_group.code,
@@ -1057,11 +1460,11 @@ pub(super) async fn list_catalog_subject_group_options(
           AND ($1 OR owner.id = ANY($2))
         ORDER BY subject_group.display_order, subject_group.name_th, subject_group.id
         "#,
-    )
-    .bind(read_filter.includes_school_owned)
-    .bind(read_owner_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(read_filter.includes_school_owned)
+        .bind(read_owner_ids)
+        .fetch_all()
+        .await?;
     Ok(rows
         .into_iter()
         .map(|row| CatalogSubjectGroupOption {
@@ -1078,8 +1481,22 @@ pub async fn resolve_subject_group_owner(
     pool: &PgPool,
     subject_group_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.resolve_subject_group_owner",
+    )
+    .await?;
+    resolve_subject_group_owner_on_connection(&mut connection, subject_group_id).await
+}
+
+pub async fn resolve_subject_group_owner_on_connection(
+    connection: &mut sqlx::PgConnection,
+    subject_group_id: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(connection)
+        .scalar(
+            "academic_core.services.catalog.resolve_subject_group_owner_on_connection",
+            r#"
         SELECT owner.id
         FROM subject_groups subject_group
         JOIN organization_units owner
@@ -1088,25 +1505,40 @@ pub async fn resolve_subject_group_owner(
         WHERE subject_group.id = $1
           AND subject_group.is_active = true
         "#,
-    )
-    .bind(subject_group_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("กลุ่มสาระนี้ยังไม่มีหน่วยงานผู้รับผิดชอบที่ใช้งานอยู่".to_string()))
+        )
+        .bind(subject_group_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| {
+            AppError::ValidationError("กลุ่มสาระนี้ยังไม่มีหน่วยงานผู้รับผิดชอบที่ใช้งานอยู่".to_string())
+        })
 }
 
 pub async fn resolve_activity_owner(pool: &PgPool) -> Result<Uuid, AppError> {
-    sqlx::query_scalar(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.resolve_activity_owner",
+    )
+    .await?;
+    resolve_activity_owner_on_connection(&mut connection).await
+}
+
+pub async fn resolve_activity_owner_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Uuid, AppError> {
+    DbSession::new(connection)
+        .scalar(
+            "academic_core.services.catalog.resolve_activity_owner_on_connection",
+            r#"
         SELECT id
         FROM organization_units
         WHERE code = 'ACAD-ACT'
           AND is_active = true
         "#,
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("ยังไม่ได้ตั้งค่าหน่วยงานกิจกรรมพัฒนาผู้เรียน".to_string()))
+        )
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ยังไม่ได้ตั้งค่าหน่วยงานกิจกรรมพัฒนาผู้เรียน".to_string()))
 }
 
 fn active_catalog_grade_levels(options: &[CatalogGradeLevel]) -> Vec<GradeLevelLookupItem> {
@@ -1332,19 +1764,30 @@ fn validate_subject_version(request: &CreateSubjectVersionRequest) -> Result<(),
 }
 
 fn validate_activity_version(request: &CreateActivityVersionRequest) -> Result<(), AppError> {
-    validate_effective_range(request.effective_from, request.effective_until)?;
-    validate_canonical_decimal(&request.hours_per_week, 2)?;
-    request
-        .hours_per_term
-        .as_deref()
+    validate_activity_version_fields(
+        &request.name,
+        &request.scheduling_mode,
+        &request.hours_per_week,
+        request.hours_per_term.as_deref(),
+        request.effective_from,
+        request.effective_until,
+    )
+}
+
+fn validate_activity_version_fields(
+    name: &str,
+    scheduling_mode: &str,
+    hours_per_week: &str,
+    hours_per_term: Option<&str>,
+    effective_from: chrono::NaiveDate,
+    effective_until: Option<chrono::NaiveDate>,
+) -> Result<(), AppError> {
+    validate_effective_range(effective_from, effective_until)?;
+    validate_canonical_decimal(hours_per_week, 2)?;
+    hours_per_term
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
-    if request.name.trim().is_empty()
-        || !matches!(
-            request.scheduling_mode.as_str(),
-            "synchronized" | "independent"
-        )
-    {
+    if name.trim().is_empty() || !matches!(scheduling_mode, "synchronized" | "independent") {
         return Err(AppError::ValidationError(
             "ข้อมูลเวอร์ชันกิจกรรมไม่ถูกต้อง".to_string(),
         ));
@@ -1380,10 +1823,17 @@ fn validate_subject_group(name_th: &str, name_en: &str) -> Result<(), AppError> 
     Ok(())
 }
 
-async fn ensure_subject_exists(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM subjects WHERE id = $1)")
+async fn ensure_subject_exists(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(), AppError> {
+    let exists: bool = DbSession::new(connection)
+        .scalar(
+            "academic_core.services.catalog.ensure_subject_exists",
+            "SELECT EXISTS (SELECT 1 FROM subjects WHERE id = $1)",
+        )
         .bind(id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
     if exists {
         Ok(())
@@ -1398,8 +1848,8 @@ async fn lock_subject_for_version(
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar("SELECT subject.id FROM subjects subject JOIN subject_versions version ON version.subject_id = subject.id WHERE version.id = $1 FOR UPDATE OF subject")
-        .bind(id).fetch_optional(&mut **transaction).await?
+    DbSession::new(&mut **transaction).scalar("academic_core.services.catalog.lock_subject_for_version", "SELECT subject.id FROM subjects subject JOIN subject_versions version ON version.subject_id = subject.id WHERE version.id = $1 FOR UPDATE OF subject")
+        .bind(id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
 }
 
@@ -1430,8 +1880,10 @@ async fn ensure_subject_revision_differs(
     grades.dedup();
     // Compare the revision applicable at the requested date, rather than every historical
     // revision: restoring A after B remains valid. Other drafts participate regardless of date.
-    let duplicate: bool = sqlx::query_scalar(
-        r#"WITH applicable AS (
+    let duplicate: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.catalog.ensure_subject_revision_differs",
+            r#"WITH applicable AS (
             SELECT id FROM subject_versions
             WHERE subject_id = $1 AND status = 'published'
               AND ($2::uuid IS NULL OR id <> $2)
@@ -1450,22 +1902,22 @@ async fn ensure_subject_revision_differs(
               AND ARRAY(SELECT grade_level_id FROM subject_version_grade_levels
                         WHERE subject_id = version.id ORDER BY grade_level_id) = $13::uuid[]
         )"#,
-    )
-    .bind(subject_id)
-    .bind(excluded_id)
-    .bind(request.effective_from)
-    .bind(request.name_th.trim())
-    .bind(&request.name_en)
-    .bind(validate_canonical_decimal(&request.credit, 2)?)
-    .bind(request.hours_per_semester)
-    .bind(request.subject_type.trim())
-    .bind(&request.description)
-    .bind(request.effective_until)
-    .bind(&request.term_code)
-    .bind(request.periods_per_week)
-    .bind(grades)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(subject_id)
+        .bind(excluded_id)
+        .bind(request.effective_from)
+        .bind(request.name_th.trim())
+        .bind(&request.name_en)
+        .bind(validate_canonical_decimal(&request.credit, 2)?)
+        .bind(request.hours_per_semester)
+        .bind(request.subject_type.trim())
+        .bind(&request.description)
+        .bind(request.effective_until)
+        .bind(&request.term_code)
+        .bind(request.periods_per_week)
+        .bind(grades)
+        .fetch_one()
+        .await?;
     if duplicate {
         return Err(AppError::Conflict(
             "ข้อมูลเวอร์ชันรายวิชาซ้ำกับเวอร์ชันที่ใช้อยู่หรือฉบับร่าง".to_string(),
@@ -1478,14 +1930,16 @@ async fn resolve_start_year(
     transaction: &mut Transaction<'_, Postgres>,
     effective_from: chrono::NaiveDate,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar(
-        "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 \
+    DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.catalog.resolve_start_year",
+            "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 \
          ORDER BY start_date DESC LIMIT 1",
-    )
-    .bind(effective_from)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่อยู่ในปีการศึกษาใด".to_string()))
+        )
+        .bind(effective_from)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("วันที่เริ่มใช้ไม่อยู่ในปีการศึกษาใด".to_string()))
 }
 
 async fn replace_subject_grade_levels(
@@ -1493,27 +1947,31 @@ async fn replace_subject_grade_levels(
     version_id: Uuid,
     grade_level_ids: Vec<Uuid>,
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM subject_version_grade_levels WHERE subject_id = $1")
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_core.services.catalog.replace_subject_grade_levels",
+            "DELETE FROM subject_version_grade_levels WHERE subject_id = $1",
+        )
         .bind(version_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     let mut grade_level_ids = grade_level_ids;
     grade_level_ids.sort_unstable();
     grade_level_ids.dedup();
     for grade_level_id in grade_level_ids {
-        sqlx::query(
+        DbSession::new(&mut **transaction).query("academic_core.services.catalog.replace_subject_grade_levels",
             "INSERT INTO subject_version_grade_levels (subject_id, grade_level_id) VALUES ($1, $2)",
         )
         .bind(version_id)
         .bind(grade_level_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
     }
     Ok(())
 }
 
 async fn publish_version(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     table: &str,
     id: Uuid,
     row_version: i64,
@@ -1524,10 +1982,14 @@ async fn publish_version(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $1 AND row_version = $2 AND status = 'draft'"
     );
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql))
+    let result = DbSession::new(connection)
+        .query(
+            "academic_core.services.catalog.publish_version",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(row_version)
-        .execute(pool)
+        .execute()
         .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::Conflict(
@@ -1554,39 +2016,59 @@ async fn replace_default_teachers(
     {
         return Err(AppError::ValidationError("รายชื่อครูเริ่มต้นซ้ำกัน".to_string()));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.replace_default_teachers",
+    )
+    .await?;
     let lock_sql = format!("SELECT row_version FROM {stable_table} WHERE id = $1 FOR UPDATE");
-    let actual: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(lock_sql))
+    let actual: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.catalog.replace_default_teachers",
+            sqlx::AssertSqlSafe(lock_sql),
+        )
         .bind(resource_id)
-        .fetch_optional(&mut *transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบทรัพยากรคลัง".to_string()))?;
     if actual != request.row_version {
         return Err(AppError::Conflict("ข้อมูลถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
     let delete_sql = format!("DELETE FROM {link_table} WHERE {foreign_key} = $1");
-    sqlx::query(sqlx::AssertSqlSafe(delete_sql))
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.catalog.replace_default_teachers",
+            sqlx::AssertSqlSafe(delete_sql),
+        )
         .bind(resource_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     let insert_sql = format!(
         "INSERT INTO {link_table} (id, {foreign_key}, instructor_id, role) VALUES ($1, $2, $3, $4)"
     );
     for teacher in request.teachers {
-        sqlx::query(sqlx::AssertSqlSafe(insert_sql.as_str()))
+        DbSession::new(&mut *transaction)
+            .query(
+                "academic_core.services.catalog.replace_default_teachers",
+                sqlx::AssertSqlSafe(insert_sql.as_str()),
+            )
             .bind(Uuid::new_v4())
             .bind(resource_id)
             .bind(teacher.user_id)
             .bind(teacher.role)
-            .execute(&mut *transaction)
+            .execute()
             .await?;
     }
     let update_sql = format!(
         "UPDATE {stable_table} SET row_version = row_version + 1, updated_at = now() WHERE id = $1"
     );
-    sqlx::query(sqlx::AssertSqlSafe(update_sql))
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.catalog.replace_default_teachers",
+            sqlx::AssertSqlSafe(update_sql),
+        )
         .bind(resource_id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     transaction.commit().await?;
     Ok(())
@@ -1638,19 +2120,120 @@ pub async fn subject_groups_for_versions(
     if version_ids.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(sqlx::query_as(
-        "SELECT version.id AS subject_version_id, sg.id AS subject_group_id,
+
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.catalog.subject_groups_for_versions",
+    )
+    .await?;
+    subject_groups_for_versions_on_connection(&mut connection, version_ids).await
+}
+
+pub async fn subject_groups_for_versions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    version_ids: &[Uuid],
+) -> Result<Vec<SubjectVersionSubjectGroup>, AppError> {
+    if version_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_core.services.catalog.subject_groups_for_versions_on_connection",
+            "SELECT version.id AS subject_version_id, sg.id AS subject_group_id,
                 sg.name_th AS name, sg.display_order
          FROM subject_versions version
          JOIN subjects subject ON subject.id = version.subject_id
          JOIN subject_groups sg ON sg.id = subject.subject_group_id
          WHERE version.id = ANY($1) ORDER BY version.id",
-    )
-    .bind(version_ids)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(version_ids)
+        .fetch_all()
+        .await?)
 }
 
 #[cfg(test)]
 #[path = "catalog_revision_selection_tests.rs"]
 mod revision_selection_tests;
+
+#[cfg(test)]
+mod pool_facade_tests {
+    use super::*;
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        pool
+    }
+
+    #[tokio::test]
+    async fn pool_facade_preflight_empty_catalog_metadata_needs_no_database() {
+        let pool = closed_pool().await;
+        assert!(subject_groups_for_versions(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty());
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_scope_denials_precede_checkout() {
+        let pool = closed_pool().await;
+        let filter = school_authorization::AcademicResourceListFilter::default();
+        assert!(matches!(
+            crate::services::curriculum::list(&pool, &filter).await,
+            Err(AppError::Forbidden(_))
+        ));
+        assert!(matches!(
+            crate::services::workspaces::curriculum_create_options(&pool, &filter).await,
+            Err(AppError::Forbidden(_))
+        ));
+        let actor = school_authorization::ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![],
+        };
+        assert!(matches!(
+            crate::services::workspaces::setup_workspace(&pool, &actor).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_preflight_conflicting_view_is_a_validation_error() {
+        let pool = closed_pool().await;
+        let query = crate::models::CurriculumViewQuery {
+            draft_id: Some(Uuid::new_v4()),
+            publication_id: Some(Uuid::new_v4()),
+        };
+        assert!(matches!(
+            crate::services::curriculum_publications::resolve_view(&pool, Uuid::new_v4(), &query)
+                .await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    #[tokio::test]
+    async fn pool_facade_exhausted_catalog_and_scope_paths_need_no_available_connection() {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(
+            "catalog_facade_exhausted",
+            1,
+        )
+        .await;
+        let held = pool.acquire().await.unwrap();
+        let filter = school_authorization::AcademicResourceListFilter::default();
+        tokio::time::timeout(std::time::Duration::from_millis(250), async {
+            assert!(subject_groups_for_versions(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty());
+            assert!(matches!(
+                crate::services::curriculum::list(&pool, &filter).await,
+                Err(AppError::Forbidden(_))
+            ));
+            assert!(matches!(
+                crate::services::workspaces::curriculum_create_options(&pool, &filter).await,
+                Err(AppError::Forbidden(_))
+            ));
+        })
+        .await
+        .expect("pure facade paths must finish while the only connection is held");
+        drop(held);
+        pool.close().await;
+    }
+}

@@ -152,6 +152,9 @@ async fn lifecycle_closure_requires_current_complete_aggregates_and_exact_warnin
     crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
         .await
         .unwrap();
+    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 109)
+        .await
+        .unwrap();
     actor
         .permissions
         .push(school_permissions::registry::codes::WILDCARD.into());

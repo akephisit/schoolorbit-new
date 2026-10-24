@@ -16,6 +16,11 @@ pub async fn list_notifications(
     user_id: Uuid,
     query: ListNotificationsQuery,
 ) -> Result<ListNotificationsResponse, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "notifications.list_notifications",
+    )
+    .await?;
     let params = notification_page_params(&query);
 
     let mut sql = r#"
@@ -31,27 +36,39 @@ pub async fn list_notifications(
 
     sql.push_str(" ORDER BY created_at DESC LIMIT $2 OFFSET $3");
 
-    let items = sqlx::query_as::<_, Notification>(sqlx::AssertSqlSafe(sql))
+    let items = school_database::DbSession::new(&mut *connection)
+        .query_as::<Notification>(
+            "notifications.src.services.list_notifications",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(user_id)
         .bind(params.limit)
         .bind(params.offset)
-        .fetch_all(pool)
+        .fetch_all()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to fetch notifications: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to fetch notifications"
+            );
             AppError::InternalServerError("ไม่สามารถดึงข้อมูลการแจ้งเตือนได้".to_string())
         })?;
 
-    let unread_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to count unread notifications: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลการแจ้งเตือนได้".to_string())
-    })?;
+    let unread_count: i64 = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "notifications.src.services.list_notifications",
+            "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
+        )
+        .bind(user_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to count unread notifications"
+            );
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลการแจ้งเตือนได้".to_string())
+        })?;
 
     Ok(ListNotificationsResponse {
         items,
@@ -66,13 +83,23 @@ pub async fn mark_as_read(
     user_id: Uuid,
     notification_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.mark_as_read")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "notifications.src.services.mark_as_read",
+            "UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2",
+        )
         .bind(notification_id)
         .bind(user_id)
-        .execute(pool)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to mark notification as read: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to mark notification as read"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
         })?;
 
@@ -80,12 +107,22 @@ pub async fn mark_as_read(
 }
 
 pub async fn mark_all_as_read(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
-    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.mark_all_as_read")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "notifications.src.services.mark_all_as_read",
+            "UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL",
+        )
         .bind(user_id)
-        .execute(pool)
+        .execute()
         .await
         .map_err(|e| {
-            tracing::error!("Failed to mark all notifications as read: {}", e);
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to mark all notifications as read"
+            );
             AppError::InternalServerError("เกิดข้อผิดพลาดในการอัพเดตสถานะ".to_string())
         })?;
 
@@ -114,7 +151,10 @@ pub async fn create_notification(
     )
     .await
     .map_err(|e| {
-        tracing::error!("Failed to create notification: {}", e);
+        tracing::error!(
+            error_class = school_database::error_class(&e),
+            "Failed to create notification"
+        );
         AppError::InternalServerError("Failed to create notification".to_string())
     })?;
 
@@ -126,8 +166,13 @@ pub async fn subscribe_push(
     user_id: Uuid,
     payload: SubscribePushRequest,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.subscribe_push")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "notifications.src.services.subscribe_push",
+            r#"
         INSERT INTO push_subscriptions (user_id, endpoint, p256dh_key, auth_key, updated_at)
         VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT (endpoint) DO UPDATE
@@ -136,17 +181,20 @@ pub async fn subscribe_push(
             auth_key = EXCLUDED.auth_key,
             updated_at = NOW()
         "#,
-    )
-    .bind(user_id)
-    .bind(payload.endpoint)
-    .bind(payload.p256dh)
-    .bind(payload.auth)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to save push subscription: {}", e);
-        AppError::InternalServerError("Failed to subscribe".to_string())
-    })?;
+        )
+        .bind(user_id)
+        .bind(payload.endpoint)
+        .bind(payload.p256dh)
+        .bind(payload.auth)
+        .execute()
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error_class = school_database::error_class(&e),
+                "Failed to save push subscription"
+            );
+            AppError::InternalServerError("Failed to subscribe".to_string())
+        })?;
 
     Ok(())
 }

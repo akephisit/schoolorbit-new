@@ -1597,6 +1597,36 @@ mod protected_router {
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
         }
 
+        let timetable_list =
+            "/api/academic/timetable-versions?academicTermId=11000000-0000-0000-0000-000000000251";
+        let timetable_resolve = "/api/academic/timetable-versions/resolve?academicTermId=11000000-0000-0000-0000-000000000251&date=2026-05-18";
+        let timetable_clone =
+            "/api/academic/timetable-versions/61000000-0000-0000-0000-000000000001/clone";
+        for (method, path) in [
+            (Method::GET, timetable_list),
+            (Method::GET, timetable_resolve),
+            (Method::POST, timetable_clone),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(method.clone(), path, Some(origin), None, None))
+                .await
+                .expect("protected timetable version route");
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {path}"
+            );
+        }
+        for path in [timetable_list, timetable_resolve] {
+            let response = app
+                .clone()
+                .oneshot(request(Method::GET, path, Some(origin), Some(&token), None))
+                .await
+                .expect("authenticated timetable version read");
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "GET {path}");
+        }
+
         let cases = [
             (
                 Method::GET,
@@ -1642,6 +1672,31 @@ mod protected_router {
         }
         // A valid tenant-bound CSRF token reaches the existing JSON extractor; no mutation occurs.
         let csrf = fixture.csrf(session_id);
+        let mut clone_request = request(
+            Method::POST,
+            timetable_clone,
+            Some(origin),
+            Some(&token),
+            Some(&csrf),
+        );
+        clone_request.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        *clone_request.body_mut() = Body::from(
+            serde_json::json!({
+                "sourceRowVersion": 1,
+                "resumeDraftId": null,
+                "draftRowVersion": null,
+            })
+            .to_string(),
+        );
+        let response = app
+            .clone()
+            .oneshot(clone_request)
+            .await
+            .expect("authenticated timetable version clone");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let response = app
             .oneshot(request(
                 Method::POST,

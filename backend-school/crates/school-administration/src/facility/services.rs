@@ -10,8 +10,21 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub async fn list_buildings(pool: &PgPool) -> Result<Vec<Building>, AppError> {
-    sqlx::query_as::<_, Building>("SELECT * FROM buildings ORDER BY name_th ASC")
-        .fetch_all(pool)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.list_buildings")
+            .await?;
+    list_buildings_on_connection(&mut connection).await
+}
+
+pub async fn list_buildings_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<Building>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Building>(
+            "administration.facility.services.list_buildings_on_connection",
+            "SELECT * FROM buildings ORDER BY name_th ASC",
+        )
+        .fetch_all()
         .await
         .map_err(AppError::from)
 }
@@ -20,20 +33,32 @@ pub async fn create_building(
     pool: &PgPool,
     payload: CreateBuildingRequest,
 ) -> Result<Building, AppError> {
-    sqlx::query_as::<_, Building>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.create_building")
+            .await?;
+    create_building_on_connection(&mut connection, payload).await
+}
+
+pub async fn create_building_on_connection(
+    connection: &mut sqlx::PgConnection,
+    payload: CreateBuildingRequest,
+) -> Result<Building, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Building>(
+            "administration.facility.services.create_building_on_connection",
+            r#"
         INSERT INTO buildings (name_th, name_en, code, description)
         VALUES ($1, $2, $3, $4)
         RETURNING *
         "#,
-    )
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.description)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(payload.name_th)
+        .bind(payload.name_en)
+        .bind(payload.code)
+        .bind(payload.description)
+        .fetch_one()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn update_building(
@@ -41,8 +66,21 @@ pub async fn update_building(
     id: Uuid,
     payload: UpdateBuildingRequest,
 ) -> Result<Building, AppError> {
-    sqlx::query_as::<_, Building>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.update_building")
+            .await?;
+    update_building_on_connection(&mut connection, id, payload).await
+}
+
+pub async fn update_building_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    payload: UpdateBuildingRequest,
+) -> Result<Building, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Building>(
+            "administration.facility.services.update_building_on_connection",
+            r#"
         UPDATE buildings SET
             name_th = COALESCE($1, name_th),
             name_en = COALESCE($2, name_en),
@@ -52,21 +90,35 @@ pub async fn update_building(
         WHERE id = $5
         RETURNING *
         "#,
-    )
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.description)
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(payload.name_th)
+        .bind(payload.name_en)
+        .bind(payload.code)
+        .bind(payload.description)
+        .bind(id)
+        .fetch_one()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn delete_building(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM buildings WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.delete_building")
+            .await?;
+    delete_building_on_connection(&mut connection, id).await
+}
+
+pub async fn delete_building_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(), AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "administration.facility.services.delete_building_on_connection",
+            "DELETE FROM buildings WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await?;
 
     Ok(())
@@ -116,12 +168,31 @@ pub async fn list_rooms(pool: &PgPool, filter: RoomFilter) -> Result<Vec<Room>, 
         }
     }
 
-    query.fetch_all(pool).await.map_err(AppError::from)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.list_rooms")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .prepared_query_as("administration.rooms.search", query)
+        .fetch_all()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn create_room(pool: &PgPool, payload: CreateRoomRequest) -> Result<Room, AppError> {
-    sqlx::query_as::<_, Room>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.create_room")
+            .await?;
+    create_room_on_connection(&mut connection, payload).await
+}
+
+pub async fn create_room_on_connection(
+    connection: &mut sqlx::PgConnection,
+    payload: CreateRoomRequest,
+) -> Result<Room, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Room>(
+            "administration.facility.services.create_room_on_connection",
+            r#"
         INSERT INTO rooms (
             building_id, name_th, name_en, code, room_type, 
             capacity, floor, status, description
@@ -129,19 +200,19 @@ pub async fn create_room(pool: &PgPool, payload: CreateRoomRequest) -> Result<Ro
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *, (SELECT name_th FROM buildings WHERE id = $1) as building_name
         "#,
-    )
-    .bind(payload.building_id)
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.room_type)
-    .bind(room_capacity_or_default(payload.capacity))
-    .bind(payload.floor)
-    .bind(room_status_or_default(payload.status))
-    .bind(payload.description)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(payload.building_id)
+        .bind(payload.name_th)
+        .bind(payload.name_en)
+        .bind(payload.code)
+        .bind(payload.room_type)
+        .bind(room_capacity_or_default(payload.capacity))
+        .bind(payload.floor)
+        .bind(room_status_or_default(payload.status))
+        .bind(payload.description)
+        .fetch_one()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn update_room(
@@ -149,8 +220,21 @@ pub async fn update_room(
     id: Uuid,
     payload: UpdateRoomRequest,
 ) -> Result<Room, AppError> {
-    sqlx::query_as::<_, Room>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.update_room")
+            .await?;
+    update_room_on_connection(&mut connection, id, payload).await
+}
+
+pub async fn update_room_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    payload: UpdateRoomRequest,
+) -> Result<Room, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<Room>(
+            "administration.facility.services.update_room_on_connection",
+            r#"
         UPDATE rooms SET
             building_id = COALESCE($1, building_id),
             name_th = COALESCE($2, name_th),
@@ -165,26 +249,40 @@ pub async fn update_room(
         WHERE id = $10
         RETURNING *, (SELECT name_th FROM buildings WHERE id = rooms.building_id) as building_name
         "#,
-    )
-    .bind(payload.building_id)
-    .bind(payload.name_th)
-    .bind(payload.name_en)
-    .bind(payload.code)
-    .bind(payload.room_type)
-    .bind(payload.capacity)
-    .bind(payload.floor)
-    .bind(payload.status)
-    .bind(payload.description)
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .bind(payload.building_id)
+        .bind(payload.name_th)
+        .bind(payload.name_en)
+        .bind(payload.code)
+        .bind(payload.room_type)
+        .bind(payload.capacity)
+        .bind(payload.floor)
+        .bind(payload.status)
+        .bind(payload.description)
+        .bind(id)
+        .fetch_one()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn delete_room(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM rooms WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "administration.delete_room")
+            .await?;
+    delete_room_on_connection(&mut connection, id).await
+}
+
+pub async fn delete_room_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<(), AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "administration.facility.services.delete_room_on_connection",
+            "DELETE FROM rooms WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await?;
 
     Ok(())

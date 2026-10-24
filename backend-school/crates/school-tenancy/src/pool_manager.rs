@@ -21,6 +21,7 @@ pub struct PoolManagerConfig {
     runtime_connections: u32,
     per_tenant: u32,
     admission_timeout: Duration,
+    background_turns: usize,
 }
 impl PoolManagerConfig {
     pub(crate) fn background_turn_limit(&self, requested: usize) -> usize {
@@ -28,10 +29,22 @@ impl PoolManagerConfig {
         requested.min(resident_slots.saturating_sub(1).max(1) as usize)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_tests(runtime_connections: u32, per_tenant: u32, background_turns: usize) -> Self {
+        assert!(per_tenant > 0 && runtime_connections >= per_tenant && background_turns > 0);
+        Self {
+            runtime_connections,
+            per_tenant,
+            background_turns,
+            admission_timeout: Duration::from_millis(250),
+        }
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let config = Self {
             runtime_connections: setting("TENANT_RUNTIME_CONNECTIONS", 40, 1, 10_000)?,
             per_tenant: setting("TENANT_POOL_MAX_CONNECTIONS", 10, 1, 100)?,
+            background_turns: setting("TENANT_BACKGROUND_MAX_TURNS", 2, 1, 64)? as usize,
             admission_timeout: Duration::from_millis(setting(
                 "TENANT_POOL_ADMISSION_TIMEOUT_MS",
                 5000,
@@ -78,6 +91,7 @@ impl Default for PoolManagerConfig {
             runtime_connections: 40,
             per_tenant: 10,
             admission_timeout: Duration::from_secs(5),
+            background_turns: 2,
         }
     }
 }
@@ -96,7 +110,10 @@ impl PoolEntry {
         self.last_used = now;
     }
     fn leased(&mut self) -> Result<TenantPool, String> {
-        let lease = self.lease.upgrade().unwrap_or_else(|| Arc::new(Lease));
+        let lease = self
+            .lease
+            .upgrade()
+            .unwrap_or_else(|| Arc::new(Lease::new()));
         self.lease = Arc::downgrade(&lease);
         TenantPool::managed(self.pool.clone(), lease)
     }
@@ -136,7 +153,23 @@ impl Drop for PendingPool {
     }
 }
 
+struct PhysicalAdmissionObservation {
+    started: Instant,
+    status: &'static str,
+}
+impl Drop for PhysicalAdmissionObservation {
+    fn drop(&mut self) {
+        tracing::debug!(
+            operation = "tenant_physical_budget",
+            admission_us = self.started.elapsed().as_micros() as u64,
+            status = self.status,
+            "Tenant physical connection budget admission ended"
+        );
+    }
+}
+
 pub struct PoolManager {
+    background_turns: Arc<crate::background::TenantTurnExecutor>,
     pools: Arc<RwLock<HashMap<String, PoolEntry>>>,
     creation_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
     admission: Arc<Mutex<()>>,
@@ -152,6 +185,9 @@ impl PoolManager {
     }
     pub fn with_config(config: PoolManagerConfig) -> Self {
         Self {
+            background_turns: Arc::new(crate::background::TenantTurnExecutor::new(
+                config.background_turn_limit(config.background_turns),
+            )),
             pools: Arc::new(RwLock::new(HashMap::new())),
             creation_locks: Arc::new(DashMap::new()),
             admission: Arc::new(Mutex::new(())),
@@ -161,6 +197,10 @@ impl PoolManager {
             pool_ttl: Duration::from_secs(1800),
             lifecycle_timeout: Duration::from_secs(30),
         }
+    }
+    /// The single background database admission owner for this process manager.
+    pub fn background_turns(&self) -> Arc<crate::background::TenantTurnExecutor> {
+        self.background_turns.clone()
     }
     #[cfg(any(test, feature = "test-support"))]
     pub async fn insert_test_pool(&self, database_url: &str, pool: PgPool) {
@@ -195,8 +235,13 @@ impl PoolManager {
     }
     async fn reserve(&self) -> Result<OwnedSemaphorePermit, String> {
         let deadline = tokio::time::Instant::now() + self.admission_timeout;
-        tokio::time::timeout_at(deadline, async {
+        let mut observation = PhysicalAdmissionObservation {
+            started: Instant::now(),
+            status: "cancelled",
+        };
+        let result = tokio::time::timeout_at(deadline, async {
             let _admission = self.admission.lock().await;
+            let mut reported_wait = false;
             loop {
                 if let Ok(permit) = self
                     .budget
@@ -204,6 +249,14 @@ impl PoolManager {
                     .try_acquire_many_owned(self.max_connections_per_school)
                 {
                     return Ok(permit);
+                }
+                if !reported_wait {
+                    tracing::debug!(
+                        operation = "tenant_physical_budget",
+                        phase = "waiting",
+                        "Tenant physical connection admission waiting"
+                    );
+                    reported_wait = true;
                 }
                 let mut pools = self.pools.write().await;
                 let victim = pools
@@ -226,8 +279,17 @@ impl PoolManager {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
-        .await
-        .map_err(|_| "Tenant connection budget admission timed out".to_string())?
+        .await;
+        match result {
+            Ok(result) => {
+                observation.status = if result.is_ok() { "ok" } else { "error" };
+                result
+            }
+            Err(_) => {
+                observation.status = "timeout";
+                Err("Tenant connection budget admission timed out".to_string())
+            }
+        }
     }
     async fn get_or_create_pool_with<F, Fut>(
         &self,
@@ -472,6 +534,29 @@ impl Default for PoolManager {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn background_setting_preserves_default_and_refuses_unbounded_values() {
+        assert_eq!(
+            super::parse_setting("TENANT_BACKGROUND_MAX_TURNS", None, 2, 1, 64).unwrap(),
+            2
+        );
+        assert_eq!(
+            super::parse_setting("TENANT_BACKGROUND_MAX_TURNS", Some("64"), 2, 1, 64).unwrap(),
+            64
+        );
+        for raw in ["0", "65", "invalid"] {
+            assert!(
+                super::parse_setting("TENANT_BACKGROUND_MAX_TURNS", Some(raw), 2, 1, 64).is_err()
+            );
+        }
+        let manager = super::PoolManager::new();
+        assert!(std::sync::Arc::ptr_eq(
+            &manager.background_turns(),
+            &manager.background_turns()
+        ));
+        assert_eq!(manager.background_turns().limit(), 2);
+    }
+
+    #[test]
     fn background_turn_admission_clamps_to_resident_pool_capacity() {
         use super::PoolManagerConfig;
         let one = PoolManagerConfig {
@@ -568,6 +653,7 @@ mod tests {
             runtime_connections: 2,
             per_tenant: 1,
             admission_timeout: Duration::from_millis(100),
+            background_turns: 2,
         })
     }
 

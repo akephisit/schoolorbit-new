@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+school-tenancy = { workspace = true }
+school-database = { workspace = true }
 dashmap = { workspace = true }
 school-errors = { workspace = true }
 school-permissions = { workspace = true }

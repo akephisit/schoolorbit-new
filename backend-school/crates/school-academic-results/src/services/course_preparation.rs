@@ -2,6 +2,7 @@ use super::*;
 use crate::policy::results as access_policy;
 use school_academic_assessment::gradebook::models::{GradebookStudent, ScoreCell, ScoreItem};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::{BTreeMap, BTreeSet};
@@ -111,7 +112,7 @@ async fn load_scope(
     group: Uuid,
     context: &ResultContext,
 ) -> Result<CourseScope, AppError> {
-    sqlx::query_as(
+    DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
                   d.assessment_total_score::text,o.owning_organization_unit_id,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
@@ -142,7 +143,7 @@ async fn load_scope(
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(actor.user_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Course group not found in context".into()))
 }
@@ -153,12 +154,20 @@ async fn begin_course<'a>(
     group: Uuid,
     context: &ResultContext,
     write: bool,
-) -> Result<(Transaction<'a, Postgres>, CourseScope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, CourseScope), AppError> {
     let access = access_policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.course_preparation.begin_course",
+    )
+    .await?;
     if !write {
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            .execute(&mut *tx)
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.course_preparation.begin_course",
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            )
+            .execute()
             .await?;
     }
     validate_context(&mut tx, context).await?;
@@ -169,32 +178,40 @@ async fn begin_course<'a>(
             context.academic_term_id,
         )
         .await?;
-        let offering: Uuid = sqlx::query_scalar(
+        let offering: Uuid = DbSession::new(&mut *tx).scalar("academic_results.services.course_preparation.begin_course",
             "SELECT learning_offering_id FROM learning_groups WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3",
         )
         .bind(group)
         .bind(context.academic_term_id)
         .bind(context.academic_year_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("Course group not found in context".into()))?;
         // Shared order for every result-source writer: offering, group, then sources.
-        sqlx::query("SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.course_preparation.begin_course",
+                "SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE",
+            )
             .bind(offering)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.course_preparation.begin_course",
+                "SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE",
+            )
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT phase.id FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.learning_offering_id=$1 ORDER BY phase.id FOR SHARE OF phase")
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.begin_course", "SELECT phase.id FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.learning_offering_id=$1 ORDER BY phase.id FOR SHARE OF phase")
             .bind(offering)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.begin_course",
             "SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active' FOR SHARE",
         )
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     let scope = load_scope(&mut tx, actor, group, context).await?;
@@ -217,13 +234,13 @@ async fn begin_course<'a>(
             context.academic_year_id,
         )
         .await?;
-        sqlx::query("SELECT id FROM learning_group_result_overrides WHERE learning_group_id=$1 ORDER BY id FOR UPDATE")
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.begin_course", "SELECT id FROM learning_group_result_overrides WHERE learning_group_id=$1 ORDER BY id FOR UPDATE")
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM learning_group_result_confirmations WHERE learning_group_id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.begin_course", "SELECT id FROM learning_group_result_confirmations WHERE learning_group_id=$1 FOR UPDATE")
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
     }
     Ok((tx, scope))
@@ -269,7 +286,7 @@ async fn load_workspace(
         }
         (None, _) => policies::active_policy(tx).await?,
     };
-    let phases: Vec<PhaseRow> = sqlx::query_as(
+    let phases: Vec<PhaseRow> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         r#"SELECT phase.id,phase.phase_code,phase.max_score::text AS max_score,phase.row_version,
                   confirmation.id AS confirmation_id,confirmation.row_version AS confirmation_row_version,
                   confirmation.source_checksum AS confirmation_source_checksum,
@@ -284,38 +301,38 @@ async fn load_workspace(
     )
     .bind(scope.group_id)
     .bind(scope.offering_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
-    let items: Vec<ItemRow> = sqlx::query_as(
+    let items: Vec<ItemRow> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         "SELECT assessment_phase_id,id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE learning_group_id=$1 ORDER BY assessment_phase_id,display_order,id LIMIT 4001",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     // Preparation uses membership revisions for Gradebook checksums. Room
     // presentation is irrelevant here; retain the existing result ordering.
-    let students: Vec<GradebookStudent> = sqlx::query_as(
+    let students: Vec<GradebookStudent> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         "SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version,NULL::integer AS class_number,NULL::text AS homeroom_name FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
-    let scores: Vec<ScoreRow> = sqlx::query_as(
+    let scores: Vec<ScoreRow> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         "SELECT item.assessment_phase_id,score.score_item_id,score.student_academic_year_id,score.score::text AS value,score.row_version FROM learning_group_student_scores score JOIN learning_group_score_items item ON item.id=score.score_item_id WHERE score.learning_group_id=$1 ORDER BY item.assessment_phase_id,score.score_item_id,score.student_academic_year_id LIMIT 200001",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     if items.len() > 4000 || students.len() > 2000 || scores.len() > 200000 {
         return Err(AppError::ValidationError(
             "Course preparation workspace exceeds supported size".into(),
         ));
     }
-    let overrides: Vec<OverrideRow> = sqlx::query_as(
+    let overrides: Vec<OverrideRow> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         "SELECT student_academic_year_id,outcome,row_version FROM learning_group_result_overrides WHERE learning_group_id=$1 ORDER BY student_academic_year_id",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
 
     let mut blockers = Vec::new();
@@ -522,11 +539,11 @@ async fn load_workspace(
         &phase_revisions,
         &selection_revisions,
     ))?;
-    let confirmation: Option<ResultConfirmation> = sqlx::query_as(
+    let confirmation: Option<ResultConfirmation> = DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_workspace",
         "SELECT id,row_version,source_checksum,roster_checksum,confirmed_by,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM learning_group_result_confirmations WHERE learning_group_id=$1",
     )
     .bind(scope.group_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?;
     let confirmation_is_current = confirmation.as_ref().is_some_and(|saved| {
         !saved.invalidated
@@ -585,11 +602,11 @@ async fn invalidate_confirmation(
     tx: &mut Transaction<'_, Postgres>,
     group: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_results.services.course_preparation.invalidate_confirmation",
         "UPDATE learning_group_result_confirmations SET row_version=row_version+1,source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true'::jsonb) WHERE learning_group_id=$1",
     )
     .bind(group)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
@@ -634,20 +651,20 @@ pub async fn save_selection(
         tx.commit().await?;
         return Ok(workspace);
     }
-    let revision: i64 = sqlx::query_scalar(
+    let revision: i64 = DbSession::new(&mut *tx).scalar("academic_results.services.course_preparation.save_selection",
         "UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
     )
     .bind(group)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
     if input.selection == CourseOutcomeSelection::Derived {
-        sqlx::query("DELETE FROM learning_group_result_overrides WHERE learning_group_id=$1 AND student_academic_year_id=$2")
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.save_selection", "DELETE FROM learning_group_result_overrides WHERE learning_group_id=$1 AND student_academic_year_id=$2")
             .bind(group)
             .bind(input.student_academic_year_id)
-            .execute(&mut *tx)
+            .execute()
             .await?;
     } else {
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_results.services.course_preparation.save_selection",
             "INSERT INTO learning_group_result_overrides (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,student_academic_year_id,outcome,row_version,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (learning_group_id,student_academic_year_id) DO UPDATE SET outcome=EXCLUDED.outcome,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()",
         )
         .bind(group)
@@ -659,7 +676,7 @@ pub async fn save_selection(
         .bind(input.selection.as_str())
         .bind(revision)
         .bind(actor.user_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     invalidate_confirmation(&mut tx, group).await?;
@@ -705,11 +722,11 @@ pub async fn confirm_group_results(
         roster_checksum: &workspace.roster_checksum,
         policy: &workspace.policy,
         phases: &phases,
-        roster: sqlx::query_as::<_, (Uuid, Uuid, i64)>(
+        roster: DbSession::new(&mut *tx).query_as::<(Uuid, Uuid, i64)>("academic_results.services.course_preparation.confirm_group_results",
             "SELECT id,student_academic_year_id,row_version FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active' ORDER BY student_academic_year_id",
         )
         .bind(group)
-        .fetch_all(&mut *tx)
+        .fetch_all()
         .await?
         .into_iter()
         .map(|(membership_id, student_academic_year_id, row_version)| RosterRevision {
@@ -728,7 +745,7 @@ pub async fn confirm_group_results(
             })
             .collect(),
     };
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_results.services.course_preparation.confirm_group_results",
         "INSERT INTO learning_group_result_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,policy_version_id,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (learning_group_id) DO UPDATE SET policy_version_id=EXCLUDED.policy_version_id,roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=learning_group_result_confirmations.row_version+1",
     )
     .bind(group)
@@ -741,7 +758,7 @@ pub async fn confirm_group_results(
     .bind(&workspace.source_checksum)
     .bind(sqlx::types::Json(snapshot))
     .bind(actor.user_id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     let (workspace, _) = load_workspace(&mut tx, actor, &scope).await?;
     tx.commit().await?;

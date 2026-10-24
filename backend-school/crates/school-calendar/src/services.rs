@@ -21,8 +21,8 @@ pub use categories_and_tags::{
 pub use events::{create_event, soft_delete_event, update_event, CalendarEventMutationOutcome};
 pub use shared::{dedupe_user_ids, tenant_today};
 pub use visibility::{
-    get_event_for_response, list_child_events, list_management_events, list_my_events,
-    list_public_events,
+    get_event_for_response, get_event_for_response_on_connection, list_child_events,
+    list_management_events, list_my_events, list_public_events,
 };
 
 #[cfg(test)]

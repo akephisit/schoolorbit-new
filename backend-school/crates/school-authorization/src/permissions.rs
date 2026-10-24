@@ -73,7 +73,12 @@ pub async fn get_cached_user_permissions(
         return Ok(permissions);
     }
     let revision = cache.snapshot_revision(tenant, user_id);
-    let permissions = fetch_user_permissions(user_id, pool).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.permission_cache_miss",
+    )
+    .await?;
+    let permissions = fetch_user_permissions(user_id, &mut connection).await?;
     if !cache.fill_if_current(tenant, user_id, revision, permissions.clone()) {
         tracing::debug!(
             tenant,
@@ -141,15 +146,22 @@ const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
         )
 "#;
 
-async fn fetch_user_permissions(user_id: Uuid, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+async fn fetch_user_permissions(
+    user_id: Uuid,
+    connection: &mut PgConnection,
+) -> Result<Vec<String>, sqlx::Error> {
     let query = format!(
         "{EFFECTIVE_PERMISSIONS_CTE}
         SELECT DISTINCT code FROM effective_permissions WHERE user_id=$1
         AND EXISTS (SELECT 1 FROM users WHERE id=$1 AND status='active') ORDER BY code"
     );
-    sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "authorization.src.permissions.fetch_user_permissions",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(user_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await
 }
 
@@ -159,7 +171,11 @@ pub async fn staff_users_with_all_permissions(
     pool: &PgPool,
     required: &[&str],
 ) -> Result<Vec<Uuid>, sqlx::Error> {
-    let mut connection = pool.acquire().await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.recipient_permissions",
+    )
+    .await?;
     staff_users_with_all_permissions_on_connection(&mut connection, required).await
 }
 
@@ -178,10 +194,14 @@ pub async fn staff_users_with_all_permissions_on_connection(
                 WHERE grant_row.user_id=users.id AND grant_row.code IN (required.code, $2))
         ) ORDER BY users.id FOR SHARE OF users"
     );
-    sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+    school_database::DbSession::new(connection)
+        .scalar(
+            "authorization.src.permissions.staff_users_with_all_permissions_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(required)
         .bind(codes::WILDCARD)
-        .fetch_all(connection)
+        .fetch_all()
         .await
 }
 
@@ -265,11 +285,15 @@ pub(crate) async fn active_staff_actors_on_connection(
     let mut users = users.to_vec();
     users.sort();
     users.dedup();
-    let active:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) AND status='active' AND user_type='staff' ORDER BY id FOR SHARE").bind(users).fetch_all(&mut *connection).await?;
+    let active:Vec<Uuid>=school_database::DbSession::new(&mut *connection).scalar("authorization.src.permissions.active_staff_actors_on_connection", "SELECT id FROM users WHERE id=ANY($1) AND status='active' AND user_type='staff' ORDER BY id FOR SHARE").bind(users).fetch_all().await?;
     let query=format!("{EFFECTIVE_PERMISSIONS_CTE} SELECT u.id,coalesce(array_agg(DISTINCT e.code ORDER BY e.code) FILTER(WHERE e.code IS NOT NULL),'{{}}'::text[]) FROM users u LEFT JOIN effective_permissions e ON e.user_id=u.id WHERE u.id=ANY($1) GROUP BY u.id ORDER BY u.id");
-    let rows: Vec<(Uuid, Vec<String>)> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    let rows: Vec<(Uuid, Vec<String>)> = school_database::DbSession::new(connection)
+        .query_as(
+            "authorization.src.permissions.active_staff_actors_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(active)
-        .fetch_all(connection)
+        .fetch_all()
         .await?;
     Ok(rows
         .into_iter()

@@ -1,13 +1,15 @@
-//! Admission for Calendar and Auth turns in the single School process.
+//! Shared database-phase admission in the single School process.
 //! Domains retain their own durable work, progress, turn limits and pool leases.
-use crate::PoolManagerConfig;
-use std::{collections::HashSet, future::Future, sync::Mutex};
+use std::{collections::HashSet, future::Future, sync::Mutex, time::Instant};
 use tokio::sync::Semaphore;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TenantJobKind {
     CalendarReminders,
     AuthRetention,
+    NotificationDispatch,
+    AttendanceMaintenance,
+    FileReconciliation,
 }
 
 pub struct TenantTurnExecutor {
@@ -16,11 +18,11 @@ pub struct TenantTurnExecutor {
     limit: usize,
 }
 
-struct ActiveTurn<'a> {
+pub struct TenantTurn<'a> {
     executor: &'a TenantTurnExecutor,
     key: (String, TenantJobKind),
 }
-impl Drop for ActiveTurn<'_> {
+impl Drop for TenantTurn<'_> {
     fn drop(&mut self) {
         if let Ok(mut active) = self.executor.active.lock() {
             active.remove(&self.key);
@@ -28,26 +30,8 @@ impl Drop for ActiveTurn<'_> {
     }
 }
 
-fn requested_limit(raw: Option<&str>) -> Result<usize, String> {
-    let requested = raw
-        .map(str::parse::<usize>)
-        .transpose()
-        .map_err(|_| "TENANT_BACKGROUND_MAX_TURNS must be an integer")?
-        .unwrap_or(2);
-    if !(1..=64).contains(&requested) {
-        return Err("TENANT_BACKGROUND_MAX_TURNS is outside the supported range".into());
-    }
-    Ok(requested)
-}
-
 impl TenantTurnExecutor {
-    pub fn from_env(pools: &PoolManagerConfig) -> Result<Self, String> {
-        let requested =
-            requested_limit(std::env::var("TENANT_BACKGROUND_MAX_TURNS").ok().as_deref())?;
-        Ok(Self::new(pools.background_turn_limit(requested)))
-    }
-
-    fn new(limit: usize) -> Self {
+    pub(crate) fn new(limit: usize) -> Self {
         Self {
             slots: Semaphore::new(limit),
             active: Mutex::new(HashSet::new()),
@@ -65,48 +49,91 @@ impl TenantTurnExecutor {
         self.limit
     }
 
-    /// Callers bound their polled future set to `limit()`. The closure starts only
-    /// after admission; same-tenant/kind overlap skips without consuming a slot.
-    /// Dropping this future releases both guards and all caller-owned work.
+    /// Exclude the same tenant/kind across both database and external-I/O phases.
+    /// This guard itself owns no database permit or pool.
+    pub fn begin(&self, tenant: &str, kind: TenantJobKind) -> Option<TenantTurn<'_>> {
+        let key = (tenant.to_owned(), kind);
+        if !self.active.lock().ok()?.insert(key.clone()) {
+            return None;
+        }
+        Some(TenantTurn {
+            executor: self,
+            key,
+        })
+    }
+
+    /// Callers bound their polled future set to `limit()`. Cancellation releases
+    /// both guards; same-key overlap skips without consuming a shared slot.
     pub async fn run<F, Fut, T>(&self, tenant: &str, kind: TenantJobKind, turn: F) -> Option<T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = T>,
     {
-        let key = (tenant.to_owned(), kind);
-        {
-            let mut active = self.active.lock().ok()?;
-            if !active.insert(key.clone()) {
-                return None;
-            }
+        self.begin(tenant, kind)?.run(turn).await
+    }
+}
+
+impl TenantJobKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CalendarReminders => "calendar_reminders",
+            Self::AuthRetention => "auth_retention",
+            Self::NotificationDispatch => "notification_dispatch",
+            Self::AttendanceMaintenance => "attendance_maintenance",
+            Self::FileReconciliation => "file_reconciliation",
         }
-        let _active = ActiveTurn {
-            executor: self,
-            key,
+    }
+}
+
+struct PhaseObservation {
+    kind: TenantJobKind,
+    started: Instant,
+}
+impl Drop for PhaseObservation {
+    fn drop(&mut self) {
+        tracing::debug!(
+            work = self.kind.label(),
+            hold_ms = self.started.elapsed().as_millis() as u64,
+            "Tenant background database phase released"
+        );
+    }
+}
+impl TenantTurn<'_> {
+    /// A batch may run independent claimed items concurrently through this shared
+    /// guard. Each executing DB phase counts separately against the semaphore;
+    /// the guard excludes other batches rather than serializing item futures.
+    /// Only owned domain values may leave a phase. Drop all pool leases and
+    /// transactions before returning to external I/O; this API owns no business SQL.
+    pub async fn run<F, Fut, T>(&self, phase: F) -> Option<T>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        let started = Instant::now();
+        let _permit = self.executor.slots.acquire().await.ok()?;
+        tracing::debug!(
+            work = self.key.1.label(),
+            admission_ms = started.elapsed().as_millis() as u64,
+            "Tenant background database phase admitted"
+        );
+        let _observation = PhaseObservation {
+            kind: self.key.1,
+            started: Instant::now(),
         };
-        let _permit = self.slots.acquire().await.ok()?;
-        Some(turn().await)
+        Some(phase().await)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PoolManagerConfig;
     use std::sync::Arc;
     use std::{
         future::pending,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
-
-    #[test]
-    fn requested_limit_is_bounded_without_mutating_process_environment() {
-        assert_eq!(requested_limit(None).unwrap(), 2);
-        assert_eq!(requested_limit(Some("64")).unwrap(), 64);
-        for raw in ["0", "65", "invalid"] {
-            assert!(requested_limit(Some(raw)).is_err());
-        }
-    }
 
     #[test]
     fn effective_limit_leaves_a_feasible_resident_slot() {
@@ -160,6 +187,40 @@ mod tests {
                 .await,
             Some(9)
         );
+    }
+
+    #[tokio::test]
+    async fn every_kind_shares_admission_and_io_guard_retains_only_same_key() {
+        let executor = Arc::new(TenantTurnExecutor::new(1));
+        let notification = executor
+            .begin("tenant", TenantJobKind::NotificationDispatch)
+            .unwrap();
+        assert_eq!(notification.run(|| async { 1 }).await, Some(1));
+        assert!(executor
+            .begin("tenant", TenantJobKind::NotificationDispatch)
+            .is_none());
+        // Simulated external I/O retains the batch identity, but no DB slot.
+        for kind in [
+            TenantJobKind::CalendarReminders,
+            TenantJobKind::AuthRetention,
+            TenantJobKind::AttendanceMaintenance,
+            TenantJobKind::FileReconciliation,
+        ] {
+            assert_eq!(
+                tokio::time::timeout(
+                    Duration::from_millis(100),
+                    executor.run("other", kind, || async { 2 })
+                )
+                .await
+                .unwrap(),
+                Some(2)
+            );
+        }
+        drop(notification);
+        assert!(executor
+            .begin("tenant", TenantJobKind::NotificationDispatch)
+            .is_some());
+        assert_eq!(executor.slots.available_permits(), 1);
     }
 
     #[tokio::test]

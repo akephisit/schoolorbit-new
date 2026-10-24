@@ -3,6 +3,7 @@ use super::promotion_runs::RUN_COLUMNS;
 use school_academic_core::services::{lifecycle_guard, promotion_students};
 use school_academic_results as results;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::types::Json;
@@ -28,7 +29,11 @@ pub async fn calculate_run(
         ));
     }
     let request_checksum = super::checksum(&(actor.user_id, run_id, "calculate", &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_calculation.calculate_run",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(outcome) = super::promotion_runs::replay_command(
         &mut tx,
@@ -41,13 +46,17 @@ pub async fn calculate_run(
         tx.commit().await?;
         return Ok(outcome);
     }
-    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    )))
-    .bind(run_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
+    let run: PromotionRun = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_calculation.calculate_run",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
+            )),
+        )
+        .bind(run_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     if run.row_version != input.row_version
         || matches!(
             run.status,
@@ -60,22 +69,29 @@ pub async fn calculate_run(
     }
     promotion_students::validate_run_years(&mut tx, run.source_year_id, run.target_year_id).await?;
     // Identity is immutable. Keep entity locks after the ordered year locks.
-    sqlx::query("SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.promotion_calculation.calculate_run",
+            "SELECT id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE",
+        )
         .bind(run_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
-    let Json(rules): Json<Vec<PromotionRuleInput>> =
-        sqlx::query_scalar("SELECT rules FROM academic_promotion_policy_versions WHERE id=$1")
-            .bind(run.policy_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let Json(rules): Json<Vec<PromotionRuleInput>> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_lifecycle.services.promotion_calculation.calculate_run",
+            "SELECT rules FROM academic_promotion_policy_versions WHERE id=$1",
+        )
+        .bind(run.policy_id)
+        .fetch_one()
+        .await?;
     let rules: std::collections::BTreeMap<_, _> = rules
         .iter()
         .map(|rule| ((rule.from_grade_level_id, rule.from_study_program_id), rule))
         .collect();
     let coverage = results::services::annual_closure_coverage(&mut tx, run.source_year_id).await?;
-    let retained:Vec<Uuid>=sqlx::query_scalar("SELECT student_academic_year_id FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")
-        .bind(run_id).fetch_all(&mut *tx).await?;
+    let retained:Vec<Uuid>=DbSession::new(&mut *tx).scalar("academic_lifecycle.services.promotion_calculation.calculate_run", "SELECT student_academic_year_id FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")
+        .bind(run_id).fetch_all().await?;
     let students: Vec<Uuid> = coverage
         .students
         .iter()
@@ -124,7 +140,7 @@ pub async fn calculate_run(
                 existing_target_student_year_id: source.existing_target_student_year_id,
             });
         }
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_calculation.calculate_run",
             "INSERT INTO academic_promotion_run_items(run_id,source_year_id,target_year_id,student_academic_year_id,student_id,source_grade_level_id,source_study_program_id,source_row_version,annual_revision_id,source_checksum,recommendation,existing_target_student_year_id)
              SELECT $1,$2,$3,item.student_academic_year_id,item.student_id,item.source_grade_level_id,item.source_study_program_id,item.source_row_version,item.annual_revision_id,item.source_checksum,item.recommendation,item.existing_target_student_year_id
              FROM jsonb_to_recordset($4) AS item(student_academic_year_id uuid,student_id uuid,source_grade_level_id uuid,source_study_program_id uuid,source_row_version bigint,annual_revision_id uuid,source_checksum text,recommendation jsonb,existing_target_student_year_id uuid)
@@ -135,17 +151,17 @@ pub async fn calculate_run(
              existing_target_student_year_id=EXCLUDED.existing_target_student_year_id,decision=NULL,reviewed_by=NULL,reviewed_at=NULL,
              status='calculated',row_version=academic_promotion_run_items.row_version+1,updated_at=now()
              WHERE academic_promotion_run_items.status<>'executed'"
-        ).bind(run.id).bind(run.source_year_id).bind(run.target_year_id).bind(Json(prepared)).execute(&mut *tx).await?;
+        ).bind(run.id).bind(run.source_year_id).bind(run.target_year_id).bind(Json(prepared)).execute().await?;
     }
-    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='calculated',row_version=row_version+1,reviewed_by=NULL,reviewed_at=NULL,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$1 RETURNING {RUN_COLUMNS}")))
-        .bind(run_id).fetch_one(&mut *tx).await?;
-    let items=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
-        .bind(run_id).fetch_all(&mut *tx).await?;
+    let run:PromotionRun=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_calculation.calculate_run", sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='calculated',row_version=row_version+1,reviewed_by=NULL,reviewed_at=NULL,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$1 RETURNING {RUN_COLUMNS}")))
+        .bind(run_id).fetch_one().await?;
+    let items=DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_calculation.calculate_run", sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
+        .bind(run_id).fetch_all().await?;
     let outcome = PromotionRunCalculation { run, items };
-    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.calculated','promotion_run',$1,$2,$3)")
-        .bind(run_id).bind(actor.user_id).bind(Json(serde_json::json!({"itemCount":outcome.items.len(),"rowVersion":outcome.run.row_version}))).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO academic_promotion_run_commands(request_id,run_id,actor_user_id,action,request_checksum,outcome) VALUES ($1,$2,$3,'calculate',$4,$5)")
-        .bind(input.request_id).bind(run_id).bind(actor.user_id).bind(request_checksum).bind(Json(&outcome)).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_calculation.calculate_run", "INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.calculated','promotion_run',$1,$2,$3)")
+        .bind(run_id).bind(actor.user_id).bind(Json(serde_json::json!({"itemCount":outcome.items.len(),"rowVersion":outcome.run.row_version}))).execute().await?;
+    DbSession::new(&mut *tx).query("academic_lifecycle.services.promotion_calculation.calculate_run", "INSERT INTO academic_promotion_run_commands(request_id,run_id,actor_user_id,action,request_checksum,outcome) VALUES ($1,$2,$3,'calculate',$4,$5)")
+        .bind(input.request_id).bind(run_id).bind(actor.user_id).bind(request_checksum).bind(Json(&outcome)).execute().await?;
     tx.commit().await?;
     Ok(outcome)
 }

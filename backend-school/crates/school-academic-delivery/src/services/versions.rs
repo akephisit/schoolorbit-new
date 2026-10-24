@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::BTreeSet;
 
 use chrono::NaiveDate;
@@ -66,7 +67,20 @@ pub async fn list_versions(
     term_id: Uuid,
     access: &AcademicResourceListFilter,
 ) -> Result<Vec<DeliveryVersionSummary>, AppError> {
-    Ok(sqlx::query_as(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.list_versions",
+    )
+    .await?;
+    list_versions_on_connection(&mut connection, term_id, access).await
+}
+
+pub async fn list_versions_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term_id: Uuid,
+    access: &AcademicResourceListFilter,
+) -> Result<Vec<DeliveryVersionSummary>, AppError> {
+    Ok(DbSession::new(connection).query_as("academic_delivery.services.versions.list_versions_on_connection",
         "WITH visible_versions AS (SELECT original.*,COALESCE((SELECT jsonb_agg(offering) FROM jsonb_array_elements(original.snapshot->'offerings') offering
         WHERE $2 OR (offering->>'owningOrganizationUnitId')::uuid=ANY($3) OR EXISTS(
             SELECT 1 FROM jsonb_array_elements(offering->'groups') source_group,jsonb_array_elements(source_group->'teachers') teacher
@@ -92,15 +106,31 @@ pub async fn list_versions(
         .bind(access.includes_school_owned)
         .bind(access.allowed_organization_unit_ids())
         .bind(access.assigned_actor_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?)
 }
 
 pub async fn get_version(pool: &PgPool, id: Uuid) -> Result<DeliveryVersion, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.get_version",
+    )
+    .await?;
+    get_version_on_connection(&mut connection, id).await
+}
+
+pub async fn get_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<DeliveryVersion, AppError> {
     let query = format!("{VERSION_SELECT} WHERE version.id=$1");
-    Ok(sqlx::query_as::<_, VersionRow>(sqlx::AssertSqlSafe(query))
+    Ok(DbSession::new(connection)
+        .query_as::<VersionRow>(
+            "academic_delivery.services.versions.get_version_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นเปิดสอน".into()))?
         .into())
@@ -108,15 +138,26 @@ pub async fn get_version(pool: &PgPool, id: Uuid) -> Result<DeliveryVersion, App
 
 /// Bounded source graphs for timetable list hydration; the consumer does not
 /// read or reconstruct delivery-owned snapshots with its own SQL.
-pub async fn snapshots<'e>(
-    executor: impl sqlx::Executor<'e, Database = Postgres>,
+pub async fn snapshots(
+    pool: &PgPool,
     ids: &[Uuid],
 ) -> Result<std::collections::HashMap<Uuid, DeliverySnapshot>, AppError> {
-    let rows: Vec<(Uuid, sqlx::types::Json<DeliverySnapshot>)> = sqlx::query_as(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.snapshots",
+    )
+    .await?;
+    snapshots_on_connection(&mut connection, ids).await
+}
+pub async fn snapshots_on_connection(
+    connection: &mut sqlx::PgConnection,
+    ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, DeliverySnapshot>, AppError> {
+    let rows: Vec<(Uuid, sqlx::types::Json<DeliverySnapshot>)> = DbSession::new(connection).query_as("academic_delivery.services.versions.snapshots_on_connection",
         "SELECT id,snapshot FROM academic_delivery_versions WHERE id=ANY($1) AND status='published'",
     )
     .bind(ids)
-    .fetch_all(executor)
+    .fetch_all()
     .await?;
     Ok(rows
         .into_iter()
@@ -129,7 +170,20 @@ pub async fn visible_version(
     id: Uuid,
     access: &AcademicResourceListFilter,
 ) -> Result<DeliveryVersion, AppError> {
-    let mut version = get_version(pool, id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.visible_version",
+    )
+    .await?;
+    visible_version_on_connection(&mut connection, id, access).await
+}
+
+pub async fn visible_version_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    access: &AcademicResourceListFilter,
+) -> Result<DeliveryVersion, AppError> {
+    let mut version = get_version_on_connection(connection, id).await?;
     version.snapshot.offerings.retain(|offering| {
         let assigned = access.assigned_actor_id.is_some_and(|actor| {
             offering.groups.iter().any(|group| {
@@ -154,9 +208,13 @@ pub async fn published_source(
     term_id: Uuid,
 ) -> Result<DeliveryVersion, AppError> {
     let query = format!("{VERSION_SELECT} WHERE version.id=$1");
-    let version: DeliveryVersion = sqlx::query_as::<_, VersionRow>(sqlx::AssertSqlSafe(query))
+    let version: DeliveryVersion = DbSession::new(&mut **tx)
+        .query_as::<VersionRow>(
+            "academic_delivery.services.versions.published_source",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นเปิดสอน".into()))?
         .into();
@@ -175,9 +233,9 @@ pub async fn latest_published_id(
     tx: &mut Transaction<'_, Postgres>,
     term_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC, published_at DESC, id DESC LIMIT 1")
+    DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_id", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC, published_at DESC, id DESC LIMIT 1")
         .bind(term_id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::ValidationError("กรุณาเผยแพร่รุ่นเปิดสอนก่อนแก้ตารางสอน".into()))
 }
@@ -186,8 +244,8 @@ pub async fn latest_published_source(
     tx: &mut Transaction<'_, Postgres>,
     term_id: Uuid,
 ) -> Result<Option<DeliveryVersion>, AppError> {
-    let id: Option<Uuid>=sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
-        .bind(term_id).fetch_optional(&mut **tx).await?;
+    let id: Option<Uuid>=DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.latest_published_source", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
+        .bind(term_id).fetch_optional().await?;
     match id {
         Some(id) => Ok(Some(published_source(tx, id, term_id).await?)),
         None => Ok(None),
@@ -206,19 +264,31 @@ pub async fn latest_published_for_term(
     pool: &PgPool,
     term_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    Ok(sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
-        .bind(term_id).fetch_optional(pool).await?)
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.latest_published_for_term",
+    )
+    .await?;
+    latest_published_for_term_on_connection(&mut connection, term_id).await
+}
+
+pub async fn latest_published_for_term_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    Ok(DbSession::new(connection).scalar("academic_delivery.services.versions.latest_published_for_term_on_connection", "SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,published_at DESC,id DESC LIMIT 1")
+        .bind(term_id).fetch_optional().await?)
 }
 
 pub(super) async fn refresh_revision_snapshot(
     tx: &mut Transaction<'_, Postgres>,
     change_set_id: Uuid,
 ) -> Result<(), AppError> {
-    let updated = sqlx::query("UPDATE academic_delivery_versions version SET snapshot=academic_delivery_revision_snapshot($1),
+    let updated = DbSession::new(&mut **tx).query("academic_delivery.services.versions.refresh_revision_snapshot", "UPDATE academic_delivery_versions version SET snapshot=academic_delivery_revision_snapshot($1),
         row_version=version.row_version+1,updated_at=now()
         FROM academic_term_change_sets revision WHERE revision.id=$1 AND revision.target_delivery_version_id=version.id
             AND revision.status='draft' AND version.status='draft'")
-        .bind(change_set_id).execute(&mut **tx).await?;
+        .bind(change_set_id).execute().await?;
     if updated.rows_affected() != 1 {
         return Err(AppError::Conflict(
             "รุ่นเปิดสอนแบบร่างเปลี่ยนไป กรุณาโหลดข้อมูลใหม่".into(),
@@ -233,12 +303,12 @@ pub(super) async fn refresh_drafts_for_offering(
     tx: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<(), AppError> {
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT revision.id FROM academic_term_change_sets revision
+    let ids: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.refresh_drafts_for_offering", "SELECT revision.id FROM academic_term_change_sets revision
         JOIN academic_delivery_versions version ON version.id=revision.target_delivery_version_id
         WHERE revision.status='draft' AND version.status='draft' AND EXISTS(
             SELECT 1 FROM jsonb_array_elements(version.snapshot->'offerings') offering WHERE (offering->>'id')::uuid=$1)
         ORDER BY revision.id FOR UPDATE OF revision,version")
-        .bind(offering_id).fetch_all(&mut **tx).await?;
+        .bind(offering_id).fetch_all().await?;
     for id in ids {
         refresh_revision_snapshot(tx, id).await?;
     }
@@ -253,34 +323,34 @@ pub(super) async fn include_offering(
     offering_id: Uuid,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    let (revision_id, term_id, year_id, date, already_included): (Uuid, Uuid, Uuid, NaiveDate, bool) = sqlx::query_as(
+    let (revision_id, term_id, year_id, date, already_included): (Uuid, Uuid, Uuid, NaiveDate, bool) = DbSession::new(&mut **tx).query_as("academic_delivery.services.versions.include_offering",
         "SELECT revision.id,version.academic_term_id,version.academic_year_id,COALESCE(version.effective_from,version.reference_date),
         EXISTS(SELECT 1 FROM jsonb_array_elements(version.snapshot->'offerings') offering WHERE (offering->>'id')::uuid=$2)
         FROM academic_delivery_versions version JOIN academic_term_change_sets revision ON revision.target_delivery_version_id=version.id
         WHERE version.id=$1 AND version.status='draft' AND revision.status='draft' FOR UPDATE OF version,revision",
-    ).bind(version_id).bind(offering_id).fetch_optional(&mut **tx).await?
+    ).bind(version_id).bind(offering_id).fetch_optional().await?
         .ok_or_else(|| AppError::Conflict("เพิ่มรายการได้เฉพาะรุ่นเปิดสอนแบบร่าง".into()))?;
     if already_included {
         refresh_revision_snapshot(tx, revision_id).await?;
         return Ok(());
     }
-    let target: i32 = sqlx::query_scalar("SELECT COALESCE(subject.periods_per_week,activity.periods_per_week)
+    let target: i32 = DbSession::new(&mut **tx).scalar("academic_delivery.services.versions.include_offering", "SELECT COALESCE(subject.periods_per_week,activity.periods_per_week)
         FROM learning_offerings offering LEFT JOIN course_offering_details course ON course.learning_offering_id=offering.id
         LEFT JOIN subject_versions subject ON subject.id=course.subject_version_id
         LEFT JOIN activity_offering_details detail ON detail.learning_offering_id=offering.id
         LEFT JOIN activity_versions activity ON activity.id=detail.activity_version_id
         WHERE offering.id=$1 AND offering.academic_term_id=$2 AND offering.academic_year_id=$3 AND offering.status IN('draft','published')
         AND (offering.starts_on IS NULL OR offering.starts_on<=$4) AND (offering.ends_on IS NULL OR offering.ends_on>=$4)")
-        .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional(&mut **tx).await?
+        .bind(offering_id).bind(term_id).bind(year_id).bind(date).fetch_optional().await?
         .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่ตรงกับรุ่นหรือวันที่ที่เลือก".into()))?;
     if target <= 0 {
         return Err(AppError::ValidationError("กรุณาระบุจำนวนคาบมากกว่าศูนย์".into()));
     }
-    sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
+    DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_offering_id,weekly_period_target,created_by)
         VALUES(gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6)")
-        .bind(revision_id).bind(term_id).bind(year_id).bind(offering_id).bind(target).bind(actor_id).execute(&mut **tx).await?;
-    sqlx::query("UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1")
-        .bind(revision_id).execute(&mut **tx).await?;
+        .bind(revision_id).bind(term_id).bind(year_id).bind(offering_id).bind(target).bind(actor_id).execute().await?;
+    DbSession::new(&mut **tx).query("academic_delivery.services.versions.include_offering", "UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(revision_id).execute().await?;
     refresh_revision_snapshot(tx, revision_id).await
 }
 
@@ -289,14 +359,28 @@ pub async fn roster_statuses(
     pool: &PgPool,
     group_ids: &[Uuid],
 ) -> Result<std::collections::HashMap<Uuid, crate::models::RosterStatus>, AppError> {
-    Ok(
-        sqlx::query_as("SELECT id,roster_status FROM learning_groups WHERE id=ANY($1)")
-            .bind(group_ids)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .collect(),
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.roster_statuses",
     )
+    .await?;
+    roster_statuses_on_connection(&mut connection, group_ids).await
+}
+
+pub async fn roster_statuses_on_connection(
+    connection: &mut sqlx::PgConnection,
+    group_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, crate::models::RosterStatus>, AppError> {
+    Ok(DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.versions.roster_statuses_on_connection",
+            "SELECT id,roster_status FROM learning_groups WHERE id=ANY($1)",
+        )
+        .bind(group_ids)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect())
 }
 
 pub fn contains_date(version: &DeliveryVersion, date: NaiveDate) -> bool {
@@ -593,8 +677,19 @@ struct DeliveryAuditRow {
 pub async fn read_cutover_audit(
     pool: &sqlx::PgPool,
 ) -> Result<DeliveryCutoverAudit, school_errors::AppError> {
-    let rows: Vec<DeliveryAuditRow> = sqlx::query_as("SELECT migration_version,passed,cutover_completed,checks FROM academic_delivery_version_migration_audit WHERE migration_version IN (87,88) ORDER BY migration_version")
-        .fetch_all(pool).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.versions.read_cutover_audit",
+    )
+    .await?;
+    read_cutover_audit_on_connection(&mut connection).await
+}
+
+pub async fn read_cutover_audit_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<DeliveryCutoverAudit, school_errors::AppError> {
+    let rows: Vec<DeliveryAuditRow> = DbSession::new(connection).query_as("academic_delivery.services.versions.read_cutover_audit_on_connection", "SELECT migration_version,passed,cutover_completed,checks FROM academic_delivery_version_migration_audit WHERE migration_version IN (87,88) ORDER BY migration_version")
+        .fetch_all().await?;
     let completed = complete_cutover_evidence(&rows);
     Ok(DeliveryCutoverAudit {
         completed,

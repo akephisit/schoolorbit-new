@@ -139,14 +139,21 @@ test('minimal project to plan approval, activity request, partial payment and cl
 	await date(page, 'วันที่จ่ายเงิน');
 	await page.getByLabel('เลขที่ใบสำคัญ *').fill('PV-02');
 	await page.getByLabel('จำนวนเงินจ่าย กระดาษ', { exact: true }).fill('3.00');
+	let evidenceUploads = 0;
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/files')
+			evidenceUploads++;
+	});
 	await page.getByLabel('แนบหลักฐาน', { exact: true }).setInputFiles({
 		name: 'หลักฐานทดสอบ.pdf',
 		mimeType: 'application/pdf',
 		buffer: Buffer.from('%PDF synthetic fixture')
 	});
-	await expect(page.getByRole('button', { name: 'นำออก', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นำไฟล์ที่เลือกออก', exact: true })).toBeVisible();
+	expect(evidenceUploads).toBe(0);
 	await page.getByRole('button', { name: 'บันทึกการจ่ายเงิน', exact: true }).last().click();
 	await expect(page.getByTestId('budget-payments')).toContainText('PV-02');
+	expect(evidenceUploads).toBe(1);
 	await expect(page.getByTestId('budget-request-detail')).toContainText('7.00');
 	await page.getByRole('button', { name: 'ปิดคำขอ', exact: true }).click();
 	await page.getByLabel('เหตุผลการปิดคำขอ *').fill('ดำเนินการครบแล้ว');
@@ -1109,3 +1116,68 @@ for (const viewport of [
 				expect(api.writes).toHaveLength(0);
 			});
 		});
+
+test('confirming a retained Budget query navigation grants only one departure from dirty evidence', async ({
+	page
+}) => {
+	const api = await mockBudget(page, { withRequest: true });
+	let uploads = 0,
+		deletes = 0;
+	page.on('request', (request) => {
+		const path = new URL(request.url()).pathname;
+		if (path === '/api/files' && request.method() === 'POST') uploads++;
+		if (path.startsWith('/api/files/') && request.method() === 'DELETE') deletes++;
+	});
+	const detail = `/staff/budget/requests/${budgetRequestId}`;
+	const retainedQuery = `${detail}?returnTo=${encodeURIComponent('/staff/budget/requests?status=approved')}`;
+	await page.goto(detail);
+	await page.getByRole('button', { name: 'บันทึกการจ่ายเงิน', exact: true }).click();
+	const form = page.getByTestId('budget-payment-form');
+	await form.getByLabel('เลขที่ใบสำคัญ *').fill('PV-RETAINED-DRAFT');
+	await form.getByLabel('แนบหลักฐาน', { exact: true }).setInputFiles({
+		name: 'navigation-evidence.pdf',
+		mimeType: 'application/pdf',
+		buffer: Buffer.from('%PDF local draft')
+	});
+	const evidence = form.getByRole('region', {
+		name: 'ตัวอย่าง navigation-evidence.pdf',
+		exact: true
+	});
+	await expect(evidence).toBeVisible();
+	async function navigate(href: string) {
+		await page.evaluate((destination) => {
+			const link = document.createElement('a');
+			link.href = destination;
+			link.dataset.sveltekitPreloadData = 'off';
+			document.body.append(link);
+			link.click();
+			link.remove();
+		}, href);
+	}
+	await navigate(retainedQuery);
+	const warning = page.getByRole('alertdialog');
+	await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+	await warning.getByRole('button', { name: 'ออกโดยไม่บันทึก', exact: true }).click();
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname === detail &&
+			url.searchParams.get('returnTo') === '/staff/budget/requests?status=approved'
+	);
+	await expect(form.getByLabel('เลขที่ใบสำคัญ *')).toHaveValue('PV-RETAINED-DRAFT');
+	await expect(evidence).toBeVisible();
+	await navigate('/staff/budget/requests');
+	await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+	await warning.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
+	await expect(form.getByLabel('เลขที่ใบสำคัญ *')).toHaveValue('PV-RETAINED-DRAFT');
+	await expect(evidence).toBeVisible();
+	expect(uploads).toBe(0);
+	expect(deletes).toBe(0);
+	await navigate('/staff/budget/requests');
+	await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+	await warning.getByRole('button', { name: 'ออกโดยไม่บันทึก', exact: true }).click();
+	await expect(page).toHaveURL(/\/staff\/budget\/requests$/);
+	await expect(form).toHaveCount(0);
+	expect(uploads).toBe(0);
+	expect(deletes).toBe(0);
+	expect(api.writes).toEqual([]);
+});
