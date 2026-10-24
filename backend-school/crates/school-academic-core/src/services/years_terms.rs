@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, Utc};
+use school_database::DbSession;
 use serde_json::json;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -178,18 +179,49 @@ const TERM_COLUMNS: &str = r#"
 "#;
 
 pub async fn list_years(pool: &PgPool) -> Result<Vec<AcademicYear>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.years_terms.list_years",
+    )
+    .await?;
+    list_years_on_connection(&mut connection).await
+}
+
+pub async fn list_years_on_connection(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<AcademicYear>, AppError> {
     let sql = format!("SELECT {YEAR_COLUMNS} FROM academic_years ORDER BY year DESC, id");
-    let rows = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
-        .fetch_all(pool)
+    let rows = DbSession::new(connection)
+        .query_as::<AcademicYearRow>(
+            "academic_core.services.years_terms.list_years_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .fetch_all()
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn get_year(pool: &PgPool, id: Uuid) -> Result<AcademicYear, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.years_terms.get_year",
+    )
+    .await?;
+    get_year_on_connection(&mut connection, id).await
+}
+
+pub async fn get_year_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<AcademicYear, AppError> {
     let sql = format!("SELECT {YEAR_COLUMNS} FROM academic_years WHERE id = $1");
-    sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as::<AcademicYearRow>(
+            "academic_core.services.years_terms.get_year_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .map(Into::into)
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))
@@ -214,14 +246,18 @@ pub async fn create_year(
         "INSERT INTO academic_years (id, year, name, start_date, end_date, school_days, status) \
          VALUES ($1, $2, $3, $4, $5, $6, 'planning') RETURNING {YEAR_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut *transaction)
+        .query_as::<AcademicYearRow>(
+            "academic_core.services.years_terms.create_year",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(request.year)
         .bind(name)
         .bind(request.start_date)
         .bind(request.end_date)
         .bind(school_days.join(","))
-        .fetch_one(&mut *transaction)
+        .fetch_one()
         .await
         .map_err(map_year_write_error)?;
     append_audit(
@@ -266,7 +302,11 @@ pub async fn update_year(
          school_days = $5, row_version = row_version + 1, updated_at = now() \
          WHERE id = $6 AND row_version = $7 AND status = 'planning' RETURNING {returning}, jsonb_build_object('year', OLD.year, 'name', OLD.name, 'startDate', OLD.start_date, 'endDate', OLD.end_date, 'schoolDays', OLD.school_days, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('year', NEW.year, 'name', NEW.name, 'startDate', NEW.start_date, 'endDate', NEW.end_date, 'schoolDays', NEW.school_days, 'rowVersion', NEW.row_version) AS after"
     );
-    let row = sqlx::query_as::<_, AcademicYearUpdateRow>(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut *transaction)
+        .query_as::<AcademicYearUpdateRow>(
+            "academic_core.services.years_terms.update_year",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(request.year)
         .bind(name)
         .bind(request.start_date)
@@ -274,7 +314,7 @@ pub async fn update_year(
         .bind(school_days.join(","))
         .bind(id)
         .bind(request.row_version)
-        .fetch_optional(&mut *transaction)
+        .fetch_optional()
         .await
         .map_err(map_year_write_error)?;
     let row = match row {
@@ -304,34 +344,72 @@ pub async fn list_terms(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<Vec<AcademicTerm>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.years_terms.list_terms",
+    )
+    .await?;
+    list_terms_on_connection(&mut connection, academic_year_id).await
+}
+
+pub async fn list_terms_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+) -> Result<Vec<AcademicTerm>, AppError> {
     let sql = format!(
         "SELECT {TERM_COLUMNS} FROM academic_terms WHERE academic_year_id = $1 \
          ORDER BY sequence_no, start_date, id"
     );
-    let rows = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
+    let rows = DbSession::new(connection)
+        .query_as::<AcademicTermRow>(
+            "academic_core.services.years_terms.list_terms_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(academic_year_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-pub(super) async fn list_all_terms(pool: &PgPool) -> Result<Vec<AcademicTerm>, AppError> {
+pub(super) async fn list_all_terms(
+    connection: &mut sqlx::PgConnection,
+) -> Result<Vec<AcademicTerm>, AppError> {
     let sql = format!(
         "SELECT term.* FROM (SELECT {TERM_COLUMNS} FROM academic_terms) term \
          JOIN academic_years year ON year.id = term.academic_year_id \
          ORDER BY year.year DESC, year.id, term.sequence, term.start_date, term.id"
     );
-    let rows = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
-        .fetch_all(pool)
+    let rows = DbSession::new(connection)
+        .query_as::<AcademicTermRow>(
+            "academic_core.services.years_terms.list_all_terms",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .fetch_all()
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
 pub async fn get_term(pool: &PgPool, id: Uuid) -> Result<AcademicTerm, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.years_terms.get_term",
+    )
+    .await?;
+    get_term_on_connection(&mut connection, id).await
+}
+
+pub async fn get_term_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<AcademicTerm, AppError> {
     let sql = format!("SELECT {TERM_COLUMNS} FROM academic_terms WHERE id = $1");
-    sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as::<AcademicTermRow>(
+            "academic_core.services.years_terms.get_term_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .map(Into::into)
         .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))
@@ -352,11 +430,11 @@ pub async fn create_term(
         request.planned_end_date,
     )
     .await?;
-    let sequence: i32 = sqlx::query_scalar(
+    let sequence: i32 = DbSession::new(&mut *transaction).scalar("academic_core.services.years_terms.create_term",
         "SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM academic_terms WHERE academic_year_id = $1",
     )
     .bind(request.academic_year_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one()
     .await?;
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
@@ -375,7 +453,11 @@ pub async fn create_term(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'planning') \
          RETURNING {TERM_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut *transaction)
+        .query_as::<AcademicTermRow>(
+            "academic_core.services.years_terms.create_term",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(request.academic_year_id)
         .bind(sequence)
@@ -387,11 +469,13 @@ pub async fn create_term(
         .bind(request.included_in_year_result)
         .bind(request.blocks_year_closure)
         .bind(request.bell_schedule_id)
-        .fetch_one(&mut *transaction)
+        .fetch_one()
         .await
         .map_err(map_term_write_error)?;
-    sqlx::query(
-        r#"INSERT INTO academic_assessment_phase_controls (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.create_term",
+            r#"INSERT INTO academic_assessment_phase_controls (
                academic_term_id, academic_year_id, phase_code, updated_by
            )
            SELECT $1, $2, phase.phase_code, $3
@@ -402,38 +486,42 @@ pub async fn create_term(
                    ('after_midterm'::text),
                    ('final'::text)
            ) AS phase(phase_code)"#,
-    )
-    .bind(id)
-    .bind(request.academic_year_id)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_gradebook_phase_controls (
+        )
+        .bind(id)
+        .bind(request.academic_year_id)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.create_term",
+            r#"INSERT INTO academic_gradebook_phase_controls (
                academic_term_id, academic_year_id, phase_code, updated_by
            )
            SELECT $1, $2, phase.phase_code, $3
            FROM (VALUES ('before_midterm'::text), ('midterm'::text),
                         ('after_midterm'::text), ('final'::text)) AS phase(phase_code)"#,
-    )
-    .bind(id)
-    .bind(request.academic_year_id)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_learner_evaluation_controls (
+        )
+        .bind(id)
+        .bind(request.academic_year_id)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.create_term",
+            r#"INSERT INTO academic_learner_evaluation_controls (
                academic_term_id, academic_year_id, domain, updated_by
            )
            SELECT $1, $2, evaluation.domain, $3
            FROM (VALUES ('desirable_characteristic'::text),
                         ('reading_thinking_writing'::text)) AS evaluation(domain)"#,
-    )
-    .bind(id)
-    .bind(request.academic_year_id)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(id)
+        .bind(request.academic_year_id)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
     append_audit(
         &mut transaction,
         "academic_term.created",
@@ -460,12 +548,15 @@ pub async fn update_term(
     let mut transaction = pool.begin().await?;
     // Resolve identity without taking the child lock. Configuration and lifecycle
     // writers lock the year before the term to avoid inverse-order deadlocks.
-    let (academic_year_id, sequence): (Uuid, i32) =
-        sqlx::query_as("SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    let (academic_year_id, sequence): (Uuid, i32) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_core.services.years_terms.update_term",
+            "SELECT academic_year_id, sequence_no FROM academic_terms WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
     validate_term_context(
         &mut transaction,
         academic_year_id,
@@ -488,7 +579,11 @@ pub async fn update_term(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'startDate', OLD.start_date, 'plannedEndDate', OLD.planned_end_date, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'startDate', NEW.start_date, 'plannedEndDate', NEW.planned_end_date, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'rowVersion', NEW.row_version) AS after"
     );
-    let row = sqlx::query_as::<_, AcademicTermUpdateRow>(sqlx::AssertSqlSafe(sql))
+    let row = DbSession::new(&mut *transaction)
+        .query_as::<AcademicTermUpdateRow>(
+            "academic_core.services.years_terms.update_term",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
@@ -498,7 +593,7 @@ pub async fn update_term(
         .bind(request.bell_schedule_id)
         .bind(id)
         .bind(request.row_version)
-        .fetch_optional(&mut *transaction)
+        .fetch_optional()
         .await
         .map_err(map_term_write_error)?;
     let row = match row {
@@ -526,23 +621,30 @@ pub async fn update_term(
 
 pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result<(), AppError> {
     let mut transaction = pool.begin().await?;
-    let academic_year_id: Uuid =
-        sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
-            .bind(id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
+    let academic_year_id: Uuid = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.years_terms.delete_term",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".to_string()))?;
     lock_term_planning_year(&mut transaction, academic_year_id).await?;
-    let status: AcademicTermStatus = sqlx::query_scalar(
-        "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE",
-    )
-    .bind(id)
-    .bind(academic_year_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีที่เลือก".into()))?;
-    let dependency_count: i64 = sqlx::query_scalar(
-        r#"
+    let status: AcademicTermStatus = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.years_terms.delete_term",
+            "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR UPDATE",
+        )
+        .bind(id)
+        .bind(academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีที่เลือก".into()))?;
+    let dependency_count: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.years_terms.delete_term",
+            r#"
         SELECT
             (SELECT count(*) FROM learning_offerings WHERE academic_term_id = $1)
           + (SELECT count(*) FROM academic_timetable_blocks WHERE academic_term_id = $1)
@@ -550,22 +652,34 @@ pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result
           + (SELECT count(*) FROM academic_exam_rounds WHERE academic_term_id = $1)
           + (SELECT count(*) FROM supervision_cycles WHERE academic_term_id = $1)
         "#,
-    )
-    .bind(id)
-    .fetch_one(&mut *transaction)
-    .await?;
+        )
+        .bind(id)
+        .fetch_one()
+        .await?;
     super::ensure_planning_delete(status, dependency_count)?;
-    sqlx::query("DELETE FROM academic_gradebook_phase_controls WHERE academic_term_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.delete_term",
+            "DELETE FROM academic_gradebook_phase_controls WHERE academic_term_id = $1",
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
-    sqlx::query("DELETE FROM academic_learner_evaluation_controls WHERE academic_term_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.delete_term",
+            "DELETE FROM academic_learner_evaluation_controls WHERE academic_term_id = $1",
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
-    sqlx::query("DELETE FROM academic_terms WHERE id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.years_terms.delete_term",
+            "DELETE FROM academic_terms WHERE id = $1",
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     append_audit(
         &mut transaction,
@@ -645,13 +759,15 @@ async fn validate_term_context(
             "วันที่เริ่มภาคเรียนต้องอยู่ภายในปีการศึกษา".to_string(),
         ));
     }
-    let schedule_matches: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM bell_schedules WHERE id = $1 AND academic_year_id = $2)",
-    )
-    .bind(bell_schedule_id)
-    .bind(academic_year_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+    let schedule_matches: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.years_terms.validate_term_context",
+            "SELECT EXISTS (SELECT 1 FROM bell_schedules WHERE id = $1 AND academic_year_id = $2)",
+        )
+        .bind(bell_schedule_id)
+        .bind(academic_year_id)
+        .fetch_one()
+        .await?;
     if !schedule_matches {
         return Err(AppError::ValidationError(
             "ตารางคาบต้องอยู่ในปีการศึกษาเดียวกับภาคเรียน".to_string(),
@@ -687,12 +803,15 @@ async fn lock_term_planning_year(
 ) -> Result<(NaiveDate, NaiveDate), AppError> {
     let status =
         lifecycle_guard::require_year_write_exclusive(transaction, academic_year_id).await?;
-    let (year_start, year_end): (NaiveDate, NaiveDate) =
-        sqlx::query_as("SELECT start_date, end_date FROM academic_years WHERE id = $1")
-            .bind(academic_year_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
+    let (year_start, year_end): (NaiveDate, NaiveDate) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.years_terms.lock_term_planning_year",
+            "SELECT start_date, end_date FROM academic_years WHERE id = $1",
+        )
+        .bind(academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
     ensure_term_planning_year(status)?;
     Ok((year_start, year_end))
 }
@@ -703,12 +822,12 @@ async fn unique_term_code(
     base_code: &str,
     sequence: i32,
 ) -> Result<String, AppError> {
-    let exists: bool = sqlx::query_scalar(
+    let exists: bool = DbSession::new(&mut **transaction).scalar("academic_core.services.years_terms.unique_term_code",
         "SELECT EXISTS (SELECT 1 FROM academic_terms WHERE academic_year_id = $1 AND code = $2)",
     )
     .bind(academic_year_id)
     .bind(base_code)
-    .fetch_one(&mut **transaction)
+    .fetch_one()
     .await?;
     if exists {
         Ok(format!("{base_code}-{sequence}"))
@@ -723,15 +842,17 @@ async fn ensure_terms_fit_year(
     start_date: NaiveDate,
     end_date: NaiveDate,
 ) -> Result<(), AppError> {
-    let invalid: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM academic_terms WHERE academic_year_id = $1 \
+    let invalid: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_core.services.years_terms.ensure_terms_fit_year",
+            "SELECT EXISTS (SELECT 1 FROM academic_terms WHERE academic_year_id = $1 \
          AND (start_date < $2 OR planned_end_date > $3 OR closed_on > $3))",
-    )
-    .bind(academic_year_id)
-    .bind(start_date)
-    .bind(end_date)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(start_date)
+        .bind(end_date)
+        .fetch_one()
+        .await?;
     if invalid {
         return Err(AppError::ValidationError(
             "ช่วงปีการศึกษาใหม่ไม่ครอบคลุมภาคเรียนเดิม".to_string(),
@@ -745,11 +866,14 @@ async fn classify_year_update_failure(
     id: Uuid,
     expected: i64,
 ) -> Result<AppError, AppError> {
-    let state: Option<(AcademicYearStatus, i64)> =
-        sqlx::query_as("SELECT status, row_version FROM academic_years WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut **transaction)
-            .await?;
+    let state: Option<(AcademicYearStatus, i64)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.years_terms.classify_year_update_failure",
+            "SELECT status, row_version FROM academic_years WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     Ok(match state {
         None => AppError::NotFound("ไม่พบปีการศึกษา".to_string()),
         Some((status, _)) if status != AcademicYearStatus::Planning => {
@@ -766,11 +890,14 @@ async fn classify_term_update_failure(
     id: Uuid,
     expected: i64,
 ) -> Result<AppError, AppError> {
-    let state: Option<(AcademicTermStatus, i64)> =
-        sqlx::query_as("SELECT status, row_version FROM academic_terms WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&mut **transaction)
-            .await?;
+    let state: Option<(AcademicTermStatus, i64)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.years_terms.classify_term_update_failure",
+            "SELECT status, row_version FROM academic_terms WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     Ok(match state {
         None => AppError::NotFound("ไม่พบภาคเรียน".to_string()),
         Some((status, _)) if status != AcademicTermStatus::Planning => {
@@ -858,22 +985,24 @@ pub async fn append_audit<T: serde::Serialize>(
     actor_user_id: Uuid,
     payload: T,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_core.services.years_terms.append_audit",
+            r#"
         INSERT INTO academic_audit_events (
             event_code, entity_type, entity_id, academic_year_id, academic_term_id,
             actor_user_id, payload
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
-    )
-    .bind(event_code)
-    .bind(entity_type)
-    .bind(entity_id)
-    .bind(academic_year_id)
-    .bind(academic_term_id)
-    .bind(actor_user_id)
-    .bind(sqlx::types::Json(payload))
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(event_code)
+        .bind(entity_type)
+        .bind(entity_id)
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .bind(actor_user_id)
+        .bind(sqlx::types::Json(payload))
+        .execute()
+        .await?;
     Ok(())
 }

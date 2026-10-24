@@ -349,8 +349,10 @@ mod phase_tests {
             panic!("unexpected scan")
         }
     }
-    async fn fixture(name: &str) -> PgPool {
-        let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
+    async fn fixture(name: &str, max_connections: u32) -> PgPool {
+        let pool =
+            school_test_db::create_named_test_pool_with_max_connections(name, max_connections)
+                .await;
         school_test_db::run_test_migrations(&pool).await;
         let actor = Uuid::new_v4();
         let file = Uuid::new_v4();
@@ -388,8 +390,8 @@ mod phase_tests {
     }
     #[tokio::test]
     async fn slow_provider_item_allows_other_tenant_database_progress() {
-        let slow = fixture("cleaner_slow_provider").await;
-        let healthy = fixture("cleaner_healthy_provider").await;
+        let slow = fixture("cleaner_slow_provider", 1).await;
+        let healthy = fixture("cleaner_healthy_provider", 1).await;
         let turns = Arc::new(school_tenancy::background::TenantTurnExecutor::for_tests(1));
         let (provider, slow_platform) = platform(true);
         let (_, healthy_platform) = platform(false);
@@ -412,6 +414,20 @@ mod phase_tests {
         tokio::time::timeout(Duration::from_secs(2), provider.started.notified())
             .await
             .unwrap();
+        assert_eq!(slow.options().get_max_connections(), 1);
+        let mut free_connection = tokio::time::timeout(Duration::from_millis(200), slow.acquire())
+            .await
+            .unwrap()
+            .unwrap();
+        let probe: i32 = sqlx::query_scalar("SELECT 1")
+            .fetch_one(&mut *free_connection)
+            .await
+            .unwrap();
+        assert_eq!(
+            probe, 1,
+            "the slow tenant's sole physical connection must be released during provider I/O"
+        );
+        drop(free_connection);
         let healthy_turn = turns
             .begin("healthy", TenantJobKind::FileReconciliation)
             .unwrap();
@@ -444,7 +460,7 @@ mod phase_tests {
     }
     #[tokio::test]
     async fn blocked_database_phase_times_out_and_releases_shared_admission() {
-        let pool = fixture("cleaner_blocked_database").await;
+        let pool = fixture("cleaner_blocked_database", 3).await;
         let turns = Arc::new(school_tenancy::background::TenantTurnExecutor::for_tests(1));
         let (_, platform) = platform(false);
         let mut blocker = pool.begin().await.unwrap();

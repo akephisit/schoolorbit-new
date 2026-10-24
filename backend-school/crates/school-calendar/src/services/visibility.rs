@@ -246,9 +246,6 @@ pub async fn list_management_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarEvent>, AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_management_events")
-            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
@@ -267,6 +264,9 @@ pub async fn list_management_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_management_events")
+            .await?;
     let rows = school_database::DbSession::new(&mut *connection)
         .prepared_query_as(
             "calendar.services.visibility.list_management_events",
@@ -312,9 +312,6 @@ pub async fn list_child_events(
     student_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_child_events")
-            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
@@ -323,6 +320,9 @@ pub async fn list_child_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_child_events")
+            .await?;
     let rows = school_database::DbSession::new(&mut *connection)
         .prepared_query_as(
             "calendar.services.visibility.list_child_events",
@@ -339,9 +339,6 @@ pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarPublicEvent>, AppError> {
-    let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_public_events")
-            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     builder.push(" AND e.is_public = true");
@@ -351,6 +348,9 @@ pub async fn list_public_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_public_events")
+            .await?;
     let rows = school_database::DbSession::new(&mut *connection)
         .prepared_query_as(
             "calendar.services.visibility.list_public_events",

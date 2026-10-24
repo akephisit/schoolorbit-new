@@ -4,6 +4,7 @@ use crate::models::{
     CurriculumViewQuery, DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest, StudyProgram,
     VersionStatus,
 };
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -59,9 +60,13 @@ pub async fn open_draft(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR UPDATE",
         super::curriculum::EDITION_COLUMNS
     );
-    let edition: CurriculumEdition = sqlx::query_as(sqlx::AssertSqlSafe(query))
+    let edition: CurriculumEdition = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_core.services.curriculum_publications.open_draft",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
     if edition.status == VersionStatus::Archived {
@@ -74,10 +79,10 @@ pub async fn open_draft(
                 "ฉบับหลักสูตรเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".into(),
             ));
         }
-        sqlx::query("UPDATE curriculum_editions SET draft_id=gen_random_uuid(),row_version=row_version+1,updated_at=now() WHERE id=$1")
-            .bind(id).execute(&mut *tx).await?;
-        sqlx::query("UPDATE curriculum_levels SET row_version=row_version+1,updated_at=now() WHERE edition_id=$1").bind(id).execute(&mut *tx).await?;
-        sqlx::query("UPDATE study_programs SET row_version=row_version+1,updated_at=now() WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)").bind(id).execute(&mut *tx).await?;
+        DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.open_draft", "UPDATE curriculum_editions SET draft_id=gen_random_uuid(),row_version=row_version+1,updated_at=now() WHERE id=$1")
+            .bind(id).execute().await?;
+        DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.open_draft", "UPDATE curriculum_levels SET row_version=row_version+1,updated_at=now() WHERE edition_id=$1").bind(id).execute().await?;
+        DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.open_draft", "UPDATE study_programs SET row_version=row_version+1,updated_at=now() WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)").bind(id).execute().await?;
     }
     tx.commit().await?;
     super::curriculum::get(pool, id).await
@@ -113,7 +118,7 @@ async fn discard_preview_in_transaction(
     token: Uuid,
     row_version: i64,
 ) -> Result<CurriculumDraftDiscardPreview, AppError> {
-    sqlx::query_as(
+    DbSession::new(&mut **tx).query_as("academic_core.services.curriculum_publications.discard_preview_in_transaction",
         "WITH graph AS (SELECT
         COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_levels r WHERE edition_id=$1),'[]') AS levels,
         COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM study_programs r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS programs,
@@ -126,7 +131,7 @@ async fn discard_preview_in_transaction(
         jsonb_array_length(levels)::bigint AS level_count,jsonb_array_length(programs)::bigint AS program_count,
         jsonb_array_length(slots)::bigint AS slot_count,jsonb_array_length(courses)::bigint AS course_count,
         jsonb_array_length(activities)::bigint AS activity_count FROM graph"
-    ).bind(id).bind(token).bind(row_version).fetch_one(&mut **tx).await.map_err(Into::into)
+    ).bind(id).bind(token).bind(row_version).fetch_one().await.map_err(Into::into)
 }
 
 pub async fn preview_discard(
@@ -139,9 +144,13 @@ pub async fn preview_discard(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR SHARE",
         super::curriculum::EDITION_COLUMNS
     );
-    let edition: CurriculumEdition = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let edition: CurriculumEdition = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_core.services.curriculum_publications.preview_discard",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
     validate_draft_token(edition.draft_id, token)?;
@@ -176,9 +185,13 @@ pub async fn discard_draft(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR UPDATE",
         super::curriculum::EDITION_COLUMNS
     );
-    let edition: CurriculumEdition = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let edition: CurriculumEdition = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_core.services.curriculum_publications.discard_draft",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
     let publication = validate_discard_context(
@@ -200,28 +213,32 @@ pub async fn discard_draft(
         "curriculum_term_slots",
     ] {
         let sql=format!("DELETE FROM {table} WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)");
-        sqlx::query(sqlx::AssertSqlSafe(sql))
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_core.services.curriculum_publications.discard_draft",
+                sqlx::AssertSqlSafe(sql),
+            )
             .bind(id)
-            .execute(&mut *tx)
+            .execute()
             .await
             .map_err(discard_error)?;
     }
-    sqlx::query("DELETE FROM curriculum_requirement_sources s WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_courses WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_activities WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM course_offering_details WHERE curriculum_course_requirement_id=s.id) AND NOT EXISTS(SELECT 1 FROM activity_offering_details WHERE curriculum_activity_requirement_id=s.id)")
-        .bind(id).execute(&mut *tx).await.map_err(discard_error)?;
-    sqlx::query("DELETE FROM study_programs w WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_programs p WHERE p.publication_id=$2 AND p.id=w.id)")
-        .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
-    sqlx::query("DELETE FROM curriculum_levels w WHERE edition_id=$1 AND NOT EXISTS(SELECT 1 FROM curriculum_publication_levels p WHERE p.publication_id=$2 AND p.id=w.id)")
-        .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "DELETE FROM curriculum_requirement_sources s WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_courses WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_activities WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM course_offering_details WHERE curriculum_course_requirement_id=s.id) AND NOT EXISTS(SELECT 1 FROM activity_offering_details WHERE curriculum_activity_requirement_id=s.id)")
+        .bind(id).execute().await.map_err(discard_error)?;
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "DELETE FROM study_programs w WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_programs p WHERE p.publication_id=$2 AND p.id=w.id)")
+        .bind(id).bind(publication).execute().await.map_err(discard_error)?;
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "DELETE FROM curriculum_levels w WHERE edition_id=$1 AND NOT EXISTS(SELECT 1 FROM curriculum_publication_levels p WHERE p.publication_id=$2 AND p.id=w.id)")
+        .bind(id).bind(publication).execute().await.map_err(discard_error)?;
     // Codes may have been swapped during editing. Vacate their
     // unique keys inside this transaction before restoring the published values.
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft",
         "UPDATE curriculum_levels SET code='discard-'||gen_random_uuid()::text WHERE edition_id=$1",
     )
     .bind(id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
-    sqlx::query("UPDATE study_programs SET code='discard-'||gen_random_uuid()::text WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
-        .bind(id).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "UPDATE study_programs SET code='discard-'||gen_random_uuid()::text WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
+        .bind(id).execute().await?;
     for (table,snapshot,columns) in [
         ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active,credit_criteria,credit_criteria_row_version"),
         ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,status,row_version,created_at,updated_at,migration_provenance,display_order"),
@@ -239,12 +256,12 @@ pub async fn discard_draft(
             _=>format!("{column}=EXCLUDED.{column}"),
         }).collect::<Vec<_>>().join(",");
         let sql=format!("INSERT INTO {table} AS workspace({columns}) SELECT {selected} FROM {snapshot} p WHERE publication_id=$1 ON CONFLICT(id) DO UPDATE SET {updated}");
-        sqlx::query(sqlx::AssertSqlSafe(sql)).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
+        DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", sqlx::AssertSqlSafe(sql)).bind(publication).execute().await.map_err(discard_error)?;
     }
     // The database guard independently requires the entire workspace to match the
     // publication before permitting this token to close without a new publication.
-    sqlx::query("UPDATE curriculum_editions SET draft_id=NULL,row_version=row_version+1,updated_at=now() WHERE id=$1")
-        .bind(id).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_core.services.curriculum_publications.discard_draft", "UPDATE curriculum_editions SET draft_id=NULL,row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(id).execute().await?;
     tx.commit().await?;
     super::curriculum::get(pool, id).await
 }
@@ -254,23 +271,36 @@ pub async fn resolve_view(
     edition_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<Option<Uuid>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.resolve_view",
+    )
+    .await?;
+    resolve_view_on_connection(&mut connection, edition_id, query).await
+}
+
+pub async fn resolve_view_on_connection(
+    connection: &mut sqlx::PgConnection,
+    edition_id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<Option<Uuid>, AppError> {
     if query.draft_id.is_some() && query.publication_id.is_some() {
         return Err(AppError::ValidationError(
             "เลือกดูร่างหรือประวัติการเผยแพร่เพียงอย่างเดียว".into(),
         ));
     }
-    let edition = super::curriculum::get(pool, edition_id).await?;
+    let edition = super::curriculum::get_on_connection(connection, edition_id).await?;
     if let Some(draft) = query.draft_id {
         validate_draft_token(edition.draft_id, draft)?;
         return Ok(None);
     }
     if let Some(publication) = query.publication_id {
-        let exists: bool = sqlx::query_scalar(
+        let exists: bool = DbSession::new(connection).scalar("academic_core.services.curriculum_publications.resolve_view_on_connection",
             "SELECT EXISTS(SELECT 1 FROM curriculum_publications WHERE id=$1 AND edition_id=$2)",
         )
         .bind(publication)
         .bind(edition_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
         if !exists {
             return Err(AppError::NotFound("ไม่พบประวัติการเผยแพร่ในฉบับนี้".into()));
@@ -280,10 +310,17 @@ pub async fn resolve_view(
     Ok(edition.current_publication_id)
 }
 
-async fn level_edition(pool: &PgPool, level_id: Uuid) -> Result<Uuid, AppError> {
-    sqlx::query_scalar("SELECT edition_id FROM curriculum_levels WHERE id=$1")
+async fn level_edition(
+    connection: &mut sqlx::PgConnection,
+    level_id: Uuid,
+) -> Result<Uuid, AppError> {
+    DbSession::new(connection)
+        .scalar(
+            "academic_core.services.curriculum_publications.level_edition",
+            "SELECT edition_id FROM curriculum_levels WHERE id=$1",
+        )
         .bind(level_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบระดับการศึกษา".into()))
 }
@@ -293,7 +330,20 @@ pub async fn read_levels(
     edition_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<Vec<CurriculumLevelView>, AppError> {
-    let publication = resolve_view(pool, edition_id, query).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.read_levels",
+    )
+    .await?;
+    read_levels_on_connection(&mut connection, edition_id, query).await
+}
+
+pub async fn read_levels_on_connection(
+    connection: &mut sqlx::PgConnection,
+    edition_id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<Vec<CurriculumLevelView>, AppError> {
+    let publication = resolve_view_on_connection(connection, edition_id, query).await?;
     let table = source("curriculum_levels", publication)?;
     let columns = if publication.is_some() {
         super::curriculum::LEVEL_COLUMNS.replace("CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id", "'published'::text AS status,NULL::uuid AS draft_id,l.publication_id")
@@ -301,10 +351,14 @@ pub async fn read_levels(
         super::curriculum::LEVEL_COLUMNS.to_owned()
     };
     let sql = format!("SELECT {columns} FROM {table} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.edition_id=$1 ORDER BY l.created_at,l.id LIMIT 501");
-    let levels: Vec<CurriculumLevel> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let levels: Vec<CurriculumLevel> = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.curriculum_publications.read_levels_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(edition_id)
         .bind(publication)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     if levels.len() > 500 {
         return Err(AppError::ValidationError(
@@ -322,8 +376,22 @@ pub async fn read_level(
     level_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<CurriculumLevel, AppError> {
-    let publication = resolve_view(pool, level_edition(pool, level_id).await?, query).await?;
-    super::curriculum::level_from_publication(pool, level_id, publication).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.read_level",
+    )
+    .await?;
+    read_level_on_connection(&mut connection, level_id, query).await
+}
+
+pub async fn read_level_on_connection(
+    connection: &mut sqlx::PgConnection,
+    level_id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<CurriculumLevel, AppError> {
+    let edition_id = level_edition(connection, level_id).await?;
+    let publication = resolve_view_on_connection(connection, edition_id, query).await?;
+    super::curriculum::level_from_publication(connection, level_id, publication).await
 }
 
 pub async fn read_workspace(
@@ -331,13 +399,29 @@ pub async fn read_workspace(
     level_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<CurriculumStructureWorkspace, AppError> {
-    let edition_id = level_edition(pool, level_id).await?;
-    let publication = resolve_view(pool, edition_id, query).await?;
-    let workspace =
-        super::curriculum_structure::get_workspace_from_publication(pool, level_id, publication)
-            .await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.read_workspace",
+    )
+    .await?;
+    read_workspace_on_connection(&mut connection, level_id, query).await
+}
+
+pub async fn read_workspace_on_connection(
+    connection: &mut sqlx::PgConnection,
+    level_id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<CurriculumStructureWorkspace, AppError> {
+    let edition_id = level_edition(connection, level_id).await?;
+    let publication = resolve_view_on_connection(connection, edition_id, query).await?;
+    let workspace = super::curriculum_structure::get_workspace_from_publication(
+        connection,
+        level_id,
+        publication,
+    )
+    .await?;
     if query.draft_id.is_some() {
-        resolve_view(pool, edition_id, query).await?;
+        resolve_view_on_connection(connection, edition_id, query).await?;
     }
     Ok(workspace)
 }
@@ -347,9 +431,23 @@ pub async fn read_programs(
     level_id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<Vec<StudyProgram>, AppError> {
-    let publication = resolve_view(pool, level_edition(pool, level_id).await?, query).await?;
-    super::curriculum::level_from_publication(pool, level_id, publication).await?;
-    super::curriculum::programs_from_publication(pool, level_id, publication).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.read_programs",
+    )
+    .await?;
+    read_programs_on_connection(&mut connection, level_id, query).await
+}
+
+pub async fn read_programs_on_connection(
+    connection: &mut sqlx::PgConnection,
+    level_id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<Vec<StudyProgram>, AppError> {
+    let edition_id = level_edition(connection, level_id).await?;
+    let publication = resolve_view_on_connection(connection, edition_id, query).await?;
+    super::curriculum::level_from_publication(connection, level_id, publication).await?;
+    super::curriculum::programs_from_publication(connection, level_id, publication).await
 }
 
 pub async fn read_program(
@@ -357,22 +455,43 @@ pub async fn read_program(
     id: Uuid,
     query: &CurriculumViewQuery,
 ) -> Result<StudyProgram, AppError> {
-    let level_id: Uuid =
-        sqlx::query_scalar("SELECT curriculum_level_id FROM study_programs WHERE id=$1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
-    let publication = resolve_view(pool, level_edition(pool, level_id).await?, query).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.read_program",
+    )
+    .await?;
+    read_program_on_connection(&mut connection, id, query).await
+}
+
+pub async fn read_program_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    query: &CurriculumViewQuery,
+) -> Result<StudyProgram, AppError> {
+    let level_id: Uuid = DbSession::new(connection)
+        .scalar(
+            "academic_core.services.curriculum_publications.read_program_on_connection",
+            "SELECT curriculum_level_id FROM study_programs WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
+    let edition_id = level_edition(connection, level_id).await?;
+    let publication = resolve_view_on_connection(connection, edition_id, query).await?;
     let table = source("study_programs", publication)?;
     let sql = format!(
         "SELECT {} FROM {table} WHERE id=$1",
         super::curriculum::PROGRAM_COLUMNS
     );
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    DbSession::new(connection)
+        .query_as(
+            "academic_core.services.curriculum_publications.read_program_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
         .bind(publication)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียนในชุดหลักสูตรที่เลือก".into()))
 }
@@ -381,11 +500,27 @@ pub async fn list_publications(
     pool: &PgPool,
     edition_id: Uuid,
 ) -> Result<Vec<CurriculumPublication>, AppError> {
-    super::curriculum::get(pool, edition_id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.list_publications",
+    )
+    .await?;
+    list_publications_on_connection(&mut connection, edition_id).await
+}
+
+pub async fn list_publications_on_connection(
+    connection: &mut sqlx::PgConnection,
+    edition_id: Uuid,
+) -> Result<Vec<CurriculumPublication>, AppError> {
+    super::curriculum::get_on_connection(connection, edition_id).await?;
     let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 ORDER BY publication_no DESC LIMIT 501");
-    let rows: Vec<CurriculumPublication> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let rows: Vec<CurriculumPublication> = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.curriculum_publications.list_publications_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(edition_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     if rows.len() > 500 {
         return Err(AppError::ValidationError(
@@ -400,15 +535,32 @@ pub async fn history(
     edition_id: Uuid,
     publication_id: Uuid,
 ) -> Result<CurriculumPublicationHistory, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.curriculum_publications.history",
+    )
+    .await?;
+    history_on_connection(&mut connection, edition_id, publication_id).await
+}
+
+pub async fn history_on_connection(
+    connection: &mut sqlx::PgConnection,
+    edition_id: Uuid,
+    publication_id: Uuid,
+) -> Result<CurriculumPublicationHistory, AppError> {
     let sql = format!("SELECT {PUBLICATION_COLUMNS} FROM curriculum_publications p LEFT JOIN user_display_names u ON u.id=p.published_by WHERE edition_id=$1 AND p.id=$2");
-    let publication: CurriculumPublication = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let publication: CurriculumPublication = DbSession::new(connection)
+        .query_as(
+            "academic_core.services.curriculum_publications.history_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(edition_id)
         .bind(publication_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบประวัติการเผยแพร่ในฉบับนี้".into()))?;
     let changes = super::curriculum_publication_changes::compare(
-        pool,
+        connection,
         publication.previous_publication_id,
         publication.id,
     )

@@ -7,18 +7,30 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub async fn get_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError> {
-    sqlx::query_scalar(
-        "SELECT user_type
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.get_user_type")
+            .await?;
+    get_user_type_on_connection(&mut connection, user_id).await
+}
+
+pub async fn get_user_type_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<String, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "navigation.services.public_menu_service.get_user_type_on_connection",
+            "SELECT user_type
          FROM users
          WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get user type for menu: {}", e);
-        AppError::InternalServerError("ไม่สามารถตรวจสอบประเภทผู้ใช้ได้".to_string())
-    })
+        )
+        .bind(user_id)
+        .fetch_one()
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get user type for menu: {}", e);
+            AppError::InternalServerError("ไม่สามารถตรวจสอบประเภทผู้ใช้ได้".to_string())
+        })
 }
 
 #[derive(Debug, FromRow)]
@@ -41,8 +53,20 @@ pub struct MenuRow {
 }
 
 pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<MenuRow>, AppError> {
-    sqlx::query_as::<_, MenuRow>(
-        r#"SELECT mi.id, mi.code, mi.name, mi.path, mi.icon, mi.required_permission,
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "navigation.fetch_menu_items")
+            .await?;
+    fetch_menu_items_on_connection(&mut connection, user_type).await
+}
+
+pub async fn fetch_menu_items_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_type: &str,
+) -> Result<Vec<MenuRow>, AppError> {
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<MenuRow>(
+            "navigation.services.public_menu_service.fetch_menu_items_on_connection",
+            r#"SELECT mi.id, mi.code, mi.name, mi.path, mi.icon, mi.required_permission,
                   mg.code as group_code, mg.name as group_name, mg.icon as group_icon,
                   mg.display_order as group_order, mg.workspace_code as group_workspace_code,
                   mw.name as workspace_name, mw.icon as workspace_icon,
@@ -55,14 +79,14 @@ pub async fn fetch_menu_items(pool: &PgPool, user_type: &str) -> Result<Vec<Menu
              AND mw.is_active = true
              AND mi.user_type = $1
            ORDER BY mw.display_order, mg.display_order, mi.display_order"#,
-    )
-    .bind(user_type)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to fetch menu items: {}", e);
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
-    })
+        )
+        .bind(user_type)
+        .fetch_all()
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch menu items: {}", e);
+            AppError::InternalServerError("ไม่สามารถดึงข้อมูลเมนูได้".to_string())
+        })
 }
 
 pub fn group_and_filter_menu(rows: Vec<MenuRow>, actor: &ActorContext) -> Vec<MenuGroupResponse> {

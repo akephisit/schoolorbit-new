@@ -1,4 +1,5 @@
 use super::super::models::{AcademicTermStatus, AcademicYearStatus};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -42,10 +43,14 @@ impl AcademicWriteState {
 
 /// Source writers (including dedicated corrections) coordinate before entity locks.
 pub async fn lock_transition_shared(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
-    sqlx::query("SELECT pg_advisory_xact_lock_shared($1,$2)")
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_core.services.lifecycle_guard.lock_transition_shared",
+            "SELECT pg_advisory_xact_lock_shared($1,$2)",
+        )
         .bind(TRANSITION_NAMESPACE)
         .bind(TRANSITION_KEY)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }
@@ -53,10 +58,14 @@ pub async fn lock_transition_shared(tx: &mut Transaction<'_, Postgres>) -> Resul
 /// Lifecycle takes this before readiness reads. Cross-year Core commands also
 /// take it before discovering their year set, never after locking an entity.
 pub async fn lock_transition(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
-    sqlx::query("SELECT pg_advisory_xact_lock($1,$2)")
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_core.services.lifecycle_guard.lock_transition",
+            "SELECT pg_advisory_xact_lock($1,$2)",
+        )
         .bind(TRANSITION_NAMESPACE)
         .bind(TRANSITION_KEY)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     Ok(())
 }
@@ -79,9 +88,13 @@ async fn lock_context_with_term_mode(
     exclusive_term: bool,
 ) -> Result<AcademicWriteState, AppError> {
     lock_transition_shared(tx).await?;
-    let year_status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR SHARE")
+    let year_status = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.lifecycle_guard.lock_context_with_term_mode",
+            "SELECT status FROM academic_years WHERE id=$1 FOR SHARE",
+        )
         .bind(year)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
     let term_query = if exclusive_term {
@@ -89,10 +102,14 @@ async fn lock_context_with_term_mode(
     } else {
         "SELECT status FROM academic_terms WHERE id=$1 AND academic_year_id=$2 FOR SHARE"
     };
-    let term_status = sqlx::query_scalar(term_query)
+    let term_status = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.lifecycle_guard.lock_context_with_term_mode",
+            term_query,
+        )
         .bind(term)
         .bind(year)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::ValidationError("ภาคเรียนไม่อยู่ในปีการศึกษาที่เลือก".into()))?;
     Ok(AcademicWriteState {
@@ -117,9 +134,13 @@ pub async fn require_year_write_shared(
     year: Uuid,
 ) -> Result<AcademicYearStatus, AppError> {
     lock_transition_shared(tx).await?;
-    let status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR SHARE")
+    let status = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.lifecycle_guard.require_year_write_shared",
+            "SELECT status FROM academic_years WHERE id=$1 FOR SHARE",
+        )
         .bind(year)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
     if !year_is_writable(status) {
@@ -137,9 +158,13 @@ pub async fn require_year_write_exclusive(
     year: Uuid,
 ) -> Result<AcademicYearStatus, AppError> {
     lock_transition_shared(tx).await?;
-    let status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1 FOR UPDATE")
+    let status = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.lifecycle_guard.require_year_write_exclusive",
+            "SELECT status FROM academic_years WHERE id=$1 FOR UPDATE",
+        )
         .bind(year)
-        .fetch_optional(&mut **tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))?;
     if !year_is_writable(status) {

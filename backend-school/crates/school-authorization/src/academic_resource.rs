@@ -71,17 +71,38 @@ pub fn academic_resource_access_for(
     AcademicResourceAccess::None
 }
 
+/// Resolve scopes that require no organization queries before acquiring a connection.
+pub fn academic_resource_list_filter_without_database(
+    actor: &ActorContext,
+    permissions: AcademicResourcePermissions,
+) -> Option<AcademicResourceListFilter> {
+    if actor.has_any_permission(permissions.school) {
+        return Some(AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        });
+    }
+    if !actor.has_any_permission(permissions.organization_unit)
+        && !actor.has_any_permission(permissions.organization_tree)
+    {
+        return Some(AcademicResourceListFilter {
+            assigned_actor_id: actor
+                .has_any_permission(permissions.assigned)
+                .then_some(actor.user_id),
+            ..AcademicResourceListFilter::default()
+        });
+    }
+    None
+}
+
 pub async fn resolve_academic_resource_list_filter(
     pool: &PgPool,
     actor: &ActorContext,
     permissions: AcademicResourcePermissions,
 ) -> Result<AcademicResourceListFilter, AppError> {
     // School-wide grants remain database-free at this work boundary.
-    if actor.has_any_permission(permissions.school) {
-        return Ok(AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
-        });
+    if let Some(filter) = academic_resource_list_filter_without_database(actor, permissions) {
+        return Ok(filter);
     }
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.resource_scope")
@@ -94,11 +115,8 @@ pub async fn resolve_academic_resource_list_filter_on_connection(
     actor: &ActorContext,
     permissions: AcademicResourcePermissions,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    if actor.has_any_permission(permissions.school) {
-        return Ok(AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
-        });
+    if let Some(filter) = academic_resource_list_filter_without_database(actor, permissions) {
+        return Ok(filter);
     }
 
     let mut exact_units = BTreeSet::new();
@@ -186,6 +204,50 @@ mod tests {
         assert_eq!(
             academic_resource_access_for(&filter, None, true),
             AcademicResourceAccess::Assigned
+        );
+    }
+    #[tokio::test]
+    async fn school_assigned_and_empty_filters_remain_database_free() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://synthetic.invalid/unavailable")
+            .unwrap();
+        pool.close().await;
+        let permissions = AcademicResourcePermissions {
+            school: &["scope.school"],
+            assigned: &["scope.assigned"],
+            organization_unit: &["scope.unit"],
+            organization_tree: &["scope.tree"],
+        };
+        for (grants, school, assigned) in [
+            (vec!["scope.school"], true, false),
+            (vec!["scope.assigned"], false, true),
+            (vec![], false, false),
+        ] {
+            let actor = ActorContext {
+                user_id: Uuid::new_v4(),
+                permissions: grants.into_iter().map(str::to_string).collect(),
+            };
+            let pure = academic_resource_list_filter_without_database(&actor, permissions).unwrap();
+            let resolved = resolve_academic_resource_list_filter(&pool, &actor, permissions)
+                .await
+                .unwrap();
+            assert_eq!(pure, resolved);
+            assert_eq!(resolved.includes_school_owned, school);
+            assert_eq!(resolved.assigned_actor_id.is_some(), assigned);
+            assert!(
+                resolved.organization_unit_ids.is_empty()
+                    && resolved.organization_tree_unit_ids.is_empty()
+            );
+        }
+        let actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec!["scope.unit".into()],
+        };
+        assert!(academic_resource_list_filter_without_database(&actor, permissions).is_none());
+        assert!(
+            resolve_academic_resource_list_filter(&pool, &actor, permissions)
+                .await
+                .is_err()
         );
     }
 }

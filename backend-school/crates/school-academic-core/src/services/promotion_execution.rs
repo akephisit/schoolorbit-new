@@ -1,5 +1,6 @@
 use super::promotion_students::PromotionStudentContext;
 use crate::models::{PromotionDestinationCommand, PromotionDestinationOutcome as Outcome};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -23,10 +24,10 @@ pub async fn execute_decision(
     decision: &PromotionDestinationCommand,
 ) -> Result<PromotionWriteOutcome, AppError> {
     super::promotion_students::validate_run_years(tx, source_year, target_year).await?;
-    let actual: Option<i64> = sqlx::query_scalar(
+    let actual: Option<i64> = DbSession::new(&mut **tx).scalar("academic_core.services.promotion_execution.execute_decision",
         "SELECT row_version FROM student_academic_years WHERE id=$1 AND academic_year_id=$2 AND student_id=$3 FOR UPDATE",
     ).bind(source.student_academic_year_id).bind(source_year).bind(source.student_id)
-        .fetch_optional(&mut **tx).await?;
+        .fetch_optional().await?;
     if actual != Some(source.row_version) {
         return Err(AppError::Conflict(
             "ข้อมูลนักเรียนต้นทางเปลี่ยนแล้ว ต้องตรวจและอนุมัติใหม่".into(),
@@ -59,10 +60,10 @@ pub async fn execute_decision(
     match decision.outcome {
         Outcome::Hold => return Ok(result),
         Outcome::Graduate | Outcome::TransferOut => {
-            result.source_row_version = sqlx::query_scalar(
+            result.source_row_version = DbSession::new(&mut **tx).scalar("academic_core.services.promotion_execution.execute_decision",
                 "UPDATE student_academic_years SET status=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 RETURNING row_version",
             ).bind(if decision.outcome == Outcome::Graduate { "graduated" } else { "withdrawn" })
-                .bind(current.student_academic_year_id).fetch_one(&mut **tx).await?;
+                .bind(current.student_academic_year_id).fetch_one().await?;
         }
         Outcome::Promote | Outcome::Repeat | Outcome::Conditional => {
             let grade = decision
@@ -72,13 +73,16 @@ pub async fn execute_decision(
                 .target_study_program_id
                 .ok_or_else(|| AppError::ValidationError("ระบุแผนการเรียนปลายทาง".into()))?;
             if let Some(room) = decision.target_homeroom_id {
-                let capacity: Option<i32> =
-                    sqlx::query_scalar("SELECT capacity FROM homerooms WHERE id=$1 FOR UPDATE")
-                        .bind(room)
-                        .fetch_one(&mut **tx)
-                        .await?;
-                let occupied: i64 = sqlx::query_scalar("SELECT count(DISTINCT student_academic_year_id) FROM homeroom_placements WHERE homeroom_id=$1 AND academic_year_id=$2 AND status IN ('planned','current')")
-                    .bind(room).bind(target_year).fetch_one(&mut **tx).await?;
+                let capacity: Option<i32> = DbSession::new(&mut **tx)
+                    .scalar(
+                        "academic_core.services.promotion_execution.execute_decision",
+                        "SELECT capacity FROM homerooms WHERE id=$1 FOR UPDATE",
+                    )
+                    .bind(room)
+                    .fetch_one()
+                    .await?;
+                let occupied: i64 = DbSession::new(&mut **tx).scalar("academic_core.services.promotion_execution.execute_decision", "SELECT count(DISTINCT student_academic_year_id) FROM homeroom_placements WHERE homeroom_id=$1 AND academic_year_id=$2 AND status IN ('planned','current')")
+                    .bind(room).bind(target_year).fetch_one().await?;
                 if capacity.is_some_and(|maximum| occupied >= i64::from(maximum)) {
                     return Err(AppError::Conflict(
                         "ห้องปลายทางเต็มแล้ว กรุณาตรวจห้องก่อนดำเนินการ".into(),
@@ -86,13 +90,13 @@ pub async fn execute_decision(
                 }
             }
             let id = Uuid::now_v7();
-            sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'planned')")
-                .bind(id).bind(current.student_id).bind(target_year).bind(grade).bind(program).execute(&mut **tx).await?;
+            DbSession::new(&mut **tx).query("academic_core.services.promotion_execution.execute_decision", "INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'planned')")
+                .bind(id).bind(current.student_id).bind(target_year).bind(grade).bind(program).execute().await?;
             result.target_student_year_id = Some(id);
             if let Some(room) = decision.target_homeroom_id {
                 let placement = Uuid::now_v7();
-                sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,'planned','promotion' FROM academic_years WHERE id=$3")
-                    .bind(placement).bind(id).bind(target_year).bind(room).execute(&mut **tx).await?;
+                DbSession::new(&mut **tx).query("academic_core.services.promotion_execution.execute_decision", "INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,'planned','promotion' FROM academic_years WHERE id=$3")
+                    .bind(placement).bind(id).bind(target_year).bind(room).execute().await?;
                 result.target_placement_id = Some(placement);
             }
         }

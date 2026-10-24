@@ -4,9 +4,9 @@ mod organization_scope;
 mod permissions;
 
 pub use academic_resource::{
-    academic_resource_access_for, resolve_academic_resource_list_filter,
-    resolve_academic_resource_list_filter_on_connection, AcademicResourceAccess,
-    AcademicResourceListFilter, AcademicResourcePermissions,
+    academic_resource_access_for, academic_resource_list_filter_without_database,
+    resolve_academic_resource_list_filter, resolve_academic_resource_list_filter_on_connection,
+    AcademicResourceAccess, AcademicResourceListFilter, AcademicResourcePermissions,
 };
 pub use cache::{PermissionCache, PermissionCacheRevision, TenantUserKey};
 pub use organization_scope::{

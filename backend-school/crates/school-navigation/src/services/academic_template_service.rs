@@ -141,7 +141,11 @@ pub async fn apply_academic_template(
     pool: &PgPool,
     expected_revision: &str,
 ) -> Result<AcademicMenuTemplateApplyResult, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "navigation.academic_template_service.transaction",
+    )
+    .await?;
     let preview = build_preview(&mut transaction, true).await?;
     if preview.revision != expected_revision {
         return Err(AppError::Conflict(
@@ -176,8 +180,10 @@ pub async fn apply_academic_template(
     let moved_count = if item_ids.is_empty() {
         0
     } else {
-        sqlx::query(
-            "UPDATE menu_items AS item
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "navigation.services.academic_template_service.apply_academic_template",
+                "UPDATE menu_items AS item
              SET group_id = updates.group_id,
                  display_order = updates.display_order,
                  updated_at = NOW()
@@ -186,13 +192,13 @@ pub async fn apply_academic_template(
              WHERE item.id = updates.id
                AND item.managed_by = 'frontend'
                AND item.recommended_workspace_code = 'academic'",
-        )
-        .bind(&item_ids)
-        .bind(&group_ids)
-        .bind(&display_orders)
-        .execute(&mut *transaction)
-        .await?
-        .rows_affected()
+            )
+            .bind(&item_ids)
+            .bind(&group_ids)
+            .bind(&display_orders)
+            .execute()
+            .await?
+            .rows_affected()
     };
 
     let applied_preview = build_preview(&mut transaction, false).await?;
@@ -235,8 +241,12 @@ async fn build_preview(
            AND item.recommended_display_order IS NOT NULL
          ORDER BY item.id"
     };
-    let routes = sqlx::query_as::<_, RecommendedRouteRow>(route_query)
-        .fetch_all(&mut *connection)
+    let routes = school_database::DbSession::new(&mut *connection)
+        .query_as::<RecommendedRouteRow>(
+            "navigation.services.academic_template_service.build_preview",
+            route_query,
+        )
+        .fetch_all()
         .await?;
 
     let section_codes: Vec<&str> = RECOMMENDED_SECTIONS
@@ -255,26 +265,32 @@ async fn build_preview(
          WHERE code = ANY($1::varchar[])
          ORDER BY code"
     };
-    let sections = sqlx::query_as::<_, ExistingSectionRow>(section_query)
+    let sections = school_database::DbSession::new(&mut *connection)
+        .query_as::<ExistingSectionRow>(
+            "navigation.services.academic_template_service.build_preview",
+            section_query,
+        )
         .bind(&section_codes)
-        .fetch_all(&mut *connection)
+        .fetch_all()
         .await?;
     let section_by_code: HashMap<&str, &ExistingSectionRow> = sections
         .iter()
         .map(|section| (section.code.as_str(), section))
         .collect();
 
-    let incomplete_route_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)
+    let incomplete_route_count: i64 = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "navigation.services.academic_template_service.build_preview",
+            "SELECT COUNT(*)
          FROM menu_items
          WHERE managed_by = 'frontend'
            AND (path LIKE '/staff/academic/%' OR path = '/staff/students')
            AND (recommended_workspace_code IS NULL
                 OR recommended_group_code IS NULL
                 OR recommended_display_order IS NULL)",
-    )
-    .fetch_one(&mut *connection)
-    .await?;
+        )
+        .fetch_one()
+        .await?;
     let has_unknown_target = routes.iter().any(|route| {
         !RECOMMENDED_SECTIONS
             .iter()
@@ -283,19 +299,23 @@ async fn build_preview(
     let recommendations_ready =
         !routes.is_empty() && incomplete_route_count == 0 && !has_unknown_target;
 
-    let untouched_custom_item_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM menu_items WHERE managed_by IN ('school', 'integration')",
-    )
-    .fetch_one(&mut *connection)
-    .await?;
-    let untouched_non_academic_route_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)
+    let untouched_custom_item_count: i64 = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "navigation.services.academic_template_service.build_preview",
+            "SELECT COUNT(*) FROM menu_items WHERE managed_by IN ('school', 'integration')",
+        )
+        .fetch_one()
+        .await?;
+    let untouched_non_academic_route_count: i64 = school_database::DbSession::new(&mut *connection)
+        .scalar(
+            "navigation.services.academic_template_service.build_preview",
+            "SELECT COUNT(*)
          FROM menu_items
          WHERE managed_by = 'frontend'
            AND recommended_workspace_code IS DISTINCT FROM 'academic'",
-    )
-    .fetch_one(&mut *connection)
-    .await?;
+        )
+        .fetch_one()
+        .await?;
 
     let sections_to_create = RECOMMENDED_SECTIONS
         .iter()
@@ -403,8 +423,10 @@ async fn create_missing_sections(connection: &mut PgConnection) -> Result<u64, A
         .collect();
     let workspace_codes = vec![ACADEMIC_WORKSPACE_CODE; RECOMMENDED_SECTIONS.len()];
 
-    sqlx::query(
-        "INSERT INTO menu_groups
+    school_database::DbSession::new(connection)
+        .query(
+            "navigation.services.academic_template_service.create_missing_sections",
+            "INSERT INTO menu_groups
             (code, name, name_en, icon, display_order, is_active, workspace_code)
          SELECT code, name, name_en, icon, display_order, true, workspace_code
          FROM UNNEST(
@@ -412,17 +434,17 @@ async fn create_missing_sections(connection: &mut PgConnection) -> Result<u64, A
              $5::int4[], $6::varchar[]
          ) AS section(code, name, name_en, icon, display_order, workspace_code)
          ON CONFLICT (code) DO NOTHING",
-    )
-    .bind(&codes)
-    .bind(&names)
-    .bind(&names_en)
-    .bind(&icons)
-    .bind(&display_orders)
-    .bind(&workspace_codes)
-    .execute(connection)
-    .await
-    .map(|result| result.rows_affected())
-    .map_err(AppError::from)
+        )
+        .bind(&codes)
+        .bind(&names)
+        .bind(&names_en)
+        .bind(&icons)
+        .bind(&display_orders)
+        .bind(&workspace_codes)
+        .execute()
+        .await
+        .map(|result| result.rows_affected())
+        .map_err(AppError::from)
 }
 
 async fn load_target_group_ids(
@@ -432,11 +454,14 @@ async fn load_target_group_ids(
         .iter()
         .map(|section| section.code)
         .collect();
-    let rows: Vec<(String, Uuid)> =
-        sqlx::query_as("SELECT code, id FROM menu_groups WHERE code = ANY($1::varchar[])")
-            .bind(&codes)
-            .fetch_all(connection)
-            .await?;
+    let rows: Vec<(String, Uuid)> = school_database::DbSession::new(connection)
+        .query_as(
+            "navigation.services.academic_template_service.load_target_group_ids",
+            "SELECT code, id FROM menu_groups WHERE code = ANY($1::varchar[])",
+        )
+        .bind(&codes)
+        .fetch_all()
+        .await?;
     Ok(rows.into_iter().collect())
 }
 

@@ -135,9 +135,9 @@ pub async fn create_tag(
     pool: &PgPool,
     payload: UpsertCalendarTagRequest,
 ) -> Result<CalendarTag, AppError> {
+    let name = normalized_tag_name(payload.name)?;
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.create_tag").await?;
-    let name = normalized_tag_name(payload.name)?;
     school_database::DbSession::new(&mut *connection)
         .query_as::<CalendarTag>(
             "calendar.services.categories_and_tags.create_tag",
@@ -158,9 +158,9 @@ pub async fn update_tag(
     id: Uuid,
     payload: UpsertCalendarTagRequest,
 ) -> Result<CalendarTag, AppError> {
+    let name = normalized_tag_name(payload.name)?;
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.update_tag").await?;
-    let name = normalized_tag_name(payload.name)?;
     let tag = school_database::DbSession::new(&mut *connection)
         .query_as::<CalendarTag>(
             "calendar.services.categories_and_tags.update_tag",

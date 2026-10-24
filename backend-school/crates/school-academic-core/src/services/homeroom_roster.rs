@@ -1,5 +1,6 @@
 use super::{lifecycle_guard, parse_row_version, student_years, years_terms::append_audit};
 use crate::models::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -12,7 +13,7 @@ async fn read_students(
     room: Uuid,
     method: &str,
 ) -> Result<Vec<HomeroomRosterStudent>, AppError> {
-    let rows = sqlx::query_as::<_, HomeroomRosterStudent>(r#"
+    let rows = DbSession::new(&mut **tx).query_as::<HomeroomRosterStudent>("academic_core.services.homeroom_roster.read_students", r#"
         SELECT p.id AS placement_id,p.student_academic_year_id,y.student_id,i.student_id AS student_code,
                u.title,u.first_name,u.last_name,u.gender,p.class_number,p.status,p.start_date,p.row_version,
                y.row_version AS student_year_row_version
@@ -24,7 +25,7 @@ async fn read_students(
           CASE WHEN $2 IN ('name','gender_name') THEN u.last_name END COLLATE schoolorbit_thai,
           CASE WHEN $2='roster' THEN p.class_number END NULLS LAST,
           i.student_id NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,p.id
-        LIMIT 501"#).bind(room).bind(method).fetch_all(&mut **tx).await?;
+        LIMIT 501"#).bind(room).bind(method).fetch_all().await?;
     if rows.len() > MAX_ROSTER {
         return Err(AppError::ValidationError(
             "ห้องมีรายการจัดห้องเกิน 500 รายการ".into(),
@@ -46,13 +47,17 @@ async fn snapshot(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<HomeroomRoster, AppError> {
-    let room=sqlx::query_as::<_,Homeroom>(r#"SELECT id,code,name,academic_year_id,grade_level_id,room_number,
+    let room=DbSession::new(&mut **tx).query_as::<Homeroom>("academic_core.services.homeroom_roster.snapshot", r#"SELECT id,code,name,academic_year_id,grade_level_id,room_number,
         study_program_id,capacity,is_active,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at
-        FROM homerooms WHERE id=$1"#).bind(id).fetch_optional(&mut **tx).await?
+        FROM homerooms WHERE id=$1"#).bind(id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบห้องประจำชั้น".into()))?;
-    let year_status = sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1")
+    let year_status = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_core.services.homeroom_roster.snapshot",
+            "SELECT status FROM academic_years WHERE id=$1",
+        )
         .bind(room.academic_year_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?;
     let students = read_students(tx, id, "roster").await?;
     let revision = roster_revision(&room, &students)?;
@@ -65,8 +70,12 @@ async fn snapshot(
 }
 async fn read_transaction(pool: &PgPool) -> Result<Transaction<'_, Postgres>, AppError> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_core.services.homeroom_roster.read_transaction",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
+        )
+        .execute()
         .await?;
     Ok(tx)
 }
@@ -76,6 +85,7 @@ pub async fn get_roster(pool: &PgPool, id: Uuid) -> Result<HomeroomRoster, AppEr
     tx.commit().await?;
     Ok(result)
 }
+
 async fn write_roster<'a>(
     pool: &'a PgPool,
     id: Uuid,
@@ -130,6 +140,7 @@ pub async fn preview_numbers(
     tx.commit().await?;
     Ok(HomeroomNumberingPreview { roster, numbers })
 }
+
 fn validate_numbers(
     students: &[HomeroomRosterStudent],
     inputs: &[HomeroomNumberInput],
@@ -172,10 +183,10 @@ pub async fn update_numbers(
     validate_numbers(&roster.students, &request.numbers)?;
     let ids: Vec<_> = request.numbers.iter().map(|n| n.placement_id).collect();
     let numbers: Vec<_> = request.numbers.iter().map(|n| n.class_number).collect();
-    sqlx::query(r#"UPDATE homeroom_placements p SET class_number=n.number,row_version=p.row_version+1,updated_at=now()
+    DbSession::new(&mut *tx).query("academic_core.services.homeroom_roster.update_numbers", r#"UPDATE homeroom_placements p SET class_number=n.number,row_version=p.row_version+1,updated_at=now()
         FROM unnest($1::uuid[],$2::int[]) AS n(id,number)
         WHERE p.id=n.id AND p.homeroom_id=$3 AND p.class_number IS DISTINCT FROM n.number"#)
-        .bind(&ids).bind(&numbers).bind(id).execute(&mut *tx).await?;
+        .bind(&ids).bind(&numbers).bind(id).execute().await?;
     append_audit(
         &mut tx,
         "homeroom.numbers_updated",
@@ -191,17 +202,31 @@ pub async fn update_numbers(
     tx.commit().await?;
     Ok(updated)
 }
+
 pub async fn list_candidates(
     pool: &PgPool,
     id: Uuid,
     query: HomeroomCandidateQuery,
 ) -> Result<Vec<HomeroomRosterCandidate>, AppError> {
-    let room = student_years::get_homeroom(pool, id).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.homeroom_roster.list_candidates",
+    )
+    .await?;
+    list_candidates_on_connection(&mut connection, id, query).await
+}
+
+pub async fn list_candidates_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+    query: HomeroomCandidateQuery,
+) -> Result<Vec<HomeroomRosterCandidate>, AppError> {
+    let room = student_years::get_homeroom_on_connection(connection, id).await?;
     let search = query.search.unwrap_or_default();
     if search.chars().count() > 100 {
         return Err(AppError::ValidationError("คำค้นหายาวเกิน 100 ตัวอักษร".into()));
     }
-    Ok(sqlx::query_as(r#"SELECT y.id AS student_academic_year_id,y.student_id,i.student_id AS student_code,
+    Ok(DbSession::new(connection).query_as("academic_core.services.homeroom_roster.list_candidates_on_connection", r#"SELECT y.id AS student_academic_year_id,y.student_id,i.student_id AS student_code,
         concat_ws(' ',u.title,u.first_name,u.last_name) AS name,y.row_version
         FROM student_academic_years y JOIN users u ON u.id=y.student_id LEFT JOIN student_info i ON i.user_id=u.id
         WHERE y.academic_year_id=$1 AND y.grade_level_id=$2 AND y.study_program_id=$3
@@ -209,7 +234,7 @@ pub async fn list_candidates(
           AND NOT EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN ('planned','current'))
           AND ($4='' OR strpos(lower(concat_ws(' ',u.first_name,u.last_name,i.student_id)),lower($4))>0)
         ORDER BY u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,y.id LIMIT 100"#)
-        .bind(room.academic_year_id).bind(room.grade_level_id).bind(room.study_program_id).bind(search.trim()).fetch_all(pool).await?)
+        .bind(room.academic_year_id).bind(room.grade_level_id).bind(room.study_program_id).bind(search.trim()).fetch_all().await?)
 }
 fn validate_selections(r: &MutateHomeroomRosterRequest) -> Result<(), AppError> {
     if r.selections.is_empty() || r.selections.len() > MAX_ROSTER {
@@ -275,20 +300,22 @@ pub async fn mutate_roster(
         .iter()
         .map(|s| s.student_academic_year_id)
         .collect();
-    let years=sqlx::query_as::<_,SelectedStudentYear>(r#"SELECT y.id,y.row_version,y.status,y.grade_level_id,y.study_program_id,u.status='active' AS active
+    let years=DbSession::new(&mut *tx).query_as::<SelectedStudentYear>("academic_core.services.homeroom_roster.mutate_roster", r#"SELECT y.id,y.row_version,y.status,y.grade_level_id,y.study_program_id,u.status='active' AS active
         FROM student_academic_years y JOIN users u ON u.id=y.student_id
         WHERE y.academic_year_id=$1 AND y.id=ANY($2) ORDER BY y.id FOR UPDATE OF y"#)
-        .bind(room.academic_year_id).bind(&ids).fetch_all(&mut *tx).await?;
+        .bind(room.academic_year_id).bind(&ids).fetch_all().await?;
     if years.len() != ids.len() {
         return Err(AppError::ValidationError("นักเรียนไม่อยู่ในปีการศึกษานี้".into()));
     }
-    let valid: bool = sqlx::query_scalar(
-        "SELECT $2 BETWEEN start_date AND end_date FROM academic_years WHERE id=$1",
-    )
-    .bind(room.academic_year_id)
-    .bind(r.effective_date)
-    .fetch_one(&mut *tx)
-    .await?;
+    let valid: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_core.services.homeroom_roster.mutate_roster",
+            "SELECT $2 BETWEEN start_date AND end_date FROM academic_years WHERE id=$1",
+        )
+        .bind(room.academic_year_id)
+        .bind(r.effective_date)
+        .fetch_one()
+        .await?;
     if !valid {
         return Err(AppError::ValidationError("วันที่อยู่นอกปีการศึกษา".into()));
     }
@@ -381,10 +408,10 @@ pub async fn mutate_roster(
         1
     };
     if r.action == HomeroomRosterAction::Add {
-        let occupied: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM homeroom_placements WHERE student_academic_year_id=ANY($1) AND status IN ('planned','current'))")
-            .bind(&ids).fetch_one(&mut *tx).await?;
-        let overlaps: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM homeroom_placements WHERE student_academic_year_id=ANY($1) AND status='ended' AND (end_date IS NULL OR end_date >= $2))")
-            .bind(&ids).bind(r.effective_date).fetch_one(&mut *tx).await?;
+        let occupied: bool=DbSession::new(&mut *tx).scalar("academic_core.services.homeroom_roster.mutate_roster", "SELECT EXISTS(SELECT 1 FROM homeroom_placements WHERE student_academic_year_id=ANY($1) AND status IN ('planned','current'))")
+            .bind(&ids).fetch_one().await?;
+        let overlaps: bool=DbSession::new(&mut *tx).scalar("academic_core.services.homeroom_roster.mutate_roster", "SELECT EXISTS(SELECT 1 FROM homeroom_placements WHERE student_academic_year_id=ANY($1) AND status='ended' AND (end_date IS NULL OR end_date >= $2))")
+            .bind(&ids).bind(r.effective_date).fetch_one().await?;
         if occupied || overlaps {
             return Err(AppError::Conflict(
                 "นักเรียนมีห้องอยู่แล้วหรือวันที่ทับซ้อนประวัติเดิม".into(),
@@ -393,9 +420,9 @@ pub async fn mutate_roster(
     }
     if r.action != HomeroomRosterAction::Add {
         let old: Vec<_> = r.selections.iter().filter_map(|s| s.placement_id).collect();
-        sqlx::query(r#"UPDATE homeroom_placements SET status=CASE WHEN status='planned' THEN 'cancelled' ELSE 'ended' END,
+        DbSession::new(&mut *tx).query("academic_core.services.homeroom_roster.mutate_roster", r#"UPDATE homeroom_placements SET status=CASE WHEN status='planned' THEN 'cancelled' ELSE 'ended' END,
             end_date=CASE WHEN status='planned' THEN NULL ELSE $2::date-1 END,row_version=row_version+1,updated_at=now() WHERE id=ANY($1)"#)
-            .bind(&old).bind(r.effective_date).execute(&mut *tx).await?;
+            .bind(&old).bind(r.effective_date).execute().await?;
     }
     if let Some(target) = destination {
         let target = target.homeroom;
@@ -415,12 +442,12 @@ pub async fn mutate_roster(
                 }
             })
             .collect();
-        sqlx::query(r#"INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number)
+        DbSession::new(&mut *tx).query("academic_core.services.homeroom_roster.mutate_roster", r#"INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number)
             SELECT n.id,n.student_year_id,$5,$6,$7,n.status,$8,n.number FROM unnest($1::uuid[],$2::uuid[],$3::int[],$4::text[]) AS n(id,student_year_id,number,status)"#)
             .bind(&placements).bind(&ids).bind(&numbers).bind(&statuses).bind(room.academic_year_id).bind(target.id).bind(r.effective_date)
-            .bind(if r.action==HomeroomRosterAction::Add { "regular" } else { "room_transfer" }).execute(&mut *tx).await?;
+            .bind(if r.action==HomeroomRosterAction::Add { "regular" } else { "room_transfer" }).execute().await?;
     }
-    sqlx::query("UPDATE student_academic_years SET row_version=row_version+1,updated_at=now() WHERE id=ANY($1)").bind(&ids).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_core.services.homeroom_roster.mutate_roster", "UPDATE student_academic_years SET row_version=row_version+1,updated_at=now() WHERE id=ANY($1)").bind(&ids).execute().await?;
     append_audit(&mut tx,"homeroom.roster_changed","homeroom",id,Some(room.academic_year_id),None,actor,
         serde_json::json!({"action":r.action,"studentYearIds":ids,"targetHomeroomId":r.target_homeroom_id,"effectiveDate":r.effective_date,"reason":r.reason.trim()})).await?;
     rosters.reconcile(&mut tx, actor, &ids).await?;
@@ -428,6 +455,7 @@ pub async fn mutate_roster(
     tx.commit().await?;
     Ok(updated)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,15 +517,29 @@ mod tests {
 }
 
 pub async fn transfer_targets(pool: &PgPool, id: Uuid) -> Result<Vec<Homeroom>, AppError> {
-    let room = student_years::get_homeroom(pool, id).await?;
-    Ok(student_years::list_homerooms(pool, room.academic_year_id)
-        .await?
-        .into_iter()
-        .filter(|target| {
-            target.id != id
-                && target.grade_level_id == room.grade_level_id
-                && target.study_program_id == room.study_program_id
-                && target.is_active == Some(true)
-        })
-        .collect())
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.homeroom_roster.transfer_targets",
+    )
+    .await?;
+    transfer_targets_on_connection(&mut connection, id).await
+}
+
+pub async fn transfer_targets_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<Vec<Homeroom>, AppError> {
+    let room = student_years::get_homeroom_on_connection(connection, id).await?;
+    Ok(
+        student_years::list_homerooms_on_connection(connection, room.academic_year_id)
+            .await?
+            .into_iter()
+            .filter(|target| {
+                target.id != id
+                    && target.grade_level_id == room.grade_level_id
+                    && target.study_program_id == room.study_program_id
+                    && target.is_active == Some(true)
+            })
+            .collect(),
+    )
 }

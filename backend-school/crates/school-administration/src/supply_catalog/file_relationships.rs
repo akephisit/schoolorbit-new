@@ -49,9 +49,13 @@ pub async fn lock_files(
     ids.sort();
     ids.dedup();
     for id in ids {
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+        school_database::DbSession::new(&mut **tx)
+            .scalar::<Uuid>(
+                "administration.supply_catalog.file_relationships.lock_files",
+                "SELECT id FROM files WHERE id=$1 FOR UPDATE",
+            )
             .bind(id)
-            .fetch_optional(&mut **tx)
+            .fetch_optional()
             .await?
             .ok_or_else(|| AppError::BadRequest("ไม่พบไฟล์".into()))?;
     }
@@ -65,21 +69,21 @@ pub async fn attach(
     purpose: FilePurpose,
     allowed_relation: Option<Uuid>,
 ) -> Result<(), AppError> {
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND v.deleted_at IS NULL AND v.storage_status='stored' AND v.scan_status='clean' AND v.storage_class='private' AND (f.expires_at IS NULL OR f.expires_at>now()) AND (f.created_by=$3 OR EXISTS(SELECT 1 FROM supply_proposals p WHERE p.id=$4 AND p.status='pending' AND p.image_file_id=f.id AND $2='supply_catalog_image')))").bind(id).bind(purpose.code()).bind(actor.user_id).bind(allowed_relation).fetch_one(&mut **tx).await?;
+    let valid:bool=school_database::DbSession::new(&mut **tx).scalar("administration.supply_catalog.file_relationships.attach", "SELECT EXISTS(SELECT 1 FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND v.deleted_at IS NULL AND v.storage_status='stored' AND v.scan_status='clean' AND v.storage_class='private' AND (f.expires_at IS NULL OR f.expires_at>now()) AND (f.created_by=$3 OR EXISTS(SELECT 1 FROM supply_proposals p WHERE p.id=$4 AND p.status='pending' AND p.image_file_id=f.id AND $2='supply_catalog_image')))").bind(id).bind(purpose.code()).bind(actor.user_id).bind(allowed_relation).fetch_one().await?;
     if !valid {
         return Err(AppError::BadRequest(
             "ไฟล์ต้องเป็นไฟล์ส่วนตัวที่พร้อมใช้งานและอัปโหลดโดยผู้ดำเนินการ".into(),
         ));
     }
-    let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1 AND id IS DISTINCT FROM $2) OR EXISTS(SELECT 1 FROM supply_proposals WHERE (image_file_id=$1 OR source_file_id=$1) AND id IS DISTINCT FROM $2)").bind(id).bind(allowed_relation).fetch_one(&mut **tx).await?;
+    let used:bool=school_database::DbSession::new(&mut **tx).scalar("administration.supply_catalog.file_relationships.attach", "SELECT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1 AND id IS DISTINCT FROM $2) OR EXISTS(SELECT 1 FROM supply_proposals WHERE (image_file_id=$1 OR source_file_id=$1) AND id IS DISTINCT FROM $2)").bind(id).bind(allowed_relation).fetch_one().await?;
     if used {
         return Err(AppError::Conflict("ไฟล์นี้ถูกใช้ในรายการอื่นแล้ว".into()));
     }
-    sqlx::query(
+    school_database::DbSession::new(&mut **tx).query("administration.supply_catalog.file_relationships.attach",
         "UPDATE files SET retention_class='standard',expires_at=NULL,updated_at=now() WHERE id=$1",
     )
     .bind(id)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
@@ -106,18 +110,25 @@ pub async fn require_file_access(
     if action != FilePolicyAction::Read {
         return Err(denied());
     }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "administration.supply_file_authorization",
+    )
+    .await?;
     if let Some(resource) = resource_id {
-        let item: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM supply_items WHERE id=$1 AND image_file_id=$2)",
-        )
-        .bind(resource)
-        .bind(file.id)
-        .fetch_one(pool)
-        .await?;
+        let item: bool = school_database::DbSession::new(&mut *connection)
+            .scalar(
+                "administration.supply_catalog.file_relationships.require_file_access",
+                "SELECT EXISTS(SELECT 1 FROM supply_items WHERE id=$1 AND image_file_id=$2)",
+            )
+            .bind(resource)
+            .bind(file.id)
+            .fetch_one()
+            .await?;
         if item && file.purpose == FilePurpose::SupplyCatalogImage {
             return require_action(actor, SupplyAction::Read, None, false);
         }
-        let owner:Option<Uuid>=sqlx::query_scalar("SELECT proposed_by FROM supply_proposals WHERE id=$1 AND status='pending' AND (image_file_id=$2 OR source_file_id=$2)").bind(resource).bind(file.id).fetch_optional(pool).await?;
+        let owner:Option<Uuid>=school_database::DbSession::new(&mut *connection).scalar("administration.supply_catalog.file_relationships.require_file_access", "SELECT proposed_by FROM supply_proposals WHERE id=$1 AND status='pending' AND (image_file_id=$2 OR source_file_id=$2)").bind(resource).bind(file.id).fetch_optional().await?;
         if let Some(owner) = owner {
             return if actor
                 .has_permission(school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL)
@@ -130,7 +141,7 @@ pub async fn require_file_access(
         return Err(denied());
     }
     require_upload(actor, file.purpose)?;
-    let own_unlinked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2) AND NOT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1) AND NOT EXISTS(SELECT 1 FROM supply_proposals WHERE image_file_id=$1 OR source_file_id=$1)").bind(file.id).bind(actor.user_id).fetch_one(pool).await?;
+    let own_unlinked:bool=school_database::DbSession::new(&mut *connection).scalar("administration.supply_catalog.file_relationships.require_file_access", "SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2) AND NOT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1) AND NOT EXISTS(SELECT 1 FROM supply_proposals WHERE image_file_id=$1 OR source_file_id=$1)").bind(file.id).bind(actor.user_id).fetch_one().await?;
     if own_unlinked {
         Ok(())
     } else {
@@ -150,11 +161,11 @@ pub async fn authorize_delete_guard<'a>(
     require_upload(actor, file.purpose)?;
     let mut tx = pool.begin().await?;
     lock_files(&mut tx, [file.id]).await?;
-    let own:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2 AND purpose_code=$3 AND visibility='private')").bind(file.id).bind(actor.user_id).bind(file.purpose.code()).fetch_one(&mut *tx).await?;
+    let own:bool=school_database::DbSession::new(&mut *tx).scalar("administration.supply_catalog.file_relationships.authorize_delete_guard", "SELECT EXISTS(SELECT 1 FROM files WHERE id=$1 AND created_by=$2 AND purpose_code=$3 AND visibility='private')").bind(file.id).bind(actor.user_id).bind(file.purpose.code()).fetch_one().await?;
     if !own {
         return Err(denied());
     }
-    let attached:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1) OR EXISTS(SELECT 1 FROM supply_proposals WHERE image_file_id=$1 OR source_file_id=$1)").bind(file.id).fetch_one(&mut *tx).await?;
+    let attached:bool=school_database::DbSession::new(&mut *tx).scalar("administration.supply_catalog.file_relationships.authorize_delete_guard", "SELECT EXISTS(SELECT 1 FROM supply_items WHERE image_file_id=$1) OR EXISTS(SELECT 1 FROM supply_proposals WHERE image_file_id=$1 OR source_file_id=$1)").bind(file.id).fetch_one().await?;
     if attached {
         return Err(AppError::Conflict("กรุณาลบหรือแทนที่ไฟล์ผ่านทะเบียนวัสดุ".into()));
     }

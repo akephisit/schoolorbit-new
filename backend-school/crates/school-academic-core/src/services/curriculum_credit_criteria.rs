@@ -2,6 +2,7 @@ use crate::models::{
     CurriculumCreditCriteriaResult, CurriculumCreditCriterion,
     ReplaceCurriculumCreditCriteriaRequest,
 };
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
@@ -62,9 +63,9 @@ pub async fn replace(
     let criteria = normalize(request.criteria)?;
     let mut tx = pool.begin().await?;
     super::curriculum::require_draft_level(&mut tx, level_id, request.draft_id).await?;
-    let (Json(previous), mut row_version, Json(mut grades)): (Json<Vec<CurriculumCreditCriterion>>, i64, Json<Vec<Uuid>>) = sqlx::query_as(
+    let (Json(previous), mut row_version, Json(mut grades)): (Json<Vec<CurriculumCreditCriterion>>, i64, Json<Vec<Uuid>>) = DbSession::new(&mut *tx).query_as("academic_core.services.curriculum_credit_criteria.replace",
         "SELECT credit_criteria,credit_criteria_row_version,grade_level_ids FROM curriculum_levels WHERE id=$1",
-    ).bind(level_id).fetch_one(&mut *tx).await?;
+    ).bind(level_id).fetch_one().await?;
     if row_version != request.row_version {
         return Err(AppError::Conflict(
             "เกณฑ์หน่วยกิตถูกแก้ไขแล้ว กรุณาตรวจสอบเกณฑ์ล่าสุด".into(),
@@ -80,8 +81,8 @@ pub async fn replace(
         ));
     }
     if previous != criteria {
-        row_version = sqlx::query_scalar("UPDATE curriculum_levels SET credit_criteria=$2,credit_criteria_row_version=credit_criteria_row_version+1,updated_at=now() WHERE id=$1 RETURNING credit_criteria_row_version")
-            .bind(level_id).bind(Json(&criteria)).fetch_one(&mut *tx).await?;
+        row_version = DbSession::new(&mut *tx).scalar("academic_core.services.curriculum_credit_criteria.replace", "UPDATE curriculum_levels SET credit_criteria=$2,credit_criteria_row_version=credit_criteria_row_version+1,updated_at=now() WHERE id=$1 RETURNING credit_criteria_row_version")
+            .bind(level_id).bind(Json(&criteria)).fetch_one().await?;
     }
     tx.commit().await?;
     Ok(CurriculumCreditCriteriaResult {
