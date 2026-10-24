@@ -240,7 +240,11 @@ pub async fn create_year(
         &request.school_days,
     )?;
     let id = Uuid::now_v7();
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.years_terms.create_year",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let sql = format!(
         "INSERT INTO academic_years (id, year, name, start_date, end_date, school_days, status) \
@@ -289,7 +293,11 @@ pub async fn update_year(
         &request.school_days,
     )?;
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.years_terms.update_year",
+    )
+    .await?;
     lifecycle_guard::require_year_write_exclusive(&mut transaction, id).await?;
     ensure_terms_fit_year(&mut transaction, id, request.start_date, request.end_date).await?;
     let returning = YEAR_COLUMNS
@@ -421,7 +429,11 @@ pub async fn create_term(
     request: CreateAcademicTermRequest,
 ) -> Result<AcademicTerm, AppError> {
     validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.years_terms.create_term",
+    )
+    .await?;
     validate_term_context(
         &mut transaction,
         request.academic_year_id,
@@ -545,7 +557,11 @@ pub async fn update_term(
 ) -> Result<AcademicTerm, AppError> {
     parse_row_version(request.row_version)?;
     validate_annual_inclusion(request.included_in_year_result, request.blocks_year_closure)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.years_terms.update_term",
+    )
+    .await?;
     // Resolve identity without taking the child lock. Configuration and lifecycle
     // writers lock the year before the term to avoid inverse-order deadlocks.
     let (academic_year_id, sequence): (Uuid, i32) = DbSession::new(&mut *transaction)
@@ -620,7 +636,11 @@ pub async fn update_term(
 }
 
 pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result<(), AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.years_terms.delete_term",
+    )
+    .await?;
     let academic_year_id: Uuid = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.years_terms.delete_term",

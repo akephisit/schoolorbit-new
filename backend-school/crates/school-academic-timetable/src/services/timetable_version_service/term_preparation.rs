@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::HashMap;
 
@@ -94,11 +95,11 @@ pub async fn apply(
     context: &TermPreparationContext,
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
-    let source: Option<SourceVersion> = sqlx::query_as(
+    let source: Option<SourceVersion> = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1",
     )
     .bind(context.source_term_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?;
     let Some(source) = source else {
         return Ok(TermPreparationModuleOutcome {
@@ -141,67 +142,73 @@ pub async fn apply(
             ));
         }
     }
-    let target_bell_schedule_id: Uuid = sqlx::query_scalar(
-        "SELECT bell_schedule_id FROM academic_terms WHERE id=$1 AND academic_year_id=$2",
-    )
-    .bind(context.target_term_id)
-    .bind(context.target_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let target_bell_schedule_id: Uuid = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_timetable.services.timetable_version_service.term_preparation.apply",
+            "SELECT bell_schedule_id FROM academic_terms WHERE id=$1 AND academic_year_id=$2",
+        )
+        .bind(context.target_term_id)
+        .bind(context.target_year_id)
+        .fetch_one()
+        .await?;
     let version_id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions(
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_timetable.services.timetable_version_service.term_preparation.apply",
+            r#"INSERT INTO academic_timetable_versions(
                id,academic_term_id,academic_year_id,effective_from,status,
                source_version_id,delivery_version_id,bell_schedule_id,row_version,created_by
            ) VALUES($1,$2,$3,NULL,'draft',NULL,$4,$5,1,$6)"#,
-    )
-    .bind(version_id)
-    .bind(context.target_term_id)
-    .bind(context.target_year_id)
-    .bind(target_delivery_id)
-    .bind(target_bell_schedule_id)
-    .bind(actor)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(version_id)
+        .bind(context.target_term_id)
+        .bind(context.target_year_id)
+        .bind(target_delivery_id)
+        .bind(target_bell_schedule_id)
+        .bind(actor)
+        .execute()
+        .await?;
 
-    let blocks: Vec<SourceBlock> = sqlx::query_as(
-        r#"SELECT id,bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
+    let blocks: Vec<SourceBlock> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_timetable.services.timetable_version_service.term_preparation.apply",
+            r#"SELECT id,bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
                   learning_offering_id,structural_kind,title,note,series_id
            FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active
            ORDER BY day_of_week,bell_schedule_period_id,id"#,
-    )
-    .bind(source.id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(source.id)
+        .fetch_all()
+        .await?;
     let block_ids = blocks.iter().map(|row| row.id).collect::<Vec<_>>();
     let block_groups: Vec<SourceBlockGroup> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT id,block_id,learning_group_id,learning_offering_id,room_id,homeroom_ids FROM academic_timetable_block_groups WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
-    ).bind(&block_ids).fetch_all(&mut **tx).await?
+    ).bind(&block_ids).fetch_all().await?
     };
     let source_group_ids = block_groups.iter().map(|row| row.id).collect::<Vec<_>>();
     let instructors: Vec<SourceInstructor> = if source_group_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT block_group_id,instructor_id,role,display_order FROM academic_timetable_block_group_instructors WHERE block_group_id=ANY($1) ORDER BY block_group_id,display_order,id",
-    ).bind(&source_group_ids).fetch_all(&mut **tx).await?
+    ).bind(&source_group_ids).fetch_all().await?
     };
     let homerooms: Vec<SourceHomeroom> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT block_id,homeroom_id,target_kind,room_id FROM academic_timetable_block_homerooms WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
-    ).bind(&block_ids).fetch_all(&mut **tx).await?
+    ).bind(&block_ids).fetch_all().await?
     };
     let teachers: Vec<SourceTeacher> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
         "SELECT block_id,teacher_id FROM academic_timetable_block_teachers WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
-    ).bind(&block_ids).fetch_all(&mut **tx).await?
+    ).bind(&block_ids).fetch_all().await?
     };
 
     let mut block_map = HashMap::new();
@@ -226,31 +233,33 @@ pub async fn apply(
                 .entry(source_series_id)
                 .or_insert_with(Uuid::new_v4)
         });
-        sqlx::query(
-            r#"INSERT INTO academic_timetable_blocks(
+        DbSession::new(&mut **tx)
+            .query(
+                "academic_timetable.services.timetable_version_service.term_preparation.apply",
+                r#"INSERT INTO academic_timetable_blocks(
                    id,timetable_version_id,academic_term_id,academic_year_id,bell_schedule_id,
                    bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
                    learning_offering_id,structural_kind,title,note,series_id,row_version,
                    is_active,created_by,updated_by
                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15,$15)"#,
-        )
-        .bind(target_block_id)
-        .bind(version_id)
-        .bind(context.target_term_id)
-        .bind(context.target_year_id)
-        .bind(target_bell_schedule_id)
-        .bind(period_id)
-        .bind(&block.day_of_week)
-        .bind(&block.block_kind)
-        .bind(&block.scheduling_mode)
-        .bind(offering_id)
-        .bind(&block.structural_kind)
-        .bind(&block.title)
-        .bind(&block.note)
-        .bind(target_series_id)
-        .bind(actor)
-        .execute(&mut **tx)
-        .await?;
+            )
+            .bind(target_block_id)
+            .bind(version_id)
+            .bind(context.target_term_id)
+            .bind(context.target_year_id)
+            .bind(target_bell_schedule_id)
+            .bind(period_id)
+            .bind(&block.day_of_week)
+            .bind(&block.block_kind)
+            .bind(&block.scheduling_mode)
+            .bind(offering_id)
+            .bind(&block.structural_kind)
+            .bind(&block.title)
+            .bind(&block.note)
+            .bind(target_series_id)
+            .bind(actor)
+            .execute()
+            .await?;
         block_map.insert(block.id, (target_block_id, block.day_of_week, period_id));
     }
     for group in block_groups {
@@ -280,10 +289,10 @@ pub async fn apply(
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
         let target_block_group_id = Uuid::now_v7();
-        sqlx::query(r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
                        VALUES($1,$2,$3,$4,$5,$6,$7,1,true,$8,$8,$9)"#)
             .bind(target_block_group_id).bind(target_block_id).bind(target_group_id).bind(target_offering_id)
-            .bind(context.target_term_id).bind(context.target_year_id).bind(room_id).bind(actor).bind(&coverage).execute(&mut **tx).await?;
+            .bind(context.target_term_id).bind(context.target_year_id).bind(room_id).bind(actor).bind(&coverage).execute().await?;
         block_group_map.insert(
             group.id,
             (target_block_group_id, target_block_id, day, period),
@@ -300,8 +309,8 @@ pub async fn apply(
         if !reserve_resource_slot(&mut teacher_slots, &day, period, teacher, target_block_id) {
             return Err(AppError::Conflict("ครูเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        sqlx::query("INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4)")
-            .bind(target_block_group_id).bind(teacher).bind(instructor.role).bind(instructor.display_order).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", "INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4)")
+            .bind(target_block_group_id).bind(teacher).bind(instructor.role).bind(instructor.display_order).execute().await?;
     }
     for homeroom in homerooms {
         let (target_block_id, day, period) = block_map[&homeroom.block_id].clone();
@@ -330,9 +339,9 @@ pub async fn apply(
         }) {
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        sqlx::query(r#"INSERT INTO academic_timetable_block_homerooms(id,block_id,homeroom_id,academic_term_id,academic_year_id,target_kind,room_id,row_version,is_active,created_by,updated_by)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_homerooms(id,block_id,homeroom_id,academic_term_id,academic_year_id,target_kind,room_id,row_version,is_active,created_by,updated_by)
                        VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,1,true,$7,$7)"#)
-            .bind(target_block_id).bind(target_homeroom).bind(context.target_term_id).bind(context.target_year_id).bind(homeroom.target_kind).bind(room).bind(actor).execute(&mut **tx).await?;
+            .bind(target_block_id).bind(target_homeroom).bind(context.target_term_id).bind(context.target_year_id).bind(homeroom.target_kind).bind(room).bind(actor).execute().await?;
     }
     for teacher in teachers {
         let (target_block_id, day, period) = block_map[&teacher.block_id].clone();
@@ -350,9 +359,9 @@ pub async fn apply(
         ) {
             return Err(AppError::Conflict("ครูเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        sqlx::query(r#"INSERT INTO academic_timetable_block_teachers(id,block_id,teacher_id,academic_term_id,academic_year_id,row_version,is_active,created_by,updated_by)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_teachers(id,block_id,teacher_id,academic_term_id,academic_year_id,row_version,is_active,created_by,updated_by)
                        VALUES(gen_random_uuid(),$1,$2,$3,$4,1,true,$5,$5)"#)
-            .bind(target_block_id).bind(target_teacher).bind(context.target_term_id).bind(context.target_year_id).bind(actor).execute(&mut **tx).await?;
+            .bind(target_block_id).bind(target_teacher).bind(context.target_term_id).bind(context.target_year_id).bind(actor).execute().await?;
     }
     Ok(TermPreparationModuleOutcome {
         module: TermPreparationModule::Timetable,

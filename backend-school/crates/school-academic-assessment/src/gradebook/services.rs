@@ -30,7 +30,11 @@ pub async fn resolve_phase_id(
 ) -> Result<Uuid, AppError> {
     let phase_code = crate::assessment::models::AssessmentPhaseCode::try_from(phase_code)
         .map_err(|_| AppError::ValidationError("Unknown Gradebook phase code".into()))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.resolve_phase_id",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let phase_id = DbSession::new(&mut *tx)
         .scalar(
@@ -137,10 +141,14 @@ pub(super) async fn begin_scope<'a>(
     group: Uuid,
     phase: Uuid,
     context: &GradebookContext,
-) -> Result<(Transaction<'a, Postgres>, Scope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, Scope), AppError> {
     let write = !matches!(operation, ScopeAccess::Read);
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.begin_scope",
+    )
+    .await?;
     if !write {
         DbSession::new(&mut *tx)
             .query(
@@ -261,7 +269,11 @@ pub async fn list_subjects(
     context: &GradebookContext,
 ) -> Result<Vec<GradebookSubject>, AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.gradebook.services.list_subjects",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let rows = list_subjects_in_tx(&mut tx, context, &access, actor.user_id).await?;
     if rows.len() > 1000 {

@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use school_database::DbSession;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -82,11 +83,26 @@ pub async fn list_memberships(
     pool: &PgPool,
     group_id: Uuid,
 ) -> Result<Vec<DatedRosterMembership>, AppError> {
-    let group_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM learning_groups WHERE id = $1)")
-            .bind(group_id)
-            .fetch_one(pool)
-            .await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.roster_memberships.list_memberships",
+    )
+    .await?;
+    list_memberships_on_connection(&mut connection, group_id).await
+}
+
+pub async fn list_memberships_on_connection(
+    connection: &mut sqlx::PgConnection,
+    group_id: Uuid,
+) -> Result<Vec<DatedRosterMembership>, AppError> {
+    let group_exists: bool = DbSession::new(connection)
+        .scalar(
+            "academic_delivery.services.roster_memberships.list_memberships_on_connection",
+            "SELECT EXISTS (SELECT 1 FROM learning_groups WHERE id = $1)",
+        )
+        .bind(group_id)
+        .fetch_one()
+        .await?;
     if !group_exists {
         return Err(AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()));
     }
@@ -94,9 +110,13 @@ pub async fn list_memberships(
         "{MEMBERSHIP_SELECT} WHERE membership.learning_group_id = $1 \
          ORDER BY student.first_name, student.last_name, membership.joined_at, membership.id"
     );
-    let rows = sqlx::query_as::<_, MembershipRow>(sqlx::AssertSqlSafe(query))
+    let rows = DbSession::new(connection)
+        .query_as::<MembershipRow>(
+            "academic_delivery.services.roster_memberships.list_memberships_on_connection",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(group_id)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
@@ -108,24 +128,32 @@ pub async fn add_membership(
     request: AddDatedRosterMembershipRequest,
 ) -> Result<DatedRosterMembership, AppError> {
     validate_row_version(request.group_row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.roster_memberships.add_membership",
+    )
+    .await?;
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
     super::roster_tracking::require_manual(&mut transaction, group_id).await?;
 
-    let (student_id, student_year_status): (Uuid, String) = sqlx::query_as(
-        r#"SELECT student_id, status
+    let (student_id, student_year_status): (Uuid, String) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.roster_memberships.add_membership",
+            r#"SELECT student_id, status
            FROM student_academic_years
            WHERE id = $1 AND academic_year_id = $2
            FOR SHARE"#,
-    )
-    .bind(request.student_academic_year_id)
-    .bind(group.academic_year_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("นักเรียนไม่ได้อยู่ในปีการศึกษาของกลุ่มเรียนนี้".to_string()))?;
+        )
+        .bind(request.student_academic_year_id)
+        .bind(group.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| {
+            AppError::ValidationError("นักเรียนไม่ได้อยู่ในปีการศึกษาของกลุ่มเรียนนี้".to_string())
+        })?;
     if !matches!(student_year_status.as_str(), "active" | "planned") {
         return Err(AppError::ValidationError(
             "สถานะนักเรียนในปีการศึกษานี้ไม่พร้อมเข้ากลุ่มเรียน".to_string(),
@@ -133,8 +161,10 @@ pub async fn add_membership(
     }
     validate_membership_date(&group, request.joined_at)?;
 
-    let overlaps: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let overlaps: bool = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_delivery.services.roster_memberships.add_membership",
+            r#"SELECT EXISTS (
                SELECT 1
                FROM learning_group_students membership
                WHERE membership.learning_group_id = $1
@@ -142,12 +172,12 @@ pub async fn add_membership(
                  AND daterange(membership.joined_at, membership.left_at, '[]')
                      && daterange($3, NULL, '[]')
            )"#,
-    )
-    .bind(group_id)
-    .bind(student_id)
-    .bind(request.joined_at)
-    .fetch_one(&mut *transaction)
-    .await?;
+        )
+        .bind(group_id)
+        .bind(student_id)
+        .bind(request.joined_at)
+        .fetch_one()
+        .await?;
     if overlaps {
         return Err(AppError::Conflict(
             "วันที่เริ่มใหม่ซ้อนกับประวัติการอยู่ในกลุ่มเดิม ต้องเริ่มหลังวันสิ้นสุดเดิมอย่างน้อย 1 วัน".to_string(),
@@ -155,30 +185,37 @@ pub async fn add_membership(
     }
 
     let membership_id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO learning_group_students (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.roster_memberships.add_membership",
+            r#"INSERT INTO learning_group_students (
                id, learning_group_id, academic_term_id, academic_year_id,
                student_academic_year_id, student_id, membership_status,
                roster_source, joined_at, published_at
            ) VALUES ($1, $2, $3, $4, $5, $6, 'active',
                      'operational_change', $7, now())"#,
-    )
-    .bind(membership_id)
-    .bind(group.id)
-    .bind(group.academic_term_id)
-    .bind(group.academic_year_id)
-    .bind(request.student_academic_year_id)
-    .bind(student_id)
-    .bind(request.joined_at)
-    .execute(&mut *transaction)
-    .await
-    .map_err(map_membership_overlap)?;
+        )
+        .bind(membership_id)
+        .bind(group.id)
+        .bind(group.academic_term_id)
+        .bind(group.academic_year_id)
+        .bind(request.student_academic_year_id)
+        .bind(student_id)
+        .bind(request.joined_at)
+        .execute()
+        .await
+        .map_err(map_membership_overlap)?;
     increment_group_revision(&mut transaction, group.id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group.id]).await?;
     transaction.commit().await?;
 
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.roster_memberships.add_membership.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "learning_group.membership_added",
         "learning_group_student",
         membership_id,
@@ -193,7 +230,7 @@ pub async fn add_membership(
         }),
     )
     .await?;
-    get_membership(pool, membership_id).await
+    get_membership(&mut completion, membership_id).await
 }
 
 pub async fn remove_membership(
@@ -205,7 +242,11 @@ pub async fn remove_membership(
 ) -> Result<DatedRosterMembership, AppError> {
     validate_row_version(request.group_row_version)?;
     validate_row_version(request.membership_row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.roster_memberships.remove_membership",
+    )
+    .await?;
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
@@ -213,17 +254,20 @@ pub async fn remove_membership(
     super::roster_tracking::require_manual(&mut transaction, group_id).await?;
     validate_membership_date(&group, request.left_at)?;
 
-    let (status, joined_at, row_version): (MembershipStatus, NaiveDate, i64) = sqlx::query_as(
-        r#"SELECT membership_status, joined_at, row_version
+    let (status, joined_at, row_version): (MembershipStatus, NaiveDate, i64) =
+        DbSession::new(&mut *transaction)
+            .query_as(
+                "academic_delivery.services.roster_memberships.remove_membership",
+                r#"SELECT membership_status, joined_at, row_version
            FROM learning_group_students
            WHERE id = $1 AND learning_group_id = $2
            FOR UPDATE"#,
-    )
-    .bind(membership_id)
-    .bind(group_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบช่วงรายชื่อนักเรียน".to_string()))?;
+            )
+            .bind(membership_id)
+            .bind(group_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบช่วงรายชื่อนักเรียน".to_string()))?;
     if status != MembershipStatus::Active {
         return Err(AppError::Conflict(
             "ช่วงรายชื่อนี้สิ้นสุดแล้ว ไม่สามารถกำหนดวันสิ้นสุดซ้ำ".to_string(),
@@ -240,22 +284,29 @@ pub async fn remove_membership(
         ));
     }
 
-    sqlx::query(
-        r#"UPDATE learning_group_students
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.roster_memberships.remove_membership",
+            r#"UPDATE learning_group_students
            SET membership_status = 'ended', left_at = $1,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $2"#,
-    )
-    .bind(request.left_at)
-    .bind(membership_id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.left_at)
+        .bind(membership_id)
+        .execute()
+        .await?;
     increment_group_revision(&mut transaction, group.id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group.id]).await?;
     transaction.commit().await?;
 
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.roster_memberships.remove_membership.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "learning_group.membership_ended",
         "learning_group_student",
         membership_id,
@@ -271,16 +322,20 @@ pub async fn remove_membership(
         }),
     )
     .await?;
-    get_membership(pool, membership_id).await
+    get_membership(&mut completion, membership_id).await
 }
 
 async fn find_group_term(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    sqlx::query_scalar("SELECT academic_term_id FROM learning_groups WHERE id = $1")
+    DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.roster_memberships.find_group_term",
+            "SELECT academic_term_id FROM learning_groups WHERE id = $1",
+        )
         .bind(group_id)
-        .fetch_optional(&mut **transaction)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
 }
@@ -290,18 +345,27 @@ async fn lock_group_context(
     group_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<GroupContext, AppError> {
-    let offering_id: Uuid =
-        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
-            .bind(group_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
-    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+    let offering_id: Uuid = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.roster_memberships.lock_group_context",
+            "SELECT learning_offering_id FROM learning_groups WHERE id = $1",
+        )
+        .bind(group_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.roster_memberships.lock_group_context",
+            "SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE",
+        )
         .bind(offering_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
-    sqlx::query_as(
-        r#"SELECT learning_group.id, learning_group.learning_offering_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.roster_memberships.lock_group_context",
+            r#"SELECT learning_group.id, learning_group.learning_offering_id,
                   learning_group.academic_term_id, learning_group.academic_year_id,
                   learning_group.status, learning_group.roster_status,
                   learning_group.row_version, offering.status AS offering_status,
@@ -314,13 +378,13 @@ async fn lock_group_context(
            WHERE learning_group.id = $1 AND learning_group.academic_term_id = $2
              AND offering.id = $3
            FOR UPDATE OF learning_group"#,
-    )
-    .bind(group_id)
-    .bind(academic_term_id)
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
+        )
+        .bind(group_id)
+        .bind(academic_term_id)
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
 }
 
 fn require_published_roster(group: &GroupContext, row_version: i64) -> Result<(), AppError> {
@@ -356,23 +420,27 @@ async fn increment_group_revision(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    DbSession::new(&mut **transaction).query("academic_delivery.services.roster_memberships.increment_group_revision",
         "UPDATE learning_groups SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
     )
     .bind(group_id)
-    .execute(&mut **transaction)
+    .execute()
     .await?;
     Ok(())
 }
 
 async fn get_membership(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     membership_id: Uuid,
 ) -> Result<DatedRosterMembership, AppError> {
     let query = format!("{MEMBERSHIP_SELECT} WHERE membership.id = $1");
-    let row = sqlx::query_as::<_, MembershipRow>(sqlx::AssertSqlSafe(query))
+    let row = DbSession::new(connection)
+        .query_as::<MembershipRow>(
+            "academic_delivery.services.roster_memberships.get_membership",
+            sqlx::AssertSqlSafe(query),
+        )
         .bind(membership_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบช่วงรายชื่อนักเรียน".to_string()))?;
     Ok(row.into())

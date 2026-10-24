@@ -1,4 +1,5 @@
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
@@ -33,20 +34,38 @@ pub async fn authorize_socket(
     actor: &ActorContext,
     academic_term_id: Uuid,
 ) -> Result<TimetableSocketAccess, AppError> {
-    let user = sqlx::query_as::<_, RealtimeUser>(
-        "SELECT display_name FROM user_display_names WHERE id = $1 AND status = 'active'",
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_timetable.services.timetable_realtime_service.authorize_socket",
     )
-    .bind(actor.user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::AuthError("ไม่พบผู้ใช้งานที่เปิดใช้งาน".to_string()))?;
+    .await?;
+    authorize_socket_on_connection(&mut connection, actor, academic_term_id).await
+}
+
+pub async fn authorize_socket_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    academic_term_id: Uuid,
+) -> Result<TimetableSocketAccess, AppError> {
+    let user = DbSession::new(connection)
+        .query_as::<RealtimeUser>(
+            "academic_timetable.services.timetable_realtime_service.authorize_socket_on_connection",
+            "SELECT display_name FROM user_display_names WHERE id = $1 AND status = 'active'",
+        )
+        .bind(actor.user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::AuthError("ไม่พบผู้ใช้งานที่เปิดใช้งาน".to_string()))?;
 
     let can_manage = socket_permission(actor)?;
-    let term_exists =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id = $1)")
-            .bind(academic_term_id)
-            .fetch_one(pool)
-            .await?;
+    let term_exists = DbSession::new(connection)
+        .scalar::<bool>(
+            "academic_timetable.services.timetable_realtime_service.authorize_socket_on_connection",
+            "SELECT EXISTS(SELECT 1 FROM academic_terms WHERE id = $1)",
+        )
+        .bind(academic_term_id)
+        .fetch_one()
+        .await?;
     if !term_exists {
         return Err(AppError::NotFound("ไม่พบภาคเรียน".to_string()));
     }

@@ -206,7 +206,11 @@ pub async fn summarize_student_term(
     ctx: &EvaluationContext,
     student: Uuid,
 ) -> Result<StudentEvaluationSummary, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.summary.summarize_student_term",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_assessment.learner_evaluation.services.summary.summarize_student_term",

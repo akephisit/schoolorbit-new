@@ -454,7 +454,11 @@ pub async fn correct_result(
             "Official result correction permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.corrections.correct_result",
+    )
+    .await?;
     super::lifecycle_guard::lock_transition_shared(&mut tx).await?;
     validate_context(&mut tx, context).await?;
     let result = match input {

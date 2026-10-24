@@ -73,7 +73,11 @@ pub async fn lock_term_aggregate(
         ));
     }
     let request_checksum = hash(&(actor.user_id, context, student, &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_revisions.lock_term_aggregate",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.aggregate_revisions.lock_term_aggregate",
@@ -149,7 +153,11 @@ pub async fn list_term_aggregate_revisions(
     student: Uuid,
 ) -> Result<Vec<TermAggregateRevision>, AppError> {
     require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_revisions.list_term_aggregate_revisions",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.aggregate_revisions.list_term_aggregate_revisions",

@@ -13,7 +13,8 @@ pub async fn options(
     actor: &ActorContext,
 ) -> Result<LeavePersonalOptions, AppError> {
     let types = list_types(pool, actor, LeaveListQuery::default()).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.queries.options").await?;
     let personnel_type = category(
         &mut tx,
         actor.user_id,
@@ -86,7 +87,8 @@ pub async fn detail(
     actor: &ActorContext,
     id: Uuid,
 ) -> Result<LeaveRequestDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.queries.detail").await?;
     let r = load(&mut tx, id).await?;
     require_read(&mut tx, actor, &r).await?;
     let policy = if matches!(

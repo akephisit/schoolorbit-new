@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
@@ -42,12 +43,15 @@ pub async fn project_effective_assignments_in_tx(
     change_set_id: Uuid,
     requested_group_ids: &[Uuid],
 ) -> Result<Vec<ProjectedTeacherAssignment>, AppError> {
-    let effective_from: NaiveDate =
-        sqlx::query_scalar("SELECT effective_from FROM academic_term_change_sets WHERE id = $1")
-            .bind(change_set_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
+    let effective_from: NaiveDate = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.effective_teachers.project_effective_assignments_in_tx",
+            "SELECT effective_from FROM academic_term_change_sets WHERE id = $1",
+        )
+        .bind(change_set_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     let group_ids = requested_group_ids
         .iter()
         .copied()
@@ -58,20 +62,24 @@ pub async fn project_effective_assignments_in_tx(
         return Ok(Vec::new());
     }
 
-    let stored: Vec<StoredEpisodeRow> = sqlx::query_as(
-        r#"SELECT id, learning_group_id, teacher_id, role, row_version
+    let stored: Vec<StoredEpisodeRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.effective_teachers.project_effective_assignments_in_tx",
+            r#"SELECT id, learning_group_id, teacher_id, role, row_version
            FROM learning_group_teachers
            WHERE learning_group_id = ANY($1)
              AND starts_on <= $2
              AND (ends_on IS NULL OR ends_on >= $2)
            ORDER BY learning_group_id, teacher_id, starts_on, id"#,
-    )
-    .bind(&group_ids)
-    .bind(effective_from)
-    .fetch_all(&mut **transaction)
-    .await?;
-    let changes: Vec<TeacherChangeRow> = sqlx::query_as(
-        r#"SELECT action_kind, learning_group_id, learning_group_teacher_id,
+        )
+        .bind(&group_ids)
+        .bind(effective_from)
+        .fetch_all()
+        .await?;
+    let changes: Vec<TeacherChangeRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.effective_teachers.project_effective_assignments_in_tx",
+            r#"SELECT action_kind, learning_group_id, learning_group_teacher_id,
                   teacher_id, teacher_role
            FROM academic_term_change_items
            WHERE change_set_id = $1
@@ -87,11 +95,11 @@ pub async fn project_effective_assignments_in_tx(
                         ELSE 3
                     END,
                     learning_group_id, teacher_id, id"#,
-    )
-    .bind(change_set_id)
-    .bind(&group_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(change_set_id)
+        .bind(&group_ids)
+        .fetch_all()
+        .await?;
 
     let mut projected = stored
         .into_iter()
@@ -175,16 +183,18 @@ pub async fn project_effective_assignments_in_tx(
     let active_teacher_ids = if teacher_ids.is_empty() {
         BTreeSet::new()
     } else {
-        sqlx::query_scalar::<_, Uuid>(
-            r#"SELECT id FROM users
+        DbSession::new(&mut **transaction)
+            .scalar::<Uuid>(
+                "academic_delivery.services.effective_teachers.project_effective_assignments_in_tx",
+                r#"SELECT id FROM users
                WHERE id = ANY($1) AND user_type = 'staff' AND status = 'active'
                ORDER BY id"#,
-        )
-        .bind(&teacher_ids)
-        .fetch_all(&mut **transaction)
-        .await?
-        .into_iter()
-        .collect::<BTreeSet<_>>()
+            )
+            .bind(&teacher_ids)
+            .fetch_all()
+            .await?
+            .into_iter()
+            .collect::<BTreeSet<_>>()
     };
     projected.retain(|(_, teacher_id), _| active_teacher_ids.contains(teacher_id));
 

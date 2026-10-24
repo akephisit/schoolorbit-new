@@ -94,7 +94,11 @@ pub async fn create(
     request: CreateBellScheduleRequest,
 ) -> Result<BellSchedule, AppError> {
     validate_schedule_fields(&request.name)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.bell_schedules.create",
+    )
+    .await?;
     require_planning_year(&mut transaction, request.academic_year_id).await?;
     let schedule_count: i64 = DbSession::new(&mut *transaction)
         .scalar(
@@ -153,7 +157,11 @@ pub async fn update(
 ) -> Result<BellSchedule, AppError> {
     validate_schedule_fields(&request.name)?;
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.bell_schedules.update",
+    )
+    .await?;
     require_schedule_planning_year(&mut transaction, id).await?;
     let (academic_year_id, current_is_default): (Uuid, bool) = DbSession::new(&mut *transaction)
         .query_as(
@@ -246,7 +254,11 @@ pub async fn replace_periods(
 ) -> Result<Vec<BellSchedulePeriod>, AppError> {
     parse_row_version(request.row_version)?;
     validate_periods(&request.periods)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.bell_schedules.replace_periods",
+    )
+    .await?;
     require_schedule_planning_year(&mut transaction, schedule_id).await?;
     let (academic_year_id, actual_version): (Uuid, i64) = DbSession::new(&mut *transaction)
         .query_as(

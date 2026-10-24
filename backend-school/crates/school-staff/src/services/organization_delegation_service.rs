@@ -227,7 +227,11 @@ pub async fn create_delegation(
     reason: Option<String>,
     expires_at: Option<DateTime<Utc>>,
 ) -> Result<Uuid, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_delegation_service.create_delegation",
+    )
+    .await?;
     organization_unit_service::ensure_organization_unit_active(&mut tx, organization_unit_id)
         .await?;
 

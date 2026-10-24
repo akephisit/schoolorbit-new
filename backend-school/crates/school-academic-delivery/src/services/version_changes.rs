@@ -2,8 +2,9 @@ use crate::models::{
     versions::{DeliveryChangeKind, DeliverySnapshot, DeliveryVersionChange},
     LearningTeacherRole,
 };
+use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{Executor, Postgres};
+
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -269,8 +270,19 @@ fn describe_ordered_ids(labels: &BTreeMap<Uuid, String>, ids: &[Uuid]) -> String
     }
 }
 
-pub async fn load_labels<'e, E: Executor<'e, Database = Postgres>>(
-    executor: E,
+pub async fn load_labels(
+    pool: &sqlx::PgPool,
+    graphs: &[&DeliverySnapshot],
+) -> Result<BTreeMap<Uuid, String>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.version_changes.load_labels",
+    )
+    .await?;
+    load_labels_on_connection(&mut connection, graphs).await
+}
+pub async fn load_labels_on_connection(
+    connection: &mut sqlx::PgConnection,
     graphs: &[&DeliverySnapshot],
 ) -> Result<BTreeMap<Uuid, String>, AppError> {
     let ids = graphs
@@ -302,11 +314,11 @@ pub async fn load_labels<'e, E: Executor<'e, Database = Postgres>>(
     if ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let labels:Vec<(Uuid,String)>=sqlx::query_as("SELECT id,name FROM homerooms WHERE id=ANY($1)
+    let labels:Vec<(Uuid,String)>=DbSession::new(connection).query_as("academic_delivery.services.version_changes.load_labels_on_connection", "SELECT id,name FROM homerooms WHERE id=ANY($1)
         UNION ALL SELECT id,CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||year::text FROM grade_levels WHERE id=ANY($1)
         UNION ALL SELECT id,name_th FROM published_study_programs WHERE id=ANY($1)
         UNION ALL SELECT id,concat_ws(' — ',code,name_th) FROM rooms WHERE id=ANY($1)")
-        .bind(ids).fetch_all(executor).await?;
+        .bind(ids).fetch_all().await?;
     Ok(labels.into_iter().collect())
 }
 

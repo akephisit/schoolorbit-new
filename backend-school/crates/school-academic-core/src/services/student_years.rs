@@ -166,7 +166,11 @@ pub async fn create_homeroom(
     request: CreateHomeroomRequest,
 ) -> Result<Homeroom, AppError> {
     validate_homeroom_fields(request.capacity)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_homeroom",
+    )
+    .await?;
     let (level_type, grade_year) = validate_homeroom_context(
         &mut transaction,
         request.academic_year_id,
@@ -213,7 +217,11 @@ pub async fn update_homeroom(
 ) -> Result<Homeroom, AppError> {
     parse_row_version(request.row_version)?;
     validate_homeroom_fields(request.capacity)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.update_homeroom",
+    )
+    .await?;
     require_owned_year_write(&mut transaction, StudentYearWriteTarget::Homeroom(id)).await?;
     let academic_year_id: Uuid = DbSession::new(&mut *transaction)
         .scalar(
@@ -355,7 +363,11 @@ pub async fn replace_advisors(
             "รายชื่อหรือบทบาทครูที่ปรึกษาไม่ถูกต้อง".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.replace_advisors",
+    )
+    .await?;
     require_owned_year_write(
         &mut transaction,
         StudentYearWriteTarget::Homeroom(homeroom_id),
@@ -558,7 +570,11 @@ pub async fn create_student_year(
     actor_user_id: Uuid,
     request: CreateStudentAcademicYearRequest,
 ) -> Result<StudentAcademicYear, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_student_year",
+    )
+    .await?;
     validate_student_year_context(
         &mut transaction,
         request.academic_year_id,
@@ -677,7 +693,11 @@ pub async fn update_student_year(
     request: UpdateStudentAcademicYearRequest,
 ) -> Result<StudentAcademicYear, AppError> {
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.update_student_year",
+    )
+    .await?;
     require_owned_year_write(&mut transaction, StudentYearWriteTarget::StudentYear(id)).await?;
     let (academic_year_id, status): (Uuid, StudentAcademicYearStatus) = DbSession::new(
         &mut *transaction,
@@ -748,7 +768,11 @@ pub async fn create_placement(
             "ประเภทการเข้าเรียนห้ามว่าง".to_string(),
         ));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.create_placement",
+    )
+    .await?;
     require_owned_year_write(
         &mut transaction,
         StudentYearWriteTarget::StudentYear(student_year_id),
@@ -842,7 +866,11 @@ pub async fn transfer_placement(
         ));
     }
     let reason = normalize_transfer_reason(&request.reason)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.student_years.transfer_placement",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let digest: String = DbSession::new(&mut *transaction)
         .scalar(

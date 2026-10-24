@@ -147,7 +147,11 @@ pub async fn create_round(
     }
     let exam_kind = normalize_exam_kind(request.exam_kind.as_deref())?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.create_round",
+    )
+    .await?;
     let (academic_year_id, _) =
         require_exam_write(&mut tx, ExamWriteTarget::Term(request.academic_term_id)).await?;
 
@@ -200,7 +204,11 @@ pub async fn update_round(
 ) -> Result<ExamRound, AppError> {
     let normalized = normalize_update_round_request(request)?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.update_round",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
 
@@ -246,7 +254,11 @@ pub async fn delete_round(
     round_id: Uuid,
     can_delete_published: bool,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     let status: String = DbSession::new(&mut *tx)
         .scalar(
@@ -291,7 +303,11 @@ pub async fn upsert_exam_day(
     )?;
     let grade_level_ids = unique_uuids(request.grade_level_ids);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.upsert_exam_day",
+    )
+    .await?;
     let (academic_year_id, academic_term_id) =
         require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
@@ -359,7 +375,11 @@ pub async fn update_exam_day(
     )?;
     let grade_level_ids = unique_uuids(request.grade_level_ids);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.update_exam_day",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let day = DbSession::new(&mut *tx)
         .query_as::<ExamDay>(
@@ -473,7 +493,11 @@ pub(super) async fn replace_exam_day_configuration(
 }
 
 pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.delete_exam_day",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let round_id: Option<Uuid> = DbSession::new(&mut *tx)
         .scalar(

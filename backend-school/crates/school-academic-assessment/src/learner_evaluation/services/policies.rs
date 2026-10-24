@@ -72,7 +72,11 @@ pub async fn list_policies(
     context: &EvaluationContext,
 ) -> Result<Vec<AggregationPolicyVersion>, AppError> {
     policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.list_policies",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let ids: Vec<Uuid> = DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.policies.list_policies",
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no DESC LIMIT 101",
@@ -110,7 +114,11 @@ pub async fn create_policy(
         ));
     }
     validate_aggregation_policy(&input.bands)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.create_policy",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.create_policy",
         "SELECT id FROM academic_learner_evaluation_policy_versions ORDER BY version_no FOR UPDATE",
@@ -169,7 +177,11 @@ pub async fn activate_policy(
             "School learner-evaluation management permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.policies.activate_policy",
+    )
+    .await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
     validate_context(&mut tx, context).await?;
     DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.policies.activate_policy",

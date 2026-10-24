@@ -101,12 +101,13 @@ pub async fn delete_guard<'a>(
     actor: &ActorContext,
     file: &PlatformFile,
     resource: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     authorize_create(pool, actor, file.purpose, resource).await?;
     if file.owner_user_id != Some(actor.user_id) || file.visibility != FileVisibility::Private {
         return Err(denied());
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.files.delete_guard").await?;
     let allowed:Option<bool>=DbSession::new(&mut *tx).scalar("staff.leave.files.delete_guard", "SELECT created_by=$2 AND retention_class='temporary' AND NOT EXISTS(SELECT 1 FROM staff_leave_file_links WHERE file_id=f.id) FROM files f WHERE id=$1 FOR UPDATE").bind(file.id).bind(actor.user_id).fetch_optional().await?;
     if allowed != Some(true) {
         return Err(denied());

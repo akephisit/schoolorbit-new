@@ -123,13 +123,16 @@ pub async fn get_role_on_connection(
 
 /// สร้าง role ใหม่ + assign permissions ใน transaction
 pub async fn create_role(pool: &PgPool, payload: CreateRoleRequest) -> Result<Uuid, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!(
-            "❌ Failed to start transaction: {}",
-            school_database::error_class(&e)
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.services.role_service.create_role")
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "❌ Failed to start transaction: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
+            })?;
 
     let role_id: Uuid = DbSession::new(&mut *tx)
         .scalar(
@@ -201,13 +204,16 @@ pub async fn update_role(
     payload: UpdateRoleRequest,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
-        tracing::error!(
-            "❌ Failed to start transaction: {}",
-            school_database::error_class(&e)
-        );
-        AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
-    })?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.services.role_service.update_role")
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "❌ Failed to start transaction: {}",
+                    school_database::error_class(&e)
+                );
+                AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
+            })?;
     lock_audit_actor(&mut tx, actor_user_id).await?;
 
     let status_outcome = if let Some(is_active) = payload.is_active {
@@ -394,7 +400,7 @@ pub async fn set_role_active(
     is_active: bool,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|error| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "staff.services.role_service.set_role_active").await.map_err(|error| {
         tracing::error!(%role_id, error_class = school_database::error_class(&error), "failed to start role status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;

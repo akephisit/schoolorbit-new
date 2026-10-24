@@ -158,7 +158,11 @@ pub async fn lock_annual(
         ));
     }
     let request_checksum = hash(&(actor.user_id, year, student, &input))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.lock_annual",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.annual_revisions.lock_annual",
@@ -235,7 +239,11 @@ pub async fn list_annual_revisions(
     student: Uuid,
 ) -> Result<Vec<AnnualResultRevision>, AppError> {
     require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.list_annual_revisions",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.annual_revisions.list_annual_revisions",
@@ -289,7 +297,11 @@ pub async fn preview_annual(
     student: Uuid,
 ) -> Result<AnnualResultPreview, AppError> {
     crate::policy::aggregate::require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.annual_revisions.preview_annual",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.annual_revisions.preview_annual",

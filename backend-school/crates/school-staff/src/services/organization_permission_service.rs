@@ -107,7 +107,12 @@ pub async fn replace_organization_permission_grants(
     organization_unit_id: Uuid,
     grants: Vec<OrganizationPermissionGrantInput>,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_permission_service.replace_organization_permission_grants",
+    )
+    .await
+    .map_err(|e| {
         tracing::error!(
             "Failed to start organization permission transaction: {}",
             school_database::error_class(&e)

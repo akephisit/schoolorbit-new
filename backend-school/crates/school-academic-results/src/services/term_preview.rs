@@ -57,7 +57,11 @@ pub async fn preview_student_term(
             "School-level result permission is required for whole-student totals".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.term_preview.preview_student_term",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.term_preview.preview_student_term",

@@ -167,7 +167,11 @@ pub async fn upsert_day_room_assignment(
         .transpose()?;
     let capacity_override = validate_capacity_override(request.capacity_override)?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.room_assignments.upsert_day_room_assignment",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
     let day_context = fetch_exam_day_context_for_update(&mut tx, exam_day_id).await?;
     let classroom = fetch_classroom_assignment_context(&mut tx, request.homeroom_id).await?;
@@ -265,7 +269,11 @@ pub async fn generate_seats_for_assignment(
     request: GenerateSeatsRequest,
     actor_user_id: Uuid,
 ) -> Result<Vec<SeatAssignmentView>, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.room_assignments.generate_seats_for_assignment",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let assignment_context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
 

@@ -31,7 +31,11 @@ pub async fn list_subjects(
     ctx: &EvaluationContext,
 ) -> Result<Vec<EvaluationSubject>, AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.list_subjects",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let rows:Vec<EvaluationSubject>=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.list_subjects", r#"WITH groups AS (
         SELECT d.subject_id,g.id AS learning_group_id,o.id AS learning_offering_id,o.code_snapshot AS code,o.name_snapshot AS name,g.name AS group_name,o.owning_organization_unit_id,
@@ -109,9 +113,13 @@ pub(super) async fn begin_subject<'a>(
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
     write: bool,
-) -> Result<(Transaction<'a, Postgres>, SubjectScope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, SubjectScope), AppError> {
     let access = policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.begin_subject",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let academic_state =
         lifecycle_guard::lock_context(&mut tx, ctx.academic_year_id, ctx.academic_term_id).await?;
@@ -168,7 +176,11 @@ pub(super) async fn subject_for_group(
     group: Uuid,
     ctx: &EvaluationContext,
 ) -> Result<Uuid, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.subject_for_group",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let subject=DbSession::new(&mut *tx).scalar("academic_assessment.learner_evaluation.services.subject_for_group", "SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3").bind(group).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_optional().await?.ok_or_else(||AppError::NotFound("Course group not found in context".into()))?;
     tx.commit().await?;

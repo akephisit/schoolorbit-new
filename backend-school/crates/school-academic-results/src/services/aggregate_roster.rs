@@ -20,7 +20,11 @@ pub async fn list_aggregate_students(
     context: &ResultContext,
 ) -> Result<Vec<AggregateStudent>, AppError> {
     crate::policy::aggregate::require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_roster.list_aggregate_students",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.aggregate_roster.list_aggregate_students",

@@ -49,6 +49,7 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+syn = { version = "=2.0.119", features = ["full", "visit"] }
 school-database = { path = "crates/school-database" }
 school-budget = { path = "crates/school-budget" }
 school-student-care = { path = "crates/school-student-care" }
@@ -262,6 +263,7 @@ school-certificates-http = { workspace = true }
 school-academic-http = { workspace = true }
 
 [dev-dependencies]
+syn = { workspace = true }
 school-notifications = { workspace = true, features = ["test-support"] }
 school-supervision = { workspace = true, features = ["integration-test-support"] }
 school-academic-lifecycle = { workspace = true, features = ["integration-test-support"] }

@@ -52,7 +52,11 @@ pub async fn replace(
 ) -> Result<GradeProgressionSet, AppError> {
     parse_row_version(request.row_version)?;
     validate_input_duplicates(&request.progressions)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.progressions.replace",
+    )
+    .await?;
     let next_row_version: Option<i64> = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.progressions.replace",

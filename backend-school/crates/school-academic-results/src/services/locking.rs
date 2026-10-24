@@ -144,7 +144,11 @@ pub async fn lock_course_subject(
             "School academic-result lock permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.locking.lock_course_subject",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     lifecycle_guard::require_term_write(
         &mut tx,
@@ -516,7 +520,11 @@ pub async fn lock_activity_group(
             "School academic-result lock permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.locking.lock_activity_group",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     lifecycle_guard::require_term_write(
         &mut tx,

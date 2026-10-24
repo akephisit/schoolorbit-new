@@ -274,9 +274,13 @@ impl SqlFileRepository {
         transaction: &mut Transaction<'_, Postgres>,
         file_id: Uuid,
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
-        let row = sqlx::query(LOAD_DELIVERY_SQL)
+        let row = school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.load_delivery_in_transaction",
+                LOAD_DELIVERY_SQL,
+            )
             .bind(file_id)
-            .fetch_optional(&mut **transaction)
+            .fetch_optional()
             .await
             .map_err(Self::database_error)?;
         row.map(delivery_from_row).transpose()
@@ -287,25 +291,27 @@ impl SqlFileRepository {
     }
 
     async fn load_operation(
-        &self,
+        connection: &mut sqlx::PgConnection,
         operation_id: Uuid,
         claim: OperationClaim,
     ) -> Result<LeasedOperation, RepositoryError> {
-        let operation = sqlx::query(
-            r#"
+        let operation = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.load_operation",
+                r#"
 SELECT id, file_id, file_version_id, file_derivative_id, operation_type, attempt_count
 FROM file_operations
 WHERE id = $1 AND status = 'leased' AND lease_owner = $2
   AND attempt_count = $3 AND lease_expires_at > statement_timestamp()
 "#,
-        )
-        .bind(operation_id)
-        .bind(&claim.owner)
-        .bind(claim.attempt_count)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(Self::database_error)?
-        .ok_or(RepositoryError::LeaseLost)?;
+            )
+            .bind(operation_id)
+            .bind(&claim.owner)
+            .bind(claim.attempt_count)
+            .fetch_optional()
+            .await
+            .map_err(Self::database_error)?
+            .ok_or(RepositoryError::LeaseLost)?;
 
         let file_id: Uuid = operation.try_get("file_id").map_err(Self::database_error)?;
         let operation_type: String = operation
@@ -320,14 +326,14 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
                 let version_id: Uuid = operation
                     .try_get("file_version_id")
                     .map_err(Self::database_error)?;
-                self.load_reconcile_work(file_id, version_id).await?
+                Self::load_reconcile_work(&mut *connection, file_id, version_id).await?
             }
             "generate_derivative" => {
                 let derivative_id: Uuid = operation
                     .try_get("file_derivative_id")
                     .map_err(Self::database_error)?;
                 OperationWork::GenerateDerivative(
-                    self.load_derivative_work(file_id, derivative_id).await?,
+                    Self::load_derivative_work(&mut *connection, file_id, derivative_id).await?,
                 )
             }
             "delete_object" => {
@@ -338,8 +344,14 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
                     .try_get("file_derivative_id")
                     .map_err(Self::database_error)?;
                 OperationWork::DeleteObject(
-                    self.load_delete_work(operation_id, file_id, version_id, derivative_id)
-                        .await?,
+                    Self::load_delete_work(
+                        &mut *connection,
+                        operation_id,
+                        file_id,
+                        version_id,
+                        derivative_id,
+                    )
+                    .await?,
                 )
             }
             _ => return Err(RepositoryError::InvalidPersistedState),
@@ -355,25 +367,27 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
     }
 
     async fn load_reconcile_work(
-        &self,
+        connection: &mut sqlx::PgConnection,
         file_id: Uuid,
         version_id: Uuid,
     ) -> Result<OperationWork, RepositoryError> {
-        let row = sqlx::query(
-            r#"
+        let row = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.load_reconcile_work",
+                r#"
 SELECT f.purpose_code, f.visibility,
        v.object_key, v.storage_class, v.detected_mime_type
 FROM files f
 JOIN file_versions v ON v.id = $2 AND v.file_id = f.id
 WHERE f.id = $1
 "#,
-        )
-        .bind(file_id)
-        .bind(version_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(Self::database_error)?
-        .ok_or(RepositoryError::InvalidPersistedState)?;
+            )
+            .bind(file_id)
+            .bind(version_id)
+            .fetch_optional()
+            .await
+            .map_err(Self::database_error)?
+            .ok_or(RepositoryError::InvalidPersistedState)?;
         let original = stored_object_from_row(&row)?;
         let purpose = purpose_from_code(
             row.try_get::<String, _>("purpose_code")
@@ -382,19 +396,21 @@ WHERE f.id = $1
         )
         .map_err(|_| RepositoryError::InvalidPersistedState)?;
 
-        let derivative_rows = sqlx::query(
-            r#"
+        let derivative_rows = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.load_reconcile_work",
+                r#"
 SELECT id, derivative_kind, object_key, storage_class, detected_mime_type
 FROM file_derivatives
 WHERE file_id = $1 AND source_version_id = $2 AND deleted_at IS NULL
 ORDER BY derivative_kind
 "#,
-        )
-        .bind(file_id)
-        .bind(version_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .bind(version_id)
+            .fetch_all()
+            .await
+            .map_err(Self::database_error)?;
 
         let mut required_derivative_ids = Vec::new();
         let mut required_derivatives = Vec::new();
@@ -421,12 +437,14 @@ ORDER BY derivative_kind
     }
 
     async fn load_derivative_work(
-        &self,
+        connection: &mut sqlx::PgConnection,
         file_id: Uuid,
         derivative_id: Uuid,
     ) -> Result<DerivativeWork, RepositoryError> {
-        let row = sqlx::query(
-            r#"
+        let row = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.load_derivative_work",
+                r#"
 SELECT f.purpose_code,
        d.derivative_kind,
        d.object_key AS target_object_key,
@@ -442,13 +460,13 @@ JOIN files f ON f.id = d.file_id
 JOIN file_versions v ON v.id = d.source_version_id AND v.file_id = d.file_id
 WHERE d.id = $2 AND d.file_id = $1
 "#,
-        )
-        .bind(file_id)
-        .bind(derivative_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(Self::database_error)?
-        .ok_or(RepositoryError::InvalidPersistedState)?;
+            )
+            .bind(file_id)
+            .bind(derivative_id)
+            .fetch_optional()
+            .await
+            .map_err(Self::database_error)?
+            .ok_or(RepositoryError::InvalidPersistedState)?;
 
         let purpose = purpose_from_code(
             row.try_get::<String, _>("purpose_code")
@@ -479,7 +497,7 @@ WHERE d.id = $2 AND d.file_id = $1
     }
 
     async fn load_delete_work(
-        &self,
+        connection: &mut sqlx::PgConnection,
         operation_id: Uuid,
         file_id: Uuid,
         version_id: Option<Uuid>,
@@ -487,12 +505,12 @@ WHERE d.id = $2 AND d.file_id = $1
     ) -> Result<DeleteWork, RepositoryError> {
         match (version_id, derivative_id) {
             (Some(version_id), None) => {
-                let row = sqlx::query(
+                let row = school_database::DbSession::new(&mut *connection).query("file-platform.src.repository.load_delete_work",
                     "SELECT object_key, storage_class, detected_mime_type FROM file_versions WHERE id = $1 AND file_id = $2",
                 )
                 .bind(version_id)
                 .bind(file_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional()
                 .await
                 .map_err(Self::database_error)?
                 .ok_or(RepositoryError::InvalidPersistedState)?;
@@ -504,12 +522,12 @@ WHERE d.id = $2 AND d.file_id = $1
                 })
             }
             (None, Some(derivative_id)) => {
-                let row = sqlx::query(
+                let row = school_database::DbSession::new(&mut *connection).query("file-platform.src.repository.load_delete_work",
                     "SELECT object_key, storage_class, detected_mime_type FROM file_derivatives WHERE id = $1 AND file_id = $2",
                 )
                 .bind(derivative_id)
                 .bind(file_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional()
                 .await
                 .map_err(Self::database_error)?
                 .ok_or(RepositoryError::InvalidPersistedState)?;
@@ -532,13 +550,15 @@ WHERE d.id = $2 AND d.file_id = $1
         transaction: &mut Transaction<'_, Postgres>,
         file_id: Uuid,
     ) -> Result<Vec<DeleteWork>, RepositoryError> {
-        let lifecycle = sqlx::query_scalar::<_, String>(
-            "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
-        )
-        .bind(file_id)
-        .fetch_optional(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
+        let lifecycle = school_database::DbSession::new(&mut **transaction)
+            .scalar::<String>(
+                "file-platform.src.repository.request_delete_in_transaction",
+                "SELECT lifecycle_status FROM files WHERE id = $1 FOR UPDATE",
+            )
+            .bind(file_id)
+            .fetch_optional()
+            .await
+            .map_err(Self::database_error)?;
         let Some(lifecycle) = lifecycle else {
             return Ok(Vec::new());
         };
@@ -546,22 +566,26 @@ WHERE d.id = $2 AND d.file_id = $1
             return Ok(Vec::new());
         }
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 UPDATE files
 SET lifecycle_status = 'delete_requested',
     delete_requested_at = COALESCE(delete_requested_at, now()),
     updated_at = now()
 WHERE id = $1 AND lifecycle_status <> 'deleted'
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 UPDATE file_operations
 SET status = 'cancelled',
     last_error_code = 'file_delete_requested',
@@ -573,36 +597,42 @@ WHERE file_id = $1
   AND operation_type IN ('reconcile', 'generate_derivative')
   AND status IN ('pending', 'leased', 'retryable_failure')
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 UPDATE file_versions
 SET storage_status = 'delete_requested'
 WHERE file_id = $1 AND storage_status <> 'deleted'
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 UPDATE file_derivatives
 SET storage_status = 'delete_requested'
 WHERE file_id = $1 AND storage_status <> 'deleted'
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 INSERT INTO file_operations (
     file_id, file_version_id, operation_type, status, next_retry_at
 )
@@ -615,13 +645,15 @@ WHERE v.file_id = $1 AND v.storage_status <> 'deleted'
         AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
   )
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
-        sqlx::query(
-            r#"
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 INSERT INTO file_operations (
     file_id, file_derivative_id, operation_type, status, next_retry_at
 )
@@ -634,19 +666,21 @@ WHERE d.file_id = $1 AND d.storage_status <> 'deleted'
         AND o.status IN ('pending', 'leased', 'retryable_failure', 'succeeded')
   )
 "#,
-        )
-        .bind(file_id)
-        .execute(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
         // A temporary upload can fail before its first physical version is
         // persisted. Complete that logical deletion in the same caller-owned
         // transaction instead of leaving it stuck at delete_requested forever.
         finalize_deleted_if_absent(transaction, file_id).await?;
 
-        let rows = sqlx::query(
-            r#"
+        let rows = school_database::DbSession::new(&mut **transaction)
+            .query(
+                "file-platform.src.repository.request_delete_in_transaction",
+                r#"
 SELECT operation.id,
        operation.file_version_id,
        operation.file_derivative_id,
@@ -662,11 +696,11 @@ WHERE operation.file_id = $1 AND operation.operation_type = 'delete_object'
   AND operation.status IN ('pending', 'retryable_failure')
 ORDER BY operation.created_at, operation.id
 "#,
-        )
-        .bind(file_id)
-        .fetch_all(&mut **transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .fetch_all()
+            .await
+            .map_err(Self::database_error)?;
 
         rows.into_iter()
             .map(|row| {
@@ -700,12 +734,19 @@ fn duration_microseconds(duration: Duration) -> Result<i64, RepositoryError> {
 #[async_trait]
 impl FileRepository for SqlFileRepository {
     async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         let visibility = visibility_code(upload.visibility);
         let retention = retention_code(upload.retention_class);
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.reserve_upload",
+                r#"
 INSERT INTO files (
     id, owner_user_id, display_filename, created_by, purpose_code,
     visibility, lifecycle_status, retention_class, expires_at, inspection_metadata
@@ -715,21 +756,23 @@ INSERT INTO files (
     $8
 )
 "#,
-        )
-        .bind(upload.file_id)
-        .bind(upload.owner_user_id)
-        .bind(&upload.display_filename)
-        .bind(upload.created_by)
-        .bind(upload.purpose.code())
-        .bind(visibility)
-        .bind(retention)
-        .bind(sqlx::types::Json(&upload.inspection_metadata))
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(upload.file_id)
+            .bind(upload.owner_user_id)
+            .bind(&upload.display_filename)
+            .bind(upload.created_by)
+            .bind(upload.purpose.code())
+            .bind(visibility)
+            .bind(retention)
+            .bind(sqlx::types::Json(&upload.inspection_metadata))
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.reserve_upload",
+                r#"
 INSERT INTO file_versions (
     id, file_id, version_number, provider_code, storage_class,
     storage_status, object_key, detected_mime_type, canonical_extension,
@@ -739,55 +782,61 @@ INSERT INTO file_versions (
     $8, $9, 'clean', 'clean', now(), $10
 )
 "#,
-        )
-        .bind(upload.version_id)
-        .bind(upload.file_id)
-        .bind(STORAGE_PROVIDER_CODE)
-        .bind(storage_class_code(upload.original.storage_class()))
-        .bind(upload.original.object_key.as_str())
-        .bind(&upload.original.content_type)
-        .bind(canonical_extension_from_mime(
-            &upload.original.content_type,
-        )?)
-        .bind(upload.byte_size)
-        .bind(&upload.checksum)
-        .bind(upload.created_by)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(upload.version_id)
+            .bind(upload.file_id)
+            .bind(STORAGE_PROVIDER_CODE)
+            .bind(storage_class_code(upload.original.storage_class()))
+            .bind(upload.original.object_key.as_str())
+            .bind(&upload.original.content_type)
+            .bind(canonical_extension_from_mime(
+                &upload.original.content_type,
+            )?)
+            .bind(upload.byte_size)
+            .bind(&upload.checksum)
+            .bind(upload.created_by)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.reserve_upload",
+                r#"
 INSERT INTO file_operations (
     id, file_id, file_version_id, operation_type, status,
     attempt_count, next_retry_at, started_at, completed_at
 ) VALUES ($1, $2, $3, 'scan', 'succeeded', 1, now(), now(), now())
 "#,
-        )
-        .bind(upload.scan_operation_id)
-        .bind(upload.file_id)
-        .bind(upload.version_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(upload.scan_operation_id)
+            .bind(upload.file_id)
+            .bind(upload.version_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
-        sqlx::query(
-            r#"
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.reserve_upload",
+                r#"
 INSERT INTO file_operations (
     id, file_id, file_version_id, operation_type, status, next_retry_at
 ) VALUES ($1, $2, $3, 'reconcile', 'pending', now())
 "#,
-        )
-        .bind(upload.reconcile_operation_id)
-        .bind(upload.file_id)
-        .bind(upload.version_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(upload.reconcile_operation_id)
+            .bind(upload.file_id)
+            .bind(upload.version_id)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
 
         for derivative in &upload.derivatives {
-            sqlx::query(
-                r#"
+            school_database::DbSession::new(&mut *transaction)
+                .query(
+                    "file-platform.src.repository.reserve_upload",
+                    r#"
 INSERT INTO file_derivatives (
     id, file_id, source_version_id, derivative_kind, provider_code,
     storage_class, storage_status, object_key, detected_mime_type,
@@ -796,37 +845,39 @@ INSERT INTO file_derivatives (
     $1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11, 'processing'
 )
 "#,
-            )
-            .bind(derivative.id)
-            .bind(upload.file_id)
-            .bind(upload.version_id)
-            .bind(derivative.recipe.variant())
-            .bind(STORAGE_PROVIDER_CODE)
-            .bind(storage_class_code(derivative.object.storage_class()))
-            .bind(derivative.object.object_key.as_str())
-            .bind(&derivative.object.content_type)
-            .bind(canonical_extension_from_mime(
-                &derivative.object.content_type,
-            )?)
-            .bind(derivative.byte_size)
-            .bind(&derivative.checksum)
-            .execute(&mut *transaction)
-            .await
-            .map_err(Self::database_error)?;
+                )
+                .bind(derivative.id)
+                .bind(upload.file_id)
+                .bind(upload.version_id)
+                .bind(derivative.recipe.variant())
+                .bind(STORAGE_PROVIDER_CODE)
+                .bind(storage_class_code(derivative.object.storage_class()))
+                .bind(derivative.object.object_key.as_str())
+                .bind(&derivative.object.content_type)
+                .bind(canonical_extension_from_mime(
+                    &derivative.object.content_type,
+                )?)
+                .bind(derivative.byte_size)
+                .bind(&derivative.checksum)
+                .execute()
+                .await
+                .map_err(Self::database_error)?;
 
-            sqlx::query(
-                r#"
+            school_database::DbSession::new(&mut *transaction)
+                .query(
+                    "file-platform.src.repository.reserve_upload",
+                    r#"
 INSERT INTO file_operations (
     id, file_id, file_derivative_id, operation_type, status, next_retry_at
 ) VALUES ($1, $2, $3, 'generate_derivative', 'pending', now())
 "#,
-            )
-            .bind(derivative.operation_id)
-            .bind(upload.file_id)
-            .bind(derivative.id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(Self::database_error)?;
+                )
+                .bind(derivative.operation_id)
+                .bind(upload.file_id)
+                .bind(derivative.id)
+                .execute()
+                .await
+                .map_err(Self::database_error)?;
         }
 
         transaction.commit().await.map_err(Self::database_error)
@@ -837,12 +888,18 @@ INSERT INTO file_operations (
         file_id: Uuid,
         version_id: Uuid,
     ) -> Result<(), RepositoryError> {
-        let result = sqlx::query(
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &self.pool,
+            "file_platform.mark_original_stored",
+        )
+        .await
+        .map_err(Self::database_error)?;
+        let result = school_database::DbSession::new(&mut *connection).query("file-platform.src.repository.mark_original_stored",
             "UPDATE file_versions SET storage_status = 'stored' WHERE id = $1 AND file_id = $2 AND storage_status = 'pending'",
         )
         .bind(version_id)
         .bind(file_id)
-        .execute(&self.pool)
+        .execute()
         .await
         .map_err(Self::database_error)?;
         if result.rows_affected() == 1 {
@@ -858,7 +915,12 @@ INSERT INTO file_operations (
         version_id: Uuid,
         error_code: &'static str,
     ) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         lock_file_operations(&mut transaction, file_id, None, "reconcile").await?;
         mark_upload_failed_in_transaction(&mut transaction, file_id, version_id, error_code, None)
             .await?;
@@ -871,7 +933,12 @@ INSERT INTO file_operations (
         derivative_id: Uuid,
         operation_id: Uuid,
     ) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         lock_file_operations(
             &mut transaction,
             file_id,
@@ -898,7 +965,12 @@ INSERT INTO file_operations (
         retry_delay: Duration,
         terminal: bool,
     ) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         lock_file_operations(
             &mut transaction,
             file_id,
@@ -925,7 +997,12 @@ INSERT INTO file_operations (
         version_id: Uuid,
         required_derivative_ids: &[Uuid],
     ) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         lock_file_operations(&mut transaction, file_id, None, "reconcile").await?;
         finalize_ready_in_transaction(
             &mut transaction,
@@ -945,21 +1022,29 @@ INSERT INTO file_operations (
         retry_delay: Duration,
     ) -> Result<(), RepositoryError> {
         let retry_microseconds = duration_microseconds(retry_delay)?;
-        sqlx::query(
-            r#"
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &self.pool,
+            "file_platform.mark_reconcile_pending",
+        )
+        .await
+        .map_err(Self::database_error)?;
+        school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.mark_reconcile_pending",
+                r#"
 UPDATE file_operations
 SET status = 'retryable_failure', last_error_code = $2,
     next_retry_at = statement_timestamp() + ($3 * INTERVAL '1 microsecond'),
     lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
 WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
 "#,
-        )
-        .bind(file_id)
-        .bind(error_code)
-        .bind(retry_microseconds)
-        .execute(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .bind(error_code)
+            .bind(retry_microseconds)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
         Ok(())
     }
 
@@ -967,16 +1052,31 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
         &self,
         file_id: Uuid,
     ) -> Result<Option<DeliveryRecord>, RepositoryError> {
-        let row = sqlx::query(LOAD_DELIVERY_SQL)
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &self.pool,
+            "file_platform.load_delivery",
+        )
+        .await
+        .map_err(Self::database_error)?;
+        let row = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.load_delivery",
+                LOAD_DELIVERY_SQL,
+            )
             .bind(file_id)
-            .fetch_optional(&self.pool)
+            .fetch_optional()
             .await
             .map_err(Self::database_error)?;
         row.map(delivery_from_row).transpose()
     }
 
     async fn request_delete(&self, file_id: Uuid) -> Result<Vec<DeleteWork>, RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         let work = self
             .request_delete_in_transaction(&mut transaction, file_id)
             .await?;
@@ -985,7 +1085,12 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
     }
 
     async fn mark_delete_succeeded(&self, work: &DeleteWork) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         lock_file_operations(
             &mut transaction,
             work.file_id,
@@ -1007,8 +1112,16 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
             return Err(RepositoryError::InvalidPersistedState);
         }
         let lease_microseconds = duration_microseconds(lease_duration)?;
-        let rows = sqlx::query(
-            r#"
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &self.pool,
+            "file_platform.lease_due_operations",
+        )
+        .await
+        .map_err(Self::database_error)?;
+        let rows = school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.lease_due_operations",
+                r#"
 WITH due AS (
     SELECT id
     FROM file_operations
@@ -1034,18 +1147,19 @@ FROM due
 WHERE o.id = due.id AND o.attempt_count < 100
 RETURNING o.id, o.lease_owner, o.attempt_count
 "#,
-        )
-        .bind(limit)
-        .bind(worker)
-        .bind(lease_microseconds)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(limit)
+            .bind(worker)
+            .bind(lease_microseconds)
+            .fetch_all()
+            .await
+            .map_err(Self::database_error)?;
 
         let mut operations = Vec::with_capacity(rows.len());
         for row in rows {
             operations.push(
-                self.load_operation(
+                Self::load_operation(
+                    &mut *connection,
                     row.try_get("id").map_err(Self::database_error)?,
                     OperationClaim {
                         owner: row.try_get("lease_owner").map_err(Self::database_error)?,
@@ -1065,16 +1179,29 @@ RETURNING o.id, o.lease_owner, o.attempt_count
         operation: &LeasedOperation,
         result: LeasedOperationResult,
     ) -> Result<(), RepositoryError> {
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         // Deletion also locks file before operation; retain that lock order.
-        sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.finish_leased_operation",
+                "SELECT id FROM files WHERE id=$1 FOR UPDATE",
+            )
             .bind(operation.file_id)
-            .execute(&mut *transaction)
+            .execute()
             .await
             .map_err(Self::database_error)?;
-        sqlx::query("SELECT id FROM file_operations WHERE id=$1 FOR UPDATE")
+        school_database::DbSession::new(&mut *transaction)
+            .query(
+                "file-platform.src.repository.finish_leased_operation",
+                "SELECT id FROM file_operations WHERE id=$1 FOR UPDATE",
+            )
             .bind(operation.id)
-            .execute(&mut *transaction)
+            .execute()
             .await
             .map_err(Self::database_error)?;
         let (kind, version, derivative) = match &operation.work {
@@ -1095,10 +1222,10 @@ RETURNING o.id, o.lease_owner, o.attempt_count
             }
         };
         // A separate statement checks wall time after any row-lock wait.
-        let live: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_operations WHERE id=$1 AND file_id=$2 AND status='leased' AND lease_owner=$3 AND attempt_count=$4 AND lease_expires_at>statement_timestamp() AND operation_type=$5 AND file_version_id IS NOT DISTINCT FROM $6 AND file_derivative_id IS NOT DISTINCT FROM $7)")
+        let live: bool = school_database::DbSession::new(&mut *transaction).scalar("file-platform.src.repository.finish_leased_operation", "SELECT EXISTS(SELECT 1 FROM file_operations WHERE id=$1 AND file_id=$2 AND status='leased' AND lease_owner=$3 AND attempt_count=$4 AND lease_expires_at>statement_timestamp() AND operation_type=$5 AND file_version_id IS NOT DISTINCT FROM $6 AND file_derivative_id IS NOT DISTINCT FROM $7)")
             .bind(operation.id).bind(operation.file_id).bind(&operation.claim.owner).bind(operation.claim.attempt_count)
             .bind(kind).bind(version).bind(derivative)
-            .fetch_one(&mut *transaction).await.map_err(Self::database_error)?;
+            .fetch_one().await.map_err(Self::database_error)?;
         if operation.attempt_count != operation.claim.attempt_count {
             return Err(RepositoryError::LeaseLost);
         }
@@ -1112,12 +1239,12 @@ RETURNING o.id, o.lease_owner, o.attempt_count
                 | LeasedOperationResult::DerivativeWriteUncertain { .. },
             ) = (&operation.work, result)
             {
-                let cancelled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_operations o JOIN files f ON f.id=o.file_id JOIN file_derivatives d ON d.id=o.file_derivative_id AND d.file_id=f.id WHERE o.id=$1 AND o.file_id=$2 AND o.attempt_count=$3 AND o.status='cancelled' AND o.last_error_code='file_delete_requested' AND o.operation_type='generate_derivative' AND d.id=$4 AND d.object_key=$5 AND f.lifecycle_status IN ('delete_requested','deleted'))")
+                let cancelled: bool = school_database::DbSession::new(&mut *transaction).scalar("file-platform.src.repository.finish_leased_operation", "SELECT EXISTS(SELECT 1 FROM file_operations o JOIN files f ON f.id=o.file_id JOIN file_derivatives d ON d.id=o.file_derivative_id AND d.file_id=f.id WHERE o.id=$1 AND o.file_id=$2 AND o.attempt_count=$3 AND o.status='cancelled' AND o.last_error_code='file_delete_requested' AND o.operation_type='generate_derivative' AND d.id=$4 AND d.object_key=$5 AND f.lifecycle_status IN ('delete_requested','deleted'))")
                     .bind(operation.id).bind(operation.file_id).bind(operation.claim.attempt_count).bind(work.derivative_id).bind(work.target.object_key.as_str())
-                    .fetch_one(&mut *transaction).await.map_err(Self::database_error)?;
+                    .fetch_one().await.map_err(Self::database_error)?;
                 if cancelled {
-                    sqlx::query("INSERT INTO file_operations(file_id,file_derivative_id,operation_type,status,next_retry_at,last_error_code) VALUES($1,$2,'delete_object','retryable_failure',statement_timestamp(),'file_delete_requested')")
-                        .bind(operation.file_id).bind(work.derivative_id).execute(&mut *transaction).await.map_err(Self::database_error)?;
+                    school_database::DbSession::new(&mut *transaction).query("file-platform.src.repository.finish_leased_operation", "INSERT INTO file_operations(file_id,file_derivative_id,operation_type,status,next_retry_at,last_error_code) VALUES($1,$2,'delete_object','retryable_failure',statement_timestamp(),'file_delete_requested')")
+                        .bind(operation.file_id).bind(work.derivative_id).execute().await.map_err(Self::database_error)?;
                     transaction.commit().await.map_err(Self::database_error)?;
                 }
             }
@@ -1220,7 +1347,12 @@ RETURNING o.id, o.lease_owner, o.attempt_count
         terminal: bool,
     ) -> Result<(), RepositoryError> {
         let retry_microseconds = duration_microseconds(retry_delay)?;
-        let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        let mut transaction = school_tenancy::TenantPool::begin_observed(
+            &self.pool,
+            "file_platform.repository.transaction",
+        )
+        .await
+        .map_err(Self::database_error)?;
         retry_operation_query(
             &mut transaction,
             operation_id,
@@ -1244,8 +1376,16 @@ RETURNING o.id, o.lease_owner, o.attempt_count
             ObjectTarget::Version(version_id) => (Some(version_id), None),
             ObjectTarget::Derivative(derivative_id) => (None, Some(derivative_id)),
         };
-        sqlx::query(
-            r#"
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            &self.pool,
+            "file_platform.queue_delete_retry",
+        )
+        .await
+        .map_err(Self::database_error)?;
+        school_database::DbSession::new(&mut *connection)
+            .query(
+                "file-platform.src.repository.queue_delete_retry",
+                r#"
 INSERT INTO file_operations (
     file_id, file_version_id, file_derivative_id, operation_type,
     status, next_retry_at, last_error_code
@@ -1255,15 +1395,15 @@ VALUES (
     statement_timestamp() + ($4 * INTERVAL '1 microsecond'), $5
 )
 "#,
-        )
-        .bind(file_id)
-        .bind(version_id)
-        .bind(derivative_id)
-        .bind(retry_microseconds)
-        .bind(error_code)
-        .execute(&self.pool)
-        .await
-        .map_err(Self::database_error)?;
+            )
+            .bind(file_id)
+            .bind(version_id)
+            .bind(derivative_id)
+            .bind(retry_microseconds)
+            .bind(error_code)
+            .execute()
+            .await
+            .map_err(Self::database_error)?;
         Ok(())
     }
 }
@@ -1276,13 +1416,17 @@ async fn lock_file_operations(
     operation_id: Option<Uuid>,
     kind: &str,
 ) -> Result<(), RepositoryError> {
-    sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.lock_file_operations",
+            "SELECT id FROM files WHERE id=$1 FOR UPDATE",
+        )
         .bind(file_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
-    sqlx::query("SELECT id FROM file_operations WHERE file_id=$1 AND (($2::uuid IS NOT NULL AND id=$2) OR ($2::uuid IS NULL AND operation_type=$3)) ORDER BY id FOR UPDATE")
-        .bind(file_id).bind(operation_id).bind(kind).execute(&mut **transaction).await.map_err(SqlFileRepository::database_error)?;
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.lock_file_operations", "SELECT id FROM file_operations WHERE file_id=$1 AND (($2::uuid IS NOT NULL AND id=$2) OR ($2::uuid IS NULL AND operation_type=$3)) ORDER BY id FOR UPDATE")
+        .bind(file_id).bind(operation_id).bind(kind).execute().await.map_err(SqlFileRepository::database_error)?;
     Ok(())
 }
 
@@ -1293,22 +1437,22 @@ async fn mark_upload_failed_in_transaction(
     error_code: &'static str,
     operation_id: Option<Uuid>,
 ) -> Result<(), RepositoryError> {
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_upload_failed_in_transaction",
             "UPDATE file_versions SET storage_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
         )
         .bind(version_id)
         .bind(file_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_upload_failed_in_transaction",
             "UPDATE files SET lifecycle_status = 'failed', updated_at = now() WHERE id = $1 AND lifecycle_status <> 'deleted'",
         )
         .bind(file_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_upload_failed_in_transaction",
             r#"
 UPDATE file_operations
 SET status = 'failed', last_error_code = $2, completed_at = now(),
@@ -1319,7 +1463,7 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded' AN
         .bind(file_id)
         .bind(error_code)
         .bind(operation_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
     Ok(())
@@ -1331,8 +1475,10 @@ async fn mark_derivative_stored_in_transaction(
     derivative_id: Uuid,
     operation_id: Uuid,
 ) -> Result<(), RepositoryError> {
-    let result = sqlx::query(
-        r#"
+    let result = school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.mark_derivative_stored_in_transaction",
+            r#"
 UPDATE file_derivatives d
 SET storage_status = 'stored', lifecycle_status = 'ready'
 FROM files f
@@ -1342,12 +1488,12 @@ WHERE d.id = $1
   AND f.lifecycle_status IN ('processing', 'failed', 'ready')
   AND d.storage_status IN ('pending', 'failed', 'stored')
 "#,
-    )
-    .bind(derivative_id)
-    .bind(file_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(derivative_id)
+        .bind(file_id)
+        .execute()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     if result.rows_affected() != 1 {
         return Err(RepositoryError::MaterializationRevoked);
     }
@@ -1365,12 +1511,12 @@ async fn mark_derivative_failed_in_transaction(
     terminal: bool,
 ) -> Result<(), RepositoryError> {
     let retry_microseconds = duration_microseconds(retry_delay)?;
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_derivative_failed_in_transaction",
             "UPDATE file_derivatives SET storage_status = 'failed', lifecycle_status = 'failed' WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
         )
         .bind(derivative_id)
         .bind(file_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
     retry_operation_query(
@@ -1391,59 +1537,65 @@ async fn finalize_ready_in_transaction(
     required_derivative_ids: &[Uuid],
     operation_id: Option<Uuid>,
 ) -> Result<(), RepositoryError> {
-    let original_ready = sqlx::query_scalar::<_, bool>(
-        r#"
+    let original_ready = school_database::DbSession::new(&mut **transaction)
+        .scalar::<bool>(
+            "file-platform.src.repository.finalize_ready_in_transaction",
+            r#"
 SELECT EXISTS (
     SELECT 1 FROM file_versions
     WHERE id = $1 AND file_id = $2
       AND storage_status = 'stored' AND scan_status = 'clean' AND deleted_at IS NULL
 )
 "#,
-    )
-    .bind(version_id)
-    .bind(file_id)
-    .fetch_one(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(version_id)
+        .bind(file_id)
+        .fetch_one()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     if !original_ready {
         return Err(RepositoryError::InvalidPersistedState);
     }
 
     if !required_derivative_ids.is_empty() {
-        let ready_count = sqlx::query_scalar::<_, i64>(
-            r#"
+        let ready_count = school_database::DbSession::new(&mut **transaction)
+            .scalar::<i64>(
+                "file-platform.src.repository.finalize_ready_in_transaction",
+                r#"
 SELECT COUNT(*)
 FROM file_derivatives
 WHERE file_id = $1 AND id = ANY($2)
   AND storage_status = 'stored' AND lifecycle_status = 'ready' AND deleted_at IS NULL
 "#,
-        )
-        .bind(file_id)
-        .bind(required_derivative_ids)
-        .fetch_one(&mut **transaction)
-        .await
-        .map_err(SqlFileRepository::database_error)?;
+            )
+            .bind(file_id)
+            .bind(required_derivative_ids)
+            .fetch_one()
+            .await
+            .map_err(SqlFileRepository::database_error)?;
         if ready_count != required_derivative_ids.len() as i64 {
             return Err(RepositoryError::InvalidPersistedState);
         }
     }
 
-    let result = sqlx::query(
-        r#"
+    let result = school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.finalize_ready_in_transaction",
+            r#"
 UPDATE files
 SET current_version_id = $2, lifecycle_status = 'ready', updated_at = now()
 WHERE id = $1 AND lifecycle_status IN ('processing', 'failed', 'ready')
 "#,
-    )
-    .bind(file_id)
-    .bind(version_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(file_id)
+        .bind(version_id)
+        .execute()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     if result.rows_affected() != 1 {
         return Err(RepositoryError::MaterializationRevoked);
     }
-    sqlx::query(
+    school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.finalize_ready_in_transaction",
             r#"
 UPDATE file_operations
 SET status = 'succeeded', completed_at = now(), last_error_code = NULL,
@@ -1453,7 +1605,7 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded' AN
         )
         .bind(file_id)
         .bind(operation_id)
-        .execute(&mut **transaction)
+        .execute()
         .await
         .map_err(SqlFileRepository::database_error)?;
     Ok(())
@@ -1465,22 +1617,22 @@ async fn mark_delete_succeeded_in_transaction(
 ) -> Result<(), RepositoryError> {
     match work.target {
         ObjectTarget::Version(version_id) => {
-            sqlx::query(
+            school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_delete_succeeded_in_transaction",
                     "UPDATE file_versions SET storage_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
                 )
                 .bind(version_id)
                 .bind(work.file_id)
-                .execute(&mut **transaction)
+                .execute()
                 .await
                 .map_err(SqlFileRepository::database_error)?;
         }
         ObjectTarget::Derivative(derivative_id) => {
-            sqlx::query(
+            school_database::DbSession::new(&mut **transaction).query("file-platform.src.repository.mark_delete_succeeded_in_transaction",
                     "UPDATE file_derivatives SET storage_status = 'deleted', lifecycle_status = 'deleted', deleted_at = COALESCE(deleted_at, now()) WHERE id = $1 AND file_id = $2 AND storage_status <> 'deleted'",
                 )
                 .bind(derivative_id)
                 .bind(work.file_id)
-                .execute(&mut **transaction)
+                .execute()
                 .await
                 .map_err(SqlFileRepository::database_error)?;
         }
@@ -1494,18 +1646,20 @@ async fn mark_operation_succeeded(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     operation_id: Uuid,
 ) -> Result<(), RepositoryError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.mark_operation_succeeded",
+            r#"
 UPDATE file_operations
 SET status = 'succeeded', completed_at = now(), last_error_code = NULL,
     lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
 WHERE id = $1
 "#,
-    )
-    .bind(operation_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(operation_id)
+        .execute()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     Ok(())
 }
 
@@ -1516,8 +1670,10 @@ async fn retry_operation_query(
     retry_microseconds: i64,
     terminal: bool,
 ) -> Result<(), RepositoryError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.retry_operation_query",
+            r#"
 UPDATE file_operations
 SET status = CASE WHEN $4 THEN 'failed' ELSE 'retryable_failure' END,
     last_error_code = $2,
@@ -1526,14 +1682,14 @@ SET status = CASE WHEN $4 THEN 'failed' ELSE 'retryable_failure' END,
     lease_owner = NULL, leased_at = NULL, lease_expires_at = NULL
 WHERE id = $1
 "#,
-    )
-    .bind(operation_id)
-    .bind(error_code)
-    .bind(retry_microseconds)
-    .bind(terminal)
-    .execute(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(operation_id)
+        .bind(error_code)
+        .bind(retry_microseconds)
+        .bind(terminal)
+        .execute()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     Ok(())
 }
 
@@ -1541,8 +1697,10 @@ async fn finalize_deleted_if_absent(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     file_id: Uuid,
 ) -> Result<(), RepositoryError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "file-platform.src.repository.finalize_deleted_if_absent",
+            r#"
 UPDATE files f
 SET lifecycle_status = 'deleted', deleted_at = COALESCE(deleted_at, now()), updated_at = now()
 WHERE f.id = $1 AND f.lifecycle_status = 'delete_requested'
@@ -1555,11 +1713,11 @@ WHERE f.id = $1 AND f.lifecycle_status = 'delete_requested'
       WHERE d.file_id = f.id AND d.storage_status <> 'deleted'
   )
 "#,
-    )
-    .bind(file_id)
-    .execute(&mut **transaction)
-    .await
-    .map_err(SqlFileRepository::database_error)?;
+        )
+        .bind(file_id)
+        .execute()
+        .await
+        .map_err(SqlFileRepository::database_error)?;
     Ok(())
 }
 

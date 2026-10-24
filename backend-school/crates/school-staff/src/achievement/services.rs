@@ -109,7 +109,12 @@ pub async fn create_achievement(
         validate_achievement_image(&mut connection, payload.image_file_id, target_user_id).await?;
     }
 
-    let mut transaction = pool.begin().await.map_err(achievement_write_error)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.achievement.services.create_achievement",
+    )
+    .await
+    .map_err(achievement_write_error)?;
     let achievement = DbSession::new(&mut *transaction).query_as::<Achievement>("staff.achievement.services.create_achievement",
         "INSERT INTO staff_achievements (user_id, title, description, achievement_date, image_file_id, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -155,7 +160,12 @@ pub async fn update_achievement(
         old_file_id
     };
 
-    let mut transaction = pool.begin().await.map_err(achievement_write_error)?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.achievement.services.update_achievement",
+    )
+    .await
+    .map_err(achievement_write_error)?;
     let achievement = DbSession::new(&mut *transaction)
         .query_as::<Achievement>(
             "staff.achievement.services.update_achievement",

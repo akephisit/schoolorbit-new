@@ -108,7 +108,11 @@ pub async fn list_policies(
     context: &ResultContext,
 ) -> Result<Vec<GradingPolicyVersion>, AppError> {
     access_policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.policies.list_policies",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let ids: Vec<Uuid> = DbSession::new(&mut *tx)
         .scalar(
@@ -147,7 +151,11 @@ pub async fn create_policy(
             "Grading policy name is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.policies.create_policy",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     let minimum_total: Option<String> = DbSession::new(&mut *tx).scalar("academic_results.services.policies.create_policy",
         "SELECT min(assessment_total_score)::text FROM course_offering_details WHERE academic_term_id=$1 AND academic_year_id=$2",
@@ -214,7 +222,11 @@ pub async fn activate_policy(
             "School result management permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.policies.activate_policy",
+    )
+    .await?;
     validate_context(&mut tx, context).await?;
     lifecycle_guard::lock_transition_shared(&mut tx).await?;
     // The grading policy is global, so activation must serialize with every writer that can

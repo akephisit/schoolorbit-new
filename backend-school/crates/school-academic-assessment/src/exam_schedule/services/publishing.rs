@@ -16,7 +16,11 @@ pub async fn publish_round(
     round_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<ExamRound, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.publishing.publish_round",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
     let _locked_round_id: Uuid = DbSession::new(&mut *tx)

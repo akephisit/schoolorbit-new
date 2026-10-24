@@ -55,7 +55,11 @@ pub async fn open_draft(
     request: OpenCurriculumDraftRequest,
 ) -> Result<CurriculumEdition, AppError> {
     super::parse_row_version(request.row_version)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_publications.open_draft",
+    )
+    .await?;
     let query = format!(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR UPDATE",
         super::curriculum::EDITION_COLUMNS
@@ -139,7 +143,11 @@ pub async fn preview_discard(
     id: Uuid,
     token: Uuid,
 ) -> Result<CurriculumDraftDiscardPreview, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_publications.preview_discard",
+    )
+    .await?;
     let sql = format!(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR SHARE",
         super::curriculum::EDITION_COLUMNS
@@ -180,7 +188,11 @@ pub async fn discard_draft(
     id: Uuid,
     request: DiscardCurriculumDraftRequest,
 ) -> Result<CurriculumEdition, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_publications.discard_draft",
+    )
+    .await?;
     let sql = format!(
         "SELECT {} FROM curriculum_editions WHERE id=$1 FOR UPDATE",
         super::curriculum::EDITION_COLUMNS

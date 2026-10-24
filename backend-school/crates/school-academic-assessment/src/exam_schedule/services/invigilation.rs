@@ -187,7 +187,11 @@ pub async fn update_assignment_invigilators(
 ) -> Result<DayRoomAssignmentView, AppError> {
     let invigilator_staff_ids =
         validate_unique_invigilator_staff_ids(request.invigilator_staff_ids)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.update_assignment_invigilators",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context = fetch_seat_assignment_context(&mut tx, assignment_id).await?;
     let exam_day_id: Uuid = DbSession::new(&mut *tx).scalar("academic_assessment.exam_schedule.services.invigilation.update_assignment_invigilators",
@@ -230,7 +234,11 @@ pub async fn assign_invigilator_to_assignment(
     staff_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.invigilation.assign_invigilator_to_assignment",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
@@ -269,7 +277,7 @@ pub async fn remove_invigilator_from_assignment(
     staff_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<ExamInvigilatorWorkspace, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "academic_assessment.exam_schedule.services.invigilation.remove_invigilator_from_assignment").await?;
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;

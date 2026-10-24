@@ -383,7 +383,11 @@ pub async fn append_staff_career_history(
     input: CreateStaffCareerHistoryRequest,
 ) -> Result<StaffCareerMutationAck, AppError> {
     let entry = normalize_career_entry(&input.entry, today())?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.staff_career_service.append_staff_career_history",
+    )
+    .await?;
     lock_staff(&mut tx, staff_id).await?;
     let existing_owner: Option<Uuid> = DbSession::new(&mut *tx)
         .scalar(
@@ -438,7 +442,11 @@ pub async fn correct_staff_career_history(
 ) -> Result<StaffCareerMutationAck, AppError> {
     let entry = normalize_career_entry(&input.entry, today())?;
     let reason = normalize_correction_reason(&input.reason)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.staff_career_service.correct_staff_career_history",
+    )
+    .await?;
     lock_staff(&mut tx, staff_id).await?;
     let before = read_entry(&mut tx, staff_id, entry_id)
         .await?

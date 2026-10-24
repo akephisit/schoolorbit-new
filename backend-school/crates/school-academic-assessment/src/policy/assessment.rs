@@ -35,12 +35,12 @@ pub async fn assessment_plan_list_access(
     actor: &ActorContext,
     action: AssessmentAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+    resource_access_policy::resolve_academic_resource_list_filter(
         pool,
-        "academic_assessment.policy.assessment.assessment_plan_list_access",
+        actor,
+        assessment_permissions(action),
     )
-    .await?;
-    assessment_plan_list_access_on_connection(&mut connection, actor, action).await
+    .await
 }
 
 pub async fn assessment_plan_list_access_on_connection(
@@ -61,12 +61,7 @@ pub async fn require_assessment_plan_list_access(
     actor: &ActorContext,
     action: AssessmentAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_assessment.policy.assessment.require_assessment_plan_list_access",
-    )
-    .await?;
-    require_assessment_plan_list_access_on_connection(&mut connection, actor, action).await
+    require_list_filter(assessment_plan_list_access(pool, actor, action).await?)
 }
 
 pub async fn require_assessment_plan_list_access_on_connection(
@@ -74,7 +69,11 @@ pub async fn require_assessment_plan_list_access_on_connection(
     actor: &ActorContext,
     action: AssessmentAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = assessment_plan_list_access_on_connection(connection, actor, action).await?;
+    require_list_filter(assessment_plan_list_access_on_connection(connection, actor, action).await?)
+}
+fn require_list_filter(
+    filter: AcademicResourceListFilter,
+) -> Result<AcademicResourceListFilter, AppError> {
     if filter.includes_school_owned
         || !filter.organization_unit_ids.is_empty()
         || filter.assigned_actor_id.is_some()
@@ -162,5 +161,35 @@ fn assessment_permissions(action: AssessmentAction) -> AcademicResourcePermissio
             organization_tree: NO_PERMISSIONS,
             school: MANAGE_SCHOOL_PERMISSIONS,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn assessment_list_policy_preserves_database_free_school_grants_and_denials() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(50))
+            .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
+            .unwrap();
+        let granted = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ACADEMIC_ASSESSMENT_READ_SCHOOL.into()],
+        };
+        assert!(
+            require_assessment_plan_list_access(&pool, &granted, AssessmentAction::Read)
+                .await
+                .unwrap()
+                .includes_school_owned
+        );
+        let denied = ActorContext {
+            user_id: granted.user_id,
+            permissions: vec![],
+        };
+        assert!(matches!(
+            require_assessment_plan_list_access(&pool, &denied, AssessmentAction::Read).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

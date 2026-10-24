@@ -158,7 +158,11 @@ pub async fn preview_aggregate(
     query: &AggregatePreviewQuery,
 ) -> Result<TermAggregatePreview, AppError> {
     require_aggregate_read(actor)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.aggregate_preview.preview_aggregate",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.aggregate_preview.preview_aggregate",

@@ -152,7 +152,11 @@ pub async fn place_exam_session(
     request: PlaceExamSessionRequest,
     actor_user_id: Uuid,
 ) -> Result<ExamSessionView, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
+    )
+    .await?;
 
     // Parent IDs are immutable. Reject a foreign-round item before locking any
     // of its rows while holding the selected day's academic boundary.
@@ -412,7 +416,11 @@ pub async fn delete_exam_session(
     session_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.sessions_and_conflicts.delete_exam_session",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Session(session_id)).await?;
 
     let round_id: Uuid = DbSession::new(&mut *tx)

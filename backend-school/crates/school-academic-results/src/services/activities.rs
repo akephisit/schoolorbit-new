@@ -106,9 +106,13 @@ async fn begin_activity<'a>(
     group: Uuid,
     context: &ResultContext,
     write: bool,
-) -> Result<(Transaction<'a, Postgres>, ActivityScope), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, ActivityScope), AppError> {
     let access = access_policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.activities.begin_activity",
+    )
+    .await?;
     if !write {
         DbSession::new(&mut *tx)
             .query(

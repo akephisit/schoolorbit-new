@@ -987,7 +987,12 @@ pub async fn create_staff(
             AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
         })?;
 
-    let mut tx = pool.begin().await.map_err(|e| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.staff_service.create_staff",
+    )
+    .await
+    .map_err(|e| {
         tracing::error!(
             "❌ Failed to start transaction: {}",
             school_database::error_class(&e)
@@ -1112,7 +1117,12 @@ pub async fn update_staff(
     mut payload: UpdateStaffRequest,
     actor_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
-    let mut tx = pool.begin().await.map_err(|e| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.staff_service.update_staff",
+    )
+    .await
+    .map_err(|e| {
         tracing::error!(
             "❌ Failed to start transaction: {}",
             school_database::error_class(&e)

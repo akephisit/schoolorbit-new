@@ -182,7 +182,11 @@ pub async fn sync_exam_sources(
     actor_user_id: Uuid,
     request: SyncExamSourcesRequest,
 ) -> Result<SyncExamSourcesResult, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
+    )
+    .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     let (status, row_version): (String, i64) = DbSession::new(&mut *tx)
         .query_as(

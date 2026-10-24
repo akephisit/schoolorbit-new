@@ -4,6 +4,7 @@ use super::super::models::{
 };
 use school_academic_core::services::{lifecycle_guard, promotion_reconciliation, years_terms};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
@@ -34,7 +35,11 @@ pub async fn resolve_promotion_impact(
         &reason,
         &input.source_checksum,
     ))?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.promotion_impact_resolutions.resolve_promotion_impact",
+    )
+    .await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     if let Some(replay) = replay(
         &mut tx,
@@ -49,11 +54,11 @@ pub async fn resolve_promotion_impact(
         tx.commit().await?;
         return Ok(replay);
     }
-    let (source_year_id, target_year_id): (Uuid, Uuid) = sqlx::query_as(
+    let (source_year_id, target_year_id): (Uuid, Uuid) = DbSession::new(&mut *tx).query_as("academic_lifecycle.services.promotion_impact_resolutions.resolve_promotion_impact",
         "SELECT source_year_id,target_year_id FROM academic_promotion_runs WHERE id=$1 FOR UPDATE",
     )
     .bind(run_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     let impacts =
@@ -94,28 +99,32 @@ pub async fn resolve_promotion_impact(
         }
     };
     let id = Uuid::now_v7();
-    let resolution: PromotionImpactResolution = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "INSERT INTO academic_promotion_impact_resolutions(
+    let resolution: PromotionImpactResolution = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impact_resolutions.resolve_promotion_impact",
+            sqlx::AssertSqlSafe(format!(
+                "INSERT INTO academic_promotion_impact_resolutions(
              id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,
              replacement_decision,reason,source_checksum,request_checksum,outcome,resolved_by
          ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          RETURNING {COLUMNS}"
-    )))
-    .bind(id)
-    .bind(input.request_id)
-    .bind(run_id)
-    .bind(impact.item_id)
-    .bind(impact.evidence.correction.id)
-    .bind(impact.id)
-    .bind(input.resolution_kind)
-    .bind(input.replacement_decision.as_ref().map(Json))
-    .bind(&reason)
-    .bind(&input.source_checksum)
-    .bind(&request_checksum)
-    .bind(Json(&outcome))
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+            )),
+        )
+        .bind(id)
+        .bind(input.request_id)
+        .bind(run_id)
+        .bind(impact.item_id)
+        .bind(impact.evidence.correction.id)
+        .bind(impact.id)
+        .bind(input.resolution_kind)
+        .bind(input.replacement_decision.as_ref().map(Json))
+        .bind(&reason)
+        .bind(&input.source_checksum)
+        .bind(&request_checksum)
+        .bind(Json(&outcome))
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     years_terms::append_audit(
         &mut tx,
         "promotion_impact.resolved",
@@ -152,7 +161,7 @@ async fn adjusted_outcome(
         Json<super::super::models::PromotionRecommendation>,
         Option<Uuid>,
         Option<Uuid>,
-    ) = sqlx::query_as(
+    ) = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.promotion_impact_resolutions.adjusted_outcome",
         "SELECT item.student_academic_year_id,item.source_grade_level_id,item.recommendation,
                 receipt.target_student_year_id,receipt.target_placement_id
          FROM academic_promotion_run_items item
@@ -161,7 +170,7 @@ async fn adjusted_outcome(
     )
     .bind(item_id)
     .bind(run_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานดำเนินการของผลกระทบนี้".into()))?;
     super::promotion_decision::validate_decision(decision, source_grade_level_id, &recommendation)?;
@@ -171,8 +180,10 @@ async fn adjusted_outcome(
     let (resolved_target_student_year_id, resolved_target_placement_id): (
         Option<Uuid>,
         Option<Uuid>,
-    ) = sqlx::query_as(
-        "SELECT
+    ) = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impact_resolutions.adjusted_outcome",
+            "SELECT
              (SELECT NULLIF(outcome->>'targetStudentYearId','')::uuid
               FROM academic_promotion_impact_resolutions
               WHERE item_id=$1 AND NULLIF(outcome->>'targetStudentYearId','') IS NOT NULL
@@ -181,10 +192,10 @@ async fn adjusted_outcome(
               FROM academic_promotion_impact_resolutions
               WHERE item_id=$1 AND NULLIF(outcome->>'targetPlacementId','') IS NOT NULL
               ORDER BY resolved_at DESC,id DESC LIMIT 1)",
-    )
-    .bind(item_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(item_id)
+        .fetch_one()
+        .await?;
     let owned_target_student_year_id =
         resolved_target_student_year_id.or(receipt_target_student_year_id);
     let owned_target_placement_id = resolved_target_placement_id.or(receipt_target_placement_id);
@@ -259,25 +270,30 @@ async fn current_outcome(
         Option<Uuid>,
         Option<Uuid>,
         i64,
-    ) = sqlx::query_as(
-        "SELECT receipt.target_student_year_id,receipt.target_placement_id,source.row_version
+    ) = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impact_resolutions.current_outcome",
+            "SELECT receipt.target_student_year_id,receipt.target_placement_id,source.row_version
          FROM academic_promotion_execution_receipts receipt
          JOIN academic_promotion_run_items item ON item.id=receipt.item_id
          JOIN student_academic_years source ON source.id=item.student_academic_year_id
          WHERE receipt.item_id=$1",
-    )
-    .bind(item_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานดำเนินการของผลกระทบนี้".into()))?;
-    let latest_replacement: Option<Json<PromotionImpactResolutionOutcome>> = sqlx::query_scalar(
-        "SELECT outcome FROM academic_promotion_impact_resolutions
+        )
+        .bind(item_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Conflict("ไม่พบหลักฐานดำเนินการของผลกระทบนี้".into()))?;
+    let latest_replacement: Option<Json<PromotionImpactResolutionOutcome>> =
+        DbSession::new(&mut **tx)
+            .scalar(
+                "academic_lifecycle.services.promotion_impact_resolutions.current_outcome",
+                "SELECT outcome FROM academic_promotion_impact_resolutions
          WHERE item_id=$1 AND resolution_kind='replace_decision'
          ORDER BY resolved_at DESC,id DESC LIMIT 1",
-    )
-    .bind(item_id)
-    .fetch_optional(&mut **tx)
-    .await?;
+            )
+            .bind(item_id)
+            .fetch_optional()
+            .await?;
     let (target_student_year_id, target_placement_id) = latest_replacement
         .map(|Json(outcome)| (outcome.target_student_year_id, outcome.target_placement_id))
         .unwrap_or((target_student_year_id, target_placement_id));
@@ -297,13 +313,15 @@ async fn replay(
     impact_id: Uuid,
     checksum: &str,
 ) -> Result<Option<PromotionImpactResolution>, AppError> {
-    let stored: Option<(Uuid, Uuid, Uuid, String)> = sqlx::query_as(
-        "SELECT resolved_by,run_id,impact_id,request_checksum
+    let stored: Option<(Uuid, Uuid, Uuid, String)> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impact_resolutions.replay",
+            "SELECT resolved_by,run_id,impact_id,request_checksum
          FROM academic_promotion_impact_resolutions WHERE request_id=$1",
-    )
-    .bind(request_id)
-    .fetch_optional(&mut **tx)
-    .await?;
+        )
+        .bind(request_id)
+        .fetch_optional()
+        .await?;
     let Some((stored_actor, stored_run, stored_impact, stored_checksum)) = stored else {
         return Ok(None);
     };
@@ -316,11 +334,15 @@ async fn replay(
             "รหัสคำขอนี้ถูกใช้กับการจัดการผลกระทบอื่นแล้ว".into(),
         ));
     }
-    let resolution = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {COLUMNS} FROM academic_promotion_impact_resolutions WHERE request_id=$1"
-    )))
-    .bind(request_id)
-    .fetch_one(&mut **tx)
-    .await?;
+    let resolution = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_lifecycle.services.promotion_impact_resolutions.replay",
+            sqlx::AssertSqlSafe(format!(
+                "SELECT {COLUMNS} FROM academic_promotion_impact_resolutions WHERE request_id=$1"
+            )),
+        )
+        .bind(request_id)
+        .fetch_one()
+        .await?;
     Ok(Some(resolution))
 }

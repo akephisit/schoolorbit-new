@@ -52,7 +52,11 @@ pub async fn readiness(
 ) -> Result<ResultReadiness, AppError> {
     let access = access_policy::list_access(pool, actor).await?;
     let allowed_organization_units = access.allowed_organization_unit_ids();
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.readiness.readiness",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.readiness.readiness",

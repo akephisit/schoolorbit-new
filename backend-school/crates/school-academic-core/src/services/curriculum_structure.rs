@@ -292,7 +292,11 @@ pub async fn replace_program_structure(
     parse_row_version(request.row_version)?;
     validate_requirement_inputs(&request.requirements)?;
 
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_structure.replace_program_structure",
+    )
+    .await?;
     let level_id: Uuid = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.curriculum_structure.replace_program_structure",
@@ -461,7 +465,11 @@ pub async fn replace_term_slots(
         }
     }
 
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_structure.replace_term_slots",
+    )
+    .await?;
     super::curriculum::require_draft_level(&mut transaction, version_id, request.draft_id).await?;
     let (status, current_row_version): (VersionStatus, i64) = DbSession::new(&mut *transaction).query_as("academic_core.services.curriculum_structure.replace_term_slots",
         "SELECT CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",

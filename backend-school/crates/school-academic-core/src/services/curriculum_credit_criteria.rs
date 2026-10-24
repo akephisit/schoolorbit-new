@@ -61,7 +61,11 @@ pub async fn replace(
 ) -> Result<CurriculumCreditCriteriaResult, AppError> {
     super::parse_row_version(request.row_version)?;
     let criteria = normalize(request.criteria)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum_credit_criteria.replace",
+    )
+    .await?;
     super::curriculum::require_draft_level(&mut tx, level_id, request.draft_id).await?;
     let (Json(previous), mut row_version, Json(mut grades)): (Json<Vec<CurriculumCreditCriterion>>, i64, Json<Vec<Uuid>>) = DbSession::new(&mut *tx).query_as("academic_core.services.curriculum_credit_criteria.replace",
         "SELECT credit_criteria,credit_criteria_row_version,grade_level_ids FROM curriculum_levels WHERE id=$1",

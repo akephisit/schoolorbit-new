@@ -113,7 +113,11 @@ pub async fn add_member(
     is_primary: bool,
     responsibilities: Option<String>,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.add_member",
+    )
+    .await?;
     lock_member_user(&mut tx, user_id).await?;
     organization_unit_service::ensure_organization_unit_active(&mut tx, organization_unit_id)
         .await?;
@@ -159,7 +163,11 @@ pub struct UpdateMemberInput {
 }
 
 pub async fn update_member(pool: &PgPool, input: UpdateMemberInput) -> Result<u64, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.update_member",
+    )
+    .await?;
     lock_member_user(&mut tx, input.user_id).await?;
     if input.new_organization_unit_id != input.organization_unit_id {
         organization_unit_service::ensure_organization_unit_active(
@@ -291,7 +299,11 @@ pub async fn remove_member(
     organization_unit_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_member_service.remove_member",
+    )
+    .await?;
     if !try_lock_member_user(&mut tx, user_id).await? {
         return Ok(());
     }

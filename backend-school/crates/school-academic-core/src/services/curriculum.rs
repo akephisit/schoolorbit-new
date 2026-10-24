@@ -303,7 +303,11 @@ pub async fn create_level(
         validate_grade_levels(&mut connection, &request.grade_level_ids).await?;
     }
     let id = Uuid::now_v7();
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.create_level",
+    )
+    .await?;
     require_draft_edition(&mut tx, edition_id, request.draft_id).await?;
     DbSession::new(&mut *tx).query("academic_core.services.curriculum.create_level", "INSERT INTO curriculum_levels(id,edition_id,code,name_th,description,grade_level_ids,is_active) VALUES($1,$2,$3,$4,$5,$6,true)")
         .bind(id).bind(edition_id).bind(internal_code("LEVEL",id)).bind(request.name_th.trim()).bind(request.description).bind(sqlx::types::Json(request.grade_level_ids)).execute().await?;
@@ -327,7 +331,11 @@ pub async fn update_level(
         validate_grade_levels(&mut connection, &request.grade_level_ids).await?;
     }
     parse_row_version(request.row_version)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.update_level",
+    )
+    .await?;
     require_draft_level(&mut tx, id, request.draft_id).await?;
     let uncovered:i64=DbSession::new(&mut *tx).scalar("academic_core.services.curriculum.update_level", "SELECT count(*) FROM (SELECT grade_level_id FROM curriculum_course_requirements WHERE curriculum_level_id=$1 UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE curriculum_level_id=$1) r WHERE NOT grade_level_id=ANY($2)").bind(id).bind(&request.grade_level_ids).fetch_one().await?;
     if uncovered > 0 {
@@ -350,7 +358,11 @@ pub async fn publish(
     actor_id: Uuid,
 ) -> Result<CurriculumEdition, AppError> {
     parse_row_version(request.row_version)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.publish",
+    )
+    .await?;
     let sql = format!("SELECT {EDITION_COLUMNS} FROM curriculum_editions WHERE id=$1 FOR UPDATE");
     let edition: CurriculumEdition = DbSession::new(&mut *tx)
         .query_as(
@@ -466,7 +478,11 @@ pub async fn create_program(
 ) -> Result<StudyProgram, AppError> {
     validate_name(&request.name_th)?;
     let id = Uuid::now_v7();
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.create_program",
+    )
+    .await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
     DbSession::new(&mut *tx).query("academic_core.services.curriculum.create_program", "INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status,display_order) SELECT $1,$2,$3,$4,'draft',COALESCE(max(display_order),0)+1 FROM study_programs WHERE curriculum_level_id=$2")
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(request.name_th.trim()).execute().await?;
@@ -494,7 +510,11 @@ pub async fn replace_program_order(
     if unique.len() != request.study_program_ids.len() {
         return Err(AppError::ValidationError("แผนการเรียนในลำดับต้องไม่ซ้ำ".into()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.replace_program_order",
+    )
+    .await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
     let mut row_version: i64 = DbSession::new(&mut *tx)
         .scalar(
@@ -572,7 +592,11 @@ pub async fn update_program(
 ) -> Result<StudyProgram, AppError> {
     validate_name(&request.name_th)?;
     parse_row_version(request.row_version)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.update_program",
+    )
+    .await?;
     let level_id: Uuid = DbSession::new(&mut *tx)
         .scalar(
             "academic_core.services.curriculum.update_program",
@@ -767,7 +791,11 @@ pub async fn copy_program(
 ) -> Result<StudyProgram, AppError> {
     parse_row_version(request.source_row_version)?;
     parse_row_version(request.destination_row_version)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.curriculum.copy_program",
+    )
+    .await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
     let (covered, revision): (sqlx::types::Json<Vec<Uuid>>, i64) = DbSession::new(&mut *tx)
         .query_as(

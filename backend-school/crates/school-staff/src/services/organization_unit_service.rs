@@ -84,7 +84,12 @@ pub async fn create_organization_unit(
     payload: CreateOrganizationUnitRequest,
 ) -> Result<Uuid, AppError> {
     validate_unit_fields(payload.name.as_str(), payload.unit_type.as_deref(), None)?;
-    let mut tx = pool.begin().await.map_err(|error| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_unit_service.create_organization_unit",
+    )
+    .await
+    .map_err(|error| {
         tracing::error!(
             error_class = school_database::error_class(&error),
             "failed to start organization unit create transaction"
@@ -171,7 +176,7 @@ pub async fn update_organization_unit(
     payload: UpdateOrganizationUnitRequest,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|error| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "staff.services.organization_unit_service.update_organization_unit").await.map_err(|error| {
         tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to start organization unit update transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
@@ -481,7 +486,7 @@ pub async fn set_organization_unit_active(
     is_active: bool,
     actor_user_id: Uuid,
 ) -> Result<StatusTransitionOutcome, AppError> {
-    let mut tx = pool.begin().await.map_err(|error| {
+    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "staff.services.organization_unit_service.set_organization_unit_active").await.map_err(|error| {
         tracing::error!(%unit_id, error_class = school_database::error_class(&error), "failed to start organization unit status transaction");
         AppError::InternalServerError("ไม่สามารถเริ่มต้น Transaction ได้".to_string())
     })?;
@@ -579,7 +584,11 @@ pub async fn delete_organization_unit_permanently(
     unit_id: Uuid,
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.organization_unit_service.delete_organization_unit_permanently",
+    )
+    .await?;
     lock_audit_actor(&mut tx, actor_user_id).await?;
     DbSession::new(&mut *tx)
         .query(

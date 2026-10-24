@@ -16,7 +16,8 @@ pub async fn create(
 ) -> Result<LeaveRequestDetail, AppError> {
     actor.require_permission(codes::STAFF_LEAVE_CREATE_OWN)?;
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_READ_SCHOOL])?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.create").await?;
     let id = Uuid::now_v7();
     if let Some(replay) = claim(
         &mut tx,
@@ -93,7 +94,8 @@ pub async fn update(
     id: Uuid,
     input: UpdateLeaveRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.update").await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -313,7 +315,8 @@ pub async fn submit(
     id: Uuid,
     input: LeaveMutationRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.submit").await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -426,7 +429,8 @@ pub async fn act(
     id: Uuid,
     input: LeaveActionRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.act").await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -557,7 +561,8 @@ pub async fn cancel(
     if input.reason.trim().is_empty() || input.reason.chars().count() > 4000 {
         return Err(invalid("กรุณาระบุเหตุผลการยกเลิก"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.cancel").await?;
     if claim(
         &mut tx,
         actor.user_id,

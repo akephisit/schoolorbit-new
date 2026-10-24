@@ -472,7 +472,11 @@ pub async fn save_plan(
     payload: SaveAssessmentPlanRequest,
 ) -> Result<AssessmentPlanDetail, AppError> {
     validate_plan_payload(&payload)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.assessment.services.save_plan",
+    )
+    .await?;
     let scope = resolve_offering_scope_in_tx(&mut transaction, offering_id).await?;
     result_locks
         .require_course_offering_unlocked(
@@ -635,7 +639,11 @@ pub async fn update_phase_control(
     actor_user_id: Uuid,
     payload: UpdateAssessmentPhaseControlRequest,
 ) -> Result<AssessmentPhaseControl, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.assessment.services.update_phase_control",
+    )
+    .await?;
     let (year, term): (Uuid, Uuid) = DbSession::new(&mut *transaction).query_as("academic_assessment.assessment.services.update_phase_control",
         "SELECT academic_year_id,academic_term_id FROM academic_assessment_phase_controls WHERE id=$1",
     ).bind(control_id).fetch_optional().await?

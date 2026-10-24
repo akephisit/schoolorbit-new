@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
@@ -186,6 +187,19 @@ pub async fn list(
     query: LearningOfferingQuery,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<LearningOffering>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.list",
+    )
+    .await?;
+    list_on_connection(&mut connection, query, filter).await
+}
+
+pub async fn list_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: LearningOfferingQuery,
+    filter: &AcademicResourceListFilter,
+) -> Result<Vec<LearningOffering>, AppError> {
     let owner_ids = filter.allowed_organization_unit_ids();
     let sql = format!(
         "SELECT {OFFERING_COLUMNS} FROM learning_offerings \
@@ -200,30 +214,50 @@ pub async fn list(
            )) \
          ORDER BY kind, code_snapshot, id LIMIT $5"
     );
-    let rows: Vec<LearningOfferingRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let rows: Vec<LearningOfferingRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.list_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(query.academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
         .bind(filter.assigned_actor_id)
         .bind((MAX_TERM_OFFERINGS + 1) as i64)
-        .fetch_all(pool)
+        .fetch_all()
         .await?;
     if rows.len() > MAX_TERM_OFFERINGS {
         return Err(AppError::ValidationError(
             "จำนวนรายการเปิดสอนในภาคเรียนเกิน 500 รายการ กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
         ));
     }
-    hydrate_many(pool, rows).await
+    hydrate_many(connection, rows).await
 }
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningOffering, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.get",
+    )
+    .await?;
+    get_on_connection(&mut connection, id).await
+}
+
+pub async fn get_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<LearningOffering, AppError> {
     let sql = format!("SELECT {OFFERING_COLUMNS} FROM learning_offerings WHERE id = $1");
-    let row: LearningOfferingRow = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let row: LearningOfferingRow = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.get_on_connection",
+            sqlx::AssertSqlSafe(sql),
+        )
         .bind(id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
-    hydrate(pool, row).await
+    hydrate(connection, row).await
 }
 
 pub async fn catalog_owner_for_create_request(
@@ -238,7 +272,11 @@ pub async fn catalog_owner_for_create_request(
             (LearningOfferingKind::Activity, request.activity_version_id)
         }
     };
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.catalog_owner_for_create_request",
+    )
+    .await?;
     let owner_id = catalog_version_owner(&mut transaction, kind, version_id).await?;
     transaction.rollback().await?;
     Ok(owner_id)
@@ -276,8 +314,15 @@ pub async fn catalog_owners_for_curriculum_request(
         .filter(|proposal| proposal.resource_kind == LearningOfferingKind::Activity)
         .map(|proposal| proposal.catalog_version_id)
         .collect::<Vec<_>>();
-    Ok(sqlx::query_scalar(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.catalog_owners_for_curriculum_request",
+    )
+    .await?;
+    Ok(DbSession::new(&mut connection)
+        .scalar(
+            "academic_delivery.services.offerings.catalog_owners_for_curriculum_request",
+            r#"
         SELECT DISTINCT source.owning_organization_unit_id
         FROM (
             SELECT subject.owning_organization_unit_id
@@ -292,11 +337,11 @@ pub async fn catalog_owners_for_curriculum_request(
         ) source
         ORDER BY source.owning_organization_unit_id
         "#,
-    )
-    .bind(course_version_ids)
-    .bind(activity_version_ids)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(course_version_ids)
+        .bind(activity_version_ids)
+        .fetch_all()
+        .await?)
 }
 
 pub async fn create(
@@ -306,7 +351,11 @@ pub async fn create(
     request: CreateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     let term_id = request.academic_term_id();
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.create",
+    )
+    .await?;
     let term =
         require_writable_term(&mut transaction, term_id, delivery_version_id.is_some()).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
@@ -325,8 +374,13 @@ pub async fn create(
     }
     transaction.commit().await?;
     let offering = get(pool, id).await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.offerings.create.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "learning_offering.created",
         "learning_offering",
         id,
@@ -346,7 +400,11 @@ pub async fn update(
     request: UpdateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     validate_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.update",
+    )
+    .await?;
     let term = require_writable_offering_term(&mut transaction, id).await?;
     let row: (
         Uuid,
@@ -354,14 +412,16 @@ pub async fn update(
         LearningOfferingKind,
         LearningOfferingStatus,
         i64,
-    ) = sqlx::query_as(
-        "SELECT academic_term_id, academic_year_id, kind, status, row_version \
+    ) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.offerings.update",
+            "SELECT academic_term_id, academic_year_id, kind, status, row_version \
          FROM learning_offerings WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
     if row.3 != LearningOfferingStatus::Draft {
         return Err(AppError::Conflict(
             "ข้อมูล snapshot ที่เผยแพร่แล้วแก้ไขไม่ได้".to_string(),
@@ -373,22 +433,33 @@ pub async fn update(
         ));
     }
     validate_targets(&mut transaction, &term, &request.targets).await?;
-    sqlx::query("DELETE FROM learning_offering_targets WHERE learning_offering_id = $1")
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.offerings.update",
+            "DELETE FROM learning_offering_targets WHERE learning_offering_id = $1",
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     insert_targets(&mut transaction, id, &term, &request.targets).await?;
-    sqlx::query(
-        "UPDATE learning_offerings SET row_version = row_version + 1, \
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.offerings.update",
+            "UPDATE learning_offerings SET row_version = row_version + 1, \
          updated_at = now() WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(id)
+        .execute()
+        .await?;
     super::versions::refresh_drafts_for_offering(&mut transaction, id).await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.offerings.update.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "learning_offering.updated",
         "learning_offering",
         id,
@@ -398,7 +469,7 @@ pub async fn update(
         serde_json::json!({ "rowVersion": request.row_version }),
     )
     .await?;
-    get(pool, id).await
+    get_on_connection(&mut completion, id).await
 }
 
 pub async fn publish(
@@ -408,22 +479,34 @@ pub async fn publish(
     request: PublishLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     validate_row_version(request.row_version)?;
-    if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM learning_offerings WHERE publish_idempotency_key = $1",
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.publish.preflight",
     )
-    .bind(request.idempotency_key)
-    .fetch_optional(pool)
-    .await?
+    .await?;
+    if let Some(existing_id) = DbSession::new(&mut preflight)
+        .scalar::<Uuid>(
+            "academic_delivery.services.offerings.publish.preflight",
+            "SELECT id FROM learning_offerings WHERE publish_idempotency_key = $1",
+        )
+        .bind(request.idempotency_key)
+        .fetch_optional()
+        .await?
     {
         if existing_id == id {
-            return get(pool, id).await;
+            return get_on_connection(&mut preflight, id).await;
         }
         return Err(AppError::Conflict(
             "idempotencyKey ถูกใช้กับรายการอื่นแล้ว".to_string(),
         ));
     }
 
-    let mut transaction = pool.begin().await?;
+    drop(preflight);
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.publish",
+    )
+    .await?;
     let term = require_writable_offering_term(&mut transaction, id).await?;
     let row: (
         Uuid,
@@ -431,14 +514,16 @@ pub async fn publish(
         LearningOfferingKind,
         LearningOfferingStatus,
         i64,
-    ) = sqlx::query_as(
-        "SELECT academic_term_id, academic_year_id, kind, status, row_version \
+    ) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.offerings.publish",
+            "SELECT academic_term_id, academic_year_id, kind, status, row_version \
          FROM learning_offerings WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
     if row.3 != LearningOfferingStatus::Draft {
         return Err(AppError::Conflict("รายการนี้ไม่ได้อยู่ในสถานะ draft".to_string()));
     }
@@ -448,25 +533,34 @@ pub async fn publish(
         ));
     }
     validate_publishable(&mut transaction, id, row.2, &term).await?;
-    sqlx::query(
-        "UPDATE learning_groups SET status = 'published', row_version = row_version + 1, \
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.offerings.publish",
+            "UPDATE learning_groups SET status = 'published', row_version = row_version + 1, \
          updated_at = now() WHERE learning_offering_id = $1 AND status = 'draft'",
-    )
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
-    sqlx::query(
-        "UPDATE learning_offerings SET status = 'published', published_at = now(), \
+        )
+        .bind(id)
+        .execute()
+        .await?;
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.offerings.publish",
+            "UPDATE learning_offerings SET status = 'published', published_at = now(), \
          publish_idempotency_key = $1, row_version = row_version + 1, updated_at = now() \
          WHERE id = $2",
-    )
-    .bind(request.idempotency_key)
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.idempotency_key)
+        .bind(id)
+        .execute()
+        .await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.offerings.publish.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "learning_offering.published",
         "learning_offering",
         id,
@@ -476,7 +570,7 @@ pub async fn publish(
         serde_json::json!({ "kind": row.2 }),
     )
     .await?;
-    get(pool, id).await
+    get_on_connection(&mut completion, id).await
 }
 
 pub async fn preview_from_curriculum(
@@ -484,7 +578,11 @@ pub async fn preview_from_curriculum(
     request: PreviewCurriculumOfferingsRequest,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let program_ids = normalized_program_ids(&request.study_program_ids)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.preview_from_curriculum",
+    )
+    .await?;
     let preview =
         build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
     transaction.commit().await?;
@@ -507,16 +605,18 @@ pub async fn preview_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
     target_term_id: Uuid,
 ) -> Result<CurriculumOfferingPreview, AppError> {
-    let program_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT DISTINCT homeroom.study_program_id
+    let program_ids: Vec<Uuid> = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.preview_term_preparation",
+            r#"SELECT DISTINCT homeroom.study_program_id
            FROM homerooms homeroom
            JOIN academic_terms term ON term.academic_year_id=homeroom.academic_year_id
            WHERE term.id=$1 AND homeroom.is_active
            ORDER BY homeroom.study_program_id"#,
-    )
-    .bind(target_term_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(target_term_id)
+        .fetch_all()
+        .await?;
     if program_ids.is_empty() {
         return Err(AppError::ValidationError(
             "ปีการศึกษาเป้าหมายยังไม่มีห้องประจำชั้นและแผนการเรียน".into(),
@@ -599,6 +699,11 @@ pub async fn apply_from_curriculum(
         choices: &choices,
     })?;
 
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.apply_from_curriculum.preflight",
+    )
+    .await?;
     if let Some((
         stored_request_hash,
         source_hash,
@@ -609,9 +714,8 @@ pub async fn apply_from_curriculum(
         created_group_count,
         retained_group_count,
         skipped_count,
-    )) = sqlx::query_as::<
-        _,
-        (
+    )) = DbSession::new(&mut preflight)
+        .query_as::<(
             String,
             String,
             Vec<Uuid>,
@@ -621,16 +725,16 @@ pub async fn apply_from_curriculum(
             i32,
             i32,
             i32,
-        ),
-    >(
-        "SELECT request_hash::text, source_hash::text, offering_ids, group_ids, \
+        )>(
+            "academic_delivery.services.offerings.apply_from_curriculum.preflight",
+            "SELECT request_hash::text, source_hash::text, offering_ids, group_ids, \
                 created_offering_count, retained_offering_count, \
                 created_group_count, retained_group_count, skipped_count \
          FROM learning_delivery_apply_runs WHERE idempotency_key = $1",
-    )
-    .bind(request.idempotency_key)
-    .fetch_optional(pool)
-    .await?
+        )
+        .bind(request.idempotency_key)
+        .fetch_optional()
+        .await?
     {
         if stored_request_hash.trim_end() != request_hash {
             return Err(AppError::Conflict(
@@ -650,7 +754,12 @@ pub async fn apply_from_curriculum(
         });
     }
 
-    let mut transaction = pool.begin().await?;
+    drop(preflight);
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.offerings.apply_from_curriculum",
+    )
+    .await?;
     let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
     let preview =
         build_curriculum_preview(&mut transaction, request.academic_term_id, &program_ids).await?;
@@ -673,29 +782,31 @@ pub async fn apply_from_curriculum(
             .await?;
         }
     }
-    sqlx::query(
-        "INSERT INTO learning_delivery_apply_runs (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.offerings.apply_from_curriculum",
+            "INSERT INTO learning_delivery_apply_runs (
              idempotency_key, academic_term_id, request_hash, source_hash,
              offering_ids, group_ids, created_offering_count,
              retained_offering_count, created_group_count, retained_group_count,
              skipped_count, actor_user_id, curriculum_sources
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-    )
-    .bind(request.idempotency_key)
-    .bind(request.academic_term_id)
-    .bind(&request_hash)
-    .bind(&preview.source_hash)
-    .bind(&applied.offering_ids)
-    .bind(&applied.group_ids)
-    .bind(applied.created_offering_count as i32)
-    .bind(applied.retained_offering_count as i32)
-    .bind(applied.created_group_count as i32)
-    .bind(applied.retained_group_count as i32)
-    .bind(applied.skipped_count as i32)
-    .bind(actor_user_id)
-    .bind(sqlx::types::Json(&preview.curriculum_sources))
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(request.idempotency_key)
+        .bind(request.academic_term_id)
+        .bind(&request_hash)
+        .bind(&preview.source_hash)
+        .bind(&applied.offering_ids)
+        .bind(&applied.group_ids)
+        .bind(applied.created_offering_count as i32)
+        .bind(applied.retained_offering_count as i32)
+        .bind(applied.created_group_count as i32)
+        .bind(applied.retained_group_count as i32)
+        .bind(applied.skipped_count as i32)
+        .bind(actor_user_id)
+        .bind(sqlx::types::Json(&preview.curriculum_sources))
+        .execute()
+        .await?;
     transaction.commit().await?;
 
     Ok(ApplyCurriculumOfferingsResult {
@@ -811,18 +922,32 @@ pub async fn signal_descriptors(
     pool: &PgPool,
     offering_ids: &[Uuid],
 ) -> Result<Vec<LearningOfferingSignalDescriptor>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.signal_descriptors",
+    )
+    .await?;
+    signal_descriptors_on_connection(&mut connection, offering_ids).await
+}
+
+pub async fn signal_descriptors_on_connection(
+    connection: &mut sqlx::PgConnection,
+    offering_ids: &[Uuid],
+) -> Result<Vec<LearningOfferingSignalDescriptor>, AppError> {
     if offering_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let rows: Vec<LearningOfferingSignalDescriptor> = sqlx::query_as(
-        r#"SELECT id AS learning_offering_id, academic_term_id, row_version
+    let rows: Vec<LearningOfferingSignalDescriptor> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.signal_descriptors_on_connection",
+            r#"SELECT id AS learning_offering_id, academic_term_id, row_version
            FROM learning_offerings
            WHERE id = ANY($1)
            ORDER BY id"#,
-    )
-    .bind(offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(offering_ids)
+        .fetch_all()
+        .await?;
     let mut rows_by_id: HashMap<Uuid, LearningOfferingSignalDescriptor> = rows
         .into_iter()
         .map(|row| (row.learning_offering_id, row))
@@ -841,16 +966,33 @@ pub async fn operational_change_offering_ids(
     pool: &PgPool,
     change_set_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
-    let change_set_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_term_change_sets WHERE id = $1)")
-            .bind(change_set_id)
-            .fetch_one(pool)
-            .await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.offerings.operational_change_offering_ids",
+    )
+    .await?;
+    operational_change_offering_ids_on_connection(&mut connection, change_set_id).await
+}
+
+pub async fn operational_change_offering_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    change_set_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let change_set_exists: bool = DbSession::new(connection)
+        .scalar(
+            "academic_delivery.services.offerings.operational_change_offering_ids_on_connection",
+            "SELECT EXISTS (SELECT 1 FROM academic_term_change_sets WHERE id = $1)",
+        )
+        .bind(change_set_id)
+        .fetch_one()
+        .await?;
     if !change_set_exists {
         return Err(AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()));
     }
-    Ok(sqlx::query_scalar(
-        r#"SELECT item.learning_offering_id
+    Ok(DbSession::new(connection)
+        .scalar(
+            "academic_delivery.services.offerings.operational_change_offering_ids_on_connection",
+            r#"SELECT item.learning_offering_id
            FROM academic_term_change_items item
            WHERE item.change_set_id = $1
              AND item.learning_offering_id IS NOT NULL
@@ -860,21 +1002,24 @@ pub async fn operational_change_offering_ids(
            JOIN learning_groups learning_group ON learning_group.id = item.learning_group_id
            WHERE item.change_set_id = $1
            ORDER BY 1"#,
-    )
-    .bind(change_set_id)
-    .fetch_all(pool)
-    .await?)
+        )
+        .bind(change_set_id)
+        .fetch_all()
+        .await?)
 }
 
-async fn hydrate(pool: &PgPool, row: LearningOfferingRow) -> Result<LearningOffering, AppError> {
-    hydrate_many(pool, vec![row])
+async fn hydrate(
+    connection: &mut sqlx::PgConnection,
+    row: LearningOfferingRow,
+) -> Result<LearningOffering, AppError> {
+    hydrate_many(connection, vec![row])
         .await?
         .pop()
         .ok_or_else(|| AppError::InternalServerError("ไม่สามารถโหลดรายการเปิดสอนได้".to_string()))
 }
 
 async fn hydrate_many(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     rows: Vec<LearningOfferingRow>,
 ) -> Result<Vec<LearningOffering>, AppError> {
     if rows.is_empty() {
@@ -882,15 +1027,17 @@ async fn hydrate_many(
     }
 
     let offering_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
-    let target_rows: Vec<TargetRow> = sqlx::query_as(
-        "SELECT learning_offering_id, id, target_kind, homeroom_id, grade_level_id, \
+    let target_rows: Vec<TargetRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.hydrate_many",
+            "SELECT learning_offering_id, id, target_kind, homeroom_id, grade_level_id, \
          study_program_id FROM learning_offering_targets \
          WHERE learning_offering_id = ANY($1) \
          ORDER BY learning_offering_id, target_kind, homeroom_id, grade_level_id, study_program_id",
-    )
-    .bind(&offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&offering_ids)
+        .fetch_all()
+        .await?;
     let mut targets_by_offering: HashMap<Uuid, Vec<LearningOfferingTarget>> = HashMap::new();
     for target in target_rows {
         targets_by_offering
@@ -899,8 +1046,10 @@ async fn hydrate_many(
             .push(target.into());
     }
 
-    let course_rows: Vec<CourseDetailRow> = sqlx::query_as(
-        "SELECT detail.learning_offering_id, detail.subject_version_id, detail.subject_id, \
+    let course_rows: Vec<CourseDetailRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.hydrate_many",
+            "SELECT detail.learning_offering_id, detail.subject_version_id, detail.subject_id, \
          detail.curriculum_course_requirement_id, detail.credit::text AS credit, \
          detail.hours::text AS hours, \
          version.periods_per_week AS standard_periods_per_week, \
@@ -908,24 +1057,26 @@ async fn hydrate_many(
          FROM course_offering_details detail \
          JOIN subject_versions version ON version.id = detail.subject_version_id \
          WHERE detail.learning_offering_id = ANY($1)",
-    )
-    .bind(&offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&offering_ids)
+        .fetch_all()
+        .await?;
     let mut courses_by_offering: HashMap<Uuid, CourseDetailRow> = course_rows
         .into_iter()
         .map(|detail| (detail.learning_offering_id, detail))
         .collect();
 
-    let activity_rows: Vec<ActivityDetailRow> = sqlx::query_as(
-        "SELECT learning_offering_id, activity_version_id, activity_id, \
+    let activity_rows: Vec<ActivityDetailRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.offerings.hydrate_many",
+            "SELECT learning_offering_id, activity_version_id, activity_id, \
          curriculum_activity_requirement_id, registration_type, scheduling_mode, \
          hours::text AS hours, capacity, attendance_requirement, pass_criteria \
          FROM activity_offering_details WHERE learning_offering_id = ANY($1)",
-    )
-    .bind(&offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&offering_ids)
+        .fetch_all()
+        .await?;
     let mut activities_by_offering: HashMap<Uuid, ActivityDetailRow> = activity_rows
         .into_iter()
         .map(|detail| (detail.learning_offering_id, detail))
@@ -1034,19 +1185,22 @@ pub(super) async fn insert_course(
     )?;
     required_standard_periods_per_week(source.standard_periods_per_week)?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
-        let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) = sqlx::query_as(
-            "SELECT requirement.subject_version_id, requirement.grade_level_id, \
+        let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) =
+            DbSession::new(&mut **transaction)
+                .query_as(
+                    "academic_delivery.services.offerings.insert_course",
+                    "SELECT requirement.subject_version_id, requirement.grade_level_id, \
                  requirement.study_program_id, slot.term_type, slot.type_occurrence, \
                  version.credit::text, version.hours_per_semester::text \
                  FROM published_curriculum_course_requirements requirement \
                  JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
                  JOIN subject_versions version ON version.id = requirement.subject_version_id \
                  WHERE requirement.id = $1",
-        )
-        .bind(requirement_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดรายวิชา".to_string()))?;
+                )
+                .bind(requirement_id)
+                .fetch_optional()
+                .await?
+                .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดรายวิชา".to_string()))?;
         validate_requirement_target(
             source.subject_version_id,
             requirement.0,
@@ -1061,50 +1215,54 @@ pub(super) async fn insert_course(
     } else {
         (source.credit.clone(), source.hours.clone())
     };
-    sqlx::query(
-        r#"INSERT INTO learning_offerings (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.offerings.insert_course",
+            r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
                status, owning_organization_unit_id
            ) VALUES ($1, $2, $3, 'course', $4, $5, $6, $7, 'draft', $8)"#,
-    )
-    .bind(id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(source.code)
-    .bind(source.name)
-    .bind(
-        request
-            .curriculum_course_requirement_id
-            .map(|_| "curriculum_course_requirement"),
-    )
-    .bind(request.curriculum_course_requirement_id)
-    .bind(source.owning_organization_unit_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO course_offering_details (
+        )
+        .bind(id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(source.code)
+        .bind(source.name)
+        .bind(
+            request
+                .curriculum_course_requirement_id
+                .map(|_| "curriculum_course_requirement"),
+        )
+        .bind(request.curriculum_course_requirement_id)
+        .bind(source.owning_organization_unit_id)
+        .execute()
+        .await?;
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.offerings.insert_course",
+            r#"INSERT INTO course_offering_details (
                learning_offering_id, academic_term_id, academic_year_id,
                subject_version_id, subject_id, curriculum_course_requirement_id,
                credit, hours, assessment_total_score
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
-    )
-    .bind(id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(source.subject_version_id)
-    .bind(source.subject_id)
-    .bind(request.curriculum_course_requirement_id)
-    .bind(validate_canonical_decimal(&credit, 2)?)
-    .bind(
-        hours
-            .as_deref()
-            .map(|value| validate_canonical_decimal(value, 2))
-            .transpose()?,
-    )
-    .bind(total_score)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(source.subject_version_id)
+        .bind(source.subject_id)
+        .bind(request.curriculum_course_requirement_id)
+        .bind(validate_canonical_decimal(&credit, 2)?)
+        .bind(
+            hours
+                .as_deref()
+                .map(|value| validate_canonical_decimal(value, 2))
+                .transpose()?,
+        )
+        .bind(total_score)
+        .execute()
+        .await?;
     insert_targets(transaction, id, term, &request.targets).await
 }
 
@@ -1133,19 +1291,22 @@ pub(super) async fn insert_activity(
     }
     let create_homeroom_groups = request.create_homeroom_groups;
     let hours = if let Some(requirement_id) = request.curriculum_activity_requirement_id {
-        let requirement: (Uuid, Uuid, Uuid, String, i32, String) = sqlx::query_as(
-            "SELECT requirement.activity_version_id, requirement.grade_level_id, \
+        let requirement: (Uuid, Uuid, Uuid, String, i32, String) =
+            DbSession::new(&mut **transaction)
+                .query_as(
+                    "academic_delivery.services.offerings.insert_activity",
+                    "SELECT requirement.activity_version_id, requirement.grade_level_id, \
              requirement.study_program_id, slot.term_type, slot.type_occurrence, \
              version.hours_per_week::text \
              FROM published_curriculum_activity_requirements requirement \
              JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
              JOIN activity_versions version ON version.id = requirement.activity_version_id \
              WHERE requirement.id = $1",
-        )
-        .bind(requirement_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดกิจกรรม".to_string()))?;
+                )
+                .bind(requirement_id)
+                .fetch_optional()
+                .await?
+                .ok_or_else(|| AppError::ValidationError("ไม่พบข้อกำหนดกิจกรรม".to_string()))?;
         validate_requirement_target(
             source.activity_version_id,
             requirement.0,
@@ -1160,49 +1321,53 @@ pub(super) async fn insert_activity(
     } else {
         source.hours.clone()
     };
-    sqlx::query(
-        r#"INSERT INTO learning_offerings (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.offerings.insert_activity",
+            r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
                status, owning_organization_unit_id
            ) VALUES ($1, $2, $3, 'activity', $4, $5, $6, $7, 'draft', $8)"#,
-    )
-    .bind(id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(source.code)
-    .bind(source.name)
-    .bind(
-        request
-            .curriculum_activity_requirement_id
-            .map(|_| "curriculum_activity_requirement"),
-    )
-    .bind(request.curriculum_activity_requirement_id)
-    .bind(source.owning_organization_unit_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO activity_offering_details (
+        )
+        .bind(id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(source.code)
+        .bind(source.name)
+        .bind(
+            request
+                .curriculum_activity_requirement_id
+                .map(|_| "curriculum_activity_requirement"),
+        )
+        .bind(request.curriculum_activity_requirement_id)
+        .bind(source.owning_organization_unit_id)
+        .execute()
+        .await?;
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.offerings.insert_activity",
+            r#"INSERT INTO activity_offering_details (
                learning_offering_id, academic_term_id, academic_year_id,
                activity_version_id, activity_id, curriculum_activity_requirement_id,
                registration_type, scheduling_mode, hours, capacity,
                attendance_requirement, pass_criteria
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"#,
-    )
-    .bind(id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(source.activity_version_id)
-    .bind(source.activity_id)
-    .bind(request.curriculum_activity_requirement_id)
-    .bind(request.registration_type)
-    .bind(request.scheduling_mode)
-    .bind(validate_canonical_decimal(&hours, 2)?)
-    .bind(request.capacity)
-    .bind(sqlx::types::Json(request.attendance_requirement))
-    .bind(sqlx::types::Json(request.pass_criteria))
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(source.activity_version_id)
+        .bind(source.activity_id)
+        .bind(request.curriculum_activity_requirement_id)
+        .bind(request.registration_type)
+        .bind(request.scheduling_mode)
+        .bind(validate_canonical_decimal(&hours, 2)?)
+        .bind(request.capacity)
+        .bind(sqlx::types::Json(request.attendance_requirement))
+        .bind(sqlx::types::Json(request.pass_criteria))
+        .execute()
+        .await?;
     insert_targets(transaction, id, term, &request.targets).await?;
     if create_homeroom_groups {
         super::groups::create_target_homeroom_groups(
@@ -1220,8 +1385,10 @@ async fn course_version_source(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
 ) -> Result<CourseVersionSource, AppError> {
-    sqlx::query_as(
-        r#"SELECT version.id AS subject_version_id, version.subject_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.course_version_source",
+            r#"SELECT version.id AS subject_version_id, version.subject_id,
                   version.code, version.name_th AS name, version.credit::text AS credit,
                   version.hours_per_semester::text AS hours,
                   version.periods_per_week AS standard_periods_per_week,
@@ -1231,11 +1398,11 @@ async fn course_version_source(
            FROM subject_versions version
            JOIN subjects subject ON subject.id = version.subject_id
            WHERE version.id = $1"#,
-    )
-    .bind(version_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันรายวิชา".to_string()))
+        )
+        .bind(version_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันรายวิชา".to_string()))
 }
 
 fn required_standard_periods_per_week(value: Option<i32>) -> Result<i32, AppError> {
@@ -1248,8 +1415,10 @@ async fn activity_version_source(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
 ) -> Result<ActivityVersionSource, AppError> {
-    sqlx::query_as(
-        r#"SELECT version.id AS activity_version_id, version.activity_id,
+    DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.activity_version_source",
+            r#"SELECT version.id AS activity_version_id, version.activity_id,
                   stable.code, version.name, version.hours_per_week::text AS hours,
                   version.scheduling_mode, stable.owning_organization_unit_id,
                   version.effective_from,
@@ -1257,11 +1426,11 @@ async fn activity_version_source(
            FROM activity_versions version
            JOIN activities stable ON stable.id = version.activity_id
            WHERE version.id = $1"#,
-    )
-    .bind(version_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันกิจกรรม".to_string()))
+        )
+        .bind(version_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::ValidationError("ไม่พบเวอร์ชันกิจกรรม".to_string()))
 }
 
 async fn catalog_version_owner(
@@ -1360,17 +1529,19 @@ pub(super) async fn validate_targets(
                 let homeroom_id = target.homeroom_id.ok_or_else(|| {
                     AppError::ValidationError("เป้าหมาย homeroom ต้องระบุห้องเรียน".to_string())
                 })?;
-                let valid: bool = sqlx::query_scalar(
-                    "SELECT EXISTS (SELECT 1 FROM homerooms WHERE id = $1 \
+                let valid: bool = DbSession::new(&mut **transaction)
+                    .scalar(
+                        "academic_delivery.services.offerings.validate_targets",
+                        "SELECT EXISTS (SELECT 1 FROM homerooms WHERE id = $1 \
                      AND academic_year_id = $2 AND grade_level_id = $3 \
                      AND study_program_id = $4)",
-                )
-                .bind(homeroom_id)
-                .bind(term.academic_year_id)
-                .bind(target.grade_level_id)
-                .bind(target.study_program_id)
-                .fetch_one(&mut **transaction)
-                .await?;
+                    )
+                    .bind(homeroom_id)
+                    .bind(term.academic_year_id)
+                    .bind(target.grade_level_id)
+                    .bind(target.study_program_id)
+                    .fetch_one()
+                    .await?;
                 if !valid {
                     return Err(AppError::ValidationError(
                         "ห้องเรียนเป้าหมายไม่ตรงปี ระดับชั้น หรือแผนการเรียน".to_string(),
@@ -1383,7 +1554,7 @@ pub(super) async fn validate_targets(
                         "เป้าหมาย grade_program ต้องไม่ระบุ homeroomId".to_string(),
                     ));
                 }
-                let valid: bool = sqlx::query_scalar(
+                let valid: bool = DbSession::new(&mut **transaction).scalar("academic_delivery.services.offerings.validate_targets",
                     "SELECT EXISTS (
                          SELECT 1 FROM published_study_programs program
                          JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
@@ -1395,7 +1566,7 @@ pub(super) async fn validate_targets(
                 )
                 .bind(target.study_program_id)
                 .bind(target.grade_level_id)
-                .fetch_one(&mut **transaction)
+                .fetch_one()
                 .await?;
                 if !valid {
                     return Err(AppError::ValidationError(
@@ -1415,22 +1586,24 @@ async fn insert_targets(
     targets: &[OfferingTargetInput],
 ) -> Result<(), AppError> {
     for target in targets {
-        sqlx::query(
-            r#"INSERT INTO learning_offering_targets (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.offerings.insert_targets",
+                r#"INSERT INTO learning_offering_targets (
                    id, learning_offering_id, academic_term_id, academic_year_id,
                    target_kind, homeroom_id, grade_level_id, study_program_id
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-        )
-        .bind(Uuid::now_v7())
-        .bind(offering_id)
-        .bind(term.id)
-        .bind(term.academic_year_id)
-        .bind(target.target_kind)
-        .bind(target.homeroom_id)
-        .bind(target.grade_level_id)
-        .bind(target.study_program_id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(Uuid::now_v7())
+            .bind(offering_id)
+            .bind(term.id)
+            .bind(term.academic_year_id)
+            .bind(target.target_kind)
+            .bind(target.homeroom_id)
+            .bind(target.grade_level_id)
+            .bind(target.study_program_id)
+            .execute()
+            .await?;
     }
     Ok(())
 }
@@ -1469,24 +1642,31 @@ async fn validate_publishable(
     kind: LearningOfferingKind,
     term: &TermContext,
 ) -> Result<(), AppError> {
-    let target_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM learning_offering_targets WHERE learning_offering_id = $1",
-    )
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    let group_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1")
-            .bind(offering_id)
-            .fetch_one(&mut **transaction)
-            .await?;
+    let target_count: i64 = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.validate_publishable",
+            "SELECT count(*) FROM learning_offering_targets WHERE learning_offering_id = $1",
+        )
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
+    let group_count: i64 = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.validate_publishable",
+            "SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1",
+        )
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
     if target_count == 0 || group_count == 0 {
         return Err(AppError::ValidationError(
             "ต้องมีเป้าหมายและกลุ่มเรียนอย่างน้อยหนึ่งรายการก่อนเผยแพร่".to_string(),
         ));
     }
-    let groups_without_primary_teacher: i64 = sqlx::query_scalar(
-        r#"SELECT count(*)
+    let groups_without_primary_teacher: i64 = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.validate_publishable",
+            r#"SELECT count(*)
            FROM learning_groups learning_group
            WHERE learning_group.learning_offering_id = $1
              AND NOT EXISTS (
@@ -1498,10 +1678,10 @@ async fn validate_publishable(
                    AND teacher.user_type = 'staff'
                    AND teacher.status = 'active'
              )"#,
-    )
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(offering_id)
+        .fetch_one()
+        .await?;
     if groups_without_primary_teacher != 0 {
         return Err(AppError::ValidationError(
             "ทุกกลุ่มเรียนต้องมีครูหลักที่ใช้งานอยู่ก่อนเผยแพร่".to_string(),
@@ -1510,28 +1690,32 @@ async fn validate_publishable(
     match kind {
         LearningOfferingKind::Course => {
             let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
-                sqlx::query_as(
-                    "SELECT version.status, version.effective_from, version.effective_until \
+                DbSession::new(&mut **transaction)
+                    .query_as(
+                        "academic_delivery.services.offerings.validate_publishable",
+                        "SELECT version.status, version.effective_from, version.effective_until \
                      FROM course_offering_details detail \
                      JOIN subject_versions version ON version.id = detail.subject_version_id \
                      WHERE detail.learning_offering_id = $1",
-                )
-                .bind(offering_id)
-                .fetch_one(&mut **transaction)
-                .await?;
+                    )
+                    .bind(offering_id)
+                    .fetch_one()
+                    .await?;
             validate_version_for_term(&status, from, until, term)?;
         }
         LearningOfferingKind::Activity => {
             let (status, from, until): (String, chrono::NaiveDate, Option<chrono::NaiveDate>) =
-                sqlx::query_as(
-                    "SELECT version.status, version.effective_from, version.effective_until \
+                DbSession::new(&mut **transaction)
+                    .query_as(
+                        "academic_delivery.services.offerings.validate_publishable",
+                        "SELECT version.status, version.effective_from, version.effective_until \
                      FROM activity_offering_details detail \
                      JOIN activity_versions version ON version.id = detail.activity_version_id \
                      WHERE detail.learning_offering_id = $1",
-                )
-                .bind(offering_id)
-                .fetch_one(&mut **transaction)
-                .await?;
+                    )
+                    .bind(offering_id)
+                    .fetch_one()
+                    .await?;
             validate_version_for_term(&status, from, until, term)?;
         }
     }
@@ -1678,17 +1862,17 @@ async fn build_curriculum_preview_for_term(
     // Lock stable owners before resolving their pointers. Joining publication rows
     // in the locking statement could otherwise retain an older statement snapshot
     // while waiting for a concurrent whole-edition publication.
-    sqlx::query("SELECT e.id FROM curriculum_editions e WHERE e.id IN(
+    DbSession::new(&mut **transaction).query("academic_delivery.services.offerings.build_curriculum_preview_for_term", "SELECT e.id FROM curriculum_editions e WHERE e.id IN(
         SELECT l.edition_id FROM study_programs program JOIN curriculum_levels l ON l.id=program.curriculum_level_id
         WHERE program.id=ANY($1)) ORDER BY e.id FOR SHARE OF e")
-        .bind(program_ids).fetch_all(&mut **transaction).await?;
-    let curriculum_sources: Vec<crate::models::CurriculumPublicationSource> = sqlx::query_as(
+        .bind(program_ids).fetch_all().await?;
+    let curriculum_sources: Vec<crate::models::CurriculumPublicationSource> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.offerings.build_curriculum_preview_for_term",
         "SELECT e.id AS edition_id,p.id AS publication_id,p.publication_no,p.revision_year,p.name AS edition_name
          FROM curriculum_editions e JOIN curriculum_publications p ON p.id=e.current_publication_id
          WHERE e.id IN(SELECT l.edition_id FROM published_study_programs program
            JOIN published_curriculum_levels l ON l.id=program.curriculum_level_id WHERE program.id=ANY($1))
          ORDER BY e.id")
-        .bind(program_ids).fetch_all(&mut **transaction).await?;
+        .bind(program_ids).fetch_all().await?;
     let valid_program_query = format!(
         "SELECT program.id FROM published_study_programs program \
          JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id \
@@ -1697,16 +1881,20 @@ async fn build_curriculum_preview_for_term(
            AND curriculum.status='published' AND curriculum.is_active AND version.is_active{}",
         if lock_rows { " FOR SHARE" } else { "" }
     );
-    let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(valid_program_query))
+    let valid_program_ids: Vec<Uuid> = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.offerings.build_curriculum_preview_for_term",
+            sqlx::AssertSqlSafe(valid_program_query),
+        )
         .bind(program_ids)
-        .fetch_all(&mut **transaction)
+        .fetch_all()
         .await?;
     if valid_program_ids.len() != program_ids.len() {
         return Err(AppError::ValidationError(
             "แผนการเรียนต้องเผยแพร่และอยู่ในหลักสูตรที่เผยแพร่แล้ว".to_string(),
         ));
     }
-    let rows: Vec<PreviewRequirementRow> = sqlx::query_as(
+    let rows: Vec<PreviewRequirementRow> = DbSession::new(&mut **transaction).query_as("academic_delivery.services.offerings.build_curriculum_preview_for_term",
         r#"SELECT 'course'::text AS resource_kind, NULL::text AS scheduling_mode,
                   requirement.subject_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
@@ -1742,20 +1930,22 @@ async fn build_curriculum_preview_for_term(
     .bind(program_ids)
     .bind(&term.term_type)
     .bind(term.type_occurrence)
-    .fetch_all(&mut **transaction)
+    .fetch_all()
     .await?;
-    let homerooms: Vec<PreviewHomeroomRow> = sqlx::query_as(
-        r#"SELECT id, name, grade_level_id, study_program_id
+    let homerooms: Vec<PreviewHomeroomRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.build_curriculum_preview_for_term",
+            r#"SELECT id, name, grade_level_id, study_program_id
            FROM homerooms
            WHERE academic_year_id = $1
              AND study_program_id = ANY($2)
              AND is_active
            ORDER BY grade_level_id, study_program_id, name, id"#,
-    )
-    .bind(term.academic_year_id)
-    .bind(program_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(term.academic_year_id)
+        .bind(program_ids)
+        .fetch_all()
+        .await?;
     let mut homerooms_by_program_grade: HashMap<(Uuid, Uuid), Vec<&PreviewHomeroomRow>> =
         HashMap::new();
     for homeroom in &homerooms {
@@ -1960,8 +2150,10 @@ async fn load_existing_preview_offerings(
         .filter(|row| row.resource_kind == LearningOfferingKind::Activity)
         .map(|row| row.catalog_version_id)
         .collect();
-    let rows: Vec<ExistingPreviewOfferingRow> = sqlx::query_as(
-        r#"SELECT 'course'::text AS resource_kind,
+    let rows: Vec<ExistingPreviewOfferingRow> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.load_existing_preview_offerings",
+            r#"SELECT 'course'::text AS resource_kind,
                   detail.subject_version_id AS catalog_version_id,
                   offering.id AS offering_id
            FROM learning_offerings offering
@@ -1979,12 +2171,12 @@ async fn load_existing_preview_offerings(
            WHERE offering.academic_term_id = $1
              AND detail.activity_version_id = ANY($3)
            ORDER BY resource_kind, catalog_version_id, offering_id"#,
-    )
-    .bind(academic_term_id)
-    .bind(&course_version_ids)
-    .bind(&activity_version_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(academic_term_id)
+        .bind(&course_version_ids)
+        .bind(&activity_version_ids)
+        .fetch_all()
+        .await?;
     let mut existing = HashMap::new();
     for row in rows {
         existing
@@ -2001,8 +2193,10 @@ async fn load_existing_preparation_groups(
     if offering_ids.is_empty() {
         return Ok(Vec::new());
     }
-    Ok(sqlx::query_as(
-        r#"SELECT learning_group.id,
+    Ok(DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.load_existing_preparation_groups",
+            r#"SELECT learning_group.id,
                   learning_group.learning_offering_id,
                   learning_group.name,
                   learning_group.generation_source,
@@ -2018,10 +2212,10 @@ async fn load_existing_preparation_groups(
            WHERE learning_group.learning_offering_id = ANY($1)
            GROUP BY learning_group.id
            ORDER BY learning_group.learning_offering_id, learning_group.id"#,
-    )
-    .bind(offering_ids)
-    .fetch_all(&mut **transaction)
-    .await?)
+        )
+        .bind(offering_ids)
+        .fetch_all()
+        .await?)
 }
 
 async fn insert_generated_offering(
@@ -2037,27 +2231,29 @@ async fn insert_generated_offering(
     .await?;
     require_active_owner(transaction, owner_id).await?;
     let id = prepared_offering_id(term.id, proposal.resource_kind, proposal.catalog_version_id);
-    sqlx::query(
-        r#"INSERT INTO learning_offerings (
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.offerings.insert_generated_offering",
+            r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
                status, owning_organization_unit_id
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9)"#,
-    )
-    .bind(id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(proposal.resource_kind)
-    .bind(&proposal.code)
-    .bind(&proposal.name)
-    .bind(match proposal.resource_kind {
-        LearningOfferingKind::Course => "curriculum_course_requirement",
-        LearningOfferingKind::Activity => "curriculum_activity_requirement",
-    })
-    .bind(proposal.requirement_ids.first().copied())
-    .bind(owner_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(id)
+        .bind(term.id)
+        .bind(term.academic_year_id)
+        .bind(proposal.resource_kind)
+        .bind(&proposal.code)
+        .bind(&proposal.name)
+        .bind(match proposal.resource_kind {
+            LearningOfferingKind::Course => "curriculum_course_requirement",
+            LearningOfferingKind::Activity => "curriculum_activity_requirement",
+        })
+        .bind(proposal.requirement_ids.first().copied())
+        .bind(owner_id)
+        .execute()
+        .await?;
     match proposal.resource_kind {
         LearningOfferingKind::Course => {
             let source = course_version_source(transaction, proposal.catalog_version_id).await?;
@@ -2068,32 +2264,34 @@ async fn insert_generated_offering(
                 term,
             )?;
             required_standard_periods_per_week(source.standard_periods_per_week)?;
-            sqlx::query(
-                r#"INSERT INTO course_offering_details (
+            DbSession::new(&mut **transaction)
+                .query(
+                    "academic_delivery.services.offerings.insert_generated_offering",
+                    r#"INSERT INTO course_offering_details (
                        learning_offering_id, academic_term_id, academic_year_id,
                        subject_version_id, subject_id, curriculum_course_requirement_id,
                        credit, hours
                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-            )
-            .bind(id)
-            .bind(term.id)
-            .bind(term.academic_year_id)
-            .bind(source.subject_version_id)
-            .bind(source.subject_id)
-            .bind(proposal.requirement_ids.first().copied())
-            .bind(validate_canonical_decimal(
-                proposal.credit.as_deref().unwrap_or(&source.credit),
-                2,
-            )?)
-            .bind(
-                proposal
-                    .hours
-                    .as_deref()
-                    .map(|value| validate_canonical_decimal(value, 2))
-                    .transpose()?,
-            )
-            .execute(&mut **transaction)
-            .await?;
+                )
+                .bind(id)
+                .bind(term.id)
+                .bind(term.academic_year_id)
+                .bind(source.subject_version_id)
+                .bind(source.subject_id)
+                .bind(proposal.requirement_ids.first().copied())
+                .bind(validate_canonical_decimal(
+                    proposal.credit.as_deref().unwrap_or(&source.credit),
+                    2,
+                )?)
+                .bind(
+                    proposal
+                        .hours
+                        .as_deref()
+                        .map(|value| validate_canonical_decimal(value, 2))
+                        .transpose()?,
+                )
+                .execute()
+                .await?;
         }
         LearningOfferingKind::Activity => {
             let source = activity_version_source(transaction, proposal.catalog_version_id).await?;
@@ -2103,8 +2301,10 @@ async fn insert_generated_offering(
                 source.effective_until,
                 term,
             )?;
-            sqlx::query(
-                r#"INSERT INTO activity_offering_details (
+            DbSession::new(&mut **transaction)
+                .query(
+                    "academic_delivery.services.offerings.insert_generated_offering",
+                    r#"INSERT INTO activity_offering_details (
                        learning_offering_id, academic_term_id, academic_year_id,
                        activity_version_id, activity_id, curriculum_activity_requirement_id,
                        registration_type, scheduling_mode, hours,
@@ -2113,20 +2313,20 @@ async fn insert_generated_offering(
                              '{"minimumPercent":null,"requiredSessions":null}'::jsonb,
                              '{"requireAttendance":false,"requireTeacherConfirmation":true,
                                "outcomes":["pass","fail"]}'::jsonb)"#,
-            )
-            .bind(id)
-            .bind(term.id)
-            .bind(term.academic_year_id)
-            .bind(source.activity_version_id)
-            .bind(source.activity_id)
-            .bind(proposal.requirement_ids.first().copied())
-            .bind(source.scheduling_mode)
-            .bind(validate_canonical_decimal(
-                proposal.hours.as_deref().unwrap_or(&source.hours),
-                2,
-            )?)
-            .execute(&mut **transaction)
-            .await?;
+                )
+                .bind(id)
+                .bind(term.id)
+                .bind(term.academic_year_id)
+                .bind(source.activity_version_id)
+                .bind(source.activity_id)
+                .bind(proposal.requirement_ids.first().copied())
+                .bind(source.scheduling_mode)
+                .bind(validate_canonical_decimal(
+                    proposal.hours.as_deref().unwrap_or(&source.hours),
+                    2,
+                )?)
+                .execute()
+                .await?;
         }
     }
     Ok(id)
@@ -2139,8 +2339,10 @@ async fn insert_homeroom_targets(
     proposal: &CurriculumPreparationProposal,
 ) -> Result<(), AppError> {
     for homeroom_id in &proposal.target_homeroom_ids {
-        sqlx::query(
-            r#"INSERT INTO learning_offering_targets (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_delivery.services.offerings.insert_homeroom_targets",
+                r#"INSERT INTO learning_offering_targets (
                    id, learning_offering_id, academic_term_id, academic_year_id,
                    target_kind, homeroom_id, grade_level_id, study_program_id
                )
@@ -2150,17 +2352,17 @@ async fn insert_homeroom_targets(
                WHERE homeroom.id = $5
                  AND homeroom.academic_year_id = $4
                ON CONFLICT ON CONSTRAINT learning_offering_targets_unique_key DO NOTHING"#,
-        )
-        .bind(Uuid::new_v5(
-            &DELIVERY_NAMESPACE,
-            format!("target:{offering_id}:{homeroom_id}").as_bytes(),
-        ))
-        .bind(offering_id)
-        .bind(term.id)
-        .bind(term.academic_year_id)
-        .bind(homeroom_id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(Uuid::new_v5(
+                &DELIVERY_NAMESPACE,
+                format!("target:{offering_id}:{homeroom_id}").as_bytes(),
+            ))
+            .bind(offering_id)
+            .bind(term.id)
+            .bind(term.academic_year_id)
+            .bind(homeroom_id)
+            .execute()
+            .await?;
     }
     Ok(())
 }
@@ -2236,17 +2438,19 @@ async fn record_curriculum_sources(
     requirement_ids: &[Uuid],
     publication_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "INSERT INTO learning_offering_curriculum_sources(learning_offering_id,publication_id)
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_delivery.services.offerings.record_curriculum_sources",
+            "INSERT INTO learning_offering_curriculum_sources(learning_offering_id,publication_id)
         SELECT DISTINCT $1,publication_id FROM (
           SELECT id,publication_id FROM curriculum_publication_courses UNION ALL
           SELECT id,publication_id FROM curriculum_publication_activities
         ) source WHERE id=ANY($2) AND publication_id=ANY($3) ON CONFLICT DO NOTHING",
-    )
-    .bind(offering_id)
-    .bind(requirement_ids)
-    .bind(publication_ids)
-    .execute(&mut **tx)
-    .await?;
+        )
+        .bind(offering_id)
+        .bind(requirement_ids)
+        .bind(publication_ids)
+        .execute()
+        .await?;
     Ok(())
 }

@@ -31,8 +31,10 @@ pub async fn promote_ready_owned_image(
     file_id: Uuid,
     owner_user_id: Uuid,
 ) -> Result<(), ProfileRelationshipError> {
-    let valid = sqlx::query_scalar::<_, bool>(
-        r#"
+    let valid = school_database::DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "file-platform.src.profile_relationships.promote_ready_owned_image",
+            r#"
 SELECT EXISTS(
     SELECT 1
     FROM files
@@ -43,23 +45,25 @@ SELECT EXISTS(
       AND deleted_at IS NULL
 )
 "#,
-    )
-    .bind(file_id)
-    .bind(owner_user_id)
-    .fetch_one(&mut *connection)
-    .await?;
+        )
+        .bind(file_id)
+        .bind(owner_user_id)
+        .fetch_one()
+        .await?;
     if !valid {
         return Err(ProfileRelationshipError::InvalidFile);
     }
 
-    sqlx::query(
-        "UPDATE files
+    school_database::DbSession::new(&mut *connection)
+        .query(
+            "file-platform.src.profile_relationships.promote_ready_owned_image",
+            "UPDATE files
          SET retention_class = 'standard', expires_at = NULL, updated_at = NOW()
          WHERE id = $1",
-    )
-    .bind(file_id)
-    .execute(&mut *connection)
-    .await?;
+        )
+        .bind(file_id)
+        .execute()
+        .await?;
     Ok(())
 }
 

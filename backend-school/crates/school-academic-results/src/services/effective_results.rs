@@ -235,7 +235,11 @@ pub async fn search_effective_results(
         academic_year_id: query.academic_year_id,
         academic_term_id: query.academic_term_id,
     };
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_results.services.effective_results.search_effective_results",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_results.services.effective_results.search_effective_results",

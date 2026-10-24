@@ -448,7 +448,11 @@ pub async fn create_subject_version(
 ) -> Result<SubjectVersion, AppError> {
     validate_subject_version(&request)?;
     let credit = validate_canonical_decimal(&request.credit, 2)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_subject_version",
+    )
+    .await?;
     let (subject_code,): (String,) = DbSession::new(&mut *transaction)
         .query_as(
             "academic_core.services.catalog.create_subject_version",
@@ -529,7 +533,11 @@ pub async fn update_subject_version(
     parse_row_version(row_version)?;
     validate_subject_version(&values)?;
     let credit = validate_canonical_decimal(&values.credit, 2)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.update_subject_version",
+    )
+    .await?;
     let subject_id = lock_subject_for_version(&mut transaction, id).await?;
     let status: super::super::models::VersionStatus = DbSession::new(&mut *transaction)
         .scalar(
@@ -587,7 +595,11 @@ pub async fn publish_subject_version(
     request: PublishVersionRequest,
 ) -> Result<SubjectVersion, AppError> {
     parse_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.publish_subject_version",
+    )
+    .await?;
     let subject_id = lock_subject_for_version(&mut transaction, id).await?;
     let version: SubjectVersion = DbSession::new(&mut *transaction)
         .query_as(
@@ -972,7 +984,11 @@ pub async fn create_activity_version(
         .map(|value| validate_canonical_decimal(value, 2))
         .transpose()?;
     let grade_level_ids = sqlx::types::Json(request.grade_level_ids.clone());
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_activity_version",
+    )
+    .await?;
     let version_no: i32 = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.catalog.create_activity_version",
@@ -1270,7 +1286,11 @@ pub async fn create_subject_group(
     if request.display_order.is_some_and(|order| order < 0) {
         return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.create_subject_group",
+    )
+    .await?;
     let code: String = DbSession::new(&mut *tx)
         .scalar(
             "academic_core.services.catalog.create_subject_group",
@@ -1308,7 +1328,11 @@ pub async fn update_subject_group(
     if request.display_order < 0 {
         return Err(AppError::ValidationError("ลำดับต้องไม่ติดลบ".to_string()));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.update_subject_group",
+    )
+    .await?;
     let updated = DbSession::new(&mut *tx)
         .query(
             "academic_core.services.catalog.update_subject_group",
@@ -1961,7 +1985,11 @@ async fn replace_default_teachers(
     {
         return Err(AppError::ValidationError("รายชื่อครูเริ่มต้นซ้ำกัน".to_string()));
     }
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.catalog.replace_default_teachers",
+    )
+    .await?;
     let lock_sql = format!("SELECT row_version FROM {stable_table} WHERE id = $1 FOR UPDATE");
     let actual: i64 = DbSession::new(&mut *transaction)
         .scalar(

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -20,8 +21,23 @@ pub async fn list_registration_options(
     student_id: Uuid,
     query: StudentActivityRegistrationQuery,
 ) -> Result<Vec<StudentActivityOfferingOption>, AppError> {
-    let rows: Vec<StudentActivityRegistrationRow> = sqlx::query_as(
-        r#"WITH student_context AS (
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_delivery.services.activities.list_registration_options",
+    )
+    .await?;
+    list_registration_options_on_connection(&mut connection, student_id, query).await
+}
+
+pub async fn list_registration_options_on_connection(
+    connection: &mut sqlx::PgConnection,
+    student_id: Uuid,
+    query: StudentActivityRegistrationQuery,
+) -> Result<Vec<StudentActivityOfferingOption>, AppError> {
+    let rows: Vec<StudentActivityRegistrationRow> = DbSession::new(connection)
+        .query_as(
+            "academic_delivery.services.activities.list_registration_options_on_connection",
+            r#"WITH student_context AS (
                SELECT student_year.id AS student_academic_year_id,
                       student_year.grade_level_id,
                       student_year.study_program_id,
@@ -141,11 +157,11 @@ pub async fn list_registration_options(
                  )
              )
            ORDER BY offering.code_snapshot, offering.id, learning_group.code, learning_group.id"#,
-    )
-    .bind(query.academic_term_id)
-    .bind(student_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(query.academic_term_id)
+        .bind(student_id)
+        .fetch_all()
+        .await?;
 
     let mut offerings = Vec::<StudentActivityOfferingOption>::new();
     let mut offering_indexes = HashMap::<Uuid, usize>::new();
@@ -193,13 +209,19 @@ pub async fn enroll(
     group_id: Uuid,
     query: StudentActivityRegistrationQuery,
 ) -> Result<StudentActivityRegistrationResult, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.activities.enroll",
+    )
+    .await?;
     let (context, term) = lock_registration_context(&mut transaction, group_id).await?;
     require_registration_window(&context, &query)?;
     let learner = require_eligible_student(&mut transaction, student_id, &context, &term).await?;
 
-    let existing: Option<(Uuid, Uuid)> = sqlx::query_as(
-        r#"SELECT member.learning_group_id, member.student_academic_year_id
+    let existing: Option<(Uuid, Uuid)> = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.activities.enroll",
+            r#"SELECT member.learning_group_id, member.student_academic_year_id
            FROM learning_group_students member
            JOIN learning_groups sibling ON sibling.id = member.learning_group_id
            WHERE sibling.learning_offering_id = $1
@@ -208,11 +230,11 @@ pub async fn enroll(
            ORDER BY member.created_at, member.id
            LIMIT 1
            FOR UPDATE OF member"#,
-    )
-    .bind(context.learning_offering_id)
-    .bind(student_id)
-    .fetch_optional(&mut *transaction)
-    .await?;
+        )
+        .bind(context.learning_offering_id)
+        .bind(student_id)
+        .fetch_optional()
+        .await?;
     if let Some((existing_group_id, student_academic_year_id)) = existing {
         if existing_group_id == group_id {
             transaction.commit().await?;
@@ -230,13 +252,15 @@ pub async fn enroll(
     }
 
     if let Some(capacity) = context.effective_capacity() {
-        let member_count: i64 = sqlx::query_scalar(
-            "SELECT count(*)::bigint FROM learning_group_students \
+        let member_count: i64 = DbSession::new(&mut *transaction)
+            .scalar(
+                "academic_delivery.services.activities.enroll",
+                "SELECT count(*)::bigint FROM learning_group_students \
              WHERE learning_group_id = $1 AND membership_status = 'active'",
-        )
-        .bind(group_id)
-        .fetch_one(&mut *transaction)
-        .await?;
+            )
+            .bind(group_id)
+            .fetch_one()
+            .await?;
         if member_count >= i64::from(capacity) {
             return Err(AppError::Conflict("กลุ่มกิจกรรมนี้เต็มแล้ว".to_string()));
         }
@@ -244,27 +268,34 @@ pub async fn enroll(
 
     let membership_id = Uuid::now_v7();
     let joined_at = registration_date(&term);
-    sqlx::query(
-        r#"INSERT INTO learning_group_students (
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.activities.enroll",
+            r#"INSERT INTO learning_group_students (
                id, learning_group_id, academic_term_id, academic_year_id,
                student_academic_year_id, student_id, membership_status,
                roster_source, joined_at
            ) VALUES ($1, $2, $3, $4, $5, $6, 'active', 'self_registration', $7)"#,
-    )
-    .bind(membership_id)
-    .bind(group_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(learner.student_academic_year_id)
-    .bind(student_id)
-    .bind(joined_at)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(membership_id)
+        .bind(group_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(learner.student_academic_year_id)
+        .bind(student_id)
+        .bind(joined_at)
+        .execute()
+        .await?;
     let revision = increment_group_revision(&mut transaction, group_id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.activities.enroll.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "activity.self_registered",
         "learning_group",
         group_id,
@@ -293,40 +324,53 @@ pub async fn unenroll(
     group_id: Uuid,
     query: StudentActivityRegistrationQuery,
 ) -> Result<StudentActivityRegistrationResult, AppError> {
-    let mut transaction = pool.begin().await?;
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.services.activities.unenroll",
+    )
+    .await?;
     let (context, term) = lock_registration_context(&mut transaction, group_id).await?;
     require_registration_window(&context, &query)?;
-    let membership: (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT id, student_academic_year_id
+    let membership: (Uuid, Uuid) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.activities.unenroll",
+            r#"SELECT id, student_academic_year_id
            FROM learning_group_students
            WHERE learning_group_id = $1
              AND student_id = $2
              AND membership_status = 'active'
            FOR UPDATE"#,
-    )
-    .bind(group_id)
-    .bind(student_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบการลงทะเบียนกิจกรรมที่ต้องการยกเลิก".to_string()))?;
+        )
+        .bind(group_id)
+        .bind(student_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบการลงทะเบียนกิจกรรมที่ต้องการยกเลิก".to_string()))?;
     let left_at = registration_date(&term);
-    sqlx::query(
-        r#"UPDATE learning_group_students
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_delivery.services.activities.unenroll",
+            r#"UPDATE learning_group_students
            SET membership_status = 'removed',
                left_at = GREATEST(joined_at, $1),
                row_version = row_version + 1,
                updated_at = now()
            WHERE id = $2"#,
-    )
-    .bind(left_at)
-    .bind(membership.0)
-    .execute(&mut *transaction)
-    .await?;
+        )
+        .bind(left_at)
+        .bind(membership.0)
+        .execute()
+        .await?;
     let revision = increment_group_revision(&mut transaction, group_id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
-    append_audit(
+    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_delivery.services.activities.unenroll.completion",
+    )
+    .await?;
+    append_audit(
+        &mut completion,
         "activity.self_unregistered",
         "learning_group",
         group_id,
@@ -406,20 +450,28 @@ async fn lock_registration_context(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
 ) -> Result<(RegistrationLockRow, TermContext), AppError> {
-    let (offering_id, academic_term_id): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT learning_offering_id, academic_term_id FROM learning_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+    let (offering_id, academic_term_id): (Uuid, Uuid) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.activities.lock_registration_context",
+            "SELECT learning_offering_id, academic_term_id FROM learning_groups WHERE id = $1",
+        )
+        .bind(group_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
     let term = require_writable_term(transaction, academic_term_id, false).await?;
-    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
+    DbSession::new(&mut **transaction)
+        .query(
+            "academic_delivery.services.activities.lock_registration_context",
+            "SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE",
+        )
         .bind(offering_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
-    let context = sqlx::query_as(
-        r#"SELECT learning_group.id AS learning_group_id,
+    let context = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.activities.lock_registration_context",
+            r#"SELECT learning_group.id AS learning_group_id,
                   offering.id AS learning_offering_id,
                   offering.academic_term_id,
                   offering.academic_year_id,
@@ -440,13 +492,13 @@ async fn lock_registration_context(
              AND learning_group.academic_term_id = $2
              AND offering.id = $3
            FOR UPDATE OF learning_group"#,
-    )
-    .bind(group_id)
-    .bind(academic_term_id)
-    .bind(offering_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
+        )
+        .bind(group_id)
+        .bind(academic_term_id)
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มกิจกรรม".to_string()))?;
     Ok((context, term))
 }
 
@@ -481,8 +533,10 @@ async fn require_eligible_student(
     context: &RegistrationLockRow,
     term: &TermContext,
 ) -> Result<EligibleStudentRow, AppError> {
-    let learner: EligibleStudentRow = sqlx::query_as(
-        r#"SELECT student_year.id AS student_academic_year_id,
+    let learner: EligibleStudentRow = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.activities.require_eligible_student",
+            r#"SELECT student_year.id AS student_academic_year_id,
                   student_year.grade_level_id,
                   student_year.study_program_id,
                   placement.homeroom_id
@@ -502,17 +556,19 @@ async fn require_eligible_student(
            WHERE student_year.student_id = $1
              AND student_year.academic_year_id = $4
              AND student_year.status IN ('planned', 'active')"#,
-    )
-    .bind(student_id)
-    .bind(term.start_date)
-    .bind(term.date_upper_bound())
-    .bind(context.academic_year_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::Forbidden("นักเรียนไม่มีสิทธิ์ลงทะเบียนกิจกรรมในปีการศึกษานี้".to_string()))?;
+        )
+        .bind(student_id)
+        .bind(term.start_date)
+        .bind(term.date_upper_bound())
+        .bind(context.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Forbidden("นักเรียนไม่มีสิทธิ์ลงทะเบียนกิจกรรมในปีการศึกษานี้".to_string()))?;
 
-    let target_allowed: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
+    let target_allowed: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.activities.require_eligible_student",
+            r#"SELECT EXISTS (
                SELECT 1
                FROM learning_offering_targets target
                WHERE target.learning_offering_id = $1
@@ -523,26 +579,28 @@ async fn require_eligible_student(
                      OR (target.target_kind = 'homeroom' AND target.homeroom_id = $4)
                  )
            )"#,
-    )
-    .bind(context.learning_offering_id)
-    .bind(learner.grade_level_id)
-    .bind(learner.study_program_id)
-    .bind(learner.homeroom_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    let coverage_allowed: bool = sqlx::query_scalar(
-        r#"SELECT NOT EXISTS (
+        )
+        .bind(context.learning_offering_id)
+        .bind(learner.grade_level_id)
+        .bind(learner.study_program_id)
+        .bind(learner.homeroom_id)
+        .fetch_one()
+        .await?;
+    let coverage_allowed: bool = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.activities.require_eligible_student",
+            r#"SELECT NOT EXISTS (
                    SELECT 1 FROM learning_group_homerooms
                    WHERE learning_group_id = $1
                ) OR EXISTS (
                    SELECT 1 FROM learning_group_homerooms
                    WHERE learning_group_id = $1 AND homeroom_id = $2
                )"#,
-    )
-    .bind(context.learning_group_id)
-    .bind(learner.homeroom_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(context.learning_group_id)
+        .bind(learner.homeroom_id)
+        .fetch_one()
+        .await?;
     if !target_allowed || !coverage_allowed {
         return Err(AppError::Forbidden(
             "กิจกรรมนี้ไม่ได้เปิดสำหรับระดับชั้น แผนการเรียน หรือห้องเรียนของนักเรียน".to_string(),
@@ -562,12 +620,14 @@ async fn increment_group_revision(
     transaction: &mut Transaction<'_, Postgres>,
     group_id: Uuid,
 ) -> Result<i64, AppError> {
-    let revision = sqlx::query_scalar(
-        "UPDATE learning_groups SET row_version = row_version + 1, updated_at = now() \
+    let revision = DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_delivery.services.activities.increment_group_revision",
+            "UPDATE learning_groups SET row_version = row_version + 1, updated_at = now() \
          WHERE id = $1 RETURNING row_version",
-    )
-    .bind(group_id)
-    .fetch_one(&mut **transaction)
-    .await?;
+        )
+        .bind(group_id)
+        .fetch_one()
+        .await?;
     Ok(revision)
 }

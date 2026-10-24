@@ -68,8 +68,12 @@ async fn snapshot(
         revision,
     })
 }
-async fn read_transaction(pool: &PgPool) -> Result<Transaction<'_, Postgres>, AppError> {
-    let mut tx = pool.begin().await?;
+async fn read_transaction(pool: &PgPool) -> Result<school_tenancy::ObservedTransaction, AppError> {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.homeroom_roster.read_transaction",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_core.services.homeroom_roster.read_transaction",
@@ -90,9 +94,13 @@ async fn write_roster<'a>(
     pool: &'a PgPool,
     id: Uuid,
     revision: &str,
-) -> Result<(Transaction<'a, Postgres>, HomeroomRoster), AppError> {
+) -> Result<(school_tenancy::ObservedTransaction, HomeroomRoster), AppError> {
     let room = student_years::get_homeroom(pool, id).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_core.services.homeroom_roster.write_roster",
+    )
+    .await?;
     lifecycle_guard::require_year_write_exclusive(&mut tx, room.academic_year_id).await?;
     let roster = snapshot(&mut tx, id).await?;
     if roster.revision != revision {

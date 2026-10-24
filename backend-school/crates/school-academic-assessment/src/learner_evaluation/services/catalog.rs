@@ -7,7 +7,11 @@ pub async fn list_catalog(
     ctx: &EvaluationContext,
 ) -> Result<Vec<CatalogCriterion>, AppError> {
     policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.catalog.list_catalog",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let rows=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.catalog.list_catalog", "SELECT id,domain,name,applicability,lifecycle,display_order,row_version FROM academic_learner_evaluation_criteria ORDER BY domain,display_order,id").fetch_all().await?;
     tx.commit().await?;
@@ -26,7 +30,11 @@ pub async fn save_catalog(
         ));
     }
     validate_catalog(&input)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.catalog.save_catalog",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let lifecycle = if input.criterion.active {
         "active"
@@ -54,7 +62,11 @@ pub async fn remove_catalog(
             "School learner evaluation management is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.catalog.remove_catalog",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     let current: Option<i64> = DbSession::new(&mut *tx)
         .scalar(
@@ -100,7 +112,11 @@ pub async fn list_controls(
     ctx: &EvaluationContext,
 ) -> Result<Vec<EvaluationControl>, AppError> {
     policy::list_access(pool, actor).await?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.catalog.list_controls",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     if lifecycle_guard::lock_context(&mut tx, ctx.academic_year_id, ctx.academic_term_id)
         .await?
@@ -124,7 +140,11 @@ pub async fn update_control(
             "School learner evaluation management is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.catalog.update_control",
+    )
+    .await?;
     validate_context(&mut tx, ctx).await?;
     lifecycle_guard::require_term_write(&mut tx, ctx.academic_year_id, ctx.academic_term_id)
         .await?;

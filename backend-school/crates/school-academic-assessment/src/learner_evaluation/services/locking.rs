@@ -32,7 +32,11 @@ pub async fn read_lock_readiness(
             "School learner evaluation lock permission is required".into(),
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
+    )
+    .await?;
     DbSession::new(&mut *tx)
         .query(
             "academic_assessment.learner_evaluation.services.locking.read_lock_readiness",

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 mod opening_policy;
 mod opening_readiness;
 #[cfg(not(feature = "integration-test-support"))]
@@ -74,9 +75,17 @@ pub async fn get_workspace(
 ) -> Result<super::models::TermLifecycleWorkspace, school_errors::AppError> {
     actor
         .require_permission(school_permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_lifecycle.services.get_workspace",
+    )
+    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_lifecycle.services.get_workspace",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let workspace =
         readiness::workspace_in_transaction(external, &mut tx, actor, year, term).await?;

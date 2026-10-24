@@ -63,7 +63,9 @@ pub async fn save_type(
     if input.name.trim().is_empty() || input.name.chars().count() > 200 {
         return Err(invalid("กรุณาระบุชื่อประเภทคำขอไม่เกิน 200 ตัวอักษร"));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.save_type")
+            .await?;
     let rid = id.unwrap_or_else(Uuid::now_v7);
     if let Some(replay) = claim(
         &mut tx,
@@ -138,7 +140,9 @@ pub async fn delete_type(
     input: LeaveMutationRequest,
 ) -> Result<(), AppError> {
     actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.delete_type")
+            .await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -207,7 +211,11 @@ pub async fn effective_policy(
     date: NaiveDate,
 ) -> Result<LeavePolicyVersion, AppError> {
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_CREATE_OWN])?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.leave.configuration.effective_policy",
+    )
+    .await?;
     let (_, p) = resolve_policy(&mut tx, actor.user_id, id, date).await?;
     tx.commit().await?;
     Ok(p)
@@ -220,7 +228,9 @@ pub async fn save_policy(
 ) -> Result<LeavePolicyVersion, AppError> {
     actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
     validate_policy(&input)?;
-    let mut tx = pool.begin().await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.configuration.save_policy")
+            .await?;
     let pid = Uuid::now_v7();
     if let Some(replay) = claim(
         &mut tx,

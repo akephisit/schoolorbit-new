@@ -45,12 +45,13 @@ pub async fn list_access(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+    let filter = resource_access_policy::resolve_academic_resource_list_filter(
         pool,
-        "academic_assessment.policy.learner_evaluation.list_access",
+        actor,
+        read_permissions(),
     )
     .await?;
-    list_access_on_connection(&mut connection, actor).await
+    require_read_filter(filter)
 }
 
 pub async fn list_access_on_connection(
@@ -60,22 +61,31 @@ pub async fn list_access_on_connection(
     let filter = resource_access_policy::resolve_academic_resource_list_filter_on_connection(
         connection,
         actor,
-        AcademicResourcePermissions {
-            assigned: &[
-                codes::ACADEMIC_LEARNER_EVALUATION_READ_ASSIGNED,
-                codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED,
-            ],
-            organization_unit: &[codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT],
-            organization_tree: &[],
-            school: &[
-                codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL,
-                codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL,
-                codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL,
-                codes::ACADEMIC_LEARNER_EVALUATION_CORRECT_SCHOOL,
-            ],
-        },
+        read_permissions(),
     )
     .await?;
+    require_read_filter(filter)
+}
+
+fn read_permissions() -> AcademicResourcePermissions {
+    AcademicResourcePermissions {
+        assigned: &[
+            codes::ACADEMIC_LEARNER_EVALUATION_READ_ASSIGNED,
+            codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED,
+        ],
+        organization_unit: &[codes::ACADEMIC_LEARNER_EVALUATION_READ_ORGANIZATION_UNIT],
+        organization_tree: &[],
+        school: &[
+            codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL,
+            codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL,
+            codes::ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL,
+            codes::ACADEMIC_LEARNER_EVALUATION_CORRECT_SCHOOL,
+        ],
+    }
+}
+fn require_read_filter(
+    filter: AcademicResourceListFilter,
+) -> Result<AcademicResourceListFilter, AppError> {
     if !filter.includes_school_owned
         && filter.assigned_actor_id.is_none()
         && filter.organization_unit_ids.is_empty()
@@ -96,12 +106,28 @@ pub async fn require_student_summary_access(
     term: Uuid,
     student: Uuid,
 ) -> Result<(), AppError> {
+    let preflight = resource_access_policy::academic_resource_list_filter_without_database(
+        actor,
+        read_permissions(),
+    )
+    .map(require_read_filter)
+    .transpose()?;
+    if preflight
+        .as_ref()
+        .is_some_and(|access| access.includes_school_owned)
+    {
+        return Ok(());
+    }
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "academic_assessment.policy.learner_evaluation.require_student_summary_access",
     )
     .await?;
-    require_student_summary_access_on_connection(&mut connection, actor, year, term, student).await
+    let access = match preflight {
+        Some(access) => access,
+        None => list_access_on_connection(&mut connection, actor).await?,
+    };
+    require_student_summary_with_access(&mut connection, actor, year, term, student, access).await
 }
 
 pub async fn require_student_summary_access_on_connection(
@@ -112,6 +138,17 @@ pub async fn require_student_summary_access_on_connection(
     student: Uuid,
 ) -> Result<(), AppError> {
     let access = list_access_on_connection(connection, actor).await?;
+    require_student_summary_with_access(connection, actor, year, term, student, access).await
+}
+
+async fn require_student_summary_with_access(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    year: Uuid,
+    term: Uuid,
+    student: Uuid,
+    access: AcademicResourceListFilter,
+) -> Result<(), AppError> {
     if access.includes_school_owned {
         return Ok(());
     }
@@ -170,5 +207,35 @@ mod tests {
         assert!(!can_manage_configuration(&teacher, false));
         assert!(can_manage_configuration(&teacher, true));
         assert!(can_confirm(&teacher, true));
+    }
+    #[tokio::test]
+    async fn list_access_preserves_database_free_school_grants_and_denials() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(50))
+            .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
+            .unwrap();
+        let granted = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL.into()],
+        };
+        let filter = list_access(&pool, &granted).await.unwrap();
+        assert!(filter.includes_school_owned);
+        require_student_summary_access(
+            &pool,
+            &granted,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+        let denied = ActorContext {
+            user_id: granted.user_id,
+            permissions: vec![],
+        };
+        assert!(matches!(
+            list_access(&pool, &denied).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

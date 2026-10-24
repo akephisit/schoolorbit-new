@@ -119,7 +119,7 @@ pub async fn delete_guard<'a>(
     actor: &ActorContext,
     file: &PlatformFile,
     resource: Option<Uuid>,
-) -> Result<Transaction<'a, Postgres>, AppError> {
+) -> Result<school_tenancy::ObservedTransaction, AppError> {
     let staff_id = file.owner_user_id.ok_or_else(denied)?;
     if resource != Some(staff_id)
         || file.purpose != FilePurpose::TeachingLicense
@@ -128,7 +128,11 @@ pub async fn delete_guard<'a>(
         return Err(denied());
     }
     require_manage(actor, staff_id)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "staff.services.staff_license_service.delete_guard",
+    )
+    .await?;
     let user: Option<Uuid> = DbSession::new(&mut *tx)
         .scalar(
             "staff.services.staff_license_service.delete_guard",
