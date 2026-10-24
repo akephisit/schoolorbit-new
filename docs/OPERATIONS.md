@@ -245,18 +245,25 @@ rotation does not change namespace identity.
 
 Roll out only during maintenance after draining all old writers. Apply the canonical migrations
 through 137 before enabling matching writers. Legacy watch namespaces are NULL and remain blocked;
-never infer their historical bucket from current configuration or a single HEAD response. An operator
-must independently verify historical routing, produce an evidence digest and explicitly bind exact
-watch IDs. `file_storage_namespace plan` reads one explicitly configured database through
+never infer their historical bucket from current configuration or a single HEAD response. Obtain the
+standalone tool through the [locked build and provenance recipe](./TESTING.md#standalone-namespace-operator-tool).
+The ordinary runtime image does not include it. Verify the checkout revision, Cargo lockfile digest
+and transferred artifact SHA-256 against the same approved release/migration revision. Set
+`namespace_tool` to that verified absolute executable path; do not assume a PATH installation or
+published artifact. Use `"$namespace_tool"` for every invocation below.
+
+An operator must independently verify historical routing, produce an evidence digest and explicitly
+bind exact watch IDs. `"$namespace_tool" plan` reads one explicitly configured database through
 `FILE_STORAGE_BINDING_DATABASE_URL`, using only `R2_ACCOUNT_ID`, `R2_PUBLIC_BUCKET_NAME` and
 `R2_PRIVATE_BUCKET_NAME`; it needs no storage credentials, CDN URL or provider access. Plan output
 contains IDs, immutable locator digests, expected row revisions and namespace fingerprints, with
-0600 create-new file semantics. `dry-run --manifest <path>` is read-only. `apply --manifest <path>
---attest-historical-namespace` requires actual watch-table-owner authority, validates all rows before
-any update and refuses changed revisions or active claims. The evidence GUC is not a security boundary.
+0600 create-new file semantics. `"$namespace_tool" dry-run --manifest <path>` is read-only.
+`"$namespace_tool" apply --manifest <path> --attest-historical-namespace` requires actual
+watch-table-owner authority, validates all rows before any update and refuses changed revisions
+or active claims. The evidence GUC is not a security boundary.
 No command migrates or synchronizes permissions.
 
-Before enabling writers, run `file_storage_namespace check --inventory <path>
+Before enabling writers, run `"$namespace_tool" check --inventory <path>
 --expected-inventory-sha256 <trusted-digest>`. Obtain that digest independently from the complete
 Admin/deployment tenant inventory; hashing a self-selected subset cannot establish completeness.
 The JSON has a nonempty `tenants` array; each entry contains `tenant_id`, `database_url_env`,

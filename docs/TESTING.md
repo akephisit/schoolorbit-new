@@ -2045,3 +2045,33 @@ or duplicate URL mappings, missing schema 137, unknown legacy namespaces and mis
 fail closed. Check/dry-run must leave all rows and permissions unchanged. Apply tests use exact
 watch IDs plus immutable identity digests and expected row revisions, with the actual table owner;
 no test-only production bypass is supported. Do not log URL/key values in fixture evidence.
+
+## Standalone namespace operator tool
+
+The ordinary School runtime image contains only the main `backend-school` executable, not
+`file_storage_namespace`. Obtain this operator tool separately from the clean, exact approved release
+checkout and its unchanged Cargo lockfile. On a trusted build host with the supported Rust 1.98.1
+toolchain, native build prerequisites, `jq` and `sha256sum`, run from the repository root:
+
+```bash
+cargo +1.98.1 build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
+namespace_target_dir="$(cargo +1.98.1 metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
+namespace_tool="$namespace_target_dir/release/file_storage_namespace"
+git rev-parse HEAD
+sha256sum backend-school/Cargo.lock "$namespace_tool"
+```
+
+Use the existing selected Cargo target directory; do not create a separate target/cache for the
+operator tool. The metadata command respects that selection (the default is
+`backend-school/target`). This recipe assumes a native build without a target-triple override;
+the resulting executable's OS, architecture, libc and linked-library requirements must fit the
+operator host. Record the checkout revision, lockfile digest and artifact SHA-256 with the handoff,
+then verify the artifact digest after transfer. The tool must match the approved release and
+canonical migration revision being rolled out, because its readiness check embeds that history;
+it need not match the old binary drained during maintenance.
+
+This is a build/acquisition recipe, not a claim that a standalone release artifact has been built,
+published or tested here. Debug/test checks do not establish compatibility of a separately built
+release artifact. Use the verified absolute binary path and the maintenance, private configuration
+and attestation procedure in [Operations](./OPERATIONS.md); no runtime image or deployment recipe
+change is required.
