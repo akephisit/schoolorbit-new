@@ -71,12 +71,12 @@ test('title selectors preserve custom historical values and allow both languages
 	});
 	await page.goto(staffPath(undefined, '/edit'));
 	await expect(page.getByLabel('ระบุ คำนำหน้า (ไทย)', { exact: true })).toHaveValue('พล.ต.');
-	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('combobox', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
 	await page.getByRole('option', { name: 'นางสาว', exact: true }).click();
 	await expect(page.getByTestId('staff-name-fields')).toContainText('ชื่อที่แสดง: นางสาว');
-	await page.getByRole('button', { name: 'Title (English)', exact: true }).click();
+	await page.getByRole('combobox', { name: 'Title (English)', exact: true }).click();
 	await page.getByRole('option', { name: 'Ms.', exact: true }).click();
-	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('combobox', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
 	await page.getByRole('option', { name: 'ยังไม่ระบุ', exact: true }).click();
 	await expect(page.getByTestId('staff-name-fields')).toContainText('Ms. Alice Example');
 });
@@ -115,7 +115,7 @@ for (const width of [390, 1440])
 				.getByRole('button', { name: 'ลบวุฒิที่ 1', exact: true })
 				.boundingBox();
 			const levelBox = await row
-				.getByRole('button', { name: 'ระดับวุฒิ รายการที่ 1', exact: true })
+				.getByRole('combobox', { name: 'ระดับวุฒิ รายการที่ 1', exact: true })
 				.boundingBox();
 			expect(deleteBox && levelBox && levelBox.y - (deleteBox.y + deleteBox.height)).toBeLessThan(
 				40
