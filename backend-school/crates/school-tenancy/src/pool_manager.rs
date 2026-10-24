@@ -29,6 +29,17 @@ impl PoolManagerConfig {
         requested.min(resident_slots.saturating_sub(1).max(1) as usize)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_tests(runtime_connections: u32, per_tenant: u32, background_turns: usize) -> Self {
+        assert!(per_tenant > 0 && runtime_connections >= per_tenant && background_turns > 0);
+        Self {
+            runtime_connections,
+            per_tenant,
+            background_turns,
+            admission_timeout: Duration::from_millis(250),
+        }
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let config = Self {
             runtime_connections: setting("TENANT_RUNTIME_CONNECTIONS", 40, 1, 10_000)?,

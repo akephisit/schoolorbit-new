@@ -61,6 +61,7 @@ pub struct EnqueueOutcome {
 pub struct ClaimedNotification {
     pub notification: QueuedNotification,
     pub lease_token: Uuid,
+    pub attempts: i32,
 }
 #[derive(sqlx::FromRow)]
 pub struct NotificationProgress {
@@ -93,6 +94,8 @@ struct Job {
     link: Option<String>,
     stored_at: Option<DateTime<Utc>>,
     lease_token: Option<Uuid>,
+    #[sqlx(default)]
+    attempts: i32,
 }
 #[derive(serde::Serialize)]
 struct InputJob<'a> {
@@ -335,7 +338,7 @@ pub async fn claim(pool: &PgPool) -> Result<Vec<ClaimedNotification>, AppError> 
         ORDER BY next_attempt_at,id LIMIT $1 FOR UPDATE OF j SKIP LOCKED
     ) UPDATE notification_dispatch_jobs j SET lease_token=gen_random_uuid(),
         next_attempt_at=now()+interval '120 seconds',attempts=j.attempts+1 FROM due WHERE j.id=due.id
-        RETURNING j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token"#)
+        RETURNING j.id,j.notification_id,j.recipient_id,j.source_kind,j.source_id,j.dedup_key,j.title,j.message,j.type type_,j.link,j.stored_at,j.lease_token,j.attempts"#)
         .bind(DELIVERY_BATCH_SIZE).fetch_all(pool).await?;
     rows.into_iter()
         .filter_map(|j| {
@@ -343,6 +346,7 @@ pub async fn claim(pool: &PgPool) -> Result<Vec<ClaimedNotification>, AppError> 
                 j.notification().map(|notification| ClaimedNotification {
                     notification,
                     lease_token,
+                    attempts: j.attempts,
                 })
             })
         })
@@ -461,6 +465,7 @@ mod tests {
             link: None,
             stored_at: None,
             lease_token: None,
+            attempts: 0,
         }
     }
     #[test]

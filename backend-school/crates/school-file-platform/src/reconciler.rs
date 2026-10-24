@@ -1,4 +1,5 @@
 use crate::file_hash::FileHasher;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{
     platform_service::{generate_derivative_body, FilePlatform},
@@ -40,8 +41,14 @@ pub async fn reconcile_due_operations(
             Ok(()) => match result {
                 LeasedOperationResult::Succeeded => summary.succeeded += 1,
                 LeasedOperationResult::OriginalMissing
-                | LeasedOperationResult::Failed { terminal: true, .. } => summary.terminal += 1,
+                | LeasedOperationResult::Failed { terminal: true, .. }
+                | LeasedOperationResult::DerivativeWriteUncertain { terminal: true, .. } => {
+                    summary.terminal += 1
+                }
                 LeasedOperationResult::Failed {
+                    terminal: false, ..
+                }
+                | LeasedOperationResult::DerivativeWriteUncertain {
                     terminal: false, ..
                 } => summary.retried += 1,
             },
@@ -59,24 +66,36 @@ pub async fn perform_leased_operation(
     operation: &LeasedOperation,
 ) -> LeasedOperationResult {
     let config = platform.runtime_config();
+    let write_started = AtomicBool::new(false);
     let result = tokio::time::timeout(
         config.reconciliation_lease / 2,
-        perform(platform, operation),
+        perform(platform, operation, &write_started),
     )
     .await;
     match result {
         Ok(Ok(())) => LeasedOperationResult::Succeeded,
         Ok(Err(ProviderFailure::OriginalMissing)) => LeasedOperationResult::OriginalMissing,
-        Ok(Err(ProviderFailure::Retry(error_code, permanent))) => LeasedOperationResult::Failed {
-            error_code,
-            retry_delay: config.retry_delay(operation.attempt_count),
-            terminal: permanent || operation.attempt_count >= config.max_operation_attempts,
-        },
-        Err(_) => LeasedOperationResult::Failed {
-            error_code: "file_operation_deadline",
-            retry_delay: config.retry_delay(operation.attempt_count),
-            terminal: operation.attempt_count >= config.max_operation_attempts,
-        },
+        failure => {
+            let (error_code, permanent) = match failure {
+                Ok(Err(ProviderFailure::Retry(code, permanent))) => (code, permanent),
+                _ => ("file_operation_deadline", false),
+            };
+            let retry_delay = config.retry_delay(operation.attempt_count);
+            let terminal = permanent || operation.attempt_count >= config.max_operation_attempts;
+            if write_started.load(Ordering::Relaxed) {
+                LeasedOperationResult::DerivativeWriteUncertain {
+                    error_code,
+                    retry_delay,
+                    terminal,
+                }
+            } else {
+                LeasedOperationResult::Failed {
+                    error_code,
+                    retry_delay,
+                    terminal,
+                }
+            }
+        }
     }
 }
 
@@ -93,6 +112,7 @@ impl From<StorageError> for ProviderFailure {
 async fn perform(
     platform: &FilePlatform,
     operation: &LeasedOperation,
+    write_started: &AtomicBool,
 ) -> Result<(), ProviderFailure> {
     match &operation.work {
         OperationWork::ReconcileUpload {
@@ -128,6 +148,7 @@ async fn perform(
                     true,
                 ));
             }
+            write_started.store(true, Ordering::Relaxed);
             match platform.provider().put(&work.target, body).await {
                 Ok(()) => Ok(()),
                 Err(StorageError::AlreadyExists) => {

@@ -7310,7 +7310,7 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             assert!(runtime.contains(".buffer_unordered(limit)"));
             assert!(runtime.contains("deliver_managed_tenant_batch"));
             let managed =
-                extract_braced_block(&source, "async fn deliver_managed_tenant_batch", false);
+                extract_braced_block(&source, "async fn deliver_managed_with_transport", false);
             assert!(managed.contains("background_turns()"));
             assert!(managed.contains("TenantJobKind::NotificationDispatch"));
             assert!(managed.contains("deliver_database_batch"));
@@ -7322,7 +7322,9 @@ fn module_handlers_resolve_tenant_pools_through_the_central_resolver() {
             assert!(batch.contains("admitted(turn"));
             assert!(batch.contains("dispatch::materialize"));
             assert!(batch.contains("NotificationService::prepare_stored"));
-            assert!(batch.contains("NotificationService::deliver_prepared"));
+            assert!(
+                batch.contains(".deliver(&publisher, claimed.notification.recipient_id, prepared)")
+            );
             assert!(batch.contains("dispatch::finish_delivery"));
             assert!(!batch.contains("spawn("));
             let publisher = read_source(

@@ -161,6 +161,12 @@ pub struct OperationClaim {
 pub enum LeasedOperationResult {
     Succeeded,
     OriginalMissing,
+    /// Provider PUT began, so bytes may exist even when its response was lost.
+    DerivativeWriteUncertain {
+        error_code: &'static str,
+        retry_delay: Duration,
+        terminal: bool,
+    },
     Failed {
         error_code: &'static str,
         retry_delay: Duration,
@@ -853,6 +859,7 @@ INSERT INTO file_operations (
         error_code: &'static str,
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        lock_file_operations(&mut transaction, file_id, None, "reconcile").await?;
         mark_upload_failed_in_transaction(&mut transaction, file_id, version_id, error_code, None)
             .await?;
         transaction.commit().await.map_err(Self::database_error)
@@ -865,6 +872,13 @@ INSERT INTO file_operations (
         operation_id: Uuid,
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        lock_file_operations(
+            &mut transaction,
+            file_id,
+            Some(operation_id),
+            "generate_derivative",
+        )
+        .await?;
         mark_derivative_stored_in_transaction(
             &mut transaction,
             file_id,
@@ -885,6 +899,13 @@ INSERT INTO file_operations (
         terminal: bool,
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        lock_file_operations(
+            &mut transaction,
+            file_id,
+            Some(operation_id),
+            "generate_derivative",
+        )
+        .await?;
         mark_derivative_failed_in_transaction(
             &mut transaction,
             file_id,
@@ -905,6 +926,7 @@ INSERT INTO file_operations (
         required_derivative_ids: &[Uuid],
     ) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        lock_file_operations(&mut transaction, file_id, None, "reconcile").await?;
         finalize_ready_in_transaction(
             &mut transaction,
             file_id,
@@ -964,6 +986,13 @@ WHERE file_id = $1 AND operation_type = 'reconcile' AND status <> 'succeeded'
 
     async fn mark_delete_succeeded(&self, work: &DeleteWork) -> Result<(), RepositoryError> {
         let mut transaction = self.pool.begin().await.map_err(Self::database_error)?;
+        lock_file_operations(
+            &mut transaction,
+            work.file_id,
+            Some(work.operation_id),
+            "delete_object",
+        )
+        .await?;
         mark_delete_succeeded_in_transaction(&mut transaction, work).await?;
         transaction.commit().await.map_err(Self::database_error)
     }
@@ -1077,8 +1106,11 @@ RETURNING o.id, o.lease_owner, o.attempt_count
             // A late PUT can recreate a derivative after deletion finished. Only
             // the exact cancelled generation may request a NEW deletion of its
             // immutable target. Reclaimed/expired claims cause no effects.
-            if let (OperationWork::GenerateDerivative(work), LeasedOperationResult::Succeeded) =
-                (&operation.work, result)
+            if let (
+                OperationWork::GenerateDerivative(work),
+                LeasedOperationResult::Succeeded
+                | LeasedOperationResult::DerivativeWriteUncertain { .. },
+            ) = (&operation.work, result)
             {
                 let cancelled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM file_operations o JOIN files f ON f.id=o.file_id JOIN file_derivatives d ON d.id=o.file_derivative_id AND d.file_id=f.id WHERE o.id=$1 AND o.file_id=$2 AND o.attempt_count=$3 AND o.status='cancelled' AND o.last_error_code='file_delete_requested' AND o.operation_type='generate_derivative' AND d.id=$4 AND d.object_key=$5 AND f.lifecycle_status IN ('delete_requested','deleted'))")
                     .bind(operation.id).bind(operation.file_id).bind(operation.claim.attempt_count).bind(work.derivative_id).bind(work.target.object_key.as_str())
@@ -1137,6 +1169,11 @@ RETURNING o.id, o.lease_owner, o.attempt_count
             (
                 OperationWork::GenerateDerivative(work),
                 LeasedOperationResult::Failed {
+                    error_code,
+                    retry_delay,
+                    terminal,
+                }
+                | LeasedOperationResult::DerivativeWriteUncertain {
                     error_code,
                     retry_delay,
                     terminal,
@@ -1229,6 +1266,24 @@ VALUES (
         .map_err(Self::database_error)?;
         Ok(())
     }
+}
+
+/// Synchronous provider completions use the same order as worker completion and
+/// deletion: file, operation, then physical target metadata.
+async fn lock_file_operations(
+    transaction: &mut Transaction<'_, Postgres>,
+    file_id: Uuid,
+    operation_id: Option<Uuid>,
+    kind: &str,
+) -> Result<(), RepositoryError> {
+    sqlx::query("SELECT id FROM files WHERE id=$1 FOR UPDATE")
+        .bind(file_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(SqlFileRepository::database_error)?;
+    sqlx::query("SELECT id FROM file_operations WHERE file_id=$1 AND (($2::uuid IS NOT NULL AND id=$2) OR ($2::uuid IS NULL AND operation_type=$3)) ORDER BY id FOR UPDATE")
+        .bind(file_id).bind(operation_id).bind(kind).execute(&mut **transaction).await.map_err(SqlFileRepository::database_error)?;
+    Ok(())
 }
 
 async fn mark_upload_failed_in_transaction(
@@ -1694,11 +1749,16 @@ mod tests {
         platform_types::{DerivativeRecipe, DetectedContent, FileInspectionMetadata},
         purpose_registry::{derivative_object_key, original_object_key},
     };
-    use school_test_db::{create_named_test_pool, run_test_migrations};
+    use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};
 
     static REPOSITORY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     async fn repository_or_skip() -> Option<SqlFileRepository> {
+        repository_with_connections_or_skip(1).await
+    }
+    async fn repository_with_connections_or_skip(
+        max_connections: u32,
+    ) -> Option<SqlFileRepository> {
         dotenvy::dotenv().ok();
         if std::env::var("TEST_DATABASE_URL")
             .map(|value| value.trim().is_empty())
@@ -1709,7 +1769,8 @@ mod tests {
             );
             return None;
         }
-        let pool = create_named_test_pool("file_repository").await;
+        let pool =
+            create_named_test_pool_with_max_connections("file_repository", max_connections).await;
         run_test_migrations(&pool).await;
         Some(SqlFileRepository::new(pool))
     }
@@ -2208,6 +2269,21 @@ WHERE file_id = $1
                     .await,
                 Err(RepositoryError::LeaseLost)
             );
+            if matches!(operation.work, OperationWork::GenerateDerivative(_)) {
+                assert_eq!(
+                    repository
+                        .finish_leased_operation(
+                            operation,
+                            LeasedOperationResult::DerivativeWriteUncertain {
+                                error_code: "file_operation_deadline",
+                                retry_delay: Duration::ZERO,
+                                terminal: false
+                            }
+                        )
+                        .await,
+                    Err(RepositoryError::LeaseLost)
+                );
+            }
             if matches!(operation.work, OperationWork::ReconcileUpload { .. }) {
                 assert_eq!(
                     repository
@@ -2314,7 +2390,7 @@ WHERE file_id = $1
     #[tokio::test]
     async fn worker_finish_rechecks_expiry_after_waiting_for_the_operation_lock() {
         let _guard = REPOSITORY_TEST_LOCK.lock().await;
-        let Some(repository) = repository_or_skip().await else {
+        let Some(repository) = repository_with_connections_or_skip(3).await else {
             return;
         };
         let mut upload = worker_upload();
@@ -2348,6 +2424,7 @@ WHERE file_id = $1
         // Observe the actual blocked backend, rather than guessing scheduling.
         tokio::time::timeout(Duration::from_secs(3), async {
             loop {
+                sqlx::query("SELECT pg_stat_clear_snapshot()").execute(&mut *blocker).await.unwrap();
                 let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM file_operations WHERE id=%FOR UPDATE%')")
                     .fetch_one(&mut *blocker).await.unwrap();
                 if waiting { break; }
@@ -2365,5 +2442,308 @@ WHERE file_id = $1
         let expired = worker_snapshot(&repository, upload.file_id).await;
         assert_eq!(worker.await.unwrap(), Err(RepositoryError::LeaseLost));
         assert_eq!(worker_snapshot(&repository, upload.file_id).await, expired);
+    }
+    async fn wait_for_blocked_backend(connection: &mut sqlx::PgConnection, blocker: i32) -> i32 {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                sqlx::query("SELECT pg_stat_clear_snapshot()").execute(&mut *connection).await.unwrap();
+                let backend: Option<i32> = sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) ORDER BY pid LIMIT 1")
+                    .bind(blocker).fetch_optional(&mut *connection).await.unwrap();
+                if let Some(backend) = backend { break backend; }
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("a real backend should reach the lock barrier")
+    }
+
+    #[tokio::test]
+    async fn synchronous_and_worker_derivative_completion_share_file_operation_target_lock_order() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_with_connections_or_skip(3).await else {
+            return;
+        };
+        let upload = worker_upload();
+        repository.reserve_upload(&upload).await.unwrap();
+        let claimed = repository
+            .lease_due_operations("worker-before-sync", Duration::from_secs(60), 10)
+            .await
+            .unwrap();
+        let operation = claimed
+            .into_iter()
+            .find(|operation| matches!(operation.work, OperationWork::GenerateDerivative(_)))
+            .unwrap();
+        let mut blocker = repository.pool().begin().await.unwrap();
+        let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *blocker)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM file_operations WHERE id=$1 FOR UPDATE")
+            .bind(operation.id)
+            .execute(&mut *blocker)
+            .await
+            .unwrap();
+        let worker_repository = repository.clone();
+        let worker_operation = operation.clone();
+        let worker = tokio::spawn(async move {
+            worker_repository
+                .finish_leased_operation(&worker_operation, LeasedOperationResult::Succeeded)
+                .await
+        });
+        let worker_pid = wait_for_blocked_backend(&mut blocker, blocker_pid).await;
+        let sync_repository = repository.clone();
+        let derivative_id = upload.derivatives[0].id;
+        let sync = tokio::spawn(async move {
+            sync_repository
+                .mark_derivative_stored(operation.file_id, derivative_id, operation.id)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                sqlx::query("SELECT pg_stat_clear_snapshot()").execute(&mut *blocker).await.unwrap();
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid<>$1 AND ($1=ANY(pg_blocking_pids(pid)) OR $2=ANY(pg_blocking_pids(pid))))")
+                    .bind(worker_pid).bind(blocker_pid).fetch_one(&mut *blocker).await.unwrap();
+                if waiting { break; }
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("synchronous completion should also reach the lock barrier");
+        blocker.commit().await.unwrap();
+        let (worker, sync) =
+            tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(worker, sync) })
+                .await
+                .unwrap();
+        worker.unwrap().unwrap();
+        sync.unwrap().unwrap();
+        let state: (String,String,String) = sqlx::query_as("SELECT d.storage_status,d.lifecycle_status,o.status FROM file_derivatives d JOIN file_operations o ON o.file_derivative_id=d.id WHERE o.id=$1")
+            .bind(upload.derivatives[0].operation_id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(state, ("stored".into(), "ready".into(), "succeeded".into()));
+    }
+
+    struct CleanScanner;
+    #[async_trait::async_trait]
+    impl crate::malware_scanner::MalwareScanner for CleanScanner {
+        async fn scan(&self, _: &[u8]) -> crate::malware_scanner::ScanOutcome {
+            crate::malware_scanner::ScanOutcome::Clean
+        }
+    }
+    struct AmbiguousPutProvider {
+        source: bytes::Bytes,
+        started: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        stored: tokio::sync::Notify,
+        objects: std::sync::Mutex<std::collections::HashSet<String>>,
+    }
+    #[async_trait::async_trait]
+    impl crate::storage_provider::StorageProvider for AmbiguousPutProvider {
+        async fn check_readiness(&self) -> Result<(), crate::storage_provider::StorageError> {
+            Ok(())
+        }
+        async fn put(
+            &self,
+            object: &StoredObject,
+            _: bytes::Bytes,
+        ) -> Result<(), crate::storage_provider::StorageError> {
+            self.started.notify_one();
+            self.release.notified().await;
+            self.objects
+                .lock()
+                .unwrap()
+                .insert(object.object_key.as_str().into());
+            self.stored.notify_one();
+            std::future::pending().await
+        }
+        async fn get(
+            &self,
+            _: &StoredObject,
+            _: u64,
+        ) -> Result<bytes::Bytes, crate::storage_provider::StorageError> {
+            Ok(self.source.clone())
+        }
+        async fn head(
+            &self,
+            object: &StoredObject,
+        ) -> Result<
+            Option<crate::storage_provider::ObjectMetadata>,
+            crate::storage_provider::StorageError,
+        > {
+            Ok(self
+                .objects
+                .lock()
+                .unwrap()
+                .contains(object.object_key.as_str())
+                .then(|| crate::storage_provider::ObjectMetadata {
+                    content_type: Some(object.content_type.clone()),
+                    content_length: Some(4),
+                }))
+        }
+        async fn delete(
+            &self,
+            object: &StoredObject,
+        ) -> Result<(), crate::storage_provider::StorageError> {
+            self.objects
+                .lock()
+                .unwrap()
+                .remove(object.object_key.as_str());
+            Ok(())
+        }
+        async fn private_download_grant(
+            &self,
+            _: &StoredObject,
+            _: &str,
+            _: Duration,
+        ) -> Result<crate::platform_types::DownloadGrant, crate::storage_provider::StorageError>
+        {
+            Err(crate::storage_provider::StorageError::OperationFailed)
+        }
+        fn public_location(
+            &self,
+            _: &StoredObject,
+        ) -> Result<url::Url, crate::storage_provider::StorageError> {
+            Err(crate::storage_provider::StorageError::OperationFailed)
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_derivative_ambiguous_put_timeout_queues_durable_cleanup_after_delete() {
+        use crate::{
+            file_hash::FileHasher,
+            platform_service::{generate_derivative_body, FilePlatform},
+            reconciler::perform_leased_operation,
+            runtime_config::FilePlatformRuntimeConfig,
+            storage_provider::StorageProvider,
+        };
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let mut source = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            2,
+            2,
+            image::Rgba([4, 8, 15, 255]),
+        ))
+        .write_to(
+            &mut std::io::Cursor::new(&mut source),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+        let mut upload = worker_upload();
+        let body = generate_derivative_body(upload.purpose, upload.derivatives[0].recipe, &source)
+            .unwrap();
+        upload.derivatives[0].byte_size = i64::try_from(body.len()).unwrap();
+        upload.derivatives[0].checksum = FileHasher::sha256(&body);
+        repository.reserve_upload(&upload).await.unwrap();
+        let operation = repository
+            .lease_due_operations("ambiguous-put", Duration::from_secs(60), 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|operation| matches!(operation.work, OperationWork::GenerateDerivative(_)))
+            .unwrap();
+        let provider = std::sync::Arc::new(AmbiguousPutProvider {
+            source: source.into(),
+            started: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            stored: tokio::sync::Notify::new(),
+            objects: std::sync::Mutex::new(std::collections::HashSet::new()),
+        });
+        let platform = std::sync::Arc::new(FilePlatform::with_config(
+            provider.clone(),
+            std::sync::Arc::new(CleanScanner),
+            FilePlatformRuntimeConfig {
+                reconciliation_lease: Duration::from_secs(4),
+                ..FilePlatformRuntimeConfig::default()
+            },
+        ));
+        let performing_platform = platform.clone();
+        let performing_operation = operation.clone();
+        let performing = tokio::spawn(async move {
+            perform_leased_operation(&performing_platform, &performing_operation).await
+        });
+        tokio::time::timeout(Duration::from_secs(1), provider.started.notified())
+            .await
+            .unwrap();
+        let deletion = repository.request_delete(upload.file_id).await.unwrap();
+        for work in deletion {
+            provider.delete(&work.object).await.unwrap();
+            repository.mark_delete_succeeded(&work).await.unwrap();
+        }
+        provider.release.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), provider.stored.notified())
+            .await
+            .unwrap();
+        assert_eq!(provider.objects.lock().unwrap().len(), 1);
+        let result = tokio::time::timeout(Duration::from_secs(3), performing)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            result,
+            LeasedOperationResult::DerivativeWriteUncertain {
+                error_code: "file_operation_deadline",
+                ..
+            }
+        ));
+        assert_eq!(
+            repository.finish_leased_operation(&operation, result).await,
+            Err(RepositoryError::LeaseLost)
+        );
+        let metadata: (String,String,String) = sqlx::query_as("SELECT f.lifecycle_status,d.lifecycle_status,o.status FROM files f JOIN file_derivatives d ON d.file_id=f.id JOIN file_operations o ON o.file_derivative_id=d.id WHERE o.id=$1")
+            .bind(operation.id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(
+            metadata,
+            ("deleted".into(), "deleted".into(), "cancelled".into())
+        );
+        let cleanup = repository
+            .lease_due_operations("cleanup", Duration::from_secs(60), 1)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let result = perform_leased_operation(&platform, &cleanup).await;
+        assert_eq!(result, LeasedOperationResult::Succeeded);
+        repository
+            .finish_leased_operation(&cleanup, result)
+            .await
+            .unwrap();
+        assert!(provider.objects.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn live_derivative_write_uncertainty_retries_without_creating_delete_work() {
+        let _guard = REPOSITORY_TEST_LOCK.lock().await;
+        let Some(repository) = repository_or_skip().await else {
+            return;
+        };
+        let upload = worker_upload();
+        repository.reserve_upload(&upload).await.unwrap();
+        let operation = repository
+            .lease_due_operations("uncertain-live", Duration::from_secs(60), 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|operation| matches!(operation.work, OperationWork::GenerateDerivative(_)))
+            .unwrap();
+        repository
+            .finish_leased_operation(
+                &operation,
+                LeasedOperationResult::DerivativeWriteUncertain {
+                    error_code: "file_operation_deadline",
+                    retry_delay: Duration::ZERO,
+                    terminal: false,
+                },
+            )
+            .await
+            .unwrap();
+        let state: (String,String,String) = sqlx::query_as("SELECT f.lifecycle_status,d.storage_status,o.status FROM files f JOIN file_derivatives d ON d.file_id=f.id JOIN file_operations o ON o.file_derivative_id=d.id WHERE o.id=$1")
+            .bind(operation.id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(
+            state,
+            (
+                "processing".into(),
+                "failed".into(),
+                "retryable_failure".into()
+            )
+        );
+        let deletes: i64 = sqlx::query_scalar("SELECT count(*) FROM file_operations WHERE file_id=$1 AND operation_type='delete_object'")
+            .bind(upload.file_id).fetch_one(repository.pool()).await.unwrap();
+        assert_eq!(deletes, 0);
     }
 }

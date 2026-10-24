@@ -735,3 +735,203 @@ async fn notification_dispatch_due_backlog_revisits_other_tenants_before_next_ba
     second.close().await;
     recovering.close().await;
 }
+
+struct ControlledBatchTransport {
+    started: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    endpoint: String,
+}
+#[async_trait::async_trait]
+impl school_notifications::runtime::test_support::ControlledTransport for ControlledBatchTransport {
+    async fn deliver(
+        &self,
+        _notification_id: Uuid,
+    ) -> Result<school_notifications::runtime::test_support::DeliveryResult, &'static str> {
+        self.started.notify_one();
+        self.release.notified().await;
+        Ok(
+            school_notifications::runtime::test_support::DeliveryResult {
+                invalid_endpoints: vec![self.endpoint.clone()],
+                retryable: false,
+            },
+        )
+    }
+}
+
+async fn managed_batch_phase_case(name: &str, remap: bool) {
+    use axum::{routing::get, Json, Router};
+    use school_tenancy::{
+        background::TenantJobKind, AdminClient, AdminClientConfig, PoolManager, PoolManagerConfig,
+    };
+    use std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+    struct Abort(tokio::task::JoinHandle<()>);
+    impl Drop for Abort {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let (fixture, recipient) = fixture(name).await;
+    let queued = item(recipient);
+    enqueue(&fixture, std::slice::from_ref(&queued)).await;
+    let endpoint = "https://synthetic.invalid/device";
+    sqlx::query("INSERT INTO push_subscriptions(user_id,endpoint,p256dh_key,auth_key) VALUES($1,$2,'synthetic','synthetic')")
+        .bind(recipient).bind(endpoint).execute(&fixture).await.unwrap();
+    let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+        .fetch_one(&fixture)
+        .await
+        .unwrap();
+    let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+    url.query_pairs_mut()
+        .append_pair("options", &format!("-csearch_path={schema},public"));
+    let directory_id = Arc::new(Mutex::new(Uuid::new_v4()));
+    let response_id = directory_id.clone();
+    let response_url = url.to_string();
+    let app = Router::new().route("/internal/schools/{tenant}", get(move || {
+        let id = *response_id.lock().unwrap();
+        let database_url = response_url.clone();
+        async move { Json(serde_json::json!({"id":id,"name":"synthetic","db_connection_string":database_url})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    }));
+    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
+        2, 1, 1,
+    )));
+    let observed = manager.get_pool(url.as_str(), name).await.unwrap();
+    let observed_raw = observed.as_ref().clone();
+    drop(observed);
+    let (channel, _) = tokio::sync::broadcast::channel(8);
+    let state = school_notifications::runtime::NotificationRuntimeState {
+        admin_client: Arc::new(AdminClient::new(
+            format!("http://{address}"),
+            "synthetic".into(),
+            AdminClientConfig::for_tests(Duration::from_secs(1), 1, Duration::from_millis(1)),
+        )),
+        pool_manager: manager.clone(),
+        notification_channel: channel,
+        eligibility: &ELIGIBILITY,
+    };
+    let transport = Arc::new(ControlledBatchTransport {
+        started: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        endpoint: endpoint.into(),
+    });
+    let worker_state = state.clone();
+    let worker_transport = transport.clone();
+    let tenant = name.to_string();
+    let worker = tokio::spawn(async move {
+        school_notifications::runtime::test_support::deliver_managed_batch(
+            &worker_state,
+            &tenant,
+            worker_transport.as_ref(),
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(3), transport.started.notified())
+        .await
+        .unwrap();
+    let turns = manager.background_turns();
+    for kind in [
+        TenantJobKind::CalendarReminders,
+        TenantJobKind::AuthRetention,
+        TenantJobKind::AttendanceMaintenance,
+        TenantJobKind::FileReconciliation,
+    ] {
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_millis(200),
+                turns.run("healthy", kind, || async { 1 })
+            )
+            .await
+            .unwrap(),
+            Some(1)
+        );
+    }
+    assert!(turns
+        .begin(name, TenantJobKind::NotificationDispatch)
+        .is_none());
+    let mut second_url = url.clone();
+    second_url
+        .query_pairs_mut()
+        .append_pair("application_name", "phase-second");
+    let second = manager
+        .get_pool(second_url.as_str(), "phase-second")
+        .await
+        .unwrap();
+    let mut third_url = url.clone();
+    third_url
+        .query_pairs_mut()
+        .append_pair("application_name", "phase-third");
+    let third = tokio::time::timeout(
+        Duration::from_secs(1),
+        manager.get_pool(third_url.as_str(), "phase-third"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        observed_raw.is_closed(),
+        "actual notification DB lease must end before blocked transport"
+    );
+    assert!(!second.is_closed() && !third.is_closed());
+    drop(second);
+    drop(third);
+    if remap {
+        let token = Uuid::new_v4();
+        state
+            .admin_client
+            .begin_directory_mutation(name, token)
+            .unwrap();
+        *directory_id.lock().unwrap() = Uuid::new_v4();
+        state
+            .admin_client
+            .finish_directory_mutation(name, token)
+            .unwrap();
+    }
+    transport.release.notify_one();
+    let result = tokio::time::timeout(Duration::from_secs(3), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    if remap {
+        assert!(result.is_err());
+    } else {
+        assert!(!result.unwrap().pending);
+    }
+    let present: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE endpoint=$1)")
+            .bind(endpoint)
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+    let published: bool = sqlx::query_scalar(
+        "SELECT published_at IS NOT NULL FROM notification_dispatch_jobs WHERE id=$1",
+    )
+    .bind(queued.id)
+    .fetch_one(&fixture)
+    .await
+    .unwrap();
+    assert_eq!(
+        present, remap,
+        "remapped finish must not delete an endpoint"
+    );
+    assert_eq!(
+        published, !remap,
+        "remapped finish must not acknowledge the original claim"
+    );
+}
+
+#[tokio::test]
+async fn notification_managed_batch_releases_real_pool_lease_and_shared_permit_during_transport() {
+    managed_batch_phase_case("dispatch_managed_phase_release", false).await;
+}
+
+#[tokio::test]
+async fn notification_managed_batch_uuid_remap_refuses_endpoint_cleanup_and_acknowledgment() {
+    managed_batch_phase_case("dispatch_managed_uuid_remap", true).await;
+}

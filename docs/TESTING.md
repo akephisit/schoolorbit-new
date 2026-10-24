@@ -291,7 +291,15 @@ occupied slots, and payload-free SSE reconciliation with retained tenant filteri
 and identity fail-close. Notification fake transport cases hold two slow item futures
 while every other kind obtains shared database admission, and confirm cancellation
 joins delivery work. Slow-first-endpoint coverage verifies later device progress and
-no surviving endpoint future after the enclosing deadline. They do not measure production capacity.
+no surviving endpoint future after the enclosing deadline. A twelve-endpoint case
+with two stalled waves verifies attempt-based rotation reaches the tail on retries.
+Managed-batch database fixtures use the actual AdminClient and PoolManager with only
+external transport controlled: while blocked, another kind receives the sole permit
+and resident-pool pressure evicts the original pool. A mock directory UUID change plus
+cache fencing then proves both endpoint deletion and acknowledgment are refused.
+Cleaner database fixtures hold a real table lock until its phase deadline releases
+admission, and verify a healthy tenant completes while a sibling's provider is blocked.
+They do not measure production capacity.
 
 From the repository root, run the database-dependent owners with the disposable
 PostgreSQL wrapper:
@@ -299,6 +307,13 @@ PostgreSQL wrapper:
 ```bash
 ./scripts/test_backend_school.sh --package school-calendar delivery::reminders::turn_tests -- --test-threads=1
 ./scripts/test_backend_school.sh --package school-auth cleanup_ -- --test-threads=1
+```
+
+Run the new managed Notification and Cleaner regressions from the repository root:
+
+```bash
+./scripts/test_backend_school.sh integration_tests::notification_dispatch::notification_managed_batch_ -- --test-threads=1
+./scripts/test_backend_school.sh services::cleaner::phase_tests -- --test-threads=1
 ```
 
 The Calendar cases use 401 durable reminders, lock the first 200, verify suffix

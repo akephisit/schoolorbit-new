@@ -259,6 +259,7 @@ school-certificates-http = { workspace = true }
 school-academic-http = { workspace = true }
 
 [dev-dependencies]
+school-notifications = { workspace = true, features = ["test-support"] }
 school-supervision = { workspace = true, features = ["integration-test-support"] }
 school-academic-lifecycle = { workspace = true, features = ["integration-test-support"] }
 school-auth = { workspace = true, features = ["test-support"] }

@@ -99,8 +99,62 @@ pub async fn deliver_tenant_batch(
         channel,
         eligibility,
         None,
+        DeliveryTransport::Network(std::marker::PhantomData),
     )
     .await
+}
+
+#[derive(Clone, Copy)]
+enum DeliveryTransport<'a> {
+    Network(std::marker::PhantomData<&'a ()>),
+    #[cfg(feature = "test-support")]
+    Controlled(&'a dyn test_support::ControlledTransport),
+}
+impl DeliveryTransport<'_> {
+    async fn deliver(
+        self,
+        publisher: &TenantNotificationPublisher<'_>,
+        user: uuid::Uuid,
+        prepared: crate::publisher::PreparedNotification,
+    ) -> Result<crate::publisher::DeliveryReceipt, &'static str> {
+        match self {
+            Self::Network(_) => {
+                NotificationService::deliver_prepared(publisher, user, prepared).await
+            }
+            #[cfg(feature = "test-support")]
+            Self::Controlled(transport) => {
+                let result = transport.deliver(prepared.notification.id).await?;
+                Ok(crate::publisher::DeliveryReceipt {
+                    invalid_endpoints: result.invalid_endpoints,
+                    retryable: result.retryable,
+                })
+            }
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+pub mod test_support {
+    use super::*;
+    pub struct DeliveryResult {
+        pub invalid_endpoints: Vec<String>,
+        pub retryable: bool,
+    }
+    #[async_trait::async_trait]
+    pub trait ControlledTransport: Send + Sync {
+        async fn deliver(
+            &self,
+            notification_id: uuid::Uuid,
+        ) -> Result<DeliveryResult, &'static str>;
+    }
+    pub async fn deliver_managed_batch(
+        state: &NotificationRuntimeState,
+        tenant: &str,
+        transport: &dyn ControlledTransport,
+    ) -> Result<dispatch::QueueStatus, AppError> {
+        deliver_managed_with_transport(state, tenant, DeliveryTransport::Controlled(transport))
+            .await
+    }
 }
 
 enum DeliveryDatabase<'a> {
@@ -157,6 +211,19 @@ async fn deliver_managed_tenant_batch(
     state: &NotificationRuntimeState,
     tenant: &str,
 ) -> Result<dispatch::QueueStatus, AppError> {
+    deliver_managed_with_transport(
+        state,
+        tenant,
+        DeliveryTransport::Network(std::marker::PhantomData),
+    )
+    .await
+}
+
+async fn deliver_managed_with_transport(
+    state: &NotificationRuntimeState,
+    tenant: &str,
+    transport: DeliveryTransport<'_>,
+) -> Result<dispatch::QueueStatus, AppError> {
     let turns = state.pool_manager.background_turns();
     let Some(turn) = turns.begin(tenant, TenantJobKind::NotificationDispatch) else {
         return Err(AppError::ServiceUnavailable(
@@ -169,6 +236,7 @@ async fn deliver_managed_tenant_batch(
         &state.notification_channel,
         state.eligibility,
         Some(&turn),
+        transport,
     )
     .await
 }
@@ -179,6 +247,7 @@ async fn deliver_database_batch(
     channel: &broadcast::Sender<TenantNotificationEvent>,
     eligibility: &dyn DeliveryEligibilityPort,
     turn: Option<&TenantTurn<'_>>,
+    transport: DeliveryTransport<'_>,
 ) -> Result<dispatch::QueueStatus, AppError> {
     let claimed_at = tokio::time::Instant::now();
     let (tenant_id, batch) = database(admitted(turn, || async {
@@ -202,6 +271,7 @@ async fn deliver_database_batch(
                     &pool,
                     claimed.notification.recipient_id,
                     notification,
+                    claimed.attempts,
                 )
                 .await
                 .map(Some)
@@ -220,15 +290,12 @@ async fn deliver_database_batch(
             }
             // Only owned transport DTOs cross this boundary; no pool or permit survives.
             let publisher = TenantNotificationPublisher::new(tenant, channel);
-            let receipt = NotificationService::deliver_prepared(
-                &publisher,
-                claimed.notification.recipient_id,
-                prepared,
-            )
-            .await
-            .map_err(|_| {
-                AppError::ServiceUnavailable("notification_transport_unavailable".into())
-            })?;
+            let receipt = transport
+                .deliver(&publisher, claimed.notification.recipient_id, prepared)
+                .await
+                .map_err(|_| {
+                    AppError::ServiceUnavailable("notification_transport_unavailable".into())
+                })?;
             admitted(turn, || async {
                 let (_, pool) = access.pool(tenant, Some(tenant_id)).await?;
                 dispatch::finish_delivery(&pool, &claimed, receipt).await

@@ -589,10 +589,18 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   Calendar advances a stable keyset past failed/contended reminders. Auth advances its
   tenant rotation before admission so cancellation cannot repeatedly starve the suffix.
   Notification retains its 32-item batch, four item futures and five-second whole-item
-  deadline, with bounded endpoint attempts and token-fenced endpoint cleanup/ack.
-  File worker effects require the exact unexpired owner/attempt claim; external work
-  cannot retain a database permit or write through a stale lease. Keep synchronous
-  upload/delete semantics with the File Platform provider.
+  deadline, with bounded endpoint attempts, attempt-based subscription rotation and
+  token-fenced endpoint cleanup/ack.
+  File worker metadata effects require the exact unexpired owner/attempt claim;
+  external work cannot retain a database permit or write through a stale lease.
+  Claim/finish DB phases are bounded within the existing lease, and the per-tenant
+  soft budget starts at first admission and is checked after completed operations.
+  A narrowly owned exception permits queuing a new durable delete after a successful
+  or uncertain derivative PUT only for the same cancelled attempt whose file is being
+  deleted; never revive its metadata or change a newer/expired/reclaimed claim.
+  External storage writes remain nontransactional with PostgreSQL: interruption before
+  fenced finish may leave bytes and needs a separate persisted recovery protocol.
+  Keep synchronous upload/delete semantics with the File Platform provider.
   Revision pruning must reject stale async fills. Session/file retention uses existing domain
   owners; never delete business history merely to free disk. Autovacuum reuses dead row space
   and is not business retention, RAM cleanup or a guarantee that files shrink.

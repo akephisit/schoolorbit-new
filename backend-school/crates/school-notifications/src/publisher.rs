@@ -61,12 +61,12 @@ struct PushSubscription {
 
 /// Owned transport input; it cannot retain a pool, transaction or database permit.
 pub(crate) struct PreparedNotification {
-    notification: Notification,
+    pub(crate) notification: Notification,
     subscriptions: Vec<PushSubscription>,
 }
 pub(crate) struct DeliveryReceipt {
-    invalid_endpoints: Vec<String>,
-    retryable: bool,
+    pub(crate) invalid_endpoints: Vec<String>,
+    pub(crate) retryable: bool,
 }
 
 impl NotificationService {
@@ -77,7 +77,7 @@ impl NotificationService {
         user_id: Uuid,
         notification: Notification,
     ) -> Result<(), &'static str> {
-        let prepared = Self::prepare_stored(pool, user_id, notification).await?;
+        let prepared = Self::prepare_stored(pool, user_id, notification, 1).await?;
         let receipt = Self::deliver_prepared(publisher, user_id, prepared).await?;
         Self::complete_delivery(pool, user_id, receipt).await
     }
@@ -86,10 +86,12 @@ impl NotificationService {
         pool: &sqlx::PgPool,
         user_id: Uuid,
         notification: Notification,
+        attempts: i32,
     ) -> Result<PreparedNotification, &'static str> {
-        let subscriptions = sqlx::query_as::<_, PushSubscription>(
+        let mut subscriptions = sqlx::query_as::<_, PushSubscription>(
             "SELECT endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id=$1 ORDER BY endpoint")
             .bind(user_id).fetch_all(pool).await.map_err(|_| "notification_subscription_unavailable")?;
+        rotate_for_attempt(&mut subscriptions, attempts);
         Ok(PreparedNotification {
             notification,
             subscriptions,
@@ -295,6 +297,14 @@ enum EndpointDelivery {
     Delivered,
     Removed(String),
 }
+fn rotate_for_attempt<T>(items: &mut [T], attempts: i32) {
+    if !items.is_empty() {
+        let wave = usize::try_from(attempts.saturating_sub(1)).unwrap_or(0);
+        let offset = wave.saturating_mul(4) % items.len();
+        items.rotate_left(offset);
+    }
+}
+
 async fn attempt_subscriptions<T, F, Fut>(
     items: Vec<T>,
     deliver: F,
@@ -426,6 +436,34 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(delivered.load(Ordering::SeqCst), 7);
         assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn retry_rotation_reaches_tail_after_multiple_stalled_endpoint_waves() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let reached_tail = AtomicUsize::new(0);
+        for attempt in 1..=3 {
+            let mut endpoints: Vec<_> = (0..12).collect();
+            rotate_for_attempt(&mut endpoints, attempt);
+            let _deadline = tokio::time::timeout(
+                Duration::from_millis(30),
+                attempt_subscriptions(endpoints, |endpoint| {
+                    let reached_tail = &reached_tail;
+                    async move {
+                        if endpoint < 8 {
+                            std::future::pending::<()>().await;
+                        }
+                        reached_tail.fetch_add(1, Ordering::SeqCst);
+                        Ok(EndpointDelivery::Delivered)
+                    }
+                }),
+            )
+            .await;
+            assert_eq!(
+                reached_tail.load(Ordering::SeqCst),
+                if attempt < 3 { 0 } else { 4 }
+            );
+        }
     }
 
     #[test]

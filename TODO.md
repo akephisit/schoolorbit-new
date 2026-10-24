@@ -103,6 +103,11 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add contract tests for school list/detail pagination and secret-field exclusion.
   - Fix the frontend-admin authentication initialization race and make lint pass without suppressions.
 
+- [ ] **FILES-001: Recover interrupted external derivative writes durably.**
+  - [File Platform deletion](./backend-school/crates/school-file-platform/src/repository.rs) cancels derivative work and clears its lease timestamps without retaining a durable in-flight PUT marker. Process death or task cancellation before fenced finish can therefore leave provider bytes committed after deletion.
+  - Design a separate persisted upload-intent/reconciliation protocol for interrupted provider writes; preserve exact generation/claim fencing and synchronous upload/delete behavior.
+  - Done when disposable provider tests cover process interruption before finish, late PUT completion after deletion, restart recovery and reclaimed-generation isolation without reviving deleted metadata.
+
 ## P2 — Scale, Maintainability, Database Efficiency, and Delivery
 
 - [ ] **SCALE-001: Make realtime events, permission invalidation, and scheduled jobs multi-replica safe.**
