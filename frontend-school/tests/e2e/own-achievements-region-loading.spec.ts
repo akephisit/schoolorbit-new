@@ -153,8 +153,12 @@ for (const [role, path] of [
 			hold: ownCertificatePath
 		});
 		const assets: string[] = [];
+		const heavyAsset = /renderer[.-]browser|pdfmake|pdf-lib|pdfjs/;
+		expect(heavyAsset.test('/src/lib/certificates/renderer.ts')).toBe(false);
+		expect(heavyAsset.test('/src/lib/certificates/renderer.browser.ts')).toBe(true);
+		expect(heavyAsset.test('/_app/immutable/chunks/renderer.browser-example.js')).toBe(true);
 		page.on('request', (request) => {
-			if (/certificate.*renderer|pdfmake/.test(request.url())) assets.push(request.url());
+			if (heavyAsset.test(new URL(request.url()).pathname)) assets.push(request.url());
 		});
 		await page.goto(path);
 		await expect(
