@@ -88,7 +88,16 @@ pub async fn confirm_group(
     ctx: &EvaluationContext,
     input: ConfirmationInput,
 ) -> Result<ConfirmationOutcome, AppError> {
-    let subject = subject_for_group(pool, group, ctx).await?;
+    let subject = {
+        let mut context_tx = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_assessment.learner_evaluation.services.subject_for_group",
+        )
+        .await?;
+        let subject = subject_for_group(&mut context_tx, group, ctx).await?;
+        context_tx.commit().await?;
+        subject
+    };
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     let group_scope = scope
         .groups

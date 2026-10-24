@@ -1,5 +1,6 @@
 use super::{audit, lock_term, settings};
 use crate::{models::*, rules::invalid};
+use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::repository::SqlFileRepository;
 use sqlx::{types::Json, PgConnection, PgPool};
@@ -60,7 +61,8 @@ pub async fn summaries_with_expected(
     expected: &[AttendanceExpectedSummary],
 ) -> Result<AttendanceReport, AppError> {
     summaries_with_expected_on_connection(
-        &mut *pool.acquire().await?,
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.reports.read")
+            .await?,
         term,
         student,
         teacher,
@@ -78,20 +80,28 @@ pub async fn summaries_with_expected_on_connection(
     let settings = settings::get_on_connection(connection, term).await?;
     let summaries = if settings.archived {
         let sql = archived_summary_sql(teacher.is_some());
-        sqlx::query_as(sql)
+        DbSession::new(&mut *connection)
+            .query_as(
+                "attendance.services.reports.summaries_with_expected_on_connection",
+                sql,
+            )
             .bind(term)
             .bind(student)
             .bind(teacher)
             .bind(Json(expected))
-            .fetch_all(&mut *connection)
+            .fetch_all()
             .await?
     } else {
-        sqlx::query_as(SUMMARY_SQL)
+        DbSession::new(&mut *connection)
+            .query_as(
+                "attendance.services.reports.summaries_with_expected_on_connection",
+                SUMMARY_SQL,
+            )
             .bind(term)
             .bind(student)
             .bind(teacher)
             .bind(Json(expected))
-            .fetch_all(&mut *connection)
+            .fetch_all()
             .await?
     };
     Ok(AttendanceReport {
@@ -116,7 +126,14 @@ pub async fn page_with_expected(
     teacher: Option<Uuid>,
     expected: &[AttendanceExpectedSummary],
 ) -> Result<AttendanceReport, AppError> {
-    page_with_expected_on_connection(&mut *pool.acquire().await?, q, teacher, expected).await
+    page_with_expected_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.reports.read")
+            .await?,
+        q,
+        teacher,
+        expected,
+    )
+    .await
 }
 pub async fn page_with_expected_on_connection(
     connection: &mut PgConnection,
@@ -149,7 +166,11 @@ pub(crate) async fn page_with_context(
     SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p."studentId",p.category,p."scopeKey") FROM page p),'[]'::jsonb), (SELECT count(*) FROM filtered)"#
     );
     let (Json(summaries), total): (Json<Vec<AttendanceSummary>>, i64) =
-        sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        DbSession::new(&mut *connection)
+            .query_as(
+                "attendance.services.reports.page_with_context",
+                sqlx::AssertSqlSafe(sql),
+            )
             .bind(q.academic_term_id)
             .bind(q.student_id)
             .bind(teacher)
@@ -158,7 +179,7 @@ pub(crate) async fn page_with_context(
             .bind(q.category.as_deref())
             .bind(q.page_size)
             .bind((q.page - 1) * q.page_size)
-            .fetch_one(&mut *connection)
+            .fetch_one()
             .await?;
     Ok(AttendanceReport {
         summaries,
@@ -170,19 +191,28 @@ pub(crate) async fn page_with_context(
     })
 }
 pub async fn impact(pool: &PgPool, term: Uuid) -> Result<AttendancePurgeImpact, AppError> {
-    impact_on_connection(&mut *pool.acquire().await?, term).await
+    impact_on_connection(
+        &mut *school_tenancy::TenantPool::observed_checkout_pool(pool, "attendance.reports.read")
+            .await?,
+        term,
+    )
+    .await
 }
 pub async fn impact_on_connection(
     connection: &mut PgConnection,
     term: Uuid,
 ) -> Result<AttendancePurgeImpact, AppError> {
-    let (records,evidence,evidence_bytes):(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1),(SELECT count(*) FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id WHERE s.academic_term_id=$1),(SELECT COALESCE(sum(metadata.byte_size),0)::bigint FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id JOIN files f ON f.id=e.evidence_file_id LEFT JOIN LATERAL (SELECT v.byte_size FROM file_versions v WHERE v.file_id=f.id ORDER BY v.created_at DESC,v.id DESC LIMIT 1) metadata ON true WHERE s.academic_term_id=$1 AND f.lifecycle_status<>'deleted')").bind(term).fetch_one(&mut *connection).await?;
+    let (records,evidence,evidence_bytes):(i64,i64,i64)=DbSession::new(&mut *connection).query_as("attendance.services.reports.impact_on_connection", "SELECT (SELECT count(*) FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1),(SELECT count(*) FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id WHERE s.academic_term_id=$1),(SELECT COALESCE(sum(metadata.byte_size),0)::bigint FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id JOIN files f ON f.id=e.evidence_file_id LEFT JOIN LATERAL (SELECT v.byte_size FROM file_versions v WHERE v.file_id=f.id ORDER BY v.created_at DESC,v.id DESC LIMIT 1) metadata ON true WHERE s.academic_term_id=$1 AND f.lifecycle_status<>'deleted')").bind(term).fetch_one().await?;
     let archived = settings::get_on_connection(connection, term)
         .await?
         .archived;
-    let closed: bool = sqlx::query_scalar("SELECT status='closed' FROM academic_terms WHERE id=$1")
+    let closed: bool = DbSession::new(&mut *connection)
+        .scalar(
+            "attendance.services.reports.impact_on_connection",
+            "SELECT status='closed' FROM academic_terms WHERE id=$1",
+        )
         .bind(term)
-        .fetch_optional(&mut *connection)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".into()))?;
     Ok(AttendancePurgeImpact {
@@ -209,12 +239,13 @@ pub async fn purge_with_expected(
     p: PurgeAttendanceTerm,
     coverage: &[AttendanceExpectedSummary],
 ) -> Result<AttendancePurgeImpact, AppError> {
-    let tx = pool.begin().await?;
+    let tx =
+        school_tenancy::TenantPool::begin_observed(pool, "attendance.reports.transaction").await?;
     purge_in_transaction(pool, tx, actor, term, p, coverage).await
 }
 pub async fn purge_in_transaction(
     pool: &PgPool,
-    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    mut tx: school_tenancy::ObservedTransaction,
     actor: Uuid,
     term: Uuid,
     p: PurgeAttendanceTerm,
@@ -224,7 +255,7 @@ pub async fn purge_in_transaction(
         return Err(invalid("ระบุเหตุผลล้างรายละเอียด"));
     }
     lock_term(&mut tx, term, false, true).await?;
-    let (closed,archived):(bool,bool)=sqlx::query_as("SELECT t.status='closed',EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) FROM academic_terms t WHERE t.id=$1").bind(term).fetch_one(&mut *tx).await?;
+    let (closed,archived):(bool,bool)=DbSession::new(&mut *tx).query_as("attendance.services.reports.purge_in_transaction", "SELECT t.status='closed',EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id) FROM academic_terms t WHERE t.id=$1").bind(term).fetch_one().await?;
     if archived {
         return impact_on_connection(&mut *tx, term).await;
     }
@@ -232,12 +263,14 @@ pub async fn purge_in_transaction(
         return Err(AppError::Conflict("ล้างได้เฉพาะภาคเรียนที่ปิดแล้ว".into()));
     }
     super::score_changes::require_drained(&mut tx, term).await?;
-    let notification_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT notification_id FROM attendance_notifications WHERE academic_term_id=$1",
-    )
-    .bind(term)
-    .fetch_all(&mut *tx)
-    .await?;
+    let notification_ids: Vec<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "attendance.services.reports.purge_in_transaction",
+            "SELECT notification_id FROM attendance_notifications WHERE academic_term_id=$1",
+        )
+        .bind(term)
+        .fetch_all()
+        .await?;
     let progress =
         school_notifications::dispatch::progress_on_connection(&mut tx, &notification_ids).await?;
     let pending = progress
@@ -246,59 +279,73 @@ pub async fn purge_in_transaction(
     if pending {
         return Err(AppError::Conflict("รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง".into()));
     }
-    let count:i64=sqlx::query_scalar("SELECT count(*) FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1").bind(term).fetch_one(&mut *tx).await?;
+    let count:i64=DbSession::new(&mut *tx).scalar("attendance.services.reports.purge_in_transaction", "SELECT count(*) FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id WHERE s.academic_term_id=$1").bind(term).fetch_one().await?;
     if count != p.expected_records {
         return Err(AppError::Conflict(
             "จำนวนข้อมูลเปลี่ยนแล้ว กรุณาตรวจผลกระทบใหม่".into(),
         ));
     }
-    let rows: Vec<AttendanceSummary> = sqlx::query_as(SUMMARY_SQL)
+    let rows: Vec<AttendanceSummary> = DbSession::new(&mut *tx)
+        .query_as(
+            "attendance.services.reports.purge_in_transaction",
+            SUMMARY_SQL,
+        )
         .bind(term)
         .bind(Option::<Uuid>::None)
         .bind(Option::<Uuid>::None)
         .bind(Json(coverage))
-        .fetch_all(&mut *tx)
+        .fetch_all()
         .await?;
     let expected: i64 = rows.iter().map(|s| s.expected).sum();
     freeze(&mut tx, term, None, &rows).await?;
-    let mut teachers: Vec<Uuid> = sqlx::query_scalar(
+    let mut teachers: Vec<Uuid> = DbSession::new(&mut *tx).scalar("attendance.services.reports.purge_in_transaction",
         "SELECT DISTINCT unnest(teacher_ids) FROM attendance_sessions WHERE academic_term_id=$1",
     )
     .bind(term)
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     teachers.extend(coverage.iter().flat_map(|v| v.teacher_ids.iter()).copied());
     teachers.sort();
     teachers.dedup();
     for teacher in teachers {
-        let scoped: Vec<AttendanceSummary> = sqlx::query_as(SUMMARY_SQL)
+        let scoped: Vec<AttendanceSummary> = DbSession::new(&mut *tx)
+            .query_as(
+                "attendance.services.reports.purge_in_transaction",
+                SUMMARY_SQL,
+            )
             .bind(term)
             .bind(Option::<Uuid>::None)
             .bind(teacher)
             .bind(Json(coverage))
-            .fetch_all(&mut *tx)
+            .fetch_all()
             .await?;
         freeze(&mut tx, term, Some(teacher), &scoped).await?;
     }
     // Reconcile every status bucket, including virtual unchecked coverage, before cleanup.
-    let frozen: Vec<AttendanceSummary> = sqlx::query_as(archived_summary_sql(false))
+    let frozen: Vec<AttendanceSummary> = DbSession::new(&mut *tx)
+        .query_as(
+            "attendance.services.reports.purge_in_transaction",
+            archived_summary_sql(false),
+        )
         .bind(term)
         .bind(Option::<Uuid>::None)
         .bind(Option::<Uuid>::None)
         .bind(Json(coverage))
-        .fetch_all(&mut *tx)
+        .fetch_all()
         .await?;
     if frozen != rows {
         return Err(AppError::Conflict("ยอดสรุปไม่ตรง หยุดการล้างข้อมูล".into()));
     }
-    let configuration: Option<Json<AttendanceConfiguration>> = sqlx::query_scalar(
-        "SELECT configuration FROM attendance_settings WHERE academic_term_id=$1",
-    )
-    .bind(term)
-    .fetch_optional(&mut *tx)
-    .await?;
-    sqlx::query("INSERT INTO attendance_term_archives(academic_term_id,archived_by,record_count,counted_record_count,settings_snapshot) VALUES($1,$2,$3,$4,$5)").bind(term).bind(actor).bind(count).bind(expected).bind(configuration.unwrap_or(Json(AttendanceConfiguration::default()))).execute(&mut *tx).await?;
-    let file_ids:Vec<Uuid>=sqlx::query_scalar("SELECT e.evidence_file_id FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id WHERE s.academic_term_id=$1 ORDER BY e.evidence_file_id").bind(term).fetch_all(&mut *tx).await?;
+    let configuration: Option<Json<AttendanceConfiguration>> = DbSession::new(&mut *tx)
+        .scalar(
+            "attendance.services.reports.purge_in_transaction",
+            "SELECT configuration FROM attendance_settings WHERE academic_term_id=$1",
+        )
+        .bind(term)
+        .fetch_optional()
+        .await?;
+    DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "INSERT INTO attendance_term_archives(academic_term_id,archived_by,record_count,counted_record_count,settings_snapshot) VALUES($1,$2,$3,$4,$5)").bind(term).bind(actor).bind(count).bind(expected).bind(configuration.unwrap_or(Json(AttendanceConfiguration::default()))).execute().await?;
+    let file_ids:Vec<Uuid>=DbSession::new(&mut *tx).scalar("attendance.services.reports.purge_in_transaction", "SELECT e.evidence_file_id FROM attendance_scan_events e JOIN attendance_sessions s ON s.id=e.session_id WHERE s.academic_term_id=$1 ORDER BY e.evidence_file_id").bind(term).fetch_all().await?;
     let repository = SqlFileRepository::new(pool.clone());
     for file in file_ids {
         repository
@@ -306,17 +353,21 @@ pub async fn purge_in_transaction(
             .await
             .map_err(|_| AppError::ServiceUnavailable("เตรียมล้างภาพไม่ได้ จึงยังไม่ล้างผล".into()))?;
     }
-    sqlx::query("DELETE FROM attendance_scan_events WHERE session_id IN(SELECT id FROM attendance_sessions WHERE academic_term_id=$1)").bind(term).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM attendance_sessions WHERE academic_term_id=$1")
+    DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "DELETE FROM attendance_scan_events WHERE session_id IN(SELECT id FROM attendance_sessions WHERE academic_term_id=$1)").bind(term).execute().await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "attendance.services.reports.purge_in_transaction",
+            "DELETE FROM attendance_sessions WHERE academic_term_id=$1",
+        )
         .bind(term)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     let completed: Vec<Uuid> = progress
         .iter()
         .filter(|n| n.published_at.is_some())
         .map(|n| n.notification_id)
         .collect();
-    sqlx::query("DELETE FROM attendance_notifications WHERE academic_term_id=$1 AND notification_id=ANY($2)").bind(term).bind(completed).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("attendance.services.reports.purge_in_transaction", "DELETE FROM attendance_notifications WHERE academic_term_id=$1 AND notification_id=ANY($2)").bind(term).bind(completed).execute().await?;
     audit(&mut tx, actor, term, "delete", &p.reason).await?;
     tx.commit().await?;
     impact(pool, term).await
@@ -347,9 +398,15 @@ async fn freeze(
         .bind(term)
         .bind(Json(rows));
     if let Some(teacher) = teacher {
-        query.bind(teacher).execute(&mut **tx).await?;
+        DbSession::new(&mut **tx)
+            .prepared_query("attendance.reports.freeze_teacher", query.bind(teacher))
+            .execute()
+            .await?;
     } else {
-        query.execute(&mut **tx).await?;
+        DbSession::new(&mut **tx)
+            .prepared_query("attendance.reports.freeze", query)
+            .execute()
+            .await?;
     }
     Ok(())
 }

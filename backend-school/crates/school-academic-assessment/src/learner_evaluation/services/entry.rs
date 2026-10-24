@@ -10,7 +10,16 @@ pub async fn get_workspace(
     domain: LearnerEvaluationDomain,
     ctx: &EvaluationContext,
 ) -> Result<EvaluationWorkspace, AppError> {
-    let subject = subject_for_group(pool, group, ctx).await?;
+    let subject = {
+        let mut context_tx = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_assessment.learner_evaluation.services.subject_for_group",
+        )
+        .await?;
+        let subject = subject_for_group(&mut context_tx, group, ctx).await?;
+        context_tx.commit().await?;
+        subject
+    };
     let access = policy::list_access(pool, actor).await?;
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, false).await?;
     let group_scope = scope
@@ -180,7 +189,16 @@ pub async fn save_responses(
     cells: Vec<ResponseInput>,
 ) -> Result<EvaluationWorkspace, AppError> {
     let cells = normalize(cells)?;
-    let subject = subject_for_group(pool, group, ctx).await?;
+    let subject = {
+        let mut context_tx = school_tenancy::TenantPool::begin_observed(
+            pool,
+            "academic_assessment.learner_evaluation.services.subject_for_group",
+        )
+        .await?;
+        let subject = subject_for_group(&mut context_tx, group, ctx).await?;
+        context_tx.commit().await?;
+        subject
+    };
     let (mut tx, scope) = begin_subject(pool, actor, subject, domain, ctx, true).await?;
     let group_scope = scope
         .groups

@@ -1,4 +1,5 @@
 //! Process-owned schedule cache: idle tenants are not polled every minute.
+use school_database::DbSession;
 use std::sync::Arc;
 #[async_trait::async_trait]
 pub trait AttendanceBehaviorPort: Send + Sync {
@@ -58,15 +59,13 @@ pub async fn touch(
     pool: PgPool,
     _channel: broadcast::Sender<TenantNotificationEvent>,
 ) -> Result<(), AppError> {
-    let mut connection = school_tenancy::TenantPool::checkout_pool(
-        &pool,
-        school_tenancy::TenantDatabaseOperation::AttendanceMaintenance,
-    )
-    .await?;
-    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=sqlx::query_as("SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all(&mut *connection).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(&pool, "attendance.runtime.touch")
+            .await?;
+    let rows:Vec<(Uuid,NaiveDate,NaiveDate,Json<AttendanceConfiguration>)>=DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT s.academic_term_id,t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date),s.configuration FROM attendance_settings s JOIN academic_terms t ON t.id=s.academic_term_id JOIN academic_years y ON y.id=t.academic_year_id WHERE y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') AND NOT EXISTS(SELECT 1 FROM attendance_term_archives a WHERE a.academic_term_id=t.id)").fetch_all().await?;
     let ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
-    let day_rows: Vec<(Uuid,NaiveDate,bool,String)> = sqlx::query_as("SELECT academic_term_id,date,counted,note FROM attendance_days WHERE academic_term_id=ANY($1) ORDER BY academic_term_id,date")
-        .bind(&ids).fetch_all(&mut *connection).await?;
+    let day_rows: Vec<(Uuid,NaiveDate,bool,String)> = DbSession::new(&mut *connection).query_as("attendance.src.runtime.touch", "SELECT academic_term_id,date,counted,note FROM attendance_days WHERE academic_term_id=ANY($1) ORDER BY academic_term_id,date")
+        .bind(&ids).fetch_all().await?;
     let mut days_by_term = HashMap::<Uuid, Vec<AttendanceDay>>::new();
     for (term, date, counted, note) in day_rows {
         days_by_term.entry(term).or_default().push(AttendanceDay {
@@ -85,10 +84,13 @@ pub async fn touch(
             days: days_by_term.remove(&term).unwrap_or_default(),
         })
         .collect();
-    let module_generation =
-        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
-            .fetch_one(&mut *connection)
-            .await?;
+    let module_generation = DbSession::new(&mut *connection)
+        .scalar(
+            "attendance.src.runtime.touch",
+            "SELECT generation FROM attendance_module_state WHERE singleton",
+        )
+        .fetch_one()
+        .await?;
     drop(connection);
     let prior = tenants()
         .get(tenant)
@@ -254,7 +256,11 @@ async fn run(
             let current = now.hour() * 60 + now.minute();
             let due = time.hour() * 60 + time.minute();
             if digest_due(current, due, r.digests.contains(&key)) {
-                let mut tx = pool.begin().await?;
+                let mut tx = school_tenancy::TenantPool::begin_observed(
+                    pool,
+                    "attendance.runtime.transaction",
+                )
+                .await?;
                 crate::services::lock_term(&mut tx, t.term, false, true).await?;
                 let expected =
                     crate::application::projection::expected(&mut *tx, t.term, Some((date, date)))

@@ -17,10 +17,19 @@ struct Flight {
 struct Entry {
     flight: Option<Arc<Flight>>,
     revision: Uuid,
-    value: Option<(SchoolDatabaseInfo, Instant)>,
+    value: Option<(SchoolDatabaseInfo, Instant, Uuid)>,
     touched: Instant,
     fence: Option<Uuid>,
     completed: Option<Uuid>,
+}
+
+/// An opaque, process-local database work snapshot. It deliberately cannot be
+/// formatted or serialized, and exposes no credential accessors to consumers.
+pub struct ResolvedTenantDatabase {
+    pub(crate) tenant: String,
+    pub(crate) database: SchoolDatabaseInfo,
+    value_revision: Uuid,
+    expires_at: Instant,
 }
 
 /// Process-local runtime credentials only. Fences never expire open.
@@ -145,7 +154,7 @@ impl DirectoryCache {
                 return Err("Tenant directory mutation in progress".into());
             }
             entry.touched = Instant::now();
-            if let Some((value, expires)) = &entry.value {
+            if let Some((value, expires, _)) = &entry.value {
                 if Instant::now() < *expires {
                     return Ok(value.clone());
                 }
@@ -197,7 +206,7 @@ impl DirectoryCache {
                 .filter(|entry| entry.revision == revision && entry.fence.is_none())
                 .ok_or("Tenant directory lookup superseded")?;
             if let Ok(value) = &fetched {
-                entry.value = Some((value.clone(), Instant::now() + self.ttl));
+                entry.value = Some((value.clone(), Instant::now() + self.ttl, Uuid::new_v4()));
                 entry.touched = Instant::now();
             }
             fetched
@@ -205,6 +214,75 @@ impl DirectoryCache {
         .await;
         leader.complete(result.clone());
         result
+    }
+
+    pub(crate) async fn resolve_work<F, Fut>(
+        &self,
+        key: &str,
+        fetch: F,
+    ) -> Result<ResolvedTenantDatabase, String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = FillResult>,
+    {
+        // Resolution may perform HTTP. The work proof is then issued entirely
+        // from one current cache value under its lock, never from the earlier
+        // returned clone paired with a later revision.
+        self.resolve(key, fetch).await?;
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| "Tenant directory unavailable")?;
+        let entry = entries
+            .get_mut(key)
+            .filter(|entry| entry.fence.is_none())
+            .ok_or("Tenant directory work superseded")?;
+        let now = Instant::now();
+        let (value, expires, revision) = entry
+            .value
+            .as_ref()
+            .filter(|(_, expires, _)| now < *expires)
+            .ok_or("Tenant directory work expired")?;
+        let snapshot = ResolvedTenantDatabase {
+            tenant: key.to_owned(),
+            database: value.clone(),
+            value_revision: *revision,
+            expires_at: *expires,
+        };
+        entry.touched = now;
+        Ok(snapshot)
+    }
+
+    pub(crate) fn validate_work(
+        &self,
+        work: &ResolvedTenantDatabase,
+        expected: Option<Uuid>,
+    ) -> Result<(), String> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| "Tenant directory unavailable")?;
+        let entry = entries
+            .get(&work.tenant)
+            .filter(|entry| entry.fence.is_none())
+            .ok_or("Tenant directory work superseded")?;
+        let now = Instant::now();
+        let valid = entry
+            .value
+            .as_ref()
+            .is_some_and(|(value, expires, revision)| {
+                *revision == work.value_revision
+                    && *expires == work.expires_at
+                    && now < *expires
+                    && now < work.expires_at
+                    && value.tenant_id == work.database.tenant_id
+                    && value.database_url == work.database.database_url
+                    && expected.is_none_or(|id| id == value.tenant_id)
+            });
+        if !valid {
+            return Err("Tenant directory work expired or superseded".into());
+        }
+        Ok(())
     }
 
     pub(crate) fn begin(&self, key: &str, token: Uuid) -> Result<(), String> {
@@ -674,5 +752,110 @@ mod tests {
             .resolve("c", || async { Ok(value("c")) })
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn work_snapshot_rotated_credentials_change_revision_without_reusing_old_proof() {
+        let cache = DirectoryCache::new(2, Duration::from_secs(60), 1, Duration::from_secs(1));
+        let old = cache
+            .resolve_work("a", || async { Ok(value("old-secret")) })
+            .await
+            .unwrap();
+        let mutation_epoch = {
+            let mut entries = cache.entries.lock().unwrap();
+            let entry = entries.get_mut("a").unwrap();
+            // An ordinary TTL refill does not change the mutation/singleflight epoch.
+            entry.value.as_mut().unwrap().1 = Instant::now();
+            entry.revision
+        };
+        let current = cache
+            .resolve_work("a", || async { Ok(value("rotated-secret")) })
+            .await
+            .unwrap();
+        assert_eq!(
+            mutation_epoch,
+            cache.entries.lock().unwrap().get("a").unwrap().revision
+        );
+        assert_eq!(old.database.tenant_id, current.database.tenant_id);
+        assert_ne!(old.value_revision, current.value_revision);
+        assert_eq!(current.database.database_url, "rotated-secret");
+        assert!(cache.validate_work(&old, Some(Uuid::nil())).is_err());
+        assert!(cache.validate_work(&current, Some(Uuid::nil())).is_ok());
+        assert!(cache.validate_work(&current, Some(Uuid::new_v4())).is_err());
+    }
+
+    #[tokio::test]
+    async fn work_snapshot_fence_eviction_and_expiry_fail_closed_without_refetch() {
+        let cache = DirectoryCache::new(1, Duration::from_secs(60), 1, Duration::from_secs(1));
+        let proof = cache
+            .resolve_work("a", || async { Ok(value("a-secret")) })
+            .await
+            .unwrap();
+        let mutation = Uuid::new_v4();
+        cache.begin("a", mutation).unwrap();
+        assert!(cache.validate_work(&proof, None).is_err());
+        assert!(cache
+            .resolve_work("a", || async { panic!("fenced work must not fetch") })
+            .await
+            .is_err());
+        cache.finish("a", mutation).unwrap();
+        assert!(cache.validate_work(&proof, None).is_err());
+        let current = cache
+            .resolve_work("a", || async { Ok(value("current")) })
+            .await
+            .unwrap();
+        cache
+            .resolve_work("b", || async { Ok(value("b")) })
+            .await
+            .unwrap();
+        assert!(cache.validate_work(&current, None).is_err());
+        let expiring = DirectoryCache::new(1, Duration::from_millis(2), 1, Duration::from_secs(1));
+        let proof = expiring
+            .resolve_work("a", || async { Ok(value("expires")) })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        assert!(expiring.validate_work(&proof, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_work_resolution_releases_fill_and_issues_no_valid_proof() {
+        let cache = Arc::new(DirectoryCache::new(
+            2,
+            Duration::from_secs(60),
+            1,
+            Duration::from_secs(1),
+        ));
+        let resolving = cache.clone();
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            resolving
+                .resolve_work("a", || async {
+                    entered.send(()).unwrap();
+                    std::future::pending::<FillResult>().await
+                })
+                .await
+        });
+        started.await.unwrap();
+        task.abort();
+        assert!(matches!(task.await, Err(error) if error.is_cancelled()));
+        assert!(cache
+            .entries
+            .lock()
+            .unwrap()
+            .get("a")
+            .unwrap()
+            .value
+            .is_none());
+        let proof = cache
+            .resolve_work("a", || async { Ok(value("retry")) })
+            .await
+            .unwrap();
+        assert!(cache.validate_work(&proof, None).is_ok());
+        let other = cache
+            .resolve_work("b", || async { Ok(value("other")) })
+            .await
+            .unwrap();
+        assert!(cache.validate_work(&other, None).is_ok());
     }
 }

@@ -1,4 +1,5 @@
-use crate::directory_cache::DirectoryCache;
+use crate::directory_cache::{DirectoryCache, ResolvedTenantDatabase};
+use crate::{PoolManager, TenantPool};
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
@@ -287,6 +288,32 @@ impl AdminClient {
         self.directory
             .resolve(subdomain, || self.fetch_school_database_info(subdomain))
             .await
+    }
+
+    /// Resolve control-plane metadata before acquiring a background DB permit.
+    pub async fn resolve_database_work(
+        &self,
+        tenant: &str,
+    ) -> Result<ResolvedTenantDatabase, String> {
+        self.directory
+            .resolve_work(tenant, || self.fetch_school_database_info(tenant))
+            .await
+    }
+
+    /// Acquire from an already-resolved proof without HTTP fallback or retries.
+    /// The second local check covers waiting for pool creation/physical admission.
+    pub async fn pool_for_resolved_work(
+        &self,
+        pools: &PoolManager,
+        work: &ResolvedTenantDatabase,
+        expected: Option<Uuid>,
+    ) -> Result<(Uuid, TenantPool), String> {
+        self.directory.validate_work(work, expected)?;
+        let pool = pools
+            .get_pool_without_migrations(&work.database.database_url, &work.tenant)
+            .await?;
+        self.directory.validate_work(work, expected)?;
+        Ok((work.database.tenant_id, pool))
     }
 
     pub fn begin_directory_mutation(&self, subdomain: &str, token: Uuid) -> Result<(), String> {
