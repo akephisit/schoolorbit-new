@@ -6,7 +6,6 @@ use uuid::Uuid;
 use super::term_preparation::{apply, normalize_input, preview, validate_checksum};
 use crate::integration_tests::academic::{
     core,
-    cutover_test_support::apply_migrations_through,
     delivery::services::offerings,
     lifecycle::models::{
         ApplyTermPreparationInput, PreviewTermPreparationInput, TermPreparationEntityMapping,
@@ -124,7 +123,6 @@ fn preparation_normalization_is_deterministic() {
 
 async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext, Uuid, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 89).await.unwrap();
     let actor = ActorContext {
         user_id: sqlx::query_scalar(
             "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",

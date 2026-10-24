@@ -82,9 +82,6 @@ impl ExternalLifecyclePort for StubExternalLifecyclePort {
 #[tokio::test]
 async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_checksum() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_external_port_contract").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -143,9 +140,6 @@ async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_che
 #[tokio::test]
 async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_exam_fingerprint").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 69)
-        .await
-        .unwrap();
     let (year, term, date): (Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as(
         "SELECT academic_year_id,id,start_date FROM academic_terms WHERE status='active'",
     )
@@ -203,9 +197,6 @@ async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
 #[tokio::test]
 async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_delivery_items() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_operational_providers").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let (year,term,bell,start):(Uuid,Uuid,Uuid,chrono::NaiveDate) = sqlx::query_as(
         "SELECT academic_year_id,id,bell_schedule_id,start_date FROM academic_terms WHERE status='active'"
     ).fetch_one(&pool).await.unwrap();
@@ -324,9 +315,6 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
 async fn lifecycle_permission_defaults_only_grant_verified_system_administrators() {
     use school_permissions::registry::codes;
     let pool = core::services_tests::prepare_core_fixture("lifecycle_permission_defaults").await;
-    crate::integration_tests::academic::cutover_test_support::apply_migrations_through(&pool, 68)
-        .await
-        .unwrap();
     let expected = vec![
         codes::ACADEMIC_LIFECYCLE_READ_SCHOOL,
         codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
