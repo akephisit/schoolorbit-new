@@ -9,6 +9,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
@@ -23,14 +24,18 @@ pub(crate) struct AdjustmentRecord {
     pub instance_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
-pub(crate) async fn record(pool: &PgPool, id: Uuid) -> Result<AdjustmentRecord, AppError> {
-    sqlx::query_as("SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1").bind(id).fetch_optional(pool).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))
+
+pub(crate) async fn record_on_connection(
+    connection: &mut sqlx::PgConnection,
+    id: Uuid,
+) -> Result<AdjustmentRecord, AppError> {
+    DbSession::new(&mut *connection).query_as("budget.src.adjustments.record_on_connection", "SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))
 }
 async fn locked(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<AdjustmentRecord, AppError> {
-    sqlx::query_as("SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))
+    DbSession::new(&mut **tx).query_as("budget.src.adjustments.locked", "SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1 FOR UPDATE").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))
 }
 fn project_ids(input: &BudgetAdjustmentInput) -> Vec<Uuid> {
     input
@@ -80,23 +85,28 @@ async fn validate_refs(
     validate(input)?;
     settings::routing(tx).await?;
     for r in input.from.iter().chain(&input.to) {
-        let p: Option<(Uuid, Option<Uuid>)> = sqlx::query_as(
-            "SELECT fiscal_year_id,accepted_snapshot_id FROM budget_projects WHERE id=$1",
-        )
-        .bind(r.project_id)
-        .fetch_optional(&mut **tx)
-        .await?;
+        let p: Option<(Uuid, Option<Uuid>)> = DbSession::new(&mut **tx)
+            .query_as(
+                "budget.src.adjustments.validate_refs",
+                "SELECT fiscal_year_id,accepted_snapshot_id FROM budget_projects WHERE id=$1",
+            )
+            .bind(r.project_id)
+            .fetch_optional()
+            .await?;
         if p.is_none_or(|p| p.0 != input.fiscal_year_id || p.1.is_none()) {
             return Err(invalid("รายการต้องอยู่ในปีงบประมาณเดียวกันและโครงการมีแผนอนุมัติ"));
         }
         repository::account(tx, r).await?;
     }
     if let Some(loan) = input.loan_id {
-        let old: Option<Json<BudgetAdjustmentInput>> =
-            sqlx::query_scalar("SELECT document FROM budget_loans WHERE id=$1 FOR UPDATE")
-                .bind(loan)
-                .fetch_optional(&mut **tx)
-                .await?;
+        let old: Option<Json<BudgetAdjustmentInput>> = DbSession::new(&mut **tx)
+            .scalar(
+                "budget.src.adjustments.validate_refs",
+                "SELECT document FROM budget_loans WHERE id=$1 FOR UPDATE",
+            )
+            .bind(loan)
+            .fetch_optional()
+            .await?;
         let old = old.ok_or_else(|| invalid("ไม่พบรายการยืมที่อนุมัติ"))?;
         if !matches!(old.kind, BudgetAdjustmentKind::Loan)
             || old.fiscal_year_id != input.fiscal_year_id
@@ -117,28 +127,29 @@ async fn validate_refs(
     Ok(())
 }
 pub(crate) async fn require_read(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     r: &AdjustmentRecord,
 ) -> Result<(), AppError> {
-    let s = policy::read_scope(pool, a, false).await?;
+    let s = policy::read_scope_on_connection(connection, a, false).await?;
     if s.school || (s.own && r.owner_id == a.user_id) {
         return Ok(());
     }
+
     if s.assigned {
-        let assigned: bool = sqlx::query_scalar(
+        let assigned: bool = DbSession::new(&mut *connection).scalar("budget.src.adjustments.require_read",
             "SELECT EXISTS(SELECT 1 FROM process_participants WHERE instance_id=$1 AND user_id=$2)",
         )
         .bind(r.instance_id)
         .bind(a.user_id)
-        .fetch_one(pool)
+        .fetch_one()
         .await?;
         if assigned {
             return Ok(());
         }
     }
     for id in project_ids(&r.document) {
-        let p = repository::project(pool, id).await?;
+        let p = repository::project_on_connection(connection, id).await?;
         if !s.units.contains(&p.document.project.organization_unit_id) {
             return Err(repository::denied());
         }
@@ -146,13 +157,13 @@ pub(crate) async fn require_read(
     Ok(())
 }
 async fn project_reads(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     a: &ActorContext,
     input: &BudgetAdjustmentInput,
 ) -> Result<(), AppError> {
     for id in project_ids(input) {
-        let p = repository::project(pool, id).await?;
-        policy::require_read(pool, a, &p).await?;
+        let p = repository::project_on_connection(connection, id).await?;
+        policy::require_read(connection, a, &p).await?;
     }
     Ok(())
 }
@@ -162,15 +173,18 @@ async fn detail_tx(
     r: &AdjustmentRecord,
 ) -> Result<BudgetAdjustmentDetail, AppError> {
     let i = process::load(tx, r.instance_id).await?;
-    let outstanding: Option<i64> =
-        sqlx::query_scalar("SELECT amount-repaid FROM budget_loans WHERE id=$1")
-            .bind(if r.document.kind == BudgetAdjustmentKind::Repayment {
-                r.document.loan_id.unwrap_or(r.id)
-            } else {
-                r.id
-            })
-            .fetch_optional(&mut **tx)
-            .await?;
+    let outstanding: Option<i64> = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.src.adjustments.detail_tx",
+            "SELECT amount-repaid FROM budget_loans WHERE id=$1",
+        )
+        .bind(if r.document.kind == BudgetAdjustmentKind::Repayment {
+            r.document.loan_id.unwrap_or(r.id)
+        } else {
+            r.id
+        })
+        .fetch_optional()
+        .await?;
     Ok(detail_from(a, r, i.as_ref(), outstanding.unwrap_or(0))?)
 }
 fn detail_from(
@@ -208,12 +222,17 @@ pub async fn detail(
     id: Uuid,
 ) -> Result<BudgetAdjustmentDetail, AppError> {
     let scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.detail").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.adjustments.detail",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let r:AdjustmentRecord=sqlx::query_as("SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1").bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))?;
-    let projects:Vec<repository::ProjectRecord>=sqlx::query_as("SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1)").bind(project_ids(&r.document)).fetch_all(&mut *tx).await?;
+    let r:AdjustmentRecord=DbSession::new(&mut *tx).query_as("budget.src.adjustments.detail", "SELECT id,owner_id,revision,status,document,instance_id,created_at FROM budget_adjustments WHERE id=$1").bind(id).fetch_optional().await?.ok_or_else(||AppError::NotFound("ไม่พบรายการปรับงบประมาณ".into()))?;
+    let projects:Vec<repository::ProjectRecord>=DbSession::new(&mut *tx).query_as("budget.src.adjustments.detail", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1)").bind(project_ids(&r.document)).fetch_all().await?;
     require_read_in_transaction(&mut tx, a, &r, &projects, &scope).await?;
     let d = detail_tx(&mut tx, a, &r).await?;
     tx.commit().await?;
@@ -236,11 +255,16 @@ pub async fn create(
         loan_id: input.loan_id,
     };
     validate(&doc)?;
-    project_reads(pool, a, &doc).await?;
-    let scope = policy::read_scope(pool, a, false).await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.adjustments.create.preflight",
+    )
+    .await?;
+    project_reads(&mut preflight, a, &doc).await?;
+    let scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
     if !scope.school && !scope.own {
         for id in project_ids(&doc) {
-            let p = repository::project(pool, id).await?;
+            let p = repository::project_on_connection(&mut preflight, id).await?;
             if !scope
                 .units
                 .contains(&p.document.project.organization_unit_id)
@@ -249,8 +273,10 @@ pub async fn create(
             }
         }
     }
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.create").await?;
     let locked_projects = repository::lock_projects(&mut tx, &project_ids(&doc)).await?;
     for p in &locked_projects {
         policy::require_read_in_transaction(&mut tx, a, p, &read_scope).await?;
@@ -270,7 +296,7 @@ pub async fn create(
         return detail(pool, a, old).await;
     }
     validate_refs(&mut tx, &doc).await?;
-    sqlx::query("INSERT INTO budget_adjustments(id,owner_id,fiscal_year_id,from_project_id,to_project_id,revision,status,document) VALUES($1,$2,$3,$4,$5,1,'draft',$6)").bind(id).bind(a.user_id).bind(doc.fiscal_year_id).bind(doc.from.as_ref().map(|x|x.project_id)).bind(doc.to.as_ref().map(|x|x.project_id)).bind(Json(doc)).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("budget.src.adjustments.create", "INSERT INTO budget_adjustments(id,owner_id,fiscal_year_id,from_project_id,to_project_id,revision,status,document) VALUES($1,$2,$3,$4,$5,1,'draft',$6)").bind(id).bind(a.user_id).bind(doc.fiscal_year_id).bind(doc.from.as_ref().map(|x|x.project_id)).bind(doc.to.as_ref().map(|x|x.project_id)).bind(Json(doc)).execute().await?;
     repository::history(
         &mut tx,
         a,
@@ -291,8 +317,13 @@ pub async fn save(
     input: UpdateBudgetAdjustmentRequest,
 ) -> Result<BudgetAdjustmentDetail, AppError> {
     a.require_permission(codes::BUDGET_ADJUSTMENT_CREATE_SCHOOL)?;
-    let old = record(pool, id).await?;
-    require_read(pool, a, &old).await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.adjustments.save.preflight",
+    )
+    .await?;
+    let old = record_on_connection(&mut preflight, id).await?;
+    require_read(&mut preflight, a, &old).await?;
     let doc = BudgetAdjustmentInput {
         kind: input.kind,
         fiscal_year_id: input.fiscal_year_id,
@@ -305,8 +336,10 @@ pub async fn save(
     validate(&doc)?;
     let mut ids = project_ids(&old.document);
     ids.extend(project_ids(&doc));
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.save").await?;
     let locked_projects = repository::lock_projects(&mut tx, &ids).await?;
     let mut r = locked(&mut tx, id).await?;
     require_read_in_transaction(&mut tx, a, &r, &locked_projects, &read_scope).await?;
@@ -341,7 +374,7 @@ pub async fn save(
     validate_refs(&mut tx, &doc).await?;
     r.document = Json(doc);
     r.revision += 1;
-    sqlx::query("UPDATE budget_adjustments SET revision=$2,fiscal_year_id=$3,from_project_id=$4,to_project_id=$5,document=$6 WHERE id=$1").bind(id).bind(r.revision).bind(r.document.fiscal_year_id).bind(r.document.from.as_ref().map(|x|x.project_id)).bind(r.document.to.as_ref().map(|x|x.project_id)).bind(&r.document).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("budget.src.adjustments.save", "UPDATE budget_adjustments SET revision=$2,fiscal_year_id=$3,from_project_id=$4,to_project_id=$5,document=$6 WHERE id=$1").bind(id).bind(r.revision).bind(r.document.fiscal_year_id).bind(r.document.from.as_ref().map(|x|x.project_id)).bind(r.document.to.as_ref().map(|x|x.project_id)).bind(&r.document).execute().await?;
     repository::history(
         &mut tx,
         a,
@@ -362,11 +395,18 @@ pub async fn submit(
     input: BudgetMutationRequest,
 ) -> Result<BudgetAdjustmentDetail, AppError> {
     a.require_permission(codes::BUDGET_ADJUSTMENT_CREATE_SCHOOL)?;
-    let old = record(pool, id).await?;
-    require_read(pool, a, &old).await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.adjustments.submit.preflight",
+    )
+    .await?;
+    let old = record_on_connection(&mut preflight, id).await?;
+    require_read(&mut preflight, a, &old).await?;
     let ids = project_ids(&old.document);
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.submit").await?;
     let locked_projects = repository::lock_projects(&mut tx, &ids).await?;
     let mut r = locked(&mut tx, id).await?;
     require_read_in_transaction(&mut tx, a, &r, &locked_projects, &read_scope).await?;
@@ -415,12 +455,16 @@ pub async fn submit(
     r.instance_id = Some(i.id);
     r.status = "submitted".into();
     r.revision += 1;
-    sqlx::query("UPDATE budget_adjustments SET revision=$2,status=$3,instance_id=$4 WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.adjustments.submit",
+            "UPDATE budget_adjustments SET revision=$2,status=$3,instance_id=$4 WHERE id=$1",
+        )
         .bind(id)
         .bind(r.revision)
         .bind(&r.status)
         .bind(r.instance_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     repository::history(
         &mut tx,
@@ -473,33 +517,41 @@ async fn apply(
     }
     match doc.kind {
         BudgetAdjustmentKind::Loan => {
-            sqlx::query("INSERT INTO budget_loans(id,amount,document) VALUES($1,$2,$3)")
+            DbSession::new(&mut **tx)
+                .query(
+                    "budget.src.adjustments.apply",
+                    "INSERT INTO budget_loans(id,amount,document) VALUES($1,$2,$3)",
+                )
                 .bind(r.id)
                 .bind(amount)
                 .bind(doc)
-                .execute(&mut **tx)
+                .execute()
                 .await?;
         }
         BudgetAdjustmentKind::Repayment => {
             let loan = doc.loan_id.ok_or_else(|| invalid("ไม่พบรายการยืม"))?;
-            let changed = sqlx::query(
-                "UPDATE budget_loans SET repaid=repaid+$2 WHERE id=$1 AND repaid+$2<=amount",
-            )
-            .bind(loan)
-            .bind(amount)
-            .execute(&mut **tx)
-            .await?;
+            let changed = DbSession::new(&mut **tx)
+                .query(
+                    "budget.src.adjustments.apply",
+                    "UPDATE budget_loans SET repaid=repaid+$2 WHERE id=$1 AND repaid+$2<=amount",
+                )
+                .bind(loan)
+                .bind(amount)
+                .execute()
+                .await?;
             if changed.rows_affected() != 1 {
                 return Err(invalid("ยอดคืนเกินเงินยืมค้างคืน"));
             }
-            sqlx::query(
-                "INSERT INTO budget_repayments(adjustment_id,loan_id,amount) VALUES($1,$2,$3)",
-            )
-            .bind(r.id)
-            .bind(loan)
-            .bind(amount)
-            .execute(&mut **tx)
-            .await?;
+            DbSession::new(&mut **tx)
+                .query(
+                    "budget.src.adjustments.apply",
+                    "INSERT INTO budget_repayments(adjustment_id,loan_id,amount) VALUES($1,$2,$3)",
+                )
+                .bind(r.id)
+                .bind(loan)
+                .bind(amount)
+                .execute()
+                .await?;
         }
         _ => {}
     }
@@ -511,11 +563,18 @@ pub async fn act(
     id: Uuid,
     input: BudgetActionRequest,
 ) -> Result<BudgetAdjustmentDetail, AppError> {
-    let old = record(pool, id).await?;
-    require_read(pool, a, &old).await?;
+    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "budget.adjustments.act.preflight",
+    )
+    .await?;
+    let old = record_on_connection(&mut preflight, id).await?;
+    require_read(&mut preflight, a, &old).await?;
     let ids = project_ids(&old.document);
-    let read_scope = policy::read_scope(pool, a, false).await?;
-    let mut tx = pool.begin().await?;
+    let read_scope = policy::read_scope_on_connection(&mut preflight, a, false).await?;
+    drop(preflight);
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.act").await?;
     let locked_projects = repository::lock_projects(&mut tx, &ids).await?;
     let mut r = locked(&mut tx, id).await?;
     require_read_in_transaction(&mut tx, a, &r, &locked_projects, &read_scope).await?;
@@ -553,11 +612,15 @@ pub async fn act(
     }
     r.status = status.as_str().into();
     r.revision += 1;
-    sqlx::query("UPDATE budget_adjustments SET revision=$2,status=$3 WHERE id=$1")
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.adjustments.act",
+            "UPDATE budget_adjustments SET revision=$2,status=$3 WHERE id=$1",
+        )
         .bind(id)
         .bind(r.revision)
         .bind(&r.status)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     repository::history(
         &mut tx,
@@ -580,12 +643,17 @@ pub async fn list(
     let s = policy::read_scope(pool, a, false).await?;
     let (limit, offset) = money::paging(&q)?;
     let filter="($1 OR ($2 AND x.owner_id=$3) OR ((x.from_project_id IS NULL OR f.organization_unit_id=ANY($4)) AND (x.to_project_id IS NULL OR t.organization_unit_id=ANY($4))) OR ($5 AND EXISTS(SELECT 1 FROM process_participants pp WHERE pp.instance_id=x.instance_id AND pp.user_id=$3))) AND ($6::uuid IS NULL OR x.from_project_id=$6 OR x.to_project_id=$6) AND ($7::uuid IS NULL OR x.fiscal_year_id=$7) AND ($8::text IS NULL OR x.status=$8)";
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(&pool, "budget.adjustments.list").await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "budget.src.adjustments.list",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
-    let total:i64=sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM budget_adjustments x LEFT JOIN budget_projects f ON f.id=x.from_project_id LEFT JOIN budget_projects t ON t.id=x.to_project_id WHERE {filter}"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.fiscal_year_id).bind(q.status.map(|x|x.as_str())).fetch_one(&mut *tx).await?;
-    let rows:Vec<AdjustmentRecord>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT x.id,x.owner_id,x.revision,x.status,x.document,x.instance_id,x.created_at FROM budget_adjustments x LEFT JOIN budget_projects f ON f.id=x.from_project_id LEFT JOIN budget_projects t ON t.id=x.to_project_id WHERE {filter} ORDER BY x.created_at DESC,x.id DESC LIMIT $9 OFFSET $10"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.project_id).bind(q.fiscal_year_id).bind(q.status.map(|x|x.as_str())).bind(limit).bind(offset).fetch_all(&mut *tx).await?;
+    let total:i64=DbSession::new(&mut *tx).scalar("budget.src.adjustments.list", sqlx::AssertSqlSafe(format!("SELECT count(*) FROM budget_adjustments x LEFT JOIN budget_projects f ON f.id=x.from_project_id LEFT JOIN budget_projects t ON t.id=x.to_project_id WHERE {filter}"))).bind(s.school).bind(s.own).bind(a.user_id).bind(&s.units).bind(s.assigned).bind(q.project_id).bind(q.fiscal_year_id).bind(q.status.map(|x|x.as_str())).fetch_one().await?;
+    let rows:Vec<AdjustmentRecord>=DbSession::new(&mut *tx).query_as("budget.src.adjustments.list", sqlx::AssertSqlSafe(format!("SELECT x.id,x.owner_id,x.revision,x.status,x.document,x.instance_id,x.created_at FROM budget_adjustments x LEFT JOIN budget_projects f ON f.id=x.from_project_id LEFT JOIN budget_projects t ON t.id=x.to_project_id WHERE {filter} ORDER BY x.created_at DESC,x.id DESC LIMIT $9 OFFSET $10"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.project_id).bind(q.fiscal_year_id).bind(q.status.map(|x|x.as_str())).bind(limit).bind(offset).fetch_all().await?;
     let items = list_details(&mut tx, a, &rows).await?;
     tx.commit().await?;
     Ok(BudgetAdjustmentPage {
@@ -634,12 +702,12 @@ async fn require_read_in_transaction(
         return Ok(());
     }
     if s.assigned
-        && sqlx::query_scalar::<_, bool>(
+        && DbSession::new(&mut **tx).scalar::<bool>("budget.src.adjustments.require_read_in_transaction",
             "SELECT EXISTS(SELECT 1 FROM process_participants WHERE instance_id=$1 AND user_id=$2)",
         )
         .bind(r.instance_id)
         .bind(a.user_id)
-        .fetch_one(&mut **tx)
+        .fetch_one()
         .await?
     {
         return Ok(());
@@ -669,12 +737,13 @@ async fn list_details(
         .iter()
         .filter_map(|r| r.instance_id)
         .collect::<Vec<_>>();
-    let instances =
-        sqlx::query_scalar::<_, Json<school_workflow::process_models::ProcessInstance>>(
+    let instances = DbSession::new(&mut **tx)
+        .scalar::<Json<school_workflow::process_models::ProcessInstance>>(
+            "budget.src.adjustments.list_details",
             "SELECT definition FROM process_instances WHERE id=ANY($1)",
         )
         .bind(instances)
-        .fetch_all(&mut **tx)
+        .fetch_all()
         .await?
         .into_iter()
         .map(|p| (p.id, p.0))
@@ -689,14 +758,16 @@ async fn list_details(
             }
         })
         .collect::<Vec<_>>();
-    let loans = sqlx::query_as::<_, (Uuid, i64)>(
-        "SELECT id,amount-repaid FROM budget_loans WHERE id=ANY($1)",
-    )
-    .bind(loans)
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .collect::<HashMap<_, _>>();
+    let loans = DbSession::new(&mut **tx)
+        .query_as::<(Uuid, i64)>(
+            "budget.src.adjustments.list_details",
+            "SELECT id,amount-repaid FROM budget_loans WHERE id=ANY($1)",
+        )
+        .bind(loans)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     rows.iter()
         .map(|r| {
             detail_from(

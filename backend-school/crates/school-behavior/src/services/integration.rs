@@ -7,6 +7,7 @@ use crate::{
     rules::{action_side, invalid, validate_score, validate_status},
 };
 use chrono::NaiveDate;
+use school_database::DbSession;
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, FromRow, PgConnection};
@@ -156,7 +157,7 @@ pub async fn replace_attendance_day(
         }
     }
     lock(connection).await?;
-    let old_day:Option<(i64,Json<DayPolicy>)>=sqlx::query_as("SELECT revision,policy FROM behavior_source_days WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_optional(&mut *connection).await?;
+    let old_day:Option<(i64,Json<DayPolicy>)>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT revision,policy FROM behavior_source_days WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_optional().await?;
     if let Some((revision, _)) = &old_day {
         if *revision >= day.revision {
             return Ok(if *revision == day.revision {
@@ -180,11 +181,11 @@ pub async fn replace_attendance_day(
     });
     let merit = current_cycle(connection, BehaviorSide::Merit).await?;
     let deduction = current_cycle(connection, BehaviorSide::Deduction).await?;
-    let existing:Vec<Existing>=sqlx::query_as("SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,t.cycle_id,t.grade_level_id,t.homeroom_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 AND e.cancelled_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 200001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
+    let existing:Vec<Existing>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,t.cycle_id,t.grade_level_id,t.homeroom_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 AND e.cancelled_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 200001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all().await?;
     if existing.len() > 200000 {
         return Err(invalid("ประวัติแก้เช็กชื่อต่อวันเกินขนาดที่รองรับ"));
     }
-    let rules:Vec<BehaviorAttendanceRule>=sqlx::query_as("SELECT DISTINCT ON(kind,status,grade_level_id)id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY kind,status,grade_level_id,effective_from DESC,id DESC").bind(day.date).fetch_all(&mut *connection).await?;
+    let rules:Vec<BehaviorAttendanceRule>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT DISTINCT ON(kind,status,grade_level_id)id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY kind,status,grade_level_id,effective_from DESC,id DESC").bind(day.date).fetch_all().await?;
     let rules: RuleLookup = rules
         .into_iter()
         .map(|r| {
@@ -194,7 +195,7 @@ pub async fn replace_attendance_day(
             )
         })
         .collect();
-    let blocked:Vec<(BehaviorSide,BehaviorSource)>=sqlx::query_as("SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all(&mut *connection).await?;
+    let blocked:Vec<(BehaviorSide,BehaviorSource)>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all().await?;
     let blocked: BTreeSet<_> = blocked.into_iter().collect();
     let daily_absent: BTreeSet<_> = day
         .facts
@@ -202,7 +203,7 @@ pub async fn replace_attendance_day(
         .filter(|f| f.kind == BehaviorSource::Arrival && f.counted && f.status == "absent")
         .map(|f| f.student_id)
         .collect();
-    let decisions:Vec<SourceDecision>=sqlx::query_as("SELECT student_id,kind,source_key,status,action,raw_points,rule_version_id,suppressed FROM behavior_source_effect_snapshots WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
+    let decisions:Vec<SourceDecision>=DbSession::new(&mut *connection).query_as("behavior.services.integration.replace_attendance_day", "SELECT student_id,kind,source_key,status,action,raw_points,rule_version_id,suppressed FROM behavior_source_effect_snapshots WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all().await?;
     let decisions: BTreeMap<_, _> = decisions
         .into_iter()
         .map(|d| ((d.student_id, d.kind, d.source_key.clone()), d))
@@ -386,31 +387,34 @@ pub async fn replace_attendance_day(
         .cloned()
         .collect();
     if !reverse.is_empty() {
-        sqlx::query("UPDATE behavior_daily_totals t SET points=t.points-e.points,row_version=t.row_version+1 FROM(SELECT total_id,sum(points)points FROM behavior_entries WHERE id=ANY($1)AND cancelled_at IS NULL GROUP BY total_id)e WHERE e.total_id=t.id").bind(&reverse).execute(&mut *connection).await?;
-        sqlx::query("UPDATE behavior_entries SET cancelled_at=now(),cancellation_reason='ผลเช็กชื่อหรือการนับคะแนนเปลี่ยน' WHERE id=ANY($1)AND cancelled_at IS NULL").bind(&reverse).execute(&mut *connection).await?;
+        DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", "UPDATE behavior_daily_totals t SET points=t.points-e.points,row_version=t.row_version+1 FROM(SELECT total_id,sum(points)points FROM behavior_entries WHERE id=ANY($1)AND cancelled_at IS NULL GROUP BY total_id)e WHERE e.total_id=t.id").bind(&reverse).execute().await?;
+        DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", "UPDATE behavior_entries SET cancelled_at=now(),cancellation_reason='ผลเช็กชื่อหรือการนับคะแนนเปลี่ยน' WHERE id=ANY($1)AND cancelled_at IS NULL").bind(&reverse).execute().await?;
     }
     if !additions.is_empty() {
-        sqlx::query(r#"INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points)
+        DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", r#"INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points)
           SELECT x."studentId",$2,$3,x."gradeLevelId",x."homeroomId",x.side,x.source,x."cycleId",sum(x.points) FROM jsonb_to_recordset($1)x("studentId" uuid,"gradeLevelId" uuid,"homeroomId" uuid,side text,source text,"cycleId" uuid,points integer)
           GROUP BY x."studentId",x."gradeLevelId",x."homeroomId",x.side,x.source,x."cycleId"
-          ON CONFLICT(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)DO UPDATE SET points=behavior_daily_totals.points+EXCLUDED.points,row_version=behavior_daily_totals.row_version+1"#).bind(Json(&additions)).bind(day.date).bind(day.academic_term_id).execute(&mut *connection).await?;
-        sqlx::query(r#"INSERT INTO behavior_entries(total_id,source_key,source_session_id,source_generation,source_revision,source_status,raw_points,rule_version_id,item_name,points)
+          ON CONFLICT(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)DO UPDATE SET points=behavior_daily_totals.points+EXCLUDED.points,row_version=behavior_daily_totals.row_version+1"#).bind(Json(&additions)).bind(day.date).bind(day.academic_term_id).execute().await?;
+        DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", r#"INSERT INTO behavior_entries(total_id,source_key,source_session_id,source_generation,source_revision,source_status,raw_points,rule_version_id,item_name,points)
           SELECT t.id,x."sourceKey",x."sourceSessionId",$2,$3,x.status,x."rawPoints",x."ruleVersionId",x."itemName",x.points FROM jsonb_to_recordset($1)x("studentId" uuid,"gradeLevelId" uuid,"homeroomId" uuid,side text,source text,"cycleId" uuid,points integer,"sourceKey" text,"sourceSessionId" uuid,status text,"rawPoints" integer,"ruleVersionId" uuid,"itemName" text)
-          JOIN behavior_daily_totals t ON t.student_id=x."studentId" AND t.grade_level_id=x."gradeLevelId" AND t.homeroom_id IS NOT DISTINCT FROM x."homeroomId" AND t.side=x.side AND t.source=x.source AND t.cycle_id=x."cycleId" AND t.date=$4 AND t.academic_term_id=$5"#).bind(Json(&additions)).bind(day.generation).bind(day.revision).bind(day.date).bind(day.academic_term_id).execute(&mut *connection).await?;
+          JOIN behavior_daily_totals t ON t.student_id=x."studentId" AND t.grade_level_id=x."gradeLevelId" AND t.homeroom_id IS NOT DISTINCT FROM x."homeroomId" AND t.side=x.side AND t.source=x.source AND t.cycle_id=x."cycleId" AND t.date=$4 AND t.academic_term_id=$5"#).bind(Json(&additions)).bind(day.generation).bind(day.revision).bind(day.date).bind(day.academic_term_id).execute().await?;
     }
     if !new_decisions.is_empty() {
-        sqlx::query(r#"INSERT INTO behavior_source_effect_snapshots(generation,academic_term_id,date,kind,source_key,student_id,status,action,raw_points,rule_version_id)
+        DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", r#"INSERT INTO behavior_source_effect_snapshots(generation,academic_term_id,date,kind,source_key,student_id,status,action,raw_points,rule_version_id)
         SELECT $2,$3,$4,x.kind,x."sourceKey",x."studentId",x.status,x.action,x."rawPoints",x."ruleVersionId" FROM jsonb_to_recordset($1)x(kind text,"sourceKey" text,"studentId" uuid,status text,action text,"rawPoints" integer,"ruleVersionId" uuid)
-        ON CONFLICT(generation,academic_term_id,date,kind,source_key,student_id)DO UPDATE SET status=EXCLUDED.status,action=EXCLUDED.action,raw_points=EXCLUDED.raw_points,rule_version_id=EXCLUDED.rule_version_id WHERE NOT behavior_source_effect_snapshots.suppressed"#).bind(Json(&new_decisions)).bind(day.generation).bind(day.academic_term_id).bind(day.date).execute(&mut *connection).await?;
+        ON CONFLICT(generation,academic_term_id,date,kind,source_key,student_id)DO UPDATE SET status=EXCLUDED.status,action=EXCLUDED.action,raw_points=EXCLUDED.raw_points,rule_version_id=EXCLUDED.rule_version_id WHERE NOT behavior_source_effect_snapshots.suppressed"#).bind(Json(&new_decisions)).bind(day.generation).bind(day.academic_term_id).bind(day.date).execute().await?;
     }
-    sqlx::query("INSERT INTO behavior_source_days(generation,academic_term_id,date,revision,policy)VALUES($1,$2,$3,$4,$5)ON CONFLICT(generation,academic_term_id,date)DO UPDATE SET revision=EXCLUDED.revision").bind(day.generation).bind(day.academic_term_id).bind(day.date).bind(day.revision).bind(Json(&policy)).execute(&mut *connection).await?;
+    DbSession::new(&mut *connection).query("behavior.services.integration.replace_attendance_day", "INSERT INTO behavior_source_days(generation,academic_term_id,date,revision,policy)VALUES($1,$2,$3,$4,$5)ON CONFLICT(generation,academic_term_id,date)DO UPDATE SET revision=EXCLUDED.revision").bind(day.generation).bind(day.academic_term_id).bind(day.date).bind(day.revision).bind(Json(&policy)).execute().await?;
     if !reverse.is_empty() || !additions.is_empty() {
         bump(connection).await?;
     }
-    let activation: NaiveDate =
-        sqlx::query_scalar("SELECT activation_date FROM behavior_state WHERE singleton")
-            .fetch_one(&mut *connection)
-            .await?;
+    let activation: NaiveDate = DbSession::new(&mut *connection)
+        .scalar(
+            "behavior.services.integration.replace_attendance_day",
+            "SELECT activation_date FROM behavior_state WHERE singleton",
+        )
+        .fetch_one()
+        .await?;
     Ok(if day.date < activation {
         BehaviorDeliveryOutcome::Suppressed
     } else {

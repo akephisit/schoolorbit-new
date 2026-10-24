@@ -1,6 +1,7 @@
 use crate::models::BehaviorStudent;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::{FromRow, PgConnection};
@@ -159,10 +160,10 @@ pub async fn require_student_read(
     student: Uuid,
 ) -> Result<(), AppError> {
     access.require_read()?;
-    let allowed:bool=sqlx::query_scalar(r#"SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.user_type='student' AND(
+    let allowed:bool=DbSession::new(connection).scalar("behavior.src.access.require_student_read", r#"SELECT EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.user_type='student' AND(
       $2 OR($3 AND(u.id=$4 OR EXISTS(SELECT 1 FROM student_parents p JOIN users pu ON pu.id=p.parent_user_id AND pu.status='active' WHERE p.student_user_id=u.id AND p.parent_user_id=$4)))
       OR($5 AND EXISTS(SELECT 1 FROM homeroom_placements hp JOIN student_academic_years y ON y.id=hp.student_academic_year_id JOIN homeroom_advisors a ON a.homeroom_id=hp.homeroom_id WHERE y.student_id=u.id AND a.user_id=$4))))"#)
-      .bind(student).bind(access.school).bind(access.own).bind(access.actor_id).bind(access.assigned).fetch_one(connection).await?;
+      .bind(student).bind(access.school).bind(access.own).bind(access.actor_id).bind(access.assigned).fetch_one().await?;
     if allowed {
         Ok(())
     } else {

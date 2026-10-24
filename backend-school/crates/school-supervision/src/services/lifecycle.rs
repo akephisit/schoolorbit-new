@@ -1,17 +1,20 @@
+use school_database::DbSession;
 pub async fn pending_term_work(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     year: uuid::Uuid,
     term: uuid::Uuid,
 ) -> Result<Vec<school_academic_core::ports::PendingTermWork>, school_errors::AppError> {
-    Ok(sqlx::query_as(
-        "SELECT id, updated_at::text || ':' || status AS revision, false AS blocks_closure
+    Ok(DbSession::new(&mut **tx)
+        .query_as(
+            "supervision.services.lifecycle.pending_term_work",
+            "SELECT id, updated_at::text || ':' || status AS revision, false AS blocks_closure
          FROM supervision_observations WHERE academic_year_id=$1 AND academic_term_id=$2
          AND status NOT IN ('completed','cancelled') ORDER BY id",
-    )
-    .bind(year)
-    .bind(term)
-    .fetch_all(&mut **tx)
-    .await?)
+        )
+        .bind(year)
+        .bind(term)
+        .fetch_all()
+        .await?)
 }
 
 use std::collections::BTreeSet;
@@ -53,20 +56,22 @@ pub(super) async fn require_cycle_write(
     target: Option<SupervisionAcademicContext>,
 ) -> Result<SupervisionAcademicContext, AppError> {
     lifecycle_guard::lock_transition_shared(tx).await?;
-    let before: SupervisionAcademicContext = sqlx::query_as(
-        "SELECT academic_year_id,academic_term_id FROM supervision_cycles WHERE id=$1",
-    )
-    .bind(cycle)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".into()))?;
+    let before: SupervisionAcademicContext = DbSession::new(&mut **tx)
+        .query_as(
+            "supervision.services.lifecycle.require_cycle_write",
+            "SELECT academic_year_id,academic_term_id FROM supervision_cycles WHERE id=$1",
+        )
+        .bind(cycle)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".into()))?;
     let contexts = target.map_or_else(|| vec![before], |target| vec![before, target]);
     require_context_writes(tx, &contexts).await?;
-    let current: SupervisionAcademicContext = sqlx::query_as(
+    let current: SupervisionAcademicContext = DbSession::new(&mut **tx).query_as("supervision.services.lifecycle.require_cycle_write",
         "SELECT academic_year_id,academic_term_id FROM supervision_cycles WHERE id=$1 FOR UPDATE",
     )
     .bind(cycle)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบนิเทศ".into()))?;
     if current != before {
@@ -82,11 +87,11 @@ pub(super) async fn require_observation_write(
     observation: Uuid,
 ) -> Result<(), AppError> {
     lifecycle_guard::lock_transition_shared(tx).await?;
-    let before: (Uuid, Uuid, Uuid) = sqlx::query_as(
+    let before: (Uuid, Uuid, Uuid) = DbSession::new(&mut **tx).query_as("supervision.services.lifecycle.require_observation_write",
         "SELECT academic_year_id,academic_term_id,cycle_id FROM supervision_observations WHERE id=$1",
     )
     .bind(observation)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรายการนิเทศ".into()))?;
     let cycle = require_cycle_write(tx, before.2, Some((before.0, Some(before.1)))).await?;
@@ -95,11 +100,11 @@ pub(super) async fn require_observation_write(
             "ปีหรือภาคเรียนของรายการนิเทศไม่ตรงกับรอบนิเทศ".into(),
         ));
     }
-    let current: (Uuid, Uuid, Uuid) = sqlx::query_as(
+    let current: (Uuid, Uuid, Uuid) = DbSession::new(&mut **tx).query_as("supervision.services.lifecycle.require_observation_write",
         "SELECT academic_year_id,academic_term_id,cycle_id FROM supervision_observations WHERE id=$1 FOR UPDATE",
     )
     .bind(observation)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรายการนิเทศ".into()))?;
     if current != before {
