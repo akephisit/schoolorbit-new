@@ -404,7 +404,8 @@ test('project rules own durable development and verification workflows', async (
 
 	const pipeline = await readFile(path.join(repoRoot, 'scripts/pipeline.mjs'), 'utf8');
 	const deployment = await readFile(path.join(repoRoot, 'scripts/verify_deployment.sh'), 'utf8');
-	assert.match(pipeline, /'test', '--test', 'static_architecture'/);
+	assert.match(pipeline, /'--test', 'database_execution_architecture'/);
+	assert.match(pipeline, /'--test', 'static_architecture'/);
 	for (const command of [
 		'bats scripts/tests/installer',
 		'shellcheck -x',
