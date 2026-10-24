@@ -77,5 +77,9 @@ for package in school-test-db school-academic-core school-academic-delivery scho
     fi
 done
 for domain in students staff calendar supervision admission question_bank; do
-    ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    if [[ "$domain" == admission ]]; then
+        ENCRYPTION_KEY=$(openssl rand -hex 32) BLIND_INDEX_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    else
+        ./scripts/test_backend_school.sh "integration_tests::$domain" -- --test-threads=4
+    fi
 done
