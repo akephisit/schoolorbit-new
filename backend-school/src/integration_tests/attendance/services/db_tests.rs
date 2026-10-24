@@ -3991,6 +3991,30 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     crate::adapters::behavior::run(&f.pool).await.unwrap();
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (0, 2));
+    // Existing deployments may retain dispatch jobs with the old business key.
+    sqlx::query("UPDATE notification_dispatch_jobs job SET dedup_key=ledger.dedup_key FROM attendance_notifications ledger WHERE job.source_kind='attendance' AND job.source_id=ledger.id")
+        .execute(&f.pool).await.unwrap();
+    let old_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+        .fetch_all(&f.pool).await.unwrap();
+    assert_eq!(old_jobs.len(), 2);
+    let old_ids: Vec<Uuid> = old_jobs.iter().map(|(id, _)| *id).collect();
+    // Replaying an already-ledgered intent must not resend or rewrite old jobs.
+    let mut duplicate = f.pool.begin().await.unwrap();
+    notifications::queue_result(
+        &mut duplicate,
+        &saved.session,
+        STUDENT,
+        AttendanceResult::Present,
+        saved.session.row_version,
+        false,
+    )
+    .await
+    .unwrap();
+    duplicate.commit().await.unwrap();
+    let after_duplicate: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as("SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE source_kind='attendance' ORDER BY id")
+        .fetch_all(&f.pool).await.unwrap();
+    assert_eq!(after_duplicate, old_jobs);
+
     let impact = school_attendance::services::reset::impact(&f.pool)
         .await
         .unwrap();
@@ -4026,6 +4050,22 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
     crate::adapters::behavior::run(&f.pool).await.unwrap();
     let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
     assert_eq!(totals, (3, 0));
+    let retained_jobs: Vec<(Uuid, sqlx::types::Json<serde_json::Value>)> = sqlx::query_as(
+        "SELECT id,to_jsonb(job) FROM notification_dispatch_jobs job WHERE id=ANY($1) ORDER BY id",
+    )
+    .bind(&old_ids)
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(retained_jobs, old_jobs);
+    let identity: (Uuid, Uuid, Uuid, Uuid, Uuid, String, String) = sqlx::query_as("SELECT ledger.id,ledger.notification_id,job.id,job.notification_id,job.source_id,job.dedup_key,ledger.dedup_key FROM attendance_notifications ledger JOIN notification_dispatch_jobs job ON job.id=ledger.id WHERE ledger.recipient_id=$1 AND ledger.student_id=$1 AND ledger.dedup_key LIKE 'arrival:%'")
+        .bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!((identity.0, identity.1), (identity.2, identity.3));
+    assert_eq!(identity.4, identity.0);
+    assert_eq!(identity.5, format!("attendance-ledger:{}", identity.0));
+    assert_eq!(identity.6, format!("arrival:{TERM}:{date}:{STUDENT}"));
+    assert!(!old_ids.contains(&identity.0));
+
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.student_id=$1 AND e.cancelled_at IS NULL").bind(STUDENT).fetch_one(&f.pool).await.unwrap(),1);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_score_changes")
@@ -5190,6 +5230,8 @@ async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
     let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
         .await
         .unwrap();
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin) VALUES($1,$2,$3,'unchecked','none')")
+        .bind(session.id).bind(STUDENT).bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES(gen_random_uuid(),$1,$2,$3,$4,now())")
         .bind(session.id).bind(STUDENT).bind(device.id).bind(linked_id).execute(&f.pool).await.unwrap();
     let schema: String = sqlx::query_scalar("SELECT current_schema()")

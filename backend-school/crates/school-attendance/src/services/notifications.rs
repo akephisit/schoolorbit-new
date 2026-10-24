@@ -106,7 +106,6 @@ struct NewLedgerNotice {
     id: Uuid,
     notification_id: Uuid,
     recipient_id: Uuid,
-    dedup_key: String,
     title: String,
     message: String,
     link: String,
@@ -126,7 +125,9 @@ async fn enqueue_new_ledger(
             notification_id: n.notification_id,
             recipient_id: n.recipient_id,
             source: NotificationSource::Attendance { source_id: n.id },
-            dedup_key: Some(n.dedup_key),
+            // The domain ledger owns business deduplication. Its immutable ID
+            // distinguishes a new intent after that ledger has been reset.
+            dedup_key: Some(format!("attendance-ledger:{}", n.id)),
             title: n.title,
             message: n.message,
             type_: NotificationType::Info,
