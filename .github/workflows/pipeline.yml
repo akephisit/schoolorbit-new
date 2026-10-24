@@ -25,6 +25,10 @@ on:
       deployment_id:
         description: Installer or operations request identifier
         type: string
+      namespace_attestation:
+        description: Explicit historical namespace attestation JSON; manual non-automatic backend release only
+        type: string
+        default: ""
       target_origin_ip:
         description: Temporary IPv4 before DNS cutover
         type: string
@@ -137,6 +141,7 @@ jobs:
       plan: ${{ needs.plan.outputs.plan }}
       target_origin_ip: ${{ inputs.target_origin_ip || '' }}
       automatic: ${{ github.event_name == 'push' || inputs.automatic == true }}
+      namespace_attestation: ${{ inputs.namespace_attestation || '' }}
     secrets: inherit
     permissions:
       contents: read

@@ -2048,10 +2048,35 @@ no test-only production bypass is supported. Do not log URL/key values in fixtur
 
 ## Standalone namespace operator tool
 
-The ordinary School runtime image contains only the main `backend-school` executable, not
-`file_storage_namespace`. Obtain this operator tool separately from the clean, exact approved release
-checkout and its unchanged Cargo lockfile. On a trusted build host with the supported Rust 1.98.1
-toolchain, native build prerequisites, `jq` and `sha256sum`, run from the repository root:
+Production release uses the main executable in the exact prepared, digest-pinned School image:
+`backend-school migrate-tenants`, then `backend-school storage-namespace check-admin`, and only
+then the matching application server. `context-admin` and offline `routing-fingerprints` expose
+only the approved count/digests. Explicit `attest-admin` additionally requires the strict
+`FILE_STORAGE_NAMESPACE_ATTESTATION_JSON` and a private persistent
+`FILE_STORAGE_NAMESPACE_MANIFEST_DIRECTORY`; no ordinary release binds namespaces. No second
+release artifact or native operator build is required. Use the controlled dispatch, journal and
+recovery procedure in [Operations](./OPERATIONS.md).
+
+Run the actual shell orchestration fixtures with existing Node 24.22.0, Bash, jq and Python 3:
+
+```bash
+node --test scripts/tests/pipeline-storage-namespace.test.mjs   scripts/tests/pipeline-maintenance.test.mjs scripts/tests/pipeline-policy.test.mjs
+```
+
+They execute the real remote adapter and production start block with synthetic Podman commands,
+covering strict manual-only transport, stop/verify/remove/migrate/check/start order, failed gates,
+private durable proof/manifests, same-target replay, empty inventory, routing/inventory mismatch,
+custom PostgreSQL CA mounts and safe failure diagnostics. They verify the rootless UID/mount
+arguments and host directory/file permissions; they do not replace an actual rootless Podman
+permission/deployment rehearsal. Run the owning deployment suite for ShellCheck/shfmt/Bats,
+actionlint, existing release/cutover guards and Compose validation. The Backend-owned fixtures
+cover canonical migrations, complete/inactive inventory, database ownership, explicit binding and
+startup-before-spawn refusal against disposable PostgreSQL. Record those checks separately from
+successful production migration/readiness and authenticated smoke.
+
+For a separate local operator, the compatible `file_storage_namespace` wrapper shares the same
+application-owned CLI implementation. Obtain it from the exact approved checkout and unchanged
+lockfile using the existing selected target/cache:
 
 ```bash
 cargo +1.98.1 build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
@@ -2061,17 +2086,7 @@ git rev-parse HEAD
 sha256sum backend-school/Cargo.lock "$namespace_tool"
 ```
 
-Use the existing selected Cargo target directory; do not create a separate target/cache for the
-operator tool. The metadata command respects that selection (the default is
-`backend-school/target`). This recipe assumes a native build without a target-triple override;
-the resulting executable's OS, architecture, libc and linked-library requirements must fit the
-operator host. Record the checkout revision, lockfile digest and artifact SHA-256 with the handoff,
-then verify the artifact digest after transfer. The tool must match the approved release and
-canonical migration revision being rolled out, because its readiness check embeds that history;
-it need not match the old binary drained during maintenance.
-
-This is a build/acquisition recipe, not a claim that a standalone release artifact has been built,
-published or tested here. Debug/test checks do not establish compatibility of a separately built
-release artifact. Use the verified absolute binary path and the maintenance, private configuration
-and attestation procedure in [Operations](./OPERATIONS.md); no runtime image or deployment recipe
-change is required.
+This optional native recipe assumes no target-triple override; OS, architecture, libc and linked
+libraries must fit the operator host. Verify the approved revision, lockfile and artifact digest
+after transfer. Debug/test builds do not establish release compatibility. The wrapper never starts
+a server or substitutes another migration engine; production rollout uses the prepared main image.

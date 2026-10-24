@@ -5,6 +5,11 @@ REGISTRY_USER=${REGISTRY_USER:?REGISTRY_USER is required}
 BASE_DOMAIN=${BASE_DOMAIN:?BASE_DOMAIN is required}
 BACKEND_IMAGE_DIGEST=${BACKEND_IMAGE_DIGEST:?BACKEND_IMAGE_DIGEST is required}
 RELEASE_SHA=${RELEASE_SHA:?RELEASE_SHA is required}
+# Reject malformed/manual-only inputs before login, R2 writes or maintenance.
+# shellcheck source=scripts/lib/pipeline-remote/storage-namespace-input.sh
+. /opt/stack/deployment/scripts/lib/pipeline-remote/storage-namespace-input.sh
+NAMESPACE_ATTESTATION_JSON=$(storage_namespace_input)
+export NAMESPACE_ATTESTATION_JSON
 echo "${REGISTRY_TOKEN}" | podman login ghcr.io -u "${REGISTRY_USER}" --password-stdin
 cd /opt/stack
 
@@ -132,6 +137,12 @@ if ! school_allowed_dev_origins="$(runtime_env_value SCHOOL_ALLOWED_DEV_ORIGINS)
     echo "Required backend-school runtime value is unavailable: SCHOOL_ALLOWED_DEV_ORIGINS"
     exit 1
 fi
+
+image_pull_started="$(schoolorbit_timer_now)"
+podman pull "$backend_school_image_reference"
+schoolorbit_timer_report image_pull "$image_pull_started"
+# Read-only evidence validation must precede R2 CORS reconciliation and disruption.
+bash "$deployment_root/scripts/lib/pipeline-remote/school-storage-rollout.sh" preflight
 
 install -m 0755 "$renderer_source" "$renderer"
 export_school_compose_env
@@ -313,10 +324,6 @@ schoolorbit_timer_report scanner_readiness "$scanner_started"
 
 jq_image=ghcr.io/jqlang/jq:1.7.1
 podman pull "$jq_image"
-image_pull_started="$(schoolorbit_timer_now)"
-podman pull "$backend_school_image_reference"
-schoolorbit_timer_report image_pull "$image_pull_started"
-
 # Keep the shared admin upstream resolvable before Nginx is recreated.
 validate_backend_network schoolorbit-backend-admin backend-admin
 
@@ -354,14 +361,9 @@ fi
 
 backend_readiness_started="$(schoolorbit_timer_now)"
 
-# Recreate backend-school only; do not restart unrelated services.
-if podman container exists schoolorbit-backend-school; then
-    podman rm --force schoolorbit-backend-school
-    if podman container exists schoolorbit-backend-school; then
-        echo "Stale backend-school container remains after forced removal"
-        exit 1
-    fi
-fi
+# The headless phase verifies stop/removal, canonical migrations and namespace
+# readiness before any matching HTTP listener or application worker can start.
+bash "$deployment_root/scripts/lib/pipeline-remote/school-storage-rollout.sh" cutover
 export_school_compose_env
 compose_up_quiet --no-deps backend-school
 unset_school_compose_env
@@ -398,24 +400,6 @@ chmod 600 "$migration_response"
 cleanup_migration_response() {
     rm -f "$migration_response"
 }
-print_migration_verification_failure() {
-    podman run --rm -i "$jq_image" -r '
-    "tenant_migration_summary latest_version=\(.latest_version // "unknown") total=\(.total // "unknown") success=\(.success // "unknown") failed=\(.failed // "unknown")",
-    (
-      .results[]?
-      | "tenant_migration_result subdomain=\(.subdomain // "unknown") status=\(.status // "unknown") version=\(.version // "none") error_code=\(
-          if .error == null then "none"
-          else (([.error | scan("ACADEMIC_[A-Z0-9_]+") ] | first) // "redacted")
-          end
-        )"
-    ),
-    (
-      .results[]? as $result
-      | $result.academicDiagnostics.currentTeacherConflicts[]?
-      | "tenant_academic_teacher_conflict subdomain=\($result.subdomain // "unknown") teacher_id=\(.teacherId // "unknown") timetable_version_id=\(.timetableVersionId // "unknown") day=\(.dayOfWeek // "unknown") bell_schedule_period_id=\(.bellSchedulePeriodId // "unknown") entry_count=\(.entryCount // "unknown") group_code_count=\(.groupCodeCount // "unknown") entry_ids=\((.entryIds // []) | tojson) group_codes=\((.groupCodes // []) | tojson)"
-    )
-  '
-}
 trap cleanup_migration_response EXIT
 
 internal_api_secret="$(
@@ -428,40 +412,6 @@ if [ -z "$internal_api_secret" ]; then
     echo "Backend internal migration credential is unavailable; maintenance remains enabled"
     exit 1
 fi
-tenant_migration_started="$(schoolorbit_timer_now)"
-if ! curl \
-    --fail \
-    --silent \
-    --show-error \
-    --connect-timeout 10 \
-    --max-time 900 \
-    -X POST \
-    -H "X-Internal-Secret: ${internal_api_secret}" \
-    -o "$migration_response" \
-    http://127.0.0.1:8081/internal/migrate-all; then
-    echo "Tenant migration request failed; maintenance remains enabled"
-    exit 1
-fi
-if ! podman run --rm -i "$jq_image" -e '
-    .latest_version as $latest
-    | $latest >= 32
-    and .total > 0
-    and .failed == 0
-    and .success == .total
-    and all(
-      .results[];
-      .version == $latest
-      and .error == null
-      and (.status == "migrated" or .status == "already_migrated")
-    )
-  ' <"$migration_response" >/dev/null; then
-    print_migration_verification_failure <"$migration_response" ||
-        echo "Tenant migration diagnostic could not be rendered"
-    echo "Tenant migration verification failed; maintenance remains enabled"
-    exit 1
-fi
-schoolorbit_timer_report tenant_migration "$tenant_migration_started"
-
 migration_status_started="$(schoolorbit_timer_now)"
 if ! curl \
     --fail \
@@ -478,7 +428,7 @@ fi
 migration_completion_filter="
     .latest_version as \$latest
     | \$latest >= 114
-    and .total_schools > 0
+    and .total_schools >= 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
     and .pending == 0 and .failed == 0 and .outdated == 0

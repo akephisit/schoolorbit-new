@@ -60,14 +60,17 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), StartupError> {
-    let command_args = env::args_os()
+    let command_args = match env::args_os()
         .skip(1)
-        .map(|argument| {
-            argument
-                .into_string()
-                .map_err(|_| StartupError::new("arguments", "invalid_unicode"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|argument| argument.into_string())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(arguments) => arguments,
+        Err(_) => {
+            eprintln!("unsupported_operational_arguments");
+            std::process::exit(2);
+        }
+    };
     if command_args.first().map(String::as_str) == Some("export-openapi") {
         if command_args.len() != 1 {
             eprintln!("usage: backend-school export-openapi");

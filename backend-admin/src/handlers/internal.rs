@@ -307,6 +307,41 @@ mod tests {
         headers
     }
 
+    #[tokio::test]
+    async fn inactive_opt_in_never_bypasses_internal_secret_or_migration_caller() {
+        let _guard = env_lock();
+        std::env::set_var("INTERNAL_API_SECRET", "shared-secret");
+        std::env::remove_var("INTERNAL_API_SECRET_BACKEND_SCHOOL");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://synthetic:synthetic@127.0.0.1:1/synthetic")
+            .unwrap();
+        pool.close().await;
+        let state = AppState::new(pool);
+        let wrong_caller = get_migration_connection_internal(
+            State(state.clone()),
+            headers("shared-secret", Some("other-service")),
+            Path("inactive".to_string()),
+            Query(MigrationConnectionQuery {
+                include_inactive: true,
+            }),
+        )
+        .await
+        .err()
+        .expect("wrong caller must fail before any database access");
+        assert_eq!(wrong_caller.0, StatusCode::FORBIDDEN);
+        let wrong_secret = get_migration_connection_internal(
+            State(state),
+            headers("wrong-secret", Some("backend-school")),
+            Path("inactive".to_string()),
+            Query(MigrationConnectionQuery {
+                include_inactive: true,
+            }),
+        )
+        .await
+        .err()
+        .expect("wrong secret must fail before any database access");
+        assert_eq!(wrong_secret.0, StatusCode::UNAUTHORIZED);
+    }
     #[test]
     fn verifies_fallback_internal_secret() {
         let _guard = env_lock();

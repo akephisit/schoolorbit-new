@@ -5,6 +5,12 @@ on:
       plan:
         type: string
         required: true
+      namespace_attestation:
+        type: string
+        default: ""
+      namespace_attestation_manual:
+        type: boolean
+        default: false
       target_origin_ip:
         type: string
         default: ""
@@ -446,6 +452,16 @@ jobs:
             echo "academic_core_smoke_subdomain must be one canonical DNS label"
             exit 1
           fi
+      - name: Canonicalize explicit namespace attestation transport
+        env:
+          NAMESPACE_ATTESTATION_JSON: ${{ inputs.namespace_attestation }}
+          NAMESPACE_ATTESTATION_MANUAL: ${{ inputs.namespace_attestation_manual }}
+        run: |
+          set -euo pipefail
+          . scripts/lib/pipeline-remote/storage-namespace-input.sh
+          validated=$(storage_namespace_input)
+          printf 'NAMESPACE_ATTESTATION_JSON=%s\n' "$validated" >> "$GITHUB_ENV"
+          printf 'NAMESPACE_ATTESTATION_MANUAL=%s\n' "$NAMESPACE_ATTESTATION_MANUAL" >> "$GITHUB_ENV"
       - name: Upload canonical runtime and proxy templates
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -464,7 +480,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-deploy-backend.sh
-          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,RELEASE_SHA
+          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,RELEASE_SHA,NAMESPACE_ATTESTATION_JSON,NAMESPACE_ATTESTATION_MANUAL
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}

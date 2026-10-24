@@ -571,7 +571,8 @@ test('School stages selected Worker versions before backend cutover', async () =
 	assert.match(JSON.stringify(deploy.needs), /stage-frontends/);
 	assert.match(String(deploy.if), /stage-frontends\.result == 'success'/);
 	assert.ok(
-		source.indexOf('Activate School API maintenance') < source.indexOf('podman rm --force')
+		source.indexOf('Activate School API maintenance') <
+			source.indexOf('school-storage-rollout.sh" cutover')
 	);
 });
 
@@ -846,4 +847,45 @@ test('superseded push workflows are removed while tenant provisioning remains', 
 		'operations.yml',
 		'pipeline.yml'
 	]);
+});
+
+test('historical namespace input is explicit manual-only and validated before maintenance', async () => {
+	const pipeline = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/pipeline.yml'), 'utf8')
+	);
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	const school = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8')
+	);
+	assert.equal(pipeline.on.workflow_dispatch.inputs.namespace_attestation.default, '');
+	assert.equal(release.on.workflow_call.inputs.namespace_attestation.default, '');
+	assert.equal(school.on.workflow_call.inputs.namespace_attestation_manual.default, false);
+	const check = release.jobs['private-preflight'].steps.find(
+		(step) => step.name === 'Validate explicit namespace attestation before maintenance'
+	);
+	assert.equal(check.env.PLAN, '${{ needs.preflight.outputs.plan }}');
+	assert.match(
+		check.env.NAMESPACE_ATTESTATION_MANUAL,
+		/github.event_name == 'workflow_dispatch' && inputs.automatic == false/
+	);
+	assert.match(check.run, /storage_namespace_input/);
+	assert.match(check.run, /index\("backend-school"\)/);
+	assert.ok(release.jobs.maintenance.needs.includes('private-preflight'));
+	const canonical = school.jobs['deploy-backend'].steps.find(
+		(step) => step.name === 'Canonicalize explicit namespace attestation transport'
+	);
+	assert.match(canonical.run, /validated=\$\(storage_namespace_input\)/);
+	assert.match(canonical.run, /NAMESPACE_ATTESTATION_JSON=%s/);
+	const deploy = school.jobs['deploy-backend'].steps.find(
+		(step) => step.name === 'Deploy to Server via SSH'
+	);
+	assert.ok(deploy.with.envs.split(',').includes('NAMESPACE_ATTESTATION_JSON'));
+	assert.ok(deploy.with.envs.split(',').includes('NAMESPACE_ATTESTATION_MANUAL'));
+	assert.equal(
+		deploy.env.NAMESPACE_ATTESTATION_JSON,
+		undefined,
+		'canonical transport must not be overridden by raw input'
+	);
 });

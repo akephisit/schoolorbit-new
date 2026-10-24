@@ -61,7 +61,7 @@ application spawn. Directly starting the image therefore cannot bypass the deplo
 
 Preflight failure preserves the old runtime. Maintenance failures remain in maintenance. After the
 first migration attempt, the old binary must never restart: recovery uses the same compatible
-release or a forward release. Preserve the previous image/configuration and aggregate progress
+release or a forward release. Preserve the previous image/allowlisted routing configuration and aggregate progress
 evidence without treating them as post-migration rollback permission. Existing timing, lease,
 client timeout, resource and health policies are unchanged.
 
