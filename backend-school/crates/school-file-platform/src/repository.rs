@@ -76,6 +76,7 @@ pub struct NewDerivative {
 
 #[derive(Clone)]
 pub struct NewUpload {
+    pub namespace: super::storage_namespace::StorageNamespace,
     pub file_id: Uuid,
     pub version_id: Uuid,
     pub reconcile_operation_id: Uuid,
@@ -120,6 +121,7 @@ pub enum ObjectTarget {
 
 #[derive(Clone)]
 pub struct DeleteWork {
+    pub namespace: Option<super::storage_namespace::StorageNamespace>,
     pub operation_id: Uuid,
     pub file_id: Uuid,
     pub target: ObjectTarget,
@@ -128,6 +130,9 @@ pub struct DeleteWork {
 
 #[derive(Clone)]
 pub struct DerivativeWork {
+    pub write_permit: Option<super::cleanup_watch::WritePermit>,
+    pub source_namespace: Option<super::storage_namespace::StorageNamespace>,
+    pub target_namespace: Option<super::storage_namespace::StorageNamespace>,
     pub derivative_id: Uuid,
     pub purpose: FilePurpose,
     pub recipe: DerivativeRecipe,
@@ -141,6 +146,8 @@ pub struct DerivativeWork {
 #[derive(Clone)]
 pub enum OperationWork {
     ReconcileUpload {
+        original_namespace: Option<super::storage_namespace::StorageNamespace>,
+        required_derivative_namespaces: Vec<Option<super::storage_namespace::StorageNamespace>>,
         version_id: Uuid,
         original: StoredObject,
         required_derivative_ids: Vec<Uuid>,
@@ -185,7 +192,10 @@ pub struct LeasedOperation {
 
 #[async_trait]
 pub trait FileRepository: Send + Sync {
-    async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError>;
+    async fn reserve_upload(
+        &self,
+        upload: &NewUpload,
+    ) -> Result<super::cleanup_watch::UploadWritePermits, RepositoryError>;
     async fn mark_original_stored(
         &self,
         file_id: Uuid,
@@ -321,7 +331,7 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
             .try_get("attempt_count")
             .map_err(Self::database_error)?;
 
-        let work = match operation_type.as_str() {
+        let mut work = match operation_type.as_str() {
             "reconcile" => {
                 let version_id: Uuid = operation
                     .try_get("file_version_id")
@@ -357,6 +367,19 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
             _ => return Err(RepositoryError::InvalidPersistedState),
         };
 
+        if let OperationWork::GenerateDerivative(work) = &mut work {
+            work.write_permit = Some(
+                super::cleanup_watch::authorize_worker_write(
+                    &mut *connection,
+                    operation_id,
+                    file_id,
+                    work.derivative_id,
+                    &claim,
+                    &work.target,
+                )
+                .await?,
+            );
+        }
         Ok(LeasedOperation {
             claim,
             id: operation_id,
@@ -412,6 +435,10 @@ ORDER BY derivative_kind
             .await
             .map_err(Self::database_error)?;
 
+        let original_namespace =
+            super::cleanup_watch::namespace_for_target(&mut *connection, "version", version_id)
+                .await?;
+        let mut required_derivative_namespaces = Vec::new();
         let mut required_derivative_ids = Vec::new();
         let mut required_derivatives = Vec::new();
         for derivative in derivative_rows {
@@ -422,13 +449,23 @@ ORDER BY derivative_kind
                     .as_str(),
             )?;
             if derivative_is_required(purpose, recipe) {
-                required_derivative_ids
-                    .push(derivative.try_get("id").map_err(Self::database_error)?);
+                let derivative_id = derivative.try_get("id").map_err(Self::database_error)?;
+                required_derivative_ids.push(derivative_id);
+                required_derivative_namespaces.push(
+                    super::cleanup_watch::namespace_for_target(
+                        &mut *connection,
+                        "derivative",
+                        derivative_id,
+                    )
+                    .await?,
+                );
                 required_derivatives.push(stored_object_from_row(&derivative)?);
             }
         }
 
         Ok(OperationWork::ReconcileUpload {
+            original_namespace,
+            required_derivative_namespaces,
             version_id,
             original,
             required_derivative_ids,
@@ -446,6 +483,7 @@ ORDER BY derivative_kind
                 "file-platform.src.repository.load_derivative_work",
                 r#"
 SELECT f.purpose_code,
+       d.source_version_id,
        d.derivative_kind,
        d.object_key AS target_object_key,
        d.storage_class AS target_storage_class,
@@ -480,7 +518,25 @@ WHERE d.id = $2 AND d.file_id = $1
                 .as_str(),
         )?;
 
+        let source_version_id: Uuid = row
+            .try_get("source_version_id")
+            .map_err(Self::database_error)?;
+        let source_namespace = super::cleanup_watch::namespace_for_target(
+            &mut *connection,
+            "version",
+            source_version_id,
+        )
+        .await?;
+        let target_namespace = super::cleanup_watch::namespace_for_target(
+            &mut *connection,
+            "derivative",
+            derivative_id,
+        )
+        .await?;
         Ok(DerivativeWork {
+            write_permit: None,
+            source_namespace,
+            target_namespace,
             derivative_id,
             purpose,
             recipe,
@@ -514,7 +570,14 @@ WHERE d.id = $2 AND d.file_id = $1
                 .await
                 .map_err(Self::database_error)?
                 .ok_or(RepositoryError::InvalidPersistedState)?;
+                let namespace = super::cleanup_watch::namespace_for_target(
+                    &mut *connection,
+                    "version",
+                    version_id,
+                )
+                .await?;
                 Ok(DeleteWork {
+                    namespace,
                     operation_id,
                     file_id,
                     target: ObjectTarget::Version(version_id),
@@ -531,7 +594,14 @@ WHERE d.id = $2 AND d.file_id = $1
                 .await
                 .map_err(Self::database_error)?
                 .ok_or(RepositoryError::InvalidPersistedState)?;
+                let namespace = super::cleanup_watch::namespace_for_target(
+                    &mut *connection,
+                    "derivative",
+                    derivative_id,
+                )
+                .await?;
                 Ok(DeleteWork {
+                    namespace,
                     operation_id,
                     file_id,
                     target: ObjectTarget::Derivative(derivative_id),
@@ -686,12 +756,16 @@ SELECT operation.id,
        operation.file_derivative_id,
        COALESCE(version.object_key, derivative.object_key) AS object_key,
        COALESCE(version.storage_class, derivative.storage_class) AS storage_class,
-       COALESCE(version.detected_mime_type, derivative.detected_mime_type) AS detected_mime_type
+       COALESCE(version.detected_mime_type, derivative.detected_mime_type) AS detected_mime_type,
+       watch.namespace_fingerprint
 FROM file_operations operation
 LEFT JOIN file_versions version
   ON version.id = operation.file_version_id AND version.file_id = operation.file_id
 LEFT JOIN file_derivatives derivative
   ON derivative.id = operation.file_derivative_id AND derivative.file_id = operation.file_id
+LEFT JOIN file_storage_cleanup_watches watch
+  ON watch.file_id=operation.file_id AND watch.target_id=COALESCE(version.id,derivative.id)
+ AND watch.target_kind=CASE WHEN version.id IS NOT NULL THEN 'version' ELSE 'derivative' END
 WHERE operation.file_id = $1 AND operation.operation_type = 'delete_object'
   AND operation.status IN ('pending', 'retryable_failure')
 ORDER BY operation.created_at, operation.id
@@ -716,7 +790,14 @@ ORDER BY operation.created_at, operation.id
                     (None, Some(id)) => ObjectTarget::Derivative(id),
                     _ => return Err(RepositoryError::InvalidPersistedState),
                 };
+                let namespace = row
+                    .try_get::<Option<String>, _>("namespace_fingerprint")
+                    .map_err(Self::database_error)?
+                    .map(super::storage_namespace::StorageNamespace::parse)
+                    .transpose()
+                    .map_err(|_| RepositoryError::InvalidPersistedState)?;
                 Ok(DeleteWork {
+                    namespace,
                     operation_id,
                     file_id,
                     target,
@@ -733,7 +814,10 @@ fn duration_microseconds(duration: Duration) -> Result<i64, RepositoryError> {
 
 #[async_trait]
 impl FileRepository for SqlFileRepository {
-    async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
+    async fn reserve_upload(
+        &self,
+        upload: &NewUpload,
+    ) -> Result<super::cleanup_watch::UploadWritePermits, RepositoryError> {
         let mut transaction = school_tenancy::TenantPool::begin_observed(
             &self.pool,
             "file_platform.repository.transaction",
@@ -768,6 +852,8 @@ INSERT INTO files (
             .execute()
             .await
             .map_err(Self::database_error)?;
+
+        let permits = super::cleanup_watch::register_upload(&mut transaction, upload).await?;
 
         school_database::DbSession::new(&mut *transaction)
             .query(
@@ -880,7 +966,8 @@ INSERT INTO file_operations (
                 .map_err(Self::database_error)?;
         }
 
-        transaction.commit().await.map_err(Self::database_error)
+        transaction.commit().await.map_err(Self::database_error)?;
+        Ok(permits)
     }
 
     async fn mark_original_stored(
@@ -2019,6 +2106,12 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             "image/png",
         );
         let upload = NewUpload {
+            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                "private",
+            )
+            .unwrap(),
             file_id,
             version_id,
             reconcile_operation_id: Uuid::new_v4(),
@@ -2195,6 +2288,12 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
         let version_id = Uuid::new_v4();
         let derivative_id = Uuid::new_v4();
         let upload = NewUpload {
+            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                "public",
+            )
+            .unwrap(),
             file_id,
             version_id,
             reconcile_operation_id: Uuid::new_v4(),
@@ -2296,6 +2395,12 @@ WHERE file_id = $1
         let tenant = Uuid::new_v4();
         let file_id = Uuid::new_v4();
         NewUpload {
+            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                "public",
+            )
+            .unwrap(),
             file_id,
             version_id: Uuid::new_v4(),
             reconcile_operation_id: Uuid::new_v4(),
@@ -2691,6 +2796,21 @@ WHERE file_id = $1
     }
     #[async_trait::async_trait]
     impl crate::storage_provider::StorageProvider for AmbiguousPutProvider {
+        fn namespace(
+            &self,
+            storage_class: crate::platform_types::StorageClass,
+        ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
+        {
+            crate::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    crate::platform_types::StorageClass::Public => "public",
+                    crate::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), crate::storage_provider::StorageError> {
             Ok(())
         }

@@ -158,6 +158,23 @@ struct PreviewStorage;
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for PreviewStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
@@ -228,6 +245,23 @@ struct DeleteFailStorage;
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for DeleteFailStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {
@@ -294,6 +328,23 @@ struct BlockingGrantStorage {
 
 #[async_trait]
 impl school_file_platform::storage_provider::StorageProvider for BlockingGrantStorage {
+    fn namespace(
+        &self,
+        storage_class: school_file_platform::platform_types::StorageClass,
+    ) -> Result<
+        school_file_platform::storage_namespace::StorageNamespace,
+        school_file_platform::storage_provider::StorageError,
+    > {
+        school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match storage_class {
+                school_file_platform::platform_types::StorageClass::Public => "public",
+                school_file_platform::platform_types::StorageClass::Private => "private",
+            },
+        )
+    }
+
     async fn check_readiness(
         &self,
     ) -> Result<(), school_file_platform::storage_provider::StorageError> {

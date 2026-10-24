@@ -9,6 +9,7 @@ api-docs = [
 ]
 
 [dependencies]
+tracing = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 school-authorization = { workspace = true }
@@ -38,7 +39,6 @@ dotenvy = { workspace = true }
 regex = { workspace = true }
 school-test-db = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
 
 [lints]
 workspace = true

@@ -189,6 +189,7 @@ impl FilePlatform {
             sanitized_display_filename(&command.display_filename)
         };
         let upload = NewUpload {
+            namespace: self.provider.namespace(original.storage_class())?,
             file_id,
             version_id,
             reconcile_operation_id: Uuid::now_v7(),
@@ -209,9 +210,12 @@ impl FilePlatform {
                 .collect(),
         };
 
-        repository.reserve_upload(&upload).await?;
+        let permits = repository.reserve_upload(&upload).await?;
 
-        if let Err(error) = self.provider.put(&original, upload_bytes.clone()).await {
+        if let Err(error) = self
+            .put_permitted(&permits.original, upload_bytes.clone())
+            .await
+        {
             let _ = repository
                 .mark_upload_failed(file_id, version_id, error.log_safe_code())
                 .await;
@@ -234,11 +238,13 @@ impl FilePlatform {
 
         let mut required_derivative_failed = false;
         for derivative in derivatives {
-            match self
-                .provider
-                .put(&derivative.metadata.object, derivative.body)
-                .await
-            {
+            let permit = permits
+                .derivatives
+                .iter()
+                .find(|(id, _)| *id == derivative.metadata.id)
+                .map(|(_, permit)| permit)
+                .ok_or(FilePlatformError::MetadataUnavailable)?;
+            match self.put_permitted(permit, derivative.body).await {
                 Ok(()) => {
                     if repository
                         .mark_derivative_stored(
@@ -309,6 +315,35 @@ impl FilePlatform {
             detected_mime_type: original.content_type,
             byte_size,
         })
+    }
+
+    pub fn storage_namespaces(
+        &self,
+    ) -> Result<Vec<super::storage_namespace::StorageNamespace>, FilePlatformError> {
+        Ok(vec![
+            self.provider
+                .namespace(super::platform_types::StorageClass::Public)?,
+            self.provider
+                .namespace(super::platform_types::StorageClass::Private)?,
+        ])
+    }
+
+    async fn put_permitted(
+        &self,
+        permit: &super::cleanup_watch::WritePermit,
+        body: Bytes,
+    ) -> Result<(), StorageError> {
+        super::cleanup_watch::verify_namespace(
+            self.provider.as_ref(),
+            &permit.object,
+            Some(&permit.namespace),
+        )?;
+        tracing::debug!(
+            operation = "file_provider_write",
+            status = "started",
+            "Durably permitted provider write"
+        );
+        self.provider.put(&permit.object, body).await
     }
 
     pub async fn public_delivery(
@@ -487,7 +522,16 @@ impl FilePlatform {
     ) -> Result<DeleteOutcome, FilePlatformError> {
         let mut pending_retry = false;
         for object in work {
-            if let Err(error) = self.provider.delete(&object.object).await {
+            let result = async {
+                super::cleanup_watch::verify_namespace(
+                    self.provider.as_ref(),
+                    &object.object,
+                    object.namespace.as_ref(),
+                )?;
+                self.provider.delete(&object.object).await
+            }
+            .await;
+            if let Err(error) = result {
                 pending_retry = true;
                 let _ = repository
                     .retry_operation(
@@ -671,6 +715,21 @@ mod tests {
 
     #[async_trait]
     impl StorageProvider for FakeProvider {
+        fn namespace(
+            &self,
+            storage_class: crate::platform_types::StorageClass,
+        ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
+        {
+            crate::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    crate::platform_types::StorageClass::Public => "public",
+                    crate::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), StorageError> {
             match *self.readiness_error.lock().unwrap() {
                 Some(error) => Err(error),
@@ -750,11 +809,14 @@ mod tests {
 
     #[async_trait]
     impl FileRepository for FakeRepository {
-        async fn reserve_upload(&self, upload: &NewUpload) -> Result<(), RepositoryError> {
+        async fn reserve_upload(
+            &self,
+            upload: &NewUpload,
+        ) -> Result<super::super::cleanup_watch::UploadWritePermits, RepositoryError> {
             *self.upload_identity.lock().unwrap() = Some((upload.owner_user_id, upload.created_by));
             *self.upload_inspection.lock().unwrap() = Some(upload.inspection_metadata.clone());
             self.events.lock().unwrap().push("processing");
-            Ok(())
+            Ok(super::super::cleanup_watch::UploadWritePermits::for_fixture(upload))
         }
 
         async fn mark_original_stored(
@@ -1184,6 +1246,7 @@ mod tests {
                 file_id,
                 attempt_count: 1,
                 work: OperationWork::DeleteObject(DeleteWork {
+                    namespace: Some(provider.namespace(object.storage_class()).unwrap()),
                     operation_id: Uuid::new_v4(),
                     file_id,
                     target: ObjectTarget::Version(Uuid::new_v4()),
@@ -1501,6 +1564,7 @@ mod tests {
             "image/png",
         );
         *repository.delete_work.lock().unwrap() = vec![DeleteWork {
+            namespace: Some(provider.namespace(object.storage_class()).unwrap()),
             operation_id: Uuid::new_v4(),
             file_id,
             target: ObjectTarget::Version(Uuid::new_v4()),
@@ -1552,6 +1616,14 @@ mod tests {
             file_id,
             attempt_count: 1,
             work: OperationWork::DeleteObject(DeleteWork {
+                namespace: Some(
+                    super::super::storage_namespace::StorageNamespace::from_provider_locator(
+                        "fixture",
+                        "https://fixture.invalid",
+                        "private",
+                    )
+                    .unwrap(),
+                ),
                 operation_id: id,
                 file_id,
                 target: ObjectTarget::Version(Uuid::new_v4()),

@@ -259,6 +259,17 @@ impl R2StorageConfig {
         format!("https://{}.r2.cloudflarestorage.com", self.account_id)
     }
 
+    pub fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError> {
+        super::storage_namespace::StorageNamespace::from_provider_locator(
+            "r2",
+            &self.endpoint_url(),
+            self.bucket_name(storage_class),
+        )
+    }
+
     fn bucket_name(&self, storage_class: StorageClass) -> &str {
         match storage_class {
             StorageClass::Public => &self.public_bucket_name,
@@ -367,6 +378,13 @@ impl R2StorageProvider {
 
 #[async_trait]
 impl StorageProvider for R2StorageProvider {
+    fn namespace(
+        &self,
+        storage_class: StorageClass,
+    ) -> Result<super::storage_namespace::StorageNamespace, StorageError> {
+        self.config.namespace(storage_class)
+    }
+
     async fn check_readiness(&self) -> Result<(), StorageError> {
         self.transport
             .head_bucket(self.config.bucket_name(StorageClass::Public))

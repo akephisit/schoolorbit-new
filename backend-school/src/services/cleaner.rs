@@ -17,9 +17,10 @@ use uuid::Uuid;
 
 use school_certificates::services::purge_service;
 use school_file_platform::{
+    cleanup_watch::{perform_cleanup_watch, LeasedCleanupWatch},
     platform_service::FilePlatform,
     reconciler::perform_leased_operation,
-    repository::{FileRepository, RepositoryError, SqlFileRepository},
+    repository::{FileRepository, LeasedOperation, RepositoryError, SqlFileRepository},
 };
 
 /// Fixture adapter uses the production phase algorithm with an unmanaged database.
@@ -40,7 +41,7 @@ impl FileCleaner {
             .begin("fixture", TenantJobKind::FileReconciliation)
             .unwrap();
         let access = FileDatabase::Unmanaged(&self.pool);
-        let started = Instant::now();
+        let mut progress = None;
         for _ in 0..MAX_RECONCILIATION_BATCHES {
             match reconcile_tenant_batch(
                 &access,
@@ -48,11 +49,13 @@ impl FileCleaner {
                 "fixture",
                 "fixture-worker",
                 &turn,
-                Some(started),
+                progress,
             )
             .await
             {
-                Ok((true, _)) if started.elapsed() < RECONCILIATION_BUDGET => {}
+                Ok((true, next)) if next.started.elapsed() < RECONCILIATION_BUDGET => {
+                    progress = Some(next);
+                }
                 Ok(_) => break,
                 Err(()) => panic!("file cleaner fixture failed"),
             }
@@ -96,8 +99,9 @@ LIMIT $1
 
     let selected = file_ids.len();
     for file_id in file_ids {
-        match repository.request_delete(file_id).await {
-            Ok(_) => info!("Expired file deletion durably queued"),
+        match repository.request_expired_delete(file_id).await {
+            Ok(true) => info!("Expired file deletion durably queued"),
+            Ok(false) => {}
             Err(error) => warn!(
                 error_code = error.log_safe_code(),
                 "Expired file deletion request failed safely"
@@ -180,6 +184,16 @@ where
     .map_err(|_| ())?
 }
 
+#[derive(Clone, Copy)]
+struct TenantProgress {
+    started: Instant,
+    prefer_watch: bool,
+}
+enum ClaimedFileWork {
+    Operation(LeasedOperation),
+    Watch(LeasedCleanupWatch),
+}
+
 /// A bounded batch; only owned operation data crosses the provider-I/O boundary.
 async fn reconcile_tenant_batch(
     access: &FileDatabase<'_>,
@@ -187,11 +201,12 @@ async fn reconcile_tenant_batch(
     tenant: &str,
     worker: &str,
     turn: &TenantTurn<'_>,
-    started: Option<Instant>,
-) -> Result<(bool, Instant), ()> {
+    progress: Option<TenantProgress>,
+) -> Result<(bool, TenantProgress), ()> {
     let config = platform.runtime_config();
     let phase_timeout = (config.reconciliation_lease / 4).min(Duration::from_secs(5));
-    let (tenant_id, expired, started) = database_phase(
+    let namespaces = platform.storage_namespaces().map_err(|_| ())?;
+    let (tenant_id, expired, mut progress) = database_phase(
         access,
         tenant,
         None,
@@ -199,21 +214,24 @@ async fn reconcile_tenant_batch(
         phase_timeout,
         "expire",
         |id, pool, admitted_at| async move {
-            let started = started.unwrap_or(admitted_at);
+            let progress = progress.unwrap_or(TenantProgress {
+                started: admitted_at,
+                prefer_watch: false,
+            });
             let repository = SqlFileRepository::new(pool.as_ref().clone());
             Ok::<_, ()>((
                 id,
                 request_expired_file_deletions(&repository).await,
-                started,
+                progress,
             ))
         },
     )
     .await?;
     let mut leased = 0;
     for _ in 0..config.reconciliation_batch_size {
-        // Lease immediately before this item's external work, rather than aging
-        // later items in a sequential batch while the first provider is slow.
-        let operation = database_phase(
+        let namespaces = namespaces.clone();
+        let prefer_watch = progress.prefer_watch;
+        let work = database_phase(
             access,
             tenant,
             Some(tenant_id),
@@ -222,44 +240,98 @@ async fn reconcile_tenant_batch(
             "claim",
             |_, pool, _| async move {
                 let repository = SqlFileRepository::new(pool.as_ref().clone());
-                repository
+                if prefer_watch {
+                    if let Some(watch) = repository
+                        .claim_cleanup_watch(worker, config.reconciliation_lease, &namespaces)
+                        .await
+                        .map_err(|_| ())?
+                    {
+                        return Ok(Some(ClaimedFileWork::Watch(watch)));
+                    }
+                }
+                if let Some(operation) = repository
                     .lease_due_operations(worker, config.reconciliation_lease, 1)
                     .await
-                    .map(|mut work| work.pop())
-                    .map_err(|_| ())
+                    .map_err(|_| ())?
+                    .pop()
+                {
+                    return Ok(Some(ClaimedFileWork::Operation(operation)));
+                }
+                if !prefer_watch {
+                    if let Some(watch) = repository
+                        .claim_cleanup_watch(worker, config.reconciliation_lease, &namespaces)
+                        .await
+                        .map_err(|_| ())?
+                    {
+                        return Ok(Some(ClaimedFileWork::Watch(watch)));
+                    }
+                }
+                Ok(None)
             },
         )
         .await?;
-        let Some(operation) = operation else {
+        let Some(work) = work else {
             break;
         };
         leased += 1;
-        let result = perform_leased_operation(platform, &operation).await;
-        database_phase(
-            access,
-            tenant,
-            Some(tenant_id),
-            turn,
-            phase_timeout,
-            "finish",
-            |_, pool, _| async move {
-                let repository = SqlFileRepository::new(pool.as_ref().clone());
-                match repository.finish_leased_operation(&operation, result).await {
-                    Ok(()) | Err(RepositoryError::LeaseLost) => Ok(()),
-                    Err(error) => {
-                        warn!(
-                            error_code = error.log_safe_code(),
-                            "File reconciliation completion fenced or deferred"
-                        );
-                        Err(())
-                    }
-                }
-            },
-        )
-        .await?;
-        // Finish the current external operation, then yield before another claim.
-        if started.elapsed() >= RECONCILIATION_BUDGET {
-            return Ok((true, started));
+        match work {
+            ClaimedFileWork::Operation(operation) => {
+                progress.prefer_watch = true;
+                let result = perform_leased_operation(platform, &operation).await;
+                database_phase(
+                    access,
+                    tenant,
+                    Some(tenant_id),
+                    turn,
+                    phase_timeout,
+                    "finish",
+                    |_, pool, _| async move {
+                        let repository = SqlFileRepository::new(pool.as_ref().clone());
+                        match repository.finish_leased_operation(&operation, result).await {
+                            Ok(()) | Err(RepositoryError::LeaseLost) => Ok(()),
+                            Err(error) => {
+                                warn!(
+                                    error_code = error.log_safe_code(),
+                                    "File reconciliation completion fenced or deferred"
+                                );
+                                Err(())
+                            }
+                        }
+                    },
+                )
+                .await?;
+            }
+            ClaimedFileWork::Watch(watch) => {
+                progress.prefer_watch = false;
+                let observation =
+                    perform_cleanup_watch(platform, &watch, config.reconciliation_lease / 2).await;
+                let delay =
+                    config.retry_delay(i32::try_from(watch.claim.generation).unwrap_or(i32::MAX));
+                database_phase(
+                    access,
+                    tenant,
+                    Some(tenant_id),
+                    turn,
+                    phase_timeout,
+                    "watch_finish",
+                    |_, pool, _| async move {
+                        let repository = SqlFileRepository::new(pool.as_ref().clone());
+                        match repository
+                            .finish_cleanup_watch(&watch, observation, delay)
+                            .await
+                        {
+                            Ok(()) | Err(RepositoryError::LeaseLost) => Ok(()),
+                            Err(_) => Err(()),
+                        }
+                    },
+                )
+                .await?;
+            }
+        }
+        // One combined batch/budget, with opposite queue preference retained
+        // across per-tenant continuations (including batch size one).
+        if progress.started.elapsed() >= RECONCILIATION_BUDGET {
+            return Ok((true, progress));
         }
     }
     database_phase(
@@ -280,7 +352,7 @@ async fn reconcile_tenant_batch(
     Ok((
         expired == EXPIRY_BATCH_SIZE as usize
             || leased == config.reconciliation_batch_size as usize,
-        started,
+        progress,
     ))
 }
 
@@ -326,7 +398,7 @@ pub async fn reconcile_all_tenants(
                 match result {
                     Ok((true, started))
                         if batches + 1 < MAX_RECONCILIATION_BATCHES
-                            && started.elapsed() < RECONCILIATION_BUDGET =>
+                            && started.started.elapsed() < RECONCILIATION_BUDGET =>
                     {
                         Some((tenant, Some(started), batches + 1))
                     }
@@ -369,6 +441,23 @@ mod phase_tests {
     }
     #[async_trait]
     impl StorageProvider for Provider {
+        fn namespace(
+            &self,
+            storage_class: school_file_platform::platform_types::StorageClass,
+        ) -> Result<
+            school_file_platform::storage_namespace::StorageNamespace,
+            school_file_platform::storage_provider::StorageError,
+        > {
+            school_file_platform::storage_namespace::StorageNamespace::from_provider_locator(
+                "fixture",
+                "https://fixture.invalid",
+                match storage_class {
+                    school_file_platform::platform_types::StorageClass::Public => "public",
+                    school_file_platform::platform_types::StorageClass::Private => "private",
+                },
+            )
+        }
+
         async fn check_readiness(&self) -> Result<(), StorageError> {
             panic!("unexpected readiness")
         }

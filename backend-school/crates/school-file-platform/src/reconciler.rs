@@ -117,13 +117,31 @@ async fn perform(
     match &operation.work {
         OperationWork::ReconcileUpload {
             original,
+            original_namespace,
             required_derivatives,
+            required_derivative_namespaces,
             ..
         } => {
+            super::cleanup_watch::verify_namespace(
+                platform.provider().as_ref(),
+                original,
+                original_namespace.as_ref(),
+            )?;
             if platform.provider().head(original).await?.is_none() {
                 return Err(ProviderFailure::OriginalMissing);
             }
-            for derivative in required_derivatives {
+            if required_derivatives.len() != required_derivative_namespaces.len() {
+                return Err(StorageError::NamespaceUnverified.into());
+            }
+            for (derivative, namespace) in required_derivatives
+                .iter()
+                .zip(required_derivative_namespaces)
+            {
+                super::cleanup_watch::verify_namespace(
+                    platform.provider().as_ref(),
+                    derivative,
+                    namespace.as_ref(),
+                )?;
                 if platform.provider().head(derivative).await?.is_none() {
                     return Err(ProviderFailure::Retry(
                         "file_required_derivative_pending",
@@ -134,6 +152,25 @@ async fn perform(
             Ok(())
         }
         OperationWork::GenerateDerivative(work) => {
+            let permit = work
+                .write_permit
+                .as_ref()
+                .ok_or(StorageError::NamespaceUnverified)?;
+            if permit.object != work.target
+                || work.target_namespace.as_ref() != Some(&permit.namespace)
+            {
+                return Err(StorageError::NamespaceUnverified.into());
+            }
+            super::cleanup_watch::verify_namespace(
+                platform.provider().as_ref(),
+                &work.source,
+                work.source_namespace.as_ref(),
+            )?;
+            super::cleanup_watch::verify_namespace(
+                platform.provider().as_ref(),
+                &permit.object,
+                Some(&permit.namespace),
+            )?;
             let maximum = purpose_definition(work.purpose)
                 .map(|definition| definition.limits.max_bytes)
                 .unwrap_or(1);
@@ -149,7 +186,7 @@ async fn perform(
                 ));
             }
             write_started.store(true, Ordering::Relaxed);
-            match platform.provider().put(&work.target, body).await {
+            match platform.provider().put(&permit.object, body).await {
                 Ok(()) => Ok(()),
                 Err(StorageError::AlreadyExists) => {
                     if platform.provider().head(&work.target).await?.is_some() {
@@ -161,10 +198,17 @@ async fn perform(
                 Err(error) => Err(error.into()),
             }
         }
-        OperationWork::DeleteObject(work) => platform
-            .provider()
-            .delete(&work.object)
-            .await
-            .map_err(Into::into),
+        OperationWork::DeleteObject(work) => {
+            super::cleanup_watch::verify_namespace(
+                platform.provider().as_ref(),
+                &work.object,
+                work.namespace.as_ref(),
+            )?;
+            platform
+                .provider()
+                .delete(&work.object)
+                .await
+                .map_err(Into::into)
+        }
     }
 }

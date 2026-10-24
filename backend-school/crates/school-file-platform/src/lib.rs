@@ -1,4 +1,5 @@
 mod catalog_images;
+pub mod cleanup_watch;
 mod favicon;
 mod file_hash;
 pub mod file_inspector;
@@ -14,6 +15,7 @@ pub mod r2_storage_provider;
 pub mod reconciler;
 pub mod repository;
 pub mod runtime_config;
+pub mod storage_namespace;
 pub mod storage_provider;
 
 #[cfg(test)]
