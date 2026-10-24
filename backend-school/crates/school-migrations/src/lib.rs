@@ -147,6 +147,14 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
     Ok(())
 }
 
+/// Highest immutable migration compiled into this exact release.
+pub fn latest_migration_version() -> i64 {
+    all_migrations_without_db_lock()
+        .iter()
+        .last()
+        .map_or(0, |migration| migration.version)
+}
+
 /// Runtime readiness validates the immutable timeline; it never creates migration tables.
 pub async fn verify_tenant_schema<'e, E>(executor: E) -> Result<i64, String>
 where

@@ -10,6 +10,7 @@ mod http_state;
 #[cfg(test)]
 mod integration_tests;
 mod middleware;
+pub mod operations;
 mod system;
 
 mod scheduling;
@@ -97,6 +98,33 @@ async fn main() -> Result<(), StartupError> {
             return Ok(());
         }
     }
+    if !command_args.is_empty() {
+        let valid = match command_args.first().map(String::as_str) {
+            Some("migrate-tenants") => command_args.len() == 1,
+            Some("storage-namespace") => {
+                operations::storage_namespace::valid_arguments(&command_args[1..])
+            }
+            _ => false,
+        };
+        if !valid {
+            eprintln!("unsupported_operational_arguments");
+            std::process::exit(2);
+        }
+        dotenv().ok();
+        let outcome = if command_args[0] == "migrate-tenants" {
+            operations::tenant_rollout::migrate_tenants().await
+        } else {
+            operations::storage_namespace::execute(command_args[1..].to_vec()).await
+        };
+        match outcome {
+            Ok(true) => return Ok(()),
+            Ok(false) => std::process::exit(1),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    }
     let result = run().await;
     if let Err(error) = &result {
         tracing::error!(
@@ -134,6 +162,12 @@ async fn run() -> Result<(), StartupError> {
         admin_client_config,
     ));
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
+
+    // Mandatory release barrier: this precedes the FIRST application task/listener.
+    // It never migrates, attests, binds or constructs runtime writers.
+    operations::tenant_rollout::startup_check(&admin_client)
+        .await
+        .map_err(|_| StartupError::new("tenant_storage_readiness", "tenant_storage_not_ready"))?;
 
     let pool_manager_config = PoolManagerConfig::from_env()
         .map_err(|error| StartupError::tenancy_configuration("tenant_connection_budget", &error))?;

@@ -199,6 +199,21 @@ pub struct ActiveSchool {
     pub migration_error: Option<String>,
 }
 
+/// Complete authenticated operational snapshot. Never Debug/Serialize credentials.
+#[derive(Clone, Deserialize, Eq, PartialEq)]
+pub struct OperationalTenant {
+    pub id: Uuid,
+    pub subdomain: String,
+    pub status: String,
+    #[serde(rename = "db_connection_string")]
+    pub database_url: String,
+}
+#[derive(Deserialize)]
+struct OperationalTenantList {
+    schools: Vec<OperationalTenant>,
+    total: usize,
+}
+
 #[derive(Deserialize)]
 struct ListSchoolsResponse {
     schools: Vec<ActiveSchool>,
@@ -437,6 +452,71 @@ impl AdminClient {
             .map_err(|e| format!("Failed to parse schools list: {}", e))?;
 
         Ok(list.schools)
+    }
+
+    /// Unfiltered, total-validated snapshot for headless release operations.
+    pub async fn list_operational_tenants(&self) -> Result<Vec<OperationalTenant>, String> {
+        let response = self
+            .get_with_retry("/internal/schools", "operational tenant inventory")
+            .await?;
+        if !response.status().is_success() {
+            return Err("tenant_inventory_unavailable".into());
+        }
+        let mut inventory: OperationalTenantList = response
+            .json()
+            .await
+            .map_err(|_| "tenant_inventory_invalid".to_string())?;
+        let mut ids = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::new();
+        if inventory.total != inventory.schools.len()
+            || inventory.total > 10000
+            || inventory.schools.iter().any(|tenant| {
+                tenant.id.is_nil()
+                    || tenant.subdomain.is_empty()
+                    || tenant.subdomain.len() > 63
+                    || !tenant.subdomain.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+                    })
+                    || tenant.status.trim().is_empty()
+                    || tenant.database_url.trim().is_empty()
+                    || !ids.insert(tenant.id)
+                    || !names.insert(tenant.subdomain.clone())
+            })
+        {
+            return Err("tenant_inventory_invalid".into());
+        }
+        inventory.schools.sort_by_key(|tenant| tenant.id);
+        Ok(inventory.schools)
+    }
+
+    /// Explicit deployment authority; unlike the ordinary method, includes retained inactive tenants.
+    pub async fn get_operational_migration_database_url(
+        &self,
+        subdomain: &str,
+    ) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct Response {
+            db_migration_connection_string: String,
+        }
+        let response = self
+            .get_with_retry(
+                &format!(
+                    "/internal/schools/{subdomain}/migration-connection?include_inactive=true"
+                ),
+                "operational migration connection",
+            )
+            .await?;
+        if !response.status().is_success() {
+            return Err("migration_connection_unavailable".into());
+        }
+        let response: Response = response
+            .json()
+            .await
+            .map_err(|_| "migration_connection_invalid".to_string())?;
+        if response.db_migration_connection_string.trim().is_empty() {
+            return Err("migration_connection_invalid".into());
+        }
+        Ok(response.db_migration_connection_string)
     }
 
     /// Write migration status back to backend-admin after migrating a tenant database.
@@ -807,6 +887,105 @@ mod tests {
             .await
             .is_err());
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+    #[tokio::test]
+    async fn operational_inventory_is_unfiltered_and_validates_complete_identity_set() {
+        let first = uuid::Uuid::new_v4();
+        let second = uuid::Uuid::new_v4();
+        let payload = json!({"total":2,"schools":[{"id":first,"subdomain":"first","status":"active","db_connection_string":"postgres://fixture/first"},{"id":second,"subdomain":"second","status":"inactive","db_connection_string":"postgres://fixture/second"}]});
+        let router = Router::new().route(
+            "/internal/schools",
+            get(
+                move |query: axum::extract::Query<std::collections::HashMap<String, String>>| {
+                    let payload = payload.clone();
+                    async move {
+                        assert!(
+                            query.is_empty(),
+                            "operational inventory must not filter inactive tenants"
+                        );
+                        Json(payload)
+                    }
+                },
+            ),
+        );
+        let (base, server) = spawn_server(router).await;
+        let client = AdminClient::new(
+            base,
+            "fixture-secret".into(),
+            test_config(Duration::from_secs(1), 1),
+        );
+        let tenants = client.list_operational_tenants().await.unwrap();
+        assert_eq!(tenants.len(), 2);
+        assert!(tenants
+            .iter()
+            .any(|tenant| tenant.id == second && tenant.status == "inactive"));
+        server.abort();
+        for payload in [
+            json!({"total":1,"schools":[]}),
+            json!({"total":2,"schools":[{"id":first,"subdomain":"same","status":"active","db_connection_string":"postgres://fixture/first"},{"id":first,"subdomain":"same","status":"inactive","db_connection_string":"postgres://fixture/second"}]}),
+        ] {
+            let router = Router::new().route(
+                "/internal/schools",
+                get(move || {
+                    let payload = payload.clone();
+                    async move { Json(payload) }
+                }),
+            );
+            let (base, server) = spawn_server(router).await;
+            let client = AdminClient::new(
+                base,
+                "fixture-secret".into(),
+                test_config(Duration::from_secs(1), 1),
+            );
+            assert!(client.list_operational_tenants().await.is_err());
+            server.abort();
+        }
+    }
+    #[tokio::test]
+    async fn authoritative_empty_operational_inventory_is_valid() {
+        let (base, server) = spawn_server(Router::new().route(
+            "/internal/schools",
+            get(|| async { Json(json!({"total":0,"schools":[]})) }),
+        ))
+        .await;
+        let client = AdminClient::new(
+            base,
+            "fixture-secret".into(),
+            test_config(Duration::from_secs(1), 1),
+        );
+        assert!(client.list_operational_tenants().await.unwrap().is_empty());
+        server.abort();
+    }
+    #[tokio::test]
+    async fn operational_migration_connection_has_explicit_inactive_opt_in() {
+        let (base, server) = spawn_server(Router::new().route(
+            "/internal/schools/inactive/migration-connection",
+            get(
+                |query: axum::extract::Query<std::collections::HashMap<String, String>>,
+                 headers: axum::http::HeaderMap| async move {
+                    assert_eq!(headers.get("X-Internal-Caller").unwrap(), "backend-school");
+                    assert_eq!(
+                        query.get("include_inactive").map(String::as_str),
+                        Some("true")
+                    );
+                    Json(json!({"db_migration_connection_string":"postgres://fixture/owner"}))
+                },
+            ),
+        ))
+        .await;
+        let client = AdminClient::new(
+            base,
+            "fixture-secret".into(),
+            test_config(Duration::from_secs(1), 1),
+        );
+        assert_eq!(
+            client
+                .get_operational_migration_database_url("inactive")
+                .await
+                .unwrap(),
+            "postgres://fixture/owner"
+        );
         server.abort();
     }
 }
