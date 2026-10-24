@@ -831,6 +831,13 @@ test('approval confirmation cancels without writes or stage cleanup and preserve
 });
 
 async function navigateSameContext(page: Page, destination: string) {
+	const sentinel = await page.evaluate(() => {
+		const marker = document.createElement('meta');
+		marker.name = 'test-same-document-navigation';
+		marker.content = crypto.randomUUID();
+		document.head.append(marker);
+		return marker.content;
+	});
 	await page.evaluate((href) => {
 		const link = document.createElement('a');
 		link.href = href;
@@ -840,6 +847,9 @@ async function navigateSameContext(page: Page, destination: string) {
 		link.remove();
 	}, destination);
 	await expect(page).toHaveURL(new RegExp(destination.replace(/[?]/g, '\\?')));
+	const marker = page.locator(`meta[name="test-same-document-navigation"][content="${sentinel}"]`);
+	await expect(marker).toHaveCount(1);
+	return marker;
 }
 
 test('same-owner loader refresh retains visible catalog and unsent search text', async ({
@@ -1057,7 +1067,11 @@ for (const navigation of ['back', 'query'] as const)
 	}) => {
 		const api = await catalog(page, [read, propose]);
 		await page.goto('/staff/supply-catalog/proposals?page=1');
-		await navigateSameContext(page, '/staff/supply-catalog/proposals?page=2');
+		await expect(
+			page.getByTestId('supply-proposals').getByText('รออนุมัติ', { exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true })).toBeEnabled();
+		const sameDocument = await navigateSameContext(page, '/staff/supply-catalog/proposals?page=2');
 		await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ร่างข้อเสนอที่ต้องเก็บไว้');
@@ -1085,6 +1099,7 @@ for (const navigation of ['back', 'query'] as const)
 		await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
 		await warning.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
 		await expect(page).toHaveURL(/proposals\?page=2$/);
+		await expect(sameDocument).toHaveCount(1);
 		await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
 			'ร่างข้อเสนอที่ต้องเก็บไว้'
 		);
@@ -1095,6 +1110,7 @@ for (const navigation of ['back', 'query'] as const)
 		await leave();
 		await warning.getByRole('button', { name: 'ออกโดยไม่บันทึก', exact: true }).click();
 		await expect(page).toHaveURL(new RegExp(destination.replace(/[?]/g, '\\?')));
+		await expect(sameDocument).toHaveCount(1);
 		await expect(page.getByRole('dialog')).toHaveCount(0);
 		expect(api.uploads).toEqual([]);
 		expect(api.deleted).toEqual([]);

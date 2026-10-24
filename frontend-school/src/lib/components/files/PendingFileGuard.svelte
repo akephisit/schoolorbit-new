@@ -34,12 +34,19 @@
 			permittedDestination = null;
 		}
 	}
-	beforeNavigate(({ cancel, to, willUnload }) => {
+	beforeNavigate(({ cancel, from, to, willUnload }) => {
 		if (to?.url.href === permittedDestination) {
 			permittedDestination = null;
 			return;
 		}
-		if (to && to.url.pathname === location.pathname && to.url.search === location.search) return;
+		if (
+			from &&
+			to &&
+			from.url.origin === to.url.origin &&
+			from.url.pathname === to.url.pathname &&
+			from.url.search === to.url.search
+		)
+			return;
 		if (to && preservesDraftNavigation?.(to.url)) return;
 		if ((!dirty && !pending) || willUnload) return;
 		cancel();
