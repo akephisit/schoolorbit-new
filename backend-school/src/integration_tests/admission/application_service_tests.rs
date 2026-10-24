@@ -1434,4 +1434,105 @@ mod tests {
         assert!(bcrypt::verify("970099", &hash).unwrap());
         assert!(!bcrypt::verify("970001", &hash).unwrap());
     }
+    async fn room_assignment_state(pool: &PgPool, application: Uuid) -> serde_json::Value {
+        sqlx::query_scalar(
+            "SELECT jsonb_build_object('application',(SELECT to_jsonb(a) FROM admission_applications a WHERE id=$1),'assignment',(SELECT to_jsonb(r) FROM admission_room_assignments r WHERE application_id=$1))",
+        ).bind(application).fetch_one(pool).await.unwrap()
+    }
+
+    fn assert_assignment_database_fault(error: AppError) {
+        let AppError::DbError(sqlx::Error::Database(error)) = error else {
+            panic!("assignment failure must preserve its typed database cause");
+        };
+        assert_eq!(error.code().as_deref(), Some("P0001"));
+    }
+
+    #[tokio::test]
+    async fn admission_database_error_policy_real_missing_round_and_assignment_keep_domain_errors()
+    {
+        let fixture = enrollment_fixture("admission_missing_assignment_policy", 1).await;
+        assert!(matches!(
+            school_admission::rounds::update_round_status(&fixture.pool, Uuid::new_v4(), "open")
+                .await,
+            Err(AppError::NotFound(_))
+        ));
+        sqlx::query("DELETE FROM admission_room_assignments WHERE application_id=$1")
+            .bind(fixture.application_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        assert!(matches!(
+            school_admission::applications::move_application_room(
+                &fixture.pool,
+                fixture.application_id,
+                Uuid::new_v4()
+            )
+            .await,
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn admission_database_error_policy_reset_rolls_back_delete_when_following_update_fails() {
+        let fixture = enrollment_fixture("admission_reset_rollback_policy", 1).await;
+        let round: Uuid =
+            sqlx::query_scalar("SELECT admission_round_id FROM admission_applications WHERE id=$1")
+                .bind(fixture.application_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        let before = room_assignment_state(&fixture.pool, fixture.application_id).await;
+        sqlx::raw_sql("CREATE FUNCTION fail_admission_reset_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture reset update failure'; END $$; CREATE TRIGGER fail_admission_reset_update BEFORE UPDATE OF room_assignment_track_id ON admission_applications FOR EACH ROW EXECUTE FUNCTION fail_admission_reset_update();")
+            .execute(&fixture.pool).await.unwrap();
+        let error = school_admission::selections::reset_all_room_assignments(&fixture.pool, round)
+            .await
+            .unwrap_err();
+        assert_assignment_database_fault(error);
+        assert_eq!(
+            room_assignment_state(&fixture.pool, fixture.application_id).await,
+            before
+        );
+
+        sqlx::query("DROP TRIGGER fail_admission_reset_update ON admission_applications")
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            school_admission::selections::reset_all_room_assignments(&fixture.pool, round)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            school_admission::selections::reset_all_room_assignments(&fixture.pool, round)
+                .await
+                .unwrap(),
+            0
+        );
+        let state: (i64, String) = sqlx::query_as("SELECT (SELECT count(*) FROM admission_room_assignments WHERE application_id=$1),status FROM admission_applications WHERE id=$1")
+            .bind(fixture.application_id).fetch_one(&fixture.pool).await.unwrap();
+        assert_eq!(state, (0, "verified".into()));
+    }
+
+    #[tokio::test]
+    async fn admission_database_error_policy_move_rolls_back_assignment_when_rank_update_fails() {
+        let fixture = enrollment_fixture("admission_move_rank_rollback_policy", 1).await;
+        let target: Uuid = sqlx::query_scalar("INSERT INTO homerooms(code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity) SELECT 'ADM-RANK-FAULT','Fault target',academic_year_id,grade_level_id,'2',study_program_id,40 FROM homerooms WHERE id=(SELECT homeroom_id FROM admission_room_assignments WHERE application_id=$1) RETURNING id")
+            .bind(fixture.application_id).fetch_one(&fixture.pool).await.unwrap();
+        let before = room_assignment_state(&fixture.pool, fixture.application_id).await;
+        sqlx::raw_sql("CREATE FUNCTION fail_admission_move_rank() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rank update failure'; END $$; CREATE TRIGGER fail_admission_move_rank BEFORE UPDATE OF rank_in_room ON admission_room_assignments FOR EACH ROW EXECUTE FUNCTION fail_admission_move_rank();")
+            .execute(&fixture.pool).await.unwrap();
+        let error = school_admission::applications::move_application_room(
+            &fixture.pool,
+            fixture.application_id,
+            target,
+        )
+        .await
+        .unwrap_err();
+        assert_assignment_database_fault(error);
+        assert_eq!(
+            room_assignment_state(&fixture.pool, fixture.application_id).await,
+            before
+        );
+    }
 }

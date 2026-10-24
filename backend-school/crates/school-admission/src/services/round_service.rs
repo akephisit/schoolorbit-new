@@ -327,8 +327,7 @@ pub async fn update_round_status(pool: &PgPool, id: Uuid, status: &str) -> Resul
         )
         .bind(id)
         .fetch_one()
-        .await
-        .unwrap_or(false);
+        .await?;
     if !exists {
         return Err(AppError::NotFound("ไม่พบรอบรับสมัคร".to_string()));
     }
@@ -867,5 +866,16 @@ mod tests {
             scoring_subject_ids_json(Some(vec![subject_id])).0,
             vec![subject_id]
         );
+    }
+    #[tokio::test]
+    async fn admission_database_error_policy_round_checkout_failure_is_not_missing() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        assert!(matches!(
+            update_round_status(&pool, Uuid::new_v4(), "open").await,
+            Err(AppError::DbError(_))
+        ));
     }
 }

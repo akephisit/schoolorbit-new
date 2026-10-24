@@ -403,7 +403,7 @@ async fn advance_one(
             .await?;
         transaction.commit().await?;
 
-        let result = {
+        let result = async {
             let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
                 pool,
                 "certificates.purge.finalize",
@@ -417,7 +417,8 @@ async fn advance_one(
                 .bind(campaign_id)
                 .fetch_one()
                 .await
-        };
+        }
+        .await;
         match result {
             Ok(true) => return Ok(completed_status(campaign_id, job.file_count)),
             Ok(false) => {

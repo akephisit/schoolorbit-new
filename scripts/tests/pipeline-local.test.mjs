@@ -112,13 +112,15 @@ test('owned School database suite executes migrated packages and actual managed 
  cpSync(path.join(repo,'scripts/test_school_database_suite.sh'),path.join(f.root,'scripts/test_school_database_suite.sh'));
  writeFileSync(path.join(f.root,'scripts/test_backend_school.sh'), `#!/usr/bin/env node
 const fs=require('node:fs');
-fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.slice(2),owned:Boolean(process.env.SCHOOLORBIT_TEST_CONTAINER&&process.env.SCHOOLORBIT_TEST_OWNER)})+'\\n');
+fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.slice(2),owned:Boolean(process.env.SCHOOLORBIT_TEST_CONTAINER&&process.env.SCHOOLORBIT_TEST_OWNER),validEncryptionKey:/^[0-9a-f]{64}$/.test(process.env.ENCRYPTION_KEY||'')})+'\\n');
 `, {mode:0o755});
  const log=path.join(f.root,'database-commands');
- const result=spawnSync('bash',['scripts/test_school_database_suite.sh'],{cwd:f.root,env:{...f.env,DB_COMMAND_LOG:log},encoding:'utf8'});
+ const result=spawnSync('bash',['scripts/test_school_database_suite.sh'],{cwd:f.root,env:{...f.env,DB_COMMAND_LOG:log,ENCRYPTION_KEY:'synthetic-ambient-key-must-not-be-reused'},encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
  const commands=readFileSync(log,'utf8').trim().split('\n').map(JSON.parse);
  assert.ok(commands.every(command=>command.owned),'every invocation reuses the explicitly owned disposable server');
+ const authHttp=commands.find(({args})=>args[0]==='integration_tests::auth::session_http_tests');
+ assert.equal(authHttp?.validEncryptionKey,true,'session HTTP receives a fresh 64-hex synthetic key rather than the ambient key');
  for(const owner of ['school-behavior','school-academic-delivery','school-academic-assessment','school-academic-results','school-academic-lifecycle','school-budget','school-student-care','school-academic-timetable','school-certificates']) {
   assert.ok(commands.some(({args})=>args[0]==='--package'&&args[1]===owner&&args[2]==='--'),`${owner} executes its whole fixture-backed package`);
  }

@@ -2121,8 +2121,7 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         )
         .bind(id)
         .fetch_optional()
-        .await
-        .unwrap_or(None);
+        .await?;
 
     if old_room_id.is_none() {
         return Err(AppError::BadRequest(
@@ -2168,8 +2167,7 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
         )
         .bind(room_id)
         .execute()
-        .await
-        .ok();
+        .await?;
 
     if let Some(old_id) = old_room_id {
         if old_id != room_id {
@@ -2189,7 +2187,7 @@ pub async fn move_application_room(pool: &PgPool, id: Uuid, room_id: Uuid) -> Re
             )
             .bind(old_id)
             .execute()
-            .await.ok();
+            .await?;
         }
     }
 
@@ -2376,6 +2374,17 @@ mod tests {
                 },
             ]
         );
+    }
+    #[tokio::test]
+    async fn admission_database_error_policy_move_checkout_failure_is_not_missing_assignment() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        assert!(matches!(
+            move_application_room(&pool, Uuid::new_v4(), Uuid::new_v4()).await,
+            Err(AppError::DbError(_))
+        ));
     }
 }
 

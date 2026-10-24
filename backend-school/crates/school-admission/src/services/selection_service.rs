@@ -796,12 +796,12 @@ pub async fn assign_rooms(
 }
 
 pub async fn reset_all_room_assignments(pool: &PgPool, round_id: Uuid) -> Result<i64, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "admission.reset_all_room_assignments",
-    )
-    .await?;
-    reset_all_room_assignments_on_connection(&mut connection, round_id).await
+    let mut transaction =
+        school_tenancy::TenantPool::begin_observed(pool, "admission.reset_all_room_assignments")
+            .await?;
+    let deleted = reset_all_room_assignments_on_connection(&mut transaction, round_id).await?;
+    transaction.commit().await?;
+    Ok(deleted)
 }
 
 pub async fn reset_all_room_assignments_on_connection(
@@ -824,14 +824,13 @@ pub async fn reset_all_room_assignments_on_connection(
         )
         .bind(round_id)
         .fetch_one()
-        .await
-        .unwrap_or(0);
+        .await?;
 
     DbSession::new(&mut *connection).query("admission.services.selection_service.reset_all_room_assignments_on_connection",
         "UPDATE admission_applications SET room_assignment_track_id = NULL, updated_at = NOW() WHERE admission_round_id = $1"
     )
     .bind(round_id)
-    .execute().await.ok();
+    .execute().await?;
 
     DbSession::new(&mut *connection).query("admission.services.selection_service.reset_all_room_assignments_on_connection",
         r#"
@@ -849,7 +848,7 @@ pub async fn reset_all_room_assignments_on_connection(
         "#
     )
     .bind(round_id)
-    .execute().await.ok();
+    .execute().await?;
 
     Ok(deleted)
 }
@@ -1411,5 +1410,16 @@ mod tests {
                 "showScores": false
             })
         );
+    }
+    #[tokio::test]
+    async fn admission_database_error_policy_reset_checkout_failure_is_not_zero_deletions() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        pool.close().await;
+        assert!(matches!(
+            reset_all_room_assignments(&pool, Uuid::new_v4()).await,
+            Err(AppError::DbError(_))
+        ));
     }
 }

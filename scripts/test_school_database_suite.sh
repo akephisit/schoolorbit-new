@@ -34,7 +34,7 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_
 
 # Security boundaries remain in the same compiled target and owned server.
 ./scripts/test_backend_school.sh --package school-auth --lib -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --test-threads=4
 # WebSocket security tests now run in the school-academic-http unit owner.
