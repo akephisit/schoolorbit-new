@@ -12,4 +12,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 #[cfg(test)]
 mod db_tests;
+#[cfg(test)]
+mod read_checkout_tests;
 pub mod finalization;
