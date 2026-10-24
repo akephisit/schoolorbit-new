@@ -48,6 +48,7 @@
 		onplacementchange,
 		placementPaths = [],
 		placementFileId,
+		placementImage,
 		onrendered,
 		readContext = ''
 	}: {
@@ -60,6 +61,7 @@
 		onplacementchange?: (placement: SignatureInput) => void;
 		placementPaths?: InkPath[];
 		placementFileId?: string;
+		placementImage?: Blob;
 		onrendered?: (document: { correspondenceId: string; documentRevision: number } | null) => void;
 		readContext?: string;
 	} = $props();
@@ -611,6 +613,7 @@
 						{disabled}
 						paths={placementPaths}
 						fileId={placementFileId}
+						localImage={placementImage}
 						onchange={onplacementchange}
 					/>{/if}
 				{#each (opened ? detail.signatures : []).filter((signature) => signature.signature.documentRevision === detail.document.revision && signature.signature.page === pageNumber) as signed (signed.id)}

@@ -68,3 +68,14 @@ test('ordinary history renders meaningful activity names without internal codes'
 	assert.equal(historyActionLabel('create'), 'ลงทะเบียนหนังสือ');
 	assert.equal(historyActionLabel('internal_transport_code'), 'บันทึกการดำเนินการ');
 });
+test('local signature preparation still requires confirmation, current revision and valid placement', () => {
+	const image = { ...signature, method: 'image' };
+	assert.equal(validateSigningDraft(image, [], 'image', '', true, 3, true), null);
+	assert.match(validateSigningDraft(image, [], 'image', '', true, 3), /ยืนยัน/);
+	assert.match(validateSigningDraft(image, [], 'image', '', false, 3, true), /ยืนยัน/);
+	assert.match(validateSigningDraft(image, [], 'image', '', true, 4, true), /ฉบับใหม่/);
+	assert.match(
+		validateSigningDraft({ ...image, x: 0.99 }, [], 'image', '', true, 3, true),
+		/ภายในหน้า/
+	);
+});

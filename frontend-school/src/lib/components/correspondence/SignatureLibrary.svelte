@@ -6,6 +6,7 @@
 		type SignatureAsset
 	} from '#lib/api/correspondence.js';
 	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { CorrespondenceRegion } from '#lib/correspondence/region.svelte.js';
@@ -28,7 +29,16 @@
 		pending = $state(false),
 		error = $state(''),
 		adding = $state(false);
+	let prepared:
+		{ source: File | null; paths: string; owner: string; upload: PendingUpload } | undefined;
 	let disposed = false;
+	$effect(() => {
+		const owner = $authStore.user?.id;
+		if (prepared && prepared.owner !== owner) {
+			prepared.upload.dispose();
+			prepared = undefined;
+		}
+	});
 	$effect.pre(() => {
 		const operation = source;
 		untrack(() => region.consume(operation));
@@ -44,6 +54,7 @@
 	});
 	onDestroy(() => {
 		disposed = true;
+		prepared?.upload.dispose();
 		region.dispose();
 	});
 	async function drawnImage(): Promise<File> {
@@ -86,11 +97,39 @@
 		}
 		pending = true;
 		try {
-			const file = image ?? (await drawnImage());
-			const uploaded = await uploadFile(file, 'correspondence_signature', $authStore.user.id);
-			if (disposed) return;
-			const asset = await createSignatureAsset(label.trim(), uploaded.id);
-			if (disposed) return;
+			const owner = $authStore.user.id;
+			const basis = JSON.stringify(paths);
+			if (
+				!prepared ||
+				prepared.source !== image ||
+				prepared.paths !== basis ||
+				prepared.owner !== owner
+			) {
+				prepared?.upload.dispose();
+				const file = image ?? (await drawnImage());
+				if (disposed || owner !== $authStore.user?.id) return;
+				prepared = {
+					source: image,
+					paths: basis,
+					owner,
+					upload: new PendingUpload(
+						file,
+						{
+							purpose: 'correspondence_signature',
+							resourceId: owner,
+							owner
+						},
+						uploadFile
+					)
+				};
+			}
+			const upload = prepared.upload;
+			const fileId = await upload.commit();
+			if (disposed || owner !== $authStore.user?.id || upload !== prepared?.upload) return;
+			const asset = await createSignatureAsset(label.trim(), fileId);
+			if (disposed || owner !== $authStore.user?.id || upload !== prepared?.upload) return;
+			prepared.upload.dispose();
+			prepared = undefined;
 			region.patch([asset, ...(region.value ?? [])]);
 			adding = false;
 			label = '';

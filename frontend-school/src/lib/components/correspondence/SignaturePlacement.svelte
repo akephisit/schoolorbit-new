@@ -17,6 +17,7 @@
 		disabled,
 		paths = [],
 		fileId,
+		localImage,
 		onchange
 	}: {
 		placement: SignatureInput;
@@ -25,8 +26,19 @@
 		disabled: boolean;
 		paths?: InkPath[];
 		fileId?: string;
+		localImage?: Blob;
 		onchange: (placement: SignatureInput) => void;
 	} = $props();
+	let localImageUrl = $state('');
+	$effect(() => {
+		if (!localImage) {
+			localImageUrl = '';
+			return;
+		}
+		const url = URL.createObjectURL(localImage);
+		localImageUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
 	let drag: { pointerId: number; mode: 'move' | 'resize'; x: number; y: number } | null = null;
 	function start(event: PointerEvent, mode: 'move' | 'resize') {
 		if (disabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
@@ -102,7 +114,11 @@
 		onpointercancel={end}
 		onkeydown={(event) => keyboard(event, false)}
 	>
-		{#if fileId}<PrivateFileImage
+		{#if localImageUrl}<img
+				src={localImageUrl}
+				alt="ตัวอย่างลายมือชื่อบนเอกสาร"
+				class="h-full w-full object-contain"
+			/>{:else if fileId}<PrivateFileImage
 				{fileId}
 				resourceId={$authStore.user?.id}
 				alt="ตัวอย่างลายมือชื่อบนเอกสาร"
