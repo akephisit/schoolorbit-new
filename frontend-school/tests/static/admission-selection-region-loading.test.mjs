@@ -44,26 +44,34 @@ test('selection route owns independent context and dependent visible rankings', 
 		assert.doesNotMatch(response, /national_id/);
 	}
 	const trackRead =
-		service.split('pub async fn get_track_ranking')[1]?.split('pub async fn assign_rooms')[0] ?? '';
-	const globalRead =
-		service.split('pub async fn get_global_ranking')[1]?.split('pub async fn get_round_rooms')[0] ??
+		service.split('pub async fn get_track_ranking(')[1]?.split('pub async fn assign_rooms(')[0] ??
 		'';
+	const globalRead =
+		service
+			.split('pub async fn get_global_ranking(')[1]
+			?.split('pub async fn get_round_rooms(')[0] ?? '';
 	assert.doesNotMatch(trackRead, /unwrap_or_default\(\)/);
 	assert.doesNotMatch(globalRead, /unwrap_or_default\(\)/);
 	assert.doesNotMatch(trackRead, /aa\.national_id|decrypt_rank_row_detailed/);
 	assert.doesNotMatch(globalRead, /aa\.national_id|decrypt_rank_row_detailed/);
 	for (const [start, end] of [
-		['pub async fn get_round_ranking', 'pub async fn get_track_ranking'],
-		['pub async fn assign_rooms(', 'pub async fn reset_all_room_assignments'],
-		['pub async fn assign_rooms_global', 'pub async fn get_global_ranking']
+		['pub async fn get_round_ranking(', 'pub async fn get_track_ranking('],
+		['pub async fn assign_rooms(', 'pub async fn reset_all_room_assignments('],
+		['pub async fn assign_rooms_global(', 'pub async fn get_global_ranking(']
 	]) {
 		const segment = service.split(start)[1]?.split(end)[0] ?? '';
 		assert.doesNotMatch(segment, /aa\.national_id|decrypt_rank_row/);
 	}
 	const roundRead =
 		service
-			.split('pub async fn get_round_ranking')[1]
-			?.split('pub async fn get_track_ranking')[0] ?? '';
+			.split('pub async fn get_round_ranking(')[1]
+			?.split('pub async fn get_track_ranking(')[0] ?? '';
 	assert.doesNotMatch(roundRead, /for \(track_id, track_name, tiebreak\) in tracks/);
-	assert.match(roundRead, /LEFT JOIN admission_applications aa/);
+	const [roundWrapper, roundHelper = ''] = roundRead.split(
+		'pub async fn get_round_ranking_on_connection('
+	);
+	assert.match(roundWrapper, /TenantPool::observed_checkout_pool/);
+	assert.match(roundWrapper, /get_round_ranking_on_connection\(&mut connection, round_id\)\.await/);
+	assert.match(roundHelper, /connection: &mut sqlx::PgConnection/);
+	assert.match(roundHelper, /LEFT JOIN admission_applications aa/);
 });

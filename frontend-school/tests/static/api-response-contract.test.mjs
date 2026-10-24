@@ -516,7 +516,9 @@ test('Local API contract verification protects the offline exporter boundary', a
 	const workflow = await readRepoFile('.github/workflows/pipeline.yml');
 	const runner = await readRepoFile('scripts/pipeline.mjs');
 	assert.doesNotMatch(workflow, /scripts\/pipeline verify/);
-	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	for (const target of ['database_execution_architecture', 'static_architecture']) {
+		assert.match(runner, new RegExp(`run\\('cargo',\\s*\\['test',[^\\]]*'--test',\\s*'${target}'`));
+	}
 	assert.match(runner, /generate-api-contracts\.mjs', '--check'/);
 	assert.match(runner, /env', \['-i',[\s\S]*export-openapi/);
 	assert.match(runner, /JSON\.parse/);
