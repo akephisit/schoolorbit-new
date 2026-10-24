@@ -28,8 +28,7 @@ done
 ./scripts/test_backend_school.sh activation_context_tests -- --test-threads=4
 ./scripts/test_backend_school.sh promotion_targets::tests -- --test-threads=4
 ./scripts/test_backend_school.sh opening_readiness_tests -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::lifecycle::services::transition_tests -- --test-threads=4
-./scripts/test_backend_school.sh promotion_execution_tests -- --test-threads=4
+./scripts/test_backend_school.sh integration_tests::academic::lifecycle -- --test-threads=4
 ./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
 ./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
 ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
