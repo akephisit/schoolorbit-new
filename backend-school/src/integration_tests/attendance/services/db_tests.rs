@@ -5230,7 +5230,7 @@ async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
     let session = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
         .await
         .unwrap();
-    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin) VALUES($1,$2,$3,'unchecked','none')")
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin) VALUES($1,$2,$3,'present','scan')")
         .bind(session.id).bind(STUDENT).bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES(gen_random_uuid(),$1,$2,$3,$4,now())")
         .bind(session.id).bind(STUDENT).bind(device.id).bind(linked_id).execute(&f.pool).await.unwrap();
