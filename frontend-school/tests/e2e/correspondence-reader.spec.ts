@@ -162,7 +162,7 @@ test('returning from history waits for the current PDF and preserves existing in
 	await confirmation.check();
 	await expect(form.getByTestId('signature-pad').locator('svg path')).toHaveCount(1);
 	await page.getByText(/^ประวัติฉบับเอกสาร \(/).click();
-	await page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง', exact: true }).click();
 	await page.getByRole('option', { name: /ฉบับ 1 ·/ }).click();
 	await expect(form.getByTestId('signature-pad')).toBeHidden();
 	await page.getByRole('button', { name: 'กลับฉบับปัจจุบัน', exact: true }).click();
@@ -253,7 +253,7 @@ test('send validation focuses the missing decision maker and exact missing recip
 	await expect(page.locator('#send-first-decisionmaker')).toBeFocused();
 	await expect(page.locator('#send-first-decisionmaker')).toHaveAttribute('aria-invalid', 'true');
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน', exact: true }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน', exact: true }).click();
 	await page.getByRole('button', { name: 'ส่งหนังสือ', exact: true }).click();
 	await expect(page.locator('#send-step-0-recipients')).toBeFocused();
@@ -289,7 +289,7 @@ for (const width of [390, 1440])
 			await expect(page).toHaveURL(new RegExp(correspondenceId));
 			await expect(page.locator('canvas')).toBeVisible();
 			await expect(
-				page.getByRole('button', { name: 'ฉบับเอกสารที่แสดง', exact: true })
+				page.getByRole('combobox', { name: 'ฉบับเอกสารที่แสดง', exact: true })
 			).toHaveCount(0);
 			await expect.poll(() => api.readRequests.length).toBe(1);
 			await expect(page.getByRole('radio', { name: 'ข้อความ', exact: true })).toHaveCount(0);

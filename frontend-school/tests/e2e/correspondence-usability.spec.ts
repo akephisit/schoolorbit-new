@@ -22,9 +22,9 @@ async function fillDocument(page: Page) {
 async function chooseRoute(page: Page) {
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -209,7 +209,7 @@ test('batch recipients preserve user, organization and position semantics and de
 	const api = await mockCorrespondence(page, { mode: 'draft' });
 	await fillDocument(page);
 	await chooseRoute(page);
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
@@ -218,7 +218,7 @@ test('batch recipients preserve user, organization and position semantics and de
 		['หน่วยงาน', 'งานบริหารทั่วไป'],
 		['ตำแหน่งในหน่วยงาน', 'งานบริหารทั่วไป · หัวหน้างาน']
 	]) {
-		await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+		await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 		await page.getByRole('option', { name: kind, exact: true }).click();
 		await page.getByRole('checkbox', { name: label, exact: true }).check();
 		await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -275,7 +275,7 @@ test('an unresolved signing command stays exactly replayable while a newer PDF i
 	const api = await mockDirectedCorrespondence(page, { scenario: 'decide', failAction: true });
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'พิจารณาสั่งการ', exact: true }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูผู้รับคนที่สอง', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -435,7 +435,7 @@ test.describe('touch signature placement', () => {
 		await page.goto(detailPath);
 		await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 		await page.getByRole('button', { name: 'เลือกลายมือชื่อที่บันทึก' }).click();
-		await page.getByRole('button', { name: 'ลายมือชื่อของฉัน', exact: true }).click();
+		await page.getByRole('combobox', { name: 'ลายมือชื่อของฉัน', exact: true }).click();
 		await page.getByRole('option', { name: 'ลายมือชื่อส่วนตัว' }).click();
 		await expect(page.locator('canvas')).toBeVisible();
 		await page.getByRole('button', { name: 'หมุน 90°' }).click();
@@ -613,9 +613,9 @@ test('a selected position can be added after search no longer displays that posi
 	await fillDocument(page);
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'ตำแหน่งในหน่วยงาน', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'งานบริหารทั่วไป · หัวหน้างาน' }).check();
 	await page.getByText('ค้นหาผู้รับเพิ่มเติม', { exact: true }).click();
@@ -623,7 +623,7 @@ test('a selected position can be added after search no longer displays that posi
 	await page.getByRole('button', { name: 'ค้นหาผู้รับ', exact: true }).click();
 	await expect(page.getByText('ไม่พบผู้รับ ลองค้นหาเพิ่มเติม')).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูค้นหาเพิ่มเติม', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -652,9 +652,9 @@ async function chooseDetailRoute(page: Page) {
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ' }).click();
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน' }).click();
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -675,7 +675,7 @@ test('a read receipt update preserves the open route choice without fetching opt
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'เลือกผู้รับและส่งหนังสือ', exact: true }).click();
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน', exact: true }).click();
 	const option = page.getByRole('option', { name: 'เวียนหนังสือมาตรฐาน', exact: true });
 	await expect(option).toBeVisible();
 	release();
@@ -875,10 +875,10 @@ test('step deadline survives wizard backtracking, clears with its control and re
 	await expect(page.locator('#step-due-0')).toContainText('เลือกวันที่');
 	await chooseDate();
 	await page.getByRole('radio', { name: 'ใช้แม่แบบลำดับงาน', exact: true }).click();
-	await page.getByRole('button', { name: 'ลำดับการดำเนินงาน' }).click();
+	await page.getByRole('combobox', { name: 'ลำดับการดำเนินงาน' }).click();
 	await page.getByRole('option', { name: 'แม่แบบทางเลือก', exact: true }).click();
 	await expect(page.locator('#step-due-0')).toContainText('เลือกวันที่');
-	await page.getByRole('button', { name: 'กลุ่มผู้รับ', exact: true }).click();
+	await page.getByRole('combobox', { name: 'กลุ่มผู้รับ', exact: true }).click();
 	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.getByRole('checkbox', { name: 'ครูเจ้าของ ทดสอบ', exact: true }).check();
 	await page.getByRole('button', { name: 'เพิ่มผู้รับ (1)', exact: true }).click();
@@ -896,15 +896,15 @@ test('optional-only edit prompts on leave, dismiss retains it and reverting to i
 }) => {
 	const api = await mockCorrespondence(page, { mode: 'draft' });
 	await page.goto('/staff/correspondence/new');
-	await page.getByRole('button', { name: 'ความเร่งด่วน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ความเร่งด่วน', exact: true }).click();
 	await page.getByRole('option', { name: 'ด่วน', exact: true }).click();
 	await page.getByRole('link', { name: 'ยกเลิก', exact: true }).click();
 	await expect(page.getByRole('alertdialog')).toBeVisible();
 	await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ' }).click();
-	await expect(page.getByRole('button', { name: 'ความเร่งด่วน', exact: true })).toContainText(
+	await expect(page.getByRole('combobox', { name: 'ความเร่งด่วน', exact: true })).toContainText(
 		'ด่วน'
 	);
-	await page.getByRole('button', { name: 'ความเร่งด่วน', exact: true }).click();
+	await page.getByRole('combobox', { name: 'ความเร่งด่วน', exact: true }).click();
 	await page.getByRole('option', { name: 'ปกติ', exact: true }).click();
 	await page.getByRole('link', { name: 'ยกเลิก', exact: true }).click();
 	await expect(page).toHaveURL(/\/staff\/correspondence$/);
