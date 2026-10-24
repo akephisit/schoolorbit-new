@@ -16,6 +16,7 @@
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import Choice from './Choice.svelte';
 	import EvidenceEditor from './EvidenceEditor.svelte';
+	let evidenceEditor = $state<{ commit: () => Promise<void>; accept: () => void }>();
 	let {
 		workspace,
 		detail,
@@ -70,6 +71,8 @@
 			if (!lines.length || lines.some((line) => BigInt(line.amountSatang) <= 0n))
 				throw new Error('เลือกรายการและกรอกจำนวนเงินมากกว่า 0');
 			pending = true;
+			await evidenceEditor?.commit();
+			if (disposed) return;
 			const basis = {
 				expectedRevision,
 				activityId,
@@ -83,7 +86,10 @@
 						...basis,
 						requestId: intent.for(basis)
 					});
-			if (!disposed) onsaved(value);
+			if (!disposed) {
+				evidenceEditor?.accept();
+				onsaved(value);
+			}
 		} catch (cause) {
 			if (!disposed) {
 				error = message(cause);
@@ -159,6 +165,7 @@
 				</div>{/each}
 		</fieldset>{/if}
 	{#if detail}<EvidenceEditor
+			bind:this={evidenceEditor}
 			resourceId={detail.request.id}
 			bind:ids={evidenceIds}
 			bind:busy={uploading}

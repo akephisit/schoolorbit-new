@@ -19,6 +19,7 @@
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import EvidenceEditor from './EvidenceEditor.svelte';
+	let evidenceEditor = $state<{ commit: () => Promise<void>; accept: () => void }>();
 	import { ApiClientError } from '#lib/api/client.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	let {
@@ -129,6 +130,8 @@
 				throw new Error(payment ? 'กรอกเหตุผลการคืนเงิน' : 'กรอกเลขที่ใบสำคัญ');
 			const allocations = paymentAllocations(amounts, lines);
 			pending = true;
+			await evidenceEditor?.commit();
+			if (disposed) return;
 			const common = { expectedRevision, allocations, evidenceFileIds: evidenceIds };
 			let result: BudgetSpendingRequestDetail;
 			if (payment) {
@@ -149,7 +152,10 @@
 					requestId: intent.for(basis)
 				});
 			}
-			if (!disposed) onsaved(result);
+			if (!disposed) {
+				evidenceEditor?.accept();
+				onsaved(result);
+			}
 		} catch (cause) {
 			if (!disposed) {
 				error = message(cause);
@@ -252,6 +258,7 @@
 			/>
 		</div>{/if}
 	<EvidenceEditor
+		bind:this={evidenceEditor}
 		resourceId={detail.request.id}
 		bind:ids={evidenceIds}
 		bind:busy={uploading}

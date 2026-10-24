@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { uploadFile } from '#lib/api/files.js';
-	import { message } from '#lib/budget/drafts.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import PendingFileGuard from '#lib/components/files/PendingFileGuard.svelte';
+	import LocalDocumentPreview from '#lib/components/files/LocalDocumentPreview.svelte';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Paperclip } from '@lucide/svelte';
-	import { PageState } from '#lib/components/app-state/index.js';
 	let {
 		resourceId,
 		ids = $bindable([]),
@@ -20,31 +21,68 @@
 		disabled?: boolean;
 		required?: boolean;
 	} = $props();
-	let error = $state(''),
-		disposed = false;
+	let drafts = $state<PendingUpload[]>([]);
+	let baseline = $state(untrack(() => ids.join(',')));
+	const dirty = $derived(drafts.length > 0 || ids.join(',') !== baseline);
+	export function accept() {
+		baseline = ids.join(',');
+	}
+	let disposed = false,
+		generation = 0;
+	$effect(() => {
+		const owner = resourceId;
+		untrack(() => {
+			if (drafts.some((draft) => draft.scope.owner !== owner)) {
+				generation++;
+				for (const draft of drafts) draft.dispose();
+				drafts = [];
+			}
+		});
+	});
 	onDestroy(() => {
 		disposed = true;
+		for (const draft of drafts) draft.dispose();
 	});
-	async function upload(event: Event) {
-		const target = event.currentTarget as HTMLInputElement,
-			files = [...(target.files ?? [])];
+	function select(event: Event) {
+		if (disabled || busy) return;
+		const input = event.currentTarget as HTMLInputElement;
+		drafts = [
+			...drafts,
+			...Array.from(input.files ?? []).map(
+				(file) =>
+					new PendingUpload(
+						file,
+						{
+							purpose: 'budget_evidence',
+							resourceId,
+							owner: resourceId
+						},
+						uploadFile
+					)
+			)
+		];
+		input.value = '';
+	}
+	export async function commit(): Promise<void> {
+		const owner = resourceId,
+			revision = generation;
 		busy = true;
-		error = '';
 		try {
-			for (const file of files) {
-				const result = await uploadFile(file, 'budget_evidence', resourceId);
-				if (disposed) return;
-				ids = [...ids, result.id];
+			for (const draft of [...drafts]) {
+				const id = await draft.commit();
+				if (disposed || owner !== resourceId || revision !== generation)
+					throw new Error('คำขอหลักฐานเปลี่ยนแล้ว');
+				if (!ids.includes(id)) ids = [...ids, id];
+				drafts = drafts.filter((value) => value !== draft);
+				draft.dispose();
 			}
-			target.value = '';
-		} catch (cause) {
-			if (!disposed) error = message(cause);
 		} finally {
-			if (!disposed) busy = false;
+			if (!disposed && revision === generation) busy = false;
 		}
 	}
 </script>
 
+<PendingFileGuard {dirty} pending={dirty && (busy || disabled)} />
 <section class="space-y-3 border-t pt-6" aria-label="หลักฐานประกอบ">
 	<Label for={`budget-evidence-${resourceId}`}
 		><Paperclip class="size-4 text-muted-foreground" aria-hidden="true" />แนบหลักฐาน{required
@@ -55,16 +93,25 @@
 		type="file"
 		multiple
 		disabled={disabled || busy}
-		onchange={upload}
+		onchange={select}
 	/>
 	<p class="text-sm text-muted-foreground">แนบเอกสารประกอบ{required ? 'การทำรายการ' : 'ถ้ามี'}</p>
-	{#if busy}<p role="status" class="text-sm text-muted-foreground">
-			กำลังแนบหลักฐาน…
-		</p>{/if}{#if error}<PageState
-			variant="error"
-			title="แนบหลักฐานไม่สำเร็จ"
-			description={error}
-		/>{/if}{#if ids.length}<ul class="divide-y rounded-lg border px-3">
+	{#each drafts as draft (draft)}
+		<div class="space-y-2">
+			<LocalDocumentPreview file={draft.file} /><Button
+				type="button"
+				size="sm"
+				variant="ghost"
+				disabled={disabled || busy}
+				onclick={() => {
+					draft.dispose();
+					drafts = drafts.filter((value) => value !== draft);
+				}}>นำไฟล์ที่เลือกออก</Button
+			>
+		</div>
+	{/each}
+	{#if busy}<p role="status" class="text-sm text-muted-foreground">กำลังแนบหลักฐาน…</p>{/if}
+	{#if ids.length}<ul class="divide-y rounded-lg border px-3">
 			{#each ids as fileId, index (fileId)}<li
 					class="flex items-center justify-between gap-2 py-2 text-sm"
 				>

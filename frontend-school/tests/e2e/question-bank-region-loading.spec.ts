@@ -290,6 +290,58 @@ test('rich editor JavaScript is loaded only when create is opened', async ({ pag
 	await expect.poll(() => scriptRequests.some((url) => !scriptsBeforeCreate.has(url))).toBe(true);
 });
 
+test('question image remains local until save and a failed update reuses its uploaded ID', async ({
+	page
+}) => {
+	await mockApis(page);
+	let uploads = 0,
+		saves = 0;
+	const fileId = '10000000-0000-4000-8000-000000000911';
+	const payloads: unknown[] = [];
+	await page.route('**/api/files', (route) => {
+		uploads++;
+		expect(route.request().postData()).toContain('question_bank_image');
+		expect(route.request().postData()).toContain(subjectId);
+		return fulfill(route, { id: fileId });
+	});
+	await page.route(`**/api/academic/question-bank/questions/${questionId}`, async (route) => {
+		if (route.request().method() !== 'PUT') return route.fallback();
+		saves++;
+		const payload = route.request().postDataJSON();
+		payloads.push(payload);
+		expect(JSON.stringify(payload.stemContent)).toContain(fileId);
+		if (saves === 1)
+			return route.fulfill({
+				status: 503,
+				json: { success: false, error: 'question save unavailable' }
+			});
+		return fulfill(route, { ...question(), ...payload, choices: [], files: [] });
+	});
+	await page.goto(questionBankUrl);
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	const editor = dialog.getByRole('region', { name: /^โจทย์/ });
+	await expect(editor.locator('[contenteditable="true"]')).toBeVisible();
+	await editor.locator('input[type="file"]').setInputFiles({
+		name: 'question.png',
+		mimeType: 'image/png',
+		buffer: Buffer.from(
+			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ9sAAAAASUVORK5CYII=',
+			'base64'
+		)
+	});
+	await expect(editor.locator('img[src^="blob:"]')).toBeVisible();
+	expect(uploads).toBe(0);
+	await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+	await expect(page.getByText('question save unavailable', { exact: true })).toBeVisible();
+	expect(uploads).toBe(1);
+	await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(saves).toBe(2);
+	expect(uploads).toBe(1);
+	expect(payloads[1]).toEqual(payloads[0]);
+});
+
 test('deleting rereads only the affected paginated list', async ({ page }) => {
 	let optionsReads = 0;
 	let listReads = 0;

@@ -139,14 +139,21 @@ test('minimal project to plan approval, activity request, partial payment and cl
 	await date(page, 'วันที่จ่ายเงิน');
 	await page.getByLabel('เลขที่ใบสำคัญ *').fill('PV-02');
 	await page.getByLabel('จำนวนเงินจ่าย กระดาษ', { exact: true }).fill('3.00');
+	let evidenceUploads = 0;
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/files')
+			evidenceUploads++;
+	});
 	await page.getByLabel('แนบหลักฐาน', { exact: true }).setInputFiles({
 		name: 'หลักฐานทดสอบ.pdf',
 		mimeType: 'application/pdf',
 		buffer: Buffer.from('%PDF synthetic fixture')
 	});
-	await expect(page.getByRole('button', { name: 'นำออก', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นำไฟล์ที่เลือกออก', exact: true })).toBeVisible();
+	expect(evidenceUploads).toBe(0);
 	await page.getByRole('button', { name: 'บันทึกการจ่ายเงิน', exact: true }).last().click();
 	await expect(page.getByTestId('budget-payments')).toContainText('PV-02');
+	expect(evidenceUploads).toBe(1);
 	await expect(page.getByTestId('budget-request-detail')).toContainText('7.00');
 	await page.getByRole('button', { name: 'ปิดคำขอ', exact: true }).click();
 	await page.getByLabel('เหตุผลการปิดคำขอ *').fill('ดำเนินการครบแล้ว');

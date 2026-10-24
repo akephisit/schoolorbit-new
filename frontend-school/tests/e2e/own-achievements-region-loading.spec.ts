@@ -14,6 +14,53 @@ test.beforeEach(async ({ page }) => {
 	);
 });
 const ownPath = '/staff/achievements/self-recorded';
+test('a prepared achievement image uploads only on save and survives a failed business save', async ({
+	page
+}) => {
+	await mockOwnAchievements(page);
+	let uploads = 0,
+		saves = 0;
+	const fileId = '10000000-0000-4000-8000-000000000910';
+	await page.route('**/api/files', (route) => {
+		uploads++;
+		expect(route.request().postData()).toContain('achievement_image');
+		return route.fulfill({ json: { success: true, data: { id: fileId } } });
+	});
+	await page.route('**/api/achievements/*', async (route) => {
+		if (route.request().method() !== 'PUT') return route.fallback();
+		saves++;
+		expect(route.request().postDataJSON().image_file_id).toBe(fileId);
+		if (saves === 1)
+			return route.fulfill({
+				status: 503,
+				json: { success: false, error: 'business save unavailable' }
+			});
+		return route.fallback();
+	});
+	await page.goto(ownPath);
+	await page.getByRole('button', { name: 'แก้ไขผลงาน ผลงานของฉัน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.locator('input[type="file"]').setInputFiles({
+		name: 'achievement.png',
+		mimeType: 'image/png',
+		buffer: Buffer.from(
+			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ9sAAAAASUVORK5CYII=',
+			'base64'
+		)
+	});
+	await expect(dialog.getByRole('img', { name: 'Preview', exact: true })).toHaveAttribute(
+		'src',
+		/^blob:/
+	);
+	expect(uploads).toBe(0);
+	await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	await expect(page.getByText('business save unavailable', { exact: true })).toBeVisible();
+	expect(uploads).toBe(1);
+	await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(saves).toBe(2);
+	expect(uploads).toBe(1);
+});
 test('own list is loader owned and no management or evidence workflows are read', async ({
 	page
 }) => {

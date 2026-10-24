@@ -13,10 +13,22 @@ const image = {
 };
 
 test('signature selection, placement and cancellation stay local', async ({ page }) => {
+	const errors: string[] = [];
+	await page.addInitScript(() => {
+		const state = window as typeof window & { revokedDraftFiles: string[] };
+		state.revokedDraftFiles = [];
+		const revoke = URL.revokeObjectURL.bind(URL);
+		URL.revokeObjectURL = (url) => {
+			state.revokedDraftFiles.push(url);
+			revoke(url);
+		};
+	});
+	page.on('pageerror', (error) => errors.push(error.message));
 	const api = await mockCorrespondence(page);
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
 	await page.getByRole('button', { name: 'เลือกลายมือชื่อที่บันทึก' }).click();
+	await page.getByLabel('เพิ่มภาพลายมือชื่อ', { exact: true }).setInputFiles(image);
 	await page.getByLabel('เพิ่มภาพลายมือชื่อ', { exact: true }).setInputFiles(image);
 	await expect(
 		page.getByRole('img', { name: 'ภาพลายมือชื่อที่เลือก', exact: true })
@@ -27,6 +39,10 @@ test('signature selection, placement and cancellation stay local', async ({ page
 	);
 	expect(api.uploads).toHaveLength(0);
 	expect(api.assetWrites).toHaveLength(0);
+	const localUrls = [
+		await page.getByRole('img', { name: 'ภาพลายมือชื่อที่เลือก', exact: true }).getAttribute('src'),
+		await page.getByTestId('signature-placement').locator('img').getAttribute('src')
+	];
 	await page
 		.getByTestId('correspondence-action')
 		.getByRole('button', { name: 'ยกเลิก', exact: true })
@@ -34,6 +50,16 @@ test('signature selection, placement and cancellation stay local', async ({ page
 	await expect(page.getByTestId('correspondence-action')).not.toBeVisible();
 	expect(api.uploads).toHaveLength(0);
 	expect(api.assetWrites).toHaveLength(0);
+	await expect
+		.poll(() =>
+			page.evaluate((urls) => {
+				const revoked = (window as typeof window & { revokedDraftFiles: string[] })
+					.revokedDraftFiles;
+				return urls.every((url) => url !== null && revoked.includes(url));
+			}, localUrls)
+		)
+		.toBe(true);
+	expect(errors).toEqual([]);
 });
 
 test('explicit signature confirmation uploads once and reuses the known asset after action failure', async ({

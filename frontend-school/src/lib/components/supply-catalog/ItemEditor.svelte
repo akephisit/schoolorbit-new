@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		createItem,
@@ -12,7 +11,10 @@
 		type SupplyCategory,
 		type SupplyProposal
 	} from '#lib/api/supply-catalog.js';
-	import { uploadFile, deleteFile } from '#lib/api/files.js';
+	import { uploadFile } from '#lib/api/files.js';
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	import PendingFileGuard from '#lib/components/files/PendingFileGuard.svelte';
+	import LocalDocumentPreview from '#lib/components/files/LocalDocumentPreview.svelte';
 	import { normalizeCatalogImage } from '#lib/utils/catalog-image.js';
 	import {
 		emptyItem,
@@ -37,7 +39,6 @@
 	import FieldError from './FieldError.svelte';
 	import CatalogImage from './CatalogImage.svelte';
 	import ItemPicker from './ItemPicker.svelte';
-	import { toast } from 'svelte-sonner';
 	let {
 		mode,
 		item = null,
@@ -104,17 +105,27 @@
 	);
 	function validationErrors(): ItemFieldErrors & { sourceUrl?: string } {
 		const fields = validateItemFields(draft, { metadataOnly: mode === 'edit' });
-		const source = mode === 'propose' && !sourceFileId ? validateSourceUrl(sourceUrl) : null;
+		const source =
+			mode === 'propose' && !sourceFileId && !localSource ? validateSourceUrl(sourceUrl) : null;
 		return source ? { ...fields, sourceUrl: source } : fields;
 	}
-	const staged = new SvelteSet<string>();
+	let localImage = $state<PendingUpload | null>(null);
+	let preparation = 0;
+	let localSource = $state<PendingUpload | null>(null);
 	let disposed = false;
+	const ownerKey = $derived(`${mode}:${item?.id ?? ''}:${proposal?.id ?? ''}`);
+	$effect(() => {
+		const owner = ownerKey;
+		untrack(() => {
+			if (
+				(localImage && localImage.scope.owner !== owner) ||
+				(localSource && localSource.scope.owner !== owner)
+			)
+				cleanup();
+		});
+	});
 	const imageResource = $derived(
-		staged.has(draft.imageFileId ?? '')
-			? undefined
-			: target?.imageFileId === draft.imageFileId
-				? target?.id
-				: (item?.id ?? proposal?.id)
+		target?.imageFileId === draft.imageFileId ? target?.id : (item?.id ?? proposal?.id)
 	);
 	function selectTarget(selected: SupplyItem) {
 		if (controlsDisabled || disposed) return;
@@ -133,101 +144,75 @@
 			draft.imageFileId = proposal?.imageFileId ?? null;
 		target = null;
 	}
-	async function cleanup(): Promise<boolean> {
-		try {
-			for (const id of staged) {
-				await deleteFile(id);
-				staged.delete(id);
-			}
-			return true;
-		} catch (e) {
-			actionError = message(e, 'ล้างไฟล์ชั่วคราวไม่สำเร็จ กรุณาลองอีกครั้ง');
-			return false;
-		}
+	function cleanup(): boolean {
+		preparation++;
+		localImage?.dispose();
+		localSource?.dispose();
+		localImage = null;
+		localSource = null;
+		uploading = null;
+		return true;
 	}
 	async function cancel() {
-		if (controlsDisabled) return;
-		pending = true;
-		if ((await cleanup()) && !disposed) oncancel();
-		if (!disposed) pending = false;
+		if (!controlsDisabled && !disposed) {
+			cleanup();
+			oncancel();
+		}
 	}
 	export async function discard() {
-		if (controlsDisabled) return false;
-		return cleanup();
+		return !controlsDisabled && cleanup();
 	}
 	onDestroy(() => {
 		disposed = true;
 		duplicateRequest.abort();
-		if (staged.size)
-			void cleanup().then((ok) => {
-				if (!ok) toast.error('ล้างไฟล์ชั่วคราวไม่สำเร็จ');
-			});
+		cleanup();
 	});
 	async function upload(file: File | undefined, kind: 'image' | 'source') {
 		if (!file || controlsDisabled || disposed) return;
+		const revision = ++preparation,
+			owner = ownerKey;
 		uploading = kind;
 		actionError = null;
 		try {
 			const normalized = await normalizeCatalogImage(file);
-			if (disposed) return;
-			const uploaded = await uploadFile(
+			if (disposed || revision !== preparation || owner !== ownerKey) return;
+			const draftUpload = new PendingUpload(
 				normalized,
-				kind === 'image' ? 'supply_catalog_image' : 'supply_proposal_source'
+				{
+					purpose: kind === 'image' ? 'supply_catalog_image' : 'supply_proposal_source',
+					owner
+				},
+				uploadFile
 			);
-			staged.add(uploaded.id);
-			if (disposed) {
-				await cleanup();
-				return;
-			}
-			const old = kind === 'image' ? draft.imageFileId : sourceFileId;
-			if (old && staged.has(old)) {
-				await deleteFile(old);
-				staged.delete(old);
-			}
-			if (kind === 'image') draft.imageFileId = uploaded.id;
-			else {
-				sourceFileId = uploaded.id;
+			if (kind === 'image') {
+				localImage?.dispose();
+				localImage = draftUpload;
+			} else {
+				localSource?.dispose();
+				localSource = draftUpload;
 				sourceUrl = '';
 			}
-		} catch (e) {
-			if (!disposed) actionError = message(e, 'อัปโหลดรูปไม่สำเร็จ');
+		} catch (cause) {
+			if (!disposed) actionError = message(cause, 'เตรียมรูปไม่สำเร็จ');
 		} finally {
-			if (!disposed) uploading = null;
+			if (!disposed && revision === preparation) uploading = null;
 		}
 	}
-	async function removeImage() {
-		if (controlsDisabled) return;
-		const id = draft.imageFileId;
-		removing = 'image';
-		actionError = null;
-		try {
-			if (id && staged.has(id)) {
-				await deleteFile(id);
-				staged.delete(id);
-			}
+	function removeImage() {
+		if (!controlsDisabled) {
+			localImage?.dispose();
+			localImage = null;
 			draft.imageFileId = null;
-		} catch (e) {
-			actionError = message(e, 'ลบรูปชั่วคราวไม่สำเร็จ');
-		} finally {
-			if (!disposed) removing = null;
 		}
 	}
-	async function removeSource() {
-		if (controlsDisabled) return;
-		removing = 'source';
-		actionError = null;
-		try {
-			if (sourceFileId && staged.has(sourceFileId)) {
-				await deleteFile(sourceFileId);
-				staged.delete(sourceFileId);
-			}
+	function removeSource() {
+		if (!controlsDisabled) {
+			localSource?.dispose();
+			localSource = null;
 			sourceFileId = null;
-		} catch (e) {
-			actionError = message(e, 'ลบรูปแหล่งที่มาไม่สำเร็จ');
-		} finally {
-			if (!disposed) removing = null;
 		}
 	}
+
 	async function requestSave() {
 		if (controlsDisabled || disposed) return;
 		submitted = true;
@@ -251,11 +236,21 @@
 		checking = false;
 		pending = true;
 		try {
-			for (const id of staged)
-				if (id !== draft.imageFileId && id !== sourceFileId) {
-					await deleteFile(id);
-					staged.delete(id);
-				}
+			const owner = ownerKey;
+			if (localImage) {
+				const image = localImage;
+				const id = await image.commit();
+				if (disposed || image !== localImage || owner !== ownerKey) return;
+				draft.imageFileId = id;
+			}
+			if (disposed || owner !== ownerKey) return;
+			if (localSource) {
+				const source = localSource;
+				const id = await source.commit();
+				if (disposed || source !== localSource || owner !== ownerKey) return;
+				sourceFileId = id;
+			}
+			if (disposed || owner !== ownerKey) return;
 			const payload = cleanItem(draft);
 			const saved =
 				mode === 'edit' && item
@@ -281,8 +276,9 @@
 									sourceUrl: trimSupplyText(sourceUrl) || null
 								})
 							: await createItem(payload);
-			staged.clear();
-			if (!disposed) onsaved(saved);
+			if (disposed || owner !== ownerKey) return;
+			cleanup();
+			onsaved(saved);
 		} catch (e) {
 			if (!disposed)
 				actionError = message(
@@ -295,6 +291,10 @@
 	}
 </script>
 
+<PendingFileGuard
+	dirty={!!localImage || !!localSource}
+	pending={busy && (!!localImage || !!localSource)}
+/>
 <form
 	class="w-full max-w-xl space-y-5"
 	novalidate
@@ -422,7 +422,13 @@
 			<p id="supply-image-help" class="text-sm text-muted-foreground">
 				ใช้รูปปัจจุบันร่วมกันทุกเวอร์ชัน เมื่อเปลี่ยนรูป ระบบจะลบรูปเก่า
 			</p>
-			{#if draft.imageFileId}<CatalogImage
+			{#if localImage}<LocalDocumentPreview file={localImage.file} /><Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={controlsDisabled}
+					onclick={removeImage}>นำรูปสินค้าออก</Button
+				>{:else if draft.imageFileId}<CatalogImage
 					fileId={draft.imageFileId}
 					resourceId={imageResource}
 					alt={draft.name || 'รูปสินค้า'}
@@ -441,7 +447,11 @@
 					accept="image/*,.heic,.heif,.tif,.tiff"
 					disabled={controlsDisabled}
 					aria-describedby="supply-image-help"
-					onchange={(event) => upload(event.currentTarget.files?.[0], 'image')}
+					onchange={(event) => {
+						const file = event.currentTarget.files?.[0];
+						event.currentTarget.value = '';
+						void upload(file, 'image');
+					}}
 				/>
 			</div>
 		</section>
@@ -458,7 +468,7 @@
 						id="supply-source-url"
 						type="url"
 						bind:value={sourceUrl}
-						disabled={controlsDisabled || !!sourceFileId}
+						disabled={controlsDisabled || !!sourceFileId || !!localSource}
 						placeholder="https://"
 						aria-invalid={!!fieldErrors.sourceUrl}
 						aria-describedby={fieldErrors.sourceUrl
@@ -473,10 +483,20 @@
 						accept="image/*,.heic,.heif,.tif,.tiff"
 						disabled={controlsDisabled}
 						aria-describedby="supply-source-help"
-						onchange={(event) => upload(event.currentTarget.files?.[0], 'source')}
+						onchange={(event) => {
+							const file = event.currentTarget.files?.[0];
+							event.currentTarget.value = '';
+							void upload(file, 'source');
+						}}
 					/>
 				</div>
-				{#if sourceFileId}<CatalogImage
+				{#if localSource}<LocalDocumentPreview file={localSource.file} /><Button
+						type="button"
+						variant="outline"
+						size="sm"
+						disabled={controlsDisabled}
+						onclick={removeSource}>นำรูปแหล่งที่มาออก</Button
+					>{:else if sourceFileId}<CatalogImage
 						fileId={sourceFileId}
 						alt="รูปแหล่งที่มา"
 						class="h-32 rounded-lg"
@@ -518,9 +538,9 @@
 			: removing === 'source'
 				? 'กำลังนำรูปแหล่งที่มาออก'
 				: uploading === 'image'
-					? 'กำลังอัปโหลดรูปสินค้า'
+					? 'กำลังเตรียมรูปสินค้า'
 					: uploading === 'source'
-						? 'กำลังอัปโหลดรูปแหล่งที่มา'
+						? 'กำลังเตรียมรูปแหล่งที่มา'
 						: ''}
 	</p>
 	{#if actionError}<Alert variant="destructive"

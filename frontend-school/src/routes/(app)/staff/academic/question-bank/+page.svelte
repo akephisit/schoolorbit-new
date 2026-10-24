@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { PendingUpload } from '#lib/files/pending-upload.js';
+	const pendingUploads = new SvelteMap<File, PendingUpload>();
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -23,7 +25,7 @@
 		type UpsertQuestionRequest
 	} from '#lib/api/questionBank.js';
 	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
-	import { deleteFile, uploadFile } from '#lib/api/files.js';
+	import { uploadFile } from '#lib/api/files.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import QuestionContent from '#lib/components/question-bank/QuestionContent.svelte';
@@ -761,6 +763,8 @@
 	}
 
 	function cleanupDraftObjectUrls(value: QuestionDraft) {
+		for (const upload of pendingUploads.values()) upload.dispose();
+		pendingUploads.clear();
 		for (const content of allDraftContents(value)) {
 			for (const image of content.pendingImages) URL.revokeObjectURL(image.previewUrl);
 			content.pendingImages = [];
@@ -830,6 +834,10 @@
 	}
 
 	async function saveQuestion() {
+		if (saving) return;
+		const source = draft,
+			subjectId = draft.subjectId;
+		const current = () => editorOpen && source === draft && subjectId === draft.subjectId;
 		const validationError = validateDraft();
 		if (validationError) {
 			toast.error(validationError);
@@ -839,23 +847,38 @@
 		saving = true;
 		const uploadedIds: string[] = [];
 		const uploadedFileIds = new SvelteMap<string, string>();
-		let saveRequestStarted = false;
 		try {
 			for (const content of allDraftContents()) {
 				const referencedImageIds = pendingImageIds(content.content);
 				for (const image of content.pendingImages.filter((candidate) =>
 					referencedImageIds.has(candidate.pendingId)
 				)) {
-					const response = await uploadFile(image.file, 'question_bank_image', draft.subjectId);
-					uploadedFileIds.set(image.pendingId, response.id);
-					uploadedIds.push(response.id);
+					let pendingUpload = pendingUploads.get(image.file);
+					if (!pendingUpload || pendingUpload.scope.resourceId !== draft.subjectId) {
+						pendingUpload?.dispose();
+						pendingUpload = new PendingUpload(
+							image.file,
+							{
+								purpose: 'question_bank_image',
+								resourceId: draft.subjectId,
+								owner: draft.subjectId
+							},
+							uploadFile
+						);
+						pendingUploads.set(image.file, pendingUpload);
+					}
+					const fileId = await pendingUpload.commit();
+					if (!current()) return;
+					uploadedFileIds.set(image.pendingId, fileId);
+					uploadedIds.push(fileId);
 				}
 			}
+			if (!current()) return;
 			const payload = buildPayload(uploadedFileIds);
-			saveRequestStarted = true;
 			const saved = draft.id
 				? await updateQuestionBankQuestion(draft.id, payload)
 				: await createQuestionBankQuestion(payload);
+			if (!current()) return;
 			if (selectedQuestionIds.has(saved.id)) selectedQuestionSummaries.set(saved.id, saved);
 			questions = questions.map((question) => (question.id === saved.id ? saved : question));
 
@@ -865,14 +888,7 @@
 			await loadQuestions(draft.id ? currentPage : 1);
 			toast.success('บันทึกข้อสอบแล้ว');
 		} catch (error) {
-			if (!saveRequestStarted) {
-				const cleanupResults = await Promise.allSettled(uploadedIds.map((id) => deleteFile(id)));
-				if (cleanupResults.some((result) => result.status === 'rejected')) {
-					toast.warning('มีไฟล์ชั่วคราวบางส่วนรอระบบเก็บกวาดอัตโนมัติ');
-				}
-			} else if (uploadedIds.length) {
-				toast.warning('ไฟล์ที่ยังไม่ถูกใช้งานจะถูกเก็บกวาดอัตโนมัติภายใน 24 ชั่วโมง');
-			}
+			if (uploadedIds.length) toast.warning('เก็บไฟล์ที่อัปโหลดแล้วไว้สำหรับลองบันทึกอีกครั้ง');
 			toast.error(error instanceof Error ? error.message : 'บันทึกข้อสอบไม่สำเร็จ');
 		} finally {
 			saving = false;
