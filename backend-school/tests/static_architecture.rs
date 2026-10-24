@@ -5336,6 +5336,38 @@ fn mask_export_openapi_cli_block(source: &str) -> String {
     String::from_utf8(masked).expect("masked Rust source remains UTF-8")
 }
 
+fn mask_operational_cli_output_functions(source: &str) -> String {
+    let lexical = lexical_mask(source, false);
+    let mut masked = source.as_bytes().to_vec();
+    for name in [
+        "json",
+        "diagnostic",
+        "invalid_arguments",
+        "legacy_inventory",
+        "legacy_manifest",
+        "legacy_binding",
+    ] {
+        let marker = format!("pub fn {name}(");
+        for (start, _) in source.match_indices(&marker) {
+            if lexical.comments[start] || lexical.literals[start] {
+                continue;
+            }
+            let opening = lexical.structural[start..]
+                .find('{')
+                .map(|offset| start + offset)
+                .expect("CLI protocol function body");
+            let closing = balanced_delimiter_end(&lexical.structural, opening, b'{', b'}')
+                .expect("balanced CLI protocol function");
+            for byte in &mut masked[start..=closing] {
+                if *byte != b'\n' {
+                    *byte = b' ';
+                }
+            }
+        }
+    }
+    String::from_utf8(masked).expect("CLI boundary masking preserves UTF-8")
+}
+
 fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
     if file_name.starts_with("src/bin/") {
         return Vec::new();
@@ -5348,6 +5380,8 @@ fn structured_logging_violations(file_name: &str, source: &str) -> Vec<String> {
             .into_owned()
     } else if file_name == "src/main.rs" {
         mask_export_openapi_cli_block(source)
+    } else if file_name == "src/operations/cli_output.rs" {
+        mask_operational_cli_output_functions(source)
     } else {
         source.to_owned()
     };
@@ -6331,6 +6365,73 @@ fn structured_logging_guard_scopes_the_main_cli_exception() {
             "src/main.rs: use tracing macros instead of println! in runtime code".to_string(),
             "src/main.rs: use tracing macros instead of eprintln! in runtime code".to_string(),
         ]
+    );
+}
+
+#[test]
+fn structured_logging_guard_scopes_named_operational_output_functions() {
+    let protocol = r#"
+        pub fn json(value: &impl Serialize) { println!("{}", value); }
+        pub fn diagnostic(error: &BindingError) { eprintln!("{error}"); }
+    "#;
+    assert!(structured_logging_violations("src/operations/cli_output.rs", protocol).is_empty());
+    for path in [
+        "src/operations/tenant_rollout.rs",
+        "src/operations/storage_namespace.rs",
+        "src/startup.rs",
+    ] {
+        assert_eq!(
+            structured_logging_violations(path, protocol).len(),
+            2,
+            "only the explicit protocol owner may print: {path}"
+        );
+    }
+    let injected = format!(
+        "{protocol}\nfn runtime() {{ println!(\"runtime\"); eprintln!(\"runtime error\"); }}"
+    );
+    assert_eq!(
+        structured_logging_violations("src/operations/cli_output.rs", &injected).len(),
+        2,
+        "unrelated functions in the protocol file must remain checked"
+    );
+    let decoy = r#"// pub fn json(value: &impl Serialize) { }
+        const MARKER: &str = "pub fn diagnostic(error: &BindingError) { }";
+        fn runtime() { eprintln!("runtime"); }
+    "#;
+    assert_eq!(
+        structured_logging_violations("src/operations/cli_output.rs", decoy).len(),
+        1
+    );
+}
+
+#[test]
+fn operational_cli_has_one_application_library_owner_and_two_thin_drivers() {
+    let library = read_source(manifest_dir().join("src/lib.rs"));
+    assert!(library.contains("pub mod operations;"));
+    assert!(!library.contains("AppState"));
+    assert!(manifest_dir().join("src/operations.rs").is_file());
+    assert!(!manifest_dir().join("src/operations/mod.rs").exists());
+    for path in ["src/main.rs", "src/bin/file_storage_namespace.rs"] {
+        let driver = read_source(manifest_dir().join(path));
+        assert!(
+            driver.contains("use backend_school::operations;"),
+            "{path}: use the single compiled package library"
+        );
+        assert!(!strip_cfg_test_modules(&driver).contains("#[path"));
+    }
+    for path in [
+        "src/operations/tenant_rollout.rs",
+        "src/operations/storage_namespace.rs",
+    ] {
+        assert!(
+            structured_logging_violations(path, &read_source(manifest_dir().join(path))).is_empty()
+        );
+    }
+    let main = read_source(manifest_dir().join("src/main.rs"));
+    let runtime = extract_braced_block(&main, "async fn run()", false);
+    assert!(
+        !runtime.contains("cli_output::"),
+        "runtime initialization must keep tracing diagnostics"
     );
 }
 

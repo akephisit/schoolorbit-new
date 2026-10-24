@@ -46,7 +46,9 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
     for path in [
         "/internal/schools/barrier-fixture",
         "/internal/schools?status=active",
+        "/internal/schools",
         "/internal/schools/barrier-fixture/migration-connection",
+        "/internal/schools/barrier-fixture/migration-connection?include_inactive=true",
     ] {
         let response = client
             .get(format!("{origin}{path}"))
@@ -58,7 +60,10 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = response.text().await.unwrap();
         assert!(!body.contains("db_connection_string"));
+        assert!(!body.contains("db_migration_connection_string"));
         assert!(!body.contains("password"));
+        assert!(!body.contains("fixture-owner"));
+        assert!(!body.contains("fixture-runtime"));
     }
     // A cancelled/rolled-back writer cannot accidentally remove the barrier.
     let mut transaction = pool.begin().await.unwrap();
@@ -152,6 +157,74 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
         response.json::<serde_json::Value>().await.unwrap()["total"],
         0
     );
+    // Inactive tenants remain in the complete operational inventory, while ordinary
+    // lookup and migration credential access keep their original inactive refusal.
+    let response = client
+        .get(format!(
+            "{origin}/internal/schools/barrier-fixture/migration-connection"
+        ))
+        .header("X-Internal-Caller", "backend-school")
+        .header("X-Internal-Secret", "directory-fixture-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = response.text().await.unwrap();
+    assert!(!body.contains("db_migration_connection_string"));
+    assert!(!body.contains("fixture-owner"));
+    let response = client
+        .get(format!(
+            "{origin}/internal/schools/barrier-fixture/migration-connection?include_inactive=true"
+        ))
+        .header("X-Internal-Caller", "backend-school")
+        .header("X-Internal-Secret", "directory-fixture-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let connection = response.json::<serde_json::Value>().await.unwrap();
+    let migration_url = reqwest::Url::parse(
+        connection["db_migration_connection_string"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        migration_url.username(),
+        format!("so_{}_owner", id.simple())
+    );
+    assert_eq!(migration_url.path(), "/barrier_fixture");
+    let response = client
+        .get(format!("{origin}/internal/schools"))
+        .header("X-Internal-Caller", "backend-school")
+        .header("X-Internal-Secret", "directory-fixture-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let complete = response.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(complete["total"], 1);
+    assert_eq!(complete["schools"].as_array().unwrap().len(), 1);
+    assert_eq!(complete["schools"][0]["id"], id.to_string());
+    assert_eq!(complete["schools"][0]["status"], "inactive");
+    assert!(complete["schools"][0]
+        .get("db_migration_connection_string")
+        .is_none());
+    for (caller, secret, status) in [
+        (
+            "other-service",
+            "directory-fixture-secret",
+            StatusCode::FORBIDDEN,
+        ),
+        ("backend-school", "wrong-secret", StatusCode::UNAUTHORIZED),
+    ] {
+        let response=client.get(format!("{origin}/internal/schools/barrier-fixture/migration-connection?include_inactive=true"))
+            .header("X-Internal-Caller",caller).header("X-Internal-Secret",secret).send().await.unwrap();
+        assert_eq!(response.status(), status);
+        let body = response.text().await.unwrap();
+        assert!(!body.contains("db_migration_connection_string"));
+        assert!(!body.contains("fixture-owner"));
+    }
     // Concurrent barrier insertion/removal never turns an existing active school into
     // a false404. A successful all-tenant snapshot always includes the complete school.
     sqlx::query("UPDATE schools SET status='active' WHERE id=$1")
@@ -182,7 +255,9 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
         for path in [
             "/internal/schools/barrier-fixture",
             "/internal/schools/barrier-fixture/migration-connection",
+            "/internal/schools/barrier-fixture/migration-connection?include_inactive=true",
             "/internal/schools?status=active",
+            "/internal/schools",
         ] {
             let response = client
                 .get(format!("{origin}{path}"))
@@ -196,7 +271,15 @@ async fn durable_barrier_survives_school_restart_and_recovery_prevents_late_writ
                 status == StatusCode::OK || status == StatusCode::SERVICE_UNAVAILABLE,
                 "directory snapshot returned unexpected {status}"
             );
-            if status == StatusCode::OK && path.contains('?') {
+            if status == StatusCode::SERVICE_UNAVAILABLE {
+                let body = response.text().await.unwrap();
+                assert!(!body.contains("db_connection_string"));
+                assert!(!body.contains("db_migration_connection_string"));
+                assert!(!body.contains("fixture-owner"));
+                assert!(!body.contains("fixture-runtime"));
+            } else if status == StatusCode::OK
+                && (path == "/internal/schools" || path.starts_with("/internal/schools?"))
+            {
                 assert_eq!(
                     response.json::<serde_json::Value>().await.unwrap()["total"],
                     1

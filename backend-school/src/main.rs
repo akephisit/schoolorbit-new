@@ -17,6 +17,7 @@ mod services;
 mod startup;
 mod utils;
 
+use backend_school::operations;
 use dotenvy::dotenv;
 use school_authorization::PermissionCache;
 use school_file_platform::{
@@ -59,14 +60,17 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), StartupError> {
-    let command_args = env::args_os()
+    let command_args = match env::args_os()
         .skip(1)
-        .map(|argument| {
-            argument
-                .into_string()
-                .map_err(|_| StartupError::new("arguments", "invalid_unicode"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|argument| argument.into_string())
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(arguments) => arguments,
+        Err(_) => {
+            operations::cli_output::invalid_arguments();
+            std::process::exit(2);
+        }
+    };
     if command_args.first().map(String::as_str) == Some("export-openapi") {
         if command_args.len() != 1 {
             eprintln!("usage: backend-school export-openapi");
@@ -95,6 +99,33 @@ async fn main() -> Result<(), StartupError> {
                 }
             }
             return Ok(());
+        }
+    }
+    if !command_args.is_empty() {
+        let valid = match command_args.first().map(String::as_str) {
+            Some("migrate-tenants") => command_args.len() == 1,
+            Some("storage-namespace") => {
+                operations::storage_namespace::valid_arguments(&command_args[1..])
+            }
+            _ => false,
+        };
+        if !valid {
+            operations::cli_output::invalid_arguments();
+            std::process::exit(2);
+        }
+        dotenv().ok();
+        let outcome = if command_args[0] == "migrate-tenants" {
+            operations::tenant_rollout::migrate_tenants().await
+        } else {
+            operations::storage_namespace::execute(command_args[1..].to_vec()).await
+        };
+        match outcome {
+            Ok(true) => return Ok(()),
+            Ok(false) => std::process::exit(1),
+            Err(error) => {
+                operations::cli_output::diagnostic(&error);
+                std::process::exit(1);
+            }
         }
     }
     let result = run().await;
@@ -134,6 +165,12 @@ async fn run() -> Result<(), StartupError> {
         admin_client_config,
     ));
     tracing::info!("✅ Admin client initialized (HTTP-based school mapping)");
+
+    // Mandatory release barrier: this precedes the FIRST application task/listener.
+    // It never migrates, attests, binds or constructs runtime writers.
+    operations::tenant_rollout::startup_check(&admin_client)
+        .await
+        .map_err(|_| StartupError::new("tenant_storage_readiness", "tenant_storage_not_ready"))?;
 
     let pool_manager_config = PoolManagerConfig::from_env()
         .map_err(|error| StartupError::tenancy_configuration("tenant_connection_budget", &error))?;

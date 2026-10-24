@@ -239,6 +239,17 @@ impl R2StorageRouting {
         routing.namespace(StorageClass::Private)?;
         Ok(routing)
     }
+    /// Safe routing-only proof for explicit operator context, never credentials or object locators.
+    pub fn namespace_fingerprints(&self) -> Result<(String, String), StorageError> {
+        Ok((
+            self.namespace(StorageClass::Public)?
+                .fingerprint()
+                .to_string(),
+            self.namespace(StorageClass::Private)?
+                .fingerprint()
+                .to_string(),
+        ))
+    }
     pub fn namespace(
         &self,
         storage_class: StorageClass,

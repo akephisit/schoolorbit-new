@@ -307,6 +307,41 @@ mod tests {
         headers
     }
 
+    #[tokio::test]
+    async fn inactive_opt_in_never_bypasses_internal_secret_or_migration_caller() {
+        let _guard = env_lock();
+        std::env::set_var("INTERNAL_API_SECRET", "shared-secret");
+        std::env::remove_var("INTERNAL_API_SECRET_BACKEND_SCHOOL");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://synthetic:synthetic@127.0.0.1:1/synthetic")
+            .unwrap();
+        pool.close().await;
+        let state = AppState::new(pool);
+        let wrong_caller = get_migration_connection_internal(
+            State(state.clone()),
+            headers("shared-secret", Some("other-service")),
+            Path("inactive".to_string()),
+            Query(MigrationConnectionQuery {
+                include_inactive: true,
+            }),
+        )
+        .await
+        .err()
+        .expect("wrong caller must fail before any database access");
+        assert_eq!(wrong_caller.0, StatusCode::FORBIDDEN);
+        let wrong_secret = get_migration_connection_internal(
+            State(state),
+            headers("wrong-secret", Some("backend-school")),
+            Path("inactive".to_string()),
+            Query(MigrationConnectionQuery {
+                include_inactive: true,
+            }),
+        )
+        .await
+        .err()
+        .expect("wrong secret must fail before any database access");
+        assert_eq!(wrong_secret.0, StatusCode::UNAUTHORIZED);
+    }
     #[test]
     fn verifies_fallback_internal_secret() {
         let _guard = env_lock();
@@ -370,10 +405,20 @@ pub struct MigrationConnection {
     pub db_migration_connection_string: String,
 }
 
+#[derive(Default, Deserialize)]
+pub struct MigrationConnectionQuery {
+    #[serde(default)]
+    pub include_inactive: bool,
+}
+fn migration_connection_status_allowed(status: &str, include_inactive: bool) -> bool {
+    include_inactive || matches!(status, "active" | "provisioning")
+}
+
 pub async fn get_migration_connection_internal(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(subdomain): Path<String>,
+    Query(options): Query<MigrationConnectionQuery>,
 ) -> Result<Json<MigrationConnection>, (StatusCode, String)> {
     verify_internal_secret(&headers)?;
     if internal_caller(&headers) != Some("backend-school") {
@@ -404,10 +449,26 @@ pub async fn get_migration_connection_internal(
             "Tenant directory mutation pending".into(),
         ));
     }
-    if !matches!(school.status.as_str(), "active" | "provisioning") {
+    if !migration_connection_status_allowed(&school.status, options.include_inactive) {
         return Err((StatusCode::NOT_FOUND, "School not found or inactive".into()));
     }
     Ok(Json(MigrationConnection {
         db_migration_connection_string: connection_for(&school, "migration")?,
     }))
+}
+
+#[cfg(test)]
+mod operational_migration_tests {
+    use super::*;
+    #[test]
+    fn inactive_migration_access_requires_explicit_opt_in() {
+        assert!(!MigrationConnectionQuery::default().include_inactive);
+        for status in ["inactive", "suspended"] {
+            assert!(!migration_connection_status_allowed(status, false));
+            assert!(migration_connection_status_allowed(status, true));
+        }
+        for status in ["active", "provisioning"] {
+            assert!(migration_connection_status_allowed(status, false));
+        }
+    }
 }

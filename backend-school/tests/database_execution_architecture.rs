@@ -697,6 +697,10 @@ fn scan_file(path: &Path, api_docs: bool, problems: &mut BTreeSet<String>) {
 fn production_database_execution_uses_bound_sessions() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut roots = vec![root.join("src/main.rs")];
+    let application_library = root.join("src/lib.rs");
+    if application_library.exists() {
+        roots.push(application_library);
+    }
     for crate_dir in fs::read_dir(root.join("crates")).unwrap() {
         let directory = crate_dir.unwrap().path();
         let manifest = fs::read_to_string(directory.join("Cargo.toml")).unwrap();

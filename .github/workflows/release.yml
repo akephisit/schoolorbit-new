@@ -8,6 +8,9 @@ on:
       automatic:
         type: boolean
         default: false
+      namespace_attestation:
+        type: string
+        default: ""
       target_origin_ip:
         type: string
         default: ""
@@ -67,6 +70,18 @@ jobs:
             throw new Error('Missing or invalid reconciled plan; maintenance is blocked');
           }
           NODE
+      - name: Validate explicit namespace attestation before maintenance
+        env:
+          NAMESPACE_ATTESTATION_JSON: ${{ inputs.namespace_attestation }}
+          NAMESPACE_ATTESTATION_MANUAL: ${{ github.event_name == 'workflow_dispatch' && inputs.automatic == false }}
+          PLAN: ${{ needs.preflight.outputs.plan }}
+        run: |
+          set -euo pipefail
+          . scripts/lib/pipeline-remote/storage-namespace-input.sh
+          validated=$(storage_namespace_input)
+          if [ -n "$validated" ]; then
+            jq -e '.deploy | index("backend-school") != null' <<<"$PLAN" >/dev/null
+          fi
       - name: Download prepared Admin backend manifest
         if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
         uses: actions/download-artifact@v7
@@ -177,6 +192,8 @@ jobs:
     with:
       plan: ${{ needs.preflight.outputs.plan }}
       target_origin_ip: ${{ inputs.target_origin_ip }}
+      namespace_attestation: ${{ inputs.namespace_attestation }}
+      namespace_attestation_manual: ${{ github.event_name == 'workflow_dispatch' && inputs.automatic == false }}
     secrets: inherit
   accept:
     needs:

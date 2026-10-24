@@ -127,10 +127,19 @@ fn invalid_export_arguments_keep_the_cli_usage_exit_code() {
 fn non_unicode_arguments_return_an_error_without_echoing_the_raw_value() {
     use std::os::unix::ffi::OsStringExt;
     let argument = std::ffi::OsString::from_vec(b"synthetic-private-marker\xff".to_vec());
-    failure(
-        startup(|command| {
-            command.arg(argument);
-        }),
-        &["arguments", "invalid_unicode"],
+    let output = startup(|command| {
+        command.arg(argument);
+    });
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(output.stderr, b"unsupported_operational_arguments\n");
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !diagnostic.contains("panicked"),
+        "invalid arguments must return a usage error: {diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("synthetic-private-marker"),
+        "argument diagnostic leaked untrusted input"
     );
 }

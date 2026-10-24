@@ -349,93 +349,44 @@ compose_up_quiet nginx
 	assert.match(workflow, /if \[ "\$clamd_pids_limit" != 256 \]; then\s+echo [^\n]+\s+exit 1/);
 });
 
-test('backend-school replacement force-removes the stale container without touching dependencies', async () => {
+test('backend-school drains verified old writers and completes headless gates before isolated startup', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
-	const replacementStart = workflow.indexOf(
-		'# Recreate backend-school only; do not restart unrelated services.'
-	);
-	const readinessStart = workflow.indexOf(
-		'# /ready checks control plane, both R2 buckets, and clamd.',
-		replacementStart
-	);
-
-	assert.ok(replacementStart >= 0 && readinessStart > replacementStart);
-	const replacement = workflow.slice(replacementStart, readinessStart);
-	const orderedMarkers = [
-		'if podman container exists schoolorbit-backend-school; then',
-		'podman rm --force schoolorbit-backend-school'
-	];
-	let previousIndex = -1;
-	for (const marker of orderedMarkers) {
-		const markerIndex = replacement.indexOf(marker);
-		assert.ok(markerIndex > previousIndex, `${marker} must appear in replacement order`);
-		previousIndex = markerIndex;
-	}
-	const staleContainerCheck = replacement.indexOf(
-		'if podman container exists schoolorbit-backend-school; then',
-		previousIndex
-	);
-	const staleContainerError = replacement.indexOf(
-		'echo "Stale backend-school container remains after forced removal"',
-		staleContainerCheck
-	);
-	const composeUp = replacement.indexOf(
-		'compose_up_quiet --no-deps backend-school',
-		staleContainerError
+	const rollout = await readRepo('scripts/lib/pipeline-remote/school-storage-rollout.sh');
+	const cutover = workflow.indexOf('school-storage-rollout.sh" cutover');
+	const start = workflow.indexOf('compose_up_quiet --no-deps backend-school', cutover);
+	assert.ok(cutover > workflow.indexOf('Activate School API maintenance'));
+	assert.ok(start > cutover);
+	assert.ok(rollout.indexOf('podman stop "$backend"') < rollout.indexOf('podman rm "$backend"'));
+	assert.ok(rollout.indexOf('old_writer_still_running') < rollout.indexOf('podman rm "$backend"'));
+	assert.ok(
+		rollout.indexOf('podman rm "$backend"') < rollout.indexOf('schoolorbit-web migrate-tenants')
 	);
 	assert.ok(
-		staleContainerCheck > previousIndex,
-		'the forced removal must verify the container is gone'
+		rollout.indexOf('schoolorbit-web migrate-tenants') <
+			rollout.indexOf('schoolorbit-web storage-namespace check-admin')
 	);
-	assert.ok(
-		staleContainerError > staleContainerCheck,
-		'a stale container must fail the deployment'
+	assert.match(rollout, /old_writer_still_exists/);
+	assert.doesNotMatch(
+		workflow,
+		/podman rm --force schoolorbit-backend-school|podman update .*schoolorbit-backend-school/
 	);
-	assert.ok(
-		composeUp > staleContainerError,
-		'compose must run only after stale-container verification'
-	);
-	assert.doesNotMatch(replacement, /podman update .*schoolorbit-backend-school/);
-	assert.doesNotMatch(replacement, /podman stop .*schoolorbit-backend-school/);
-	assert.doesNotMatch(replacement, /podman rm schoolorbit-backend-school \|\| true/);
-	assert.doesNotMatch(replacement, /^\s*compose_up_quiet backend-school\s*$/m);
+	assert.doesNotMatch(workflow, /^\s*compose_up_quiet backend-school\s*$/m);
+	assert.doesNotMatch(rollout, /podman start|podman-compose.*up/);
 });
 
-test('backend-school migration failure reports only bounded deployment diagnostics', async () => {
-	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
-	const diagnosticStart = workflow.indexOf('            print_migration_verification_failure() {');
-	const verificationFailure = workflow.indexOf(
-		'              echo "Tenant migration verification failed; maintenance remains enabled"'
-	);
-
-	assert.ok(diagnosticStart >= 0, 'migration verification must define a bounded diagnostic');
-	assert.ok(
-		verificationFailure > diagnosticStart,
-		'migration diagnostics must be available before verification can fail'
-	);
-	const diagnostic = workflow.slice(diagnosticStart, verificationFailure);
-	assert.match(diagnostic, /tenant_migration_summary latest_version=/);
-	assert.match(diagnostic, /tenant_migration_result subdomain=/);
-	assert.match(diagnostic, /error_code=/);
-	assert.match(diagnostic, /scan\("ACADEMIC_\[A-Z0-9_\]\+"\)/);
-	assert.match(diagnostic, /academicDiagnostics\.currentTeacherConflicts\[\]\?/);
-	assert.match(diagnostic, /tenant_academic_teacher_conflict subdomain=/);
-	assert.match(diagnostic, /teacher_id=/);
-	assert.match(diagnostic, /timetable_version_id=/);
-	assert.match(diagnostic, /day=/);
-	assert.match(diagnostic, /bell_schedule_period_id=/);
-	assert.match(diagnostic, /entry_count=/);
-	assert.match(diagnostic, /group_code_count=/);
-	assert.match(diagnostic, /entry_ids=/);
-	assert.match(diagnostic, /group_codes=/);
-	assert.match(diagnostic, /tojson/);
-	assert.match(diagnostic, /print_migration_verification_failure\s*<\s*"\$migration_response"/);
-	assert.doesNotMatch(diagnostic, /error=\\\(\.error/);
-	assert.doesNotMatch(diagnostic, /join\(","\)/);
-	assert.doesNotMatch(diagnostic, /displayName|firstName|lastName/);
-
-	const hostileGroupCodes = JSON.stringify(['SAFE', 'FORGED\nstatus=success']);
-	assert.equal(hostileGroupCodes.includes('\n'), false);
+test('headless migration failure reports safe aggregate diagnostics without private routing or process stderr', async () => {
+	const rollout = await readRepo('scripts/lib/pipeline-remote/school-storage-rollout.sh');
+	assert.match(rollout, /report_aggregate "\$output"/);
+	assert.match(rollout, /with_entries\(select\(\.key/);
+	assert.match(rollout, /type == "number"/);
+	assert.match(rollout, /storage_binding_database_failed/);
+	assert.match(rollout, /storage_binding_active_claim/);
+	assert.match(rollout, /headless_command_failed/);
+	assert.doesNotMatch(rollout, /cat "\$scratch\/command-error"|cat "\$output"/);
+	assert.match(rollout, /R2_ACCOUNT_ID=/);
+	assert.match(rollout, /R2_PUBLIC_BUCKET_NAME=/);
+	assert.match(rollout, /R2_PRIVATE_BUCKET_NAME=/);
+	assert.doesNotMatch(rollout, /\{\{json \.Config\}\}/);
 });
 
 test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
@@ -1341,7 +1292,10 @@ test('completed personnel migration hooks are retired while all-tenant deploymen
 			/personnel_preflight|personnel_cutover|personnelCutover|personnel-preflight/
 		);
 	}
-	assert.match(release, /\/internal\/migrate-all/);
+	const rollout = await readRepo('scripts/lib/pipeline-remote/school-storage-rollout.sh');
+	assert.match(rollout, /schoolorbit-web migrate-tenants/);
+	assert.match(rollout, /schoolorbit-web storage-namespace check-admin/);
+	assert.doesNotMatch(release, /\/internal\/migrate-all/);
 	assert.match(release, /\/internal\/migration-status/);
 	assert.ok(release.includes('.migration_version == \\$latest'));
 	assert.match(release, /\.migrated == \.total_schools/);

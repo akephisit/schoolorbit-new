@@ -243,38 +243,120 @@ locators. Same-name bucket recreation cannot be detected by the current provider
 maintain namespace continuity. Account/endpoint/bucket routing changes fail closed. Credential-only
 rotation does not change namespace identity.
 
-Roll out only during maintenance after draining all old writers. Apply the canonical migrations
-through 137 before enabling matching writers. Legacy watch namespaces are NULL and remain blocked;
-never infer their historical bucket from current configuration or a single HEAD response. Obtain the
-standalone tool through the [locked build and provenance recipe](./TESTING.md#standalone-namespace-operator-tool).
-The ordinary runtime image does not include it. Verify the checkout revision, Cargo lockfile digest
-and transferred artifact SHA-256 against the same approved release/migration revision. Set
-`namespace_tool` to that verified absolute executable path; do not assume a PATH installation or
-published artifact. Use `"$namespace_tool"` for every invocation below.
+Roll out only during maintenance after draining all old writers. The exact prepared School image
+supplies worker-free `backend-school migrate-tenants` and `backend-school storage-namespace`
+commands; no separately built tool is required for release. The normal startup path also checks
+complete namespace readiness before spawning application workers. The standalone
+`file_storage_namespace` wrapper remains available for explicit local operator work through the
+[same locked source recipe](./TESTING.md#standalone-namespace-operator-tool).
 
-An operator must independently verify historical routing, produce an evidence digest and explicitly
-bind exact watch IDs. `"$namespace_tool" plan` reads one explicitly configured database through
-`FILE_STORAGE_BINDING_DATABASE_URL`, using only `R2_ACCOUNT_ID`, `R2_PUBLIC_BUCKET_NAME` and
-`R2_PRIVATE_BUCKET_NAME`; it needs no storage credentials, CDN URL or provider access. Plan output
-contains IDs, immutable locator digests, expected row revisions and namespace fingerprints, with
-0600 create-new file semantics. `"$namespace_tool" dry-run --manifest <path>` is read-only.
-`"$namespace_tool" apply --manifest <path> --attest-historical-namespace` requires actual
-watch-table-owner authority, validates all rows before any update and refuses changed revisions
-or active claims. The evidence GUC is not a security boundary.
-No command migrates or synchronizes permissions.
+The ordinary Pipeline validates inputs before R2 reconciliation, then verifies maintenance,
+stops and verifies the old School process, removes its container to prevent boot restart, applies
+canonical migrations through 137, and runs `storage-namespace check-admin` before creating the
+matching server. Existing readiness, cutover audits, authenticated smoke and global acceptance
+still control reopening. No pool/lease/client timeout or health policy changes. A stopped process
+does not prove an external PUT has settled: retained watches and existing late-write cleanup
+remain necessary; neither database/provider atomicity nor recovery of already-purged historical
+locators is promised.
 
-Before enabling writers, run `"$namespace_tool" check --inventory <path>
---expected-inventory-sha256 <trusted-digest>`. Obtain that digest independently from the complete
-Admin/deployment tenant inventory; hashing a self-selected subset cannot establish completeness.
-The JSON has a nonempty `tenants` array; each entry contains `tenant_id`, `database_url_env`,
-`r2_account_id`, `public_bucket_name` and `private_bucket_name`. URL environment names must start
-`FILE_STORAGE_BINDING_URL_`; URL values and storage credentials never belong in this file or logs.
-There is no tenant filter. The gate visits every listed database, verifies its canonical
-`so_<tenant-simple>_owner` role and `schoolorbit:<tenant-uuid>:migration` marker, and checks all
-retained watches, including locators whose business records were purged. Any missing target,
-connection/identity/schema failure, unknown namespace or unsupported/mismatched provider blocks
-readiness. Only aggregate codes/counts are printed. Historical routing that cannot be attested
-blocks the rollout until separately resolved; the command never guesses or bypasses it.
+`context-admin` obtains the complete authenticated, mutation-fenced Admin inventory, including
+inactive tenants; an authoritative empty list is valid for first installation. It prints only
+`schema_version`, `tenants`, `inventory_sha256`, `public_namespace_sha256` and
+`private_namespace_sha256`. Its inventory digest excludes migration-progress bookkeeping but
+binds tenant identity and database routing. `routing-fingerprints` prints only the configured
+public/private digests and performs no network access. `check-admin` verifies every listed
+database's owner/identity, canonical schema and every retained watch, including locators whose
+business records were purged. Any missing target, connection/identity/schema failure, unknown
+namespace or provider mismatch blocks readiness. Ordinary releases check only; they never bind.
+
+Historical namespaces require explicit attestation. For this initial rollout the user independently
+confirms the R2 account and both buckets never changed since files were first stored. This is
+bounded historical evidence, not permission to infer future namespaces from current configuration
+or a successful HEAD response. The remote adapter fingerprints the actual old container's three
+routing values with the exact prepared image, compares operator expectations with both those
+values and the target context, and retains a private journal under
+`/opt/stack/deployment/releases/<release-sha>/storage-namespace/`. Only allowlisted old routing,
+immutable image/container identities, integrity digests and progress markers are retained; no
+provider/session/database credentials are copied into this journal. Files are mode 0600 and
+published with file/directory fsync before removal or migration; the directory is mode 0700.
+
+The first check-only release can stop in maintenance with aggregate unresolved/mismatched counts.
+Read the approved context JSON and old-routing digests from that exact release's preflight output.
+If any digest is missing or masked, obtain verified original bytes; never reconstruct it by guess.
+Construct a private JSON file with exactly these fields, using independently verified context and
+an evidence digest that records the historical assertion and its exact rollout scope:
+
+```json
+{
+  "schema_version": 1,
+  "evidence_digest": "<64 lowercase hex digits>",
+  "expected_inventory_sha256": "<64 lowercase hex digits>",
+  "expected_public_namespace_sha256": "<64 lowercase hex digits>",
+  "expected_private_namespace_sha256": "<64 lowercase hex digits>",
+  "scope": "all_unbound"
+}
+```
+
+Dispatch Pipeline explicitly on the same reviewed main revision with `scope=backend-school`,
+`automatic=false` and that file as `namespace_attestation`, for example:
+
+```bash
+gh workflow run pipeline.yml --ref main -f scope=backend-school -f automatic=false   --field namespace_attestation=@/absolute/private/namespace-attestation.json
+```
+
+Nonempty attestation is rejected for pushes and automatic dispatches. The input is a strict,
+bounded hash-only JSON object, never credentials or raw routing. It is canonicalized before SSH
+transport and passed only through `FILE_STORAGE_NAMESPACE_ATTESTATION_JSON` to the explicit
+`storage-namespace attest-admin` command. That command checks the live complete inventory and
+routing again, writes/fsyncs exact mode-0600 watch manifests, then uses the existing plan/apply
+owner checks, expected revisions and active-claim refusal. Its private host manifest directory is
+mounted only for attestation; rootless one-shots use `--userns=keep-id --user <host-uid>:<host-gid>`
+so the image user does not need world-writable permissions. No command guesses a namespace or
+performs provider PUT/DELETE calls to verify identity. An active claim requires an explicit retry
+after its existing expiry; do not alter lease times or bypass the claim fence.
+
+The binding tool remains available after rollout for explicit recovery of an unbound backup;
+normal deployments and restarts retain only the check/startup gates. There are no permanent
+legacy compatibility flags or automatic attestation defaults. Completed workflow design/plan
+artifacts can be removed once the pull request records the outcome; durable commands and tests
+remain owned by their normal implementation.
+
+Failure keeps maintenance enabled. Before migration attempts, preflight preserves the old
+runtime; after the first attempt the old binary must not restart, even if a later grant, audit,
+binding or readiness step fails. An interrupted retry automatically reuses proof only for the
+same release SHA and image digest. Its stopped-container and migration-attempt markers survive
+container removal; the old routing cannot be reconstructed from the new `.env`.
+
+Every adapter-launched headless command reserves the global rootless Podman name
+`schoolorbit-school-rollout`, with immutable release, image and operation labels. Podman reserves
+that name atomically: a surviving command blocks the next command even if its SSH client or
+controller disappears and GitHub releases the production lock. The journal records intent and
+proof, not process completion. Normal `--rm` removes a completed one-shot; any still-existing named
+container, including a stopped or unrecognized residual, blocks release. Diagnostics expose only
+the fixed name and validated release/operation labels. This interlock assumes the same canonical
+rootless runtime owner; do not bypass it with another user, a random name or a second runtime.
+
+On `headless_operation_exists`, keep maintenance enabled and inspect the named operation privately.
+Verify its actual immutable image, release/operation labels, process/exit state and relevant
+migration/binding journal. A lost SSH connection is not evidence that work ended. Do not kill or
+remove a running operation or one whose ownership/completion cannot be established. After an
+operator verifies that the process has ended and resolves any migration/claim uncertainty, an
+explicit `podman rm schoolorbit-school-rollout` can remove a stopped residual; never use force
+or an automatic cleanup/retry to bypass the interlock. Then retry the exact reviewed target under
+the production lock and the existing journal rules. This does not prove external PUT completion;
+the retained-watch limitations still apply.
+
+A different compatible target requires a separately reviewed operator carry-forward under the
+production lock, not automatic journal re-pinning. Preserve the original journal and routing
+configuration; validate their owner/mode, original release/image identities and configuration
+SHA-256. Verify the new prepared image and complete context. Record evidence linking the original
+journal SHA-256, immutable old image and routing digests to the exact new release/image and inventory.
+Only then create a new target-bound private journal from that original verified routing/configuration
+and a new explicit manual attestation file. Keep the original evidence intact, sync new files and
+parent directories, and verify the new target journal before retrying. This is an operator procedure
+requiring protected host access and independent review; Pipeline does not supply an automated
+cross-release carry-forward operation. If original proof cannot be verified, stop for recovery;
+never copy new runtime routing as supposed historical evidence or run an incompatible old binary.
 
 Expiry discovery alone never authorizes deletion: File Platform locks and rechecks current retention,
 expiry and lifecycle in the deletion transaction. Domain Save locks/revalidates files before promotion
