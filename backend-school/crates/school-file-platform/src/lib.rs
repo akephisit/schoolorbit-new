@@ -7,6 +7,7 @@ mod file_processor;
 mod share_image;
 pub use file_processor::ImageProcessor;
 pub mod malware_scanner;
+pub mod namespace_binding;
 pub mod platform_service;
 pub mod platform_types;
 pub mod profile_relationships;
@@ -24,3 +25,6 @@ mod schema_tests;
 pub mod access;
 pub mod consumer_service;
 pub mod http_models;
+
+#[cfg(test)]
+mod cleanup_watch_tests;

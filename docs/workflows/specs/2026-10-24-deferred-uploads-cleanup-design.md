@@ -18,7 +18,7 @@ Migration 039 defines the current finalize_certificate_campaign_purge function. 
 
 The R2 adapter uses conditional If-None-Match:* PUT and ordinary key DELETE. It returns no object-version/ETag/settlement receipt. SDK retry ambiguity and dropped client futures do not establish server-side quiescence. HEAD404 or successful DELETE is an observation at that time, not proof a previous PUT cannot later complete.
 
-## Additive migration 136 and immutable physical identity
+## Additive migrations 136/137 and immutable physical identity
 
 Introduce file_storage_cleanup_watches, owned by File Platform, independent of deletable domain rows. Suggested columns:
 
@@ -64,7 +64,7 @@ The frontend owner's initial audit identified 24 upload calls across 21 files, f
 
 ## Recovery phases and fencing
 
-Extend the existing FileReconciliation tenant turn and bounded continuation, without new permits, pool limits or timeout policy. Alternate bounded opportunities for ordinary operations and recurring watches within the SAME total batch/permit/120-second budget. Either queue can use an empty peer slot; a continuously backlogged queue cannot consume the other queue's next opportunity. Probes count against bounded per-turn work. Persist due time and order by next_probe_at/id so prefix failures and restarts do not starve later targets. Repeated absence is rescheduled with capped backoff.
+Extend the existing FileReconciliation tenant turn and bounded continuation, without new permits, pool limits or timeout policy. Alternate bounded opportunities for ordinary operations and recurring watches within the SAME total batch/permit/120-second budget. Either queue can use an empty peer slot; a continuously backlogged queue cannot consume the other queue's next opportunity. Probes count against bounded per-turn work. Persist due time and order by next_probe_at/id so prefix failures and restarts do not starve later targets. Repeated absence is rescheduled with capped backoff. Migration137 adds a per-watch prefer_watch_next bit, atomically flipped on the oldest runnable verified target when a NEW sweep chooses its first queue. This survives lost local continuations and process restarts; watch and ordinary failures cannot reset every new sweep to ordinary-first. Claiming a watch also advances its due timestamp before IO, so repeated lost finishes do not monopolize the oldest-key prefix. Check/attestation requires both136 and137, without modifying136 after its committed/disposable application.
 
 1. Resolve current tenant work proof outside DB admission. Under the existing phase deadline and before/after pool proof validation, claim one due revoked watch using SKIP LOCKED and an exact owner/generation/expiry claim. Return owned locator/namespace data, then release DB resources.
 2. Check provider namespace, HEAD and when present DELETE, using a bounded external phase. Do not hold a connection, transaction, TenantPool or shared DB permit during provider IO. No automatic PUT retry is added.

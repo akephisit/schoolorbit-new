@@ -206,6 +206,7 @@ async fn reconcile_tenant_batch(
     let config = platform.runtime_config();
     let phase_timeout = (config.reconciliation_lease / 4).min(Duration::from_secs(5));
     let namespaces = platform.storage_namespaces().map_err(|_| ())?;
+    let initial_namespaces = namespaces.clone();
     let (tenant_id, expired, mut progress) = database_phase(
         access,
         tenant,
@@ -214,16 +215,19 @@ async fn reconcile_tenant_batch(
         phase_timeout,
         "expire",
         |id, pool, admitted_at| async move {
-            let progress = progress.unwrap_or(TenantProgress {
-                started: admitted_at,
-                prefer_watch: false,
-            });
             let repository = SqlFileRepository::new(pool.as_ref().clone());
-            Ok::<_, ()>((
-                id,
-                request_expired_file_deletions(&repository).await,
-                progress,
-            ))
+            let expired = request_expired_file_deletions(&repository).await;
+            let progress = match progress {
+                Some(progress) => progress,
+                None => TenantProgress {
+                    started: admitted_at,
+                    prefer_watch: repository
+                        .cleanup_starting_preference(&initial_namespaces)
+                        .await
+                        .map_err(|_| ())?,
+                },
+            };
+            Ok::<_, ()>((id, expired, progress))
         },
     )
     .await?;
@@ -438,6 +442,7 @@ mod phase_tests {
         started: tokio::sync::Notify,
         release: tokio::sync::Notify,
         block: bool,
+        head_calls: std::sync::atomic::AtomicUsize,
     }
     #[async_trait]
     impl StorageProvider for Provider {
@@ -468,7 +473,9 @@ mod phase_tests {
             panic!("unexpected GET")
         }
         async fn head(&self, _: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
-            panic!("unexpected HEAD")
+            self.head_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(None)
         }
         async fn delete(&self, _: &StoredObject) -> Result<(), StorageError> {
             if self.block {
@@ -515,6 +522,34 @@ mod phase_tests {
             .execute(&pool)
             .await
             .unwrap();
+        // These historical metadata fixtures predate a persisted namespace.
+        // Explicit owner attestation binds the exact fake provider routing.
+        let (provider, _) = platform(false);
+        let namespaces =
+            school_file_platform::namespace_binding::ConfiguredNamespaces::from_provider(
+                provider.as_ref(),
+            )
+            .unwrap();
+        let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM file_storage_cleanup_watches")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let manifest = school_file_platform::namespace_binding::prepare_binding_manifest(
+            &pool,
+            &ids,
+            "a".repeat(64),
+            &namespaces,
+        )
+        .await
+        .unwrap();
+        school_file_platform::namespace_binding::bind_attested_namespaces(
+            &pool,
+            &manifest,
+            &namespaces,
+            true,
+        )
+        .await
+        .unwrap();
         pool
     }
     fn platform(block: bool) -> (Arc<Provider>, Arc<FilePlatform>) {
@@ -522,6 +557,7 @@ mod phase_tests {
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
             block,
+            head_calls: std::sync::atomic::AtomicUsize::new(0),
         });
         let config = FilePlatformRuntimeConfig {
             reconciliation_lease: Duration::from_secs(4),
@@ -535,6 +571,65 @@ mod phase_tests {
         ));
         (provider, platform)
     }
+    #[tokio::test]
+    async fn reconstructed_sweep_gives_watch_a_turn_after_cancelled_ordinary_item() {
+        let pool = fixture("cleaner_restart_queue_fairness", 1).await;
+        let turns = Arc::new(school_tenancy::background::TenantTurnExecutor::for_tests(1));
+        let (provider, platform) = platform(true);
+        let worker_pool = pool.clone();
+        let worker_platform = platform.clone();
+        let worker_turns = turns.clone();
+        let worker = tokio::spawn(async move {
+            let turn = worker_turns
+                .begin("restart", TenantJobKind::FileReconciliation)
+                .unwrap();
+            reconcile_tenant_batch(
+                &FileDatabase::Unmanaged(&worker_pool),
+                &worker_platform,
+                "restart",
+                "before-restart",
+                &turn,
+                None,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), provider.started.notified())
+            .await
+            .unwrap();
+        // Preserve ordinary backlog while discarding the entire local continuation.
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        sqlx::query("UPDATE file_operations SET leased_at=statement_timestamp()-interval '120 seconds',lease_expires_at=statement_timestamp()-interval '60 seconds' WHERE status='leased'").execute(&pool).await.unwrap();
+        let turn = turns
+            .begin("restart", TenantJobKind::FileReconciliation)
+            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            reconcile_tenant_batch(
+                &FileDatabase::Unmanaged(&pool),
+                &platform,
+                "restart",
+                "after-restart",
+                &turn,
+                None,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            provider
+                .head_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM file_operations WHERE status='leased' AND lease_expires_at<=statement_timestamp()").fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            pending, 1,
+            "the watch must get its opportunity despite runnable ordinary work"
+        );
+    }
+
     #[tokio::test]
     async fn slow_provider_item_allows_other_tenant_database_progress() {
         let slow = fixture("cleaner_slow_provider", 1).await;

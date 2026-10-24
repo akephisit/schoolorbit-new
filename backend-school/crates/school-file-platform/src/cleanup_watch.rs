@@ -163,6 +163,26 @@ struct ClaimedWatch {
 }
 
 impl SqlFileRepository {
+    /// Persist the first queue opportunity, even if this sweep later times out
+    /// before completing its first operation. No authority or claim is changed.
+    pub async fn cleanup_starting_preference(
+        &self,
+        namespaces: &[StorageNamespace],
+    ) -> Result<bool, RepositoryError> {
+        let allowed = namespaces
+            .iter()
+            .map(|n| n.fingerprint().to_string())
+            .collect::<Vec<_>>();
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            self.pool(),
+            "file_watch.starting_queue",
+        )
+        .await
+        .map_err(|_| RepositoryError::OperationFailed)?;
+        let value = DbSession::new(&mut *connection).scalar::<bool>("file_watch.starting_queue", "WITH due AS (SELECT id FROM file_storage_cleanup_watches WHERE revoked_at IS NOT NULL AND namespace_fingerprint=ANY($1) AND next_probe_at<=statement_timestamp() AND (lease_owner IS NULL OR lease_expires_at<=statement_timestamp()) ORDER BY next_probe_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE file_storage_cleanup_watches w SET prefer_watch_next=NOT prefer_watch_next FROM due WHERE w.id=due.id RETURNING NOT w.prefer_watch_next")
+            .bind(allowed).fetch_optional().await.map_err(|_|RepositoryError::OperationFailed)?;
+        Ok(value.unwrap_or(false))
+    }
     /// Explicit recovery work entry; no file-row dependency survives Certificate purge.
     pub async fn claim_cleanup_watch(
         &self,
@@ -186,7 +206,7 @@ impl SqlFileRepository {
             school_tenancy::TenantPool::observed_checkout_pool(self.pool(), "file_watch.claim")
                 .await
                 .map_err(|_| RepositoryError::OperationFailed)?;
-        let row=DbSession::new(&mut *connection).query_as::<ClaimedWatch>("file_watch.claim", "WITH due AS (SELECT id FROM file_storage_cleanup_watches WHERE revoked_at IS NOT NULL AND namespace_fingerprint=ANY($1) AND next_probe_at<=statement_timestamp() AND (lease_owner IS NULL OR lease_expires_at<=statement_timestamp()) ORDER BY next_probe_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE file_storage_cleanup_watches w SET lease_owner=$2,lease_generation=lease_generation+1,leased_at=statement_timestamp(),lease_expires_at=statement_timestamp()+($3*interval '1 microsecond') FROM due WHERE w.id=due.id RETURNING w.id,w.file_id,w.storage_class,w.object_key,w.content_type,w.namespace_fingerprint,w.lease_owner,w.lease_generation")
+        let row=DbSession::new(&mut *connection).query_as::<ClaimedWatch>("file_watch.claim", "WITH due AS (SELECT id FROM file_storage_cleanup_watches WHERE revoked_at IS NOT NULL AND namespace_fingerprint=ANY($1) AND next_probe_at<=statement_timestamp() AND (lease_owner IS NULL OR lease_expires_at<=statement_timestamp()) ORDER BY next_probe_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE file_storage_cleanup_watches w SET lease_owner=$2,lease_generation=lease_generation+1,leased_at=statement_timestamp(),lease_expires_at=statement_timestamp()+($3*interval '1 microsecond'),next_probe_at=GREATEST(w.next_probe_at,statement_timestamp())+($3*interval '1 microsecond') FROM due WHERE w.id=due.id RETURNING w.id,w.file_id,w.storage_class,w.object_key,w.content_type,w.namespace_fingerprint,w.lease_owner,w.lease_generation")
             .bind(allowed).bind(worker).bind(lease_us).fetch_optional().await.map_err(|_|RepositoryError::OperationFailed)?;
         row.map(|row| {
             let class = parse_class(&row.storage_class)?;
@@ -321,21 +341,16 @@ fn parse_class(value: &str) -> Result<StorageClass, RepositoryError> {
 }
 
 pub(crate) async fn authorize_worker_write(
-    connection: &mut PgConnection,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     operation_id: Uuid,
     file_id: Uuid,
     derivative_id: Uuid,
     claim: &super::repository::OperationClaim,
     object: &StoredObject,
 ) -> Result<WritePermit, RepositoryError> {
-    use sqlx::Connection;
-    let mut transaction = connection
-        .begin()
-        .await
-        .map_err(|_| RepositoryError::OperationFailed)?;
     // Preserve file -> operation -> physical target order. Separate statements
     // validate claim wall time after every potentially blocking row lock.
-    DbSession::new(&mut *transaction)
+    DbSession::new(&mut **transaction)
         .query(
             "file_watch.write_file_lock",
             "SELECT id FROM files WHERE id=$1 FOR UPDATE",
@@ -344,7 +359,7 @@ pub(crate) async fn authorize_worker_write(
         .execute()
         .await
         .map_err(|_| RepositoryError::OperationFailed)?;
-    DbSession::new(&mut *transaction)
+    DbSession::new(&mut **transaction)
         .query(
             "file_watch.write_operation_lock",
             "SELECT id FROM file_operations WHERE id=$1 FOR UPDATE",
@@ -353,14 +368,10 @@ pub(crate) async fn authorize_worker_write(
         .execute()
         .await
         .map_err(|_| RepositoryError::OperationFailed)?;
-    DbSession::new(&mut *transaction).query("file_watch.write_target_lock","SELECT id FROM file_storage_cleanup_watches WHERE target_kind='derivative' AND target_id=$1 FOR UPDATE").bind(derivative_id).execute().await.map_err(|_|RepositoryError::OperationFailed)?;
-    let result=DbSession::new(&mut *transaction).query_as::<(Uuid,String)>("file_watch.write_permission", "UPDATE file_storage_cleanup_watches w SET write_generation=write_generation+1 WHERE target_kind='derivative' AND target_id=$1 AND file_id=$2 AND revoked_at IS NULL AND namespace_fingerprint IS NOT NULL AND object_key=$6 AND storage_class=$7 AND EXISTS(SELECT 1 FROM file_operations o WHERE o.id=$3 AND o.file_id=$2 AND o.file_derivative_id=$1 AND o.operation_type='generate_derivative' AND o.status='leased' AND o.lease_owner=$4 AND o.attempt_count=$5 AND o.lease_expires_at>statement_timestamp()) RETURNING w.id,w.namespace_fingerprint")
+    DbSession::new(&mut **transaction).query("file_watch.write_target_lock","SELECT id FROM file_storage_cleanup_watches WHERE target_kind='derivative' AND target_id=$1 FOR UPDATE").bind(derivative_id).execute().await.map_err(|_|RepositoryError::OperationFailed)?;
+    let result=DbSession::new(&mut **transaction).query_as::<(Uuid,String)>("file_watch.write_permission", "UPDATE file_storage_cleanup_watches w SET write_generation=write_generation+1 WHERE target_kind='derivative' AND target_id=$1 AND file_id=$2 AND revoked_at IS NULL AND namespace_fingerprint IS NOT NULL AND object_key=$6 AND storage_class=$7 AND EXISTS(SELECT 1 FROM file_operations o WHERE o.id=$3 AND o.file_id=$2 AND o.file_derivative_id=$1 AND o.operation_type='generate_derivative' AND o.status='leased' AND o.lease_owner=$4 AND o.attempt_count=$5 AND o.lease_expires_at>statement_timestamp()) RETURNING w.id,w.namespace_fingerprint")
         .bind(derivative_id).bind(file_id).bind(operation_id).bind(&claim.owner).bind(claim.attempt_count).bind(object.object_key.as_str()).bind(class_code(object.storage_class()))
         .fetch_optional().await.map_err(|_|RepositoryError::OperationFailed)?.ok_or(RepositoryError::LeaseLost)?;
-    transaction
-        .commit()
-        .await
-        .map_err(|_| RepositoryError::OperationFailed)?;
     Ok(WritePermit {
         _watch_id: result.0,
         object: object.clone(),

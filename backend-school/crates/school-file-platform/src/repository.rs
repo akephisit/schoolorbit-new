@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{Connection, PgPool, Postgres, Row, Transaction};
 use std::{fmt, time::Duration};
 use uuid::Uuid;
 
@@ -331,7 +331,7 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
             .try_get("attempt_count")
             .map_err(Self::database_error)?;
 
-        let mut work = match operation_type.as_str() {
+        let work = match operation_type.as_str() {
             "reconcile" => {
                 let version_id: Uuid = operation
                     .try_get("file_version_id")
@@ -367,19 +367,6 @@ WHERE id = $1 AND status = 'leased' AND lease_owner = $2
             _ => return Err(RepositoryError::InvalidPersistedState),
         };
 
-        if let OperationWork::GenerateDerivative(work) = &mut work {
-            work.write_permit = Some(
-                super::cleanup_watch::authorize_worker_write(
-                    &mut *connection,
-                    operation_id,
-                    file_id,
-                    work.derivative_id,
-                    &claim,
-                    &work.target,
-                )
-                .await?,
-            );
-        }
         Ok(LeasedOperation {
             claim,
             id: operation_id,
@@ -1244,19 +1231,34 @@ RETURNING o.id, o.lease_owner, o.attempt_count
 
         let mut operations = Vec::with_capacity(rows.len());
         for row in rows {
-            operations.push(
-                Self::load_operation(
-                    &mut *connection,
-                    row.try_get("id").map_err(Self::database_error)?,
-                    OperationClaim {
-                        owner: row.try_get("lease_owner").map_err(Self::database_error)?,
-                        attempt_count: row
-                            .try_get("attempt_count")
-                            .map_err(Self::database_error)?,
-                    },
-                )
-                .await?,
-            );
+            let mut operation = Self::load_operation(
+                &mut *connection,
+                row.try_get("id").map_err(Self::database_error)?,
+                OperationClaim {
+                    owner: row.try_get("lease_owner").map_err(Self::database_error)?,
+                    attempt_count: row.try_get("attempt_count").map_err(Self::database_error)?,
+                },
+            )
+            .await?;
+            if let OperationWork::GenerateDerivative(work) = &mut operation.work {
+                // The claim UPDATE above already committed. Begin explicit
+                // preparation here on this SAME connection, preserving file ->
+                // operation -> watch order without retaining an op-first lock.
+                let mut transaction = connection.begin().await.map_err(Self::database_error)?;
+                work.write_permit = Some(
+                    super::cleanup_watch::authorize_worker_write(
+                        &mut transaction,
+                        operation.id,
+                        operation.file_id,
+                        work.derivative_id,
+                        &operation.claim,
+                        &work.target,
+                    )
+                    .await?,
+                );
+                transaction.commit().await.map_err(Self::database_error)?;
+            }
+            operations.push(operation);
         }
         Ok(operations)
     }
@@ -2106,12 +2108,7 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
             "image/png",
         );
         let upload = NewUpload {
-            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
-                "fixture",
-                "https://fixture.invalid",
-                "private",
-            )
-            .unwrap(),
+            namespace: fixture_namespace(original.storage_class()),
             file_id,
             version_id,
             reconcile_operation_id: Uuid::new_v4(),
@@ -2288,12 +2285,20 @@ VALUES ($1, 'test-only-hash', 'Synthetic', 'User', 'staff', 'active')
         let version_id = Uuid::new_v4();
         let derivative_id = Uuid::new_v4();
         let upload = NewUpload {
-            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
-                "fixture",
-                "https://fixture.invalid",
-                "public",
-            )
-            .unwrap(),
+            namespace: fixture_namespace(
+                (StoredObject::new(
+                    original_object_key(
+                        tenant_id,
+                        FilePurpose::SchoolLogo,
+                        file_id,
+                        1,
+                        DetectedContent::Png,
+                    )
+                    .unwrap(),
+                    "image/png",
+                ))
+                .storage_class(),
+            ),
             file_id,
             version_id,
             reconcile_operation_id: Uuid::new_v4(),
@@ -2391,16 +2396,35 @@ WHERE file_id = $1
             repository.mark_delete_succeeded(work).await.unwrap();
         }
     }
+    fn fixture_namespace(class: StorageClass) -> super::super::storage_namespace::StorageNamespace {
+        super::super::storage_namespace::StorageNamespace::from_provider_locator(
+            "fixture",
+            "https://fixture.invalid",
+            match class {
+                StorageClass::Public => "public",
+                StorageClass::Private => "private",
+            },
+        )
+        .unwrap()
+    }
     fn worker_upload() -> NewUpload {
         let tenant = Uuid::new_v4();
         let file_id = Uuid::new_v4();
         NewUpload {
-            namespace: super::super::storage_namespace::StorageNamespace::from_provider_locator(
-                "fixture",
-                "https://fixture.invalid",
-                "public",
-            )
-            .unwrap(),
+            namespace: fixture_namespace(
+                (StoredObject::new(
+                    original_object_key(
+                        tenant,
+                        FilePurpose::SchoolLogo,
+                        file_id,
+                        1,
+                        DetectedContent::Png,
+                    )
+                    .unwrap(),
+                    "image/png",
+                ))
+                .storage_class(),
+            ),
             file_id,
             version_id: Uuid::new_v4(),
             reconcile_operation_id: Uuid::new_v4(),
