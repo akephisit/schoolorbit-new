@@ -3,11 +3,12 @@
 use std::collections::BTreeSet;
 
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::{
-    accessible_exact_units_for_permission, accessible_tree_units_for_permission, ActorContext,
+    accessible_exact_units_for_permission_on_connection,
+    accessible_tree_units_for_permission_on_connection, ActorContext,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,6 +76,22 @@ pub async fn resolve_academic_resource_list_filter(
     actor: &ActorContext,
     permissions: AcademicResourcePermissions,
 ) -> Result<AcademicResourceListFilter, AppError> {
+    // School-wide grants remain database-free at this work boundary.
+    if actor.has_any_permission(permissions.school) {
+        return Ok(AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..AcademicResourceListFilter::default()
+        });
+    }
+    let mut connection = pool.acquire().await?;
+    resolve_academic_resource_list_filter_on_connection(&mut connection, actor, permissions).await
+}
+
+pub async fn resolve_academic_resource_list_filter_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    permissions: AcademicResourcePermissions,
+) -> Result<AcademicResourceListFilter, AppError> {
     if actor.has_any_permission(permissions.school) {
         return Ok(AcademicResourceListFilter {
             includes_school_owned: true,
@@ -86,7 +103,12 @@ pub async fn resolve_academic_resource_list_filter(
     for permission in permissions.organization_unit {
         if actor.has_permission(permission) {
             exact_units.extend(
-                accessible_exact_units_for_permission(pool, actor.user_id, permission).await?,
+                accessible_exact_units_for_permission_on_connection(
+                    &mut *connection,
+                    actor.user_id,
+                    permission,
+                )
+                .await?,
             );
         }
     }
@@ -95,7 +117,12 @@ pub async fn resolve_academic_resource_list_filter(
     for permission in permissions.organization_tree {
         if actor.has_permission(permission) {
             tree_units.extend(
-                accessible_tree_units_for_permission(pool, actor.user_id, permission).await?,
+                accessible_tree_units_for_permission_on_connection(
+                    &mut *connection,
+                    actor.user_id,
+                    permission,
+                )
+                .await?,
             );
         }
     }

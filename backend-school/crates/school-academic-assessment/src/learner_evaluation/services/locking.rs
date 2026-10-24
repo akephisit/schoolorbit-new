@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use std::collections::BTreeSet;
 
 #[derive(sqlx::FromRow)]
@@ -32,11 +33,15 @@ pub async fn read_lock_readiness(
         ));
     }
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     validate_context(&mut tx, ctx).await?;
-    let rows: Vec<LockReadinessRow> = sqlx::query_as(
+    let rows: Vec<LockReadinessRow> = DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
         r#"WITH domains(domain) AS (
                VALUES ('desirable_characteristic'::text), ('reading_thinking_writing'::text)
            ), subject_groups AS (
@@ -145,7 +150,7 @@ pub async fn read_lock_readiness(
     )
     .bind(ctx.academic_term_id)
     .bind(ctx.academic_year_id)
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     if rows.len() > 5000 {
         return Err(AppError::ValidationError(
@@ -269,9 +274,9 @@ pub async fn lock_subject(
         criteria,
         groups: snapshots,
     };
-    let lock:EvaluationLock=sqlx::query_as("INSERT INTO subject_term_evaluation_locks (subject_id,academic_term_id,academic_year_id,domain,roster_checksum,source_checksum,source_snapshot,locked_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,subject_id,domain,source_checksum,roster_checksum,row_version").bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(domain.as_str()).bind(roster_checksum).bind(source_checksum).bind(sqlx::types::Json(&snapshot)).bind(actor.user_id).fetch_one(&mut *tx).await?;
+    let lock:EvaluationLock=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.locking.lock_subject", "INSERT INTO subject_term_evaluation_locks (subject_id,academic_term_id,academic_year_id,domain,roster_checksum,source_checksum,source_snapshot,locked_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,subject_id,domain,source_checksum,roster_checksum,row_version").bind(subject).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(domain.as_str()).bind(roster_checksum).bind(source_checksum).bind(sqlx::types::Json(&snapshot)).bind(actor.user_id).fetch_one().await?;
     // Snapshot inputs were fully validated above; one statement captures every room.
-    sqlx::query("INSERT INTO subject_term_student_evaluations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,evaluation_lock_id,student_academic_year_id,quality_level) SELECT r.learning_group_id,r.learning_offering_id,r.academic_term_id,r.academic_year_id,r.subject_id,r.domain,r.subject_term_criterion_id,$4,r.student_academic_year_id,r.quality_level FROM learning_group_student_evaluations r JOIN subject_term_evaluation_criteria c ON c.id=r.subject_term_criterion_id AND c.lifecycle='active' JOIN learning_group_students m ON m.learning_group_id=r.learning_group_id AND m.student_academic_year_id=r.student_academic_year_id AND m.membership_status='active' WHERE r.subject_id=$1 AND r.academic_term_id=$2 AND r.domain=$3 AND r.learning_group_id=ANY($5)").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).bind(lock.id).bind(scope.groups.iter().map(|g|g.group_id).collect::<Vec<_>>()).execute(&mut *tx).await?;
+    DbSession::new(&mut *tx).query("academic_assessment.learner_evaluation.services.locking.lock_subject", "INSERT INTO subject_term_student_evaluations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,subject_term_criterion_id,evaluation_lock_id,student_academic_year_id,quality_level) SELECT r.learning_group_id,r.learning_offering_id,r.academic_term_id,r.academic_year_id,r.subject_id,r.domain,r.subject_term_criterion_id,$4,r.student_academic_year_id,r.quality_level FROM learning_group_student_evaluations r JOIN subject_term_evaluation_criteria c ON c.id=r.subject_term_criterion_id AND c.lifecycle='active' JOIN learning_group_students m ON m.learning_group_id=r.learning_group_id AND m.student_academic_year_id=r.student_academic_year_id AND m.membership_status='active' WHERE r.subject_id=$1 AND r.academic_term_id=$2 AND r.domain=$3 AND r.learning_group_id=ANY($5)").bind(subject).bind(ctx.academic_term_id).bind(domain.as_str()).bind(lock.id).bind(scope.groups.iter().map(|g|g.group_id).collect::<Vec<_>>()).execute().await?;
     tx.commit().await?;
     Ok(LockOutcome {
         lock: Some(lock),

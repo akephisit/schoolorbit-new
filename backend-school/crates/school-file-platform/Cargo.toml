@@ -9,6 +9,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 async-trait = { workspace = true }

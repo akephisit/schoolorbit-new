@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
-use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, QueryBuilder};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::models::{
@@ -61,25 +61,27 @@ struct CalendarEventTagRow {
     name: String,
 }
 
-async fn list_targets_for_events<'e>(
-    executor: impl PgExecutor<'e>,
+async fn list_targets_for_events(
+    connection: &mut PgConnection,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventTarget>>, AppError> {
     if event_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query_as::<_, CalendarEventTargetRow>(
-        r#"
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarEventTargetRow>(
+            "calendar.services.visibility.list_targets_for_events",
+            r#"
         SELECT event_id, id, audience_type, grade_level_id, homeroom_id
         FROM calendar_event_targets
         WHERE event_id = ANY($1)
         ORDER BY event_id, audience_type, grade_level_id NULLS FIRST, homeroom_id NULLS FIRST
         "#,
-    )
-    .bind(event_ids)
-    .fetch_all(executor)
-    .await?;
+        )
+        .bind(event_ids)
+        .fetch_all()
+        .await?;
 
     let mut targets = HashMap::new();
     for row in rows {
@@ -97,25 +99,27 @@ async fn list_targets_for_events<'e>(
     Ok(targets)
 }
 
-async fn list_reminders_for_events<'e>(
-    executor: impl PgExecutor<'e>,
+async fn list_reminders_for_events(
+    connection: &mut PgConnection,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventReminder>>, AppError> {
     if event_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query_as::<_, CalendarEventReminderRow>(
-        r#"
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarEventReminderRow>(
+            "calendar.services.visibility.list_reminders_for_events",
+            r#"
         SELECT event_id, id, days_before, remind_on, sent_at
         FROM calendar_event_reminders
         WHERE event_id = ANY($1)
         ORDER BY event_id, remind_on, days_before
         "#,
-    )
-    .bind(event_ids)
-    .fetch_all(executor)
-    .await?;
+        )
+        .bind(event_ids)
+        .fetch_all()
+        .await?;
 
     let mut reminders = HashMap::new();
     for row in rows {
@@ -133,26 +137,28 @@ async fn list_reminders_for_events<'e>(
     Ok(reminders)
 }
 
-async fn list_tags_for_events<'e>(
-    executor: impl PgExecutor<'e>,
+async fn list_tags_for_events(
+    connection: &mut PgConnection,
     event_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CalendarEventTag>>, AppError> {
     if event_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = sqlx::query_as::<_, CalendarEventTagRow>(
-        r#"
+    let rows = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarEventTagRow>(
+            "calendar.services.visibility.list_tags_for_events",
+            r#"
         SELECT event_tags.event_id, tags.id, tags.name
         FROM calendar_event_tags event_tags
         JOIN calendar_tags tags ON tags.id = event_tags.tag_id
         WHERE event_tags.event_id = ANY($1)
         ORDER BY event_tags.event_id, LOWER(tags.name), tags.id
         "#,
-    )
-    .bind(event_ids)
-    .fetch_all(executor)
-    .await?;
+        )
+        .bind(event_ids)
+        .fetch_all()
+        .await?;
 
     let mut tags = HashMap::new();
     for row in rows {
@@ -203,20 +209,13 @@ async fn hydrate_events_on_connection(
         .collect())
 }
 
-async fn hydrate_events(
-    pool: &PgPool,
-    rows: Vec<CalendarEventRow>,
-) -> Result<Vec<CalendarEvent>, AppError> {
-    let mut connection = pool.acquire().await?;
-    hydrate_events_on_connection(&mut connection, rows).await
-}
-
 /// Hydrate one non-deleted event for application-owned notification delivery.
 pub async fn get_event_for_response(
     pool: &PgPool,
     event_id: Uuid,
 ) -> Result<CalendarEvent, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.get_event").await?;
     get_event_for_response_on_connection(&mut connection, event_id).await
 }
 
@@ -229,9 +228,12 @@ pub async fn get_event_for_response_on_connection(
     builder.push_bind(event_id);
     builder.push(" AND e.deleted_at IS NULL");
 
-    let rows = builder
-        .build_query_as::<CalendarEventRow>()
-        .fetch_all(&mut *connection)
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "calendar.services.visibility.get_event_for_response_on_connection",
+            builder.build_query_as::<CalendarEventRow>(),
+        )
+        .fetch_all()
         .await?;
     let mut events = hydrate_events_on_connection(connection, rows).await?;
 
@@ -244,6 +246,9 @@ pub async fn list_management_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarEvent>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_management_events")
+            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
@@ -262,11 +267,14 @@ pub async fn list_management_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
-    let rows = builder
-        .build_query_as::<CalendarEventRow>()
-        .fetch_all(pool)
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "calendar.services.visibility.list_management_events",
+            builder.build_query_as::<CalendarEventRow>(),
+        )
+        .fetch_all()
         .await?;
-    hydrate_events(pool, rows).await
+    hydrate_events_on_connection(&mut connection, rows).await
 }
 
 pub async fn list_my_events(
@@ -274,7 +282,9 @@ pub async fn list_my_events(
     user_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
-    let user_type = active_user_type(pool, user_id).await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_my_events").await?;
+    let user_type = active_user_type(&mut connection, user_id).await?;
     self_calendar_user_type_access(&user_type)?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
@@ -284,11 +294,14 @@ pub async fn list_my_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
-    let rows = builder
-        .build_query_as::<CalendarEventRow>()
-        .fetch_all(pool)
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "calendar.services.visibility.list_my_events",
+            builder.build_query_as::<CalendarEventRow>(),
+        )
+        .fetch_all()
         .await?;
-    let mut events = hydrate_events(pool, rows).await?;
+    let mut events = hydrate_events_on_connection(&mut connection, rows).await?;
     retain_visible_targets_for_user_type(&mut events, &user_type);
     Ok(events.into_iter().map(CalendarViewerEvent::from).collect())
 }
@@ -299,6 +312,9 @@ pub async fn list_child_events(
     student_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_child_events")
+            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
@@ -307,11 +323,14 @@ pub async fn list_child_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
-    let rows = builder
-        .build_query_as::<CalendarEventRow>()
-        .fetch_all(pool)
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "calendar.services.visibility.list_child_events",
+            builder.build_query_as::<CalendarEventRow>(),
+        )
+        .fetch_all()
         .await?;
-    let mut events = hydrate_events(pool, rows).await?;
+    let mut events = hydrate_events_on_connection(&mut connection, rows).await?;
     retain_child_visible_targets(&mut events);
     Ok(events.into_iter().map(CalendarViewerEvent::from).collect())
 }
@@ -320,6 +339,9 @@ pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarPublicEvent>, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_public_events")
+            .await?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
     let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     builder.push(" AND e.is_public = true");
@@ -329,11 +351,14 @@ pub async fn list_public_events(
     push_event_order(&mut builder);
     push_search_page(&mut builder, search_offset);
 
-    let rows = builder
-        .build_query_as::<CalendarEventRow>()
-        .fetch_all(pool)
+    let rows = school_database::DbSession::new(&mut *connection)
+        .prepared_query_as(
+            "calendar.services.visibility.list_public_events",
+            builder.build_query_as::<CalendarEventRow>(),
+        )
+        .fetch_all()
         .await?;
-    let events = hydrate_events(pool, rows).await?;
+    let events = hydrate_events_on_connection(&mut connection, rows).await?;
 
     Ok(events.into_iter().map(CalendarPublicEvent::from).collect())
 }
@@ -458,17 +483,22 @@ pub(super) fn self_calendar_user_type_access(user_type: &str) -> Result<(), AppE
     }
 }
 
-async fn active_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError> {
-    let user_type = sqlx::query_scalar::<_, String>(
-        r#"
+async fn active_user_type(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<String, AppError> {
+    let user_type = school_database::DbSession::new(&mut *connection)
+        .scalar::<String>(
+            "calendar.services.visibility.active_user_type",
+            r#"
         SELECT user_type
         FROM users
         WHERE id = $1 AND status = 'active'
         "#,
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+        )
+        .bind(user_id)
+        .fetch_optional()
+        .await?;
 
     user_type.ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".to_string()))
 }

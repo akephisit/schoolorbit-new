@@ -1,5 +1,6 @@
 use super::*;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -20,8 +21,12 @@ pub async fn list_aggregate_students(
 ) -> Result<Vec<AggregateStudent>, AppError> {
     crate::policy::aggregate::require_aggregate_read(actor)?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.aggregate_roster.list_aggregate_students",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let coverage = term_closure_coverage(&mut tx, context).await?;
     let ids: Vec<_> = coverage
@@ -62,7 +67,7 @@ pub(super) async fn student_identities(
     year: Uuid,
     ids: &[Uuid],
 ) -> Result<Vec<StudentIdentity>, AppError> {
-    let identities:Vec<StudentIdentity>=sqlx::query_as(
+    let identities:Vec<StudentIdentity>=DbSession::new(&mut **tx).query_as("academic_results.services.aggregate_roster.student_identities",
         "SELECT sy.id AS student_academic_year_id,info.student_id AS student_code,
          concat_ws(' ',nullif(btrim(student.title),''),student.first_name,student.last_name) AS student_name,
          CASE grade.level_type WHEN 'kindergarten' THEN 'อนุบาลปีที่ '||grade.year WHEN 'primary' THEN 'ประถมศึกษาปีที่ '||grade.year WHEN 'secondary' THEN 'มัธยมศึกษาปีที่ '||grade.year ELSE 'ระดับชั้น '||grade.year END AS grade_level_name,
@@ -73,7 +78,7 @@ pub(super) async fn student_identities(
          JOIN published_study_programs program ON program.id=sy.study_program_id
          WHERE sy.academic_year_id=$1 AND sy.id=ANY($2)
          ORDER BY info.student_id NULLS LAST,student.first_name,student.last_name,sy.id"
-    ).bind(year).bind(ids).fetch_all(&mut **tx).await?;
+    ).bind(year).bind(ids).fetch_all().await?;
     if identities.len() != ids.len() {
         return Err(AppError::Conflict(
             "ข้อมูลนักเรียนสำหรับตรวจผลสรุปไม่ครบ กรุณาตรวจทะเบียนนักเรียน".into(),

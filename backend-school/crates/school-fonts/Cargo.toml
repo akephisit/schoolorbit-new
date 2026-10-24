@@ -12,6 +12,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 school-http = { workspace = true }
 school-auth-http = { workspace = true }
 school-auth = { workspace = true }

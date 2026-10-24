@@ -9,6 +9,8 @@ api-docs = [
 ]
 
 [dependencies]
+school-tenancy = { workspace = true }
+school-database = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }

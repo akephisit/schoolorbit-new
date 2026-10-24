@@ -4,6 +4,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use school_academic_assessment::policy::learner_evaluation as learner_evaluation_access_policy;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -174,28 +175,32 @@ async fn correct_course(
             "expectedEffectiveVersion must be greater than zero".into(),
         ));
     }
-    let initial: CourseResultRow = sqlx::query_as(
-        r#"SELECT id,student_academic_year_id,outcome,numeric_grade,row_version
+    let initial: CourseResultRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_course",
+            r#"SELECT id,student_academic_year_id,outcome,numeric_grade,row_version
            FROM academic_course_results
            WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3
            FOR UPDATE"#,
-    )
-    .bind(course_result_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Official course result not found".into()))?;
-    let mut history: Vec<CourseCorrectionRow> = sqlx::query_as(
-        r#"SELECT id,old_course_outcome,new_course_outcome,old_numeric_grade,new_numeric_grade,
+        )
+        .bind(course_result_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Official course result not found".into()))?;
+    let mut history: Vec<CourseCorrectionRow> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_course",
+            r#"SELECT id,old_course_outcome,new_course_outcome,old_numeric_grade,new_numeric_grade,
                   expected_effective_version,corrected_by,corrected_at
            FROM academic_result_corrections
            WHERE course_result_id=$1
            ORDER BY expected_effective_version,id"#,
-    )
-    .bind(initial.id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .fetch_all()
+        .await?;
     let current_version = history.last().map_or(initial.row_version, |row| {
         row.expected_effective_version + 1
     });
@@ -217,23 +222,25 @@ async fn correct_course(
             "Corrected result must differ from the effective result".into(),
         ));
     }
-    let inserted: CourseCorrectionRow = sqlx::query_as(
-        r#"INSERT INTO academic_result_corrections (
+    let inserted: CourseCorrectionRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_course",
+            r#"INSERT INTO academic_result_corrections (
                course_result_id,old_course_outcome,new_course_outcome,
                old_numeric_grade,new_numeric_grade,expected_effective_version,corrected_by
            ) VALUES ($1,$2,$3,$4,$5,$6,$7)
            RETURNING id,old_course_outcome,new_course_outcome,old_numeric_grade,new_numeric_grade,
                      expected_effective_version,corrected_by,corrected_at"#,
-    )
-    .bind(initial.id)
-    .bind(&old_outcome)
-    .bind(&new_outcome)
-    .bind(&old_grade)
-    .bind(&new_grade)
-    .bind(current_version)
-    .bind(actor.user_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .bind(&old_outcome)
+        .bind(&new_outcome)
+        .bind(&old_grade)
+        .bind(&new_grade)
+        .bind(current_version)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     history.push(inserted);
 
     let initial_value = course_value(&initial.outcome, initial.numeric_grade.as_ref())?;
@@ -264,28 +271,32 @@ async fn correct_activity(
             "expectedEffectiveVersion must be greater than zero".into(),
         ));
     }
-    let initial: ActivityResultRow = sqlx::query_as(
-        r#"SELECT id,student_academic_year_id,outcome,row_version
+    let initial: ActivityResultRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_activity",
+            r#"SELECT id,student_academic_year_id,outcome,row_version
            FROM academic_activity_results
            WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3
            FOR UPDATE"#,
-    )
-    .bind(activity_result_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Official activity result not found".into()))?;
-    let mut history: Vec<ActivityCorrectionRow> = sqlx::query_as(
-        r#"SELECT id,old_activity_outcome,new_activity_outcome,
+        )
+        .bind(activity_result_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Official activity result not found".into()))?;
+    let mut history: Vec<ActivityCorrectionRow> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_activity",
+            r#"SELECT id,old_activity_outcome,new_activity_outcome,
                   expected_effective_version,corrected_by,corrected_at
            FROM academic_result_corrections
            WHERE activity_result_id=$1
            ORDER BY expected_effective_version,id"#,
-    )
-    .bind(initial.id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .fetch_all()
+        .await?;
     let current_version = history.last().map_or(initial.row_version, |row| {
         row.expected_effective_version + 1
     });
@@ -302,21 +313,23 @@ async fn correct_activity(
             "Corrected result must differ from the effective result".into(),
         ));
     }
-    let inserted: ActivityCorrectionRow = sqlx::query_as(
-        r#"INSERT INTO academic_result_corrections (
+    let inserted: ActivityCorrectionRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_activity",
+            r#"INSERT INTO academic_result_corrections (
                activity_result_id,old_activity_outcome,new_activity_outcome,
                expected_effective_version,corrected_by
            ) VALUES ($1,$2,$3,$4,$5)
            RETURNING id,old_activity_outcome,new_activity_outcome,
                      expected_effective_version,corrected_by,corrected_at"#,
-    )
-    .bind(initial.id)
-    .bind(&old_outcome)
-    .bind(new_outcome)
-    .bind(current_version)
-    .bind(actor.user_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .bind(&old_outcome)
+        .bind(new_outcome)
+        .bind(current_version)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     history.push(inserted);
 
     Ok(EffectiveResult {
@@ -350,28 +363,32 @@ async fn correct_learner_evaluation(
             "Quality level must be 0 through 3".into(),
         ));
     }
-    let initial: LearnerEvaluationResultRow = sqlx::query_as(
-        r#"SELECT id,student_academic_year_id,quality_level,row_version
+    let initial: LearnerEvaluationResultRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_learner_evaluation",
+            r#"SELECT id,student_academic_year_id,quality_level,row_version
            FROM subject_term_student_evaluations
            WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3
            FOR UPDATE"#,
-    )
-    .bind(subject_student_evaluation_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Official learner evaluation not found".into()))?;
-    let mut history: Vec<LearnerEvaluationCorrectionRow> = sqlx::query_as(
-        r#"SELECT id,old_quality_level,new_quality_level,
+        )
+        .bind(subject_student_evaluation_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Official learner evaluation not found".into()))?;
+    let mut history: Vec<LearnerEvaluationCorrectionRow> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_learner_evaluation",
+            r#"SELECT id,old_quality_level,new_quality_level,
                   expected_effective_version,corrected_by,corrected_at
            FROM academic_result_corrections
            WHERE subject_student_evaluation_id=$1
            ORDER BY expected_effective_version,id"#,
-    )
-    .bind(initial.id)
-    .fetch_all(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .fetch_all()
+        .await?;
     let current_version = history.last().map_or(initial.row_version, |row| {
         row.expected_effective_version + 1
     });
@@ -386,21 +403,23 @@ async fn correct_learner_evaluation(
             "Corrected result must differ from the effective result".into(),
         ));
     }
-    let inserted: LearnerEvaluationCorrectionRow = sqlx::query_as(
-        r#"INSERT INTO academic_result_corrections (
+    let inserted: LearnerEvaluationCorrectionRow = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_results.services.corrections.correct_learner_evaluation",
+            r#"INSERT INTO academic_result_corrections (
                subject_student_evaluation_id,old_quality_level,new_quality_level,
                expected_effective_version,corrected_by
            ) VALUES ($1,$2,$3,$4,$5)
            RETURNING id,old_quality_level,new_quality_level,
                      expected_effective_version,corrected_by,corrected_at"#,
-    )
-    .bind(initial.id)
-    .bind(old_quality_level)
-    .bind(quality_level)
-    .bind(current_version)
-    .bind(actor.user_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(initial.id)
+        .bind(old_quality_level)
+        .bind(quality_level)
+        .bind(current_version)
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     history.push(inserted);
 
     Ok(EffectiveResult {

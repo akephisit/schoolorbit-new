@@ -4,12 +4,14 @@ mod organization_scope;
 mod permissions;
 
 pub use academic_resource::{
-    academic_resource_access_for, resolve_academic_resource_list_filter, AcademicResourceAccess,
+    academic_resource_access_for, resolve_academic_resource_list_filter,
+    resolve_academic_resource_list_filter_on_connection, AcademicResourceAccess,
     AcademicResourceListFilter, AcademicResourcePermissions,
 };
 pub use cache::{PermissionCache, PermissionCacheRevision, TenantUserKey};
 pub use organization_scope::{
-    accessible_exact_units_for_permission, accessible_tree_units_for_permission,
+    accessible_exact_units_for_permission, accessible_exact_units_for_permission_on_connection,
+    accessible_tree_units_for_permission, accessible_tree_units_for_permission_on_connection,
     has_exact_unit_permission, has_exact_unit_permission_on_connection,
 };
 pub use permissions::{

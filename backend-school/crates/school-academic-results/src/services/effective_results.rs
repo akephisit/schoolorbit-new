@@ -3,6 +3,7 @@ use crate::policy::results as academic_result_access_policy;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use school_authorization::{AcademicResourceListFilter, ActorContext};
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -235,11 +236,15 @@ pub async fn search_effective_results(
         academic_term_id: query.academic_term_id,
     };
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.effective_results.search_effective_results",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     validate_context(&mut tx, &context).await?;
-    let rows: Vec<EffectiveSearchRow> = sqlx::query_as(
+    let rows: Vec<EffectiveSearchRow> = DbSession::new(&mut *tx).query_as("academic_results.services.effective_results.search_effective_results",
         r#"WITH visible AS (
             SELECT 'course'::text AS kind,result.id AS result_id,result.student_academic_year_id,
                    student_info.student_id AS student_code,
@@ -357,7 +362,7 @@ pub async fn search_effective_results(
     .bind(requested_kind)
     .bind(search)
     .bind(i64::from(limit))
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
 
     let course_ids = rows
@@ -375,8 +380,10 @@ pub async fn search_effective_results(
         .filter(|row| row.kind == "learner_evaluation")
         .map(|row| row.result_id)
         .collect::<Vec<_>>();
-    let corrections: Vec<CorrectionRow> = sqlx::query_as(
-        r#"SELECT id,course_result_id,activity_result_id,subject_student_evaluation_id,
+    let corrections: Vec<CorrectionRow> = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_results.services.effective_results.search_effective_results",
+            r#"SELECT id,course_result_id,activity_result_id,subject_student_evaluation_id,
                   old_course_outcome,new_course_outcome,old_numeric_grade,new_numeric_grade,
                   old_activity_outcome,new_activity_outcome,old_quality_level,new_quality_level,
                   expected_effective_version,corrected_by,corrected_at
@@ -385,12 +392,12 @@ pub async fn search_effective_results(
               OR subject_student_evaluation_id=ANY($3)
            ORDER BY COALESCE(course_result_id,activity_result_id,subject_student_evaluation_id),
                     expected_effective_version,id"#,
-    )
-    .bind(&course_ids)
-    .bind(&activity_ids)
-    .bind(&learner_ids)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(&course_ids)
+        .bind(&activity_ids)
+        .bind(&learner_ids)
+        .fetch_all()
+        .await?;
     tx.commit().await?;
 
     let mut histories: HashMap<(String, Uuid), Vec<ResultCorrectionRecord>> = HashMap::new();

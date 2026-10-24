@@ -1,6 +1,7 @@
 use super::*;
 use crate::policy::results as access_policy;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -52,12 +53,16 @@ pub async fn readiness(
     let access = access_policy::list_access(pool, actor).await?;
     let allowed_organization_units = access.allowed_organization_unit_ids();
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.readiness.readiness",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     validate_context(&mut tx, context).await?;
     // Both queues are bounded set queries. There is no per-group service/query loop.
-    let course_rows: Vec<CourseReadinessRow> = sqlx::query_as(
+    let course_rows: Vec<CourseReadinessRow> = DbSession::new(&mut *tx).query_as("academic_results.services.readiness.readiness",
         r#"WITH active_policy AS (
                SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active'
            )
@@ -169,14 +174,14 @@ pub async fn readiness(
     .bind(&allowed_organization_units)
     .bind(access.assigned_actor_id)
     .bind(actor.user_id)
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     if course_rows.len() > 5000 {
         return Err(AppError::ValidationError(
             "Course readiness exceeds 5000 groups".into(),
         ));
     }
-    let activity_rows: Vec<ActivityReadinessRow> = sqlx::query_as(
+    let activity_rows: Vec<ActivityReadinessRow> = DbSession::new(&mut *tx).query_as("academic_results.services.readiness.readiness",
         r#"SELECT g.id AS learning_group_id,o.id AS learning_offering_id,g.name AS group_name,
                   o.name_snapshot AS offering_name,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
@@ -234,7 +239,7 @@ pub async fn readiness(
     .bind(&allowed_organization_units)
     .bind(access.assigned_actor_id)
     .bind(actor.user_id)
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     if activity_rows.len() > 5000 {
         return Err(AppError::ValidationError(

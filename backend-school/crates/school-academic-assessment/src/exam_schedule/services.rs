@@ -31,3 +31,15 @@ pub use self::workspace::{get_workspace, preview_exam_sources, sync_exam_sources
 
 #[cfg(test)]
 mod tests;
+
+pub use self::invigilation::{
+    get_invigilator_workspace_on_connection, list_invigilator_staff_options_on_connection,
+};
+pub use self::published_views::{
+    list_child_published_exam_schedule_on_connection,
+    list_my_published_exam_schedule_on_connection,
+    list_staff_published_exam_schedule_on_connection,
+};
+pub use self::room_assignments::list_day_room_assignments_on_connection;
+pub use self::rounds_and_days::list_rounds_on_connection;
+pub use self::workspace::{get_workspace_on_connection, preview_exam_sources_on_connection};

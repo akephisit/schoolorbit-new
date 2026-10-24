@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use sqlx::PgPool;
@@ -122,7 +123,19 @@ pub async fn list_day_room_assignments(
     pool: &PgPool,
     exam_day_id: Uuid,
 ) -> Result<Vec<DayRoomAssignmentView>, AppError> {
-    let day_exists: bool = sqlx::query_scalar(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.room_assignments.list_day_room_assignments",
+    )
+    .await?;
+    list_day_room_assignments_on_connection(&mut connection, exam_day_id).await
+}
+
+pub async fn list_day_room_assignments_on_connection(
+    connection: &mut sqlx::PgConnection,
+    exam_day_id: Uuid,
+) -> Result<Vec<DayRoomAssignmentView>, AppError> {
+    let day_exists: bool = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.room_assignments.list_day_room_assignments_on_connection",
         r#"
         SELECT EXISTS (
             SELECT 1
@@ -132,14 +145,14 @@ pub async fn list_day_room_assignments(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_one(pool)
+    .fetch_one()
     .await?;
 
     if !day_exists {
         return Err(AppError::NotFound("Exam day not found".to_string()));
     }
 
-    fetch_day_room_assignment_views_for_day(pool, exam_day_id).await
+    fetch_day_room_assignment_views_for_day(connection, exam_day_id).await
 }
 pub async fn upsert_day_room_assignment(
     pool: &PgPool,
@@ -181,7 +194,7 @@ pub async fn upsert_day_room_assignment(
         )));
     }
 
-    let assignment_id: Uuid = sqlx::query_scalar(
+    let assignment_id: Uuid = DbSession::new(&mut *tx).scalar("academic_assessment.exam_schedule.services.room_assignments.upsert_day_room_assignment",
         r#"
         INSERT INTO academic_exam_day_room_assignments (
             exam_day_id,
@@ -210,7 +223,7 @@ pub async fn upsert_day_room_assignment(
     .bind(request.room_id)
     .bind(capacity_override)
     .bind(actor_user_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await
     .map_err(map_day_room_assignment_write_error)?;
 
@@ -239,7 +252,12 @@ pub async fn upsert_day_room_assignment(
         .await?;
     tx.commit().await?;
 
-    fetch_day_room_assignment_view(pool, assignment_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.room_assignments.upsert_day_room_assignment",
+    )
+    .await?;
+    fetch_day_room_assignment_view(&mut connection, assignment_id).await
 }
 pub async fn generate_seats_for_assignment(
     pool: &PgPool,
@@ -282,7 +300,7 @@ async fn fetch_classroom_assignment_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     homeroom_id: Uuid,
 ) -> Result<ClassroomAssignmentContext, AppError> {
-    sqlx::query_as::<_, ClassroomAssignmentContext>(
+    DbSession::new(&mut **tx).query_as::<ClassroomAssignmentContext>("academic_assessment.exam_schedule.services.room_assignments.fetch_classroom_assignment_context",
         r#"
         SELECT grade_level_id,
                is_active
@@ -291,7 +309,7 @@ async fn fetch_classroom_assignment_context(
         "#,
     )
     .bind(homeroom_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Classroom not found".to_string()))
 }
@@ -299,7 +317,7 @@ async fn fetch_room_assignment_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     room_id: Uuid,
 ) -> Result<RoomAssignmentContext, AppError> {
-    sqlx::query_as::<_, RoomAssignmentContext>(
+    DbSession::new(&mut **tx).query_as::<RoomAssignmentContext>("academic_assessment.exam_schedule.services.room_assignments.fetch_room_assignment_context",
         r#"
         SELECT capacity,
                status
@@ -308,7 +326,7 @@ async fn fetch_room_assignment_context(
         "#,
     )
     .bind(room_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Room not found".to_string()))
 }
@@ -316,7 +334,7 @@ async fn count_active_classroom_students(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     homeroom_id: Uuid,
 ) -> Result<i64, AppError> {
-    sqlx::query_scalar(
+    DbSession::new(&mut **tx).scalar("academic_assessment.exam_schedule.services.room_assignments.count_active_classroom_students",
         r#"
         SELECT COUNT(*)::BIGINT
         FROM homeroom_placements placement
@@ -328,15 +346,15 @@ async fn count_active_classroom_students(
         "#,
     )
     .bind(homeroom_id)
-    .fetch_one(&mut **tx)
+    .fetch_one()
     .await
     .map_err(AppError::from)
 }
 async fn fetch_day_room_assignment_views_for_day(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     exam_day_id: Uuid,
 ) -> Result<Vec<DayRoomAssignmentView>, AppError> {
-    let rows = sqlx::query_as::<_, DayRoomAssignmentViewRow>(
+    let rows = DbSession::new(connection).query_as::<DayRoomAssignmentViewRow>("academic_assessment.exam_schedule.services.room_assignments.fetch_day_room_assignment_views_for_day",
         r#"
         SELECT assignment.id,
                assignment.exam_day_id,
@@ -361,16 +379,16 @@ async fn fetch_day_room_assignment_views_for_day(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
-    hydrate_day_room_assignment_views(pool, rows).await
+    hydrate_day_room_assignment_views(connection, rows).await
 }
 pub(super) async fn fetch_day_room_assignment_view(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     assignment_id: Uuid,
 ) -> Result<DayRoomAssignmentView, AppError> {
-    let rows = sqlx::query_as::<_, DayRoomAssignmentViewRow>(
+    let rows = DbSession::new(connection).query_as::<DayRoomAssignmentViewRow>("academic_assessment.exam_schedule.services.room_assignments.fetch_day_room_assignment_view",
         r#"
         SELECT assignment.id,
                assignment.exam_day_id,
@@ -394,16 +412,16 @@ pub(super) async fn fetch_day_room_assignment_view(
         "#,
     )
     .bind(assignment_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
-    let mut views = hydrate_day_room_assignment_views(pool, rows).await?;
+    let mut views = hydrate_day_room_assignment_views(connection, rows).await?;
     views
         .pop()
         .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
 }
 async fn hydrate_day_room_assignment_views(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     rows: Vec<DayRoomAssignmentViewRow>,
 ) -> Result<Vec<DayRoomAssignmentView>, AppError> {
     if rows.is_empty() {
@@ -412,7 +430,7 @@ async fn hydrate_day_room_assignment_views(
 
     let assignment_ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
     let mut invigilators_by_assignment =
-        fetch_invigilator_views_by_assignment_ids(pool, &assignment_ids).await?;
+        fetch_invigilator_views_by_assignment_ids(connection, &assignment_ids).await?;
 
     Ok(rows
         .into_iter()
@@ -428,7 +446,7 @@ pub(super) async fn fetch_seat_assignment_context(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     assignment_id: Uuid,
 ) -> Result<SeatAssignmentContext, AppError> {
-    sqlx::query_as::<_, SeatAssignmentContext>(
+    DbSession::new(&mut **tx).query_as::<SeatAssignmentContext>("academic_assessment.exam_schedule.services.room_assignments.fetch_seat_assignment_context",
         r#"
         SELECT assignment.id AS assignment_id,
                exam_day.exam_round_id,
@@ -443,7 +461,7 @@ pub(super) async fn fetch_seat_assignment_context(
         "#,
     )
     .bind(assignment_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Exam room assignment not found".to_string()))
 }
@@ -451,7 +469,7 @@ async fn fetch_seat_assignments_for_assignment(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     assignment_id: Uuid,
 ) -> Result<Vec<SeatAssignmentView>, AppError> {
-    sqlx::query_as::<_, SeatAssignmentView>(
+    DbSession::new(&mut **tx).query_as::<SeatAssignmentView>("academic_assessment.exam_schedule.services.room_assignments.fetch_seat_assignments_for_assignment",
         r#"
         SELECT seat.id,
                seat.day_room_assignment_id,
@@ -473,7 +491,7 @@ async fn fetch_seat_assignments_for_assignment(
         "#,
     )
     .bind(assignment_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await
     .map_err(AppError::from)
 }
@@ -491,7 +509,7 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
     if assignment_ids.is_empty() {
         return Ok(());
     }
-    let contexts = sqlx::query_as::<_, SeatAssignmentContext>(
+    let contexts = DbSession::new(&mut **tx).query_as::<SeatAssignmentContext>("academic_assessment.exam_schedule.services.room_assignments.synchronize_assignment_seats_in_tx",
         r#"
         SELECT assignment.id AS assignment_id, day.exam_round_id,
                assignment.homeroom_id, assignment.capacity_override,
@@ -505,9 +523,9 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
         "#,
     )
     .bind(assignment_ids)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
-    let rows = sqlx::query_as::<_, AssignmentSeatStudent>(
+    let rows = DbSession::new(&mut **tx).query_as::<AssignmentSeatStudent>("academic_assessment.exam_schedule.services.room_assignments.synchronize_assignment_seats_in_tx",
         r#"
         SELECT assignment.id AS assignment_id, student_year.student_id,
                placement.class_number
@@ -527,7 +545,7 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
         "#,
     )
     .bind(assignment_ids)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     let mut students_by_assignment: HashMap<Uuid, Vec<SeatStudent>> = HashMap::new();
     for row in rows {
@@ -558,7 +576,7 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
     }
     // Remove changed or departed seats first so number swaps cannot hit the unique constraint.
     // Unchanged seats retain their identities and timestamps.
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.room_assignments.synchronize_assignment_seats_in_tx",
         r#"
         DELETE FROM academic_exam_seat_assignments seat
         WHERE seat.day_room_assignment_id = ANY($1)
@@ -575,9 +593,9 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
     .bind(&draft_assignment_ids)
     .bind(&student_ids)
     .bind(&seat_numbers)
-    .execute(&mut **tx)
+    .execute()
     .await?;
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.room_assignments.synchronize_assignment_seats_in_tx",
         r#"
         INSERT INTO academic_exam_seat_assignments (day_room_assignment_id, student_id, seat_number)
         SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::text[])
@@ -587,7 +605,7 @@ pub(super) async fn synchronize_assignment_seats_in_tx(
     .bind(&draft_assignment_ids)
     .bind(&student_ids)
     .bind(&seat_numbers)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }

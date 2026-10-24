@@ -12,25 +12,35 @@ const CATEGORY_NOT_FOUND_MESSAGE: &str = "ไม่พบหมวดหมู�
 const TAG_NOT_FOUND_MESSAGE: &str = "ไม่พบแท็ก";
 
 pub async fn list_categories(pool: &PgPool) -> Result<Vec<CalendarCategory>, AppError> {
-    sqlx::query_as::<_, CalendarCategory>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_categories")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarCategory>(
+            "calendar.services.categories_and_tags.list_categories",
+            r#"
         SELECT id, name, color, order_index, is_active, created_at, updated_at
         FROM calendar_categories
         WHERE is_active = true
         ORDER BY order_index, name
         "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .fetch_all()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn create_category(
     pool: &PgPool,
     payload: UpsertCalendarCategoryRequest,
 ) -> Result<CalendarCategory, AppError> {
-    sqlx::query_as::<_, CalendarCategory>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.create_category")
+            .await?;
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarCategory>(
+            "calendar.services.categories_and_tags.create_category",
+            r#"
         INSERT INTO calendar_categories (name, color, order_index, is_active)
         VALUES (
             $1,
@@ -40,14 +50,14 @@ pub async fn create_category(
         )
         RETURNING id, name, color, order_index, is_active, created_at, updated_at
         "#,
-    )
-    .bind(payload.name)
-    .bind(payload.color)
-    .bind(payload.order_index)
-    .bind(payload.is_active)
-    .fetch_one(pool)
-    .await
-    .map_err(map_category_write_error)
+        )
+        .bind(payload.name)
+        .bind(payload.color)
+        .bind(payload.order_index)
+        .bind(payload.is_active)
+        .fetch_one()
+        .await
+        .map_err(map_category_write_error)
 }
 
 pub async fn update_category(
@@ -55,8 +65,13 @@ pub async fn update_category(
     id: Uuid,
     payload: UpsertCalendarCategoryRequest,
 ) -> Result<CalendarCategory, AppError> {
-    let category = sqlx::query_as::<_, CalendarCategory>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.update_category")
+            .await?;
+    let category = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarCategory>(
+            "calendar.services.categories_and_tags.update_category",
+            r#"
         UPDATE calendar_categories
         SET
             name = $1,
@@ -66,23 +81,30 @@ pub async fn update_category(
         WHERE id = $5 AND is_active = true
         RETURNING id, name, color, order_index, is_active, created_at, updated_at
         "#,
-    )
-    .bind(payload.name)
-    .bind(payload.color)
-    .bind(payload.order_index)
-    .bind(payload.is_active)
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(map_category_write_error)?;
+        )
+        .bind(payload.name)
+        .bind(payload.color)
+        .bind(payload.order_index)
+        .bind(payload.is_active)
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(map_category_write_error)?;
 
     category.ok_or_else(|| AppError::NotFound(CATEGORY_NOT_FOUND_MESSAGE.to_string()))
 }
 
 pub async fn hard_delete_category(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM calendar_categories WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.hard_delete_category")
+            .await?;
+    let result = school_database::DbSession::new(&mut *connection)
+        .query(
+            "calendar.services.categories_and_tags.hard_delete_category",
+            "DELETE FROM calendar_categories WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await?;
 
     if result.rows_affected() == 0 {
@@ -93,34 +115,42 @@ pub async fn hard_delete_category(pool: &PgPool, id: Uuid) -> Result<(), AppErro
 }
 
 pub async fn list_tags(pool: &PgPool) -> Result<Vec<CalendarTag>, AppError> {
-    sqlx::query_as::<_, CalendarTag>(
-        r#"
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.list_tags").await?;
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarTag>(
+            "calendar.services.categories_and_tags.list_tags",
+            r#"
         SELECT id, name, created_at, updated_at
         FROM calendar_tags
         ORDER BY LOWER(name), id
         "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(AppError::from)
+        )
+        .fetch_all()
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn create_tag(
     pool: &PgPool,
     payload: UpsertCalendarTagRequest,
 ) -> Result<CalendarTag, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.create_tag").await?;
     let name = normalized_tag_name(payload.name)?;
-    sqlx::query_as::<_, CalendarTag>(
-        r#"
+    school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarTag>(
+            "calendar.services.categories_and_tags.create_tag",
+            r#"
         INSERT INTO calendar_tags (name)
         VALUES ($1)
         RETURNING id, name, created_at, updated_at
         "#,
-    )
-    .bind(name)
-    .fetch_one(pool)
-    .await
-    .map_err(map_tag_write_error)
+        )
+        .bind(name)
+        .fetch_one()
+        .await
+        .map_err(map_tag_write_error)
 }
 
 pub async fn update_tag(
@@ -128,28 +158,39 @@ pub async fn update_tag(
     id: Uuid,
     payload: UpsertCalendarTagRequest,
 ) -> Result<CalendarTag, AppError> {
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.update_tag").await?;
     let name = normalized_tag_name(payload.name)?;
-    let tag = sqlx::query_as::<_, CalendarTag>(
-        r#"
+    let tag = school_database::DbSession::new(&mut *connection)
+        .query_as::<CalendarTag>(
+            "calendar.services.categories_and_tags.update_tag",
+            r#"
         UPDATE calendar_tags
         SET name = $1
         WHERE id = $2
         RETURNING id, name, created_at, updated_at
         "#,
-    )
-    .bind(name)
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .map_err(map_tag_write_error)?;
+        )
+        .bind(name)
+        .bind(id)
+        .fetch_optional()
+        .await
+        .map_err(map_tag_write_error)?;
 
     tag.ok_or_else(|| AppError::NotFound(TAG_NOT_FOUND_MESSAGE.to_string()))
 }
 
 pub async fn hard_delete_tag(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM calendar_tags WHERE id = $1")
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.hard_delete_tag")
+            .await?;
+    let result = school_database::DbSession::new(&mut *connection)
+        .query(
+            "calendar.services.categories_and_tags.hard_delete_tag",
+            "DELETE FROM calendar_tags WHERE id = $1",
+        )
         .bind(id)
-        .execute(pool)
+        .execute()
         .await?;
 
     if result.rows_affected() == 0 {

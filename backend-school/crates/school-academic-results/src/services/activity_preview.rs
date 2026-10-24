@@ -1,4 +1,5 @@
 use crate::models::*;
+use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use std::collections::BTreeMap;
@@ -40,7 +41,7 @@ pub(super) async fn load_activity_inputs_batch(
     context: &ResultContext,
     students: &[Uuid],
 ) -> Result<BTreeMap<Uuid, Vec<ActivityAggregateInput>>, AppError> {
-    let rows: Vec<StudentActivityRow> = sqlx::query_as(r#"
+    let rows: Vec<StudentActivityRow> = DbSession::new(&mut **tx).query_as("academic_results.services.activity_preview.load_activity_inputs_batch", r#"
         WITH expected AS (
             SELECT m.student_academic_year_id,g.id AS learning_group_id,g.learning_offering_id
             FROM learning_group_students m
@@ -67,7 +68,7 @@ pub(super) async fn load_activity_inputs_batch(
         ORDER BY expected.student_academic_year_id,expected.learning_group_id
         LIMIT 100001
     "#).bind(students).bind(context.academic_term_id).bind(context.academic_year_id)
-        .fetch_all(&mut **tx).await?;
+        .fetch_all().await?;
     if rows.len() > 100000 {
         return Err(AppError::ValidationError(
             "Activity result batch exceeds 100000 source rows; select fewer students".into(),

@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -34,8 +35,21 @@ pub async fn assessment_plan_list_access(
     actor: &ActorContext,
     action: AssessmentAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    resource_access_policy::resolve_academic_resource_list_filter(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_assessment.policy.assessment.assessment_plan_list_access",
+    )
+    .await?;
+    assessment_plan_list_access_on_connection(&mut connection, actor, action).await
+}
+
+pub async fn assessment_plan_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: AssessmentAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
         actor,
         assessment_permissions(action),
     )
@@ -47,7 +61,20 @@ pub async fn require_assessment_plan_list_access(
     actor: &ActorContext,
     action: AssessmentAction,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = assessment_plan_list_access(pool, actor, action).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.policy.assessment.require_assessment_plan_list_access",
+    )
+    .await?;
+    require_assessment_plan_list_access_on_connection(&mut connection, actor, action).await
+}
+
+pub async fn require_assessment_plan_list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    action: AssessmentAction,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = assessment_plan_list_access_on_connection(connection, actor, action).await?;
     if filter.includes_school_owned
         || !filter.organization_unit_ids.is_empty()
         || filter.assigned_actor_id.is_some()
@@ -66,8 +93,24 @@ pub async fn require_assessment_plan_access(
     offering_id: Uuid,
     action: AssessmentAction,
 ) -> Result<(), AppError> {
-    let target: Option<(Option<Uuid>, bool)> = sqlx::query_as(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.policy.assessment.require_assessment_plan_access",
+    )
+    .await?;
+    require_assessment_plan_access_on_connection(&mut connection, actor, offering_id, action).await
+}
+
+pub async fn require_assessment_plan_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    offering_id: Uuid,
+    action: AssessmentAction,
+) -> Result<(), AppError> {
+    let target: Option<(Option<Uuid>, bool)> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.policy.assessment.require_assessment_plan_access_on_connection",
+            r#"
         SELECT offering.owning_organization_unit_id,
                EXISTS (
                    SELECT 1
@@ -81,16 +124,16 @@ pub async fn require_assessment_plan_access(
         WHERE offering.id = $1
           AND offering.kind = 'course'
         "#,
-    )
-    .bind(offering_id)
-    .bind(actor.user_id)
-    .fetch_optional(pool)
-    .await?;
+        )
+        .bind(offering_id)
+        .bind(actor.user_id)
+        .fetch_optional()
+        .await?;
     let Some((owning_organization_unit_id, actor_is_assigned)) = target else {
         return Err(AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()));
     };
 
-    let filter = assessment_plan_list_access(pool, actor, action).await?;
+    let filter = assessment_plan_list_access_on_connection(connection, actor, action).await?;
     if resource_access_policy::academic_resource_access_for(
         &filter,
         owning_organization_unit_id,

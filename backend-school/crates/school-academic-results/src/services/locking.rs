@@ -2,6 +2,7 @@ use super::*;
 use crate::policy::results as access_policy;
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::BTreeSet;
@@ -77,8 +78,10 @@ pub async fn require_course_offering_unlocked(
     academic_term_id: Uuid,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
-    let locked: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS(
+    let locked: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_results.services.locking.require_course_offering_unlocked",
+            r#"SELECT EXISTS(
                SELECT 1
                FROM course_offering_details detail
                JOIN academic_course_result_locks result_lock
@@ -89,12 +92,12 @@ pub async fn require_course_offering_unlocked(
                  AND detail.academic_term_id=$2
                  AND detail.academic_year_id=$3
            )"#,
-    )
-    .bind(learning_offering_id)
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(learning_offering_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .fetch_one()
+        .await?;
     if locked {
         return Err(AppError::Conflict(
             "Course results are locked and source data is read-only".into(),
@@ -109,17 +112,19 @@ pub(crate) async fn require_activity_group_unlocked(
     academic_term_id: Uuid,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
-    let locked: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS(
+    let locked: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "academic_results.services.locking.require_activity_group_unlocked",
+            r#"SELECT EXISTS(
                SELECT 1 FROM academic_activity_result_locks
                WHERE learning_group_id=$1 AND academic_term_id=$2 AND academic_year_id=$3
            )"#,
-    )
-    .bind(learning_group_id)
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .fetch_one(&mut **tx)
-    .await?;
+        )
+        .bind(learning_group_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .fetch_one()
+        .await?;
     if locked {
         return Err(AppError::Conflict(
             "Activity result is locked and source data is read-only".into(),
@@ -148,8 +153,10 @@ pub async fn lock_course_subject(
     )
     .await?;
 
-    let offering_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT offering.id
+    let offering_ids: Vec<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_results.services.locking.lock_course_subject",
+            r#"SELECT offering.id
            FROM learning_offerings offering
            JOIN course_offering_details detail ON detail.learning_offering_id=offering.id
            WHERE detail.subject_id=$1
@@ -157,19 +164,19 @@ pub async fn lock_course_subject(
              AND offering.academic_year_id=$3
            ORDER BY offering.id
            FOR UPDATE OF offering"#,
-    )
-    .bind(subject_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(subject_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_all()
+        .await?;
     if offering_ids.is_empty() {
         return Err(AppError::NotFound(
             "Course subject not found in this academic context".into(),
         ));
     }
 
-    let groups: Vec<CourseGroupRow> = sqlx::query_as(
+    let groups: Vec<CourseGroupRow> = DbSession::new(&mut *tx).query_as("academic_results.services.locking.lock_course_subject",
         r#"SELECT learning_group.id AS learning_group_id,
                   learning_group.learning_offering_id,
                   learning_group.name AS group_name,
@@ -194,7 +201,7 @@ pub async fn lock_course_subject(
     )
     .bind(&offering_ids)
     .bind(actor.user_id)
-    .fetch_all(&mut *tx)
+    .fetch_all()
     .await?;
     if groups.is_empty() {
         return Err(AppError::ValidationError(
@@ -207,13 +214,13 @@ pub async fn lock_course_subject(
         ));
     }
 
-    if sqlx::query_scalar::<_, bool>(
+    if DbSession::new(&mut *tx).scalar::<bool>("academic_results.services.locking.lock_course_subject",
         "SELECT EXISTS(SELECT 1 FROM academic_course_result_locks WHERE subject_id=$1 AND academic_term_id=$2 AND academic_year_id=$3)",
     )
     .bind(subject_id)
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?
     {
         return Err(AppError::Conflict(
@@ -224,11 +231,13 @@ pub async fn lock_course_subject(
     // Offering/group locks were acquired first, matching every result-source writer. Holding the
     // current policy row prevents a concurrent activation from changing the effective policy
     // between source revalidation and the immutable snapshot insert.
-    sqlx::query(
-        "SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active' FOR SHARE",
-    )
-    .execute(&mut *tx)
-    .await?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.locking.lock_course_subject",
+            "SELECT id FROM academic_grading_policy_versions WHERE lifecycle='active' FOR SHARE",
+        )
+        .execute()
+        .await?;
 
     let mut readiness = Vec::with_capacity(groups.len());
     let mut snapshots = Vec::with_capacity(groups.len());
@@ -364,24 +373,26 @@ pub async fn lock_course_subject(
             .collect::<Vec<_>>(),
     )?;
     let source_snapshot = CourseLockSourceSnapshot { groups: snapshots };
-    let (id, row_version, locked_at): (Uuid, i64, DateTime<Utc>) = sqlx::query_as(
-        r#"INSERT INTO academic_course_result_locks (
+    let (id, row_version, locked_at): (Uuid, i64, DateTime<Utc>) = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_results.services.locking.lock_course_subject",
+            r#"INSERT INTO academic_course_result_locks (
                subject_id,academic_term_id,academic_year_id,policy_version_id,policy_snapshot,
                roster_checksum,source_checksum,source_snapshot,locked_by
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            RETURNING id,row_version,locked_at"#,
-    )
-    .bind(subject_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(policy.id)
-    .bind(sqlx::types::Json(&policy))
-    .bind(&roster_checksum)
-    .bind(&source_checksum)
-    .bind(sqlx::types::Json(&source_snapshot))
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(subject_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(policy.id)
+        .bind(sqlx::types::Json(&policy))
+        .bind(&roster_checksum)
+        .bind(&source_checksum)
+        .bind(sqlx::types::Json(&source_snapshot))
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
 
     if !initial_results.is_empty() {
         let learning_group_ids = initial_results
@@ -416,8 +427,10 @@ pub async fn lock_course_subject(
             .iter()
             .map(|result| result.selection_source)
             .collect::<Vec<_>>();
-        sqlx::query(
-            r#"INSERT INTO academic_course_results (
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.locking.lock_course_subject",
+                r#"INSERT INTO academic_course_results (
                    learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
                    subject_id,course_result_lock_id,student_academic_year_id,calculated_score,
                    calculated_grade,outcome,numeric_grade,selection_source
@@ -433,21 +446,21 @@ pub async fn lock_course_subject(
                    learning_group_id,learning_offering_id,student_academic_year_id,
                    calculated_score,calculated_grade,outcome,numeric_grade,selection_source
                )"#,
-        )
-        .bind(context.academic_term_id)
-        .bind(context.academic_year_id)
-        .bind(subject_id)
-        .bind(id)
-        .bind(learning_group_ids)
-        .bind(learning_offering_ids)
-        .bind(student_ids)
-        .bind(calculated_scores)
-        .bind(calculated_grades)
-        .bind(outcomes)
-        .bind(numeric_grades)
-        .bind(selection_sources)
-        .execute(&mut *tx)
-        .await?;
+            )
+            .bind(context.academic_term_id)
+            .bind(context.academic_year_id)
+            .bind(subject_id)
+            .bind(id)
+            .bind(learning_group_ids)
+            .bind(learning_offering_ids)
+            .bind(student_ids)
+            .bind(calculated_scores)
+            .bind(calculated_grades)
+            .bind(outcomes)
+            .bind(numeric_grades)
+            .bind(selection_sources)
+            .execute()
+            .await?;
     }
 
     let result_count = u32::try_from(initial_results.len()).map_err(|_| {
@@ -511,8 +524,10 @@ pub async fn lock_activity_group(
         context.academic_term_id,
     )
     .await?;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT offering.id
+    let offering_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_results.services.locking.lock_activity_group",
+            r#"SELECT offering.id
            FROM learning_groups learning_group
            JOIN learning_offerings offering
              ON offering.id=learning_group.learning_offering_id
@@ -522,16 +537,20 @@ pub async fn lock_activity_group(
              AND learning_group.academic_year_id=$3
              AND learning_group.status<>'closed'
            FOR UPDATE OF offering"#,
-    )
-    .bind(group_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Activity group not found in context".into()))?;
-    sqlx::query("SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE")
+        )
         .bind(group_id)
-        .execute(&mut *tx)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Activity group not found in context".into()))?;
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.locking.lock_activity_group",
+            "SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE",
+        )
+        .bind(group_id)
+        .execute()
         .await?;
 
     let workspace = activities::workspace_for_lock(&mut tx, actor, context, group_id).await?;
@@ -580,23 +599,25 @@ pub async fn lock_activity_group(
         source_checksum: workspace.source_checksum.clone(),
         outcomes,
     };
-    let (id, row_version, locked_at): (Uuid, i64, DateTime<Utc>) = sqlx::query_as(
-        r#"INSERT INTO academic_activity_result_locks (
+    let (id, row_version, locked_at): (Uuid, i64, DateTime<Utc>) = DbSession::new(&mut *tx)
+        .query_as(
+            "academic_results.services.locking.lock_activity_group",
+            r#"INSERT INTO academic_activity_result_locks (
                learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
                roster_checksum,source_checksum,source_snapshot,locked_by
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
            RETURNING id,row_version,locked_at"#,
-    )
-    .bind(group_id)
-    .bind(offering_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(&workspace.roster_checksum)
-    .bind(&workspace.source_checksum)
-    .bind(sqlx::types::Json(&source_snapshot))
-    .bind(actor.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(group_id)
+        .bind(offering_id)
+        .bind(context.academic_term_id)
+        .bind(context.academic_year_id)
+        .bind(&workspace.roster_checksum)
+        .bind(&workspace.source_checksum)
+        .bind(sqlx::types::Json(&source_snapshot))
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
     if !source_snapshot.outcomes.is_empty() {
         let student_ids = source_snapshot
             .outcomes
@@ -608,24 +629,26 @@ pub async fn lock_activity_group(
             .iter()
             .map(|value| value.outcome.as_str())
             .collect::<Vec<_>>();
-        sqlx::query(
-            r#"INSERT INTO academic_activity_results (
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.locking.lock_activity_group",
+                r#"INSERT INTO academic_activity_results (
                    learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
                    activity_result_lock_id,student_academic_year_id,outcome
                )
                SELECT $1,$2,$3,$4,$5,value.student_academic_year_id,value.outcome
                FROM unnest($6::uuid[],$7::text[])
                     AS value(student_academic_year_id,outcome)"#,
-        )
-        .bind(group_id)
-        .bind(offering_id)
-        .bind(context.academic_term_id)
-        .bind(context.academic_year_id)
-        .bind(id)
-        .bind(student_ids)
-        .bind(outcomes)
-        .execute(&mut *tx)
-        .await?;
+            )
+            .bind(group_id)
+            .bind(offering_id)
+            .bind(context.academic_term_id)
+            .bind(context.academic_year_id)
+            .bind(id)
+            .bind(student_ids)
+            .bind(outcomes)
+            .execute()
+            .await?;
     }
     let result_count = u32::try_from(source_snapshot.outcomes.len()).map_err(|_| {
         AppError::InternalServerError("Activity result count exceeds the API limit".into())

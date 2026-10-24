@@ -11,6 +11,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

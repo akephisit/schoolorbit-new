@@ -3,6 +3,7 @@ use school_authorization::{
     self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
     AcademicResourcePermissions,
 };
+use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
 use sqlx::PgPool;
@@ -44,8 +45,20 @@ pub async fn list_access(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = resource_access_policy::resolve_academic_resource_list_filter(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_assessment.policy.learner_evaluation.list_access",
+    )
+    .await?;
+    list_access_on_connection(&mut connection, actor).await
+}
+
+pub async fn list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
         actor,
         AcademicResourcePermissions {
             assigned: &[
@@ -83,16 +96,31 @@ pub async fn require_student_summary_access(
     term: Uuid,
     student: Uuid,
 ) -> Result<(), AppError> {
-    let access = list_access(pool, actor).await?;
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.policy.learner_evaluation.require_student_summary_access",
+    )
+    .await?;
+    require_student_summary_access_on_connection(&mut connection, actor, year, term, student).await
+}
+
+pub async fn require_student_summary_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    year: Uuid,
+    term: Uuid,
+    student: Uuid,
+) -> Result<(), AppError> {
+    let access = list_access_on_connection(connection, actor).await?;
     if access.includes_school_owned {
         return Ok(());
     }
-    let scopes:Vec<(Option<Uuid>,bool,bool)>=sqlx::query_as(r#"WITH relevant AS (
+    let scopes:Vec<(Option<Uuid>,bool,bool)>=DbSession::new(connection).query_as("academic_assessment.policy.learner_evaluation.require_student_summary_access_on_connection", r#"WITH relevant AS (
         SELECT m.learning_group_id FROM learning_group_students m WHERE m.student_academic_year_id=$1 AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active'
         UNION SELECT learning_group_id FROM subject_term_student_evaluations WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND academic_year_id=$3)
         SELECT o.owning_organization_unit_id,EXISTS(SELECT 1 FROM learning_group_teachers teacher WHERE teacher.learning_group_id=g.id AND teacher.teacher_id=$4 AND teacher.starts_on<=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date) AND (teacher.ends_on IS NULL OR teacher.ends_on>=LEAST(GREATEST(current_date,t.start_date),t.planned_end_date))),
         EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$4)
-        FROM relevant r JOIN learning_groups g ON g.id=r.learning_group_id JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id"#).bind(student).bind(term).bind(year).bind(actor.user_id).fetch_all(pool).await?;
+        FROM relevant r JOIN learning_groups g ON g.id=r.learning_group_id JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id"#).bind(student).bind(term).bind(year).bind(actor.user_id).fetch_all().await?;
     if scopes.is_empty()
         || scopes.iter().any(|(owner, assigned, coordinator)| {
             !can_read_group(&access, *owner, *assigned, *coordinator)

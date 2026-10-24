@@ -5,6 +5,7 @@ use school_academic_assessment::learner_evaluation::{
     services::summarize_student_terms_in_transaction,
 };
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::PgPool;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -158,8 +159,12 @@ pub async fn preview_aggregate(
 ) -> Result<TermAggregatePreview, AppError> {
     require_aggregate_read(actor)?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.aggregate_preview.preview_aggregate",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let preview = aggregate_in_transaction(&mut tx, student, query).await?;
     tx.commit().await?;

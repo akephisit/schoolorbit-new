@@ -1,5 +1,6 @@
 use super::*;
 use school_academic_assessment::learner_evaluation::models::LearnerEvaluationDomain;
+use school_database::DbSession;
 use sqlx::types::Json;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -43,9 +44,9 @@ pub async fn corrections_after_annuals(
             "ตรวจผลแก้ไขได้ครั้งละ 1–500 รุ่นผลรายปี โดยไม่ซ้ำรายการ".into(),
         ));
     }
-    let annuals: Vec<(Uuid, Json<AnnualResultPreview>)> = sqlx::query_as(
+    let annuals: Vec<(Uuid, Json<AnnualResultPreview>)> = DbSession::new(&mut **tx).query_as("academic_results.services.annual_corrections.corrections_after_annuals",
         "SELECT id,snapshot FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND id=ANY($2) ORDER BY id",
-    ).bind(year).bind(annual_ids).fetch_all(&mut **tx).await?;
+    ).bind(year).bind(annual_ids).fetch_all().await?;
     if annuals.len() != annual_ids.len() {
         return Err(AppError::NotFound("ไม่พบรุ่นผลรายปีครบตามปีการศึกษาที่ระบุ".into()));
     }
@@ -57,7 +58,7 @@ pub async fn corrections_after_annuals(
         return Ok(Vec::new());
     }
     let baselines: Vec<_> = baselines.into_values().collect();
-    let rows: Vec<AnnualCorrectionEvidence> = sqlx::query_as(
+    let rows: Vec<AnnualCorrectionEvidence> = DbSession::new(&mut **tx).query_as("academic_results.services.annual_corrections.corrections_after_annuals",
         "WITH baseline AS (
            SELECT * FROM jsonb_to_recordset($1) AS b(annual_revision_id uuid,academic_term_id uuid,result_id uuid,kind text,source_version bigint,term_name text,criterion_name text,evaluation_domain text)
          )
@@ -84,7 +85,7 @@ pub async fn corrections_after_annuals(
          WHERE c.expected_effective_version>=b.source_version
          ORDER BY b.annual_revision_id,b.academic_term_id,b.kind,b.result_id,c.expected_effective_version,c.id
          LIMIT 10001",
-    ).bind(Json(&baselines)).fetch_all(&mut **tx).await?;
+    ).bind(Json(&baselines)).fetch_all().await?;
     if rows.len() > 10_000 {
         return Err(AppError::ValidationError(
             "ผลแก้ไขในชุดนี้เกิน 10,000 รายการ กรุณาแบ่งชุดที่ตรวจให้เล็กลง".into(),

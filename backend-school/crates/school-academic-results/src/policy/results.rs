@@ -63,8 +63,20 @@ pub async fn list_access(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<AcademicResourceListFilter, AppError> {
-    let filter = resource_access_policy::resolve_academic_resource_list_filter(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
+        "academic_results.policy.results.list_access",
+    )
+    .await?;
+    list_access_on_connection(&mut connection, actor).await
+}
+
+pub async fn list_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+) -> Result<AcademicResourceListFilter, AppError> {
+    let filter = resource_access_policy::resolve_academic_resource_list_filter_on_connection(
+        connection,
         actor,
         AcademicResourcePermissions {
             assigned: &[

@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -10,9 +11,9 @@ pub async fn promotion_annual_sources(
     // The owner validates 1–500 distinct student-year IDs and exact year scope.
     // Caller holds a consistent read transaction or the lifecycle transition lock.
     let previews = annual_revisions::annual_students_in_transaction(tx, year, students).await?;
-    let rows:Vec<StoredSource>=sqlx::query_as(
+    let rows:Vec<StoredSource>=DbSession::new(&mut **tx).query_as("academic_results.services.promotion_sources.promotion_annual_sources",
         "SELECT DISTINCT ON(student_academic_year_id) student_academic_year_id,id,revision,snapshot,official_gpa::text,hold_reason,locked_by,locked_at FROM academic_annual_result_revisions WHERE academic_year_id=$1 AND student_academic_year_id=ANY($2) ORDER BY student_academic_year_id,revision DESC"
-    ).bind(year).bind(students).fetch_all(&mut **tx).await?;
+    ).bind(year).bind(students).fetch_all().await?;
     let mut sources: BTreeMap<_, _> = students.iter().map(|id| (*id, None)).collect();
     for row in rows {
         let preview = previews.get(&row.student_academic_year_id).ok_or_else(|| {

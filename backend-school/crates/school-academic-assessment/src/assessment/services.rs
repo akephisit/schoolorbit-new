@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
 use bigdecimal::BigDecimal;
@@ -84,12 +85,12 @@ pub async fn apply_term_preparation(
         coordinator_id: Option<Uuid>,
     }
 
-    let plans: Vec<SourcePlan> = sqlx::query_as(
+    let plans: Vec<SourcePlan> = DbSession::new(&mut **transaction).query_as("academic_assessment.assessment.services.apply_term_preparation",
         "SELECT id,learning_offering_id AS offering_id,assessment_coordinator_id AS coordinator_id
          FROM course_assessment_plans WHERE academic_term_id=$1 ORDER BY id",
     )
     .bind(context.source_term_id)
-    .fetch_all(&mut **transaction)
+    .fetch_all()
     .await?;
     let mut ids = Vec::new();
     for plan in plans {
@@ -102,17 +103,21 @@ pub async fn apply_term_preparation(
             .ok_or_else(|| {
                 AppError::Conflict(format!("ไม่พบการจับคู่ learning_offering {}", plan.offering_id))
             })?;
-        let (subject_version_id, target_year_id): (Uuid, Uuid) = sqlx::query_as(
-            "SELECT detail.subject_version_id,offering.academic_year_id
+        let (subject_version_id, target_year_id): (Uuid, Uuid) = DbSession::new(&mut **transaction)
+            .query_as(
+                "academic_assessment.assessment.services.apply_term_preparation",
+                "SELECT detail.subject_version_id,offering.academic_year_id
              FROM course_offering_details detail
              JOIN learning_offerings offering ON offering.id=detail.learning_offering_id
              WHERE offering.id=$1 AND offering.academic_term_id=$2",
-        )
-        .bind(target_offering)
-        .bind(context.target_term_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::Conflict("รายการเปิดสอนเป้าหมายของโครงสร้างคะแนนไม่พร้อม".into()))?;
+            )
+            .bind(target_offering)
+            .bind(context.target_term_id)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| {
+                AppError::Conflict("รายการเปิดสอนเป้าหมายของโครงสร้างคะแนนไม่พร้อม".into())
+            })?;
         let coordinator = plan
             .coordinator_id
             .map(|id| {
@@ -123,33 +128,37 @@ pub async fn apply_term_preparation(
             })
             .transpose()?;
         let id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO course_assessment_plans(
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_assessment.assessment.services.apply_term_preparation",
+                "INSERT INTO course_assessment_plans(
                  id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id,
                  assessment_coordinator_id,row_version,migration_provenance,created_at,updated_at
              ) VALUES($1,$2,$3,$4,$5,$6,1,'{}'::jsonb,now(),now())",
-        )
-        .bind(id)
-        .bind(context.target_term_id)
-        .bind(subject_version_id)
-        .bind(target_offering)
-        .bind(target_year_id)
-        .bind(coordinator)
-        .execute(&mut **transaction)
-        .await?;
-        sqlx::query(
-            r#"INSERT INTO course_assessment_phases(
+            )
+            .bind(id)
+            .bind(context.target_term_id)
+            .bind(subject_version_id)
+            .bind(target_offering)
+            .bind(target_year_id)
+            .bind(coordinator)
+            .execute()
+            .await?;
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_assessment.assessment.services.apply_term_preparation",
+                r#"INSERT INTO course_assessment_phases(
                    id,plan_id,phase_code,max_score,exam_arrangement,exam_duration_minutes,
                    row_version,created_by,updated_by,created_at,updated_at
                ) SELECT gen_random_uuid(),$1,phase_code,max_score,exam_arrangement,
                         exam_duration_minutes,1,$2,$2,now(),now()
                  FROM course_assessment_phases WHERE plan_id=$3"#,
-        )
-        .bind(id)
-        .bind(actor_user_id)
-        .bind(plan.id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(id)
+            .bind(actor_user_id)
+            .bind(plan.id)
+            .execute()
+            .await?;
         ids.push(id);
     }
     Ok(TermPreparationModuleOutcome {
@@ -275,9 +284,25 @@ pub async fn list_assessment_plans(
     access: &AcademicResourceListFilter,
     current_actor_id: Uuid,
 ) -> Result<Vec<AssessmentPlanSummary>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.assessment.services.list_assessment_plans",
+    )
+    .await?;
+    list_assessment_plans_on_connection(&mut connection, query, access, current_actor_id).await
+}
+
+pub async fn list_assessment_plans_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: &AssessmentPlanListQuery,
+    access: &AcademicResourceListFilter,
+    current_actor_id: Uuid,
+) -> Result<Vec<AssessmentPlanSummary>, AppError> {
     let owner_ids = access.allowed_organization_unit_ids();
-    let rows: Vec<AssessmentPlanSummaryRow> = sqlx::query_as(
-        r#"
+    let rows: Vec<AssessmentPlanSummaryRow> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.assessment.services.list_assessment_plans_on_connection",
+            r#"
         SELECT plan.id AS plan_id,
                offering.id AS offering_id,
                offering.academic_term_id,
@@ -341,24 +366,24 @@ pub async fn list_assessment_plans(
                  offering.id
         LIMIT 500
         "#,
-    )
-    .bind(query.academic_term_id)
-    .bind(query.subject_id)
-    .bind(query.instructor_id)
-    .bind(access.includes_school_owned)
-    .bind(owner_ids)
-    .bind(access.assigned_actor_id)
-    .bind(current_actor_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(query.academic_term_id)
+        .bind(query.subject_id)
+        .bind(query.instructor_id)
+        .bind(access.includes_school_owned)
+        .bind(owner_ids)
+        .bind(access.assigned_actor_id)
+        .bind(current_actor_id)
+        .fetch_all()
+        .await?;
 
     let plan_ids = rows
         .iter()
         .filter_map(|row| row.plan_id)
         .collect::<Vec<_>>();
     let offering_ids = rows.iter().map(|row| row.offering_id).collect::<Vec<_>>();
-    let mut phases_by_plan = load_phases_by_plan(pool, &plan_ids).await?;
-    let candidates_by_offering = load_coordinator_candidates(pool, &offering_ids).await?;
+    let mut phases_by_plan = load_phases_by_plan(connection, &plan_ids).await?;
+    let candidates_by_offering = load_coordinator_candidates(connection, &offering_ids).await?;
 
     let mut summaries = Vec::with_capacity(rows.len());
     for row in rows {
@@ -423,7 +448,19 @@ pub async fn get_plan_detail(
     pool: &PgPool,
     offering_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
-    fetch_plan_detail(pool, offering_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.assessment.services.get_plan_detail",
+    )
+    .await?;
+    get_plan_detail_on_connection(&mut connection, offering_id).await
+}
+
+pub async fn get_plan_detail_on_connection(
+    connection: &mut sqlx::PgConnection,
+    offering_id: Uuid,
+) -> Result<AssessmentPlanDetail, AppError> {
+    fetch_plan_detail(connection, offering_id).await
 }
 
 pub async fn save_plan(
@@ -489,18 +526,20 @@ pub async fn save_plan(
                     "โครงสร้างคะแนนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string(),
                 ));
             }
-            let updated = sqlx::query(
-                r#"UPDATE course_assessment_plans
+            let updated = DbSession::new(&mut *transaction)
+                .query(
+                    "academic_assessment.assessment.services.save_plan",
+                    r#"UPDATE course_assessment_plans
                    SET assessment_coordinator_id = $2,
                        row_version = row_version + 1,
                        updated_at = now()
                    WHERE id = $1 AND row_version = $3"#,
-            )
-            .bind(plan.id)
-            .bind(payload.assessment_coordinator_id)
-            .bind(expected_version)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(plan.id)
+                .bind(payload.assessment_coordinator_id)
+                .bind(expected_version)
+                .execute()
+                .await?;
             if updated.rows_affected() != 1 {
                 return Err(AppError::Conflict(
                     "โครงสร้างคะแนนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string(),
@@ -515,21 +554,23 @@ pub async fn save_plan(
                 ));
             }
             let plan_id = Uuid::now_v7();
-            sqlx::query(
-                r#"INSERT INTO course_assessment_plans (
+            DbSession::new(&mut *transaction)
+                .query(
+                    "academic_assessment.assessment.services.save_plan",
+                    r#"INSERT INTO course_assessment_plans (
                        id, academic_term_id, subject_version_id, learning_offering_id,
                        academic_year_id, assessment_coordinator_id, row_version,
                        migration_provenance, created_at, updated_at
                    ) VALUES ($1, $2, $3, $4, $5, $6, 1, '{}'::jsonb, now(), now())"#,
-            )
-            .bind(plan_id)
-            .bind(scope.academic_term_id)
-            .bind(scope.subject_version_id)
-            .bind(scope.offering_id)
-            .bind(scope.academic_year_id)
-            .bind(payload.assessment_coordinator_id)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(plan_id)
+                .bind(scope.academic_term_id)
+                .bind(scope.subject_version_id)
+                .bind(scope.offering_id)
+                .bind(scope.academic_year_id)
+                .bind(payload.assessment_coordinator_id)
+                .execute()
+                .await?;
             plan_id
         }
     };
@@ -543,15 +584,34 @@ pub async fn save_plan(
     )
     .await?;
     transaction.commit().await?;
-    fetch_plan_detail(pool, offering_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.assessment.services.save_plan",
+    )
+    .await?;
+    fetch_plan_detail(&mut connection, offering_id).await
 }
 
 pub async fn list_phase_controls(
     pool: &PgPool,
     academic_term_id: Uuid,
 ) -> Result<Vec<AssessmentPhaseControl>, AppError> {
-    let rows: Vec<AssessmentPhaseControlRow> = sqlx::query_as(
-        r#"SELECT id, academic_term_id, academic_year_id, phase_code,
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.assessment.services.list_phase_controls",
+    )
+    .await?;
+    list_phase_controls_on_connection(&mut connection, academic_term_id).await
+}
+
+pub async fn list_phase_controls_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+) -> Result<Vec<AssessmentPhaseControl>, AppError> {
+    let rows: Vec<AssessmentPhaseControlRow> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.assessment.services.list_phase_controls_on_connection",
+            r#"SELECT id, academic_term_id, academic_year_id, phase_code,
                   plan_editing_enabled, row_version
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
@@ -562,10 +622,10 @@ pub async fn list_phase_controls(
                WHEN 'final' THEN 4
                ELSE 99
            END"#,
-    )
-    .bind(academic_term_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?;
     rows.into_iter().map(phase_control_from_row).collect()
 }
 
@@ -576,13 +636,15 @@ pub async fn update_phase_control(
     payload: UpdateAssessmentPhaseControlRequest,
 ) -> Result<AssessmentPhaseControl, AppError> {
     let mut transaction = pool.begin().await?;
-    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+    let (year, term): (Uuid, Uuid) = DbSession::new(&mut *transaction).query_as("academic_assessment.assessment.services.update_phase_control",
         "SELECT academic_year_id,academic_term_id FROM academic_assessment_phase_controls WHERE id=$1",
-    ).bind(control_id).fetch_optional(&mut *transaction).await?
+    ).bind(control_id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบการตั้งค่าช่วงคะแนน".into()))?;
     lifecycle_guard::require_term_write(&mut transaction, year, term).await?;
-    let row: AssessmentPhaseControlRow = sqlx::query_as(
-        r#"UPDATE academic_assessment_phase_controls
+    let row: AssessmentPhaseControlRow = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_assessment.assessment.services.update_phase_control",
+            r#"UPDATE academic_assessment_phase_controls
            SET plan_editing_enabled = $2,
                row_version = row_version + 1,
                updated_by = $3,
@@ -590,14 +652,16 @@ pub async fn update_phase_control(
            WHERE id = $1 AND row_version = $4
            RETURNING id, academic_term_id, academic_year_id, phase_code,
                      plan_editing_enabled, row_version"#,
-    )
-    .bind(control_id)
-    .bind(payload.plan_editing_enabled)
-    .bind(actor_user_id)
-    .bind(payload.row_version)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::Conflict("การตั้งค่าช่วงคะแนนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string()))?;
+        )
+        .bind(control_id)
+        .bind(payload.plan_editing_enabled)
+        .bind(actor_user_id)
+        .bind(payload.row_version)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| {
+            AppError::Conflict("การตั้งค่าช่วงคะแนนมีการแก้ไขจากผู้ใช้อื่น กรุณาโหลดใหม่".to_string())
+        })?;
     let result = phase_control_from_row(row)?;
     transaction.commit().await?;
     Ok(result)
@@ -622,12 +686,16 @@ pub fn actor_can_manage_all_plans(actor: &ActorContext) -> bool {
 }
 
 async fn resolve_offering_scope(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     offering_id: Uuid,
 ) -> Result<AssessmentOfferingScopeRow, AppError> {
-    sqlx::query_as(sqlx::AssertSqlSafe(offering_scope_sql(false)))
+    DbSession::new(connection)
+        .query_as(
+            "academic_assessment.assessment.services.resolve_offering_scope",
+            sqlx::AssertSqlSafe(offering_scope_sql(false)),
+        )
         .bind(offering_id)
-        .fetch_optional(pool)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))
 }
@@ -637,17 +705,20 @@ async fn resolve_offering_scope_in_tx(
     offering_id: Uuid,
 ) -> Result<AssessmentOfferingScopeRow, AppError> {
     // Resolve immutable context without taking an offering lock before the lifecycle lock.
-    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+    let (year, term): (Uuid, Uuid) = DbSession::new(&mut **transaction).query_as("academic_assessment.assessment.services.resolve_offering_scope_in_tx",
         "SELECT academic_year_id,academic_term_id FROM learning_offerings WHERE id=$1 AND kind='course'",
-    ).bind(offering_id).fetch_optional(&mut **transaction).await?
+    ).bind(offering_id).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".into()))?;
     lifecycle_guard::require_term_write(transaction, year, term).await?;
-    let scope: AssessmentOfferingScopeRow =
-        sqlx::query_as(sqlx::AssertSqlSafe(offering_scope_sql(true)))
-            .bind(offering_id)
-            .fetch_optional(&mut **transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))?;
+    let scope: AssessmentOfferingScopeRow = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_assessment.assessment.services.resolve_offering_scope_in_tx",
+            sqlx::AssertSqlSafe(offering_scope_sql(true)),
+        )
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))?;
     Ok(scope)
 }
 
@@ -681,7 +752,7 @@ async fn load_plan_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<Option<AssessmentPlanRow>, AppError> {
-    Ok(sqlx::query_as(
+    Ok(DbSession::new(&mut **transaction).query_as("academic_assessment.assessment.services.load_plan_in_tx",
         r#"SELECT plan.id, plan.assessment_coordinator_id,
                   CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
                       nullif(coordinator.display_name, ''),
@@ -694,7 +765,7 @@ async fn load_plan_in_tx(
            FOR UPDATE OF plan"#,
     )
     .bind(offering_id)
-    .fetch_optional(&mut **transaction)
+    .fetch_optional()
     .await?)
 }
 
@@ -704,15 +775,17 @@ async fn require_enabled_plan_phase_changes(
     plan_id: Option<Uuid>,
     phases: &[SaveAssessmentPhaseRequest],
 ) -> Result<HashSet<String>, AppError> {
-    let controls: Vec<(String, bool)> = sqlx::query_as(
-        r#"SELECT phase_code, plan_editing_enabled
+    let controls: Vec<(String, bool)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_assessment.assessment.services.require_enabled_plan_phase_changes",
+            r#"SELECT phase_code, plan_editing_enabled
            FROM academic_assessment_phase_controls
            WHERE academic_term_id = $1
            FOR SHARE"#,
-    )
-    .bind(academic_term_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+        )
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?;
     if controls.len() != AssessmentPhaseCode::ALL.len() {
         return Err(AppError::InternalServerError(
             "การตั้งค่าช่วงคะแนนของภาคเรียนไม่ครบถ้วน".to_string(),
@@ -725,16 +798,18 @@ async fn require_enabled_plan_phase_changes(
         .map(|(phase_code, _)| phase_code.clone())
         .collect::<HashSet<_>>();
     let existing_phases: Vec<super::models::AssessmentPhaseRow> = if let Some(plan_id) = plan_id {
-        sqlx::query_as(
-            r#"SELECT id, plan_id, phase_code, max_score, exam_arrangement,
+        DbSession::new(&mut **transaction)
+            .query_as(
+                "academic_assessment.assessment.services.require_enabled_plan_phase_changes",
+                r#"SELECT id, plan_id, phase_code, max_score, exam_arrangement,
                           exam_duration_minutes, row_version
                    FROM course_assessment_phases
                    WHERE plan_id = $1
                    FOR UPDATE"#,
-        )
-        .bind(plan_id)
-        .fetch_all(&mut **transaction)
-        .await?
+            )
+            .bind(plan_id)
+            .fetch_all()
+            .await?
     } else {
         Vec::new()
     };
@@ -783,12 +858,14 @@ async fn replace_plan_phases(
     phases: &[SaveAssessmentPhaseRequest],
     editable_phase_codes: Option<&HashSet<String>>,
 ) -> Result<(), AppError> {
-    let existing: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, phase_code FROM course_assessment_phases WHERE plan_id = $1 FOR UPDATE",
-    )
-    .bind(plan_id)
-    .fetch_all(&mut **transaction)
-    .await?;
+    let existing: Vec<(Uuid, String)> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_assessment.assessment.services.replace_plan_phases",
+            "SELECT id, phase_code FROM course_assessment_phases WHERE plan_id = $1 FOR UPDATE",
+        )
+        .bind(plan_id)
+        .fetch_all()
+        .await?;
     let existing_by_code = existing
         .into_iter()
         .map(|(id, code)| (code, id))
@@ -808,8 +885,10 @@ async fn replace_plan_phases(
         }
         let phase_id = existing_id.unwrap_or_else(Uuid::new_v4);
         let max_score = validate_canonical_decimal(&phase.max_score, 2)?;
-        sqlx::query(
-            r#"INSERT INTO course_assessment_phases (
+        DbSession::new(&mut **transaction)
+            .query(
+                "academic_assessment.assessment.services.replace_plan_phases",
+                r#"INSERT INTO course_assessment_phases (
                    id, plan_id, phase_code, max_score, exam_arrangement,
                    exam_duration_minutes, row_version, created_by, updated_by,
                    created_at, updated_at
@@ -826,26 +905,26 @@ async fn replace_plan_phases(
                       course_assessment_phases.exam_duration_minutes)
                    IS DISTINCT FROM (EXCLUDED.max_score, EXCLUDED.exam_arrangement,
                                      EXCLUDED.exam_duration_minutes)"#,
-        )
-        .bind(phase_id)
-        .bind(plan_id)
-        .bind(phase.phase_code.as_str())
-        .bind(max_score)
-        .bind(phase.exam_arrangement.as_str())
-        .bind(phase.exam_duration_minutes)
-        .bind(actor_user_id)
-        .execute(&mut **transaction)
-        .await?;
+            )
+            .bind(phase_id)
+            .bind(plan_id)
+            .bind(phase.phase_code.as_str())
+            .bind(max_score)
+            .bind(phase.exam_arrangement.as_str())
+            .bind(phase.exam_duration_minutes)
+            .bind(actor_user_id)
+            .execute()
+            .await?;
     }
     Ok(())
 }
 
 async fn fetch_plan_detail(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     offering_id: Uuid,
 ) -> Result<AssessmentPlanDetail, AppError> {
-    let scope = resolve_offering_scope(pool, offering_id).await?;
-    let plan: Option<AssessmentPlanRow> = sqlx::query_as(
+    let scope = resolve_offering_scope(connection, offering_id).await?;
+    let plan: Option<AssessmentPlanRow> = DbSession::new(connection).query_as("academic_assessment.assessment.services.fetch_plan_detail",
         r#"SELECT plan.id, plan.assessment_coordinator_id,
                   CASE WHEN coordinator.id IS NULL THEN NULL ELSE coalesce(
                       nullif(coordinator.display_name, ''),
@@ -857,17 +936,19 @@ async fn fetch_plan_detail(
            WHERE plan.learning_offering_id = $1"#,
     )
     .bind(offering_id)
-    .fetch_optional(pool)
+    .fetch_optional()
     .await?;
-    let learning_group_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM learning_groups
+    let learning_group_ids: Vec<Uuid> = DbSession::new(connection)
+        .scalar(
+            "academic_assessment.assessment.services.fetch_plan_detail",
+            r#"SELECT id FROM learning_groups
            WHERE learning_offering_id = $1 AND status <> 'closed'
            ORDER BY code, id"#,
-    )
-    .bind(offering_id)
-    .fetch_all(pool)
-    .await?;
-    let candidates = load_coordinator_candidates(pool, &[offering_id])
+        )
+        .bind(offering_id)
+        .fetch_all()
+        .await?;
+    let candidates = load_coordinator_candidates(connection, &[offering_id])
         .await?
         .remove(&offering_id)
         .unwrap_or_default();
@@ -876,7 +957,7 @@ async fn fetch_plan_detail(
 
     let (id, coordinator_id, coordinator_name, row_version, phases) = match plan {
         Some(plan) => {
-            let phases = load_phases_by_plan(pool, &[plan.id])
+            let phases = load_phases_by_plan(connection, &[plan.id])
                 .await?
                 .remove(&plan.id)
                 .unwrap_or_default();
@@ -928,14 +1009,16 @@ async fn fetch_plan_detail(
 }
 
 async fn load_phases_by_plan(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     plan_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<AssessmentPhase>>, AppError> {
     if plan_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows: Vec<super::models::AssessmentPhaseRow> = sqlx::query_as(
-        r#"SELECT id, plan_id, phase_code, max_score, exam_arrangement,
+    let rows: Vec<super::models::AssessmentPhaseRow> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.assessment.services.load_phases_by_plan",
+            r#"SELECT id, plan_id, phase_code, max_score, exam_arrangement,
                       exam_duration_minutes, row_version
                FROM course_assessment_phases
                WHERE plan_id = ANY($1)
@@ -947,10 +1030,10 @@ async fn load_phases_by_plan(
                        WHEN 'final' THEN 4
                        ELSE 99
                    END"#,
-    )
-    .bind(plan_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(plan_ids)
+        .fetch_all()
+        .await?;
     let mut by_plan: HashMap<Uuid, Vec<AssessmentPhase>> = HashMap::new();
     for row in rows {
         let plan_id = row.plan_id;
@@ -1029,14 +1112,16 @@ fn response_readiness(
 }
 
 async fn load_coordinator_candidates(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     offering_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<CoordinatorCandidate>>, AppError> {
     if offering_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows: Vec<CoordinatorCandidateRow> = sqlx::query_as(
-        r#"SELECT offering.id AS offering_id,
+    let rows: Vec<CoordinatorCandidateRow> = DbSession::new(connection)
+        .query_as(
+            "academic_assessment.assessment.services.load_coordinator_candidates",
+            r#"SELECT offering.id AS offering_id,
                   teacher.teacher_id,
                   coalesce(
                       nullif(user_account.display_name, ''),
@@ -1071,10 +1156,10 @@ async fn load_coordinator_candidates(
            GROUP BY offering.id, teacher.teacher_id,
                     user_account.display_name, user_account.username
            ORDER BY offering.id, display_name, teacher.teacher_id"#,
-    )
-    .bind(offering_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(offering_ids)
+        .fetch_all()
+        .await?;
     let mut by_offering: HashMap<Uuid, Vec<CoordinatorCandidate>> = HashMap::new();
     for row in rows {
         by_offering
@@ -1097,8 +1182,10 @@ async fn load_candidate_ids_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<HashSet<Uuid>, AppError> {
-    Ok(sqlx::query_scalar(
-        r#"SELECT DISTINCT teacher.teacher_id
+    Ok(DbSession::new(&mut **transaction)
+        .scalar(
+            "academic_assessment.assessment.services.load_candidate_ids_in_tx",
+            r#"SELECT DISTINCT teacher.teacher_id
            FROM learning_offerings offering
            JOIN academic_terms term ON term.id = offering.academic_term_id
            JOIN learning_groups learning_group
@@ -1119,12 +1206,12 @@ async fn load_candidate_ids_in_tx(
              ON user_account.id = teacher.teacher_id
             AND user_account.status = 'active'
            WHERE offering.id = $1"#,
-    )
-    .bind(offering_id)
-    .fetch_all(&mut **transaction)
-    .await?
-    .into_iter()
-    .collect())
+        )
+        .bind(offering_id)
+        .fetch_all()
+        .await?
+        .into_iter()
+        .collect())
 }
 
 fn suggested_coordinator(

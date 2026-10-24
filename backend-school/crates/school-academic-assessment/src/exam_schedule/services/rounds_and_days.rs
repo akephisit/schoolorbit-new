@@ -1,9 +1,10 @@
+use school_database::DbSession;
 pub async fn pending_term_work(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     year: uuid::Uuid,
     term: uuid::Uuid,
 ) -> Result<Vec<school_academic_core::ports::PendingTermWork>, school_errors::AppError> {
-    Ok(sqlx::query_as(
+    Ok(DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.rounds_and_days.pending_term_work",
         "SELECT round.id,md5(to_jsonb(round)::text
          || COALESCE((SELECT jsonb_agg(to_jsonb(day) ORDER BY day.id)::text FROM academic_exam_days day WHERE day.exam_round_id=round.id),'[]')
          || COALESCE((SELECT jsonb_agg(to_jsonb(session) ORDER BY session.id)::text FROM academic_exam_sessions session WHERE session.exam_round_id=round.id),'[]')
@@ -15,7 +16,7 @@ pub async fn pending_term_work(
          || COALESCE((SELECT jsonb_agg(to_jsonb(seat) ORDER BY seat.id)::text FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=round.id),'[]')) AS revision,
          false AS blocks_closure FROM academic_exam_rounds round WHERE academic_year_id=$1
          AND academic_term_id=$2 AND status='draft' ORDER BY round.id",
-    ).bind(year).bind(term).fetch_all(&mut **tx).await?)
+    ).bind(year).bind(term).fetch_all().await?)
 }
 
 use std::collections::HashMap;
@@ -94,8 +95,22 @@ pub async fn list_rounds(
     pool: &PgPool,
     academic_term_id: Uuid,
 ) -> Result<Vec<ExamRound>, AppError> {
-    let rows = sqlx::query_as::<_, ExamRound>(
-        r#"
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.list_rounds",
+    )
+    .await?;
+    list_rounds_on_connection(&mut connection, academic_term_id).await
+}
+
+pub async fn list_rounds_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+) -> Result<Vec<ExamRound>, AppError> {
+    let rows = DbSession::new(connection)
+        .query_as::<ExamRound>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.list_rounds_on_connection",
+            r#"
         SELECT id,
                academic_year_id,
                academic_term_id,
@@ -111,10 +126,10 @@ pub async fn list_rounds(
         WHERE academic_term_id = $1
         ORDER BY created_at DESC, name ASC
         "#,
-    )
-    .bind(academic_term_id)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?;
 
     Ok(rows)
 }
@@ -136,8 +151,10 @@ pub async fn create_round(
     let (academic_year_id, _) =
         require_exam_write(&mut tx, ExamWriteTarget::Term(request.academic_term_id)).await?;
 
-    let row = sqlx::query_as::<_, ExamRound>(
-        r#"
+    let row = DbSession::new(&mut *tx)
+        .query_as::<ExamRound>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.create_round",
+            r#"
         INSERT INTO academic_exam_rounds (
             academic_year_id,
             academic_term_id,
@@ -160,15 +177,15 @@ pub async fn create_round(
                   created_at,
                   updated_at
         "#,
-    )
-    .bind(academic_year_id)
-    .bind(request.academic_term_id)
-    .bind(name)
-    .bind(request.description)
-    .bind(exam_kind)
-    .bind(actor_user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(academic_year_id)
+        .bind(request.academic_term_id)
+        .bind(name)
+        .bind(request.description)
+        .bind(exam_kind)
+        .bind(actor_user_id)
+        .fetch_one()
+        .await?;
 
     tx.commit().await?;
 
@@ -187,8 +204,10 @@ pub async fn update_round(
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
     mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
 
-    let row = sqlx::query_as::<_, ExamRound>(
-        r#"
+    let row = DbSession::new(&mut *tx)
+        .query_as::<ExamRound>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.update_round",
+            r#"
         UPDATE academic_exam_rounds
         SET name = COALESCE($2, name),
             description = COALESCE($3, description),
@@ -208,15 +227,15 @@ pub async fn update_round(
                   created_at,
                   updated_at
         "#,
-    )
-    .bind(round_id)
-    .bind(normalized.name)
-    .bind(normalized.description)
-    .bind(normalized.exam_kind)
-    .bind(actor_user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+        )
+        .bind(round_id)
+        .bind(normalized.name)
+        .bind(normalized.description)
+        .bind(normalized.exam_kind)
+        .bind(actor_user_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
 
     tx.commit().await?;
     Ok(row)
@@ -229,24 +248,30 @@ pub async fn delete_round(
 ) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
-    let status: String = sqlx::query_scalar(
-        r#"
+    let status: String = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
+            r#"
         SELECT status
         FROM academic_exam_rounds
         WHERE id = $1
         FOR UPDATE
         "#,
-    )
-    .bind(round_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
 
     ensure_exam_round_can_be_deleted(&status, can_delete_published)?;
 
-    sqlx::query("DELETE FROM academic_exam_rounds WHERE id = $1")
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
+            "DELETE FROM academic_exam_rounds WHERE id = $1",
+        )
         .bind(round_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     tx.commit().await?;
 
@@ -270,8 +295,10 @@ pub async fn upsert_exam_day(
     let (academic_year_id, academic_term_id) =
         require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
-    let day = sqlx::query_as::<_, ExamDay>(
-        r#"
+    let day = DbSession::new(&mut *tx)
+        .query_as::<ExamDay>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.upsert_exam_day",
+            r#"
         INSERT INTO academic_exam_days (
             exam_round_id,
             academic_term_id,
@@ -295,23 +322,28 @@ pub async fn upsert_exam_day(
                   start_time,
                   end_time
         "#,
-    )
-    .bind(round_id)
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .bind(request.exam_date)
-    .bind(request.label)
-    .bind(request.start_time)
-    .bind(request.end_time)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(round_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(request.exam_date)
+        .bind(request.label)
+        .bind(request.start_time)
+        .bind(request.end_time)
+        .fetch_one()
+        .await?;
 
     replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
 
     mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
     tx.commit().await?;
 
-    fetch_exam_day_detail(pool, day.id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.upsert_exam_day",
+    )
+    .await?;
+    fetch_exam_day_detail(&mut connection, day.id).await
 }
 
 pub async fn update_exam_day(
@@ -329,8 +361,10 @@ pub async fn update_exam_day(
 
     let mut tx = pool.begin().await?;
     require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
-    let day = sqlx::query_as::<_, ExamDay>(
-        r#"
+    let day = DbSession::new(&mut *tx)
+        .query_as::<ExamDay>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.update_exam_day",
+            r#"
         UPDATE academic_exam_days
         SET exam_date = $2,
             label = $3,
@@ -345,23 +379,28 @@ pub async fn update_exam_day(
                   start_time,
                   end_time
         "#,
-    )
-    .bind(exam_day_id)
-    .bind(request.exam_date)
-    .bind(request.label)
-    .bind(request.start_time)
-    .bind(request.end_time)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_exam_day_write_error)?
-    .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
+        )
+        .bind(exam_day_id)
+        .bind(request.exam_date)
+        .bind(request.label)
+        .bind(request.start_time)
+        .bind(request.end_time)
+        .fetch_optional()
+        .await
+        .map_err(map_exam_day_write_error)?
+        .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
 
     replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
 
     mark_round_draft_after_mutation(&mut tx, day.exam_round_id, None).await?;
     tx.commit().await?;
 
-    fetch_exam_day_detail(pool, day.id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.rounds_and_days.update_exam_day",
+    )
+    .await?;
+    fetch_exam_day_detail(&mut connection, day.id).await
 }
 
 pub(super) async fn replace_exam_day_configuration(
@@ -370,13 +409,13 @@ pub(super) async fn replace_exam_day_configuration(
     grade_level_ids: &[Uuid],
     blocked_windows: &[BlockedWindowInput],
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM academic_exam_day_grade_levels WHERE exam_day_id = $1")
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.replace_exam_day_configuration", "DELETE FROM academic_exam_day_grade_levels WHERE exam_day_id = $1")
         .bind(exam_day_id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
 
     if !grade_level_ids.is_empty() {
-        sqlx::query(
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.replace_exam_day_configuration",
             r#"
             INSERT INTO academic_exam_day_grade_levels (exam_day_id, grade_level_id)
             SELECT $1, grade_level_id
@@ -386,13 +425,13 @@ pub(super) async fn replace_exam_day_configuration(
         )
         .bind(exam_day_id)
         .bind(grade_level_ids)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     }
 
-    sqlx::query("DELETE FROM academic_exam_day_blocked_windows WHERE exam_day_id = $1")
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.replace_exam_day_configuration", "DELETE FROM academic_exam_day_blocked_windows WHERE exam_day_id = $1")
         .bind(exam_day_id)
-        .execute(&mut **tx)
+        .execute()
         .await?;
 
     if !blocked_windows.is_empty() {
@@ -409,7 +448,7 @@ pub(super) async fn replace_exam_day_configuration(
             .map(|window| window.end_time)
             .collect();
 
-        sqlx::query(
+        DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.replace_exam_day_configuration",
             r#"
             INSERT INTO academic_exam_day_blocked_windows (
                 exam_day_id,
@@ -426,7 +465,7 @@ pub(super) async fn replace_exam_day_configuration(
         .bind(&labels)
         .bind(&start_times)
         .bind(&end_times)
-        .execute(&mut **tx)
+        .execute()
         .await?;
     }
 
@@ -436,16 +475,18 @@ pub(super) async fn replace_exam_day_configuration(
 pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
     require_exam_write(&mut tx, ExamWriteTarget::Day(exam_day_id)).await?;
-    let round_id: Option<Uuid> = sqlx::query_scalar(
-        r#"
+    let round_id: Option<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.rounds_and_days.delete_exam_day",
+            r#"
         DELETE FROM academic_exam_days
         WHERE id = $1
         RETURNING exam_round_id
         "#,
-    )
-    .bind(exam_day_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+        )
+        .bind(exam_day_id)
+        .fetch_optional()
+        .await?;
 
     let round_id = round_id.ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
 
@@ -460,7 +501,7 @@ pub(super) async fn mark_round_draft_after_mutation(
     round_id: Uuid,
     actor_user_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.mark_round_draft_after_mutation",
         r#"
         UPDATE academic_exam_rounds
         SET status = 'draft',
@@ -474,7 +515,7 @@ pub(super) async fn mark_round_draft_after_mutation(
     )
     .bind(round_id)
     .bind(actor_user_id)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
@@ -506,7 +547,7 @@ pub(super) async fn fetch_exam_day_context_for_update(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     exam_day_id: Uuid,
 ) -> Result<ExamDayContext, AppError> {
-    sqlx::query_as::<_, ExamDayContext>(
+    DbSession::new(&mut **tx).query_as::<ExamDayContext>("academic_assessment.exam_schedule.services.rounds_and_days.fetch_exam_day_context_for_update",
         r#"
         SELECT exam_round_id,
                academic_term_id,
@@ -517,7 +558,7 @@ pub(super) async fn fetch_exam_day_context_for_update(
         "#,
     )
     .bind(exam_day_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))
 }
@@ -615,9 +656,14 @@ pub(super) fn normalize_blocked_windows(
     Ok(normalized)
 }
 
-pub(super) async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRound, AppError> {
-    sqlx::query_as::<_, ExamRound>(
-        r#"
+pub(super) async fn fetch_round(
+    connection: &mut sqlx::PgConnection,
+    round_id: Uuid,
+) -> Result<ExamRound, AppError> {
+    DbSession::new(connection)
+        .query_as::<ExamRound>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.fetch_round",
+            r#"
         SELECT id,
                academic_year_id,
                academic_term_id,
@@ -632,19 +678,21 @@ pub(super) async fn fetch_round(pool: &PgPool, round_id: Uuid) -> Result<ExamRou
         FROM academic_exam_rounds
         WHERE id = $1
         "#,
-    )
-    .bind(round_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))
 }
 
 pub(super) async fn fetch_exam_day_detail(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     exam_day_id: Uuid,
 ) -> Result<ExamDayDetail, AppError> {
-    let day = sqlx::query_as::<_, ExamDay>(
-        r#"
+    let day = DbSession::new(connection)
+        .query_as::<ExamDay>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.fetch_exam_day_detail",
+            r#"
         SELECT id,
                exam_round_id,
                exam_date,
@@ -654,23 +702,23 @@ pub(super) async fn fetch_exam_day_detail(
         FROM academic_exam_days
         WHERE id = $1
         "#,
-    )
-    .bind(exam_day_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
+        )
+        .bind(exam_day_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
 
-    let mut details = hydrate_exam_day_details(pool, vec![day]).await?;
+    let mut details = hydrate_exam_day_details(connection, vec![day]).await?;
     details
         .pop()
         .ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))
 }
 
 pub(super) async fn fetch_exam_day_details_for_round(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     round_id: Uuid,
 ) -> Result<Vec<ExamDayDetail>, AppError> {
-    let days = sqlx::query_as::<_, ExamDay>(
+    let days = DbSession::new(connection).query_as::<ExamDay>("academic_assessment.exam_schedule.services.rounds_and_days.fetch_exam_day_details_for_round",
         r#"
         SELECT id,
                exam_round_id,
@@ -684,14 +732,14 @@ pub(super) async fn fetch_exam_day_details_for_round(
         "#,
     )
     .bind(round_id)
-    .fetch_all(pool)
+    .fetch_all()
     .await?;
 
-    hydrate_exam_day_details(pool, days).await
+    hydrate_exam_day_details(connection, days).await
 }
 
 pub(super) async fn hydrate_exam_day_details(
-    pool: &PgPool,
+    connection: &mut sqlx::PgConnection,
     days: Vec<ExamDay>,
 ) -> Result<Vec<ExamDayDetail>, AppError> {
     if days.is_empty() {
@@ -700,8 +748,10 @@ pub(super) async fn hydrate_exam_day_details(
 
     let day_ids: Vec<Uuid> = days.iter().map(|day| day.id).collect();
 
-    let grade_rows = sqlx::query_as::<_, ExamDayGradeLevelRow>(
-        r#"
+    let grade_rows = DbSession::new(connection)
+        .query_as::<ExamDayGradeLevelRow>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.hydrate_exam_day_details",
+            r#"
         SELECT scope.exam_day_id,
                scope.grade_level_id
         FROM academic_exam_day_grade_levels scope
@@ -717,13 +767,15 @@ pub(super) async fn hydrate_exam_day_details(
                  grade_level.year,
                  scope.grade_level_id
         "#,
-    )
-    .bind(&day_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&day_ids)
+        .fetch_all()
+        .await?;
 
-    let blocked_rows = sqlx::query_as::<_, BlockedWindowRow>(
-        r#"
+    let blocked_rows = DbSession::new(connection)
+        .query_as::<BlockedWindowRow>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.hydrate_exam_day_details",
+            r#"
         SELECT exam_day_id,
                id,
                label,
@@ -733,13 +785,15 @@ pub(super) async fn hydrate_exam_day_details(
         WHERE exam_day_id = ANY($1)
         ORDER BY exam_day_id, start_time, end_time, label, id
         "#,
-    )
-    .bind(&day_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&day_ids)
+        .fetch_all()
+        .await?;
 
-    let assignment_rows = sqlx::query_as::<_, ExamDayRoomAssignmentRow>(
-        r#"
+    let assignment_rows = DbSession::new(connection)
+        .query_as::<ExamDayRoomAssignmentRow>(
+            "academic_assessment.exam_schedule.services.rounds_and_days.hydrate_exam_day_details",
+            r#"
         SELECT assignment.id,
                assignment.exam_day_id,
                assignment.homeroom_id,
@@ -754,17 +808,17 @@ pub(super) async fn hydrate_exam_day_details(
         WHERE assignment.exam_day_id = ANY($1)
         ORDER BY assignment.exam_day_id, classroom.name, room.name_th, assignment.id
         "#,
-    )
-    .bind(&day_ids)
-    .fetch_all(pool)
-    .await?;
+        )
+        .bind(&day_ids)
+        .fetch_all()
+        .await?;
 
     let assignment_ids: Vec<Uuid> = assignment_rows
         .iter()
         .map(|assignment| assignment.id)
         .collect();
     let mut invigilators_by_assignment =
-        fetch_invigilators_by_assignment_ids(pool, &assignment_ids).await?;
+        fetch_invigilators_by_assignment_ids(connection, &assignment_ids).await?;
 
     let mut grade_ids_by_day: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
     for row in grade_rows {

@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use futures::{stream::FuturesUnordered, StreamExt};
-use sqlx::pool::PoolConnection;
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgConnection, PgPool};
 use std::time::Duration;
 use std::{collections::VecDeque, future::Future};
 use tokio::sync::broadcast;
@@ -129,15 +128,20 @@ async fn fetch_due_reminder_candidates(
     tenant_current_date: NaiveDate,
     after: Option<ReminderCursor>,
 ) -> Result<Vec<DueCalendarEventReminderRow>, AppError> {
-    Ok(sqlx::query_as::<_, DueCalendarEventReminderRow>(
-        select_due_calendar_reminder_candidates_sql(),
-    )
-    .bind(tenant_current_date)
-    .bind(after.map(|cursor| cursor.remind_on))
-    .bind(after.map(|cursor| cursor.created_at))
-    .bind(after.map(|cursor| cursor.id))
-    .fetch_all(pool)
-    .await?)
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.reminder_candidates")
+            .await?;
+    Ok(school_database::DbSession::new(&mut *connection)
+        .query_as::<DueCalendarEventReminderRow>(
+            "calendar.delivery.reminders.fetch_due_reminder_candidates",
+            select_due_calendar_reminder_candidates_sql(),
+        )
+        .bind(tenant_current_date)
+        .bind(after.map(|cursor| cursor.remind_on))
+        .bind(after.map(|cursor| cursor.created_at))
+        .bind(after.map(|cursor| cursor.id))
+        .fetch_all()
+        .await?)
 }
 
 async fn process_due_reminder_candidate(
@@ -147,19 +151,20 @@ async fn process_due_reminder_candidate(
     candidate: DueCalendarEventReminderRow,
 ) -> Result<bool, AppError> {
     let lock_keys = calendar_reminder_advisory_lock_keys(candidate.id);
-    let mut connection = school_tenancy::TenantPool::checkout_pool(
-        pool,
-        school_tenancy::TenantDatabaseOperation::CalendarReminder,
-    )
-    .await?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.reminder").await?;
     // Cancellation can happen while PostgreSQL accepts the lock but before the
     // driver receives its result. Such a session must never return to the pool.
     connection.close_on_drop();
 
-    let acquired = sqlx::query_scalar::<_, bool>(try_calendar_reminder_advisory_lock_sql())
+    let acquired = school_database::DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "calendar.delivery.reminders.process_due_reminder_candidate",
+            try_calendar_reminder_advisory_lock_sql(),
+        )
         .bind(lock_keys.0)
         .bind(lock_keys.1)
-        .fetch_one(&mut *connection)
+        .fetch_one()
         .await?;
 
     if !acquired {
@@ -198,17 +203,19 @@ async fn process_due_reminder_candidate(
 async fn process_advisory_locked_reminder(
     notification_channel: &broadcast::Sender<TenantNotificationEvent>,
     tenant: &str,
-    connection: &mut PoolConnection<Postgres>,
+    connection: &mut PgConnection,
     reminder_id: Uuid,
 ) -> Result<bool, AppError> {
     // The session-level advisory lock is held on this connection only for one reminder.
     // No row transaction is kept open while event loading and notification fan-out run.
-    let reminder = sqlx::query_as::<_, DueCalendarEventReminderRow>(
-        refetch_due_calendar_reminder_after_lock_sql(),
-    )
-    .bind(reminder_id)
-    .fetch_optional(&mut **connection)
-    .await?;
+    let reminder = school_database::DbSession::new(&mut *connection)
+        .query_as::<DueCalendarEventReminderRow>(
+            "calendar.delivery.reminders.process_advisory_locked_reminder",
+            refetch_due_calendar_reminder_after_lock_sql(),
+        )
+        .bind(reminder_id)
+        .fetch_optional()
+        .await?;
 
     let Some(reminder) = reminder else {
         return Ok(false);
@@ -273,26 +280,34 @@ async fn process_advisory_locked_reminder(
 }
 
 async fn mark_calendar_reminder_sent(
-    connection: &mut PoolConnection<Postgres>,
+    connection: &mut PgConnection,
     reminder_id: Uuid,
 ) -> Result<bool, AppError> {
-    let result = sqlx::query(mark_calendar_reminder_sent_sql())
+    let result = school_database::DbSession::new(&mut *connection)
+        .query(
+            "calendar.delivery.reminders.mark_calendar_reminder_sent",
+            mark_calendar_reminder_sent_sql(),
+        )
         .bind(reminder_id)
-        .execute(&mut **connection)
+        .execute()
         .await?;
 
     Ok(result.rows_affected() > 0)
 }
 
 async fn release_calendar_reminder_advisory_lock(
-    connection: &mut PoolConnection<Postgres>,
+    connection: &mut PgConnection,
     reminder_id: Uuid,
     lock_keys: (i32, i32),
 ) -> Result<(), AppError> {
-    let released = sqlx::query_scalar::<_, bool>(release_calendar_reminder_advisory_lock_sql())
+    let released = school_database::DbSession::new(&mut *connection)
+        .scalar::<bool>(
+            "calendar.delivery.reminders.release_calendar_reminder_advisory_lock",
+            release_calendar_reminder_advisory_lock_sql(),
+        )
         .bind(lock_keys.0)
         .bind(lock_keys.1)
-        .fetch_one(&mut **connection)
+        .fetch_one()
         .await?;
 
     if !released {

@@ -45,7 +45,7 @@ pub(crate) async fn create_event_in_transaction(
 ) -> Result<Uuid, AppError> {
     validate_event_payload(payload)?;
     validate_category(transaction, payload.category_id).await?;
-    let event_id = sqlx::query_scalar::<_, Uuid>(
+    let event_id = school_database::DbSession::new(&mut **transaction).scalar::<Uuid>("calendar.services.events.create_event_in_transaction",
         "INSERT INTO calendar_events (category_id,title,description,location,start_date,end_date,
             all_day,start_time,end_time,is_public,created_by,updated_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11) RETURNING id",
@@ -69,7 +69,7 @@ pub(crate) async fn create_event_in_transaction(
     })
     .bind(payload.is_public)
     .bind(actor_user_id)
-    .fetch_one(&mut **transaction)
+    .fetch_one()
     .await?;
     replace_event_configuration(transaction, event_id, payload).await?;
     Ok(event_id)
@@ -98,12 +98,14 @@ async fn validate_category(
     category_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     if let Some(category) = category_id {
-        let valid: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM calendar_categories WHERE id=$1 AND is_active)",
-        )
-        .bind(category)
-        .fetch_one(&mut **transaction)
-        .await?;
+        let valid: bool = school_database::DbSession::new(&mut **transaction)
+            .scalar(
+                "calendar.services.events.validate_category",
+                "SELECT EXISTS(SELECT 1 FROM calendar_categories WHERE id=$1 AND is_active)",
+            )
+            .bind(category)
+            .fetch_one()
+            .await?;
         if !valid {
             return Err(AppError::BadRequest("หมวดหมู่ไม่พร้อมใช้งาน กรุณาเลือกใหม่".into()));
         }
@@ -147,23 +149,25 @@ pub async fn update_event(
 ) -> Result<CalendarEventMutationOutcome, AppError> {
     validate_event_payload(&payload)?;
     let mut transaction = pool.begin().await?;
-    let exists = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM calendar_events WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *transaction)
-    .await?;
+    let exists = school_database::DbSession::new(&mut *transaction)
+        .scalar::<Uuid>(
+            "calendar.services.events.update_event",
+            "SELECT id FROM calendar_events WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?;
     if exists.is_none() {
         return Err(AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.into()));
     }
     validate_category(&mut transaction, payload.category_id).await?;
-    sqlx::query("UPDATE calendar_events SET category_id=$1,title=$2,description=$3,location=$4,start_date=$5,end_date=$6,
+    school_database::DbSession::new(&mut *transaction).query("calendar.services.events.update_event", "UPDATE calendar_events SET category_id=$1,title=$2,description=$3,location=$4,start_date=$5,end_date=$6,
         all_day=$7,start_time=$8,end_time=$9,is_public=$10,updated_by=$11 WHERE id=$12")
         .bind(payload.category_id).bind(payload.title.trim()).bind(&payload.description).bind(&payload.location)
         .bind(payload.start_date).bind(payload.end_date).bind(payload.all_day)
         .bind(if payload.all_day { None } else { payload.start_time })
         .bind(if payload.all_day { None } else { payload.end_time }).bind(payload.is_public).bind(actor_user_id).bind(id)
-        .execute(&mut *transaction).await?;
+        .execute().await?;
     replace_event_configuration(&mut transaction, id, &payload).await?;
     transaction.commit().await?;
     event_outcome(
@@ -181,14 +185,18 @@ pub async fn soft_delete_event(
     actor_user_id: Uuid,
 ) -> Result<(), AppError> {
     let mut transaction = pool.begin().await?;
-    let result=sqlx::query("UPDATE calendar_events SET deleted_at=NOW(),updated_by=$2 WHERE id=$1 AND deleted_at IS NULL")
-        .bind(id).bind(actor_user_id).execute(&mut *transaction).await?;
+    let result=school_database::DbSession::new(&mut *transaction).query("calendar.services.events.soft_delete_event", "UPDATE calendar_events SET deleted_at=NOW(),updated_by=$2 WHERE id=$1 AND deleted_at IS NULL")
+        .bind(id).bind(actor_user_id).execute().await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(EVENT_NOT_FOUND_MESSAGE.into()));
     }
-    sqlx::query("DELETE FROM calendar_event_reminders WHERE event_id=$1 AND sent_at IS NULL")
+    school_database::DbSession::new(&mut *transaction)
+        .query(
+            "calendar.services.events.soft_delete_event",
+            "DELETE FROM calendar_event_reminders WHERE event_id=$1 AND sent_at IS NULL",
+        )
         .bind(id)
-        .execute(&mut *transaction)
+        .execute()
         .await?;
     transaction.commit().await?;
     Ok(())
@@ -200,41 +208,49 @@ async fn replace_event_targets(
     event_date: NaiveDate,
     targets: &[CalendarEventTargetInput],
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM calendar_event_targets WHERE event_id = $1")
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "calendar.services.events.replace_event_targets",
+            "DELETE FROM calendar_event_targets WHERE event_id = $1",
+        )
         .bind(event_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
 
     if targets.is_empty() {
         return Ok(());
     }
 
-    let year_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 ORDER BY id",
-    )
-    .bind(event_date)
-    .fetch_all(&mut **transaction)
-    .await?;
+    let year_ids: Vec<Uuid> = school_database::DbSession::new(&mut **transaction)
+        .scalar(
+            "calendar.services.events.replace_event_targets",
+            "SELECT id FROM academic_years WHERE start_date <= $1 AND end_date >= $1 ORDER BY id",
+        )
+        .bind(event_date)
+        .fetch_all()
+        .await?;
     let mut scoped_targets = Vec::new();
     for target in targets {
         let year = if let Some(room) = target.homeroom_id {
             Some(
-                sqlx::query_scalar::<_, Uuid>(
+                school_database::DbSession::new(&mut **transaction).scalar::<Uuid>("calendar.services.events.replace_event_targets",
                     "SELECT room.academic_year_id FROM homerooms room JOIN academic_years year ON year.id=room.academic_year_id WHERE room.id=$1 AND room.is_active AND year.start_date <= $2 AND year.end_date >= $2",
                 )
                 .bind(room)
                 .bind(event_date)
-                .fetch_optional(&mut **transaction)
+                .fetch_optional()
                 .await?
                 .ok_or_else(|| AppError::BadRequest("ห้องเรียนไม่พร้อมใช้งาน".into()))?,
             )
         } else if let Some(grade) = target.grade_level_id {
-            let valid: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM grade_levels WHERE id=$1 AND is_active)",
-            )
-            .bind(grade)
-            .fetch_one(&mut **transaction)
-            .await?;
+            let valid: bool = school_database::DbSession::new(&mut **transaction)
+                .scalar(
+                    "calendar.services.events.replace_event_targets",
+                    "SELECT EXISTS(SELECT 1 FROM grade_levels WHERE id=$1 AND is_active)",
+                )
+                .bind(grade)
+                .fetch_one()
+                .await?;
             if !valid {
                 return Err(AppError::BadRequest(
                     "ไม่พบปีของระดับชั้นในวันที่กิจกรรม กรุณาเลือกห้องเรียนหรือทุกระดับชั้น".into(),
@@ -262,7 +278,13 @@ async fn replace_event_targets(
             .push_bind(target.grade_level_id)
             .push_bind(target.homeroom_id);
     });
-    builder.build().execute(&mut **transaction).await?;
+    school_database::DbSession::new(&mut **transaction)
+        .prepared_query(
+            "calendar.services.events.replace_event_targets",
+            builder.build(),
+        )
+        .execute()
+        .await?;
 
     Ok(())
 }
@@ -272,27 +294,33 @@ async fn replace_event_tags(
     event_id: Uuid,
     tag_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    sqlx::query("DELETE FROM calendar_event_tags WHERE event_id = $1")
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "calendar.services.events.replace_event_tags",
+            "DELETE FROM calendar_event_tags WHERE event_id = $1",
+        )
         .bind(event_id)
-        .execute(&mut **transaction)
+        .execute()
         .await?;
 
     if tag_ids.is_empty() {
         return Ok(());
     }
 
-    let result = sqlx::query(
-        r#"
+    let result = school_database::DbSession::new(&mut **transaction)
+        .query(
+            "calendar.services.events.replace_event_tags",
+            r#"
         INSERT INTO calendar_event_tags (event_id, tag_id)
         SELECT $1, tags.id
         FROM calendar_tags tags
         WHERE tags.id = ANY($2::uuid[])
         "#,
-    )
-    .bind(event_id)
-    .bind(tag_ids)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(event_id)
+        .bind(tag_ids)
+        .execute()
+        .await?;
 
     if result.rows_affected() != tag_ids.len() as u64 {
         return Err(AppError::BadRequest(INVALID_TAGS_MESSAGE.to_string()));
@@ -306,15 +334,17 @@ async fn replace_pending_event_reminders(
     event_id: Uuid,
     reminder_pairs: Vec<(i32, NaiveDate)>,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
+    school_database::DbSession::new(&mut **transaction)
+        .query(
+            "calendar.services.events.replace_pending_event_reminders",
+            r#"
         DELETE FROM calendar_event_reminders
         WHERE event_id = $1 AND sent_at IS NULL
         "#,
-    )
-    .bind(event_id)
-    .execute(&mut **transaction)
-    .await?;
+        )
+        .bind(event_id)
+        .execute()
+        .await?;
 
     if reminder_pairs.is_empty() {
         return Ok(());
@@ -335,7 +365,13 @@ async fn replace_pending_event_reminders(
             updated_at = NOW()
         "#,
     );
-    builder.build().execute(&mut **transaction).await?;
+    school_database::DbSession::new(&mut **transaction)
+        .prepared_query(
+            "calendar.services.events.replace_pending_event_reminders",
+            builder.build(),
+        )
+        .execute()
+        .await?;
 
     Ok(())
 }

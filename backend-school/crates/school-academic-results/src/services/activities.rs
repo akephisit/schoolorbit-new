@@ -1,6 +1,7 @@
 use super::*;
 use crate::policy::results as access_policy;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use serde::Serialize;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
@@ -67,7 +68,7 @@ async fn load_scope(
     group: Uuid,
     context: &ResultContext,
 ) -> Result<ActivityScope, AppError> {
-    sqlx::query_as(
+    DbSession::new(&mut **tx).query_as("academic_results.services.activities.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,o.owning_organization_unit_id,
                   EXISTS(SELECT 1 FROM learning_group_teachers teacher JOIN users u ON u.id=teacher.teacher_id AND u.status='active'
                          WHERE teacher.learning_group_id=g.id AND teacher.academic_term_id=g.academic_term_id
@@ -94,7 +95,7 @@ async fn load_scope(
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(actor.user_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| AppError::NotFound("Activity group not found in context".into()))
 }
@@ -109,8 +110,12 @@ async fn begin_activity<'a>(
     let access = access_policy::list_access(pool, actor).await?;
     let mut tx = pool.begin().await?;
     if !write {
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            .execute(&mut *tx)
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.activities.begin_activity",
+                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            )
+            .execute()
             .await?;
     }
     validate_context(&mut tx, context).await?;
@@ -121,22 +126,30 @@ async fn begin_activity<'a>(
             context.academic_term_id,
         )
         .await?;
-        let offering: Uuid = sqlx::query_scalar(
+        let offering: Uuid = DbSession::new(&mut *tx).scalar("academic_results.services.activities.begin_activity",
             "SELECT learning_offering_id FROM learning_groups WHERE id=$1 AND academic_term_id=$2 AND academic_year_id=$3",
         )
         .bind(group)
         .bind(context.academic_term_id)
         .bind(context.academic_year_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("Activity group not found in context".into()))?;
-        sqlx::query("SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.activities.begin_activity",
+                "SELECT id FROM learning_offerings WHERE id=$1 FOR UPDATE",
+            )
             .bind(offering)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx)
+            .query(
+                "academic_results.services.activities.begin_activity",
+                "SELECT id FROM learning_groups WHERE id=$1 FOR UPDATE",
+            )
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
     }
     let scope = load_scope(&mut tx, actor, group, context).await?;
@@ -156,13 +169,13 @@ async fn begin_activity<'a>(
             context.academic_year_id,
         )
         .await?;
-        sqlx::query("SELECT id FROM academic_activity_evaluations WHERE learning_group_id=$1 ORDER BY id FOR UPDATE")
+        DbSession::new(&mut *tx).query("academic_results.services.activities.begin_activity", "SELECT id FROM academic_activity_evaluations WHERE learning_group_id=$1 ORDER BY id FOR UPDATE")
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
-        sqlx::query("SELECT id FROM academic_activity_result_confirmations WHERE learning_group_id=$1 FOR UPDATE")
+        DbSession::new(&mut *tx).query("academic_results.services.activities.begin_activity", "SELECT id FROM academic_activity_result_confirmations WHERE learning_group_id=$1 FOR UPDATE")
             .bind(group)
-            .execute(&mut *tx)
+            .execute()
             .await?;
     }
     Ok((tx, scope))
@@ -180,11 +193,11 @@ async fn invalidate_confirmation(
     tx: &mut Transaction<'_, Postgres>,
     group: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
+    DbSession::new(&mut **tx).query("academic_results.services.activities.invalidate_confirmation",
         "UPDATE academic_activity_result_confirmations SET row_version=row_version+1,source_snapshot=jsonb_set(source_snapshot,'{invalidated}','true'::jsonb) WHERE learning_group_id=$1",
     )
     .bind(group)
-    .execute(&mut **tx)
+    .execute()
     .await?;
     Ok(())
 }
@@ -194,17 +207,17 @@ async fn load_workspace(
     actor: &ActorContext,
     scope: &ActivityScope,
 ) -> Result<(ActivityPreparationWorkspace, Vec<ActivityRosterRevision>), AppError> {
-    let students: Vec<ActivityStudentRow> = sqlx::query_as(
+    let students: Vec<ActivityStudentRow> = DbSession::new(&mut **tx).query_as("academic_results.services.activities.load_workspace",
         "SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
-    let values: Vec<ActivityValueRow> = sqlx::query_as(
+    let values: Vec<ActivityValueRow> = DbSession::new(&mut **tx).query_as("academic_results.services.activities.load_workspace",
         "SELECT student_academic_year_id,outcome,row_version FROM academic_activity_evaluations WHERE learning_group_id=$1 ORDER BY student_academic_year_id LIMIT 2001",
     )
     .bind(scope.group_id)
-    .fetch_all(&mut **tx)
+    .fetch_all()
     .await?;
     if students.len() > 2000 || values.len() > 2000 {
         return Err(AppError::ValidationError(
@@ -275,11 +288,11 @@ async fn load_workspace(
     if scope.locked {
         blockers.push(blocker(ResultBlockerCode::AlreadyLocked, None));
     }
-    let confirmation: Option<ResultConfirmation> = sqlx::query_as(
+    let confirmation: Option<ResultConfirmation> = DbSession::new(&mut **tx).query_as("academic_results.services.activities.load_workspace",
         "SELECT id,row_version,source_checksum,roster_checksum,confirmed_by,COALESCE((source_snapshot->>'invalidated')::boolean,false) AS invalidated FROM academic_activity_result_confirmations WHERE learning_group_id=$1",
     )
     .bind(scope.group_id)
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?;
     let confirmation_is_current = confirmation.as_ref().is_some_and(|saved| {
         !saved.invalidated
@@ -388,11 +401,11 @@ pub async fn save_activity_outcomes(
             })?;
         check_version(*version, student.row_version)?;
     }
-    let revision: i64 = sqlx::query_scalar(
+    let revision: i64 = DbSession::new(&mut *tx).scalar("academic_results.services.activities.save_activity_outcomes",
         "UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
     )
     .bind(group)
-    .fetch_one(&mut *tx)
+    .fetch_one()
     .await?;
     let (mut set_students, mut outcomes, mut clear_students) = (Vec::new(), Vec::new(), Vec::new());
     for (student, (outcome, _)) in cells {
@@ -404,7 +417,7 @@ pub async fn save_activity_outcomes(
         }
     }
     if !set_students.is_empty() {
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_results.services.activities.save_activity_outcomes",
             "INSERT INTO academic_activity_evaluations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,student_academic_year_id,outcome,row_version,updated_by) SELECT $1,$2,$3,$4,c.student,c.outcome,$7,$8 FROM unnest($5::uuid[],$6::text[]) c(student,outcome) ON CONFLICT (learning_group_id,student_academic_year_id) DO UPDATE SET outcome=EXCLUDED.outcome,row_version=EXCLUDED.row_version,updated_by=EXCLUDED.updated_by,updated_at=now()",
         )
         .bind(group)
@@ -415,16 +428,16 @@ pub async fn save_activity_outcomes(
         .bind(outcomes)
         .bind(revision)
         .bind(actor.user_id)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     if !clear_students.is_empty() {
-        sqlx::query(
+        DbSession::new(&mut *tx).query("academic_results.services.activities.save_activity_outcomes",
             "DELETE FROM academic_activity_evaluations WHERE learning_group_id=$1 AND student_academic_year_id=ANY($2)",
         )
         .bind(group)
         .bind(clear_students)
-        .execute(&mut *tx)
+        .execute()
         .await?;
     }
     invalidate_confirmation(&mut tx, group).await?;
@@ -497,7 +510,7 @@ pub async fn confirm_activity(
         roster,
         outcomes,
     };
-    sqlx::query(
+    DbSession::new(&mut *tx).query("academic_results.services.activities.confirm_activity",
         "INSERT INTO academic_activity_result_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (learning_group_id) DO UPDATE SET roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=academic_activity_result_confirmations.row_version+1",
     )
     .bind(group)
@@ -508,7 +521,7 @@ pub async fn confirm_activity(
     .bind(&workspace.source_checksum)
     .bind(sqlx::types::Json(snapshot))
     .bind(actor.user_id)
-    .execute(&mut *tx)
+    .execute()
     .await?;
     let (workspace, _) = load_workspace(&mut tx, actor, &scope).await?;
     tx.commit().await?;

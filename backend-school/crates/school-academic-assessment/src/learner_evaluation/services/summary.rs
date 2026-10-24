@@ -1,5 +1,6 @@
 use super::*;
 use bigdecimal::{num_bigint::BigInt, BigDecimal};
+use school_database::DbSession;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
@@ -206,8 +207,12 @@ pub async fn summarize_student_term(
     student: Uuid,
 ) -> Result<StudentEvaluationSummary, AppError> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_assessment.learner_evaluation.services.summary.summarize_student_term",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let summary = summarize_student_term_in_transaction(&mut tx, ctx, student).await?;
     tx.commit().await?;
@@ -244,7 +249,7 @@ pub async fn summarize_student_terms_in_transaction(
     if students.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let expected:Vec<(Uuid,Uuid)>=sqlx::query_as("SELECT DISTINCT m.student_academic_year_id,d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=ANY($1) AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' UNION SELECT student_academic_year_id,subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY student_academic_year_id,subject_id LIMIT 100001").bind(students).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut **tx).await?;
+    let expected:Vec<(Uuid,Uuid)>=DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.summary.summarize_student_terms_in_transaction", "SELECT DISTINCT m.student_academic_year_id,d.subject_id FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE m.student_academic_year_id=ANY($1) AND m.academic_term_id=$2 AND m.academic_year_id=$3 AND m.membership_status='active' UNION SELECT student_academic_year_id,subject_id FROM subject_term_student_evaluations WHERE student_academic_year_id=ANY($1) AND academic_term_id=$2 AND academic_year_id=$3 ORDER BY student_academic_year_id,subject_id LIMIT 100001").bind(students).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all().await?;
     if expected.len() > 100000 {
         return Err(AppError::ValidationError(
             "Evaluation batch exceeds 100000 expected subjects; select fewer students".into(),
@@ -256,17 +261,17 @@ pub async fn summarize_student_terms_in_transaction(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let locked:Vec<(Uuid,LearnerEvaluationDomain)>=sqlx::query_as("SELECT subject_id,domain FROM subject_term_evaluation_locks WHERE academic_term_id=$1 AND academic_year_id=$2 AND subject_id=ANY($3)").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(&all_subjects).fetch_all(&mut **tx).await?;
+    let locked:Vec<(Uuid,LearnerEvaluationDomain)>=DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.summary.summarize_student_terms_in_transaction", "SELECT subject_id,domain FROM subject_term_evaluation_locks WHERE academic_term_id=$1 AND academic_year_id=$2 AND subject_id=ANY($3)").bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(&all_subjects).fetch_all().await?;
     let rows = load_effective_values_batch(tx, ctx, students).await?;
-    let policy_version_id: Uuid = sqlx::query_scalar(
+    let policy_version_id: Uuid = DbSession::new(&mut **tx).scalar("academic_assessment.learner_evaluation.services.summary.summarize_student_terms_in_transaction",
         "SELECT id FROM academic_learner_evaluation_policy_versions WHERE lifecycle='active'",
     )
-    .fetch_optional(&mut **tx)
+    .fetch_optional()
     .await?
     .ok_or_else(|| {
         AppError::ValidationError("No active learner evaluation aggregation policy".into())
     })?;
-    let bands:Vec<(i16,String)>=sqlx::query_as("SELECT quality_level,lower_bound::text FROM academic_learner_evaluation_policy_bands WHERE policy_version_id=$1 ORDER BY quality_level").bind(policy_version_id).fetch_all(&mut **tx).await?;
+    let bands:Vec<(i16,String)>=DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.summary.summarize_student_terms_in_transaction", "SELECT quality_level,lower_bound::text FROM academic_learner_evaluation_policy_bands WHERE policy_version_id=$1 ORDER BY quality_level").bind(policy_version_id).fetch_all().await?;
     let mut expected_by_student: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
     for (student, subject) in expected {
         expected_by_student
@@ -313,7 +318,7 @@ async fn load_effective_values_batch(
     // Criterion labels/catalog identities come from the lock snapshot, not today's catalog.
     // The immutable initial row remains the fallback; only the latest append-only correction
     // participates in the effective term summary.
-    let rows: Vec<StudentCriterionValue> = sqlx::query_as(r#"SELECT r.student_academic_year_id,r.id,r.subject_id,r.domain,r.subject_term_criterion_id,c."schoolCriterionId" AS school_criterion_id,c.name,
+    let rows: Vec<StudentCriterionValue> = DbSession::new(&mut **tx).query_as("academic_assessment.learner_evaluation.services.summary.load_effective_values_batch", r#"SELECT r.student_academic_year_id,r.id,r.subject_id,r.domain,r.subject_term_criterion_id,c."schoolCriterionId" AS school_criterion_id,c.name,
                COALESCE(correction.new_quality_level,r.quality_level) AS quality_level,
                COALESCE(correction.expected_effective_version+1,r.row_version) AS row_version
         FROM subject_term_student_evaluations r JOIN subject_term_evaluation_locks l ON l.id=r.evaluation_lock_id
@@ -326,7 +331,7 @@ async fn load_effective_values_batch(
             LIMIT 1
         ) correction ON true
         WHERE c.id=r.subject_term_criterion_id AND r.student_academic_year_id=ANY($1) AND r.academic_term_id=$2 AND r.academic_year_id=$3
-        ORDER BY r.student_academic_year_id,r.domain,r.subject_id,r.subject_term_criterion_id LIMIT 500001"#).bind(students).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all(&mut **tx).await?;
+        ORDER BY r.student_academic_year_id,r.domain,r.subject_id,r.subject_term_criterion_id LIMIT 500001"#).bind(students).bind(ctx.academic_term_id).bind(ctx.academic_year_id).fetch_all().await?;
     if rows.len() > 500000 {
         return Err(AppError::ValidationError(
             "Evaluation batch exceeds 500000 criterion values; select fewer students".into(),

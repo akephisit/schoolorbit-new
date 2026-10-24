@@ -1,3 +1,4 @@
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -18,27 +19,31 @@ pub async fn publish_round(
     let mut tx = pool.begin().await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
 
-    let _locked_round_id: Uuid = sqlx::query_scalar(
-        r#"
+    let _locked_round_id: Uuid = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.publishing.publish_round",
+            r#"
         SELECT id
         FROM academic_exam_rounds
         WHERE id = $1
         FOR UPDATE
         "#,
-    )
-    .bind(round_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+        )
+        .bind(round_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
 
-    let assignment_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT assignment.id FROM academic_exam_day_room_assignments assignment \
+    let assignment_ids: Vec<Uuid> = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.services.publishing.publish_round",
+            "SELECT assignment.id FROM academic_exam_day_room_assignments assignment \
          JOIN academic_exam_days day ON day.id = assignment.exam_day_id \
          WHERE day.exam_round_id = $1 ORDER BY assignment.id",
-    )
-    .bind(round_id)
-    .fetch_all(&mut *tx)
-    .await?;
+        )
+        .bind(round_id)
+        .fetch_all()
+        .await?;
     synchronize_assignment_seats_in_tx(&mut tx, &assignment_ids).await?;
 
     let counts = fetch_workspace_counts_in_tx(&mut tx, round_id).await?;
@@ -50,8 +55,10 @@ pub async fn publish_round(
         ));
     }
 
-    let round = sqlx::query_as::<_, ExamRound>(
-        r#"
+    let round = DbSession::new(&mut *tx)
+        .query_as::<ExamRound>(
+            "academic_assessment.exam_schedule.services.publishing.publish_round",
+            r#"
         UPDATE academic_exam_rounds
         SET status = 'published',
             published_at = now(),
@@ -72,11 +79,11 @@ pub async fn publish_round(
                   created_at,
                   updated_at
         "#,
-    )
-    .bind(round_id)
-    .bind(actor_user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+        )
+        .bind(round_id)
+        .bind(actor_user_id)
+        .fetch_one()
+        .await?;
 
     tx.commit().await?;
     Ok(round)

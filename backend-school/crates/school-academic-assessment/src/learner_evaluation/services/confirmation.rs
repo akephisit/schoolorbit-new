@@ -1,4 +1,5 @@
 use super::*;
+use school_database::DbSession;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,7 +122,7 @@ pub async fn confirm_group(
         ));
     }
     let snapshot = sqlx::types::Json(snapshot(&ws, group_scope.offering_id));
-    let confirmation=sqlx::query_as("INSERT INTO learning_group_evaluation_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (learning_group_id,domain) DO UPDATE SET roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=learning_group_evaluation_confirmations.row_version+1 RETURNING id,source_checksum,roster_checksum,row_version,false AS invalidated,confirmed_by").bind(group).bind(group_scope.offering_id).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(domain.as_str()).bind(&ws.roster_checksum).bind(&ws.source_checksum).bind(snapshot).bind(actor.user_id).fetch_one(&mut *tx).await?;
+    let confirmation=DbSession::new(&mut *tx).query_as("academic_assessment.learner_evaluation.services.confirmation.confirm_group", "INSERT INTO learning_group_evaluation_confirmations (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,subject_id,domain,roster_checksum,source_checksum,source_snapshot,confirmed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (learning_group_id,domain) DO UPDATE SET roster_checksum=EXCLUDED.roster_checksum,source_checksum=EXCLUDED.source_checksum,source_snapshot=EXCLUDED.source_snapshot,confirmed_by=EXCLUDED.confirmed_by,confirmed_at=now(),row_version=learning_group_evaluation_confirmations.row_version+1 RETURNING id,source_checksum,roster_checksum,row_version,false AS invalidated,confirmed_by").bind(group).bind(group_scope.offering_id).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(subject).bind(domain.as_str()).bind(&ws.roster_checksum).bind(&ws.source_checksum).bind(snapshot).bind(actor.user_id).fetch_one().await?;
     tx.commit().await?;
     Ok(ConfirmationOutcome {
         confirmation: Some(confirmation),

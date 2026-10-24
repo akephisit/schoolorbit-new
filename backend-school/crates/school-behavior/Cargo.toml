@@ -12,6 +12,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-database = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 school-notifications = { workspace = true }

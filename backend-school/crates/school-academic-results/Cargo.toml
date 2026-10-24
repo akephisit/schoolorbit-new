@@ -11,6 +11,8 @@ api-docs = [
 ]
 
 [dependencies]
+school-tenancy = { workspace = true }
+school-database = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }

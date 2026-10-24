@@ -1,5 +1,6 @@
 use super::*;
 use school_authorization::ActorContext;
+use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -10,8 +11,12 @@ pub async fn list_annual_students(
 ) -> Result<Vec<AnnualResultStudent>, AppError> {
     crate::policy::aggregate::require_aggregate_read(actor)?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-        .execute(&mut *tx)
+    DbSession::new(&mut *tx)
+        .query(
+            "academic_results.services.annual_roster.list_annual_students",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
         .await?;
     let coverage = annual_revisions::annual_closure_coverage(&mut tx, year).await?;
     let ids: Vec<_> = coverage
