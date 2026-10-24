@@ -4201,6 +4201,184 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
 }
 
 #[tokio::test]
+async fn purge_finalize_checkout_timeout_is_durable_and_retryable() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
+
+    let (pool, actor, academic_year_id) =
+        school_campaign_fixture("certificate_purge_finalize_checkout", 3160).await;
+    let campaign = campaign_service::create_campaign(
+        &pool,
+        &actor,
+        campaign_create_payload(academic_year_id, None, "กิจกรรมรอลบหลังเชื่อมต่อใหม่"),
+    )
+    .await
+    .unwrap();
+    let template = template_service::create_template(
+        &pool,
+        &actor,
+        campaign.id,
+        CreateCertificateTemplateRequest {
+            name: "แบบที่ต้องเก็บเมื่อปิดงานไม่ได้".to_string(),
+            allowed_recipient_types: vec![RecipientType::External],
+        },
+    )
+    .await
+    .unwrap();
+    let impact = purge_service::impact(&pool, &actor, campaign.id)
+        .await
+        .unwrap();
+    assert_eq!(impact.counts.file_count, 0);
+    let request = StartCertificateCampaignPurgeRequest {
+        confirmation_name: impact.campaign_name,
+        expected_updated_at: impact.updated_at,
+        expected_impact: impact.counts,
+    };
+
+    let injected = Arc::new(AtomicUsize::new(0));
+    let preserved = Arc::new(Mutex::new(None));
+    let campaign_id = campaign.id;
+    let template_id = template.id;
+    let fault_options = pool
+        .options()
+        .clone()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(1))
+        .idle_timeout(None)
+        .max_lifetime(None)
+        .before_acquire({
+            let injected = Arc::clone(&injected);
+            let preserved = Arc::clone(&preserved);
+            move |connection, _| {
+                let injected = Arc::clone(&injected);
+                let preserved = Arc::clone(&preserved);
+                Box::pin(async move {
+                    if injected.load(Ordering::SeqCst) != 0 {
+                        return Ok(true);
+                    }
+                    let state: Option<(String, serde_json::Value, serde_json::Value)> =
+                        sqlx::query_as(
+                            "SELECT job.status, to_jsonb(campaign), to_jsonb(template)
+                             FROM certificate_campaign_purge_jobs job
+                             JOIN certificate_campaigns campaign ON campaign.id = job.campaign_id
+                             JOIN certificate_templates template ON template.campaign_id = campaign.id
+                             WHERE job.campaign_id = $1 AND template.id = $2",
+                        )
+                        .bind(campaign_id)
+                        .bind(template_id)
+                        .fetch_optional(connection)
+                        .await?;
+                    if let Some((phase, campaign, template)) = state {
+                        if phase == "finalizing"
+                            && injected
+                                .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+                                .is_ok()
+                        {
+                            *preserved.lock().expect("purge snapshot lock") =
+                                Some((campaign, template));
+                            // The real acquire deadline cancels this one checkout. The
+                            // following mark_failed checkout must recover normally.
+                            return std::future::pending::<Result<bool, sqlx::Error>>().await;
+                        }
+                    }
+                    Ok(true)
+                })
+            }
+        });
+    let connect_options = pool.connect_options();
+    pool.close().await;
+    // Cloned options retain the fixture's schema-selecting after_connect hook.
+    let pool = fault_options
+        .connect_with((*connect_options).clone())
+        .await
+        .unwrap();
+    let platform = school_file_platform::platform_service::FilePlatform::new(
+        Arc::new(PreviewStorage),
+        Arc::new(PreviewScanner),
+    );
+    let failed = purge_service::start(&pool, &actor, &platform, campaign.id, request.clone())
+        .await
+        .expect("finalizer checkout timeout must be captured as a durable failed job");
+    assert_eq!(injected.load(Ordering::SeqCst), 1);
+    assert_eq!(failed.phase, CertificateCampaignPurgePhase::Failed);
+    assert_eq!((failed.file_count, failed.deleted_file_count), (0, 0));
+    assert_eq!(
+        failed.last_error_code.as_deref(),
+        Some("certificate_purge_finalize_failed")
+    );
+    let preserved_after: (serde_json::Value, serde_json::Value) = sqlx::query_as(
+        "SELECT to_jsonb(campaign), to_jsonb(template)
+         FROM certificate_campaigns campaign
+         JOIN certificate_templates template ON template.campaign_id = campaign.id
+         WHERE campaign.id = $1 AND template.id = $2",
+    )
+    .bind(campaign.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(preserved_after.0["status"], "purging");
+    assert_eq!(
+        Some(preserved_after),
+        *preserved.lock().expect("purge snapshot lock")
+    );
+    let durable: (i64, String, Option<String>, i64) = sqlx::query_as(
+        "SELECT COUNT(*), MIN(status), MIN(last_error_code), MIN(file_count)
+         FROM certificate_campaign_purge_jobs WHERE campaign_id = $1",
+    )
+    .bind(campaign.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        durable,
+        (1, "failed".to_string(), failed.last_error_code.clone(), 0)
+    );
+    assert_eq!(
+        purge_service::status(&pool, &actor, campaign.id)
+            .await
+            .unwrap(),
+        failed
+    );
+    assert_eq!(
+        purge_service::start(&pool, &actor, &platform, campaign.id, request)
+            .await
+            .unwrap(),
+        failed
+    );
+
+    let completed = purge_service::retry(&pool, &actor, &platform, campaign.id)
+        .await
+        .expect("healthy checkout must allow retry to finalize the same durable purge");
+    assert_eq!(completed.phase, CertificateCampaignPurgePhase::Completed);
+    assert_eq!((completed.file_count, completed.deleted_file_count), (0, 0));
+    assert_eq!(completed.last_error_code, None);
+    assert_eq!(injected.load(Ordering::SeqCst), 1);
+    let remaining: (i64, i64, i64) = sqlx::query_as(
+        "SELECT
+            (SELECT COUNT(*) FROM certificate_campaigns WHERE id = $1),
+            (SELECT COUNT(*) FROM certificate_templates WHERE id = $2),
+            (SELECT COUNT(*) FROM certificate_campaign_purge_jobs WHERE campaign_id = $1)",
+    )
+    .bind(campaign.id)
+    .bind(template.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, (0, 0, 0));
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        1
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_purge_retry", 3150).await;
