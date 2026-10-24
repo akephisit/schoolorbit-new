@@ -223,6 +223,8 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         "calendar day note"
     );
     apply_migrations_through(&f.pool, 108).await.unwrap();
+    // Current saves use the ledger-only contract after central dispatch takes ownership.
+    apply_migrations_through(&f.pool, 120).await.unwrap();
     let detail = sessions::detail(&f.pool, &f.actor, saved_session.id)
         .await
         .unwrap();
