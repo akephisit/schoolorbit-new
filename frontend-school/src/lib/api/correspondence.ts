@@ -32,6 +32,7 @@ export type DocumentAnnotation = Schemas['DocumentAnnotation'];
 export type InkStroke = Schemas['InkStroke'];
 export type SignatureInput = Schemas['SignatureInput'];
 export type SignatureAsset = Schemas['SignatureAsset'];
+export type CreateSignatureAssetRequest = Schemas['CreateSignatureAssetRequest'];
 
 export type CorrespondenceView = Schemas['CorrespondenceListView'];
 export interface CorrespondenceFilters {
@@ -182,13 +183,11 @@ export async function listSignatureAssets(
 		'โหลดลายมือชื่อไม่สำเร็จ'
 	);
 }
-export async function createSignatureAsset(label: string, fileId: string): Promise<SignatureAsset> {
+export async function createSignatureAsset(
+	payload: CreateSignatureAssetRequest
+): Promise<SignatureAsset> {
 	return requireApiData(
-		await apiClient.post<SignatureAsset>('/api/correspondence/signatures', {
-			requestId: crypto.randomUUID(),
-			label,
-			fileId
-		}),
+		await apiClient.post<SignatureAsset>('/api/correspondence/signatures', payload),
 		'บันทึกลายมือชื่อไม่สำเร็จ'
 	);
 }

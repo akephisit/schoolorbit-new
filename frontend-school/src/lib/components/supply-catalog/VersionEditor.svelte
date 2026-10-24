@@ -28,12 +28,14 @@
 		item,
 		version = null,
 		append,
+		preservesDraftNavigation,
 		onsaved,
 		oncancel
 	}: {
 		item: SupplyItemDetail;
 		version?: SupplyVersion | null;
 		append: boolean;
+		preservesDraftNavigation?: (destination: URL) => boolean;
 		onsaved: (item: SupplyItemDetail) => void;
 		oncancel: () => void;
 	} = $props();
@@ -142,7 +144,7 @@
 	}
 </script>
 
-<PendingFileGuard dirty={!!localImage} pending={busy && !!localImage} />
+<PendingFileGuard {preservesDraftNavigation} dirty={!!localImage} pending={busy && !!localImage} />
 <form
 	class="w-full max-w-xl space-y-5"
 	novalidate

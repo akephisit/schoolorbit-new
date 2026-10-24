@@ -44,6 +44,7 @@
 		item = null,
 		proposal = null,
 		categories,
+		preservesDraftNavigation,
 		onsaved,
 		oncancel
 	}: {
@@ -51,6 +52,7 @@
 		item?: SupplyItem | null;
 		proposal?: SupplyProposal | null;
 		categories: SupplyCategory[];
+		preservesDraftNavigation?: (destination: URL) => boolean;
 		onsaved: (item: SupplyItem | SupplyProposal) => void;
 		oncancel: () => void;
 	} = $props();
@@ -292,6 +294,7 @@
 </script>
 
 <PendingFileGuard
+	{preservesDraftNavigation}
 	dirty={!!localImage || !!localSource}
 	pending={busy && (!!localImage || !!localSource)}
 />

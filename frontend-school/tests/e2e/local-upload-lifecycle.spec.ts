@@ -105,3 +105,62 @@ test('new correspondence previews a local PDF before a draft or upload exists', 
 	await preview.getByRole('button', { name: 'ปิดตัวอย่าง' }).click();
 	expect(api.uploads).toHaveLength(0);
 });
+
+test('signature library replays its exact creation receipt when the asset acknowledgement is lost', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { loseSignatureAssetAck: true });
+	await page.goto('/staff/correspondence/signatures');
+	await page.getByRole('button', { name: 'เพิ่มลายมือชื่อ', exact: true }).click();
+	const label = page.getByLabel('ชื่อลายมือชื่อ *', { exact: true });
+	await label.fill('ลายมือชื่อคำสั่งเดิม');
+	await page.getByLabel('ภาพลายมือชื่อส่วนตัว', { exact: true }).setInputFiles(image);
+	expect(api.uploads).toHaveLength(0);
+	await page.getByRole('button', { name: 'บันทึกลายมือชื่อ', exact: true }).click();
+	await expect(
+		page.getByRole('status').filter({ hasText: 'ยังไม่ได้รับผลการบันทึก' })
+	).toBeVisible();
+	await expect(label).toBeDisabled();
+	await expect(label).toHaveValue('ลายมือชื่อคำสั่งเดิม');
+	await expect(page.getByLabel('ภาพลายมือชื่อส่วนตัว', { exact: true })).toBeDisabled();
+	expect(api.uploads).toHaveLength(1);
+	expect(api.assetRecords).toHaveLength(1);
+	await page.getByRole('button', { name: 'ตรวจสอบการบันทึกลายมือชื่อเดิม', exact: true }).click();
+	await expect(page.getByTestId('signature-library')).toContainText('ลายมือชื่อคำสั่งเดิม');
+	expect(api.uploads).toHaveLength(1);
+	expect(api.assetWrites).toHaveLength(2);
+	expect(api.assetWrites[1]).toEqual(api.assetWrites[0]);
+	expect(api.assetWrites[0].requestId).toMatch(/^[0-9a-f-]{36}$/);
+	expect(api.assetRecords).toHaveLength(1);
+});
+
+test('signing replays a committed asset with a lost acknowledgement before continuing the action', async ({
+	page
+}) => {
+	const api = await mockCorrespondence(page, { loseSignatureAssetAck: true });
+	await page.goto(detailPath);
+	await page.getByRole('button', { name: 'ลงนาม', exact: true }).click();
+	await page.getByRole('button', { name: 'เลือกลายมือชื่อที่บันทึก' }).click();
+	const selection = page.getByLabel('เพิ่มภาพลายมือชื่อ', { exact: true });
+	await selection.setInputFiles(image);
+	await expect(page.getByTestId('signature-placement').locator('img')).toHaveAttribute(
+		'src',
+		/^blob:/
+	);
+	await page.getByRole('checkbox', { name: /ยืนยันใช้ลายมือชื่อนี้/ }).check();
+	await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
+	await expect(
+		page.getByRole('status').filter({ hasText: 'ยังไม่ได้รับผลการสร้างลายมือชื่อ' })
+	).toBeVisible();
+	await expect(selection).toBeDisabled();
+	expect(api.uploads).toHaveLength(1);
+	expect(api.assetRecords).toHaveLength(1);
+	expect(api.writes.filter((write) => write.path.endsWith('/actions'))).toHaveLength(0);
+	await page.getByRole('button', { name: 'ยืนยันลงนาม', exact: true }).click();
+	await expect(page.getByText('หลักฐานลงนาม', { exact: true })).toBeVisible();
+	expect(api.uploads).toHaveLength(1);
+	expect(api.assetWrites).toHaveLength(2);
+	expect(api.assetWrites[1]).toEqual(api.assetWrites[0]);
+	expect(api.assetRecords).toHaveLength(1);
+	expect(api.detail().signatures.at(-1)?.signature.assetId).toBe(api.assetRecords[0].id);
+});

@@ -2,7 +2,15 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
-	let { dirty, pending = false }: { dirty: boolean; pending?: boolean } = $props();
+	let {
+		dirty,
+		pending = false,
+		preservesDraftNavigation
+	}: {
+		dirty: boolean;
+		pending?: boolean;
+		preservesDraftNavigation?: (destination: URL) => boolean;
+	} = $props();
 	let destination = $state<string | null>(null);
 	let open = $state(false);
 	let leaving = false;
@@ -23,9 +31,10 @@
 			navigationError = cause instanceof Error ? cause.message : 'ออกจากหน้าไม่สำเร็จ ลองอีกครั้ง';
 		}
 	}
-	beforeNavigate(({ cancel, to, willUnload, shallow }) => {
-		if (to && to.url.pathname === location.pathname) return;
-		if (shallow || leaving || (!dirty && !pending) || willUnload) return;
+	beforeNavigate(({ cancel, to, willUnload }) => {
+		if (to && to.url.pathname === location.pathname && to.url.search === location.search) return;
+		if (to && preservesDraftNavigation?.(to.url)) return;
+		if (leaving || (!dirty && !pending) || willUnload) return;
 		cancel();
 		destination = to?.url.href ?? null;
 		open = true;

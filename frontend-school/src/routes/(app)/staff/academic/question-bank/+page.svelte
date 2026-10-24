@@ -189,6 +189,8 @@
 	let draggedExportQuestionId = $state<string | null>(null);
 	const selectedQuestionIds = new SvelteSet<string>();
 	const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>();
+	let disposed = false,
+		saveEpoch = 0;
 	const wordExportRequest = new LatestRequest();
 	const optionsRequest = new LatestRequest();
 	const questionsRequest = new LatestRequest();
@@ -212,6 +214,8 @@
 	);
 
 	onDestroy(() => {
+		disposed = true;
+		saveEpoch++;
 		optionsRequest.abort();
 		questionsRequest.abort();
 		detailRequest.abort();
@@ -558,6 +562,7 @@
 	}
 
 	async function loadQuestions(page = 1) {
+		if (disposed) return;
 		const query = questionQuery(page);
 		const nextQueryKey = JSON.stringify(query);
 		const { revision, signal } = questionsRequest.begin();
@@ -572,16 +577,16 @@
 		}
 		try {
 			const pageResponse = await listQuestionBankQuestions(query, { signal });
-			if (questionsRequest.isCurrent(revision)) {
+			if (!disposed && questionsRequest.isCurrent(revision)) {
 				applyPage(pageResponse);
 				questionsLoaded = true;
 				appliedQueryKey = nextQueryKey;
 			}
 		} catch (error) {
-			if (!isAbortError(error) && questionsRequest.isCurrent(revision))
+			if (!disposed && !isAbortError(error) && questionsRequest.isCurrent(revision))
 				questionsError = error instanceof Error ? error.message : 'โหลดคลังข้อสอบไม่สำเร็จ';
 		} finally {
-			if (questionsRequest.isCurrent(revision)) loadingQuestions = false;
+			if (!disposed && questionsRequest.isCurrent(revision)) loadingQuestions = false;
 		}
 	}
 
@@ -834,10 +839,13 @@
 	}
 
 	async function saveQuestion() {
-		if (saving) return;
+		if (saving || disposed) return;
+		const epoch = ++saveEpoch;
+		const alive = () => !disposed && epoch === saveEpoch;
 		const source = draft,
 			subjectId = draft.subjectId;
-		const current = () => editorOpen && source === draft && subjectId === draft.subjectId;
+		const current = () =>
+			alive() && editorOpen && source === draft && subjectId === draft.subjectId;
 		const validationError = validateDraft();
 		if (validationError) {
 			toast.error(validationError);
@@ -885,13 +893,16 @@
 			cleanupDraftObjectUrls(draft);
 			editorOpen = false;
 			detail = null;
-			await loadQuestions(draft.id ? currentPage : 1);
+			if (!alive()) return;
+			await loadQuestions(source.id ? currentPage : 1);
+			if (!alive()) return;
 			toast.success('บันทึกข้อสอบแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			if (uploadedIds.length) toast.warning('เก็บไฟล์ที่อัปโหลดแล้วไว้สำหรับลองบันทึกอีกครั้ง');
 			toast.error(error instanceof Error ? error.message : 'บันทึกข้อสอบไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (alive()) saving = false;
 		}
 	}
 

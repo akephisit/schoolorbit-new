@@ -1026,31 +1026,81 @@ for (const form of ['proposal', 'version'] as const) {
 	});
 }
 
-test('same-owner proposal navigation retains the open upload draft and never deletes its stages', async ({
+test('same-owner catalog query navigation preserves a prepared editor without upload or deletion', async ({
 	page
 }) => {
-	const api = await catalog(page, [read, propose]);
-	await page.goto('/staff/supply-catalog/proposals');
-	await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
+	const api = await catalog(page, [read, manage]);
+	await page.goto('/staff/supply-catalog?page=1');
+	await page.getByRole('button', { name: 'เพิ่มพัสดุ', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ข้อเสนอที่ยังไม่บันทึก');
+	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ร่างพัสดุที่ยังไม่บันทึก');
 	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
 	await expect(dialog.getByRole('status')).toHaveText('');
-	await navigateSameContext(page, '/staff/supply-catalog/proposals?page=1');
+	await navigateSameContext(page, '/staff/supply-catalog?page=2');
 	await expect
-		.poll(
-			() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/proposals?')).length
-		)
+		.poll(() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/items?')).length)
 		.toBe(2);
 	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
-		'ข้อเสนอที่ยังไม่บันทึก'
+		'ร่างพัสดุที่ยังไม่บันทึก'
 	);
 	await expect(
 		dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
 	).toBeVisible();
+	await expect(page.getByRole('alertdialog')).toHaveCount(0);
+	expect(api.uploads).toEqual([]);
 	expect(api.writes).toEqual([]);
 	expect(api.deleted).toEqual([]);
 });
+
+for (const navigation of ['back', 'query'] as const)
+	test(`dirty proposal ${navigation} warns before destroying the prepared file`, async ({
+		page
+	}) => {
+		const api = await catalog(page, [read, propose]);
+		await page.goto('/staff/supply-catalog/proposals?page=1');
+		await navigateSameContext(page, '/staff/supply-catalog/proposals?page=2');
+		await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ร่างข้อเสนอที่ต้องเก็บไว้');
+		await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
+		await expect(
+			dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toBeVisible();
+		const destination =
+			navigation === 'back'
+				? '/staff/supply-catalog/proposals?page=1'
+				: '/staff/supply-catalog/proposals?page=3&review=false';
+		async function leave() {
+			if (navigation === 'back') await page.evaluate(() => history.back());
+			else
+				await page.evaluate((href) => {
+					const link = document.createElement('a');
+					link.href = href;
+					document.body.append(link);
+					link.click();
+					link.remove();
+				}, destination);
+		}
+		await leave();
+		const warning = page.getByRole('alertdialog');
+		await expect(warning).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+		await warning.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
+		await expect(page).toHaveURL(/proposals\?page=2$/);
+		await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
+			'ร่างข้อเสนอที่ต้องเก็บไว้'
+		);
+		await expect(
+			dialog.getByRole('region', { name: `ตัวอย่าง ${png.name}`, exact: true })
+		).toBeVisible();
+		expect(api.uploads).toEqual([]);
+		await leave();
+		await warning.getByRole('button', { name: 'ออกโดยไม่บันทึก', exact: true }).click();
+		await expect(page).toHaveURL(new RegExp(destination.replace(/[?]/g, '\\?')));
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		expect(api.uploads).toEqual([]);
+		expect(api.deleted).toEqual([]);
+		expect(api.writes).toEqual([]);
+	});
 
 test.describe('touch catalog controls', () => {
 	test.use({ viewport: { width: 375, height: 900 }, hasTouch: true, isMobile: true });

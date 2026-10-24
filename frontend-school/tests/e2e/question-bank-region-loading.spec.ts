@@ -362,3 +362,83 @@ test('deleting rereads only the affected paginated list', async ({ page }) => {
 	await expect.poll(() => listReads).toBe(2);
 	expect(optionsReads).toBe(1);
 });
+
+for (const status of [200, 503])
+	test(`accepted question update with late ${status} after leaving cannot update the destroyed route`, async ({
+		page
+	}) => {
+		let listReads = 0;
+		await mockApis(page, {
+			onListRead: () => {
+				listReads++;
+			}
+		});
+		const entered = deferred(),
+			release = deferred();
+		let accepted: Record<string, unknown> | undefined;
+		let payload: Record<string, unknown> | undefined;
+		let saves = 0,
+			deletes = 0;
+		page.on('request', (request) => {
+			if (request.method() === 'DELETE') deletes++;
+		});
+		await page.route(`**/api/academic/question-bank/questions/${questionId}`, async (route) => {
+			if (route.request().method() !== 'PUT') return route.fallback();
+			saves++;
+			payload = route.request().postDataJSON();
+			entered.resolve();
+			await release.promise;
+			// The server accepts this mutation even if the former UI owner has gone.
+			accepted = { ...question(), ...payload, choices: [], files: [] };
+			if (status === 503)
+				await route.fulfill({ status, json: { success: false, error: 'late question failure' } });
+			else await fulfill(route, accepted);
+		});
+		await page.goto('/staff/tools/qr-code');
+		await expect(page.getByRole('heading', { name: 'สร้าง QR Code', exact: true })).toBeVisible();
+		await page.evaluate((href) => {
+			const link = document.createElement('a');
+			link.href = href;
+			document.body.append(link);
+			link.click();
+			link.remove();
+		}, questionBankUrl);
+		await expect(page.getByText('โจทย์เริ่มต้น')).toBeVisible();
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(
+			dialog.getByRole('region', { name: /^โจทย์/ }).locator('[contenteditable="true"]')
+		).toBeVisible();
+		await dialog
+			.getByRole('region', { name: /^โจทย์/ })
+			.locator('[contenteditable="true"]')
+			.fill('คำสั่งที่เซิร์ฟเวอร์รับไว้');
+		await dialog.getByRole('button', { name: 'บันทึกข้อสอบ', exact: true }).click();
+		await entered.promise;
+		await page.evaluate(() => history.back());
+		await expect(page).toHaveURL(/\/staff\/tools\/qr-code$/);
+		await expect(page.getByRole('heading', { name: 'สร้าง QR Code', exact: true })).toBeVisible();
+		const readsAfterLeaving = listReads;
+		const response = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'PUT' &&
+				new URL(response.url()).pathname.endsWith(questionId)
+		);
+		release.resolve();
+		await (await response).finished();
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		expect(accepted?.stemContent).toEqual(payload?.stemContent);
+		expect(JSON.stringify(accepted?.stemContent)).toContain('คำสั่งที่เซิร์ฟเวอร์รับไว้');
+		expect(accepted).toBeDefined();
+		expect(listReads).toBe(readsAfterLeaving);
+		expect(saves).toBe(1);
+		expect(deletes).toBe(0);
+		await expect(page.getByText('บันทึกข้อสอบแล้ว', { exact: true })).toHaveCount(0);
+		await expect(page.getByText('late question failure', { exact: true })).toHaveCount(0);
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+	});
