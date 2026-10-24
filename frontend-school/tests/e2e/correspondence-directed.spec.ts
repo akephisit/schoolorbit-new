@@ -74,7 +74,25 @@ test('detail directed send replays an accepted lost response with the exact firs
 	await expect(form).toHaveCount(0);
 	expect(api.sends).toHaveLength(2);
 	expect(api.sends[1]).toEqual(first);
-	expect(api.detail()).toEqual(accepted);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	const receipt = structuredClone(api.detail().myReadReceipt);
+	expect(receipt).toEqual({
+		correspondenceId,
+		userId: actor,
+		documentRevision: accepted.document.revision,
+		firstReadAt: expect.any(String)
+	});
+	expect(Number.isFinite(Date.parse(receipt!.firstReadAt))).toBe(true);
+	if (accepted.myReadReceipt) expect(receipt).toEqual(accepted.myReadReceipt);
+	const acknowledged = { ...accepted, myReadReceipt: receipt };
+	expect(api.detail()).toEqual(acknowledged);
+
+	const readCount = api.readRequests.length;
+	await page.reload();
+	await expect.poll(() => api.readRequests.length).toBeGreaterThan(readCount);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	expect(api.detail()).toEqual(acknowledged);
+	expect(api.sends).toEqual([first, first]);
 });
 
 for (const width of [390, 1440])

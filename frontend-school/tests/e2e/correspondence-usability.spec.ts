@@ -6,6 +6,7 @@ import {
 	detailPath
 } from './fixtures/correspondence';
 import { mockDirectedCorrespondence } from './fixtures/correspondence-directed';
+import { actor } from './fixtures/staff-home-route-data';
 import type {
 	CreateCorrespondenceRequest,
 	ReviseCorrespondenceRequest,
@@ -739,7 +740,27 @@ test('detail template send replays an accepted lost response with its exact froz
 	const sends = api.writes.filter((write) => write.path.endsWith('/send'));
 	expect(sends).toHaveLength(2);
 	expect(sends[1].payload).toEqual(first);
-	expect(api.detail()).toEqual(accepted);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	const receipt = structuredClone(api.detail().myReadReceipt);
+	expect(receipt).toEqual({
+		correspondenceId,
+		userId: actor,
+		documentRevision: accepted.document.revision,
+		firstReadAt: expect.any(String)
+	});
+	expect(Number.isFinite(Date.parse(receipt!.firstReadAt))).toBe(true);
+	if (accepted.myReadReceipt) expect(receipt).toEqual(accepted.myReadReceipt);
+	const acknowledged = { ...accepted, myReadReceipt: receipt };
+	expect(api.detail()).toEqual(acknowledged);
+
+	const readCount = api.readRequests.length;
+	await page.reload();
+	await expect.poll(() => api.readRequests.length).toBeGreaterThan(readCount);
+	await expect(page.getByTestId('correspondence-read-receipt')).toBeVisible();
+	expect(api.detail()).toEqual(acknowledged);
+	expect(
+		api.writes.filter((write) => write.path.endsWith('/send')).map((write) => write.payload)
+	).toEqual([first, first]);
 });
 
 test('in-flight detail send prevents leaving until the server responds', async ({ page }) => {
