@@ -1,0 +1,17 @@
+# Shared tenant database runtime
+
+Approved scope: one School process owns background database admission in `school-tenancy`, composed by `PoolManager`. Calendar, Auth retention, Notification dispatch, Attendance maintenance and File Platform reconciliation share the existing default two turns, clamped to feasible resident pool capacity. This does not change pool sizing, admission timeouts, schedules, business retention or notification durability.
+
+`PoolManager::background_turns()` returns the process owner's executor. A typed job kind supplies fixed safe observation labels. Existing `run` admits a complete database-only turn. A same-key `begin` guard spans phased work; its `run` admits individual database phases and releases the global permit before external I/O. Domain providers retain all SQL, transactions, source guards, progress and fencing. No scheduler stores idle pools, unbounded pending futures or overlapping cron sweeps.
+
+Calendar hydrates events, resolves recipients and accepts each direct notification on its already-held advisory-lock connection. Per-recipient transactions and partial-success behavior remain unchanged. The lock is refetched after acquisition and released only after fanout; cancellation or an unconfirmed unlock closes the session.
+
+Notification dispatch claims at most 32 jobs, prepares under admission, releases pool leases before bounded external delivery, and reacquires for invalid-endpoint cleanup and token-fenced acknowledgment. Four item futures retain a five-second item deadline. Push subscriptions are fetched once and attempted concurrently with a fixed endpoint bound and timeout. Failed work remains durable for retry. Source validity, exact ledger identity, recipient snapshots, physical deletion and missing-inbox suppression remain enforced.
+
+Cleaner uses a bounded completion-driven tenant queue, one reconciliation batch per continuation, same-key exclusion and a whole-sweep guard. Its existing 120-second budget is checked between completed batches. File Platform remains the authority for leased state transitions and fences stale completions.
+
+Observations expose fixed operation/work labels and admission, checkout, connection hold and logical lease durations where the typed boundary owns them. Database URLs, SQL parameters, endpoint credentials and personal data are excluded.
+
+Verification covers all-kind admission/cancellation, phase release during slow external I/O, one-connection Calendar fanout, bounded slow endpoint delivery, durable notification/source behavior and File Platform stale-lease transitions using disposable fixtures. Draft PR creation and checkpoint pushes are authorized. Merge, deployment, production and load work remain prohibited.
+
+Attendance uses the `AttendanceMaintenance` kind. Evidence authorization holds one connection through its guard and operation. Preview uses a typed context once; history and reports reuse one read-only snapshot and settings load. Finalization uses its already-held guard, and runtime maintenance batches days. File Platform worker effects use typed lease owner, attempt and expiry fences for every database effect; synchronous upload/delete paths preserve their existing behavior. Prepared external-I/O values own their data and retain neither a pool nor a transaction. Finish phases resolve the immutable tenant UUID before applying acknowledgment or endpoint deletion, rejecting a remapped tenant.
