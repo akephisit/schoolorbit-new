@@ -119,6 +119,8 @@ fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.s
  assert.equal(result.status,0,result.stderr);
  const commands=readFileSync(log,'utf8').trim().split('\n').map(JSON.parse);
  assert.ok(commands.every(command=>command.owned),'every invocation reuses the explicitly owned disposable server');
+ const namespaceCli=commands.filter(({args})=>args[0]==='--integration'&&args[1]==='file_storage_namespace');
+ assert.deepEqual(namespaceCli.map(({args})=>args),[['--integration','file_storage_namespace','--','--test-threads=1']],'the actual namespace-attestation CLI acceptance target runs once on the owned PostgreSQL fixture');
  const authHttp=commands.find(({args})=>args[0]==='integration_tests::auth::session_http_tests');
  assert.equal(authHttp?.validEncryptionKey,true,'session HTTP receives a fresh 64-hex synthetic key rather than the ambient key');
  const careCalls=commands.filter(({args})=>args[0]==='--package'&&args[1]==='school-student-care');

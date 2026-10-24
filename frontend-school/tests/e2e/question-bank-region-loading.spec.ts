@@ -82,98 +82,108 @@ async function mockApis(
 	let optionsReads = 0;
 	let listReads = 0;
 	let deleted = false;
-	await page.route('**/api/**', async (route) => {
-		const url = new URL(route.request().url());
-		if (url.pathname === '/api/auth/me') {
-			await fulfill(route, {
-				id: userId,
-				username: 'question-bank-admin',
-				firstName: 'ทดสอบ',
-				displayName: 'ทดสอบ ระบบ',
-				lastName: 'ระบบ',
-				userType: 'staff',
-				status: 'ACTIVE',
-				permissions: ['*']
-			});
-			return;
-		}
-		if (url.pathname === '/api/academic/question-bank/options') {
-			optionsReads += 1;
-			options.onOptionsRead?.();
-			await options.optionsWait;
-			if (options.failOptionsOnce && optionsReads === 1) {
-				await route.fulfill({
-					status: 500,
-					contentType: 'application/json',
-					body: '{"success":false,"error":"options failed"}'
+	await page.route(
+		(url) => url.pathname.startsWith('/api/'),
+		async (route) => {
+			const url = new URL(route.request().url());
+			if (url.pathname === '/api/auth/me') {
+				await fulfill(route, {
+					id: userId,
+					username: 'question-bank-admin',
+					firstName: 'ทดสอบ',
+					displayName: 'ทดสอบ ระบบ',
+					lastName: 'ระบบ',
+					userType: 'staff',
+					status: 'ACTIVE',
+					permissions: ['*']
 				});
 				return;
 			}
-			await fulfill(route, {
-				subjects: [{ id: subjectId, code: 'ค21101', nameTh: 'คณิตศาสตร์', canCreate: true }]
-			});
-			return;
-		}
-		if (url.pathname === '/api/academic/question-bank/questions') {
-			listReads += 1;
-			const search = url.searchParams.get('search') ?? '';
-			options.onListRead?.(search);
-			await (options.searchWait?.[search] ?? options.listWait);
-			if (options.failListOnce && listReads === 1) {
-				await route.fulfill({
-					status: 500,
-					contentType: 'application/json',
-					body: '{"success":false,"error":"list failed"}'
+			if (url.pathname === '/api/academic/question-bank/options') {
+				optionsReads += 1;
+				options.onOptionsRead?.();
+				await options.optionsWait;
+				if (options.failOptionsOnce && optionsReads === 1) {
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"options failed"}'
+					});
+					return;
+				}
+				await fulfill(route, {
+					subjects: [{ id: subjectId, code: 'ค21101', nameTh: 'คณิตศาสตร์', canCreate: true }]
 				});
 				return;
 			}
-			try {
-				await fulfill(
-					route,
-					deleted
-						? {
-								items: [],
-								page: 1,
-								pageSize: 20,
-								total: 0,
-								totalPages: 1,
-								summary: { total: 0, choice: 0, written: 0, ready: 0 }
-							}
-						: questionPage(search ? `โจทย์ ${search}` : undefined)
-				);
-			} catch {
-				/* Superseded request may already be aborted. */
-			}
-			return;
-		}
-		if (url.pathname === `/api/academic/question-bank/questions/${questionId}`) {
-			if (route.request().method() === 'DELETE') {
-				deleted = true;
-				await fulfill(route, {});
+			if (url.pathname === '/api/academic/question-bank/questions') {
+				listReads += 1;
+				const search = url.searchParams.get('search') ?? '';
+				options.onListRead?.(search);
+				await (options.searchWait?.[search] ?? options.listWait);
+				if (options.failListOnce && listReads === 1) {
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"list failed"}'
+					});
+					return;
+				}
+				try {
+					await fulfill(
+						route,
+						deleted
+							? {
+									items: [],
+									page: 1,
+									pageSize: 20,
+									total: 0,
+									totalPages: 1,
+									summary: { total: 0, choice: 0, written: 0, ready: 0 }
+								}
+							: questionPage(search ? `โจทย์ ${search}` : undefined)
+					);
+				} catch {
+					/* Superseded request may already be aborted. */
+				}
 				return;
 			}
-			options.onDetailRead?.();
-			await fulfill(route, { ...question(), choices: [], files: [] });
-			return;
+			if (url.pathname === `/api/academic/question-bank/questions/${questionId}`) {
+				if (route.request().method() === 'DELETE') {
+					deleted = true;
+					await fulfill(route, {});
+					return;
+				}
+				options.onDetailRead?.();
+				await fulfill(route, { ...question(), choices: [], files: [] });
+				return;
+			}
+			if (url.pathname === '/api/menu/user') {
+				await fulfill(route, { groups: [] });
+				return;
+			}
+			if (url.pathname === '/api/me/work-items/counts') {
+				await fulfill(route, {
+					open: 0,
+					dueSoon: 0,
+					overdue: 0,
+					submitted: 0,
+					closed: 0,
+					total: 0
+				});
+				return;
+			}
+			if (url.pathname === '/api/notifications') {
+				await fulfill(route, { items: [], unread_count: 0 });
+				return;
+			}
+			if (url.pathname === '/api/notifications/stream') {
+				await route.fulfill({ contentType: 'text/event-stream', body: '' });
+				return;
+			}
+			await fulfill(route, {});
 		}
-		if (url.pathname === '/api/menu/user') {
-			await fulfill(route, { groups: [] });
-			return;
-		}
-		if (url.pathname === '/api/me/work-items/counts') {
-			await fulfill(route, { open: 0, dueSoon: 0, overdue: 0, submitted: 0, closed: 0, total: 0 });
-			return;
-		}
-		if (url.pathname === '/api/notifications') {
-			await fulfill(route, { items: [], unread_count: 0 });
-			return;
-		}
-		if (url.pathname === '/api/notifications/stream') {
-			await route.fulfill({ contentType: 'text/event-stream', body: '' });
-			return;
-		}
-		await fulfill(route, {});
-	});
+	);
 }
 
 test('list renders while subject options are pending; detail remains action-only', async ({

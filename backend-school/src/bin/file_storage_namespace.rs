@@ -180,6 +180,7 @@ async fn check_inventory(command: &Command) -> Result<bool, BindingError> {
                 let result = async {
                     let identity = {
                         let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool.as_ref(), "storage_binding.database_identity").await.map_err(|_| BindingError::Database)?;
+                        school_migrations::verify_tenant_schema(&mut *connection).await.map_err(|_| BindingError::SchemaMissing)?;
                         school_database::DbSession::new(&mut connection).query_as::<(String, Option<String>)>("storage_binding.database_identity", "SELECT r.rolname,shobj_description(r.oid,'pg_authid') FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba WHERE d.datname=current_database()")
                             .fetch_one().await.map_err(|_| BindingError::Database)?
                     };

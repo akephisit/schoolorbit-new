@@ -13,28 +13,35 @@
 	} = $props();
 	let destination = $state<string | null>(null);
 	let open = $state(false);
-	let leaving = false;
+	let permittedDestination: string | null = null;
 	$effect(() => {
 		if (!dirty && !pending) open = false;
 	});
 	let navigationError = $state('');
 	async function leave() {
 		if (!destination) return;
-		leaving = true;
+		const target = destination;
+		permittedDestination = target;
 		open = false;
 		navigationError = '';
 		try {
-			await goto(destination);
+			await goto(target);
+			if (destination === target) destination = null;
 		} catch (cause) {
-			leaving = false;
 			open = true;
 			navigationError = cause instanceof Error ? cause.message : 'ออกจากหน้าไม่สำเร็จ ลองอีกครั้ง';
+		} finally {
+			permittedDestination = null;
 		}
 	}
 	beforeNavigate(({ cancel, to, willUnload }) => {
+		if (to?.url.href === permittedDestination) {
+			permittedDestination = null;
+			return;
+		}
 		if (to && to.url.pathname === location.pathname && to.url.search === location.search) return;
 		if (to && preservesDraftNavigation?.(to.url)) return;
-		if (leaving || (!dirty && !pending) || willUnload) return;
+		if ((!dirty && !pending) || willUnload) return;
 		cancel();
 		destination = to?.url.href ?? null;
 		open = true;

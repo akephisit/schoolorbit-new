@@ -31,27 +31,33 @@ async function mockFiles(page: Page, kind: 'pdf' | 'image' = 'pdf', failUpload =
 		purpose: 'teaching_license'
 	};
 	const uploads: string[] = [];
-	await page.route('**/api/files**', async (route) => {
-		const request = route.request(),
-			url = new URL(request.url());
-		if (request.method() === 'POST' && url.pathname === '/api/files') {
-			uploads.push(request.postData() ?? '');
-			if (failUpload)
-				return route.fulfill({ status: 503, json: { success: false, error: 'อัปโหลดไม่สำเร็จ' } });
-			expect(request.postDataBuffer()?.toString()).toContain('teaching_license');
-			expect(request.postDataBuffer()?.toString()).toContain(firstStaff);
-			return route.fulfill({ json: { success: true, data: file } });
-		}
-		expect(url.searchParams.get('resource_id')).toBe(firstStaff);
-		return route.fulfill({
-			json: {
-				success: true,
-				data: url.pathname.endsWith('/download')
-					? { url: `${url.origin}/synthetic-licence-file`, expiresAt: '2099-01-01T00:00:00Z' }
-					: file
+	await page.route(
+		(url) => url.pathname === '/api/files' || url.pathname.startsWith('/api/files/'),
+		async (route) => {
+			const request = route.request(),
+				url = new URL(request.url());
+			if (request.method() === 'POST' && url.pathname === '/api/files') {
+				uploads.push(request.postData() ?? '');
+				if (failUpload)
+					return route.fulfill({
+						status: 503,
+						json: { success: false, error: 'อัปโหลดไม่สำเร็จ' }
+					});
+				expect(request.postDataBuffer()?.toString()).toContain('teaching_license');
+				expect(request.postDataBuffer()?.toString()).toContain(firstStaff);
+				return route.fulfill({ json: { success: true, data: file } });
 			}
-		});
-	});
+			expect(url.searchParams.get('resource_id')).toBe(firstStaff);
+			return route.fulfill({
+				json: {
+					success: true,
+					data: url.pathname.endsWith('/download')
+						? { url: `${url.origin}/synthetic-licence-file`, expiresAt: '2099-01-01T00:00:00Z' }
+						: file
+				}
+			});
+		}
+	);
 	await page.route('**/synthetic-licence-file', (route) =>
 		route.fulfill({ body: bytes, contentType: mime })
 	);

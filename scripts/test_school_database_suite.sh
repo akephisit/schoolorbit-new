@@ -59,6 +59,7 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 
 # Actual bound-session, managed admission and policy regressions require the owned server.
 ./scripts/test_backend_school.sh integration_tests::database -- --test-threads=4
+./scripts/test_backend_school.sh --integration file_storage_namespace -- --test-threads=1
 ./scripts/test_backend_school.sh integration_tests::notification_dispatch -- --test-threads=4
 ./scripts/test_backend_school.sh services::cleaner::phase_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::policies -- --test-threads=4
