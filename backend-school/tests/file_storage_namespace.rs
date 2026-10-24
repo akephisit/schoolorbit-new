@@ -1216,3 +1216,74 @@ async fn interrupted_binding_keeps_durable_exact_manifest_and_requires_explicit_
     );
     fixture.finish().await;
 }
+
+#[tokio::test]
+async fn explicit_attestation_covers_purged_locators_beyond_one_manifest_chunk() {
+    let fixture = Fixture::new().await;
+    // Independent historical locators deliberately have no surviving business/operation rows.
+    let ids:Vec<Uuid>=sqlx::query_scalar("INSERT INTO file_storage_cleanup_watches(file_id,target_kind,target_id,provider_code,storage_class,object_key,content_type,revoked_at) SELECT uuidv7(),'version',uuidv7(),'r2','private','tenants/'||$1||'/certificate/template-image/purged-'||n::text||'.png','image/png',statement_timestamp() FROM generate_series(1,1001) AS n RETURNING id")
+        .bind(fixture.tenants[0].id.to_string()).fetch_all(&fixture.tenants[0].pool).await.unwrap();
+    assert_eq!(ids.len(), 1001);
+    let metadata:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM files)+(SELECT count(*) FROM file_versions)+(SELECT count(*) FROM file_operations)").fetch_one(&fixture.tenants[0].pool).await.unwrap();
+    assert_eq!(metadata, 0);
+    let admin = OperationalAdmin::start(&fixture).await;
+    let mut environment = admin.environment();
+    let context = json_success(
+        &fixture
+            .main_command(&["storage-namespace", "context-admin"], &environment)
+            .await,
+    );
+    environment.insert("FILE_STORAGE_NAMESPACE_ATTESTATION_JSON".into(),json!({"schema_version":1,"evidence_digest":"f".repeat(64),"expected_inventory_sha256":context["inventory_sha256"],"expected_public_namespace_sha256":context["public_namespace_sha256"],"expected_private_namespace_sha256":context["private_namespace_sha256"],"scope":"all_unbound"}).to_string());
+    environment.insert(
+        "FILE_STORAGE_NAMESPACE_MANIFEST_DIRECTORY".into(),
+        fixture.directory.to_str().unwrap().into(),
+    );
+    let result = json_success(
+        &fixture
+            .main_command(&["storage-namespace", "attest-admin"], &environment)
+            .await,
+    );
+    assert_eq!(result["applied"], 1001);
+    assert_eq!(result["ready"], true);
+    let state:(i64,i64,i64)=sqlx::query_as("SELECT count(*),count(*) FILTER(WHERE namespace_fingerprint IS NOT NULL AND binding_evidence_digest=repeat('f',64) AND revoked_at IS NOT NULL),count(*) FILTER(WHERE namespace_fingerprint IS NULL) FROM file_storage_cleanup_watches").fetch_one(&fixture.tenants[0].pool).await.unwrap();
+    assert_eq!(state, (1001, 1001, 0));
+    let paths = std::fs::read_dir(&fixture.directory)
+        .unwrap()
+        .map(|path| path.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("namespace-attestation-")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(paths.len(), 1);
+    let plan: Value = serde_json::from_slice(&std::fs::read(&paths[0]).unwrap()).unwrap();
+    let chunks = plan["tenants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|tenant| tenant["manifests"].as_array().unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        chunks.len() > 1,
+        "the public binding API's1000-row limit must not truncate the operational inventory"
+    );
+    assert!(chunks
+        .iter()
+        .all(|chunk| chunk["watches"].as_array().unwrap().len() <= 1000));
+    let selected = chunks
+        .iter()
+        .flat_map(|chunk| chunk["watches"].as_array().unwrap())
+        .map(|watch| watch["watch_id"].as_str().unwrap().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(selected, ids.iter().map(Uuid::to_string).collect());
+    let checked = json_success(
+        &fixture
+            .main_command(&["storage-namespace", "check-admin"], &environment)
+            .await,
+    );
+    assert_eq!(checked["watches"], 1001);
+    assert_eq!(checked["unresolved"], 0);
+    fixture.finish().await;
+}

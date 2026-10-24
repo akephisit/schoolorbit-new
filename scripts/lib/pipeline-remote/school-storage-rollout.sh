@@ -10,6 +10,7 @@ root="$stack/deployment"
 image="ghcr.io/akephisit/schoolorbit-backend-school@$BACKEND_IMAGE_DIGEST"
 journal="$root/releases/$RELEASE_SHA/storage-namespace"
 backend=schoolorbit-backend-school
+oneshot=schoolorbit-school-rollout
 # shellcheck source=scripts/lib/pipeline-remote/runtime-env.sh
 . "$root/scripts/lib/pipeline-remote/runtime-env.sh"
 # shellcheck source=scripts/lib/pipeline-remote/storage-namespace-input.sh
@@ -75,10 +76,36 @@ valid_routing() {
         type == "object" and .schema_version == 1 and
         (.public_namespace_sha256 | digest) and (.private_namespace_sha256 | digest)' "$1" >/dev/null 2>&1
 }
+report_interlock() {
+    # Existing name ownership is enough to refuse; untrusted labels are diagnostics only.
+    if podman inspect --format '{{json .Config.Labels}}' "$oneshot" >"$scratch/interlock-labels" 2>"$scratch/interlock-error"; then
+        jq -ces --arg name "$oneshot" '
+            if length == 1 and (.[0] | type == "object") then .[0] else {} end |
+            {name:$name,
+             release:(.["org.schoolorbit.rollout.release"] | if type == "string" and test("^[0-9a-f]{40}$") then . else "unknown" end),
+             operation:(.["org.schoolorbit.rollout.operation"] | if IN("migrate-tenants","context-admin","routing-fingerprints","check-admin","attest-admin") then . else "unknown" end)}
+        ' "$scratch/interlock-labels" >&2 2>/dev/null && return 0
+    fi
+    printf '{"name":"%s","release":"unknown","operation":"unknown"}\n' "$oneshot" >&2
+}
 run_image() {
-    local output=$1 network=$2
+    local output=$1 network=$2 operation
     shift 2
-    local -a options=(--rm --network "$network" --read-only --cap-drop=all --security-opt=no-new-privileges
+    case "$*" in
+        migrate-tenants) operation=migrate-tenants ;;
+        'storage-namespace context-admin') operation=context-admin ;;
+        'storage-namespace routing-fingerprints') operation=routing-fingerprints ;;
+        'storage-namespace check-admin') operation=check-admin ;;
+        'storage-namespace attest-admin') operation=attest-admin ;;
+        *) fail invalid_headless_operation ;;
+    esac
+    # Podman reserves the name atomically for the daemon-side lifetime, including
+    # after SSH/controller loss. Never remove another operation to make progress.
+    local -a options=(--rm --name "$oneshot"
+        --label "org.schoolorbit.rollout.release=$RELEASE_SHA"
+        --label "org.schoolorbit.rollout.image=$BACKEND_IMAGE_DIGEST"
+        --label "org.schoolorbit.rollout.operation=$operation"
+        --network "$network" --read-only --cap-drop=all --security-opt=no-new-privileges
         --userns=keep-id --user "$(id -u):$(id -g)"
         --env R2_ACCOUNT_ID --env R2_PUBLIC_BUCKET_NAME --env R2_PRIVATE_BUCKET_NAME)
     if [[ $network != none ]]; then
@@ -100,6 +127,10 @@ run_image() {
     fi
     if ! podman run "${options[@]}" "$image" /app/backend-school "$@" >"$output" 2>"$scratch/command-error"; then
         report_aggregate "$output" || true
+        if podman container exists "$oneshot"; then
+            report_interlock
+            fail headless_operation_exists
+        fi
         # BindingError is a static allowlist; never print arbitrary process stderr.
         if grep -Eq '^(storage_binding_manifest_invalid|storage_watch_schema_missing|storage_binding_database_failed|storage_binding_namespace_invalid|storage_binding_owner_required|storage_binding_watch_changed|storage_binding_active_claim)$' "$scratch/command-error"; then
             grep -E '^(storage_binding_manifest_invalid|storage_watch_schema_missing|storage_binding_database_failed|storage_binding_namespace_invalid|storage_binding_owner_required|storage_binding_watch_changed|storage_binding_active_claim)$' "$scratch/command-error" >&2

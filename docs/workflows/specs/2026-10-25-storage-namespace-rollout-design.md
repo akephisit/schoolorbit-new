@@ -65,6 +65,16 @@ release or a forward release. Preserve the previous image/allowlisted routing co
 evidence without treating them as post-migration rollback permission. Existing timing, lease,
 client timeout, resource and health policies are unchanged.
 
+All adapter-launched headless commands atomically reserve the fixed Podman name
+`schoolorbit-school-rollout`, labelled with the release SHA, prepared image digest and operation.
+The name survives with the daemon-side operation after SSH/controller loss, so a later release
+cannot overlap it after the GitHub lock is released. Normal `--rm` handles completed operations;
+any existing name blocks, including stopped or unknown residuals. No automatic kill/removal or
+retry bypass is permitted. An operator must verify ownership and process completion before
+explicitly removing a stopped residual under the same rootless runtime owner and production lock.
+Only validated name/release/operation metadata can enter failure diagnostics. Journal markers
+alone do not establish process completion.
+
 Stop verification proves that the old process is gone; it does not prove an external PUT has
 settled. Retained watches and the existing late-write cleanup protocol remain necessary. Neither
 container removal nor rollout acceptance makes database and external-provider effects atomic.

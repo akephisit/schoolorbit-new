@@ -175,6 +175,15 @@ async fn require_schema(connection: &mut PgConnection) -> Result<(), BindingErro
         Err(BindingError::SchemaMissing)
     }
 }
+/// Exact retained legacy selection for an operator work entry using its existing connection.
+/// Includes revoked/purged locators and performs no admission, transaction or mutation.
+pub async fn unbound_watch_ids_on_connection(
+    connection: &mut PgConnection,
+) -> Result<Vec<Uuid>, BindingError> {
+    DbSession::new(connection).scalar::<Uuid>("rollout.unbound_inventory", "SELECT id FROM file_storage_cleanup_watches WHERE namespace_fingerprint IS NULL ORDER BY id")
+        .fetch_all().await.map_err(|_|BindingError::Database)
+}
+
 async fn load(
     connection: &mut PgConnection,
     watch_ids: &[Uuid],

@@ -327,6 +327,25 @@ binding or readiness step fails. An interrupted retry automatically reuses proof
 same release SHA and image digest. Its stopped-container and migration-attempt markers survive
 container removal; the old routing cannot be reconstructed from the new `.env`.
 
+Every adapter-launched headless command reserves the global rootless Podman name
+`schoolorbit-school-rollout`, with immutable release, image and operation labels. Podman reserves
+that name atomically: a surviving command blocks the next command even if its SSH client or
+controller disappears and GitHub releases the production lock. The journal records intent and
+proof, not process completion. Normal `--rm` removes a completed one-shot; any still-existing named
+container, including a stopped or unrecognized residual, blocks release. Diagnostics expose only
+the fixed name and validated release/operation labels. This interlock assumes the same canonical
+rootless runtime owner; do not bypass it with another user, a random name or a second runtime.
+
+On `headless_operation_exists`, keep maintenance enabled and inspect the named operation privately.
+Verify its actual immutable image, release/operation labels, process/exit state and relevant
+migration/binding journal. A lost SSH connection is not evidence that work ended. Do not kill or
+remove a running operation or one whose ownership/completion cannot be established. After an
+operator verifies that the process has ended and resolves any migration/claim uncertainty, an
+explicit `podman rm schoolorbit-school-rollout` can remove a stopped residual; never use force
+or an automatic cleanup/retry to bypass the interlock. Then retry the exact reviewed target under
+the production lock and the existing journal rules. This does not prove external PUT completion;
+the retained-watch limitations still apply.
+
 A different compatible target requires a separately reviewed operator carry-forward under the
 production lock, not automatic journal re-pinning. Preserve the original journal and routing
 configuration; validate their owner/mode, original release/image identities and configuration

@@ -130,14 +130,21 @@ function fixture(t, options = {}) {
     path.join(stack, "bin/podman"),
     `#!/usr/bin/env node
 const fs=require('node:fs'),p=require('node:path');const root=process.env.FIXTURE_ROOT,args=process.argv.slice(2),opts=JSON.parse(fs.readFileSync(p.join(root,'options.json'))),file=p.join(root,'container.json');
-const state=()=>JSON.parse(fs.readFileSync(file));const log=JSON.stringify({args,envKeys:Object.keys(process.env).filter(k=>k.startsWith('R2_')||k.startsWith('FILE_STORAGE_NAMESPACE_'))});fs.appendFileSync(p.join(root,'commands'),log+'\\n');
+const oneshot=p.join(root,'oneshot.json');const state=(name)=>JSON.parse(fs.readFileSync(name==='schoolorbit-school-rollout'?oneshot:file));const log=JSON.stringify({args,envKeys:Object.keys(process.env).filter(k=>k.startsWith('R2_')||k.startsWith('FILE_STORAGE_NAMESPACE_'))});fs.appendFileSync(p.join(root,'commands'),log+'\\n');
 if(args[0]==='image'&&args[1]==='exists')process.exit(0);
-if(args[0]==='container'&&args[1]==='exists')process.exit(fs.existsSync(file)?0:1);
-if(args[0]==='inspect'){const format=args[2],s=state();if(format==='{{.Id}}')console.log(s.Id);else if(format==='{{.Image}}')console.log(s.Image);else if(format==='{{.State.Running}}')console.log(s.State.Running);else if(format==='{{json .Config.Env}}')console.log(JSON.stringify(s.Config.Env));else if(format==='{{json .Config}}')console.log(JSON.stringify(s.Config));else process.exit(91);process.exit(0);}
+if(args[0]==='container'&&args[1]==='exists')process.exit(fs.existsSync(args[2]==='schoolorbit-school-rollout'?oneshot:file)?0:1);
+if(args[0]==='inspect'){const format=args[2],s=state(args.at(-1));if(format==='{{.Id}}')console.log(s.Id);else if(format==='{{.Image}}')console.log(s.Image);else if(format==='{{.State.Running}}')console.log(s.State.Running);else if(format==='{{json .Config.Env}}')console.log(JSON.stringify(s.Config.Env));else if(format==='{{json .Config}}')console.log(JSON.stringify(s.Config));else if(format==='{{json .Config.Labels}}')console.log(JSON.stringify(s.Config.Labels));else process.exit(91);process.exit(0);}
 if(args[0]==='stop'){if(opts.stopFailure)process.exit(1);const s=state();s.State.Running=!!opts.stopLies;fs.writeFileSync(file,JSON.stringify(s));process.exit(0);}
 if(args[0]==='rm'){if(state().State.Running)process.exit(92);fs.unlinkSync(file);process.exit(0);}
 if(args[0]==='run'){
- const i=args.indexOf('/app/backend-school'),command=args.slice(i+1).join(' ');if(i<0||!args.includes('--read-only')||!args.includes('--userns=keep-id')||args[args.indexOf('--user')+1]!==process.getuid()+':'+process.getgid()||args.some(a=>a==='-p'||a==='--publish'))process.exit(93);
+ const i=args.indexOf('/app/backend-school'),command=args.slice(i+1).join(' ');if(i<0||args.includes('--replace')||!args.includes('--read-only')||!args.includes('--userns=keep-id')||args[args.indexOf('--user')+1]!==process.getuid()+':'+process.getgid()||args.some(a=>a==='-p'||a==='--publish'))process.exit(93);
+ const name=args[args.indexOf('--name')+1];const labels={};for(let n=0;n<args.length;n++)if(args[n]==='--label'){const v=args[n+1],i=v.indexOf('=');labels[v.slice(0,i)]=v.slice(i+1);}
+ const operation=command==='migrate-tenants'?'migrate-tenants':command.split(' ').at(-1);
+ if(name!=='schoolorbit-school-rollout'||labels['org.schoolorbit.rollout.release']!==process.env.RELEASE_SHA||labels['org.schoolorbit.rollout.image']!==process.env.BACKEND_IMAGE_DIGEST||labels['org.schoolorbit.rollout.operation']!==operation)process.exit(100);
+ try{fs.writeFileSync(oneshot,JSON.stringify({State:{Running:true},Config:{Labels:labels}}),{flag:'wx'});}catch(error){if(error.code==='EEXIST'){console.error('private-sentinel name collision');process.exit(125);}throw error;}
+ let orphan=false;process.on('exit',()=>{if(!orphan)fs.unlinkSync(oneshot);});
+ fs.appendFileSync(p.join(root,'executed'),command+'\\n');
+ if(opts.orphanOperation==='migrate-tenants'&&operation==='migrate-tenants'){orphan=true;process.exit(1);}
  const route={schema_version:1,public_namespace_sha256:'${publicHash}',private_namespace_sha256:process.env.R2_PRIVATE_BUCKET_NAME==='private-other'?'0'.repeat(64):'${privateHash}'};
  if(command==='storage-namespace routing-fingerprints'){if(args[args.indexOf('--network')+1]!=='none')process.exit(94);console.log(JSON.stringify(route));process.exit(0);}
  if(command==='storage-namespace context-admin'){console.log(JSON.stringify({...route,tenants:opts.fresh?0:2,inventory_sha256:opts.inventoryMismatch?'0'.repeat(64):'${inventoryHash}',...(opts.hostileContext?{private:'private-sentinel'}:{})}));process.exit(0);}
@@ -147,7 +154,7 @@ if(args[0]==='run'){
   if(!process.env.FILE_STORAGE_NAMESPACE_ATTESTATION_JSON||!args.includes('--env')||process.env.FILE_STORAGE_NAMESPACE_MANIFEST_DIRECTORY!=='/run/storage-namespace-manifests')process.exit(96);
   const mount=args.find(a=>a.endsWith(':/run/storage-namespace-manifests:rw'));if(!mount)process.exit(97);const directory=mount.split(':')[0];const st=fs.statSync(directory);if((st.mode&511)!==448||st.uid!==process.getuid())process.exit(98);
   fs.writeFileSync(p.join(directory,'exact-manifest.json'),JSON.stringify({watch_ids:['synthetic-exact-id'],expected_revision:1}),{mode:0o600,flag:'wx'});
-  if(opts.attestFailure){console.error('storage_binding_active_claim');process.exit(1);}console.log(JSON.stringify({schema_version:1,tenants:2,applied:1,ready:true}));process.exit(0);
+  if(opts.orphanOperation==='attest-admin'){orphan=true;process.exit(1);}  if(opts.attestFailure){console.error('storage_binding_active_claim');process.exit(1);}console.log(JSON.stringify({schema_version:1,tenants:2,applied:1,ready:true}));process.exit(0);
  }
  if(command==='storage-namespace check-admin'){if(opts.checkFailure){console.log(JSON.stringify({schema_version:1,tenants:2,checked:2,failed:0,watches:3,unresolved:2,mismatched:1,...(opts.maliciousFailure?{tenants:'private-sentinel'}:{})}));console.error('storage_binding_namespace_invalid');console.error('private-sentinel postgres://secret');process.exit(1);}console.log(JSON.stringify({schema_version:1,tenants:opts.fresh?0:2,checked:opts.fresh?0:2,failed:0,watches:0,unresolved:0,mismatched:0}));process.exit(0);}
 }
@@ -511,6 +518,100 @@ test("changed container identity between preflight and cutover refuses to stop t
   assert.notEqual(f.cutover().status, 0);
   assert.equal(
     f.commands().some((x) => x.args[0] === "stop"),
+    false,
+  );
+});
+
+for (const running of [true, false]) {
+  test(`occupied global headless name (${running ? "running" : "stopped"}) blocks before any next operation`, (t) => {
+    const f = fixture(t);
+    writeFileSync(
+      path.join(f.stack, "oneshot.json"),
+      JSON.stringify({
+        State: { Running: running },
+        Config: {
+          Labels: {
+            "org.schoolorbit.rollout.release": sha,
+            "org.schoolorbit.rollout.image": digest,
+            "org.schoolorbit.rollout.operation": "attest-admin",
+          },
+        },
+      }),
+    );
+    const result = f.run("preflight");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /headless_operation_exists/);
+    assert.match(result.stderr, /"name":"schoolorbit-school-rollout"/);
+    assert.match(
+      result.stderr,
+      /"release":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/,
+    );
+    assert.match(result.stderr, /"operation":"attest-admin"/);
+    assert.equal(existsSync(path.join(f.stack, "executed")), false);
+    assert.equal(
+      f.commands().some((x) => x.args[0] === "stop" || x.args[0] === "rm"),
+      false,
+    );
+    assert.ok(existsSync(path.join(f.stack, "oneshot.json")));
+    assert.doesNotMatch(result.stdout + result.stderr, /private-sentinel/);
+  });
+}
+for (const operation of ["migrate-tenants", "attest-admin"]) {
+  test(`orphaned ${operation} survives controller loss and globally refuses later releases/start`, (t) => {
+    const f = fixture(t, {
+      attest: operation === "attest-admin",
+      orphanOperation: operation,
+    });
+    assert.equal(f.run("preflight").status, 0);
+    f.maintenance();
+    const first = f.cutover();
+    assert.notEqual(first.status, 0);
+    assert.match(first.stderr, /headless_operation_exists/);
+    assert.ok(existsSync(path.join(f.stack, "oneshot.json")));
+    const accepted = readFileSync(path.join(f.stack, "executed"), "utf8");
+    const next = f.run("preflight", { RELEASE_SHA: "2".repeat(40) });
+    assert.notEqual(next.status, 0);
+    assert.match(next.stderr, /headless_operation_exists/);
+    const same = f.cutover();
+    assert.notEqual(same.status, 0);
+    assert.match(same.stderr, /headless_operation_exists/);
+    assert.equal(
+      readFileSync(path.join(f.stack, "executed"), "utf8"),
+      accepted,
+    );
+    assert.equal(existsSync(path.join(f.stack, "started")), false);
+    assert.equal(
+      f
+        .commands()
+        .some(
+          (x) =>
+            ["stop", "rm"].includes(x.args[0]) &&
+            x.args.at(-1) === "schoolorbit-school-rollout",
+        ),
+      false,
+    );
+  });
+}
+test("unknown occupied owner remains blocked and hostile labels never enter diagnostics", (t) => {
+  const f = fixture(t);
+  writeFileSync(
+    path.join(f.stack, "oneshot.json"),
+    JSON.stringify({
+      Config: {
+        Labels: {
+          "org.schoolorbit.rollout.release": "private-sentinel\nforged",
+          "org.schoolorbit.rollout.operation": "private-sentinel",
+        },
+      },
+    }),
+  );
+  const r = f.run("preflight");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /"release":"unknown","operation":"unknown"/);
+  assert.match(r.stderr, /headless_operation_exists/);
+  assert.doesNotMatch(r.stdout + r.stderr, /private-sentinel|forged/);
+  assert.equal(
+    f.commands().some((x) => ["rm", "stop"].includes(x.args[0])),
     false,
   );
 });

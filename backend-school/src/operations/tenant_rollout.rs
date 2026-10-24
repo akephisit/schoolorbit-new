@@ -399,19 +399,43 @@ pub async fn namespace_operation(mode: &str) -> Result<bool, BindingError> {
         let pool = school_tenancy::connect_privileged_pool(&url, 1)
             .await
             .map_err(|_| failure())?;
-        let planned=async {
-            verify_pool(pool.as_ref(),tenant.id,true,true).await?;
-            let ids={let mut connection=school_tenancy::TenantPool::observed_checkout_pool(pool.as_ref(),"rollout.unbound_inventory").await.map_err(|_|failure())?;
-                DbSession::new(&mut connection).scalar::<Uuid>("rollout.unbound_inventory","SELECT id FROM file_storage_cleanup_watches WHERE namespace_fingerprint IS NULL ORDER BY id").fetch_all().await.map_err(|_|failure())?};
-            let mut manifests=Vec::new();
+        let planned = async {
+            verify_pool(pool.as_ref(), tenant.id, true, true).await?;
+            let ids = {
+                let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                    pool.as_ref(),
+                    "rollout.unbound_inventory",
+                )
+                .await
+                .map_err(|_| failure())?;
+                namespace_binding::unbound_watch_ids_on_connection(&mut connection).await?
+            };
+            let mut manifests = Vec::new();
             for chunk in ids.chunks(1000) {
-                let manifest=namespace_binding::prepare_binding_manifest(pool.as_ref(),chunk,attestation.evidence_digest.clone(),&namespaces).await?;
+                let manifest = namespace_binding::prepare_binding_manifest(
+                    pool.as_ref(),
+                    chunk,
+                    attestation.evidence_digest.clone(),
+                    &namespaces,
+                )
+                .await?;
                 // Validate every chunk/tenant before ANY apply; final apply rechecks each exact revision.
-                namespace_binding::bind_attested_namespaces(pool.as_ref(),&manifest,&namespaces,false).await?;
+                namespace_binding::bind_attested_namespaces(
+                    pool.as_ref(),
+                    &manifest,
+                    &namespaces,
+                    false,
+                )
+                .await?;
                 manifests.push(manifest);
             }
-            Ok::<_,BindingError>(PlannedTenant {tenant_id:tenant.id,subdomain:tenant.subdomain.clone(),manifests})
-        }.await;
+            Ok::<_, BindingError>(PlannedTenant {
+                tenant_id: tenant.id,
+                subdomain: tenant.subdomain.clone(),
+                manifests,
+            })
+        }
+        .await;
         pool.close().await;
         plan.tenants.push(planned?);
     }
