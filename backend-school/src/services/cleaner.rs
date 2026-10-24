@@ -690,6 +690,32 @@ mod phase_tests {
         tokio::time::timeout(Duration::from_secs(3), provider.started.notified())
             .await
             .unwrap();
+        // Deletion acceptance and the lease have committed before provider IO starts.
+        // Snapshot this authoritative pre-finish state, including identities, timestamps,
+        // and lease fields, so stale directory proof must leave every DB field unchanged.
+        let metadata_sql = "SELECT jsonb_build_object(
+            'files', (SELECT jsonb_agg(to_jsonb(f) ORDER BY f.id) FROM files f),
+            'operations', (SELECT jsonb_agg(to_jsonb(o) ORDER BY o.id) FROM file_operations o),
+            'versions', (SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM file_versions v))";
+        let before_finish: serde_json::Value = sqlx::query_scalar(metadata_sql)
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        for table in ["files", "operations", "versions"] {
+            assert_eq!(before_finish[table].as_array().unwrap().len(), 1);
+        }
+        let file = &before_finish["files"][0];
+        let operation = &before_finish["operations"][0];
+        let version = &before_finish["versions"][0];
+        assert_eq!(file["lifecycle_status"], "delete_requested");
+        assert_eq!(operation["status"], "leased");
+        assert_eq!(version["storage_status"], "delete_requested");
+        assert_eq!(operation["file_id"], file["id"]);
+        assert_eq!(operation["file_version_id"], version["id"]);
+        assert_eq!(file["current_version_id"], version["id"]);
+        assert_eq!(operation["lease_owner"], "worker");
+        assert!(!operation["leased_at"].is_null());
+        assert!(!operation["lease_expires_at"].is_null());
         let turns = manager.background_turns();
         assert_eq!(turns.limit(), 1);
         let blocker = turns
@@ -727,10 +753,13 @@ mod phase_tests {
             .unwrap()
             .unwrap()
             .is_err());
-        let (lifecycle, operation, stored): (String, String, String) = sqlx::query_as("SELECT f.lifecycle_status,o.status,v.storage_status FROM files f JOIN file_operations o ON o.file_id=f.id JOIN file_versions v ON v.id=f.current_version_id LIMIT 1").fetch_one(&fixture).await.unwrap();
+        let after_rejected_finish: serde_json::Value = sqlx::query_scalar(metadata_sql)
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
         assert_eq!(
-            (lifecycle.as_str(), operation.as_str(), stored.as_str()),
-            ("delete_requested", "leased", "stored")
+            after_rejected_finish, before_finish,
+            "stale directory proof must not acknowledge the lease or mutate file/version metadata"
         );
         assert_eq!(
             directory.calls(),
