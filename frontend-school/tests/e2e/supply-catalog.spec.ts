@@ -954,10 +954,8 @@ for (const form of ['proposal', 'version'] as const) {
 			await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
 			await dialog.getByRole('button', { name: 'เพิ่มรุ่นราคา', exact: true }).click();
 		}
-		const save = dialog.getByRole('button', {
-			name: form === 'proposal' ? 'ส่งข้อเสนอ' : 'เพิ่มรุ่นราคา',
-			exact: true
-		});
+		const save = dialog.locator('form').locator('button[type="submit"]');
+		await expect(save).toHaveAccessibleName(form === 'proposal' ? 'ส่งข้อเสนอ' : 'เพิ่มรุ่นราคา');
 		const actionOffset = () =>
 			save.evaluate((button) => {
 				const form = button.closest('form');
@@ -1018,6 +1016,7 @@ for (const form of ['proposal', 'version'] as const) {
 		await save.click();
 		await expect.poll(() => entered).toBe(true);
 		await expect(save).toBeDisabled();
+		await expect(save).toHaveAccessibleName('กำลังดำเนินการ...');
 		expect(await actionOffset()).toBeCloseTo(preparedOffset, 1);
 		release();
 		await expect.poll(() => api.uploads.length).toBe(1);
